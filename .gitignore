@@ -1,0 +1,35 @@
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environments and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Build and dependency output
+build/
+dist/
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Test and coverage output
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
