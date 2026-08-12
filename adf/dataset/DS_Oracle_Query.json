@@ -1,0 +1,33 @@
+{
+    "name": "DS_Oracle_Query",
+    "properties": {
+        "description": "Generic Oracle dataset. Every activity supplies its own query, so schema/table are here only to satisfy the dataset contract.",
+        "linkedServiceName": {
+            "referenceName": "LS_Oracle_Source",
+            "type": "LinkedServiceReference"
+        },
+        "parameters": {
+            "pSchema": {
+                "type": "string",
+                "defaultValue": "SYS"
+            },
+            "pTable": {
+                "type": "string",
+                "defaultValue": "DUAL"
+            }
+        },
+        "annotations": [],
+        "type": "OracleTable",
+        "schema": [],
+        "typeProperties": {
+            "schema": {
+                "value": "@dataset().pSchema",
+                "type": "Expression"
+            },
+            "table": {
+                "value": "@dataset().pTable",
+                "type": "Expression"
+            }
+        }
+    }
+}

@@ -1,0 +1,363 @@
+{
+    "name": "PL_COPY_TABLE_DATA",
+    "properties": {
+        "description": "Phase 2 for a single table: build the Oracle extract query (full or incremental, optionally range-partitioned), copy into the Snowflake table, then advance the watermark from what actually landed.",
+        "activities": [
+            {
+                "name": "SCR_Get_Watermark",
+                "description": "Aggregates so that a table with no watermark row still returns exactly one row - the pipeline can then reference rows[0] unconditionally.",
+                "type": "Script",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 2,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "linkedServiceName": {
+                    "referenceName": "LS_Snowflake_Target",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "scripts": [
+                        {
+                            "type": "Query",
+                            "text": {
+                                "value": "SELECT COALESCE(MAX(HIGH_WATERMARK), '1900-01-01 00:00:00') AS HIGH_WATERMARK,\n       COALESCE(MAX(WATERMARK_TYPE), 'TIMESTAMP')          AS WATERMARK_TYPE\nFROM CTL.LOAD_WATERMARK\nWHERE CONTROL_ID = @{pipeline().parameters.pControlId}",
+                                "type": "Expression"
+                            }
+                        }
+                    ],
+                    "scriptBlockExecutionTimeout": "00:10:00"
+                }
+            },
+            {
+                "name": "SV_Build_Extract_Query",
+                "description": "Materialising the query into a variable means the exact SQL sent to Oracle is visible in the run output.",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "SCR_Get_Watermark",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "vExtractQuery",
+                    "value": {
+                        "value": "@if(not(empty(pipeline().parameters.pSourceQueryOverride)), pipeline().parameters.pSourceQueryOverride, concat('SELECT * FROM \"', pipeline().parameters.pSourceSchema, '\".\"', pipeline().parameters.pSourceTable, '\" WHERE 1 = 1', if(and(equals(toUpper(pipeline().parameters.pLoadType), 'INCREMENTAL'), not(empty(pipeline().parameters.pWatermarkColumn))), concat(' AND \"', pipeline().parameters.pWatermarkColumn, '\" > ', if(equals(toUpper(activity('SCR_Get_Watermark').output.resultSets[0].rows[0].WATERMARK_TYPE), 'NUMBER'), activity('SCR_Get_Watermark').output.resultSets[0].rows[0].HIGH_WATERMARK, concat('TO_TIMESTAMP(''', activity('SCR_Get_Watermark').output.resultSets[0].rows[0].HIGH_WATERMARK, ''', ''YYYY-MM-DD HH24:MI:SS'')'))), ''), if(not(empty(pipeline().parameters.pPartitionColumn)), ' AND ?AdfDynamicRangePartitionCondition', '')))",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "CP_Oracle_To_Snowflake",
+                "description": "Oracle -> Snowflake. The Snowflake sink is fed through a blob stage because COPY INTO can only read from cloud storage; ADF writes the extract there and cleans it up afterwards.",
+                "type": "Copy",
+                "dependsOn": [
+                    {
+                        "activity": "SV_Build_Extract_Query",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.08:00:00",
+                    "retry": 2,
+                    "retryIntervalInSeconds": 60,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [
+                    {
+                        "name": "Source",
+                        "value": "@{pipeline().parameters.pSourceSchema}.@{pipeline().parameters.pSourceTable}"
+                    },
+                    {
+                        "name": "Destination",
+                        "value": "@{pipeline().parameters.pTargetSchema}.@{pipeline().parameters.pTargetTable}"
+                    }
+                ],
+                "typeProperties": {
+                    "source": {
+                        "type": "OracleSource",
+                        "oracleReaderQuery": {
+                            "value": "@variables('vExtractQuery')",
+                            "type": "Expression"
+                        },
+                        "partitionOption": {
+                            "value": "@if(empty(pipeline().parameters.pPartitionColumn), 'None', 'DynamicRange')",
+                            "type": "Expression"
+                        },
+                        "partitionSettings": {
+                            "partitionColumnName": {
+                                "value": "@pipeline().parameters.pPartitionColumn",
+                                "type": "Expression"
+                            }
+                        },
+                        "queryTimeout": "02:00:00"
+                    },
+                    "sink": {
+                        "type": "SnowflakeV2Sink",
+                        "preCopyScript": {
+                            "value": "@if(equals(toUpper(pipeline().parameters.pLoadType), 'FULL'), concat('TRUNCATE TABLE IF EXISTS \"', pipeline().parameters.pTargetDatabase, '\".\"', pipeline().parameters.pTargetSchema, '\".\"', pipeline().parameters.pTargetTable, '\"'), '')",
+                            "type": "Expression"
+                        },
+                        "importSettings": {
+                            "type": "SnowflakeImportCopyCommand",
+                            "additionalCopyOptions": {
+                                "ON_ERROR": "ABORT_STATEMENT"
+                            }
+                        },
+                        "writeBehavior": "Insert"
+                    },
+                    "enableStaging": true,
+                    "stagingSettings": {
+                        "linkedServiceName": {
+                            "referenceName": "LS_Blob_Staging",
+                            "type": "LinkedServiceReference"
+                        },
+                        "path": "adf-stage",
+                        "enableCompression": true
+                    },
+                    "parallelCopies": 4,
+                    "validateDataConsistency": false,
+                    "translator": {
+                        "type": "TabularTranslator",
+                        "typeConversion": true,
+                        "typeConversionSettings": {
+                            "allowDataTruncation": false,
+                            "treatBooleanAsNumber": false
+                        }
+                    }
+                },
+                "inputs": [
+                    {
+                        "referenceName": "DS_Oracle_Query",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "pSchema": {
+                                "value": "@pipeline().parameters.pSourceSchema",
+                                "type": "Expression"
+                            },
+                            "pTable": {
+                                "value": "@pipeline().parameters.pSourceTable",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "DS_Snowflake_Table",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "pSchema": {
+                                "value": "@pipeline().parameters.pTargetSchema",
+                                "type": "Expression"
+                            },
+                            "pTable": {
+                                "value": "@pipeline().parameters.pTargetTable",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "SCR_Update_Watermark",
+                "description": "Recomputed from the target table, never from the clock: a copy that moved only part of the delta cannot skip the rest on the next run. No-ops for FULL loads.",
+                "type": "Script",
+                "dependsOn": [
+                    {
+                        "activity": "CP_Oracle_To_Snowflake",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:20:00",
+                    "retry": 2,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "linkedServiceName": {
+                    "referenceName": "LS_Snowflake_Target",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "scripts": [
+                        {
+                            "type": "Query",
+                            "text": {
+                                "value": "CALL CTL.SP_UPDATE_WATERMARK(\n    @{pipeline().parameters.pControlId},\n    '@{pipeline().parameters.pTargetDatabase}',\n    '@{pipeline().parameters.pTargetSchema}',\n    '@{pipeline().parameters.pTargetTable}',\n    '@{pipeline().parameters.pWatermarkColumn}'\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    ],
+                    "scriptBlockExecutionTimeout": "00:20:00"
+                }
+            },
+            {
+                "name": "SCR_Log_Data_Success",
+                "type": "Script",
+                "dependsOn": [
+                    {
+                        "activity": "SCR_Update_Watermark",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "linkedServiceName": {
+                    "referenceName": "LS_Snowflake_Target",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "scripts": [
+                        {
+                            "type": "Query",
+                            "text": {
+                                "value": "CALL CTL.SP_LOG_LOAD_AUDIT(\n    @{pipeline().parameters.pControlId},\n    '@{pipeline().DataFactory}',\n    '@{pipeline().Pipeline}',\n    '@{pipeline().RunId}',\n    '@{pipeline().parameters.pParentRunId}',\n    '@{pipeline().parameters.pSourceSchema}.@{pipeline().parameters.pSourceTable}',\n    '@{pipeline().parameters.pTargetDatabase}.@{pipeline().parameters.pTargetSchema}.@{pipeline().parameters.pTargetTable}',\n    'DATA',\n    '@{pipeline().parameters.pLoadType}',\n    'SUCCEEDED',\n    @{coalesce(activity('CP_Oracle_To_Snowflake').output.rowsRead, 0)},\n    @{coalesce(activity('CP_Oracle_To_Snowflake').output.rowsCopied, 0)},\n    @{coalesce(activity('CP_Oracle_To_Snowflake').output.copyDuration, 0)},\n    NULL\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    ],
+                    "scriptBlockExecutionTimeout": "00:10:00"
+                }
+            },
+            {
+                "name": "SCR_Log_Data_Failure",
+                "type": "Script",
+                "dependsOn": [
+                    {
+                        "activity": "CP_Oracle_To_Snowflake",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "linkedServiceName": {
+                    "referenceName": "LS_Snowflake_Target",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "scripts": [
+                        {
+                            "type": "Query",
+                            "text": {
+                                "value": "CALL CTL.SP_LOG_LOAD_AUDIT(\n    @{pipeline().parameters.pControlId},\n    '@{pipeline().DataFactory}',\n    '@{pipeline().Pipeline}',\n    '@{pipeline().RunId}',\n    '@{pipeline().parameters.pParentRunId}',\n    '@{pipeline().parameters.pSourceSchema}.@{pipeline().parameters.pSourceTable}',\n    '@{pipeline().parameters.pTargetDatabase}.@{pipeline().parameters.pTargetSchema}.@{pipeline().parameters.pTargetTable}',\n    'DATA',\n    '@{pipeline().parameters.pLoadType}',\n    'FAILED',\n    NULL,\n    NULL,\n    NULL,\n    '@{replace(string(activity('CP_Oracle_To_Snowflake').error.message), '''', '''''')}'\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    ],
+                    "scriptBlockExecutionTimeout": "00:10:00"
+                }
+            },
+            {
+                "name": "FAIL_Copy",
+                "description": "Marks the table failed for the parent loop after the audit row is written.",
+                "type": "Fail",
+                "dependsOn": [
+                    {
+                        "activity": "SCR_Log_Data_Failure",
+                        "dependencyConditions": [
+                            "Completed"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "message": {
+                        "value": "@concat('Copy failed for ', pipeline().parameters.pSourceSchema, '.', pipeline().parameters.pSourceTable, ': ', activity('CP_Oracle_To_Snowflake').error.message)",
+                        "type": "Expression"
+                    },
+                    "errorCode": "COPY_FAILED"
+                }
+            }
+        ],
+        "parameters": {
+            "pControlId": {
+                "type": "int"
+            },
+            "pSourceSchema": {
+                "type": "string"
+            },
+            "pSourceTable": {
+                "type": "string"
+            },
+            "pTargetDatabase": {
+                "type": "string",
+                "defaultValue": "ORACLE_LANDING"
+            },
+            "pTargetSchema": {
+                "type": "string",
+                "defaultValue": "RAW"
+            },
+            "pTargetTable": {
+                "type": "string"
+            },
+            "pLoadType": {
+                "type": "string",
+                "defaultValue": "FULL"
+            },
+            "pWatermarkColumn": {
+                "type": "string",
+                "defaultValue": ""
+            },
+            "pPartitionColumn": {
+                "type": "string",
+                "defaultValue": ""
+            },
+            "pSourceQueryOverride": {
+                "type": "string",
+                "defaultValue": ""
+            },
+            "pParentRunId": {
+                "type": "string",
+                "defaultValue": ""
+            }
+        },
+        "variables": {
+            "vExtractQuery": {
+                "type": "String"
+            }
+        },
+        "folder": {
+            "name": "Oracle to Snowflake/Child"
+        },
+        "annotations": [
+            "oracle",
+            "snowflake",
+            "copy"
+        ]
+    }
+}

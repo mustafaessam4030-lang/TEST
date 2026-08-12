@@ -1,0 +1,124 @@
+{
+    "name": "PL_DISCOVER_ORACLE_SCHEMA",
+    "properties": {
+        "description": "Onboarding helper. Lists every table in an Oracle schema and registers it in CTL.PIPELINE_CONTROL, so a new source schema becomes a working load without hand-writing control rows. Run it once per schema, then edit LOAD_TYPE / WATERMARK_COLUMN for the tables that should go incremental.",
+        "activities": [
+            {
+                "name": "LKP_Oracle_Tables",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.00:20:00",
+                    "retry": 2,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "OracleSource",
+                        "oracleReaderQuery": {
+                            "value": "SELECT owner AS SCHEMA_NAME,\n       table_name AS TABLE_NAME\nFROM all_tables\nWHERE owner = '@{pipeline().parameters.pSourceSchema}'\n  AND table_name LIKE '@{pipeline().parameters.pTableNameFilter}'\n  AND table_name NOT LIKE 'BIN$%'\n  AND temporary = 'N'\n  AND nested = 'NO'\nORDER BY table_name",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None",
+                        "queryTimeout": "00:10:00"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_Oracle_Query",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "pSchema": {
+                                "value": "@pipeline().parameters.pSourceSchema",
+                                "type": "Expression"
+                            },
+                            "pTable": {
+                                "value": "DUAL",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "FEACH_Register_Tables",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "LKP_Oracle_Tables",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('LKP_Oracle_Tables').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "batchCount": 10,
+                    "activities": [
+                        {
+                            "name": "SCR_Register_Table",
+                            "description": "Upsert - re-running discovery never duplicates or resets an existing control row's load settings beyond what is passed in.",
+                            "type": "Script",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.00:10:00",
+                                "retry": 1,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "linkedServiceName": {
+                                "referenceName": "LS_Snowflake_Target",
+                                "type": "LinkedServiceReference"
+                            },
+                            "typeProperties": {
+                                "scripts": [
+                                    {
+                                        "type": "Query",
+                                        "text": {
+                                            "value": "CALL CTL.SP_REGISTER_TABLE(\n    '@{item().SCHEMA_NAME}',\n    '@{item().TABLE_NAME}',\n    '@{pipeline().parameters.pTargetSchema}',\n    'FULL',\n    NULL,\n    '@{pipeline().parameters.pLoadGroup}'\n)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "scriptBlockExecutionTimeout": "00:10:00"
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "pSourceSchema": {
+                "type": "string"
+            },
+            "pTableNameFilter": {
+                "type": "string",
+                "defaultValue": "%"
+            },
+            "pTargetSchema": {
+                "type": "string",
+                "defaultValue": "RAW"
+            },
+            "pLoadGroup": {
+                "type": "string",
+                "defaultValue": "DEFAULT"
+            }
+        },
+        "folder": {
+            "name": "Oracle to Snowflake/Utility"
+        },
+        "annotations": [
+            "oracle",
+            "onboarding"
+        ]
+    }
+}

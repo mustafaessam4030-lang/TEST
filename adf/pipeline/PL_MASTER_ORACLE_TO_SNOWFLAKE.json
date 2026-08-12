@@ -1,0 +1,271 @@
+{
+    "name": "PL_MASTER_ORACLE_TO_SNOWFLAKE",
+    "properties": {
+        "description": "Orchestrator. Reads CTL.PIPELINE_CONTROL, then runs two phases in order: (1) mirror every table's structure into Snowflake, (2) copy the data. Phase selection is done by emptying the ForEach item list rather than wrapping the loops in If activities, because ADF does not allow a ForEach inside an If.",
+        "activities": [
+            {
+                "name": "SCR_Get_Control_Rows",
+                "description": "The single source of truth for what is in scope this run.",
+                "type": "Script",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 2,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "linkedServiceName": {
+                    "referenceName": "LS_Snowflake_Target",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "scripts": [
+                        {
+                            "type": "Query",
+                            "text": {
+                                "value": "SELECT CONTROL_ID,\n       SOURCE_SCHEMA,\n       SOURCE_TABLE,\n       TARGET_DATABASE,\n       TARGET_SCHEMA,\n       TARGET_TABLE,\n       LOAD_TYPE,\n       COALESCE(WATERMARK_COLUMN, '')      AS WATERMARK_COLUMN,\n       COALESCE(PARTITION_COLUMN, '')      AS PARTITION_COLUMN,\n       COALESCE(SOURCE_QUERY_OVERRIDE, '') AS SOURCE_QUERY_OVERRIDE\nFROM CTL.PIPELINE_CONTROL\nWHERE IS_ACTIVE = TRUE\n  AND ('@{pipeline().parameters.pLoadGroup}' = 'ALL' OR LOAD_GROUP = '@{pipeline().parameters.pLoadGroup}')\nORDER BY PRIORITY, SOURCE_SCHEMA, SOURCE_TABLE",
+                                "type": "Expression"
+                            }
+                        }
+                    ],
+                    "scriptBlockExecutionTimeout": "00:10:00"
+                }
+            },
+            {
+                "name": "FEACH_Create_Structures",
+                "description": "Phase 1 - structures. Runs for every in-scope table; the item list is empty when pRunMode is DATA_ONLY, which turns the phase into a no-op.",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "SCR_Get_Control_Rows",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@if(or(equals(toUpper(pipeline().parameters.pRunMode), 'FULL'), equals(toUpper(pipeline().parameters.pRunMode), 'DDL_ONLY')), activity('SCR_Get_Control_Rows').output.resultSets[0].rows, createArray())",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "batchCount": {
+                        "value": "@pipeline().parameters.pDdlParallelism",
+                        "type": "Expression"
+                    },
+                    "activities": [
+                        {
+                            "name": "EXEC_Create_Snowflake_Table",
+                            "type": "ExecutePipeline",
+                            "dependsOn": [],
+                            "policy": {
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "pipeline": {
+                                    "referenceName": "PL_CREATE_SNOWFLAKE_TABLE",
+                                    "type": "PipelineReference"
+                                },
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                    "pControlId": {
+                                        "value": "@item().CONTROL_ID",
+                                        "type": "Expression"
+                                    },
+                                    "pSourceSchema": {
+                                        "value": "@item().SOURCE_SCHEMA",
+                                        "type": "Expression"
+                                    },
+                                    "pSourceTable": {
+                                        "value": "@item().SOURCE_TABLE",
+                                        "type": "Expression"
+                                    },
+                                    "pTargetDatabase": {
+                                        "value": "@item().TARGET_DATABASE",
+                                        "type": "Expression"
+                                    },
+                                    "pTargetSchema": {
+                                        "value": "@item().TARGET_SCHEMA",
+                                        "type": "Expression"
+                                    },
+                                    "pTargetTable": {
+                                        "value": "@item().TARGET_TABLE",
+                                        "type": "Expression"
+                                    },
+                                    "pAddAuditColumns": {
+                                        "value": "@pipeline().parameters.pAddAuditColumns",
+                                        "type": "Expression"
+                                    },
+                                    "pParentRunId": {
+                                        "value": "@pipeline().RunId",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "FEACH_Copy_Data",
+                "description": "Phase 2 - data. Starts only after every structure exists, so a copy can never hit a missing table.",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "FEACH_Create_Structures",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@if(or(equals(toUpper(pipeline().parameters.pRunMode), 'FULL'), equals(toUpper(pipeline().parameters.pRunMode), 'DATA_ONLY')), activity('SCR_Get_Control_Rows').output.resultSets[0].rows, createArray())",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "batchCount": {
+                        "value": "@pipeline().parameters.pCopyParallelism",
+                        "type": "Expression"
+                    },
+                    "activities": [
+                        {
+                            "name": "EXEC_Copy_Table_Data",
+                            "type": "ExecutePipeline",
+                            "dependsOn": [],
+                            "policy": {
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "pipeline": {
+                                    "referenceName": "PL_COPY_TABLE_DATA",
+                                    "type": "PipelineReference"
+                                },
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                    "pControlId": {
+                                        "value": "@item().CONTROL_ID",
+                                        "type": "Expression"
+                                    },
+                                    "pSourceSchema": {
+                                        "value": "@item().SOURCE_SCHEMA",
+                                        "type": "Expression"
+                                    },
+                                    "pSourceTable": {
+                                        "value": "@item().SOURCE_TABLE",
+                                        "type": "Expression"
+                                    },
+                                    "pTargetDatabase": {
+                                        "value": "@item().TARGET_DATABASE",
+                                        "type": "Expression"
+                                    },
+                                    "pTargetSchema": {
+                                        "value": "@item().TARGET_SCHEMA",
+                                        "type": "Expression"
+                                    },
+                                    "pTargetTable": {
+                                        "value": "@item().TARGET_TABLE",
+                                        "type": "Expression"
+                                    },
+                                    "pLoadType": {
+                                        "value": "@item().LOAD_TYPE",
+                                        "type": "Expression"
+                                    },
+                                    "pWatermarkColumn": {
+                                        "value": "@item().WATERMARK_COLUMN",
+                                        "type": "Expression"
+                                    },
+                                    "pPartitionColumn": {
+                                        "value": "@item().PARTITION_COLUMN",
+                                        "type": "Expression"
+                                    },
+                                    "pSourceQueryOverride": {
+                                        "value": "@item().SOURCE_QUERY_OVERRIDE",
+                                        "type": "Expression"
+                                    },
+                                    "pParentRunId": {
+                                        "value": "@pipeline().RunId",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "SCR_Run_Summary",
+                "description": "Emits the per-table outcome of this run into the activity output, so a failure is diagnosable from the monitor without opening Snowflake.",
+                "type": "Script",
+                "dependsOn": [
+                    {
+                        "activity": "FEACH_Copy_Data",
+                        "dependencyConditions": [
+                            "Completed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "linkedServiceName": {
+                    "referenceName": "LS_Snowflake_Target",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "scripts": [
+                        {
+                            "type": "Query",
+                            "text": {
+                                "value": "SELECT TARGET_OBJECT,\n       PHASE,\n       STATUS,\n       ROWS_WRITTEN,\n       DURATION_SEC,\n       ERROR_MESSAGE\nFROM CTL.LOAD_AUDIT\nWHERE ADF_PARENT_RUN_ID = '@{pipeline().RunId}'\nORDER BY PHASE, TARGET_OBJECT",
+                                "type": "Expression"
+                            }
+                        }
+                    ],
+                    "scriptBlockExecutionTimeout": "00:10:00"
+                }
+            }
+        ],
+        "parameters": {
+            "pRunMode": {
+                "type": "string",
+                "defaultValue": "FULL"
+            },
+            "pLoadGroup": {
+                "type": "string",
+                "defaultValue": "ALL"
+            },
+            "pDdlParallelism": {
+                "type": "int",
+                "defaultValue": 10
+            },
+            "pCopyParallelism": {
+                "type": "int",
+                "defaultValue": 5
+            },
+            "pAddAuditColumns": {
+                "type": "bool",
+                "defaultValue": false
+            }
+        },
+        "folder": {
+            "name": "Oracle to Snowflake"
+        },
+        "annotations": [
+            "oracle",
+            "snowflake",
+            "metadata-driven"
+        ]
+    }
+}

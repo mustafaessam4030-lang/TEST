@@ -1,0 +1,40 @@
+{
+    "name": "TR_Nightly_Oracle_To_Snowflake",
+    "properties": {
+        "description": "Nightly run of the NIGHTLY load group. Starts stopped - enable it after a successful manual run.",
+        "annotations": [],
+        "runtimeState": "Stopped",
+        "pipelines": [
+            {
+                "pipelineReference": {
+                    "referenceName": "PL_MASTER_ORACLE_TO_SNOWFLAKE",
+                    "type": "PipelineReference"
+                },
+                "parameters": {
+                    "pRunMode": "FULL",
+                    "pLoadGroup": "NIGHTLY",
+                    "pDdlParallelism": 10,
+                    "pCopyParallelism": 5,
+                    "pAddAuditColumns": false
+                }
+            }
+        ],
+        "type": "ScheduleTrigger",
+        "typeProperties": {
+            "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "startTime": "2026-01-01T02:00:00",
+                "timeZone": "W. Europe Standard Time",
+                "schedule": {
+                    "minutes": [
+                        0
+                    ],
+                    "hours": [
+                        2
+                    ]
+                }
+            }
+        }
+    }
+}

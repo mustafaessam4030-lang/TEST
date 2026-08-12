@@ -1,0 +1,29 @@
+{
+    "name": "LS_Snowflake_Target",
+    "properties": {
+        "description": "Snowflake target, using the Snowflake (V2) connector with key-pair authentication. The database here is also the database the Script activities run against.",
+        "annotations": [],
+        "type": "SnowflakeV2",
+        "typeProperties": {
+            "accountIdentifier": "myorg-myaccount",
+            "user": "SVC_ADF",
+            "authenticationType": "KeyPair",
+            "privateKey": {
+                "type": "AzureKeyVaultSecret",
+                "store": {
+                    "referenceName": "LS_KeyVault",
+                    "type": "LinkedServiceReference"
+                },
+                "secretName": "snowflake-adf-private-key"
+            },
+            "database": "ORACLE_LANDING",
+            "warehouse": "WH_ADF_LOAD",
+            "role": "ADF_LOADER",
+            "schema": "CTL"
+        },
+        "connectVia": {
+            "referenceName": "AutoResolveIntegrationRuntime",
+            "type": "IntegrationRuntimeReference"
+        }
+    }
+}

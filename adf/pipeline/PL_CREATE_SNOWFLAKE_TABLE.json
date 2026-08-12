@@ -1,0 +1,247 @@
+{
+    "name": "PL_CREATE_SNOWFLAKE_TABLE",
+    "properties": {
+        "description": "Phase 1 for a single table: read the column structure out of the Oracle data dictionary and materialise the matching Snowflake table. Idempotent - re-running against an existing table only adds columns that appeared at the source.",
+        "activities": [
+            {
+                "name": "LKP_Column_Metadata",
+                "description": "Reads ora_meta.v_table_metadata, which carries the Oracle -> Snowflake type mapping. firstRowOnly is false: we want every column.",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.00:20:00",
+                    "retry": 2,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "OracleSource",
+                        "oracleReaderQuery": {
+                            "value": "SELECT COLUMN_NAME,\n       ORDINAL_POSITION,\n       ORACLE_DATA_TYPE,\n       IS_NULLABLE,\n       SF_DATA_TYPE\nFROM ora_meta.v_table_metadata\nWHERE schema_name = '@{pipeline().parameters.pSourceSchema}'\n  AND table_name  = '@{pipeline().parameters.pSourceTable}'\nORDER BY ordinal_position",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None",
+                        "queryTimeout": "00:10:00"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_Oracle_Query",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "pSchema": {
+                                "value": "@pipeline().parameters.pSourceSchema",
+                                "type": "Expression"
+                            },
+                            "pTable": {
+                                "value": "@pipeline().parameters.pSourceTable",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "IF_Metadata_Found",
+                "description": "An empty result means the table does not exist at the source, or ADF_READER has no SELECT grant on it. Both are configuration errors and should stop this table loudly rather than create an empty shell in Snowflake.",
+                "type": "IfCondition",
+                "dependsOn": [
+                    {
+                        "activity": "LKP_Column_Metadata",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "expression": {
+                        "value": "@greater(activity('LKP_Column_Metadata').output.count, 0)",
+                        "type": "Expression"
+                    },
+                    "ifFalseActivities": [
+                        {
+                            "name": "FAIL_No_Metadata",
+                            "type": "Fail",
+                            "dependsOn": [],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "message": {
+                                    "value": "@concat('No column metadata returned for ', pipeline().parameters.pSourceSchema, '.', pipeline().parameters.pSourceTable, '. Check that the table exists and that ADF_READER holds SELECT on it.')",
+                                    "type": "Expression"
+                                },
+                                "errorCode": "ORA_METADATA_EMPTY"
+                            }
+                        }
+                    ],
+                    "ifTrueActivities": [
+                        {
+                            "name": "SCR_Create_Snowflake_Table",
+                            "description": "Hands the column list to Snowflake as JSON; the stored procedure builds and runs the DDL.",
+                            "type": "Script",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.00:30:00",
+                                "retry": 1,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "linkedServiceName": {
+                                "referenceName": "LS_Snowflake_Target",
+                                "type": "LinkedServiceReference"
+                            },
+                            "typeProperties": {
+                                "scripts": [
+                                    {
+                                        "type": "Query",
+                                        "text": {
+                                            "value": "CALL CTL.SP_CREATE_TABLE_FROM_METADATA(\n    '@{pipeline().parameters.pTargetDatabase}',\n    '@{pipeline().parameters.pTargetSchema}',\n    '@{pipeline().parameters.pTargetTable}',\n    PARSE_JSON('@{replace(string(activity('LKP_Column_Metadata').output.value), '''', '''''')}'),\n    @{pipeline().parameters.pAddAuditColumns}\n)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "scriptBlockExecutionTimeout": "00:30:00"
+                            }
+                        },
+                        {
+                            "name": "SCR_Log_DDL_Success",
+                            "type": "Script",
+                            "dependsOn": [
+                                {
+                                    "activity": "SCR_Create_Snowflake_Table",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.00:10:00",
+                                "retry": 1,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "linkedServiceName": {
+                                "referenceName": "LS_Snowflake_Target",
+                                "type": "LinkedServiceReference"
+                            },
+                            "typeProperties": {
+                                "scripts": [
+                                    {
+                                        "type": "Query",
+                                        "text": {
+                                            "value": "CALL CTL.SP_LOG_LOAD_AUDIT(\n    @{pipeline().parameters.pControlId},\n    '@{pipeline().DataFactory}',\n    '@{pipeline().Pipeline}',\n    '@{pipeline().RunId}',\n    '@{pipeline().parameters.pParentRunId}',\n    '@{pipeline().parameters.pSourceSchema}.@{pipeline().parameters.pSourceTable}',\n    '@{pipeline().parameters.pTargetDatabase}.@{pipeline().parameters.pTargetSchema}.@{pipeline().parameters.pTargetTable}',\n    'DDL',\n    'STRUCTURE',\n    'SUCCEEDED',\n    @{activity('LKP_Column_Metadata').output.count},\n    NULL,\n    NULL,\n    '@{replace(string(activity('SCR_Create_Snowflake_Table').output.resultSets[0].rows[0].SP_CREATE_TABLE_FROM_METADATA), '''', '''''')}'\n)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "scriptBlockExecutionTimeout": "00:10:00"
+                            }
+                        },
+                        {
+                            "name": "SCR_Log_DDL_Failure",
+                            "description": "Records why the DDL failed before the pipeline reports failure, so the audit table stays complete.",
+                            "type": "Script",
+                            "dependsOn": [
+                                {
+                                    "activity": "SCR_Create_Snowflake_Table",
+                                    "dependencyConditions": [
+                                        "Failed"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.00:10:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "linkedServiceName": {
+                                "referenceName": "LS_Snowflake_Target",
+                                "type": "LinkedServiceReference"
+                            },
+                            "typeProperties": {
+                                "scripts": [
+                                    {
+                                        "type": "Query",
+                                        "text": {
+                                            "value": "CALL CTL.SP_LOG_LOAD_AUDIT(\n    @{pipeline().parameters.pControlId},\n    '@{pipeline().DataFactory}',\n    '@{pipeline().Pipeline}',\n    '@{pipeline().RunId}',\n    '@{pipeline().parameters.pParentRunId}',\n    '@{pipeline().parameters.pSourceSchema}.@{pipeline().parameters.pSourceTable}',\n    '@{pipeline().parameters.pTargetDatabase}.@{pipeline().parameters.pTargetSchema}.@{pipeline().parameters.pTargetTable}',\n    'DDL',\n    'STRUCTURE',\n    'FAILED',\n    NULL,\n    NULL,\n    NULL,\n    '@{replace(string(activity('SCR_Create_Snowflake_Table').error.message), '''', '''''')}'\n)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "scriptBlockExecutionTimeout": "00:10:00"
+                            }
+                        },
+                        {
+                            "name": "FAIL_Create_Table",
+                            "description": "Re-raises the DDL error so the parent ForEach iteration is marked failed.",
+                            "type": "Fail",
+                            "dependsOn": [
+                                {
+                                    "activity": "SCR_Log_DDL_Failure",
+                                    "dependencyConditions": [
+                                        "Completed"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "message": {
+                                    "value": "@concat('Snowflake DDL failed for ', pipeline().parameters.pTargetSchema, '.', pipeline().parameters.pTargetTable, ': ', activity('SCR_Create_Snowflake_Table').error.message)",
+                                    "type": "Expression"
+                                },
+                                "errorCode": "SF_DDL_FAILED"
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "pControlId": {
+                "type": "int"
+            },
+            "pSourceSchema": {
+                "type": "string"
+            },
+            "pSourceTable": {
+                "type": "string"
+            },
+            "pTargetDatabase": {
+                "type": "string",
+                "defaultValue": "ORACLE_LANDING"
+            },
+            "pTargetSchema": {
+                "type": "string",
+                "defaultValue": "RAW"
+            },
+            "pTargetTable": {
+                "type": "string"
+            },
+            "pAddAuditColumns": {
+                "type": "bool",
+                "defaultValue": false
+            },
+            "pParentRunId": {
+                "type": "string",
+                "defaultValue": ""
+            }
+        },
+        "folder": {
+            "name": "Oracle to Snowflake/Child"
+        },
+        "annotations": [
+            "oracle",
+            "snowflake",
+            "ddl"
+        ]
+    }
+}

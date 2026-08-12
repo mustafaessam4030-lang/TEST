@@ -1,0 +1,32 @@
+{
+    "name": "DS_Snowflake_Table",
+    "properties": {
+        "description": "Parameterised Snowflake sink. The database comes from the linked service; schema and table are supplied per run from CTL.PIPELINE_CONTROL.",
+        "linkedServiceName": {
+            "referenceName": "LS_Snowflake_Target",
+            "type": "LinkedServiceReference"
+        },
+        "parameters": {
+            "pSchema": {
+                "type": "string",
+                "defaultValue": "RAW"
+            },
+            "pTable": {
+                "type": "string"
+            }
+        },
+        "annotations": [],
+        "type": "SnowflakeV2Table",
+        "schema": [],
+        "typeProperties": {
+            "schema": {
+                "value": "@dataset().pSchema",
+                "type": "Expression"
+            },
+            "table": {
+                "value": "@dataset().pTable",
+                "type": "Expression"
+            }
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "LS_KeyVault",
+    "properties": {
+        "description": "Holds every credential used by this framework. No secret is stored in the factory itself.",
+        "annotations": [],
+        "type": "AzureKeyVault",
+        "typeProperties": {
+            "baseUrl": "https://kv-adf-oracle-sf.vault.azure.net/"
+        }
+    }
+}

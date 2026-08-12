@@ -1,0 +1,31 @@
+{
+    "name": "LS_Oracle_Source",
+    "properties": {
+        "description": "Oracle source. Uses the Oracle (V2) connector, which needs no client install on the self-hosted integration runtime.",
+        "annotations": [],
+        "type": "OracleV2",
+        "typeProperties": {
+            "server": "oracle-prod.contoso.local:1521/ORCLPDB1",
+            "authenticationType": "Basic",
+            "username": "ADF_READER",
+            "password": {
+                "type": "AzureKeyVaultSecret",
+                "store": {
+                    "referenceName": "LS_KeyVault",
+                    "type": "LinkedServiceReference"
+                },
+                "secretName": "oracle-adf-reader-password"
+            },
+            "encryptionClient": "accepted",
+            "cryptoChecksumClient": "accepted",
+            "initialLobFetchSize": 0,
+            "fetchSize": 10000,
+            "statementCacheSize": 0,
+            "supportV1DataTypes": false
+        },
+        "connectVia": {
+            "referenceName": "SHIR-OnPrem",
+            "type": "IntegrationRuntimeReference"
+        }
+    }
+}

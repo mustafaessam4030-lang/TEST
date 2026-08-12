@@ -1,0 +1,22 @@
+{
+    "name": "LS_Blob_Staging",
+    "properties": {
+        "description": "Interim staging area for the Copy activity. A Snowflake sink fed from a non-blob source (Oracle here) always goes through a blob stage - ADF writes the extract there and issues COPY INTO. The container should have a lifecycle rule that deletes blobs after a day. Snowflake staged copy requires SAS or account-key auth; managed identity is not supported for this hop.",
+        "annotations": [],
+        "type": "AzureBlobStorage",
+        "typeProperties": {
+            "sasUri": {
+                "type": "AzureKeyVaultSecret",
+                "store": {
+                    "referenceName": "LS_KeyVault",
+                    "type": "LinkedServiceReference"
+                },
+                "secretName": "adf-staging-blob-sas-uri"
+            }
+        },
+        "connectVia": {
+            "referenceName": "AutoResolveIntegrationRuntime",
+            "type": "IntegrationRuntimeReference"
+        }
+    }
+}
