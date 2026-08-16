@@ -1,0 +1,2360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="description" content="Maya — AI-powered medical intelligence. An assistant that helps you understand your health information clearly, intelligently and responsibly."/>
+<meta name="theme-color" content="#04080B"/>
+<title>Maya — Medical intelligence, made human</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   MAYA — MEDICAL INTELLIGENCE, MADE HUMAN
+   -----------------------------------------------------------------------
+   ONE IDEA CARRIES THE WHOLE PRODUCT: THE SIGNAL.
+
+   A single line of light is the through-line of the entire experience.
+   It begins as a heartbeat, becomes a neural signal, resolves into a
+   network, converges into the wordmark, and then never leaves — it is
+   the thinking indicator, the section rule, the scan that reads the
+   body, the beam that finds one document among millions.
+
+   Nothing here is decoration. Every moving thing is the same signal at a
+   different moment in its life.
+
+   -----------------------------------------------------------------------
+   THE COLOUR RULE (obeyed everywhere, without exception)
+
+     TEAL  (#3ED8C0) is MACHINE READING.
+       Maya thinking, retrieval, structure, confidence, data.
+
+     IVORY / AMBER (#F0DCC4 → #F2A97E) is THE HUMAN.
+       The body, the symptom, the person, and the moment care is needed.
+
+   The two meet in exactly one place — the conversation — because that is
+   the only place where the machine and the person actually touch. When
+   every element glows every colour, nothing means anything.
+
+   -----------------------------------------------------------------------
+   TYPOGRAPHY IS A THREE-VOICE SYSTEM, not a font choice.
+
+     SERIF   — the voice of medicine. Headlines, the answer itself.
+               Journals, institutions, considered language.
+     SANS    — the voice of the interface. Controls, labels, body copy.
+     MONO    — the voice of data. Values, units, sources, timings.
+               Used ONLY where the content is genuinely machine data.
+
+   A serif display face in health-tech is a deliberate rejection of the
+   geometric-sans default that makes every AI product look like the same
+   product.
+
+   -----------------------------------------------------------------------
+   Committed single theme. This is a product, presented. Every colour is
+   painted explicitly so the page holds on any host background.
+═══════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ── ground. Near-black carrying a blue-green undertone; pure black
+        reads as absence, and this product should feel like a room with
+        the lights low, not a void. ── */
+  --ink:#04080B;
+  --ink-2:#070D12;
+  --surface:#0A141A;
+  --surface-2:#0D1A22;
+
+  /* ── machine reading ── */
+  --teal:#3ED8C0;
+  --teal-lit:#8CF2E2;
+  --teal-deep:#1B7F72;
+  --blue:#5FA8D8;
+
+  /* ── the human ── */
+  --ivory:#F0DCC4;
+  --care:#F2A97E;
+  --alert:#EF8C79;
+
+  --ok:#6FDCA8;
+
+  /* ── warm white. Never #FFF — a lit screen in a dark room isn't. ── */
+  --text:#EDF2F1;
+  --muted:rgba(237,242,241,.64);
+  --faint:rgba(237,242,241,.42);
+  --ghost:rgba(237,242,241,.24);
+  --hair:rgba(237,242,241,.10);
+  --hair-teal:rgba(62,216,192,.20);
+
+  --display:ui-serif,"New York","Iowan Old Style","Palatino Linotype",Palatino,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  /* ── motion. Calm, intelligent, precise, expensive. ── */
+  --out:cubic-bezier(.16,1,.3,1);        /* the house curve — long tail  */
+  --io:cubic-bezier(.65,0,.35,1);        /* symmetric, for crossfades    */
+  --spring:cubic-bezier(.34,1.26,.64,1); /* one gentle overshoot, never more */
+
+  --gutter:clamp(20px,5vw,80px);
+  --rule:1px solid var(--hair);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+/* Ground on BOTH html and body: set on body alone it propagates to the
+   canvas, leaving body with no background of its own — and every
+   screen-blended light field then composites against transparency. */
+html{background:var(--ink);scroll-behavior:smooth;}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+  isolation:isolate;
+}
+body.locked{overflow:hidden;height:100%;}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
+a{color:inherit;text-decoration:none;}
+svg{display:block;}
+::selection{background:var(--teal);color:#04211D;}
+:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:2px;}
+
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0 0 0 0);white-space:nowrap;border:0;}
+
+/* Filmic grain — the single texture in the whole system. Keeps large flat
+   dark fields from banding, and reads as photographed rather than rendered. */
+.grain{
+  position:fixed;inset:0;z-index:200;pointer-events:none;opacity:.038;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:180px;
+}
+
+/* ═══ TYPE SCALE ══════════════════════════════════════════════════════ */
+.display{
+  font-family:var(--display);font-weight:500;
+  font-size:clamp(40px,6.4vw,88px);line-height:1.02;letter-spacing:-.03em;
+  text-wrap:balance;
+}
+.h2{
+  font-family:var(--display);font-weight:500;
+  font-size:clamp(30px,4.2vw,58px);line-height:1.08;letter-spacing:-.028em;
+  text-wrap:balance;
+}
+.h3{
+  font-family:var(--display);font-weight:500;
+  font-size:clamp(21px,2.1vw,28px);line-height:1.2;letter-spacing:-.02em;
+}
+.lede{
+  font-size:clamp(16px,1.35vw,19px);line-height:1.62;color:var(--muted);
+  max-width:52ch;letter-spacing:-.006em;text-wrap:pretty;
+}
+.body{font-size:15px;line-height:1.65;color:var(--muted);text-wrap:pretty;}
+.eyebrow{
+  font-family:var(--mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.24em;text-transform:uppercase;color:var(--teal);
+}
+.eyebrow .n{color:var(--ghost);margin-right:12px;}
+.data{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+em.warm{font-style:normal;color:var(--ivory);}
+em.cool{font-style:normal;color:var(--teal);}
+
+/* ═══ LAYOUT ══════════════════════════════════════════════════════════ */
+.wrap{width:100%;max-width:1240px;margin:0 auto;padding:0 var(--gutter);}
+section.band{position:relative;padding:clamp(88px,13vh,168px) 0;}
+.band + .band::before{
+  content:'';position:absolute;top:0;left:var(--gutter);right:var(--gutter);height:1px;
+  background:linear-gradient(90deg,transparent,var(--hair) 18%,var(--hair) 82%,transparent);
+}
+.head-block{max-width:760px;}
+.head-block .eyebrow{margin-bottom:22px;display:block;}
+.head-block .lede{margin-top:22px;}
+
+/* ═══ REVEAL ══════════════════════════════════════════════════════════
+   One reveal primitive for the entire page. Sections do not each invent
+   their own entrance — that is what makes a page feel assembled rather
+   than authored. Stagger comes from --i, set in markup or by script.
+═══════════════════════════════════════════════════════════════════════ */
+[data-reveal]{
+  opacity:0;transform:translateY(24px);filter:blur(8px);
+  transition:opacity 1s var(--out),transform 1.2s var(--out),filter .9s var(--out);
+  transition-delay:calc(var(--i,0) * 90ms);
+}
+[data-reveal].in{opacity:1;transform:none;filter:blur(0);}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE INTRO
+   Four scenes on one canvas and one clock. The canvas carries the
+   particles, the pulse, the network and the push; the DOM carries only
+   the wordmark, because type must stay type — rasterising it into canvas
+   throws away the hinting that makes a serif look expensive.
+═══════════════════════════════════════════════════════════════════════ */
+#intro{
+  position:fixed;inset:0;z-index:150;background:var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity 1.1s var(--io),visibility 1.1s;
+}
+#intro.done{opacity:0;visibility:hidden;pointer-events:none;}
+#introCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.intro-vig{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 50%,transparent 30%,rgba(2,4,6,.9) 100%);}
+
+.mark{position:relative;text-align:center;pointer-events:none;padding:0 6vw;}
+.mark-word{
+  font-family:var(--display);font-weight:500;
+  font-size:clamp(58px,12vw,152px);line-height:1;letter-spacing:.14em;
+  text-indent:.14em; /* letter-spacing adds a trailing gap; this recentres */
+  color:var(--text);
+  opacity:0;transform:scale(1.14);filter:blur(30px);
+  text-shadow:0 0 70px rgba(62,216,192,.28);
+}
+.mark-word .dot{color:var(--teal);}
+.mark-sub{
+  margin-top:26px;font-family:var(--mono);font-size:clamp(9px,1vw,11.5px);
+  letter-spacing:.42em;text-indent:.42em;text-transform:uppercase;color:var(--muted);
+  /* the network is behind this line; the shadow is what keeps it legible
+     without resorting to a plate under the type */
+  text-shadow:0 0 18px var(--ink),0 0 34px var(--ink);
+  opacity:0;transform:translateY(10px);
+}
+.mark-rule{
+  width:0;height:1px;margin:30px auto 0;
+  background:linear-gradient(90deg,transparent,var(--teal),transparent);
+  box-shadow:0 0 14px rgba(62,216,192,.7);
+}
+#intro.reveal .mark-word{
+  opacity:1;transform:scale(1);filter:blur(0);
+  transition:opacity 1.9s var(--out),transform 2.6s var(--out),filter 1.9s var(--out);
+}
+#intro.reveal .mark-sub{
+  opacity:1;transform:none;
+  transition:opacity 1.4s .95s var(--out),transform 1.6s .95s var(--out);
+}
+#intro.reveal .mark-rule{width:min(300px,52vw);transition:width 1.7s .7s var(--out);}
+/* Scene 04 — the camera moves forward INTO the product. The wordmark is
+   what passes the camera, so it must scale past the frame and blur out,
+   not fade. Fading here would read as a slideshow. */
+#intro.push .mark-word{
+  transform:scale(2.5);filter:blur(26px);opacity:0;
+  transition:transform 1.7s var(--io),filter 1.5s var(--io),opacity 1.4s .25s var(--io);
+}
+#intro.push .mark-sub,#intro.push .mark-rule{opacity:0;transition:opacity .6s;}
+
+.skip{
+  position:absolute;bottom:34px;right:34px;z-index:3;
+  font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ghost);padding:10px 16px;border:1px solid var(--hair);border-radius:100px;
+  opacity:0;transition:opacity .8s 1.4s var(--out),color .25s,border-color .25s,background .25s;
+}
+#intro.armed .skip{opacity:1;}
+.skip:hover{color:var(--text);border-color:var(--hair-teal);background:rgba(62,216,192,.06);}
+
+/* ═══ NAV ═════════════════════════════════════════════════════════════ */
+.nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;gap:24px;
+  padding:16px var(--gutter);
+  background:linear-gradient(180deg,rgba(4,8,11,.82),rgba(4,8,11,0));
+  transition:background .5s var(--out),border-color .5s var(--out);
+  border-bottom:1px solid transparent;
+}
+body.scrolled .nav{
+  background:rgba(4,8,11,.86);
+  backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);
+  border-bottom-color:var(--hair);
+}
+.brand{display:flex;align-items:center;gap:11px;}
+.brand-mark{width:26px;height:26px;flex:0 0 26px;}
+.brand-name{font-family:var(--display);font-size:19px;letter-spacing:.1em;text-indent:.1em;
+  font-weight:500;}
+.brand-name .dot{color:var(--teal);}
+.nav-links{display:flex;gap:30px;}
+.nav-links a{
+  font-size:13px;color:var(--faint);letter-spacing:-.005em;position:relative;padding:4px 0;
+  transition:color .3s var(--out);
+}
+.nav-links a::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--teal);
+  transform:scaleX(0);transform-origin:left;transition:transform .45s var(--out);
+}
+.nav-links a:hover{color:var(--text);}
+.nav-links a:hover::after{transform:scaleX(1);}
+
+/* ═══ BUTTONS ═════════════════════════════════════════════════════════
+   Magnetic hover is applied by script via --mx/--my. The transform lives
+   on an inner span so the magnet never fights the reveal transform on the
+   button itself — two systems writing one transform is how motion breaks.
+═══════════════════════════════════════════════════════════════════════ */
+.btn{
+  position:relative;display:inline-flex;align-items:center;gap:10px;
+  padding:14px 26px;border-radius:100px;font-size:14px;font-weight:500;
+  letter-spacing:-.008em;white-space:nowrap;
+  transition:transform .5s var(--out),box-shadow .45s var(--out),
+             background .3s var(--out),border-color .3s var(--out),color .3s var(--out);
+  transform:translate3d(calc(var(--mx,0px) * .32),calc(var(--my,0px) * .32),0);
+}
+.btn svg{width:15px;height:15px;flex:0 0 15px;
+  transition:transform .5s var(--spring);}
+.btn.primary{
+  background:linear-gradient(145deg,var(--teal-lit),var(--teal));
+  color:#032420;font-weight:600;
+  border:1px solid rgba(140,242,226,.5);
+  box-shadow:0 10px 34px rgba(62,216,192,.24),inset 0 1px 0 rgba(255,255,255,.35);
+}
+.btn.primary:hover{box-shadow:0 16px 48px rgba(62,216,192,.4),inset 0 1px 0 rgba(255,255,255,.45);}
+.btn.primary:hover svg{transform:translateX(3px);}
+.btn.ghost{
+  background:rgba(237,242,241,.04);color:var(--text);
+  border:1px solid var(--hair);
+}
+.btn.ghost:hover{background:rgba(237,242,241,.09);border-color:var(--hair-teal);}
+.btn.sm{padding:10px 18px;font-size:12.5px;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   HERO
+   The visual is not an illustration beside the copy — it is the product's
+   thesis: a luminous network that resolves into a human being. Machine
+   reading (teal) arranged in the shape of a person (the warm scan).
+═══════════════════════════════════════════════════════════════════════ */
+.hero{
+  position:relative;min-height:100svh;display:flex;align-items:center;
+  padding:120px 0 80px;overflow:hidden;
+}
+.hero-grid{
+  display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+  gap:clamp(30px,5vw,72px);align-items:center;width:100%;
+}
+.hero-copy{max-width:620px;}
+.hero-copy .display{margin-top:24px;}
+.hero-copy .display .line2{display:block;color:var(--muted);}
+.hero-copy .lede{margin-top:26px;}
+.hero-cta{display:flex;gap:12px;margin-top:38px;flex-wrap:wrap;}
+.hero-note{
+  margin-top:34px;padding-top:20px;border-top:var(--rule);
+  display:flex;align-items:flex-start;gap:11px;max-width:46ch;
+  font-size:12.5px;line-height:1.55;color:var(--faint);
+}
+.hero-note svg{width:15px;height:15px;flex:0 0 15px;margin-top:2px;stroke:var(--care);}
+/* The figure is tall and narrow, so the frame has to be too — a square
+   frame around a standing body is mostly empty air, and empty air is
+   what made this read as a smear instead of a person. */
+.hero-vis{position:relative;aspect-ratio:1/1.52;max-height:70vh;justify-self:center;
+  width:100%;max-width:520px;}
+#bodyCanvas{position:absolute;inset:0;width:100%;height:100%;}
+/* Readouts float in the visual's own space — they are the machine's
+   margin notes on the body, so they sit off to the side, never centred. */
+.vis-tag{
+  position:absolute;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  color:var(--faint);text-transform:uppercase;pointer-events:none;
+  opacity:0;transform:translateY(6px);transition:opacity 1s var(--out),transform 1s var(--out);
+}
+.hero-vis.lit .vis-tag{opacity:1;transform:none;}
+.vis-tag b{color:var(--teal);font-weight:600;}
+/* Placed in the frame's dead corners — beside the head, outboard of the
+   arms, beside the legs — so an annotation never lands on anatomy. */
+.vis-tag{line-height:1.5;}
+.vis-tag.a{top:5%;left:0;max-width:170px;transition-delay:1.5s;}
+.vis-tag.b{top:42%;right:0;text-align:right;max-width:138px;transition-delay:1.8s;}
+.vis-tag.c{bottom:7%;left:0;max-width:170px;transition-delay:2.1s;}
+.hero-fade{
+  position:absolute;left:0;right:0;bottom:0;height:180px;pointer-events:none;z-index:2;
+  background:linear-gradient(180deg,transparent,var(--ink));
+}
+
+/* ═══ CAPABILITY CARDS ════════════════════════════════════════════════
+   Matte planes, not frosted glass. A dark surface caught by light, held
+   by a hairline. The cursor lights the surface it is over — the card
+   responds to the person, which is the whole product in miniature.
+═══════════════════════════════════════════════════════════════════════ */
+.cards{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));
+  gap:1px;margin-top:64px;background:var(--hair);
+  border:1px solid var(--hair);border-radius:16px;overflow:hidden;
+}
+.card{
+  position:relative;padding:34px 30px 38px;background:var(--ink-2);
+  transition:background .5s var(--out);overflow:hidden;
+}
+.card::before{
+  content:'';position:absolute;inset:0;opacity:0;pointer-events:none;
+  transition:opacity .5s var(--out);
+  background:radial-gradient(340px circle at var(--px,50%) var(--py,50%),
+             rgba(62,216,192,.11),transparent 65%);
+}
+.card:hover::before{opacity:1;}
+.card:hover{background:var(--surface);}
+.card-ico{width:34px;height:34px;margin-bottom:26px;stroke:var(--teal);fill:none;
+  stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;}
+.card-ico .fillp{fill:rgba(62,216,192,.14);stroke:none;}
+.card h3{font-family:var(--display);font-size:20px;font-weight:500;letter-spacing:-.018em;
+  margin-bottom:11px;}
+.card p{font-size:13.5px;line-height:1.6;color:var(--faint);}
+.card-n{position:absolute;top:26px;right:28px;font-family:var(--mono);font-size:10px;
+  color:var(--ghost);letter-spacing:.12em;}
+
+/* ═══ THE PIPELINE ════════════════════════════════════════════════════
+   How Maya understands medical information, drawn as the signal passing
+   through six stages. Scroll drives the signal — the reader's own motion
+   is what moves it, so the mechanism is felt rather than watched.
+═══════════════════════════════════════════════════════════════════════ */
+.pipe{margin-top:70px;position:relative;}
+.pipe-track{
+  position:absolute;left:0;right:0;top:19px;height:1px;background:var(--hair);
+}
+.pipe-live{
+  position:absolute;left:0;top:19px;height:1px;width:0;
+  background:linear-gradient(90deg,var(--teal-deep),var(--teal));
+  box-shadow:0 0 12px rgba(62,216,192,.8);
+  transition:width .35s linear;
+}
+.stages{display:grid;grid-template-columns:repeat(6,1fr);gap:clamp(8px,1.6vw,22px);
+  position:relative;}
+.stage{padding-top:0;}
+.stage-node{
+  width:11px;height:11px;border-radius:50%;background:var(--ink);
+  border:1px solid var(--ghost);margin:14px 0 22px;position:relative;
+  transition:border-color .5s var(--out),background .5s var(--out),box-shadow .5s var(--out);
+}
+.stage.on .stage-node{
+  border-color:var(--teal);background:var(--teal);
+  box-shadow:0 0 0 4px rgba(62,216,192,.14),0 0 18px rgba(62,216,192,.7);
+}
+.stage-n{font-family:var(--mono);font-size:9.5px;color:var(--ghost);letter-spacing:.16em;
+  transition:color .5s var(--out);}
+.stage.on .stage-n{color:var(--teal);}
+.stage-t{font-size:14.5px;font-weight:500;letter-spacing:-.015em;margin-bottom:7px;
+  color:var(--faint);transition:color .5s var(--out);}
+.stage.on .stage-t{color:var(--text);}
+.stage-d{font-size:12px;line-height:1.5;color:var(--ghost);
+  transition:color .5s var(--out);}
+.stage.on .stage-d{color:var(--faint);}
+
+/* ═══ BODY MAP ════════════════════════════════════════════════════════ */
+.map-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);
+  gap:clamp(30px,5vw,70px);align-items:center;margin-top:60px;}
+.map-vis{position:relative;aspect-ratio:1/1.52;max-height:64vh;
+  width:100%;max-width:440px;justify-self:center;}
+#mapCanvas{position:absolute;inset:0;width:100%;height:100%;}
+.hot{
+  position:absolute;width:34px;height:34px;transform:translate(-50%,-50%);
+  border-radius:50%;display:grid;place-items:center;cursor:pointer;
+  transition:transform .4s var(--spring);
+}
+.hot:hover,.hot.on{transform:translate(-50%,-50%) scale(1.12);}
+.hot i{
+  width:9px;height:9px;border-radius:50%;background:var(--ivory);display:block;
+  box-shadow:0 0 0 1px rgba(240,220,196,.45),0 0 16px rgba(240,220,196,.55);
+  transition:background .35s,box-shadow .35s;
+}
+.hot.on i{background:var(--care);box-shadow:0 0 0 1px rgba(242,169,126,.6),0 0 26px rgba(242,169,126,.85);}
+.hot::after{
+  content:'';position:absolute;inset:0;border-radius:50%;border:1px solid rgba(240,220,196,.3);
+  animation:ping 3.4s var(--out) infinite;
+}
+@keyframes ping{0%{transform:scale(.55);opacity:.9}70%,100%{transform:scale(1.5);opacity:0}}
+.map-panel{min-height:210px;}
+.map-panel .eyebrow{display:block;margin-bottom:16px;}
+.map-body{position:relative;}
+.map-item{
+  position:absolute;inset:0;opacity:0;transform:translateY(14px);pointer-events:none;
+  transition:opacity .6s var(--out),transform .7s var(--out);
+}
+.map-item.on{opacity:1;transform:none;position:relative;pointer-events:auto;}
+.map-item h3{font-family:var(--display);font-size:clamp(24px,2.6vw,34px);font-weight:500;
+  letter-spacing:-.024em;margin-bottom:14px;}
+.map-item p{font-size:14.5px;line-height:1.62;color:var(--muted);max-width:44ch;}
+.map-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;}
+.chip{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  padding:7px 12px;border-radius:100px;border:1px solid var(--hair);color:var(--faint);
+}
+.chip.warm{border-color:rgba(242,169,126,.3);color:var(--care);
+  background:rgba(242,169,126,.06);}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE CONVERSATION
+   The only place teal and ivory are allowed to sit in the same frame.
+   The person speaks in ivory; Maya answers in teal-lit structure; the
+   moment care is needed comes back in amber, because that is a human
+   consequence, not a machine output.
+═══════════════════════════════════════════════════════════════════════ */
+.convo{
+  margin-top:56px;display:grid;grid-template-columns:230px minmax(0,1fr);
+  border:1px solid var(--hair);border-radius:20px;overflow:hidden;
+  background:linear-gradient(168deg,rgba(62,216,192,.045),rgba(10,20,26,.75));
+  box-shadow:0 40px 110px rgba(0,0,0,.55),inset 0 1px 0 rgba(237,242,241,.05);
+}
+/* Grid items default to min-width:auto, so the horizontally-scrolling
+   question rail inside the sidebar was setting a min-content floor of
+   3 × 210px and dragging the whole panel wider than the viewport.
+   min-width:0 is what lets the rail scroll instead of push. */
+.convo-side,.convo-main{min-width:0;}
+.convo-side{padding:26px 22px;border-right:1px solid var(--hair);
+  background:rgba(4,8,11,.4);}
+.side-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ghost);margin-bottom:18px;}
+.qbtn{
+  display:block;width:100%;text-align:left;padding:14px 14px;border-radius:11px;
+  font-size:13px;line-height:1.45;color:var(--faint);border:1px solid transparent;
+  transition:background .3s var(--out),color .3s var(--out),border-color .3s var(--out),
+             transform .4s var(--spring);
+  margin-bottom:7px;letter-spacing:-.008em;
+}
+.qbtn:hover{background:rgba(237,242,241,.05);color:var(--text);transform:translateX(3px);}
+.qbtn.on{
+  background:rgba(62,216,192,.1);border-color:var(--hair-teal);color:var(--text);
+}
+.qbtn .qn{font-family:var(--mono);font-size:9px;color:var(--ghost);display:block;
+  margin-bottom:6px;letter-spacing:.14em;}
+.side-foot{margin-top:22px;padding-top:18px;border-top:var(--rule);
+  font-size:11px;line-height:1.5;color:var(--ghost);}
+
+.convo-main{padding:clamp(24px,3vw,40px);min-height:600px;display:flex;flex-direction:column;}
+.turn{display:flex;gap:14px;margin-bottom:26px;}
+.turn.self{flex-direction:row-reverse;}
+.av{
+  width:32px;height:32px;flex:0 0 32px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--mono);font-size:9px;letter-spacing:.05em;color:var(--faint);
+  background:rgba(237,242,241,.06);border:1px solid var(--hair);
+}
+/* Maya's avatar is the signal itself, alive. It is the only element on
+   the page that never fully rests. */
+.av.maya{background:radial-gradient(circle at 36% 30%,var(--teal-lit),rgba(62,216,192,.12) 72%);
+  border-color:rgba(62,216,192,.4);box-shadow:0 0 20px rgba(62,216,192,.4);}
+.av.maya span{width:6px;height:6px;border-radius:50%;background:#032420;
+  animation:corepulse 2.6s var(--io) infinite;}
+@keyframes corepulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(.6);opacity:1}}
+.said{
+  max-width:80%;padding:14px 18px;border-radius:16px;font-size:14.5px;line-height:1.55;
+  letter-spacing:-.008em;
+  background:rgba(240,220,196,.09);border:1px solid rgba(240,220,196,.2);color:var(--ivory);
+}
+.turn.self .said{border-bottom-right-radius:5px;}
+
+/* ── the thinking state ── */
+.think{flex:1;min-width:0;padding-top:4px;}
+.think-line{
+  display:flex;align-items:center;gap:12px;font-size:13.5px;color:var(--faint);
+  letter-spacing:-.006em;height:24px;
+  opacity:0;transform:translateY(8px);
+  transition:opacity .45s var(--out),transform .5s var(--out);
+}
+.think-line.in{opacity:1;transform:none;}
+.think-line.past{opacity:.34;}
+.think-line .tick{width:13px;height:13px;flex:0 0 13px;stroke:var(--teal);fill:none;
+  stroke-width:2.2;stroke-linecap:round;opacity:0;transition:opacity .4s;}
+.think-line.past .tick{opacity:1;}
+/* the signal, travelling — the same line from the intro, one channel wide */
+.think-wire{
+  position:relative;width:56px;height:1px;flex:0 0 56px;background:var(--hair);overflow:hidden;
+}
+.think-wire::after{
+  content:'';position:absolute;top:0;left:-40%;width:40%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--teal),transparent);
+  box-shadow:0 0 8px rgba(62,216,192,.9);
+  animation:travel 1.35s var(--io) infinite;
+}
+@keyframes travel{to{left:110%}}
+.think-line.past .think-wire::after{animation:none;opacity:0;}
+
+/* ── the answer ── */
+.answer{flex:1;min-width:0;}
+.blk{
+  opacity:0;transform:translateY(16px);filter:blur(6px);
+  transition:opacity .8s var(--out),transform .9s var(--out),filter .7s var(--out);
+}
+.blk.in{opacity:1;transform:none;filter:blur(0);}
+
+.ans-lede{
+  font-family:var(--display);font-size:clamp(19px,2vw,25px);line-height:1.34;
+  letter-spacing:-.02em;color:var(--text);margin-bottom:26px;
+}
+.ans-lede .w{opacity:0;filter:blur(5px);display:inline-block;
+  animation:wordin .7s var(--out) forwards;}
+@keyframes wordin{to{opacity:1;filter:blur(0)}}
+
+.blk-head{
+  display:flex;align-items:center;gap:12px;margin:0 0 15px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ghost);
+}
+.blk-head::after{content:'';flex:1;height:1px;background:var(--hair);}
+.blk-head.warm{color:var(--care);}
+
+.reason{display:flex;flex-direction:column;gap:1px;background:var(--hair);
+  border:1px solid var(--hair);border-radius:12px;overflow:hidden;margin-bottom:30px;}
+.reason-row{display:flex;gap:16px;padding:13px 16px;background:var(--ink-2);align-items:baseline;}
+.reason-k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--teal);flex:0 0 108px;}
+.reason-v{font-size:13.5px;color:var(--muted);line-height:1.5;}
+
+/* Symptom meters. Segmented, not a filled pill — a fitness ring says
+   "score"; discrete segments say "reading", which is the honest claim. */
+.meters{display:flex;flex-direction:column;gap:17px;margin-bottom:30px;}
+.meter-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+.meter-l{font-size:13px;color:var(--text);letter-spacing:-.008em;}
+.meter-v{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.06em;}
+.segs{display:flex;gap:3px;}
+.seg{
+  flex:1;height:4px;border-radius:1px;background:rgba(237,242,241,.09);
+  transform:scaleY(.5);transform-origin:bottom;
+  transition:background .5s var(--out),transform .5s var(--spring);
+}
+.blk.in .seg.lit{transform:scaleY(1);background:var(--ivory);}
+.blk.in .seg.lit.hi{background:var(--care);}
+.meter-note{font-size:11.5px;color:var(--ghost);margin-top:8px;}
+
+.recs{counter-reset:r;margin-bottom:30px;}
+.rec{
+  counter-increment:r;display:flex;gap:16px;padding:14px 0;border-bottom:var(--rule);
+  align-items:baseline;
+}
+.rec:last-child{border-bottom:none;}
+.rec::before{
+  content:counter(r,decimal-leading-zero);font-family:var(--mono);font-size:10px;
+  color:var(--teal);flex:0 0 auto;letter-spacing:.1em;
+}
+.rec p{font-size:13.5px;line-height:1.55;color:var(--muted);}
+.rec p b{color:var(--text);font-weight:500;}
+
+/* Escalation. The one warm panel in the machine's output — and it is
+   deliberately the most physically present surface on the page. */
+.escalate{
+  border:1px solid rgba(242,169,126,.3);border-radius:14px;padding:20px 22px;
+  background:linear-gradient(155deg,rgba(242,169,126,.11),rgba(242,169,126,.02));
+  box-shadow:0 0 40px rgba(242,169,126,.07);margin-bottom:28px;
+}
+.escalate ul{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:9px 26px;}
+.escalate li{
+  font-size:13px;line-height:1.5;color:var(--ivory);padding-left:17px;position:relative;
+}
+.escalate li::before{
+  content:'';position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;
+  background:var(--care);box-shadow:0 0 8px rgba(242,169,126,.8);
+}
+.escalate .esc-foot{margin-top:16px;padding-top:14px;border-top:1px solid rgba(242,169,126,.2);
+  font-size:12.5px;color:var(--care);}
+
+.sources{display:flex;flex-wrap:wrap;gap:8px;}
+.src{
+  display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:100px;
+  border:1px solid var(--hair);font-size:11.5px;color:var(--faint);
+  transition:border-color .3s,color .3s,background .3s;
+}
+.src:hover{border-color:var(--hair-teal);color:var(--text);background:rgba(62,216,192,.05);}
+.src .dot{width:4px;height:4px;border-radius:50%;background:var(--teal);flex:0 0 4px;}
+.src .kind{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--ghost);}
+.ans-foot{
+  margin-top:26px;padding-top:18px;border-top:var(--rule);
+  display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;align-items:center;
+  font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ghost);
+}
+.ans-foot b{color:var(--teal);font-weight:500;}
+
+/* ── anatomy figure inside an answer ── */
+.anat{
+  border:1px solid var(--hair);border-radius:14px;padding:8px;margin-bottom:30px;
+  background:radial-gradient(120% 100% at 50% 0%,rgba(62,216,192,.06),transparent 70%),var(--ink-2);
+}
+.anat svg{width:100%;max-width:600px;height:auto;margin:0 auto 6px;display:block;}
+.anat .bone{fill:rgba(237,242,241,.055);stroke:rgba(237,242,241,.3);stroke-width:1.1;}
+.anat .soft{fill:rgba(62,216,192,.13);stroke:rgba(62,216,192,.5);stroke-width:1;}
+.anat .lig{stroke:rgba(237,242,241,.28);stroke-width:2.4;fill:none;stroke-linecap:round;}
+.anat .focus{fill:rgba(242,169,126,.2);stroke:var(--care);stroke-width:1.5;
+  animation:focuspulse 3.2s var(--io) infinite;}
+@keyframes focuspulse{0%,100%{opacity:.55}50%{opacity:1}}
+.anat .lbl{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;
+  fill:var(--faint);text-transform:uppercase;}
+/* NB: not ".hot" — that class already belongs to the body-map hotspot,
+   whose transform:translate(-50%,-50%) applies to SVG <text> too and
+   silently walks these labels off their leader lines. */
+.anat .lbl-hot{fill:var(--care);}
+.anat .leader{stroke:var(--hair);stroke-width:1;stroke-dasharray:2 3;}
+.anat-cap{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--ghost);
+  text-transform:uppercase;padding:10px 12px 6px;}
+
+/* ── small data chart inside an answer ── */
+.chart{border:1px solid var(--hair);border-radius:14px;padding:20px;margin-bottom:30px;
+  background:var(--ink-2);}
+.chart svg{width:100%;height:auto;}
+/* Only the zone that matters is shaded. Shading the "normal" band too
+   turns a chart into a pair of coloured blocks and buries the series. */
+.chart .band-hi{fill:rgba(242,169,126,.1);}
+.chart .gl{stroke:var(--hair);stroke-width:1;stroke-dasharray:3 4;}
+.chart .avg{stroke:var(--teal);stroke-width:1;stroke-dasharray:6 4;opacity:.75;}
+.chart .avg-l{fill:var(--teal);letter-spacing:.14em;}
+.chart .ln{fill:none;stroke:var(--ivory);stroke-width:2;stroke-linecap:round;
+  stroke-linejoin:round;stroke-dasharray:600;stroke-dashoffset:600;}
+.blk.in .chart .ln{animation:draw 2s .2s var(--out) forwards;}
+@keyframes draw{to{stroke-dashoffset:0}}
+.chart .pt{fill:var(--ink);stroke:var(--ivory);stroke-width:1.6;}
+.chart .pt.over{stroke:var(--care);fill:var(--care);
+  filter:drop-shadow(0 0 6px rgba(242,169,126,.9));}
+.chart .ax{font-family:var(--mono);font-size:8.5px;fill:var(--ghost);letter-spacing:.1em;}
+.chart-legend{display:flex;gap:20px;margin-top:14px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ghost);}
+.chart-legend i{width:16px;height:2px;display:inline-block;margin-right:7px;vertical-align:middle;}
+
+/* ═══ KNOWLEDGE FIELD ═════════════════════════════════════════════════ */
+.field{position:relative;margin-top:56px;border:1px solid var(--hair);border-radius:18px;
+  overflow:hidden;background:var(--ink-2);}
+#fieldCanvas{width:100%;height:clamp(320px,48vh,440px);display:block;}
+.field-read{position:absolute;top:26px;left:28px;pointer-events:none;}
+.field-n{font-family:var(--mono);font-size:clamp(26px,3.6vw,44px);font-weight:600;
+  letter-spacing:-.04em;line-height:1;color:var(--teal);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 34px rgba(62,216,192,.45);}
+.field-l{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--ghost);
+  margin-top:8px;text-transform:uppercase;}
+.field-sim{position:absolute;top:26px;right:28px;text-align:right;pointer-events:none;}
+.field-sim .v{font-family:var(--mono);font-size:clamp(18px,2.4vw,28px);font-weight:600;
+  color:var(--ivory);font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1;}
+.field-budget{
+  display:flex;flex-wrap:wrap;gap:clamp(10px,2.4vw,34px);margin-top:28px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;color:var(--ghost);
+  text-transform:uppercase;
+}
+.field-budget b{color:var(--teal);font-weight:600;}
+.field-budget .sum{color:var(--ivory);}
+.field-budget .sum b{color:var(--ivory);}
+
+/* ═══ TRUST ═══════════════════════════════════════════════════════════ */
+.trust-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);
+  gap:clamp(30px,5vw,80px);align-items:start;margin-top:16px;}
+.nevers{margin-top:8px;}
+.never{
+  display:flex;gap:18px;padding:22px 0;border-bottom:var(--rule);align-items:flex-start;
+}
+.never:last-child{border-bottom:none;}
+.never-x{
+  flex:0 0 22px;width:22px;height:22px;border-radius:7px;margin-top:1px;
+  background:rgba(239,140,121,.1);border:1px solid rgba(239,140,121,.34);
+  display:grid;place-items:center;
+}
+.never-x svg{width:9px;height:9px;stroke:var(--alert);stroke-width:3;stroke-linecap:round;fill:none;}
+.never h3{font-size:16px;font-weight:500;letter-spacing:-.018em;margin-bottom:6px;}
+.never p{font-size:13px;line-height:1.55;color:var(--faint);}
+
+/* ═══ CTA ═════════════════════════════════════════════════════════════ */
+.cta{position:relative;text-align:center;padding:clamp(110px,17vh,190px) 0;overflow:hidden;}
+.cta::before{
+  content:'';position:absolute;left:50%;top:50%;width:min(900px,120vw);height:min(900px,120vw);
+  transform:translate(-50%,-50%);pointer-events:none;
+  background:radial-gradient(circle,rgba(62,216,192,.11),transparent 62%);
+}
+.cta .wrap{position:relative;}
+.cta .lede{margin:24px auto 0;}
+.cta-row{display:flex;gap:12px;justify-content:center;margin-top:40px;flex-wrap:wrap;}
+
+/* ═══ FOOTER ══════════════════════════════════════════════════════════ */
+.foot{border-top:var(--rule);padding:44px 0 56px;}
+.foot-in{display:flex;justify-content:space-between;gap:26px;flex-wrap:wrap;align-items:flex-start;}
+.foot-note{font-size:12px;line-height:1.6;color:var(--ghost);max-width:56ch;}
+.foot-note b{color:var(--faint);font-weight:500;}
+.foot-act{display:flex;gap:10px;flex-wrap:wrap;}
+
+/* ═══ RESPONSIVE ══════════════════════════════════════════════════════
+   Mobile is a different composition, not a narrower one. The hero stacks
+   visual-first because on a phone the network IS the headline; the
+   conversation loses its rail and gains a horizontal question scroller;
+   the pipeline turns from a horizontal track into a vertical descent,
+   which is the only honest reading of a stage sequence in one column.
+═══════════════════════════════════════════════════════════════════════ */
+@media(max-width:1040px){
+  .hero-grid{grid-template-columns:1fr;gap:20px;}
+  .hero{min-height:auto;padding:112px 0 60px;}
+  .hero-vis{order:-1;aspect-ratio:1/1.25;max-height:44vh;max-width:300px;}
+  .hero-copy{max-width:none;}
+  .vis-tag.a{top:4%;left:0;}
+  .vis-tag.c{bottom:4%;}
+  .map-grid,.trust-grid{grid-template-columns:1fr;}
+  .map-vis{aspect-ratio:1/1.4;max-height:52vh;max-width:300px;order:-1;margin-bottom:8px;}
+  .convo{grid-template-columns:1fr;}
+  .convo-side{border-right:none;border-bottom:1px solid var(--hair);}
+  .side-label{margin-bottom:12px;}
+  .qrail{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;
+    scrollbar-width:none;-ms-overflow-style:none;}
+  .qrail::-webkit-scrollbar{display:none;}
+  .qbtn{flex:0 0 auto;min-width:210px;max-width:260px;margin-bottom:0;
+    border:1px solid var(--hair);}
+  .side-foot{display:none;}
+  .convo-main{min-height:0;}
+}
+@media(max-width:760px){
+  body{font-size:15px;}
+  .nav-links{display:none;}
+  .nav{padding:12px var(--gutter);}
+  .stages{grid-template-columns:1fr;gap:0;}
+  .pipe-track{left:5px;right:auto;top:0;bottom:0;width:1px;height:auto;}
+  .pipe-live{left:5px;top:0;width:1px;height:0;
+    background:linear-gradient(180deg,var(--teal),var(--teal-deep));
+    transition:height .35s linear;}
+  .stage{padding:0 0 26px 30px;position:relative;}
+  .stage-node{position:absolute;left:0;top:4px;margin:0;}
+  .stage-n{display:block;margin-bottom:6px;}
+  .said{max-width:100%;}
+  .turn{gap:11px;}
+  /* On a phone the figure IS the hero image — annotations crowding it
+     would be the compressed-desktop move. They go. */
+  .vis-tag{display:none;}
+  /* Maya's answer runs the full column on a phone. Keeping the avatar in
+     the flow would spend 43px of a 350px measure on an indent, and the
+     answer is the thing people came for. The avatar lifts out and only
+     the "Maya" header steps around it. */
+  .turn:not(.self){display:block;position:relative;}
+  .turn:not(.self) > .av{position:absolute;left:0;top:0;}
+  .turn:not(.self) .think,
+  .turn:not(.self) .answer > .blk-head:first-child{padding-left:43px;}
+  .turn:not(.self) .think{min-height:34px;}
+  .reason-row{flex-direction:column;gap:5px;}
+  .reason-k{flex:0 0 auto;}
+  .escalate ul{grid-template-columns:1fr;}
+  .ans-foot{font-size:9px;letter-spacing:.1em;}
+  /* comfortable touch targets everywhere they matter */
+  .btn{padding:15px 26px;}
+  .qbtn{padding:15px 15px;}
+  .hot{width:44px;height:44px;}
+  .field-read,.field-sim{top:18px;}
+  .field-read{left:18px;} .field-sim{right:18px;}
+  .skip{bottom:22px;right:22px;}
+}
+@media(max-width:420px){
+  .foot-in{flex-direction:column;}
+  .hero-cta .btn{flex:1 1 100%;justify-content:center;}
+}
+
+/* ═══ REDUCED MOTION ══════════════════════════════════════════════════
+   The narrative survives intact: every scene still arrives, the answer
+   still builds in order, the meaning is never carried by movement alone.
+   Only the movement itself is removed.
+═══════════════════════════════════════════════════════════════════════ */
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.16s!important;}
+  [data-reveal]{opacity:1!important;transform:none!important;filter:none!important;}
+  .mark-word,.mark-sub{opacity:1!important;transform:none!important;filter:none!important;}
+  .blk{opacity:1!important;transform:none!important;filter:none!important;}
+  .grain{display:none;}
+  .hot::after{display:none;}
+  .btn{transform:none!important;}
+}
+</style>
+</head>
+<body class="locked">
+
+<div class="grain" aria-hidden="true"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     THE INTRO — four scenes, one canvas, one clock
+═══════════════════════════════════════════════════════════════════ -->
+<div id="intro" role="dialog" aria-label="Maya introduction">
+  <canvas id="introCanvas" aria-hidden="true"></canvas>
+  <div class="intro-vig" aria-hidden="true"></div>
+  <div class="mark">
+    <p class="mark-word">MAYA<span class="dot">.</span></p>
+    <div class="mark-rule" aria-hidden="true"></div>
+    <p class="mark-sub">AI-powered medical intelligence</p>
+  </div>
+  <button class="skip" id="skipBtn" type="button">Skip intro</button>
+</div>
+
+<!-- ═══ NAV ═══════════════════════════════════════════════════════════ -->
+<header class="nav">
+  <a class="brand" href="#top" aria-label="Maya, home">
+    <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <circle cx="20" cy="20" r="18.4" stroke="rgba(62,216,192,.34)" stroke-width="1.2"/>
+      <circle cx="20" cy="20" r="12" stroke="rgba(62,216,192,.16)" stroke-width="1"/>
+      <path d="M4 20h7.5l3-7 4.5 15 4-11 2.8 5H36" stroke="#3ED8C0" stroke-width="1.9"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="brand-name">MAYA<span class="dot">.</span></span>
+  </a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="#does">What Maya does</a>
+    <a href="#understands">How it understands</a>
+    <a href="#conversation">See a conversation</a>
+    <a href="#trust">Safety</a>
+  </nav>
+  <a class="btn primary sm" href="#conversation">
+    Ask Maya
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M5 12h13M13 6l6 6-6 6"/>
+    </svg>
+  </a>
+</header>
+
+<main id="top">
+
+<!-- ═══ HERO ══════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow" data-reveal style="--i:0">Medical intelligence</span>
+      <h1 class="display" data-reveal style="--i:1">
+        Meet Maya.
+        <span class="line2">Medical intelligence,<br/>made human.</span>
+      </h1>
+      <p class="lede" data-reveal style="--i:2">
+        An AI-powered medical assistant designed to help you understand your health
+        information clearly, intelligently, and responsibly.
+      </p>
+      <div class="hero-cta" data-reveal style="--i:3">
+        <a class="btn primary" href="#conversation" data-magnet>
+          Ask Maya
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h13M13 6l6 6-6 6"/>
+          </svg>
+        </a>
+        <a class="btn ghost" href="#understands" data-magnet>Explore how it works</a>
+      </div>
+      <p class="hero-note" data-reveal style="--i:4">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l8 4v6c0 4.6-3.2 7.6-8 9-4.8-1.4-8-4.4-8-9V7z"/><path d="M12 9v4"/>
+          <path d="M12 16.5v.01"/>
+        </svg>
+        <span>Maya explains health information and helps you prepare for care.
+        It does not diagnose, and it does not replace a clinician.</span>
+      </p>
+    </div>
+
+    <div class="hero-vis" id="heroVis">
+      <canvas id="bodyCanvas" aria-hidden="true"></canvas>
+      <p class="vis-tag a">Reading <b>whole-body context</b></p>
+      <p class="vis-tag b">Signal integrity <b>98.2%</b></p>
+      <p class="vis-tag c">Scan <b>continuous</b></p>
+    </div>
+  </div>
+  <div class="hero-fade" aria-hidden="true"></div>
+</section>
+
+<!-- ═══ WHAT MAYA DOES ════════════════════════════════════════════════ -->
+<section class="band" id="does">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">01</span>What Maya does</span>
+      <h2 class="h2" data-reveal style="--i:1">
+        Most people don't need a diagnosis.<br/>
+        They need to <em class="warm">understand what they're looking at.</em>
+      </h2>
+      <p class="lede" data-reveal style="--i:2">
+        A result you can't read. A symptom you can't place. A leaflet written for someone
+        else. Maya sits in that gap — turning medical information into something you can
+        actually act on, and telling you plainly when the answer is a clinician.
+      </p>
+    </div>
+
+    <div class="cards">
+      <article class="card" data-tilt data-reveal>
+        <span class="card-n">01</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M4 18h5l2.5-7 4 14 3.5-9 2 4h7"/>
+          <circle cx="16" cy="16" r="13.2" opacity=".3"/>
+        </svg>
+        <h3>Reads your symptoms in context</h3>
+        <p>Duration, pattern, what changes it, what came before. Maya asks the questions a
+        clinician would ask first, and holds the answers together.</p>
+      </article>
+      <article class="card" data-tilt data-reveal style="--i:1">
+        <span class="card-n">02</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3v7M16 22v7M5.5 9l6 3.5M20.5 19.5l6 3.5M5.5 23l6-3.5M20.5 12.5l6-3.5"/>
+          <circle class="fillp" cx="16" cy="16" r="5.4"/>
+          <circle cx="16" cy="16" r="5.4"/>
+          <circle cx="16" cy="3" r="2"/><circle cx="16" cy="29" r="2"/>
+          <circle cx="3.8" cy="8" r="2"/><circle cx="28.2" cy="24" r="2"/>
+          <circle cx="3.8" cy="24" r="2"/><circle cx="28.2" cy="8" r="2"/>
+        </svg>
+        <h3>Explains the medicine, not the jargon</h3>
+        <p>Findings, ranges and terminology rewritten in plain language — with the reasoning
+        left visible, so you can see how the explanation was reached.</p>
+      </article>
+      <article class="card" data-tilt data-reveal style="--i:2">
+        <span class="card-n">03</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 28.5S4 21.6 4 13.2A6.7 6.7 0 0 1 16 9a6.7 6.7 0 0 1 12 4.2c0 8.4-12 15.3-12 15.3z"/>
+          <path d="M8.5 15.5h4l1.8-3.4 2.9 6.6 2.2-4.2 1.3 1h3.4"/>
+        </svg>
+        <h3>Knows when to stop and escalate</h3>
+        <p>Red-flag patterns are matched before anything else is said. Below its confidence
+        threshold Maya hands you to a human — with the conversation attached.</p>
+      </article>
+      <article class="card" data-tilt data-reveal style="--i:3">
+        <span class="card-n">04</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="5" y="4" width="22" height="24" rx="3"/>
+          <path d="M10 11h12M10 16h12M10 21h7"/>
+          <circle class="fillp" cx="24" cy="24" r="6"/>
+          <circle cx="24" cy="24" r="6"/><path d="M21.6 24l1.7 1.7 3.2-3.4"/>
+        </svg>
+        <h3>Shows its sources, every time</h3>
+        <p>Every claim traces to published clinical guidance. Nothing is asserted from the
+        model's own memory, and unsourced statements never reach you.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ HOW IT UNDERSTANDS ════════════════════════════════════════════ -->
+<section class="band" id="understands">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">02</span>How Maya understands</span>
+      <h2 class="h2" data-reveal style="--i:1">
+        Six steps between your question<br/>and a sentence you can trust.
+      </h2>
+      <p class="lede" data-reveal style="--i:2">
+        Maya does not answer from memory. Every response is assembled — structured, retrieved,
+        reasoned, then checked against the guidance it came from before a word is shown.
+      </p>
+    </div>
+
+    <div class="pipe" id="pipe" data-reveal>
+      <div class="pipe-track" aria-hidden="true"></div>
+      <div class="pipe-live" id="pipeLive" aria-hidden="true"></div>
+      <div class="stages">
+        <div class="stage"><span class="stage-n">01</span><div class="stage-node"></div>
+          <p class="stage-t">Listen</p>
+          <p class="stage-d">Free text becomes structured clinical concepts — onset, duration, severity, context.</p></div>
+        <div class="stage"><span class="stage-n">02</span><div class="stage-node"></div>
+          <p class="stage-t">Screen</p>
+          <p class="stage-d">Red-flag patterns are matched first, before any explanation is attempted.</p></div>
+        <div class="stage"><span class="stage-n">03</span><div class="stage-node"></div>
+          <p class="stage-t">Retrieve</p>
+          <p class="stage-d">Published guidance is searched semantically, then reranked for clinical relevance.</p></div>
+        <div class="stage"><span class="stage-n">04</span><div class="stage-node"></div>
+          <p class="stage-t">Reason</p>
+          <p class="stage-d">Retrieved evidence is weighed against the structured picture, never against memory.</p></div>
+        <div class="stage"><span class="stage-n">05</span><div class="stage-node"></div>
+          <p class="stage-t">Check</p>
+          <p class="stage-d">Each claim is verified against its source. Unsupported statements are dropped.</p></div>
+        <div class="stage"><span class="stage-n">06</span><div class="stage-node"></div>
+          <p class="stage-t">Explain</p>
+          <p class="stage-d">The answer is written in plain language, with the reasoning and sources kept visible.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ THE BODY MAP ══════════════════════════════════════════════════ -->
+<section class="band" id="body">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">03</span>Interactive visualisation</span>
+      <h2 class="h2" data-reveal style="--i:1">The body, mapped to what it can tell you.</h2>
+    </div>
+
+    <div class="map-grid">
+      <div class="map-vis" id="mapVis">
+        <canvas id="mapCanvas" aria-hidden="true"></canvas>
+        <!-- hotspots are positioned by script against the drawn figure -->
+        <button class="hot on" data-region="head" style="left:50%;top:11%" aria-label="Head and neurological">
+          <i></i></button>
+        <button class="hot" data-region="chest" style="left:50%;top:31%" aria-label="Chest and cardiorespiratory">
+          <i></i></button>
+        <button class="hot" data-region="abdomen" style="left:50%;top:44%" aria-label="Abdomen and metabolic">
+          <i></i></button>
+        <button class="hot" data-region="knee" style="left:39%;top:73%" aria-label="Knee and musculoskeletal">
+          <i></i></button>
+      </div>
+
+      <div class="map-panel" data-reveal>
+        <span class="eyebrow">Select a region</span>
+        <div class="map-body">
+          <div class="map-item on" data-item="head">
+            <h3>Head &amp; neurological</h3>
+            <p>Headache pattern, visual change, dizziness and sleep quality are read together —
+            because the useful signal is almost never in one of them alone.</p>
+            <div class="map-chips">
+              <span class="chip">Headache pattern</span><span class="chip">Sleep quality</span>
+              <span class="chip">Visual change</span><span class="chip warm">Sudden severe onset</span>
+            </div>
+          </div>
+          <div class="map-item" data-item="chest">
+            <h3>Chest &amp; cardiorespiratory</h3>
+            <p>The highest-stakes region Maya handles, and the one where it escalates soonest.
+            Anything suggesting cardiac or respiratory compromise ends the explanation and
+            starts a referral.</p>
+            <div class="map-chips">
+              <span class="chip">Breathlessness</span><span class="chip">Palpitations</span>
+              <span class="chip warm">Chest pain</span><span class="chip warm">Pain at rest</span>
+            </div>
+          </div>
+          <div class="map-item" data-item="abdomen">
+            <h3>Abdomen &amp; metabolic</h3>
+            <p>Appetite, weight trend, bowel change and energy are tracked as one picture over
+            time, not as four unrelated complaints on four separate days.</p>
+            <div class="map-chips">
+              <span class="chip">Weight trend</span><span class="chip">Appetite</span>
+              <span class="chip">Bowel change</span><span class="chip warm">Unexplained loss</span>
+            </div>
+          </div>
+          <div class="map-item" data-item="knee">
+            <h3>Musculoskeletal</h3>
+            <p>Load, mechanism and what makes it worse — the three things that separate a
+            self-limiting strain from something that needs imaging.</p>
+            <div class="map-chips">
+              <span class="chip">Load response</span><span class="chip">Mechanism</span>
+              <span class="chip">Swelling</span><span class="chip warm">Locking or giving way</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ THE CONVERSATION ══════════════════════════════════════════════ -->
+<section class="band" id="conversation">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">04</span>A conversation with Maya</span>
+      <h2 class="h2" data-reveal style="--i:1">Watch it think.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Pick a question. Maya works through it the way it would for a real one — structuring,
+        retrieving, checking — and then explains what it found.
+      </p>
+    </div>
+
+    <div class="convo" data-reveal>
+      <aside class="convo-side">
+        <p class="side-label">Try a question</p>
+        <div class="qrail" id="qrail" role="group" aria-label="Example questions"></div>
+        <p class="side-foot">Illustrative demo content, written to show the interface and the
+        reasoning structure — not medical advice for any individual.</p>
+      </aside>
+      <div class="convo-main" id="convoMain" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ KNOWLEDGE FIELD ═══════════════════════════════════════════════ -->
+<section class="band" id="knowledge">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">05</span>Medical knowledge</span>
+      <h2 class="h2" data-reveal style="--i:1">
+        The hard part is finding the <em class="cool">one passage</em> that answers you.
+      </h2>
+      <p class="lede" data-reveal style="--i:2">
+        Guidelines, monographs, formularies and reviews — a corpus far larger than any
+        clinician reads. Maya's job is not to know it. It is to find the small part of it
+        that applies to you, and to prove that it does.
+      </p>
+    </div>
+
+    <div class="field" data-reveal>
+      <canvas id="fieldCanvas" aria-hidden="true"></canvas>
+      <div class="field-read">
+        <p class="field-n data" id="fieldN">0</p>
+        <p class="field-l" id="fieldL">Passages in scope</p>
+      </div>
+      <div class="field-sim">
+        <p class="v data" id="fieldSim">0.00</p>
+        <p class="field-l">Relevance</p>
+      </div>
+    </div>
+    <div class="field-budget" data-reveal>
+      <span>Structure <b>40 ms</b></span>
+      <span>Retrieve <b>90 ms</b></span>
+      <span>Rerank <b>60 ms</b></span>
+      <span>Verify <b>110 ms</b></span>
+      <span>First token <b>400 ms</b></span>
+      <span class="sum">→ <b>700 ms</b> to the first word</span>
+    </div>
+    <p class="body" data-reveal style="margin-top:18px;font-size:12px;color:var(--ghost);">
+      Target latency budget, to be validated in pilot. Figures shown are design targets,
+      not measured production results.
+    </p>
+  </div>
+</section>
+
+<!-- ═══ TRUST ═════════════════════════════════════════════════════════ -->
+<section class="band" id="trust">
+  <div class="wrap">
+    <div class="trust-grid">
+      <div class="head-block">
+        <span class="eyebrow" data-reveal><span class="n">06</span>Trust &amp; safety</span>
+        <h2 class="h2" data-reveal style="--i:1">What Maya will <em class="warm">never</em> do.</h2>
+        <p class="lede" data-reveal style="--i:2">
+          In medicine the constraints are the product. A model that will say anything is not
+          a medical assistant — it is a liability with a chat window. These are enforced
+          outside the model, where the model cannot argue with them.
+        </p>
+      </div>
+
+      <div class="nevers">
+        <div class="never" data-reveal>
+          <span class="never-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+          <div><h3>Diagnose you</h3>
+          <p>Maya explains what findings mean and what they are associated with. Naming your
+          condition is a clinical act, and it stays with a clinician.</p></div>
+        </div>
+        <div class="never" data-reveal style="--i:1">
+          <span class="never-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+          <div><h3>Recommend or adjust a medication</h3>
+          <p>No doses, no substitutions, no stopping. Maya will explain what a drug is for and
+          what to ask about it — nothing that changes what you take.</p></div>
+        </div>
+        <div class="never" data-reveal style="--i:2">
+          <span class="never-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+          <div><h3>State anything it cannot source</h3>
+          <p>Each claim is checked against the passage it came from. If the passage does not
+          support it, the sentence is removed before you see it.</p></div>
+        </div>
+        <div class="never" data-reveal style="--i:3">
+          <span class="never-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+          <div><h3>Talk past a red flag</h3>
+          <p>Warning patterns are matched before the explanation is written. When one appears,
+          the answer becomes a referral — and it does not soften it.</p></div>
+        </div>
+        <div class="never" data-reveal style="--i:4">
+          <span class="never-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+          <div><h3>Guess when it is unsure</h3>
+          <p>Below its confidence threshold Maya says so plainly and escalates to a human,
+          with the full conversation attached so nothing is retold.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CTA ═══════════════════════════════════════════════════════════ -->
+<section class="band cta">
+  <div class="wrap">
+    <h2 class="h2" data-reveal>Ask Maya.</h2>
+    <p class="lede" data-reveal style="--i:1">
+      Bring the result you can't read, the symptom you can't place, or the question you
+      didn't want to bother anyone with.
+    </p>
+    <div class="cta-row" data-reveal style="--i:2">
+      <a class="btn primary" href="#conversation" data-magnet>
+        Ask Maya
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h13M13 6l6 6-6 6"/>
+        </svg>
+      </a>
+      <a class="btn ghost" href="#understands" data-magnet>Explore how it works</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p class="foot-note">
+      <b>Maya is a design prototype.</b> All conversations, figures, sources and latency
+      targets shown on this page are illustrative, created to demonstrate the interface and
+      the reasoning structure. Nothing here is medical advice. If you are worried about a
+      symptom, contact a clinician or your local emergency number.
+    </p>
+    <div class="foot-act">
+      <button class="btn ghost sm" id="replayBtn" type="button">Replay intro</button>
+    </div>
+  </div>
+</footer>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   ONE CLOCK
+   Every animated surface on this page — the intro, the body network, the
+   knowledge field — is driven by a single rAF loop. Nothing schedules its
+   own timer. That is what makes pause, skip and off-screen suspension
+   actually work, and it is why five canvases cost roughly one canvas.
+═══════════════════════════════════════════════════════════════════════ */
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const Loop = (() => {
+  const jobs = new Set();
+  let last = 0, running = false;
+  function frame(t){
+    const dt = Math.min((t - last) || 16, 50);
+    last = t;
+    jobs.forEach(j => { try { j(dt, t); } catch(e){ jobs.delete(j); } });
+    if (jobs.size) requestAnimationFrame(frame); else running = false;
+  }
+  return {
+    add(fn){
+      jobs.add(fn);
+      if (!running){ running = true; last = performance.now(); requestAnimationFrame(frame); }
+      return () => jobs.delete(fn);
+    },
+    drop(fn){ jobs.delete(fn); }
+  };
+})();
+
+const lerp  = (a,b,t) => a + (b-a)*t;
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+/* the house easing, in code, so canvas motion and CSS motion agree */
+const easeOut = t => 1 - Math.pow(1 - t, 3.2);
+const easeIO  = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+
+function fitCanvas(cv){
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { ctx, w, h };
+}
+
+/* Glow sprites, rasterised once.
+   Building a radial gradient per node per frame costs more than every
+   other thing on this page combined — at 560 nodes it is 560 gradient
+   allocations 60 times a second. Drawing a pre-rendered sprite instead
+   is the same picture for a fraction of the work. */
+const SPRITE = (() => {
+  const cache = {};
+  return (key, inner) => {
+    if (cache[key]) return cache[key];
+    const S = 64, c = document.createElement("canvas");
+    c.width = c.height = S;
+    const g = c.getContext("2d");
+    const rg = g.createRadialGradient(S/2,S/2,0,S/2,S/2,S/2);
+    rg.addColorStop(0, inner);
+    rg.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = rg; g.fillRect(0,0,S,S);
+    return (cache[key] = c);
+  };
+})();
+const GLOW_COOL = () => SPRITE("cool","rgba(140,242,226,1)");
+const GLOW_WARM = () => SPRITE("warm","rgba(255,226,196,1)");
+
+/* Only paint what is on screen. A canvas below the fold is a battery
+   bill with no audience. */
+function whenVisible(el, on, off){
+  const io = new IntersectionObserver(es => {
+    es.forEach(e => e.isIntersecting ? on() : off());
+  }, { rootMargin: "120px" });
+  io.observe(el);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE INTRO
+   Scene 01  0.0 – 2.6s   the pulse travels
+   Scene 02  2.6 – 5.6s   the pulse becomes a network
+   Scene 03  5.6 – 8.6s   the network converges; MAYA resolves
+   Scene 04  8.6 – 10.3s  the camera moves forward through it
+═══════════════════════════════════════════════════════════════════════ */
+const Intro = (() => {
+  const el = document.getElementById("intro");
+  const cv = document.getElementById("introCanvas");
+  const T1 = 2600, T2 = 5600, T3 = 8600, T4 = 10300;
+
+  let ctx, W, H, t = 0, stop = null, done = false;
+  let nodes = [], dust = [];
+
+  function build(){
+    ({ ctx, w:W, h:H } = fitCanvas(cv));
+    const cx = W/2, cy = H/2;
+
+    /* Nodes are born on the pulse trace and carry three later homes:
+       the network field, the convergence ring, and a push vector. One
+       node, four lives — which is why the transformation reads as
+       continuous rather than as three separate animations. */
+    const N = W < 700 ? 84 : 150;
+    nodes = [];
+    for (let i = 0; i < N; i++){
+      const u = i / (N - 1);
+      const a = Math.random() * Math.PI * 2;
+      const ringR = (W < 700 ? 96 : 168) + Math.random() * (W < 700 ? 70 : 130);
+      nodes.push({
+        u,
+        x: 0, y: 0,
+        /* phase 2 — an open field, denser toward the middle */
+        fx: cx + (Math.random()-.5) * W * .82 * (0.45 + Math.random()*.55),
+        fy: cy + (Math.random()-.5) * H * .78 * (0.45 + Math.random()*.55),
+        /* phase 3 — a halo around where the wordmark will be */
+        rx: cx + Math.cos(a) * ringR * 1.5,
+        ry: cy + Math.sin(a) * ringR * .62,
+        z: 0,
+        pz: .6 + Math.random() * 1.9,       // push speed, for the parallax of scene 4
+        r: .7 + Math.random() * 1.5,
+        lag: Math.random() * .3,             // per-node stagger
+        tw: Math.random() * Math.PI * 2
+      });
+    }
+
+    dust = [];
+    const D = W < 700 ? 60 : 120;
+    for (let i = 0; i < D; i++){
+      dust.push({
+        x: Math.random()*W, y: Math.random()*H,
+        z: .3 + Math.random()*.9,
+        r: .4 + Math.random()*1.1,
+        vx: (Math.random()-.5)*.10, vy: -.045 - Math.random()*.07
+      });
+    }
+  }
+
+  /* The pulse. Flat baseline, one P-QRS-T complex, a little biological
+     noise. Deliberately NOT a sine — a sine reads as an audio waveform,
+     and this has to read as a heart. */
+  function wave(u){
+    const b = Math.sin(u * 26) * .022 + Math.sin(u * 61) * .009;   // baseline life
+    const d = u - .52;
+    if (Math.abs(d) > .085) return b;
+    const s = d / .085;                                             // -1 … 1
+    let v = 0;
+    if (s < -.45)      v = Math.sin((s + 1) * 6.6) * .12;           // P
+    else if (s < -.12) v = -.16 * Math.exp(-Math.pow((s + .28)*14, 2));  // Q
+    else if (s < .12)  v = 1 * Math.exp(-Math.pow(s * 20, 2));      // R
+    else if (s < .34)  v = -.26 * Math.exp(-Math.pow((s - .21)*15, 2)); // S
+    else               v = .27 * Math.exp(-Math.pow((s - .62)*7, 2));   // T
+    return b + v;
+  }
+
+  function draw(){
+    const cx = W/2, cy = H/2;
+    const amp = Math.min(H * .19, 150);
+    ctx.clearRect(0,0,W,H);
+
+    /* a barely-there field so the black is a space, not a hole */
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W,H)*.62);
+    g.addColorStop(0, "rgba(20,52,58,.5)");
+    g.addColorStop(1, "rgba(4,8,11,0)");
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+    /* microscopic drift — present the whole way through, so the frame is
+       never actually still */
+    dust.forEach(p => {
+      p.x += p.vx * p.z; p.y += p.vy * p.z;
+      if (p.y < -6) { p.y = H + 6; p.x = Math.random()*W; }
+      if (p.x < -6) p.x = W + 6; if (p.x > W + 6) p.x = -6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.z, 0, 7);
+      ctx.fillStyle = "rgba(140,242,226," + (0.05 + p.z * .10) + ")";
+      ctx.fill();
+    });
+
+    /* ── SCENE 01 · the pulse travels ── */
+    if (t < T2){
+      const p = clamp(t / T1, 0, 1);
+      const head = easeIO(p);
+      const fade = t > T1 ? 1 - clamp((t - T1) / 900, 0, 1) : 1;
+      const x0 = W * .06, x1 = W * .94;
+
+      ctx.lineJoin = "round"; ctx.lineCap = "round";
+      /* drawn in short segments so the tail can fall away behind the head
+         — a single stroke cannot carry a gradient along its own length */
+      const STEP = 3;
+      for (let sx = x0; sx < x0 + (x1-x0)*head - STEP; sx += STEP){
+        const u0 = (sx - x0) / (x1 - x0), u1 = (sx + STEP - x0) / (x1 - x0);
+        const behind = head - u0;
+        const a = clamp(1 - behind * 1.25, .06, 1) * fade;
+        ctx.beginPath();
+        ctx.moveTo(sx, cy - wave(u0) * amp);
+        ctx.lineTo(sx + STEP, cy - wave(u1) * amp);
+        ctx.strokeStyle = "rgba(62,216,192," + (a * .85) + ")";
+        ctx.lineWidth = 1.5 + a * .9;
+        ctx.stroke();
+      }
+      if (p < 1){
+        const hx = x0 + (x1-x0)*head, hy = cy - wave(head)*amp;
+        const hg = ctx.createRadialGradient(hx,hy,0,hx,hy,26);
+        hg.addColorStop(0,"rgba(140,242,226,.9)");
+        hg.addColorStop(1,"rgba(62,216,192,0)");
+        ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(hx,hy,26,0,7); ctx.fill();
+      }
+    }
+
+    /* ── node positions: trace → field → ring → push ── */
+    const inField = clamp((t - T1 + 300) / 1500, 0, 1);
+    const inRing  = clamp((t - T2 + 200) / 1900, 0, 1);
+    const inPush  = clamp((t - T3) / (T4 - T3), 0, 1);
+    const x0 = W*.06, x1 = W*.94;
+
+    nodes.forEach(n => {
+      const tx = x0 + (x1 - x0) * n.u;
+      const ty = cy - wave(n.u) * amp;
+      const f = easeOut(clamp((inField - n.lag) / (1 - n.lag || 1), 0, 1));
+      const r = easeOut(clamp((inRing  - n.lag) / (1 - n.lag || 1), 0, 1));
+      let px = lerp(tx, n.fx, f), py = lerp(ty, n.fy, f);
+      px = lerp(px, n.rx, r);     py = lerp(py, n.ry, r);
+      n.x = px; n.y = py;
+      n.z = inPush > 0 ? easeIO(inPush) * n.pz : 0;
+    });
+
+    if (inField > 0.02){
+      const nodeAlpha = Math.min(inField * 1.4, 1) * (1 - inPush * .25);
+
+      /* edges — nearest-neighbour, recomputed every frame at this node
+         count. Only short links are drawn; long ones make a cobweb, and
+         a cobweb reads as decoration rather than structure. */
+      const LINK = W < 700 ? 92 : 128;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < nodes.length; i++){
+        const a = nodes[i];
+        const sa = 1 + a.z * 1.9;
+        const ax = W/2 + (a.x - W/2) * sa, ay = H/2 + (a.y - H/2) * sa;
+        for (let j = i+1; j < nodes.length; j++){
+          const b = nodes[j];
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const d2 = dx*dx + dy*dy;
+          if (d2 > LINK*LINK) continue;
+          const sb = 1 + b.z * 1.9;
+          const bx = W/2 + (b.x - W/2) * sb, by = H/2 + (b.y - H/2) * sb;
+          const a0 = (1 - Math.sqrt(d2)/LINK) * .34 * nodeAlpha;
+          ctx.strokeStyle = "rgba(62,216,192," + a0 + ")";
+          ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+        }
+      }
+
+      nodes.forEach(n => {
+        const s = 1 + n.z * 1.9;
+        const px = W/2 + (n.x - W/2) * s, py = H/2 + (n.y - H/2) * s;
+        const tw = .68 + Math.sin(t/420 + n.tw) * .32;
+        const rr = n.r * (1 + n.z * 1.5);
+        const glow = rr * 5;
+        ctx.globalAlpha = .9 * nodeAlpha * tw;
+        ctx.drawImage(GLOW_COOL(), px - glow, py - glow, glow*2, glow*2);
+        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(px,py,rr,0,7);
+        ctx.fillStyle = "rgba(200,255,248," + (nodeAlpha*tw) + ")"; ctx.fill();
+      });
+    }
+  }
+
+  function tick(dt){
+    t += dt;
+    if (!done && t >= T2 - 400) el.classList.add("reveal");
+    if (!done && t >= T3)       el.classList.add("push");
+    if (!done && t >= T4)       finish();
+    draw();
+  }
+
+  function finish(){
+    if (done) return;
+    done = true;
+    el.classList.add("done");
+    document.body.classList.remove("locked");
+    setTimeout(() => { if (stop) { stop(); stop = null; } }, 1200);
+    Page.wake();
+  }
+
+  function run(){
+    done = false; t = 0;
+    el.classList.remove("done","reveal","push","armed");
+    document.body.classList.add("locked");
+    build();
+    /* void reflow so the removed classes actually re-trigger */
+    void el.offsetWidth;
+    setTimeout(() => el.classList.add("armed"), 60);
+    if (REDUCED){
+      /* the narrative still happens — it simply arrives */
+      el.classList.add("reveal");
+      draw();
+      setTimeout(finish, 1400);
+      return;
+    }
+    if (stop) stop();
+    stop = Loop.add(tick);
+  }
+
+  addEventListener("resize", () => { if (!done) build(); });
+  document.getElementById("skipBtn").addEventListener("click", finish);
+  addEventListener("keydown", e => {
+    if (!done && (e.key === "Escape" || e.key === "Enter")) finish();
+  });
+
+  return { run, finish };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE BODY NETWORK
+   Nodes are rejection-sampled inside a real silhouette path, so the
+   figure is discovered by the point cloud rather than drawn as an
+   outline. A scan sweeps upward and the nodes it passes warm from teal
+   to ivory — machine reading, meeting a person.
+═══════════════════════════════════════════════════════════════════════ */
+const HEAD_PATH  = "M100 16 a24 24 0 1 0 .01 0 z";
+const TORSO_PATH =
+  "M92 62 L66 76 L52 92 L44 140 L38 190 L33 208 L48 206 L53 188 L59 140 L69 102 " +
+  "L72 150 L68 196 L70 250 L74 296 L78 358 L71 373 L93 373 L91 358 L91 296 L100 238 " +
+  "L109 296 L109 358 L107 373 L129 373 L122 358 L126 296 L130 250 L132 196 L128 150 " +
+  "L131 102 L141 140 L147 188 L152 206 L167 208 L162 190 L156 140 L148 92 L134 76 L108 62 Z";
+const BODY_W = 200, BODY_H = 390;
+
+function samplePoints(count){
+  const probe = document.createElement("canvas");
+  probe.width = BODY_W; probe.height = BODY_H;
+  const pctx = probe.getContext("2d");
+  const path = new Path2D(HEAD_PATH + " " + TORSO_PATH);
+  const out = [];
+  let guard = 0;
+  while (out.length < count && guard < count * 200){
+    guard++;
+    const x = Math.random() * BODY_W, y = Math.random() * BODY_H;
+    if (pctx.isPointInPath(path, x, y)) out.push({ bx: x, by: y });
+  }
+  return out;
+}
+
+function bodyNetwork(canvas, host, opts){
+  const o = Object.assign({ count: 520, link: 17, scan: true, interactive: true,
+                            fill: .92, onLayout: null }, opts || {});
+  let ctx, W, H, pts = [], sx = 1, ox = 0, oy = 0, scanY = 1, life = 0;
+  let mx = -9999, my = -9999, stop = null, seeded = false;
+
+  function layout(){
+    ({ ctx, w:W, h:H } = fitCanvas(canvas));
+    /* density follows the DEVICE, not the canvas — these frames are
+       deliberately narrow, and keying off canvas width silently halved
+       the figure on desktop */
+    const n = innerWidth < 760 ? Math.round(o.count * .5) : o.count;
+    if (!seeded || pts.length !== n){
+      pts = samplePoints(n).map(p => ({
+        ...p, x:0, y:0, dx:0, dy:0, heat:0, tw: Math.random()*6.28, r:.55 + Math.random()*.95
+      }));
+      /* Sorted by body-space y once, so the link pass can stop scanning
+         as soon as it leaves the vertical window. Turns an O(n²) sweep
+         into something near-linear, which is what lets the figure carry
+         500+ nodes and still read as a body rather than a constellation. */
+      pts.sort((a,b) => a.by - b.by);
+      seeded = true;
+    }
+    /* contain the figure with breathing room — a body pinned to the frame
+       edge reads as a diagram, not a presence */
+    sx = Math.min(W / BODY_W, H / BODY_H) * o.fill;
+    ox = (W - BODY_W * sx) / 2;
+    oy = (H - BODY_H * sx) / 2;
+    pts.forEach(p => { p.x = ox + p.bx*sx; p.y = oy + p.by*sx; });
+    if (o.onLayout) o.onLayout((bx,by) => ({ x: ox + bx*sx, y: oy + by*sx, W, H }));
+  }
+
+  function frame(dt){
+    life += dt;
+    ctx.clearRect(0,0,W,H);
+
+    /* the scan — one continuous sweep from the feet up, 7s a pass */
+    if (o.scan){ scanY -= dt / 7000; if (scanY < -0.12) scanY = 1.12; }
+    const scanPx = oy + BODY_H * sx * scanY;
+
+    const linkD = o.link * sx / (BODY_W/200);
+
+    /* cursor displacement, springing home. The body notices you, then
+       settles — it should feel alive, not skittish. */
+    pts.forEach(p => {
+      const hx = ox + p.bx*sx, hy = oy + p.by*sx;
+      if (o.interactive){
+        const dx = hx + p.dx - mx, dy = hy + p.dy - my;
+        const d = Math.hypot(dx,dy);
+        if (d < 130 && d > .01){
+          const f = (1 - d/130) * 16;
+          p.dx += (dx/d) * f * (dt/1000) * 5;
+          p.dy += (dy/d) * f * (dt/1000) * 5;
+        }
+      }
+      p.dx += (0 - p.dx) * Math.min(dt/1000 * 3.4, 1);
+      p.dy += (0 - p.dy) * Math.min(dt/1000 * 3.4, 1);
+      p.x = hx + p.dx; p.y = hy + p.dy;
+      p.heat = clamp(1 - Math.abs(p.y - scanPx) / (66 * Math.max(sx,.4)), 0, 1);
+    });
+
+    ctx.lineWidth = 1;
+    const L2 = linkD * linkD;
+    for (let i = 0; i < pts.length; i++){
+      const a = pts[i];
+      for (let j = i+1; j < pts.length; j++){
+        const b = pts[j];
+        /* points are y-sorted: once b is below the window, so is every
+           point after it */
+        if (b.y - a.y > linkD + 30) break;   /* +30 covers cursor displacement */
+        const dx = a.x-b.x, dy = a.y-b.y, d2 = dx*dx+dy*dy;
+        if (d2 > L2) continue;
+        const heat = Math.max(a.heat, b.heat);
+        const al = (1 - Math.sqrt(d2)/linkD) * (.16 + heat * .44);
+        ctx.strokeStyle = heat > .35
+          ? "rgba(240,220,196," + al + ")"
+          : "rgba(62,216,192," + al + ")";
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      }
+    }
+
+    const cool = GLOW_COOL(), warm = GLOW_WARM();
+    pts.forEach(p => {
+      const tw = .6 + Math.sin(life/560 + p.tw) * .4;
+      const r = p.r * (1 + p.heat * .9);
+      const glow = r * 4.4;
+      const hot = p.heat > .35;
+      ctx.globalAlpha = (hot ? .8 : .46) * tw;
+      ctx.drawImage(hot ? warm : cool, p.x - glow, p.y - glow, glow*2, glow*2);
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,7);
+      ctx.fillStyle = hot
+        ? "rgba(255,244,232," + (.55 + p.heat*.45) + ")"
+        : "rgba(190,250,240," + (.4 + tw*.3) + ")";
+      ctx.fill();
+    });
+
+    /* The scan is one hairline that fades out at both ends — no filled
+       band. A rectangle has corners, and corners on a body read as a
+       rendering artefact rather than an instrument passing over it. */
+    if (o.scan){
+      const x0 = ox - 16, x1 = ox + BODY_W*sx + 16;
+      const lg = ctx.createLinearGradient(x0, 0, x1, 0);
+      lg.addColorStop(0,   "rgba(255,236,214,0)");
+      lg.addColorStop(.5,  "rgba(255,236,214,.42)");
+      lg.addColorStop(1,   "rgba(255,236,214,0)");
+      ctx.strokeStyle = lg; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x0, scanPx); ctx.lineTo(x1, scanPx); ctx.stroke();
+      ctx.strokeStyle = lg; ctx.lineWidth = 7; ctx.globalAlpha = .1;
+      ctx.beginPath(); ctx.moveTo(x0, scanPx); ctx.lineTo(x1, scanPx); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  if (o.interactive){
+    host.addEventListener("pointermove", e => {
+      const r = canvas.getBoundingClientRect();
+      mx = e.clientX - r.left; my = e.clientY - r.top;
+    });
+    host.addEventListener("pointerleave", () => { mx = my = -9999; });
+  }
+  addEventListener("resize", layout);
+  layout();
+
+  if (REDUCED){ frame(16); return { layout }; }
+  whenVisible(host,
+    () => { if (!stop) stop = Loop.add(frame); },
+    () => { if (stop){ stop(); stop = null; } });
+  return { layout };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE KNOWLEDGE FIELD
+   Clustered points are bodies of guidance. A query pulse crosses the
+   field, the relevant cluster answers, and one passage is lifted out.
+   The counters fall in step with the beam, so the number and the picture
+   are describing the same event.
+═══════════════════════════════════════════════════════════════════════ */
+function knowledgeField(){
+  const cv = document.getElementById("fieldCanvas");
+  const nEl = document.getElementById("fieldN");
+  const lEl = document.getElementById("fieldL");
+  const sEl = document.getElementById("fieldSim");
+  let ctx, W, H, clusters = [], pts = [], t = 0, stop = null;
+  const CYCLE = 9000;
+  const TOTAL = 1284000;
+
+  function layout(){
+    ({ ctx, w:W, h:H } = fitCanvas(cv));
+    const names = 7;
+    clusters = [];
+    for (let i = 0; i < names; i++){
+      clusters.push({
+        x: W * (0.16 + (i % 4) * 0.235 + (i > 3 ? .11 : 0)),
+        y: H * (i > 3 ? 0.70 : 0.30) + (Math.random()-.5) * H * .12,
+        r: Math.min(W,H) * (0.09 + Math.random()*0.05)
+      });
+    }
+    const per = W < 620 ? 22 : 38;
+    pts = [];
+    clusters.forEach((c, ci) => {
+      for (let i = 0; i < per; i++){
+        const a = Math.random()*6.28, d = Math.sqrt(Math.random()) * c.r;
+        pts.push({ ci, x: c.x + Math.cos(a)*d, y: c.y + Math.sin(a)*d,
+                   r:1.1 + Math.random()*1.5, tw: Math.random()*6.28 });
+      }
+    });
+    /* the winning passage is a real point in a real cluster */
+    target = pts[Math.floor(pts.length * 0.62)];
+  }
+  let target = null;
+
+  function frame(dt){
+    t = (t + dt) % CYCLE;
+    const p = t / CYCLE;
+    ctx.clearRect(0,0,W,H);
+
+    const beamX = W * easeIO(clamp(p / .52, 0, 1));
+    const narrowing = clamp((p - .30) / .34, 0, 1);
+    const locked = p > .66;
+
+    /* the beam — it trails, it does not lead. The bright edge is the
+       leading line itself, so the fill must end exactly on it or the
+       sweep grows a hard right-hand border. */
+    if (p < .60){
+      const bg = ctx.createLinearGradient(beamX - 120, 0, beamX, 0);
+      bg.addColorStop(0,"rgba(62,216,192,0)");
+      bg.addColorStop(1,"rgba(62,216,192,.14)");
+      ctx.fillStyle = bg; ctx.fillRect(beamX - 120, 0, 120, H);
+      ctx.strokeStyle = "rgba(140,242,226,.55)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(beamX, 0); ctx.lineTo(beamX, H); ctx.stroke();
+    }
+
+    const cool = GLOW_COOL(), warm = GLOW_WARM();
+    pts.forEach(pt => {
+      const swept = pt.x < beamX;
+      const isT = pt === target;
+      /* everything not relevant dims away as the search narrows */
+      let a = .85;
+      if (swept) a = lerp(.85, .14, narrowing);
+      if (isT && locked) a = 1;
+      const tw = .7 + Math.sin(t/500 + pt.tw)*.3;
+      const rr = isT && locked ? pt.r * 2.2 : pt.r;
+      if (isT && locked){
+        ctx.globalAlpha = .55;
+        ctx.drawImage(warm, pt.x - 38, pt.y - 38, 76, 76);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "rgba(242,169,126,.85)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(pt.x,pt.y, 13 + Math.sin(t/300)*2.5, 0, 7); ctx.stroke();
+      } else {
+        ctx.globalAlpha = a * tw * .5;
+        ctx.drawImage(cool, pt.x - rr*5, pt.y - rr*5, rr*10, rr*10);
+        ctx.globalAlpha = 1;
+      }
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, rr, 0, 7);
+      ctx.fillStyle = isT && locked
+        ? "rgba(255,248,238,1)"
+        : "rgba(180,250,238," + (a * tw) + ")";
+      ctx.fill();
+    });
+
+    /* readouts move with the picture, never independently of it */
+    let n, label, sim;
+    if (p < .32){ n = Math.round(TOTAL * (1 - p * .3)); label = "Passages in scope"; sim = 0; }
+    else if (p < .66){
+      const k = (p - .32) / .34;
+      n = Math.round(lerp(TOTAL * .9, 128, easeOut(k)));
+      label = "Candidates after retrieval"; sim = lerp(0, .71, k);
+    } else {
+      const k = (p - .66) / .34;
+      n = Math.round(lerp(128, 1, easeOut(Math.min(k*2.2,1))));
+      label = k > .3 ? "Passage cited in the answer" : "Reranked for clinical relevance";
+      sim = lerp(.71, .94, Math.min(k*2.2,1));
+    }
+    nEl.textContent = n.toLocaleString("en-US");
+    lEl.textContent = label;
+    sEl.textContent = sim.toFixed(2);
+  }
+
+  addEventListener("resize", layout);
+  layout();
+  if (REDUCED){ frame(16); return; }
+  whenVisible(cv.parentElement,
+    () => { if (!stop) stop = Loop.add(frame); },
+    () => { if (stop){ stop(); stop = null; } });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE CONVERSATION
+   Demo content. Written to be medically responsible: it explains, it
+   never names a condition as yours, and every answer carries both the
+   escalation panel and its sources. The block order IS the argument —
+   what was considered, what it means, what to do, when to stop.
+═══════════════════════════════════════════════════════════════════════ */
+const CONVOS = [
+  {
+    id: "fatigue",
+    q: "Why have I been feeling tired recently?",
+    steps: ["Structuring what you've described",
+            "Reviewing relevant clinical guidance",
+            "Checking each statement against its source"],
+    conf: "Moderate",
+    read: "6 sources · 4 kept",
+    blocks: [
+      { t:"lede", v:"Persistent tiredness usually has more than one cause at once. The things worth ruling out first are sleep quality, iron and vitamin D status, thyroid function, mood, and the medications you already take." },
+      { t:"reason", head:"What I considered", rows:[
+        ["Duration","Around six weeks, gradual onset rather than sudden"],
+        ["Pattern","Present on waking; not relieved by a longer night"],
+        ["Context","No fever, no unexplained weight change reported"],
+        ["Excluded","No red-flag features described in this conversation"]
+      ]},
+      { t:"meters", head:"How you've described it", rows:[
+        { l:"Fatigue", v:7, n:"Worst in the morning, improves slightly by midday", hi:true },
+        { l:"Sleep quality", v:4, n:"Broken sleep, waking two to three times" },
+        { l:"Mood", v:5, n:"Lower than usual but not persistently low" }
+      ], note:"Self-reported intensity, 0–10. Recorded to track change over time — not a clinical score." },
+      { t:"recs", head:"What usually helps next", rows:[
+        "<b>Keep a two-week sleep and energy log.</b> Bed time, waking time, night waking, and a 0–10 energy score each morning. It is the single most useful thing to bring to an appointment.",
+        "<b>Ask your GP about a basic blood panel.</b> Full blood count, ferritin, thyroid function, vitamin D and HbA1c cover the common reversible causes in one draw.",
+        "<b>Review what you already take.</b> Several common medications — including some antihistamines, beta blockers and antidepressants — list fatigue as a recognised effect.",
+        "<b>Anchor your morning light and movement.</b> Daylight within an hour of waking and a short walk have the best evidence of anything you can start today."
+      ]},
+      { t:"escalate", head:"See a clinician promptly if", rows:[
+        "Unexplained weight loss","Drenching night sweats",
+        "Breathless at rest or on light activity","Chest pain or pressure",
+        "Fainting or near-fainting","New or unusual bruising or bleeding"
+      ], foot:"Any of these change the picture entirely and should be assessed in person, not online." },
+      { t:"sources", rows:[
+        ["Guideline","NICE Clinical Knowledge Summaries — Tiredness / fatigue in adults"],
+        ["Public guidance","NHS — Self-help: tiredness and fatigue"],
+        ["Reference","MedlinePlus — Fatigue"],
+        ["Guideline","NICE — Suspected cancer: recognition and referral (red-flag criteria)"]
+      ]}
+    ]
+  },
+  {
+    id: "knee",
+    q: "Why does my knee hurt when I climb stairs?",
+    steps: ["Structuring the mechanism and load pattern",
+            "Reviewing musculoskeletal guidance",
+            "Checking each statement against its source"],
+    conf: "Moderate",
+    read: "5 sources · 3 kept",
+    blocks: [
+      { t:"lede", v:"Pain at the front of the knee that is worse on stairs, hills and standing up from sitting is the classic load-related pattern. It usually points to how force is being distributed across the kneecap rather than to damage inside the joint." },
+      { t:"anat", head:"Where the load concentrates", which:"knee" },
+      { t:"reason", head:"What I considered", rows:[
+        ["Mechanism","No twist, no impact, no sudden onset described"],
+        ["Load pattern","Worse ascending and descending stairs; worse after sitting"],
+        ["Swelling","None reported — makes an internal joint injury less likely"],
+        ["Excluded","No locking, giving way, or inability to bear weight"]
+      ]},
+      { t:"recs", head:"What usually helps next", rows:[
+        "<b>Reduce the aggravating load, don't stop moving.</b> Complete rest tends to make load-related knee pain worse over weeks, not better.",
+        "<b>Build the quadriceps and hip abductors.</b> Progressive strengthening has the strongest evidence base for this pattern of pain.",
+        "<b>Give it six weeks of consistent work before judging it.</b> Meaningful change in tendon and muscle loading is slow by nature.",
+        "<b>See a physiotherapist if it isn't shifting.</b> They can assess the movement pattern causing it, which no description online can."
+      ]},
+      { t:"escalate", head:"See a clinician promptly if", rows:[
+        "The knee locks or gives way","You cannot put weight through it",
+        "It is hot, red or swollen","There was a significant twist or impact",
+        "You have a fever alongside the pain"
+      ], foot:"These suggest something structural or infective rather than load-related." },
+      { t:"sources", rows:[
+        ["Guideline","NICE Clinical Knowledge Summaries — Knee pain assessment"],
+        ["Public guidance","NHS — Knee pain"],
+        ["Review","Cochrane — Exercise therapy for patellofemoral pain"]
+      ]}
+    ]
+  },
+  {
+    id: "bp",
+    q: "My blood pressure readings keep changing — is that normal?",
+    steps: ["Structuring your readings into a series",
+            "Reviewing hypertension guidance",
+            "Checking each statement against its source"],
+    conf: "High",
+    read: "4 sources · 3 kept",
+    blocks: [
+      { t:"lede", v:"Blood pressure is supposed to vary. A single reading is close to meaningless on its own — what matters is the average of several readings taken properly, over days rather than minutes." },
+      { t:"chart", head:"Your readings, as a series", which:"bp" },
+      { t:"reason", head:"What I considered", rows:[
+        ["Series","Seven home readings across nine days"],
+        ["Spread","Systolic range 118–147 — wide, but not unusual for home readings"],
+        ["Pattern","Highest readings are the first of each sitting"],
+        ["Excluded","No symptoms described alongside the raised readings"]
+      ]},
+      { t:"recs", head:"What usually helps next", rows:[
+        "<b>Measure twice, one minute apart, and record the second.</b> The first reading of a sitting is reliably the highest, which is why guidance discards it.",
+        "<b>Sit still for five minutes first.</b> Back supported, feet flat, arm at heart height, no talking during the reading.",
+        "<b>Take readings twice daily for seven days</b>, then average days two to seven. This is the standard home-monitoring protocol clinicians use.",
+        "<b>Bring the whole series to your appointment</b>, not the highest reading. The average is what any decision will be based on."
+      ]},
+      { t:"escalate", head:"Seek medical help the same day if", rows:[
+        "A reading at or above 180/120","Chest pain or pressure",
+        "Sudden severe headache","Vision change or difficulty speaking",
+        "Weakness or numbness on one side"
+      ], foot:"A very high reading with any of these symptoms is an emergency — call your local emergency number." },
+      { t:"sources", rows:[
+        ["Guideline","NICE NG136 — Hypertension in adults: diagnosis and management"],
+        ["Public guidance","NHS — How to measure blood pressure at home"],
+        ["Reference","British Heart Foundation — Understanding your readings"]
+      ]}
+    ]
+  }
+];
+
+/* Anterior view, not lateral. Front-on is the only orientation where a
+   simplified knee still reads as a knee to a non-clinician: two condyles,
+   the patella sitting centred over them, the tibial plateau beneath. The
+   patella is the amber focus because it is what the answer is about. */
+const ANAT = {
+  knee: `<svg viewBox="0 0 360 306" role="img" aria-label="Simplified anterior view of the knee, with the patella highlighted as the region where load concentrates">
+    <!-- femur: shaft flaring into two condyles with the intercondylar notch -->
+    <path class="bone" d="M158 8 L202 8 L202 116 C202 130 231 133 233 157
+      C235 183 223 198 206 198 C196 198 190 190 180 190 C170 190 164 198 154 198
+      C137 198 125 183 127 157 C129 133 158 130 158 116 Z"/>
+    <!-- menisci: the two lenses between femur and tibia -->
+    <ellipse class="soft" cx="152" cy="205" rx="25" ry="6.5"/>
+    <ellipse class="soft" cx="208" cy="205" rx="25" ry="6.5"/>
+    <!-- tibia: plateau narrowing into the shaft -->
+    <path class="bone" d="M129 211 L231 211 L229 232 C227 244 204 246 202 258
+      L202 298 L158 298 L158 258 C156 246 133 244 131 232 Z"/>
+    <!-- fibula -->
+    <path class="bone" d="M239 219 C250 217 256 224 254 236 L250 298 L237 298
+      L234 238 C233 227 234 221 239 219 Z"/>
+    <!-- collateral ligaments -->
+    <path class="lig" d="M122 168 C116 186 117 200 124 216"/>
+    <path class="lig" d="M238 168 C244 186 243 200 236 216"/>
+    <!-- the patella, sitting over the condyles: the load focus -->
+    <ellipse class="focus" cx="180" cy="170" rx="27" ry="33"/>
+
+    <line class="leader" x1="96" y1="62"  x2="154" y2="68"/>
+    <line class="leader" x1="96" y1="205" x2="126" y2="205"/>
+    <line class="leader" x1="96" y1="272" x2="155" y2="272"/>
+    <line class="leader" x1="264" y1="152" x2="206" y2="164"/>
+    <line class="leader" x1="264" y1="252" x2="252" y2="250"/>
+    <text class="lbl"     x="92"  y="65"  text-anchor="end">Femur</text>
+    <text class="lbl"     x="92"  y="208" text-anchor="end">Meniscus</text>
+    <text class="lbl"     x="92"  y="275" text-anchor="end">Tibia</text>
+    <text class="lbl lbl-hot" x="268" y="149">Patella</text>
+    <text class="lbl lbl-hot" x="268" y="162">Load focus</text>
+    <text class="lbl"     x="268" y="255">Fibula</text>
+  </svg>`
+};
+
+const CHARTS = {
+  /* seven home readings; the last is the one that prompted the question */
+  bp: (() => {
+    const sys = [147,132,128,141,124,122,138];
+    const dia = [ 94, 86, 82, 88, 79, 78, 86];
+    const W = 640, H = 250, L = 42, R = 16, T = 14, B = 30;
+    const iw = W - L - R, ih = H - T - B;
+    const yMin = 70, yMax = 155;
+    const px = i => L + (iw / (sys.length - 1)) * i;
+    const py = v => T + ih - ((v - yMin) / (yMax - yMin)) * ih;
+    const line = a => a.map((v,i) => (i ? "L" : "M") + px(i).toFixed(1) + " " + py(v).toFixed(1)).join(" ");
+    const dots = a => a.map((v,i) =>
+      `<circle class="pt${v >= 140 ? " over" : ""}" cx="${px(i).toFixed(1)}" cy="${py(v).toFixed(1)}" r="3.4"/>`).join("");
+    const days = sys.map((_,i) =>
+      `<text class="ax" x="${px(i).toFixed(1)}" y="${H-10}" text-anchor="middle">D${i+1}</text>`).join("");
+    /* The average is the whole point of the answer, so it is drawn — a
+       chart that argues "one reading means little" while showing only
+       individual readings is arguing against its own picture. */
+    const avg = Math.round(sys.reduce((a,b) => a+b, 0) / sys.length);
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Seven home blood pressure readings over nine days, with a seven-day systolic average of ${avg}">
+      <rect class="band-hi" x="${L}" y="${T}" width="${iw}" height="${(py(140)-T).toFixed(1)}"/>
+      <line class="gl" x1="${L}" y1="${py(140).toFixed(1)}" x2="${W-R}" y2="${py(140).toFixed(1)}"/>
+      <line class="gl" x1="${L}" y1="${py(90).toFixed(1)}"  x2="${W-R}" y2="${py(90).toFixed(1)}"/>
+      <text class="ax" x="6" y="${(py(140)+3).toFixed(1)}">140</text>
+      <text class="ax" x="6" y="${(py(90)+3).toFixed(1)}">90</text>
+      <line class="avg" x1="${L}" y1="${py(avg).toFixed(1)}" x2="${W-R}" y2="${py(avg).toFixed(1)}"/>
+      <text class="ax avg-l" x="${L+4}" y="${(py(avg)+15).toFixed(1)}">7-DAY AVERAGE ${avg}</text>
+      <path class="ln" d="${line(sys)}"/>
+      <path class="ln" style="stroke:rgba(240,220,196,.4)" d="${line(dia)}"/>
+      ${dots(sys)}${dots(dia)}${days}
+    </svg>`;
+  })()
+};
+
+const Convo = (() => {
+  const rail = document.getElementById("qrail");
+  const main = document.getElementById("convoMain");
+  let timers = [], active = null;
+
+  const clearTimers = () => { timers.forEach(clearTimeout); timers = []; };
+  const at = (ms, fn) => timers.push(setTimeout(fn, REDUCED ? Math.min(ms, 200) : ms));
+
+  function el(tag, cls, html){
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    return n;
+  }
+
+  function buildBlock(b){
+    switch (b.t){
+      case "lede": {
+        const p = el("p","blk ans-lede");
+        /* the answer arrives as language, word by word — never as a
+           character-by-character terminal effect, which reads as a machine
+           typing rather than a mind speaking */
+        p.innerHTML = b.v.split(" ").map((w,i) =>
+          `<span class="w" style="animation-delay:${(i*0.028).toFixed(3)}s">${w}</span>`).join(" ");
+        return p;
+      }
+      case "reason": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head", b.head));
+        const box = el("div","reason");
+        b.rows.forEach(([k,v]) => {
+          const r = el("div","reason-row");
+          r.appendChild(el("span","reason-k", k));
+          r.appendChild(el("span","reason-v", v));
+          box.appendChild(r);
+        });
+        wrap.appendChild(box);
+        return wrap;
+      }
+      case "meters": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head", b.head));
+        const box = el("div","meters");
+        b.rows.forEach(m => {
+          const row = el("div");
+          const top = el("div","meter-top");
+          top.appendChild(el("span","meter-l", m.l));
+          top.appendChild(el("span","meter-v data", m.v + " / 10"));
+          row.appendChild(top);
+          const segs = el("div","segs");
+          for (let i = 0; i < 10; i++){
+            const s = el("i","seg" + (i < m.v ? " lit" : "") + (m.hi ? " hi" : ""));
+            s.style.transitionDelay = (0.3 + i*0.045) + "s";
+            segs.appendChild(s);
+          }
+          row.appendChild(segs);
+          if (m.n) row.appendChild(el("p","meter-note", m.n));
+          box.appendChild(row);
+        });
+        wrap.appendChild(box);
+        if (b.note) wrap.appendChild(el("p","meter-note", b.note));
+        return wrap;
+      }
+      case "anat": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head", b.head));
+        const box = el("div","anat", ANAT[b.which]);
+        box.insertBefore(el("p","anat-cap","Simplified · not to scale"), box.firstChild);
+        wrap.appendChild(box);
+        return wrap;
+      }
+      case "chart": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head", b.head));
+        const box = el("div","chart", CHARTS[b.which]);
+        box.appendChild(el("div","chart-legend",
+          `<span><i style="background:var(--ivory)"></i>Systolic</span>` +
+          `<span><i style="background:rgba(240,220,196,.42)"></i>Diastolic</span>` +
+          `<span><i style="background:rgba(242,169,126,.5)"></i>Above 140</span>`));
+        wrap.appendChild(box);
+        return wrap;
+      }
+      case "recs": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head", b.head));
+        const box = el("div","recs");
+        b.rows.forEach(r => { const d = el("div","rec"); d.appendChild(el("p",null,r)); box.appendChild(d); });
+        wrap.appendChild(box);
+        return wrap;
+      }
+      case "escalate": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head warm", b.head));
+        const box = el("div","escalate");
+        const ul = el("ul");
+        b.rows.forEach(r => ul.appendChild(el("li",null,r)));
+        box.appendChild(ul);
+        if (b.foot) box.appendChild(el("p","esc-foot", b.foot));
+        wrap.appendChild(box);
+        return wrap;
+      }
+      case "sources": {
+        const wrap = el("div","blk");
+        wrap.appendChild(el("p","blk-head","Sources"));
+        const box = el("div","sources");
+        b.rows.forEach(([kind,name]) => {
+          const s = el("span","src",
+            `<i class="dot"></i><span class="kind">${kind}</span><span>${name}</span>`);
+          box.appendChild(s);
+        });
+        wrap.appendChild(box);
+        return wrap;
+      }
+    }
+    return el("div");
+  }
+
+  function play(convo){
+    clearTimers();
+    active = convo.id;
+    [...rail.children].forEach(b => b.classList.toggle("on", b.dataset.id === convo.id));
+    main.innerHTML = "";
+
+    /* the person */
+    const you = el("div","turn self");
+    you.appendChild(el("div","av","YOU"));
+    you.appendChild(el("div","said", convo.q));
+    main.appendChild(you);
+
+    /* Maya */
+    const maya = el("div","turn");
+    const av = el("div","av maya"); av.appendChild(el("span"));
+    maya.appendChild(av);
+    const think = el("div","think");
+    maya.appendChild(think);
+    main.appendChild(maya);
+
+    const lines = convo.steps.map(s => {
+      const l = el("div","think-line",
+        `<span class="think-wire"></span>
+         <svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+         <span>${s}</span>`);
+      think.appendChild(l);
+      return l;
+    });
+
+    const STEP = 780;
+    lines.forEach((l, i) => {
+      at(120 + i*STEP, () => l.classList.add("in"));
+      at(120 + (i+1)*STEP - 60, () => { if (i < lines.length - 1) l.classList.add("past"); });
+    });
+    at(120 + lines.length*STEP - 60, () => lines[lines.length-1].classList.add("past"));
+
+    /* the answer replaces the thinking in place — the indicator does not
+       disappear and get replaced by a card, because that reads as two
+       events. It is one continuous turn. */
+    at(160 + lines.length*STEP + 320, () => {
+      const ans = el("div","answer");
+      const meta = el("p","blk-head", "Maya");
+      ans.appendChild(meta);
+      convo.blocks.forEach(b => ans.appendChild(buildBlock(b)));
+      const foot = el("p","ans-foot",
+        `<span>Confidence <b>${convo.conf}</b></span>
+         <span>Retrieved <b>${convo.read}</b></span>
+         <span>Every claim checked against its source</span>`);
+      ans.appendChild(foot);
+      think.replaceWith(ans);
+      const blks = ans.querySelectorAll(".blk");
+      blks.forEach((b,i) => at(60 + i*260, () => b.classList.add("in")));
+    });
+  }
+
+  function init(){
+    CONVOS.forEach((c,i) => {
+      const b = el("button","qbtn" + (i === 0 ? " on" : ""),
+        `<span class="qn">0${i+1}</span>${c.q}`);
+      b.type = "button"; b.dataset.id = c.id;
+      b.addEventListener("click", () => { if (active !== c.id) play(c); });
+      rail.appendChild(b);
+    });
+    /* the first conversation plays itself the moment the section is seen —
+       the demo should never be waiting for permission to be a demo */
+    let started = false;
+    whenVisible(main, () => { if (!started){ started = true; play(CONVOS[0]); } }, () => {});
+  }
+
+  return { init };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PAGE BEHAVIOUR
+   Reveals, magnets, tilt, the scroll-driven pipeline, the body map.
+   Motion has a job everywhere it appears, or it is not here.
+═══════════════════════════════════════════════════════════════════════ */
+const Page = (() => {
+  let woken = false;
+
+  /* The hero is deliberately excluded: it sits in the viewport at load,
+     behind the intro, so a viewport observer would run its staggered
+     entrance where nobody can see it. wake() owns the hero instead. */
+  function reveals(){
+    const io = new IntersectionObserver(es => {
+      es.forEach(e => { if (e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, { rootMargin: "-8% 0px -8% 0px" });
+    document.querySelectorAll("[data-reveal]").forEach(n => {
+      if (!n.closest(".hero")) io.observe(n);
+    });
+  }
+
+  /* Magnetic buttons. The pull is small and the release is long — a
+     button that leaps at the cursor is a toy; one that leans is a
+     considered object. */
+  function magnets(){
+    if (REDUCED) return;
+    document.querySelectorAll("[data-magnet]").forEach(b => {
+      b.addEventListener("pointermove", e => {
+        const r = b.getBoundingClientRect();
+        b.style.setProperty("--mx", (e.clientX - (r.left + r.width/2)) + "px");
+        b.style.setProperty("--my", (e.clientY - (r.top + r.height/2)) + "px");
+      });
+      b.addEventListener("pointerleave", () => {
+        b.style.setProperty("--mx","0px"); b.style.setProperty("--my","0px");
+      });
+    });
+  }
+
+  /* Cards light where the cursor is. No tilt — a tilting card in a
+     medical product looks like a game menu. */
+  function tilts(){
+    document.querySelectorAll("[data-tilt]").forEach(c => {
+      c.addEventListener("pointermove", e => {
+        const r = c.getBoundingClientRect();
+        c.style.setProperty("--px", (e.clientX - r.left) + "px");
+        c.style.setProperty("--py", (e.clientY - r.top)  + "px");
+      });
+    });
+  }
+
+  /* The pipeline is driven by the reader's own scroll. Stages light in
+     order as the section crosses the viewport, so the mechanism is
+     something you operate rather than something you watch. */
+  function pipeline(){
+    const pipe = document.getElementById("pipe");
+    const live = document.getElementById("pipeLive");
+    const stages = [...pipe.querySelectorAll(".stage")];
+    const vertical = () => matchMedia("(max-width:760px)").matches;
+    function update(){
+      const r = pipe.getBoundingClientRect();
+      const span = innerHeight * .78;
+      const p = clamp((innerHeight * .82 - r.top) / span, 0, 1);
+      if (vertical()) live.style.height = (p * 100) + "%";
+      else            live.style.width  = (p * 100) + "%";
+      stages.forEach((s,i) => s.classList.toggle("on", p >= (i + .35) / stages.length));
+    }
+    addEventListener("scroll", update, { passive:true });
+    addEventListener("resize", update);
+    update();
+  }
+
+  /* Hotspots live in BODY space, not container space — so they stay on the
+     anatomy at every viewport instead of drifting off it. */
+  const REGION_AT = { head:[100,40], chest:[100,108], abdomen:[100,166], knee:[91,300] };
+
+  function bodyMap(){
+    const vis  = document.getElementById("mapVis");
+    const hots = [...vis.querySelectorAll(".hot")];
+    bodyNetwork(document.getElementById("mapCanvas"), vis, {
+      count: 520, link: 17, scan: true, interactive: true, fill: .94,
+      onLayout(project){
+        hots.forEach(h => {
+          const at = REGION_AT[h.dataset.region];
+          if (!at) return;
+          const { x, y, W, H } = project(at[0], at[1]);
+          h.style.left = (x / W * 100) + "%";
+          h.style.top  = (y / H * 100) + "%";
+        });
+      }
+    });
+    const items = [...document.querySelectorAll(".map-item")];
+    hots.forEach(h => h.addEventListener("click", () => {
+      hots.forEach(x => x.classList.toggle("on", x === h));
+      items.forEach(it => it.classList.toggle("on", it.dataset.item === h.dataset.region));
+    }));
+  }
+
+  function chrome(){
+    const onScroll = () => document.body.classList.toggle("scrolled", scrollY > 40);
+    addEventListener("scroll", onScroll, { passive:true });
+    onScroll();
+    document.getElementById("replayBtn").addEventListener("click", () => {
+      scrollTo({ top:0, behavior: REDUCED ? "auto" : "smooth" });
+      Intro.run();
+    });
+  }
+
+  /* Called when the intro clears. The hero must not begin arriving while
+     it is still hidden behind the intro — a staggered entrance the viewer
+     did not see is a staggered entrance that never happened. */
+  function wake(){
+    if (woken) return; woken = true;
+    document.querySelector(".hero-vis").classList.add("lit");
+    requestAnimationFrame(() => {
+      document.querySelectorAll(".hero [data-reveal]").forEach(n => n.classList.add("in"));
+    });
+  }
+
+  function init(){
+    reveals(); magnets(); tilts(); pipeline(); chrome(); bodyMap();
+    bodyNetwork(document.getElementById("bodyCanvas"),
+                document.getElementById("heroVis"),
+                { count: 560, link: 17, scan: true, interactive: true, fill: .96 });
+    knowledgeField();
+    Convo.init();
+  }
+
+  return { init, wake };
+})();
+
+Page.init();
+Intro.run();
+</script>
+</body>
+</html>
