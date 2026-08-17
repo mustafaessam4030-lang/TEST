@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<meta name="description" content="Maya — AI for heavy equipment. Understand your machines, diagnose problems, find parts, and access equipment intelligence through one assistant."/>
+<meta name="description" content="Maia — AI for heavy equipment. Understand your machines, diagnose problems, find parts, and access equipment intelligence through one assistant."/>
 <meta name="theme-color" content="#0A0C0E"/>
-<title>Maya Equipment Intelligence</title>
+<title>Maia Equipment Intelligence</title>
 <style>
 /* ═══════════════════════════════════════════════════════════════════════
-   MAYA — AI FOR HEAVY EQUIPMENT
+   MAIA — AI FOR HEAVY EQUIPMENT
    -----------------------------------------------------------------------
    THE ONE IDEA: THE MACHINE IS THE INTERFACE.
 
@@ -36,7 +36,7 @@
        Live components, the value that matters, the thing to act on,
        the warning. Amber is always about steel and always earns itself.
 
-     BLUE (#0F62FE) is MAYA READING THE MACHINE.
+     BLUE (#0F62FE) is MAIA READING THE MACHINE.
        Retrieval, structure, confidence, the data layer.
 
      STEEL AND WHITE are the room everything sits in.
@@ -57,25 +57,35 @@
 ═══════════════════════════════════════════════════════════════════════ */
 
 :root{
-  /* ── the lit product ── */
+  /* ── the lit product. A warm cream ground, not a cool grey: Cat yellow
+        sitting on cool grey turns green-ish, and the whole palette goes
+        sour. Warm ground, warm accent. ── */
   --paper:#FFFFFF;
-  --ground:#F1F3F5;
-  --ground-2:#E6E9ED;
-  --steel:#D3D9DF;
-  --steel-2:#AEB8C2;
-  --graphite:#48525C;
-  --muted:#6E7883;
-  --ink:#101519;
+  --ground:#F7F4EC;
+  --ground-2:#EFEADF;
+  --steel:#E2DCCD;
+  --steel-2:#BCB4A2;
+  --graphite:#4B4C52;
+  --muted:#807E78;
+  --ink:#14151A;
 
-  /* ── the machine ── */
-  --amber:#FF7A00;
-  --amber-lit:#FFA23B;
-  --amber-wash:#FFF3E6;
-  --amber-ink:#1C1103;
+  /* ── the dealer and the machine: Caterpillar yellow ──
+        THE RULE THAT MAKES THIS PALETTE WORK:
+        --amber is a FILL. It never carries text on a light ground —
+        #FFCD11 on white is 1.6:1, which is why so much Cat-branded work
+        is unreadable. Where the yellow has to speak as type it becomes
+        --amber-text, the same hue taken down to 6.5:1. On the near-black
+        surfaces the fill yellow is the text colour, and it sings. */
+  --amber:#FFCD11;
+  --amber-lit:#FFE45C;
+  --amber-wash:#FFF9E0;
+  --amber-ink:#14151A;      /* type ON yellow */
+  --amber-text:#7A5C00;     /* yellow AS type, on light */
 
-  /* ── Maya reading it ── */
-  --blue:#0F62FE;
-  --blue-wash:#EDF3FF;
+  /* ── the platform underneath: Snowflake ── */
+  --blue:#29B5E8;
+  --blue-deep:#0A6E93;      /* the same hue at type contrast */
+  --blue-wash:#E9F7FD;
 
   --ok:#0E7A4B;
   --warn:#B85B00;
@@ -112,7 +122,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
 a{color:inherit;text-decoration:none;}
 svg{display:block;}
 ::selection{background:var(--amber);color:var(--amber-ink);}
-:focus-visible{outline:2px solid var(--blue);outline-offset:3px;}
+:focus-visible{outline:2px solid var(--blue-deep);outline-offset:3px;}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
 
 /* ═══ TYPE ════════════════════════════════════════════════════════════ */
@@ -126,10 +136,10 @@ svg{display:block;}
   max-width:56ch;letter-spacing:-.006em;text-wrap:pretty;}
 .body{font-size:14.5px;line-height:1.62;color:var(--graphite);}
 .eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.2em;
-  text-transform:uppercase;color:var(--amber);display:inline-flex;gap:12px;align-items:center;}
+  text-transform:uppercase;color:var(--amber-text);display:inline-flex;gap:12px;align-items:center;}
 .eyebrow .n{color:var(--steel-2);}
 .data{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
-em.hi{font-style:normal;color:var(--amber);}
+em.hi{font-style:normal;color:var(--amber-text);}
 
 .wrap{width:100%;max-width:1360px;margin:0 auto;padding:0 var(--gutter);}
 section.band{position:relative;padding:clamp(76px,11vh,150px) 0;}
@@ -239,18 +249,18 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .machine [data-sys]{transition:opacity .55s var(--out),filter .55s var(--out);}
 .machine.iso [data-sys]{opacity:.16;}
 .machine.iso [data-sys].on{opacity:1;
-  filter:drop-shadow(0 0 3px rgba(255,122,0,.85)) drop-shadow(0 0 16px rgba(255,122,0,.45));}
-.machine.iso [data-sys].on .m-body{fill:#FFE9D2;stroke:#C25A00;}
-.machine.iso [data-sys].on .m-plate{fill:#FFD9B0;stroke:#C25A00;}
-.machine.iso [data-sys].on .m-cyl{stroke:#FFB061;}
-.machine.iso [data-sys].on .m-rod{stroke:#FFE0C0;}
+  filter:drop-shadow(0 0 3px rgba(196,150,0,.9)) drop-shadow(0 0 16px rgba(255,205,17,.55));}
+.machine.iso [data-sys].on .m-body{fill:#FFF3C4;stroke:#8A6A00;}
+.machine.iso [data-sys].on .m-plate{fill:#FFE886;stroke:#8A6A00;}
+.machine.iso [data-sys].on .m-cyl{stroke:#E0B92B;}
+.machine.iso [data-sys].on .m-rod{stroke:#FFF0B8;}
 
 /* ═══════════════════════════════════════════════════════════════════════
    THE INTRO — four scenes, one clock
    01 industrial darkness · the lamp finds the machine
    02 the machine comes alive · hydraulics, dust
    03 the data layer · lines and readings converge
-   04 MAYA · the camera pushes through, the work lights come on
+   04 MAIA · the camera pushes through, the work lights come on
 ═══════════════════════════════════════════════════════════════════════ */
 #intro{position:fixed;inset:0;z-index:150;background:var(--night);overflow:hidden;
   transition:opacity .9s var(--io),visibility .9s;}
@@ -344,7 +354,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
   padding:10px 15px;border:1px solid rgba(255,255,255,.16);border-radius:3px;opacity:0;
   transition:opacity .7s 1.2s,color .2s,border-color .2s,background .2s;}
 #intro.armed .skip{opacity:1;}
-.skip:hover{color:#fff;border-color:var(--amber);background:rgba(255,122,0,.14);}
+.skip:hover{color:#fff;border-color:var(--amber);background:rgba(255,205,17,.16);}
 
 /* ═══ HERO ════════════════════════════════════════════════════════════ */
 .hero{position:relative;padding:104px 0 40px;background:var(--paper);overflow:hidden;}
@@ -388,9 +398,9 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .callout:nth-of-type(1){transition-delay:.5s} .callout:nth-of-type(2){transition-delay:.75s}
 .callout:nth-of-type(3){transition-delay:1s}
 .callout .stem{display:block;width:1px;height:clamp(20px,3.4vw,44px);margin-top:8px;
-  position:relative;background:linear-gradient(180deg,rgba(15,98,254,0),var(--blue));}
+  position:relative;background:linear-gradient(180deg,rgba(41,181,232,0),var(--blue-deep));}
 .callout .stem::after{content:'';position:absolute;bottom:-2px;left:-2.5px;width:6px;height:6px;
-  border-radius:50%;background:var(--blue);}
+  border-radius:50%;background:var(--blue-deep);}
 .callout.down .stem{transform:scaleY(-1);margin:0 0 8px;}
 .callout-k{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;
   color:var(--muted);white-space:nowrap;}
@@ -418,21 +428,21 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .sys-btn.on{background:var(--amber-wash);}
 .sys-top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
 .sys-n{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--steel-2);}
-.sys-btn.on .sys-n{color:var(--amber);}
+.sys-btn.on .sys-n{color:var(--amber-text);}
 .sys-t{font-size:16px;font-weight:620;letter-spacing:-.022em;color:var(--ink);margin-top:6px;}
 .sys-parts{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;max-height:0;overflow:hidden;
   opacity:0;transition:max-height .5s var(--out),opacity .4s,margin .4s;}
 .sys-btn.on .sys-parts{max-height:120px;opacity:1;}
 .sys-parts span{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--warn);border:1px solid rgba(255,122,0,.34);
-  background:rgba(255,122,0,.07);padding:4px 8px;border-radius:3px;}
+  text-transform:uppercase;color:var(--warn);border:1px solid rgba(122,92,0,.34);
+  background:rgba(255,205,17,.16);padding:4px 8px;border-radius:3px;}
 .sys-dot{width:9px;height:9px;border-radius:50%;background:var(--steel);flex:0 0 9px;}
-.sys-btn.on .sys-dot{background:var(--amber);box-shadow:0 0 0 3px rgba(255,122,0,.2);}
+.sys-btn.on .sys-dot{background:var(--amber);box-shadow:0 0 0 3px rgba(255,205,17,.28);}
 
 /* ═══════════════════════════════════════════════════════════════════════
    THE CHAT
    Structured like a work order, not a messaging app: the question, what
-   Maya checked, ranked causes, what to do first, when to stop, sources.
+   Maia checked, ranked causes, what to do first, when to stop, sources.
 ═══════════════════════════════════════════════════════════════════════ */
 .chat{margin-top:44px;display:grid;grid-template-columns:280px minmax(0,1fr);
   background:var(--paper);border:var(--rule);border-radius:6px;overflow:hidden;
@@ -464,9 +474,9 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .av{width:32px;height:32px;flex:0 0 32px;border-radius:4px;display:grid;place-items:center;
   font-family:var(--mono);font-size:9px;color:var(--muted);background:var(--ground);
   border:var(--rule);}
-.av.maya{background:var(--ink);border-color:var(--ink);}
-.av.maya i{width:14px;height:2px;background:var(--amber);display:block;position:relative;}
-.av.maya i::after{content:'';position:absolute;left:0;top:0;width:100%;height:2px;
+.av.maia{background:var(--ink);border-color:var(--ink);}
+.av.maia i{width:14px;height:2px;background:var(--amber);display:block;position:relative;}
+.av.maia i::after{content:'';position:absolute;left:0;top:0;width:100%;height:2px;
   background:var(--amber-lit);animation:scanbar 2.4s var(--io) infinite;}
 @keyframes scanbar{0%,100%{transform:translateY(-4px);opacity:.4}50%{transform:translateY(4px);opacity:1}}
 .said{max-width:78%;padding:13px 16px;border-radius:6px;font-size:14.5px;line-height:1.5;
@@ -517,7 +527,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .row:last-child{border-bottom:none;}
 .row:nth-child(odd){background:var(--ground);}
 .row-k{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--blue);flex:0 0 132px;}
+  color:var(--blue-deep);flex:0 0 132px;}
 .row-v{font-size:13.5px;color:var(--graphite);line-height:1.45;}
 .row-v b{color:var(--ink);font-weight:600;}
 
@@ -525,7 +535,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .step{counter-increment:s;display:flex;gap:15px;padding:13px 0;border-bottom:var(--rule);}
 .step:last-child{border-bottom:none;}
 .step::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);font-size:10px;
-  color:var(--amber);flex:0 0 auto;padding-top:3px;letter-spacing:.08em;}
+  color:var(--amber-text);flex:0 0 auto;padding-top:3px;letter-spacing:.08em;}
 .step p{font-size:13.5px;line-height:1.52;color:var(--graphite);}
 .step p b{color:var(--ink);font-weight:600;}
 
@@ -534,7 +544,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .stopbox{border:1px solid rgba(207,42,34,.3);border-radius:5px;overflow:hidden;
   margin-bottom:26px;background:#FFF6F5;}
 .stopbox-bar{height:6px;background:repeating-linear-gradient(-45deg,
-  #1A1103 0 9px,var(--amber) 9px 18px);}
+  #14151A 0 9px,var(--amber) 9px 18px);}
 .stopbox-in{padding:16px 18px;}
 .stopbox ul{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
   gap:8px 24px;}
@@ -549,7 +559,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
   border-radius:3px;font-size:11.5px;color:var(--graphite);background:var(--paper);
   transition:border-color .2s;}
 .src:hover{border-color:var(--ink);}
-.src .kind{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;color:var(--blue);
+.src .kind{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;color:var(--blue-deep);
   text-transform:uppercase;}
 .ans-foot{margin-top:24px;padding-top:16px;border-top:var(--rule);display:flex;
   justify-content:space-between;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:9.5px;
@@ -586,7 +596,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .link:last-child{margin-right:0;}
 .link.on{background:var(--amber-wash);}
 .link-n{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--steel-2);}
-.link.on .link-n{color:var(--amber);}
+.link.on .link-n{color:var(--amber-text);}
 .link-k{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
   color:var(--muted);margin-top:12px;}
 .link-v{font-size:15.5px;font-weight:620;color:var(--ink);letter-spacing:-.022em;margin-top:5px;}
@@ -608,7 +618,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .svc-row:last-child{border-bottom:none;}
 .svc-dot{width:9px;height:9px;border-radius:50%;justify-self:center;}
 .svc-dot.due{background:var(--alert);box-shadow:0 0 0 3px rgba(207,42,34,.16);}
-.svc-dot.soon{background:var(--amber);box-shadow:0 0 0 3px rgba(255,122,0,.18);}
+.svc-dot.soon{background:var(--amber);box-shadow:0 0 0 3px rgba(255,205,17,.26);}
 .svc-dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(14,122,75,.14);}
 .svc-n{font-size:14.5px;color:var(--ink);font-weight:520;letter-spacing:-.012em;}
 .svc-sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;}
@@ -640,9 +650,9 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
   transition:background .35s;}
 .card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .4s;
   background:radial-gradient(320px circle at var(--px,50%) var(--py,50%),
-             rgba(255,122,0,.08),transparent 68%);}
+             rgba(255,205,17,.16),transparent 68%);}
 .card:hover::before{opacity:1;}
-.card-ico{width:32px;height:32px;margin-bottom:22px;stroke:var(--amber);fill:none;
+.card-ico{width:32px;height:32px;margin-bottom:22px;stroke:var(--amber-text);fill:none;
   stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
 .card h3{font-size:17px;font-weight:640;letter-spacing:-.024em;color:var(--ink);margin-bottom:9px;}
 .card p{font-size:13.5px;line-height:1.55;color:var(--muted);}
@@ -653,7 +663,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 .cta{background:var(--ink);color:#fff;text-align:center;padding:clamp(90px,14vh,150px) 0;
   position:relative;overflow:hidden;}
 .cta::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;
-  background:repeating-linear-gradient(-45deg,#0A0C0E 0 11px,var(--amber) 11px 22px);}
+  background:repeating-linear-gradient(-45deg,#14151A 0 11px,var(--amber) 11px 22px);}
 .cta .h2{color:#fff;}
 .cta .lede{color:rgba(255,255,255,.62);margin:20px auto 0;}
 .cta-row{display:flex;gap:12px;justify-content:center;margin-top:34px;flex-wrap:wrap;}
@@ -738,7 +748,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 <body class="locked">
 
 <!-- ═══ INTRO ═════════════════════════════════════════════════════════ -->
-<div id="intro" role="dialog" aria-label="Maya introduction">
+<div id="intro" role="dialog" aria-label="Maia introduction">
   <canvas id="dustCanvas" aria-hidden="true"></canvas>
   <div class="lamp" aria-hidden="true"></div>
   <!-- The data layer lives INSIDE the machine's own box, so every reading
@@ -762,7 +772,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 
   <div class="mark">
     <div class="sweep" aria-hidden="true"></div>
-    <p class="mark-word">MAYA<span class="dot">.</span></p>
+    <p class="mark-word">MAIA<span class="dot">.</span></p>
     <p class="mark-sub">AI for heavy equipment</p>
     <div class="mark-lines">
       <span>Understand your machines.</span>
@@ -777,15 +787,15 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 
 <!-- ═══ NAV ═══════════════════════════════════════════════════════════ -->
 <header class="nav">
-  <a class="brand" href="#top" aria-label="Maya, home">
+  <a class="brand" href="#top" aria-label="Maia, home">
     <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true">
       <rect x="1.6" y="1.6" width="36.8" height="36.8" rx="4" stroke="#101519" stroke-width="2"/>
       <path d="M9 28V12l7 9 7-9v16" stroke="#101519" stroke-width="2.6"
             stroke-linecap="round" stroke-linejoin="round"/>
       <circle cx="30" cy="26" r="3.4" fill="#FF7A00"/>
     </svg>
-    <span class="brand-name">MAYA</span>
-    <span class="brand-tag">AI for heavy equipment</span>
+    <span class="brand-name">MAIA</span>
+    <span class="brand-tag">Powered by Mantrac AI · Cat® dealer</span>
   </a>
   <nav class="nav-links" aria-label="Sections">
     <a href="#machine">Equipment</a>
@@ -793,9 +803,10 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
     <a href="#parts">Parts</a>
     <a href="#service">Maintenance</a>
     <a href="#specs">Specifications</a>
+    <a href="how-maia-works.html">How it works</a>
   </nav>
   <a class="btn primary sm" href="#diagnose">
-    Ask Maya
+    Ask Maia
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
   </a>
@@ -809,7 +820,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
     <div class="hero-copy">
       <span class="eyebrow" data-reveal><i class="bar"></i>Equipment intelligence</span>
       <h1 class="display" data-reveal style="--i:1">
-        Meet Maya.<span class="l2">AI for heavy equipment<span class="dot">.</span></span>
+        Meet Maia.<span class="l2">AI for heavy equipment<span class="dot">.</span></span>
       </h1>
       <p class="lede" data-reveal style="--i:2">
         Understand your machines, diagnose problems, find parts, and access equipment
@@ -818,7 +829,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
       </p>
       <div class="hero-cta" data-reveal style="--i:3">
         <a class="btn primary" href="#diagnose" data-magnet>
-          Ask Maya
+          Ask Maia
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
         </a>
@@ -853,17 +864,17 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
   </div>
 </section>
 
-<!-- ═══ WHAT MAYA DOES ════════════════════════════════════════════════ -->
+<!-- ═══ WHAT MAIA DOES ════════════════════════════════════════════════ -->
 <section class="band alt">
   <div class="wrap">
     <div class="head-block">
-      <span class="eyebrow" data-reveal><span class="n">02</span>What Maya does</span>
+      <span class="eyebrow" data-reveal><span class="n">02</span>What Maia does</span>
       <h2 class="h2" data-reveal style="--i:1">
         The manual has the answer.<br/>Nobody has time to find it.
       </h2>
       <p class="lede" data-reveal style="--i:2">
         A fault at the far end of a site. A part number that has been superseded twice.
-        A service interval buried in a 900-page PDF. Maya is the layer between the person
+        A service interval buried in a 900-page PDF. Maia is the layer between the person
         holding the spanner and everything the manufacturer already wrote down.
       </p>
     </div>
@@ -875,7 +886,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
           <circle cx="11" cy="20" r="2.2"/>
         </svg>
         <h3>Diagnoses by symptom</h3>
-        <p>Describe what the machine is doing. Maya ranks the likely systems by
+        <p>Describe what the machine is doing. Maia ranks the likely systems by
         confidence and tells you what to check first — in field order, not manual order.</p>
       </article>
       <article class="card" data-tilt data-reveal style="--i:1">
@@ -906,7 +917,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
         </svg>
         <h3>Stops at the safety line</h3>
         <p>Pressure testing, lifting, stored energy. Where a procedure is dangerous,
-        Maya says so and hands the job to a qualified technician.</p>
+        Maia says so and hands the job to a qualified technician.</p>
       </article>
     </div>
   </div>
@@ -963,7 +974,7 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
       <span class="eyebrow" data-reveal><span class="n">04</span>AI troubleshooting</span>
       <h2 class="h2" data-reveal style="--i:1">Describe the fault. In plain words.</h2>
       <p class="lede" data-reveal style="--i:2">
-        Maya structures what you said, screens it for safety, retrieves the relevant service
+        Maia structures what you said, screens it for safety, retrieves the relevant service
         procedures and ranks the likely causes — then tells you what to check first.
       </p>
     </div>
@@ -1118,13 +1129,13 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 <!-- ═══ CTA ═══════════════════════════════════════════════════════════ -->
 <section class="cta">
   <div class="wrap">
-    <h2 class="h2" data-reveal>Ask Maya.</h2>
+    <h2 class="h2" data-reveal>Ask Maia.</h2>
     <p class="lede" data-reveal style="--i:1">
       Bring the fault code, the noise nobody can place, or the part number that no longer exists.
     </p>
     <div class="cta-row" data-reveal style="--i:2">
       <a class="btn primary" href="#diagnose" data-magnet>
-        Ask Maya
+        Ask Maia
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
       </a>
@@ -1135,7 +1146,8 @@ body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--st
 
 <footer class="foot">
   <div class="wrap foot-in">
-    <p class="foot-note"><b>Maya is a design prototype.</b> Machine models, part numbers,
+    <p class="foot-note"><b>Maia · Powered by Mantrac AI · Cat® Authorized Dealer · Egypt.</b>
+    This page is a design prototype. Machine models, part numbers,
     specifications, service intervals and conversations shown here are illustrative, created
     to demonstrate the interface. Always work to the manufacturer's own service manual and
     safety procedures. Caterpillar® and CAT® are trademarks of Caterpillar Inc., used here
@@ -1353,7 +1365,7 @@ function dust(cv, opts){
    THE INTRO
    01  0.0 – 3.2s   industrial darkness · the lamp finds the machine
    02  3.2 – 6.4s   the data layer reads it while it works
-   03  6.4 – 10.2s  lines converge · MAYA
+   03  6.4 – 10.2s  lines converge · MAIA
    04 10.2 – 11.8s  through the wordmark · the work lights come on
 ═══════════════════════════════════════════════════════════════════════ */
 const Intro = (() => {
@@ -1619,11 +1631,11 @@ const Chat = (() => {
     you.appendChild(el("div","said", c.q));
     main.appendChild(you);
 
-    const maya = el("div","turn");
-    const av = el("div","av maya"); av.appendChild(el("i"));
-    maya.appendChild(av);
-    const think = el("div","think"); maya.appendChild(think);
-    main.appendChild(maya);
+    const maia = el("div","turn");
+    const av = el("div","av maia"); av.appendChild(el("i"));
+    maia.appendChild(av);
+    const think = el("div","think"); maia.appendChild(think);
+    main.appendChild(maia);
 
     const lines = c.steps.map(s => {
       const l = el("div","think-line", `<span class="wire"></span><span>${s}</span>`);
@@ -1637,7 +1649,7 @@ const Chat = (() => {
 
     at(150 + lines.length*STEP + 300, () => {
       const ans = el("div","answer");
-      ans.appendChild(el("p","blk-head","Maya"));
+      ans.appendChild(el("p","blk-head","Maia"));
       c.blocks.forEach(b => ans.appendChild(block(b)));
       ans.appendChild(el("p","ans-foot",
         `<span>Confidence <b>${c.conf}</b></span><span>Retrieved <b>${c.read}</b></span>
