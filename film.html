@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="description" content="A two-minute film introducing Maya, the AI assistant for heavy equipment."/>
+<meta name="theme-color" content="#0A0C0E"/>
+<title>The Maya Film</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   THE MAYA FILM
+   -----------------------------------------------------------------------
+   ONE MACHINE, ONE CAMERA, TWELVE SCENES.
+
+   This is not a slideshow of separate graphics. There is a single
+   excavator — the same drawing the product page uses, spliced from the
+   same source — and the film is a camera move around it. Scenes change
+   the camera and the lighting; the machine never cuts away. That is what
+   makes it read as footage rather than as a deck.
+
+   THE ARC IS THE LIGHTING.
+     Scenes 01–03  the yard at night. One work lamp, dust, a machine down.
+     Scene   04    the work lights come on. Once. Never back.
+     Scenes 04–12  daylight: steel, white, and answers.
+
+   Dark is where the fault lives. Light is where the answer lives.
+
+   COLOUR, unchanged from the product:
+     AMBER  is the machine — live components, the value that matters,
+            the warning.
+     BLUE   is Maya reading the machine.
+     STEEL and WHITE are the room.
+
+   SOUND is generated, not sampled. A diesel idle built from a detuned
+   sub pair, a wind bed of filtered noise, a three-voice pad that moves one
+   chord per scene, and a struck-metal hit on each cut. No audio files, no
+   network, and nothing starts until a click — so the film can never trip
+   an autoplay policy.
+
+   ONE CLOCK drives scene progress, every cue, the dust canvas and every
+   counter. Nothing schedules its own timer, so pause genuinely pauses and
+   skipping a scene cannot leave a stale callback to fire into the next.
+═══════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --night:#0A0C0E; --night-2:#12161A;
+  --paper:#FFFFFF; --ground:#F1F3F5; --ground-2:#E6E9ED;
+  --steel:#D3D9DF; --steel-2:#AEB8C2;
+  --graphite:#48525C; --muted:#6E7883; --ink:#101519;
+  --amber:#FF7A00; --amber-lit:#FFA23B; --amber-wash:#FFF3E6; --amber-ink:#1C1103;
+  --blue:#0F62FE;
+  --ok:#0E7A4B; --alert:#CF2A22;
+  --lamp:#FFB259;
+
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  --out:cubic-bezier(.22,1,.28,1);
+  --io:cubic-bezier(.62,0,.34,1);
+  --hyd:cubic-bezier(.45,0,.55,1);
+
+  --bar:5.6vh;              /* letterbox */
+
+  /* live theme — swapped once, at scene 04 */
+  --bg:var(--night);
+  --scrim0:rgba(10,12,14,0);      /* the ground at zero alpha — interpolating
+                                     to `transparent` fringes grey in some engines */
+  --fg:#FFFFFF;
+  --fg-soft:rgba(255,255,255,.62);
+  --fg-faint:rgba(255,255,255,.38);
+  --hair:rgba(255,255,255,.14);
+}
+body.day{
+  --bg:var(--paper);
+  --scrim0:rgba(255,255,255,0);
+  --fg:var(--ink);
+  --fg-soft:var(--graphite);
+  --fg-faint:var(--muted);
+  --hair:var(--steel);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+/* Ground on BOTH html and body: on body alone it propagates to the canvas,
+   leaving body with no background of its own to composite against. */
+html{background:var(--night);}
+html,body{width:100%;height:100%;overflow:hidden;}
+body{
+  background:var(--bg);color:var(--fg);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overscroll-behavior:none;
+  transition:background 1.5s var(--io),color 1.5s var(--io);
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
+:focus-visible{outline:2px solid var(--amber);outline-offset:3px;}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+
+/* ═══ THE FRAME ═══════════════════════════════════════════════════════ */
+#dust{position:fixed;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}
+.lamp{
+  position:fixed;top:-16%;left:50%;width:130vmax;height:130vmax;z-index:1;
+  transform:translateX(-50%);pointer-events:none;
+  background:radial-gradient(ellipse 32% 50% at 50% 0%,
+    rgba(255,178,89,.42),rgba(255,150,60,.10) 44%,transparent 70%);
+  transition:opacity 2.4s var(--io);
+}
+body.day .lamp{opacity:0;}
+.vig{position:fixed;inset:0;z-index:3;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 48%,transparent 38%,rgba(2,4,6,.72) 100%);
+  transition:opacity 1.6s var(--io);}
+body.day .vig{opacity:0;}
+.grain{
+  position:fixed;inset:0;z-index:9;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:180px;animation:grain .5s steps(4) infinite;}
+@keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-2px,1px)}100%{transform:translate(0,0)}}
+body.day .grain{opacity:.028;}
+.letterbox{position:fixed;left:0;right:0;height:0;background:#000;z-index:40;pointer-events:none;
+  transition:height 1.4s var(--out);}
+.letterbox.t{top:0} .letterbox.b{bottom:0}
+body.rolling .letterbox{height:var(--bar);}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE CAMERA
+   The machine sits in a fixed stage and the "camera" is a transform on
+   that stage. Long durations and a symmetric curve: a camera on a jib
+   does not ease out of a spring, and neither does 22 tonnes of steel.
+═══════════════════════════════════════════════════════════════════════ */
+#stage{
+  position:fixed;left:50%;top:52%;width:min(1500px,150vw);z-index:4;
+  pointer-events:none;transform-origin:50% 50%;
+  transform:translate(-50%,-50%) var(--cam,scale(1));
+  transition:transform 3.4s var(--io),opacity 1.8s var(--io),filter 1.8s var(--io);
+  opacity:0;filter:blur(10px);
+}
+#stage.in{opacity:1;filter:blur(0);}
+#stage.recede{opacity:.08;filter:blur(6px);}
+#stage .machine{width:100%;height:auto;display:block;}
+
+/* the drawing's own palette, swapped by class */
+.machine .m-body{fill:var(--m-body);stroke:var(--m-line);stroke-width:1.6;stroke-linejoin:round;}
+.machine .m-plate{fill:var(--m-plate);stroke:var(--m-line);stroke-width:1.4;}
+.machine .m-dark{fill:var(--m-dark);stroke:var(--m-line);stroke-width:1.3;}
+.machine .m-glass{fill:var(--m-glass);stroke:var(--m-line);stroke-width:1.3;}
+.machine .m-cyl{stroke:var(--m-cyl);stroke-linecap:round;fill:none;}
+.machine .m-rod{stroke:var(--m-rod);stroke-linecap:round;fill:none;}
+.machine .m-hose{stroke:var(--m-hose);stroke-width:2.4;fill:none;stroke-linecap:round;}
+.machine .m-det{stroke:var(--m-line);stroke-width:1.2;fill:none;}
+.machine .m-pin{fill:var(--m-plate);stroke:var(--m-line);stroke-width:1.5;}
+.machine .m-tooth{fill:var(--m-dark);}
+.machine{
+  --m-body:#15191D; --m-plate:#101418; --m-dark:#0B0E11; --m-glass:#1C242C;
+  --m-line:#6E5C45; --m-cyl:#1C2126; --m-rod:#3A342C; --m-hose:#23282D;
+  transition:none;
+}
+/* Every colour crossfades at the flip, so the work lights coming on is one
+   continuous event rather than a cut to a different drawing. */
+body.day .machine{
+  --m-body:#DCE2E8; --m-plate:#C2CBD4; --m-dark:#78838F; --m-glass:#A9C6DD;
+  --m-line:#39434D; --m-cyl:#8F9BA7; --m-rod:#C7CFD6; --m-hose:#6B7681;
+}
+.machine [data-part],.machine *{transition:fill 1.6s var(--io),stroke 1.6s var(--io);}
+
+/* hydraulics, running the whole film */
+.machine [data-part]{transform-box:view-box;}
+.boom-g{transform-origin:498px 400px;animation:boomSwing 13s var(--hyd) infinite;}
+.arm-g {transform-origin:697px 229px;animation:armSwing  13s var(--hyd) infinite;animation-delay:-1.8s;}
+.bkt-g {transform-origin:842px 409px;animation:bktCurl   13s var(--hyd) infinite;animation-delay:-3.3s;}
+.cylb-g{transform-origin:452px 430px;animation:barrel    13s var(--hyd) infinite;}
+@keyframes boomSwing{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-6deg)}}
+@keyframes armSwing {0%,100%{transform:rotate(0deg)}50%{transform:rotate(10deg)}}
+@keyframes bktCurl  {0%,100%{transform:rotate(0deg)}50%{transform:rotate(-17deg)}}
+@keyframes barrel   {0%,100%{transform:rotate(0deg)}50%{transform:rotate(-3.4deg)}}
+
+/* system isolation, used in the systems scene */
+.machine [data-sys]{transition:opacity .8s var(--out),filter .8s var(--out);}
+#stage.iso .machine [data-sys]{opacity:.13;}
+#stage.iso .machine [data-sys].on{opacity:1;
+  filter:drop-shadow(0 0 3px rgba(255,122,0,.9)) drop-shadow(0 0 18px rgba(255,122,0,.5));}
+#stage.iso .machine [data-sys].on .m-body{fill:#FFE9D2;stroke:#C25A00;}
+#stage.iso .machine [data-sys].on .m-plate{fill:#FFD9B0;stroke:#C25A00;}
+#stage.iso .machine [data-sys].on .m-cyl{stroke:#FFB061;}
+#stage.iso .machine [data-sys].on .m-rod{stroke:#FFE0C0;}
+
+/* ═══ SCENES ══════════════════════════════════════════════════════════ */
+.scene{
+  position:fixed;inset:0;z-index:12;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;
+  padding:calc(var(--bar) + 4vh) 7vw;
+  opacity:0;visibility:hidden;transform:translateY(14px);
+  transition:opacity 1.1s var(--io),visibility 1.1s,transform 1.9s var(--out);
+}
+.scene.active{opacity:1;visibility:visible;transform:none;}
+.scene.exit{opacity:0;transform:translateY(-14px);}
+.scene.low{justify-content:flex-end;padding-bottom:calc(var(--bar) + 9vh);}
+.scene.left{align-items:flex-start;text-align:left;padding-left:8vw;}
+
+/* THE SCRIM.
+   Titles over footage need separation or the machine eats them — this is
+   the oldest rule in title design and the film broke it everywhere. The
+   scrim sits inside the scene, below its own text but above the stage, and
+   it follows the copy: a floor wash under bottom-set titles, a soft pool
+   under centred ones, a left wall where the copy is left-set. */
+.scene::before{
+  content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(78% 62% at 50% 52%,var(--bg) 24%,var(--scrim0) 74%);
+  opacity:.9;transition:background 1.5s var(--io);
+}
+.scene.low::before{
+  background:linear-gradient(180deg,var(--scrim0) 30%,var(--bg) 84%);opacity:.94;
+}
+.scene.low.left::before{
+  background:linear-gradient(100deg,var(--bg) 22%,var(--scrim0) 66%),
+             linear-gradient(180deg,var(--scrim0) 44%,var(--bg) 92%);
+}
+
+.kicker{
+  font-family:var(--mono);font-size:clamp(9px,1vw,11px);font-weight:600;
+  letter-spacing:.26em;text-transform:uppercase;color:var(--amber);
+  margin-bottom:22px;opacity:0;}
+.active .kicker{animation:rise 1.2s .2s var(--out) forwards;}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+.line{
+  font-size:clamp(28px,5vw,68px);font-weight:640;line-height:1.05;letter-spacing:-.04em;
+  max-width:20ch;text-wrap:balance;}
+.line.sm{font-size:clamp(22px,3.4vw,44px);max-width:26ch;}
+.line .w{display:inline-block;opacity:0;transform:translateY(20px);filter:blur(8px);}
+.active .line .w{animation:wordIn 1.3s var(--out) forwards;}
+@keyframes wordIn{to{opacity:1;transform:none;filter:blur(0)}}
+.line .hi{color:var(--amber);}
+.line .dim{color:var(--fg-faint);}
+
+.sub{
+  font-size:clamp(14px,1.4vw,18.5px);line-height:1.58;color:var(--fg-soft);
+  max-width:50ch;margin-top:22px;opacity:0;letter-spacing:-.006em;text-wrap:pretty;}
+.active .sub{animation:rise 1.3s 1s var(--out) forwards;}
+.sub b{color:var(--fg);font-weight:600;}
+.note{
+  font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--fg-faint);margin-top:20px;opacity:0;}
+.active .note{animation:rise 1.2s 1.7s var(--out) forwards;}
+
+/* ═══ THE WORDMARK ════════════════════════════════════════════════════ */
+.mark{font-size:clamp(64px,14vw,180px);font-weight:700;letter-spacing:-.05em;line-height:1;
+  opacity:0;transform:scale(1.08);filter:blur(20px);}
+.mark .dot{color:var(--amber);}
+.active .mark{animation:markIn 2.4s .4s var(--out) forwards;}
+@keyframes markIn{to{opacity:1;transform:scale(1);filter:blur(0)}}
+.mark-sub{margin-top:18px;font-family:var(--mono);font-size:clamp(9px,1.1vw,12.5px);
+  letter-spacing:.4em;text-indent:.4em;text-transform:uppercase;color:var(--fg-soft);opacity:0;}
+.active .mark-sub{animation:rise 1.2s 1.5s var(--out) forwards;}
+/* one light pass across the wordmark, at the moment it lands */
+.sweep{position:absolute;inset:-30% -60%;pointer-events:none;opacity:0;
+  background:linear-gradient(105deg,transparent 43%,rgba(255,255,255,.42) 50%,transparent 57%);
+  transform:translateX(-55%);}
+.active .sweep{opacity:1;transform:translateX(55%);
+  transition:transform 1.8s .9s var(--io),opacity .3s .9s;}
+
+/* ═══ SCENE FURNITURE ═════════════════════════════════════════════════ */
+/* readings pinned to the machine, same instrument logic as the product */
+.pins{position:absolute;inset:0;z-index:2;pointer-events:none;}
+#machineBox{position:relative;z-index:1;}
+.pin{position:absolute;display:flex;flex-direction:column;align-items:flex-start;
+  transform:translateY(-100%);opacity:0;transition:opacity .8s var(--out);}
+.pin.down{transform:none;flex-direction:column-reverse;}
+.pins.on .pin{opacity:1;}
+.pins.on .pin:nth-child(2){transition-delay:.4s}
+.pin .stem{display:block;width:1px;height:clamp(20px,4vh,42px);margin-top:8px;position:relative;
+  background:linear-gradient(180deg,rgba(255,178,89,0),rgba(255,178,89,.9));}
+.pin .stem::after{content:'';position:absolute;bottom:-2px;left:-2.5px;width:6px;height:6px;
+  border-radius:50%;background:var(--lamp);box-shadow:0 0 10px rgba(255,178,89,.95);}
+.pin.down .stem{transform:scaleY(-1);margin:0 0 8px;}
+.pin-k{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--fg-faint);white-space:nowrap;}
+.pin-v{font-family:var(--mono);font-size:13.5px;letter-spacing:-.02em;color:var(--lamp);
+  font-variant-numeric:tabular-nums;margin-top:2px;white-space:nowrap;}
+
+/* ranked causes */
+.causes{width:100%;max-width:640px;margin-top:34px;display:flex;flex-direction:column;gap:15px;}
+.cause{opacity:0;transform:translateX(-16px);
+  transition:opacity .7s var(--out),transform .8s var(--out);}
+.cause.in{opacity:1;transform:none;}
+.cause-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;}
+.cause-l{font-size:clamp(13px,1.35vw,16px);font-weight:520;letter-spacing:-.014em;}
+.cause-v{font-family:var(--mono);font-size:11px;color:var(--fg-faint);}
+.segs{display:flex;gap:3px;}
+.seg{flex:1;height:8px;border-radius:1px;background:var(--hair);
+  transform:scaleY(.4);transform-origin:bottom;
+  transition:transform .4s var(--out),background .4s var(--out);}
+.cause.in .seg.lit{transform:scaleY(1);background:var(--steel-2);}
+.cause.in .seg.lit.a{background:var(--amber);}
+
+/* numbered checks */
+.checks{width:100%;max-width:660px;margin-top:30px;counter-reset:c;text-align:left;}
+.check{counter-increment:c;display:flex;gap:16px;padding:13px 0;border-bottom:1px solid var(--hair);
+  opacity:0;transform:translateX(-18px);
+  transition:opacity .7s var(--out),transform .8s var(--out);}
+.check:last-child{border-bottom:none;}
+.check.in{opacity:1;transform:none;}
+.check::before{content:counter(c,decimal-leading-zero);font-family:var(--mono);font-size:10px;
+  color:var(--amber);padding-top:3px;letter-spacing:.08em;}
+.check p{font-size:clamp(13px,1.3vw,15.5px);line-height:1.5;color:var(--fg-soft);}
+.check p b{color:var(--fg);font-weight:600;}
+
+/* the supersession chain resolving to one number */
+.chain{display:flex;align-items:center;gap:clamp(8px,2vw,22px);margin-top:34px;flex-wrap:wrap;
+  justify-content:center;}
+.pn{font-family:var(--mono);font-size:clamp(15px,2.4vw,30px);letter-spacing:-.02em;
+  color:var(--fg-faint);position:relative;opacity:0;transform:translateY(10px);
+  transition:opacity .6s var(--out),transform .7s var(--out),color .6s;}
+.pn.in{opacity:1;transform:none;}
+.pn.dead{text-decoration:line-through;text-decoration-color:var(--alert);
+  text-decoration-thickness:2px;}
+.pn.live{color:var(--amber);font-size:clamp(20px,3.6vw,46px);font-weight:600;}
+.arrow{opacity:0;color:var(--fg-faint);font-family:var(--mono);transition:opacity .6s var(--out);}
+.arrow.in{opacity:1;}
+
+/* the safety line — the one hazard-striped element in the whole film */
+.hazard{width:min(720px,86vw);margin-top:30px;border:1px solid rgba(207,42,34,.32);
+  border-radius:5px;overflow:hidden;background:rgba(207,42,34,.05);
+  opacity:0;transform:translateY(14px);
+  transition:opacity .8s var(--out),transform .9s var(--out);}
+.hazard.in{opacity:1;transform:none;}
+.hazard-bar{height:7px;background:repeating-linear-gradient(-45deg,
+  #1A1103 0 10px,var(--amber) 10px 20px);}
+.hazard-in{padding:18px 20px;text-align:left;}
+.hazard-in p{font-size:clamp(13px,1.3vw,15px);line-height:1.5;color:var(--fg);}
+.hazard-in .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--alert);margin-bottom:9px;}
+
+/* fleet status */
+.fleet{width:min(760px,88vw);margin-top:30px;display:flex;flex-direction:column;gap:1px;
+  background:var(--hair);border:1px solid var(--hair);border-radius:5px;overflow:hidden;}
+.unit{display:grid;grid-template-columns:14px 1fr auto;gap:16px;align-items:center;
+  padding:14px 18px;background:var(--bg);text-align:left;
+  opacity:0;transform:translateX(-14px);
+  transition:opacity .6s var(--out),transform .7s var(--out);}
+.unit.in{opacity:1;transform:none;}
+.unit i{width:9px;height:9px;border-radius:50%;}
+.unit i.due{background:var(--alert);} .unit i.soon{background:var(--amber);}
+.unit i.ok{background:var(--ok);}
+.unit-n{font-family:var(--mono);font-size:clamp(12px,1.25vw,14.5px);color:var(--fg);
+  letter-spacing:-.01em;}
+.unit-s{font-family:var(--mono);font-size:clamp(10px,1.05vw,12px);color:var(--fg-faint);
+  white-space:nowrap;}
+
+/* the number */
+.big{font-family:var(--mono);font-size:clamp(64px,15vw,190px);font-weight:600;
+  letter-spacing:-.06em;line-height:.94;font-variant-numeric:tabular-nums;color:var(--amber);
+  opacity:0;}
+.active .big{animation:rise 1.1s .2s var(--out) forwards;}
+.big-l{font-size:clamp(15px,1.9vw,24px);font-weight:560;letter-spacing:-.022em;margin-top:12px;
+  opacity:0;}
+.active .big-l{animation:rise 1.2s .9s var(--out) forwards;}
+
+/* ═══ CHROME ══════════════════════════════════════════════════════════ */
+.chrome{position:fixed;z-index:45;opacity:0;transition:opacity .45s var(--out);}
+body.chrome-on .chrome{opacity:1;}
+.scrub{
+  bottom:calc((var(--bar) - 22px) / 2);left:50%;transform:translateX(-50%);
+  display:flex;gap:3px;padding:7px 11px;border-radius:100px;max-width:min(560px,86vw);
+  background:rgba(10,12,14,.62);border:1px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
+.seg-b{position:relative;overflow:hidden;flex:1 1 0;min-width:9px;max-width:34px;height:3px;
+  border-radius:3px;background:rgba(255,255,255,.24);cursor:pointer;
+  transition:flex-grow .45s var(--out),background .3s;}
+.seg-b.current{flex-grow:3;background:rgba(255,255,255,.3);}
+.seg-b i{position:absolute;inset:0;transform:scaleX(0);transform-origin:left;
+  background:var(--amber);will-change:transform;display:block;}
+.seg-b.past i{transform:scaleX(1);background:rgba(255,122,0,.5);}
+.tbtn{
+  bottom:calc((var(--bar) - 34px) / 2);display:flex;align-items:center;gap:8px;
+  border-radius:100px;padding:9px 14px;font-size:11.5px;font-weight:520;
+  color:rgba(255,255,255,.6);
+  background:rgba(10,12,14,.62);border:1px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  transition:color .2s,background .2s,opacity .45s var(--out);}
+.tbtn:hover{color:#fff;background:rgba(255,122,0,.24);}
+.tbtn svg{width:14px;height:14px;}
+.tbtn.sound{right:22px;}
+.tbtn.voice{right:150px;}
+.tbtn.replay{left:22px;visibility:hidden;}
+body.ended .replay{visibility:visible;}
+.tbtn[aria-pressed="true"]{color:#fff;border-color:rgba(255,122,0,.55);
+  background:rgba(255,122,0,.2);}
+.hint{top:calc(var(--bar) + 14px);right:22px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.14em;color:rgba(255,255,255,.32);}
+.hint kbd{font-family:var(--mono);padding:2px 5px;border:1px solid rgba(255,255,255,.16);
+  border-radius:3px;margin:0 2px;}
+body.day .tbtn{background:rgba(255,255,255,.82);color:var(--graphite);
+  border-color:var(--steel);}
+body.day .tbtn:hover{color:var(--ink);background:var(--amber-wash);}
+body.day .tbtn[aria-pressed="true"]{color:var(--amber-ink);background:var(--amber);
+  border-color:var(--amber);}
+body.day .scrub{background:rgba(255,255,255,.82);border-color:var(--steel);}
+body.day .seg-b{background:var(--steel);}
+body.day .seg-b.current{background:var(--steel-2);}
+body.day .hint{color:var(--steel-2);}
+body.day .hint kbd{border-color:var(--steel);}
+
+/* ═══ TITLE CARD ══════════════════════════════════════════════════════ */
+.gate{
+  position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;padding:0 7vw;
+  background:var(--night);
+  transition:opacity 1.4s var(--io),visibility 1.4s;}
+.gate.gone{opacity:0;visibility:hidden;pointer-events:none;}
+.gate-pre{font-family:var(--mono);font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;
+  color:var(--amber);opacity:0;animation:rise 1.3s .3s var(--out) forwards;}
+.gate-t{font-size:clamp(54px,12vw,150px);font-weight:700;letter-spacing:-.05em;line-height:1;
+  margin-top:20px;color:#fff;opacity:0;transform:scale(1.1);filter:blur(18px);
+  animation:markIn 2.2s .5s var(--out) forwards;}
+.gate-t .dot{color:var(--amber);}
+.gate-s{margin-top:16px;font-family:var(--mono);font-size:clamp(9px,1vw,11.5px);
+  letter-spacing:.36em;text-indent:.36em;text-transform:uppercase;
+  color:rgba(255,255,255,.55);opacity:0;animation:rise 1.2s 1.2s var(--out) forwards;}
+.gate-btns{display:flex;gap:12px;margin-top:38px;flex-wrap:wrap;justify-content:center;
+  opacity:0;animation:rise 1.2s 1.6s var(--out) forwards;}
+.gate-b{display:inline-flex;align-items:center;gap:10px;padding:15px 28px;border-radius:4px;
+  font-size:14px;font-weight:600;letter-spacing:-.01em;
+  transition:background .2s,transform .3s var(--out),border-color .2s;}
+.gate-b.p{background:var(--amber);color:var(--amber-ink);}
+.gate-b.p:hover{background:var(--amber-lit);transform:translateY(-2px);}
+.gate-b.s{border:1px solid rgba(255,255,255,.26);color:#fff;}
+.gate-b.s:hover{border-color:#fff;background:rgba(255,255,255,.08);}
+.gate-b svg{width:13px;height:13px;}
+.gate-n{margin-top:18px;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:rgba(255,255,255,.3);opacity:0;
+  animation:rise 1.2s 2s var(--out) forwards;}
+
+/* ═══ RESPONSIVE ══════════════════════════════════════════════════════ */
+@media(max-width:860px){
+  #stage{width:220vw;}
+  .hint{display:none;}
+  .tbtn span{display:none;}
+  .tbtn{padding:11px;}
+  .tbtn.sound{right:14px;} .tbtn.voice{right:66px;} .tbtn.replay{left:14px;}
+  .unit{grid-template-columns:14px 1fr;gap:10px;}
+  .unit-s{grid-column:2;}
+  .scene{padding:calc(var(--bar) + 3vh) 6vw;}
+  .chain{gap:6px;}
+}
+@media(max-height:620px){
+  .line{font-size:clamp(22px,3.6vw,36px);}
+  .mark{font-size:clamp(48px,10vw,90px);}
+  .big{font-size:clamp(52px,11vw,110px);}
+  .sub{margin-top:12px;}
+  .causes,.checks,.fleet{margin-top:16px;}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.2s!important;}
+  .scene,.scene.exit{transform:none!important;}
+  .line .w,.mark,.big,.big-l,.kicker,.sub,.note,.mark-sub{
+    opacity:1!important;transform:none!important;filter:none!important;}
+  .grain{display:none;}
+  #stage{filter:none!important;}
+}
+body.frozen *{animation-play-state:paused!important;}
+</style>
+</head>
+<body>
+
+<div class="lamp" aria-hidden="true"></div>
+<canvas id="dust" aria-hidden="true"></canvas>
+<div class="vig" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="letterbox t" aria-hidden="true"></div>
+<div class="letterbox b" aria-hidden="true"></div>
+
+<div id="stage" aria-hidden="true">
+  <div id="machineBox"></div>
+  <!-- readings live in the machine's own box, so the camera carries them
+       and each one stays on the component it describes -->
+  <div class="pins" id="pins">
+    <div class="pin" style="left:58%;top:43%">
+      <p class="pin-k">Hydraulic system</p><p class="pin-v">31.5 MPa</p><i class="stem"></i></div>
+    <div class="pin" style="left:58%;top:70%">
+      <p class="pin-k">Oil temperature</p><p class="pin-v">96 °C</p><i class="stem"></i></div>
+  </div>
+</div>
+
+<main aria-hidden="true">
+
+<!-- 01 · COLD OPEN ─────────────────────────────────────────────────── -->
+<section class="scene low" id="s1">
+  <p class="kicker">23:40 · 60 km from the depot</p>
+  <h1 class="line" data-split>A machine goes down at the far end of a site.</h1>
+</section>
+
+<!-- 02 · THE PROBLEM ───────────────────────────────────────────────── -->
+<section class="scene low left" id="s2">
+  <p class="kicker">The old way</p>
+  <h1 class="line" data-split>The answer is in the manual. <span class="dim">The manual is in the office.</span></h1>
+  <p class="sub">Nine hundred pages, a part number that has been superseded twice, and
+  nobody left to ask until morning. <b>That is the cost of downtime.</b></p>
+</section>
+
+<!-- 03 · THE REVEAL ────────────────────────────────────────────────── -->
+<section class="scene" id="s3">
+  <div class="sweep" aria-hidden="true"></div>
+  <p class="mark">MAYA<span class="dot">.</span></p>
+  <p class="mark-sub">AI for heavy equipment</p>
+</section>
+
+<!-- 04 · THE LIGHTS COME ON ────────────────────────────────────────── -->
+<section class="scene low" id="s4">
+  <p class="kicker">What she is</p>
+  <h1 class="line" data-split>Every manual, every catalogue, every machine — <span class="hi">answering in plain words.</span></h1>
+  <p class="sub">Built on service documentation and parts data, not on guesswork.
+  Ask in the words you would use to a colleague.</p>
+</section>
+
+<!-- 05 · THE SYSTEMS ───────────────────────────────────────────────── -->
+<section class="scene low" id="s5">
+  <p class="kicker">She knows the machine</p>
+  <h1 class="line sm" data-split>Not a picture of an excavator. <span class="hi" id="sysName">The engine.</span></h1>
+</section>
+
+<!-- 06 · THE DIAGNOSIS ─────────────────────────────────────────────── -->
+<section class="scene" id="s6">
+  <p class="kicker">Describe the fault in plain words</p>
+  <h1 class="line sm" data-split>“Losing hydraulic power after 30 minutes.”</h1>
+  <div class="causes" id="causes">
+    <div class="cause" data-v="8"><div class="cause-top"><span class="cause-l">Hydraulic oil temperature</span><span class="cause-v">8 / 10</span></div><div class="segs"></div></div>
+    <div class="cause" data-v="6"><div class="cause-top"><span class="cause-l">Hydraulic filter restriction</span><span class="cause-v">6 / 10</span></div><div class="segs"></div></div>
+    <div class="cause" data-v="4"><div class="cause-top"><span class="cause-l">Pump performance</span><span class="cause-v">4 / 10</span></div><div class="segs"></div></div>
+    <div class="cause" data-v="3"><div class="cause-top"><span class="cause-l">Valve system</span><span class="cause-v">3 / 10</span></div><div class="segs"></div></div>
+  </div>
+</section>
+
+<!-- 07 · THE ORDER OF WORK ─────────────────────────────────────────── -->
+<section class="scene" id="s7">
+  <p class="kicker">Ranked by what to do, not by what to read</p>
+  <h1 class="line sm" data-split>The cheap check comes first.</h1>
+  <div class="checks" id="checks">
+    <div class="check"><p><b>Read the oil temperature at working heat.</b> Free, instant, and it separates a cooling fault from a pump fault.</p></div>
+    <div class="check"><p><b>Inspect the cooler core and fan drive.</b> On a site machine, a packed core causes this exact complaint more than anything else.</p></div>
+    <div class="check"><p><b>Only then flow-test the pump.</b> It is the expensive test, so it belongs last — not first.</p></div>
+  </div>
+</section>
+
+<!-- 08 · THE PART ──────────────────────────────────────────────────── -->
+<section class="scene" id="s8">
+  <p class="kicker">Resolved against the catalogue · serial gated</p>
+  <h1 class="line sm" data-split>Two supersessions deep.</h1>
+  <div class="chain" id="chain">
+    <span class="pn dead">126-1813</span><span class="arrow">→</span>
+    <span class="pn dead">338-3540</span><span class="arrow">→</span>
+    <span class="pn live">462-1171</span>
+  </div>
+  <p class="note">Hydraulic return filter element · CAT 320 GC · in stock</p>
+</section>
+
+<!-- 09 · THE SAFETY LINE ───────────────────────────────────────────── -->
+<section class="scene" id="s9">
+  <p class="kicker">Where she stops</p>
+  <h1 class="line sm" data-split>Some jobs are <span class="hi">not hers.</span></h1>
+  <div class="hazard" id="hazard">
+    <div class="hazard-bar"></div>
+    <div class="hazard-in">
+      <p class="k">Stop · qualified technician</p>
+      <p>Pressure testing, stored energy, anything that needs the boom raised to reach it.
+      Maya says so plainly and hands the job over — it does not talk you through it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 10 · THE FLEET ─────────────────────────────────────────────────── -->
+<section class="scene" id="s10">
+  <p class="kicker">Maintenance intelligence</p>
+  <h1 class="line sm" data-split>Service by the hour meter, across the fleet.</h1>
+  <div class="fleet" id="fleet">
+    <div class="unit"><i class="due"></i><span class="unit-n">EX-4471 · CAT 320</span><span class="unit-s">Engine oil — due now</span></div>
+    <div class="unit"><i class="soon"></i><span class="unit-n">WL-2208 · CAT 950</span><span class="unit-s">Hydraulic filter — 120 h left</span></div>
+    <div class="unit"><i class="ok"></i><span class="unit-n">DZ-1140 · CAT D6</span><span class="unit-s">All intervals clear</span></div>
+    <div class="unit"><i class="soon"></i><span class="unit-n">EX-3390 · CAT 336</span><span class="unit-s">Undercarriage — 61% worn</span></div>
+  </div>
+</section>
+
+<!-- 11 · THE NUMBER ────────────────────────────────────────────────── -->
+<section class="scene" id="s11">
+  <p class="kicker">The target</p>
+  <p class="big data" id="bigNum">0 ms</p>
+  <p class="big-l">to the first word of an answer</p>
+  <p class="sub">Structure, retrieve, rerank, verify. The search that used to take a walk back
+  to the office takes less time than reading this line.</p>
+  <p class="note">Design target · to be validated in pilot</p>
+</section>
+
+<!-- 12 · CLOSE ─────────────────────────────────────────────────────── -->
+<section class="scene" id="s12">
+  <p class="mark">MAYA<span class="dot">.</span></p>
+  <p class="mark-sub">Understand your machines · Find the right answers · Work smarter</p>
+</section>
+
+</main>
+
+<div class="chrome scrub" id="scrub" role="group" aria-label="Scene navigation"></div>
+
+<button class="chrome tbtn sound" id="soundBtn" type="button" aria-pressed="true">
+  <svg id="soundIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" aria-hidden="true">
+    <path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>
+  </svg><span id="soundLabel">Sound on</span>
+</button>
+
+<button class="chrome tbtn voice" id="voiceBtn" type="button" aria-pressed="false">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" aria-hidden="true">
+    <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/>
+  </svg><span>Narration</span>
+</button>
+
+<button class="chrome tbtn replay" id="replayBtn" type="button">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+  <span>Replay</span>
+</button>
+
+<p class="chrome hint"><kbd>SPACE</kbd> PAUSE <kbd>←→</kbd> SCENE <kbd>F</kbd> FULL <kbd>M</kbd> MUTE</p>
+
+<div class="gate" id="gate">
+  <p class="gate-pre">A film about Maya</p>
+  <p class="gate-t">MAYA<span class="dot">.</span></p>
+  <p class="gate-s">AI for heavy equipment</p>
+  <div class="gate-btns">
+    <button class="gate-b p" id="playBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8z"/></svg>
+      Play with sound
+    </button>
+    <button class="gate-b s" id="quietBtn" type="button">Play without sound</button>
+  </div>
+  <p class="gate-n">2 min 16 · best viewed full screen</p>
+</div>
+
+<!-- The film is aria-hidden; this carries it for screen readers. -->
+<div class="sr">
+  <h1>Maya — a film</h1>
+  <p>A two-minute film introducing Maya, an AI assistant for heavy equipment.</p>
+  <ol>
+    <li>23:40, sixty kilometres from the depot. A machine goes down at the far end of a site.</li>
+    <li>The answer is in the manual, and the manual is in the office. Nine hundred pages, a part number superseded twice, and nobody left to ask until morning. That is the cost of downtime.</li>
+    <li>Maya. AI for heavy equipment.</li>
+    <li>Every manual, every catalogue, every machine — answering in plain words. Built on service documentation and parts data, not on guesswork.</li>
+    <li>She knows the machine, system by system: the engine and powertrain, the hydraulics, the undercarriage, and the front linkage.</li>
+    <li>Describe the fault in plain words: losing hydraulic power after thirty minutes. Maya ranks the likely causes — hydraulic oil temperature at eight out of ten, filter restriction at six, pump performance at four, valve system at three.</li>
+    <li>The cheap check comes first. Read the oil temperature at working heat. Inspect the cooler core and fan drive. Only then flow-test the pump.</li>
+    <li>The part is two supersessions deep: 126-1813 became 338-3540, which became 462-1171 — the hydraulic return filter element for a CAT 320 GC, in stock.</li>
+    <li>Some jobs are not hers. Pressure testing, stored energy, anything needing the boom raised to reach it. Maya says so plainly and hands the job to a qualified technician.</li>
+    <li>Service tracked by the hour meter across the fleet: engine oil due now on EX-4471, a hydraulic filter with 120 hours left on WL-2208, all intervals clear on DZ-1140, and undercarriage 61 percent worn on EX-3390.</li>
+    <li>Seven hundred milliseconds to the first word of an answer. This is a design target to be validated in pilot.</li>
+    <li>Maya. Understand your machines. Find the right answers. Work smarter.</li>
+  </ol>
+  <p>All machine models, part numbers, specifications and figures in this film are illustrative.</p>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   THE PROJECTOR
+   One clock drives scene progress, every cue, the dust and the counters.
+   Nothing schedules its own setTimeout, so pause genuinely pauses — and
+   skipping a scene cannot leave a stale callback to fire into the next.
+═══════════════════════════════════════════════════════════════════════ */
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const easeOut = t => 1 - Math.pow(1-t, 3);
+
+/* ═══ THE MACHINE ═════════════════════════════════════════════════════
+   Spliced verbatim from maya.html at build time. One drawing, one source
+   of truth — the film and the product cannot drift apart.
+═══════════════════════════════════════════════════════════════════════ */
+function MACHINE(kind){
+  /* track grousers, generated rather than hand-placed */
+  let gr = "";
+  for (let x = 176; x < 452; x += 23)
+    gr += `<path class="m-det" d="M${x} 459 v-9 M${x} 551 v9"/>`;
+  let rollers = "";
+  [215,262,309,356,403].forEach(x => rollers += `<circle class="m-dark" cx="${x}" cy="537" r="15"/>`);
+  [250,372].forEach(x => rollers += `<circle class="m-dark" cx="${x}" cy="472" r="10"/>`);
+  let teeth = "";
+  [[901,461],[884,466],[867,470],[850,474]].forEach(([x,y]) =>
+    teeth += `<path class="m-tooth" d="M${x} ${y} l14 9 l-11 8 z"/>`);
+  let louvre = "";
+  for (let i = 0; i < 5; i++) louvre += `<path class="m-det" d="M${218+i*22} 366 v46"/>`;
+
+  return `
+<svg class="machine ${kind}" viewBox="0 0 1060 620" role="img"
+     aria-label="Side view of a tracked hydraulic excavator with boom, arm and bucket">
+
+  <!-- ── UNDERCARRIAGE ─────────────────────────────────────────── -->
+  <g data-sys="undercarriage">
+    <path class="m-plate" d="M170 459 L452 459 A46 46 0 0 1 452 551 L170 551 A46 46 0 0 1 170 459 Z"/>
+    ${gr}
+    <path class="m-body" d="M176 478 L446 478 A10 10 0 0 1 456 488 L456 522 A10 10 0 0 1 446 532 L176 532 A10 10 0 0 1 166 522 L166 488 A10 10 0 0 1 176 478 Z"/>
+    ${rollers}
+    <circle class="m-dark" cx="452" cy="505" r="31"/>
+    <circle class="m-det"  cx="452" cy="505" r="20"/>
+    <path class="m-det" d="M452 474 v62 M421 505 h62 M430 483 l44 44 M474 483 l-44 44"/>
+    <circle class="m-dark" cx="170" cy="505" r="28"/>
+    <circle class="m-det"  cx="170" cy="505" r="15"/>
+  </g>
+
+  <!-- ── ENGINE & POWERTRAIN (house) ───────────────────────────── -->
+  <g data-sys="engine">
+    <path class="m-plate" d="M140 424 L500 424 L492 462 L148 462 Z"/>
+    <path class="m-body"  d="M118 424 L200 424 L200 330 L152 318 Q118 326 118 352 Z"/>
+    <path class="m-det"   d="M126 340 h66 M126 356 h66 M126 372 h66"/>
+    <path class="m-body"  d="M200 424 L200 352 L336 344 L342 424 Z"/>
+    ${louvre}
+    <rect class="m-dark" x="286" y="304" width="17" height="42" rx="3"/>
+    <path class="m-det" d="M208 336 h120"/>
+  </g>
+
+  <!-- ── CAB / OPERATOR ────────────────────────────────────────── -->
+  <g data-sys="structure">
+    <path class="m-body"  d="M346 424 L346 296 L376 266 L458 266 L458 424 Z"/>
+    <path class="m-glass" d="M357 300 L379 278 L447 278 L447 352 L357 352 Z"/>
+    <path class="m-det"   d="M357 366 h90 M357 384 h90"/>
+    <path class="m-det"   d="M470 424 v-46"/>
+  </g>
+
+  <!-- ── HYDRAULICS: boom cylinder barrel, pinned to the house ──── -->
+  <g data-sys="hydraulics">
+    <g class="cylb-g" data-part>
+      <path class="m-cyl" d="M452 430 L560 366" stroke-width="27"/>
+      <path class="m-det" d="M470 425 L548 379"/>
+      <circle class="m-pin" cx="452" cy="430" r="8"/>
+    </g>
+  </g>
+
+  <!-- ══ FRONT LINKAGE — boom ▸ arm ▸ bucket, nested so each member
+         carries its children and its own cylinder rod ══════════════ -->
+  <g class="boom-g" data-part>
+
+    <g data-sys="frontend">
+      <path class="m-body" d="M476 382 Q566 286 686 210 L708 248 Q600 330 516 430 Z"/>
+      <circle class="m-pin" cx="498" cy="400" r="15"/>
+      <circle class="m-pin" cx="697" cy="229" r="13"/>
+    </g>
+
+    <g data-sys="hydraulics">
+      <!-- boom cylinder ROD: pinned to the boom, so it slides out of the
+           barrel above as the boom rises. This pairing is the reason the
+           hydraulics read as hydraulics and not as decoration. -->
+      <path class="m-rod" d="M540 386 L608 344" stroke-width="12"/>
+      <circle class="m-pin" cx="608" cy="344" r="7"/>
+      <!-- arm cylinder barrel, pinned to the boom -->
+      <path class="m-cyl" d="M556 300 L648 240" stroke-width="23"/>
+      <path class="m-det" d="M570 297 L638 253"/>
+      <circle class="m-pin" cx="556" cy="300" r="7"/>
+      <!-- hoses running the length of the boom -->
+      <path class="m-hose" d="M512 404 Q596 322 686 244"/>
+      <path class="m-hose" d="M520 414 Q604 332 694 254"/>
+    </g>
+
+    <g class="arm-g" data-part>
+      <g data-sys="frontend">
+        <path class="m-body" d="M676 242 L826 420 L858 398 L714 212 Z"/>
+        <circle class="m-pin" cx="842" cy="409" r="11"/>
+      </g>
+      <g data-sys="hydraulics">
+        <!-- arm cylinder rod: pinned to the arm -->
+        <path class="m-rod" d="M640 246 L716 206" stroke-width="11"/>
+        <circle class="m-pin" cx="716" cy="206" r="6"/>
+        <!-- bucket cylinder, riding on the arm -->
+        <path class="m-cyl" d="M726 262 L790 336" stroke-width="20"/>
+        <circle class="m-pin" cx="726" cy="262" r="6"/>
+        <path class="m-rod" d="M784 330 L818 372" stroke-width="10"/>
+        <path class="m-hose" d="M700 250 Q742 300 782 340"/>
+      </g>
+
+      <g class="bkt-g" data-part data-sys="frontend">
+        <path class="m-body" d="M816 394 L892 370 Q930 404 908 458 L828 480 Q798 436 816 394 Z"/>
+        <path class="m-det"  d="M828 404 Q880 396 898 420"/>
+        ${teeth}
+        <path class="m-plate" d="M818 372 L846 398 L830 412 L806 388 Z"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ground shadow -->
+  <ellipse cx="310" cy="566" rx="220" ry="9" fill="rgba(16,21,25,.10)"/>
+</svg>`;
+}
+
+document.getElementById("machineBox").innerHTML = MACHINE("");
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE SCORE
+   A diesel idle rather than a fanfare: a detuned sub pair, a slow
+   combustion pulse, a wind bed, and an open three-voice pad that moves one
+   chord per scene. Cuts are marked by struck metal, not by a drum. All of
+   it through a compressor so stacked hits cannot clip.
+═══════════════════════════════════════════════════════════════════════ */
+const Score = (() => {
+  let ac, master, comp, voices = [], wind, windGain, idleGain;
+  let on = true, live = false;
+
+  /* Open fifths and suspended voicings — unresolved while the machine is
+     down, settling only on the final chord. */
+  const CHORDS = [
+    [ 55.00, 82.41,123.47],[ 49.00, 73.42,110.00],[ 55.00, 82.41,130.81],
+    [ 61.74, 92.50,146.83],[ 65.41, 98.00,146.83],[ 58.27, 87.31,138.59],
+    [ 55.00, 82.41,130.81],[ 61.74, 92.50,155.56],[ 49.00, 73.42,116.54],
+    [ 58.27, 87.31,138.59],[ 65.41, 98.00,164.81],[ 43.65, 65.41,110.00]
+  ];
+
+  function init(){
+    if (ac) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    ac = new Ctx();
+    master = ac.createGain(); master.gain.value = 0;
+    comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -15; comp.knee.value = 24; comp.ratio.value = 5;
+    comp.attack.value = .004; comp.release.value = .25;
+    master.connect(comp); comp.connect(ac.destination);
+
+    /* the idle — a detuned sub pair beating slowly against itself */
+    idleGain = ac.createGain(); idleGain.gain.value = .05;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 190;
+    idleGain.connect(lp); lp.connect(master);
+    [43.5, 43.9].forEach(f => {
+      const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = f;
+      o.connect(idleGain); o.start();
+    });
+
+    /* pad */
+    const pad = ac.createGain(); pad.gain.value = .02;
+    const padLP = ac.createBiquadFilter();
+    padLP.type = "lowpass"; padLP.frequency.value = 950; padLP.Q.value = .5;
+    pad.connect(padLP); padLP.connect(master);
+    for (let i = 0; i < 3; i++){
+      const o = ac.createOscillator();
+      o.type = i === 2 ? "triangle" : "sawtooth";
+      o.frequency.value = CHORDS[0][i];
+      const g = ac.createGain(); g.gain.value = i === 2 ? .26 : .4;
+      o.connect(g); g.connect(pad); o.start(); voices.push(o);
+    }
+
+    /* wind bed — this is the sound of the location, and it is what makes
+       the frame read as outdoors rather than as a page */
+    const len = ac.sampleRate * 4;
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = Math.random()*2 - 1;
+    wind = ac.createBufferSource(); wind.buffer = buf; wind.loop = true;
+    const wf = ac.createBiquadFilter();
+    wf.type = "bandpass"; wf.frequency.value = 380; wf.Q.value = .6;
+    windGain = ac.createGain(); windGain.gain.value = .03;
+    const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = .06;
+    const amt = ac.createGain(); amt.gain.value = 160;
+    lfo.connect(amt); amt.connect(wf.frequency); lfo.start();
+    wind.connect(wf); wf.connect(windGain); windGain.connect(master); wind.start();
+
+    live = true;
+    master.gain.linearRampToValueAtTime(on ? 1 : 0, ac.currentTime + 2.6);
+  }
+
+  return {
+    start(){ init(); },
+    chord(i){
+      if (!live) return;
+      const c = CHORDS[i] || CHORDS[0], t = ac.currentTime;
+      voices.forEach((o,n) => o.frequency.exponentialRampToValueAtTime(c[n], t + 2.6));
+    },
+    /* struck metal: a short bandpassed noise transient plus two ringing
+       partials. A drum hit would make this a trailer; this makes it a yard. */
+    hit(soft){
+      if (!live) return;
+      const t = ac.currentTime, lvl = soft ? .3 : 1;
+      const n = ac.createBufferSource();
+      const len = Math.floor(ac.sampleRate * .3);
+      const b = ac.createBuffer(1, len, ac.sampleRate);
+      const d = b.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 6);
+      n.buffer = b;
+      const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+      bp.frequency.value = 2100; bp.Q.value = 1.1;
+      const g = ac.createGain(); g.gain.value = .12 * lvl;
+      n.connect(bp); bp.connect(g); g.connect(master); n.start();
+      [523.25, 1244.5].forEach((f,i) => {
+        const o = ac.createOscillator(), og = ac.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        og.gain.setValueAtTime(0, t);
+        og.gain.linearRampToValueAtTime(.035*lvl/(i+1), t + .006);
+        og.gain.exponentialRampToValueAtTime(.0001, t + 2.4);
+        o.connect(og); og.connect(master); o.start(); o.stop(t + 2.5);
+      });
+    },
+    /* the moment the work lights come on */
+    swell(){
+      if (!live) return;
+      const t = ac.currentTime;
+      windGain.gain.cancelScheduledValues(t);
+      windGain.gain.linearRampToValueAtTime(.075, t + 1.2);
+      windGain.gain.linearRampToValueAtTime(.026, t + 5);
+      idleGain.gain.cancelScheduledValues(t);
+      idleGain.gain.linearRampToValueAtTime(.02, t + 3.5);
+    },
+    mute(m){
+      on = !m;
+      if (!live) return;
+      master.gain.cancelScheduledValues(ac.currentTime);
+      master.gain.linearRampToValueAtTime(on ? 1 : 0, ac.currentTime + .35);
+    },
+    suspend(){ if (ac && ac.state === "running") ac.suspend(); },
+    resume(){ if (ac && ac.state === "suspended") ac.resume(); }
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NARRATION
+   Uses the browser's own speech synthesis, so it needs no audio files and
+   no network — but voices are supplied by the operating system, so this
+   is off by default and hides itself entirely where none exist.
+═══════════════════════════════════════════════════════════════════════ */
+const Voice = (() => {
+  const S = window.speechSynthesis;
+  let on = false, ready = false;
+  function pick(){
+    if (!S) return null;
+    const v = S.getVoices();
+    if (!v.length) return null;
+    ready = true;
+    return v.find(x => /en-GB/i.test(x.lang) && !/google/i.test(x.name))
+        || v.find(x => /^en/i.test(x.lang)) || v[0];
+  }
+  if (S) { pick(); S.onvoiceschanged = pick; }
+  return {
+    available(){ return !!S; },
+    set(v){ on = v; if (!v && S) S.cancel(); },
+    get(){ return on; },
+    say(text){
+      if (!on || !S || !text) return;
+      S.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const v = pick(); if (v) u.voice = v;
+      u.rate = .94; u.pitch = .92; u.volume = 1;
+      S.speak(u);
+    },
+    stop(){ if (S) S.cancel(); }
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE SCENES
+   Each scene owns its duration, its camera, its chord, and a cue list.
+   Cues fire off the film clock and the whole list is discarded on exit,
+   which is what makes scrubbing safe.
+═══════════════════════════════════════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const stage = $("#stage");
+const pins = $("#pins");
+
+const SYSTEMS = [
+  ["engine",        "The engine."],
+  ["hydraulics",    "The hydraulics."],
+  ["undercarriage", "The undercarriage."],
+  ["frontend",      "The front linkage."]
+];
+
+function isoSystem(key){
+  stage.classList.add("iso");
+  stage.querySelectorAll("[data-sys]").forEach(g => g.classList.toggle("on", g.dataset.sys === key));
+}
+function isoOff(){ stage.classList.remove("iso");
+  stage.querySelectorAll("[data-sys]").forEach(g => g.classList.remove("on")); }
+
+function fillSegs(el, v){
+  const box = el.querySelector(".segs");
+  box.innerHTML = "";
+  for (let i = 0; i < 10; i++){
+    const s = document.createElement("i");
+    s.className = "seg" + (i < v ? " lit" : "") + (v >= 6 ? " a" : "");
+    s.style.transitionDelay = (.15 + i*.045) + "s";
+    box.appendChild(s);
+  }
+}
+document.querySelectorAll("#causes .cause").forEach(c => fillSegs(c, +c.dataset.v));
+
+const SCENES = [
+  { id:"s1", dur:9000, cam:"scale(.92) translate(2%, 4%)", chord:0,
+    say:"Twenty-three forty. Sixty kilometres from the depot. A machine goes down at the far end of a site.",
+    cues:[[600, () => stage.classList.add("in")]] },
+
+  { id:"s2", dur:10000, cam:"scale(1.2) translate(15%, 6%)", chord:1,
+    say:"The answer is in the manual. The manual is in the office. Nine hundred pages, a part number superseded twice, and nobody left to ask until morning.",
+    cues:[[1200, () => pins.classList.add("on")],
+          [8400, () => pins.classList.remove("on")]] },
+
+  /* the machine goes back into the dark so the wordmark owns the frame */
+  { id:"s3", dur:9000, cam:"scale(1.5)", chord:2,
+    say:"Maya. A. I. for heavy equipment.",
+    cues:[[0, () => stage.classList.add("recede")], [400, () => Score.hit()]] },
+
+  /* THE FLIP — the work lights come on, once, and never go back */
+  { id:"s4", dur:11000, cam:"scale(.96) translate(0, 3%)", chord:3,
+    say:"Every manual, every catalogue, every machine, answering in plain words. Built on service documentation and parts data, not on guesswork.",
+    cues:[[200, () => { document.body.classList.add("day");
+                        stage.classList.remove("recede"); Score.swell(); }]] },
+
+  { id:"s5", dur:16000, cam:"scale(1.28) translate(-2%, 5%)", chord:4,
+    say:"She knows the machine, system by system.",
+    cues:SYSTEMS.map(([k,label], i) =>
+      [i*3600 + 900, () => {
+        isoSystem(k);
+        $("#sysName").textContent = label;
+        Score.hit(true);
+      }]).concat([[15400, isoOff]]) },
+
+  { id:"s6", dur:16000, cam:"scale(1.6) translate(-16%, 22%)", chord:5,
+    say:"Describe the fault in plain words. Losing hydraulic power after thirty minutes. Maya ranks the likely causes.",
+    cues:[...document.querySelectorAll("#causes .cause")].map((c,i) =>
+      [1600 + i*1500, () => { c.classList.add("in"); Score.hit(true); }]) },
+
+  { id:"s7", dur:11000, cam:"scale(1.5) translate(14%, 18%)", chord:6,
+    say:"The cheap check comes first. Read the oil temperature at working heat. Inspect the cooler core. Only then flow-test the pump.",
+    cues:[...document.querySelectorAll("#checks .check")].map((c,i) =>
+      [1400 + i*1700, () => c.classList.add("in")]) },
+
+  { id:"s8", dur:11000, cam:"scale(2.3) translate(-6%, 26%)", chord:7,
+    say:"The part is two supersessions deep. One two six, one eight one three, became four six two, one one seven one.",
+    cues:[[900,  () => $("#chain").children[0].classList.add("in")],
+          [1500, () => $("#chain").children[1].classList.add("in")],
+          [2400, () => $("#chain").children[2].classList.add("in")],
+          [3000, () => $("#chain").children[3].classList.add("in")],
+          [3900, () => { $("#chain").children[4].classList.add("in"); Score.hit(); }]] },
+
+  { id:"s9", dur:10000, cam:"scale(1.2) translate(10%, 8%)", chord:8,
+    say:"Some jobs are not hers. Pressure testing, stored energy, anything needing the boom raised to reach it. Maya hands the job to a qualified technician.",
+    cues:[[1200, () => { $("#hazard").classList.add("in"); Score.hit(); }]] },
+
+  { id:"s10", dur:11000, cam:"scale(1) translate(-3%, 4%)", chord:9,
+    say:"Service tracked by the hour meter, across the fleet.",
+    cues:[...document.querySelectorAll("#fleet .unit")].map((u,i) =>
+      [1200 + i*900, () => u.classList.add("in")]) },
+
+  { id:"s11", dur:10000, cam:"scale(1.34) translate(6%, 10%)", chord:10,
+    say:"Seven hundred milliseconds to the first word of an answer. A design target, to be validated in pilot.",
+    cues:[[400, () => count($("#bigNum"), 700, " ms", 1700)]] },
+
+  { id:"s12", dur:12000, cam:"scale(.9) translate(0, 6%)", chord:11,
+    say:"Maya. Understand your machines. Find the right answers. Work smarter.",
+    cues:[[300, () => Score.hit()]] }
+];
+
+const TOTAL = SCENES.reduce((a,s) => a + s.dur, 0);
+
+/* counters run off the film clock too, so pausing pauses them */
+let counters = [];
+function count(el, to, suffix, dur){
+  counters.push({ el, to, suffix: suffix || "", dur: dur || 1400, t: 0 });
+}
+
+/* ═══ THE PROJECTOR ═══════════════════════════════════════════════════ */
+const Film = (() => {
+  let i = -1, t = 0, playing = false, cues = [], fired = [], raf = 0, last = 0;
+  const segs = [];
+
+  const scrub = $("#scrub");
+  SCENES.forEach((s, n) => {
+    const b = document.createElement("button");
+    b.className = "seg-b"; b.type = "button";
+    b.setAttribute("aria-label", "Scene " + (n+1));
+    b.appendChild(document.createElement("i"));
+    b.addEventListener("click", () => go(n));
+    scrub.appendChild(b); segs.push(b);
+  });
+
+  function enter(n){
+    const prev = SCENES[i];
+    if (prev){
+      const el = document.getElementById(prev.id);
+      el.classList.remove("active"); el.classList.add("exit");
+      setTimeout(() => el.classList.remove("exit"), 1200);
+    }
+    i = n; t = 0; counters = [];
+    const s = SCENES[n];
+    cues = s.cues || []; fired = cues.map(() => false);
+
+    /* reset everything this scene owns, so a scrub back replays it */
+    const el = document.getElementById(s.id);
+    el.querySelectorAll(".cause,.check,.unit,.pn,.arrow,.hazard")
+      .forEach(x => x.classList.remove("in"));
+    if (n < 4) document.body.classList.remove("day");
+    if (n !== 4) isoOff();
+    if (n !== 1) pins.classList.remove("on");
+    if (n > 2) stage.classList.remove("recede");
+    if (n > 0) stage.classList.add("in");
+
+    stage.style.setProperty("--cam", s.cam);
+    void el.offsetWidth;
+    el.classList.add("active");
+
+    Score.chord(s.chord);
+    if (n > 0) Score.hit(true);
+    Voice.say(s.say);
+
+    segs.forEach((b,k) => {
+      b.classList.toggle("current", k === n);
+      b.classList.toggle("past", k < n);
+      if (k > n) b.querySelector("i").style.transform = "scaleX(0)";
+    });
+  }
+
+  function tick(now){
+    raf = requestAnimationFrame(tick);
+    const dt = Math.min(now - last || 16, 60); last = now;
+    if (!playing) return;
+    const s = SCENES[i];
+    t += dt;
+
+    cues.forEach((c,k) => { if (!fired[k] && t >= c[0]){ fired[k] = true; c[1](); } });
+
+    counters.forEach(c => {
+      c.t = Math.min(c.t + dt, c.dur);
+      const v = Math.round(c.to * easeOut(c.t / c.dur));
+      c.el.textContent = v.toLocaleString("en-US").replace(/,/g," ") + c.suffix;
+    });
+
+    segs[i].querySelector("i").style.transform = "scaleX(" + clamp(t/s.dur,0,1) + ")";
+
+    if (t >= s.dur){
+      if (i < SCENES.length - 1) enter(i + 1);
+      else { playing = false; document.body.classList.add("ended"); Voice.stop(); }
+    }
+  }
+
+  function go(n){
+    n = clamp(n, 0, SCENES.length - 1);
+    document.body.classList.remove("ended");
+    /* replay the lighting state for wherever we landed */
+    document.body.classList.toggle("day", n >= 4);
+    enter(n);
+    if (!playing) play();
+  }
+
+  function play(){
+    playing = true;
+    document.body.classList.remove("frozen");
+    Score.resume();
+    if (!raf){ last = performance.now(); raf = requestAnimationFrame(tick); }
+  }
+  function pause(){
+    playing = false;
+    document.body.classList.add("frozen");
+    Score.suspend(); Voice.stop();
+  }
+  function toggle(){ playing ? pause() : play(); }
+
+  function start(sound){
+    document.body.classList.add("rolling","chrome-on");
+    $("#gate").classList.add("gone");
+    if (sound){ Score.start(); } else { Score.mute(true); setPressed($("#soundBtn"), false, "Sound off"); }
+    enter(0);
+    play();
+  }
+
+  return { start, go, toggle, next:() => go(i+1), prev:() => go(i-1),
+           replay:() => { document.body.classList.remove("ended"); go(0); },
+           isPlaying:() => playing };
+})();
+
+/* ═══ CONTROLS ════════════════════════════════════════════════════════ */
+function setPressed(btn, on, label){
+  btn.setAttribute("aria-pressed", String(on));
+  const s = btn.querySelector("span"); if (s && label) s.textContent = label;
+}
+let muted = false;
+$("#soundBtn").addEventListener("click", () => {
+  muted = !muted; Score.mute(muted);
+  setPressed($("#soundBtn"), !muted, muted ? "Sound off" : "Sound on");
+});
+if (Voice.available()){
+  $("#voiceBtn").addEventListener("click", () => {
+    const on = !Voice.get();
+    Voice.set(on); setPressed($("#voiceBtn"), on);
+    if (on) Voice.say("Narration on.");
+  });
+} else {
+  $("#voiceBtn").remove();   /* no synthesis here — don't offer a dead control */
+}
+$("#replayBtn").addEventListener("click", () => Film.replay());
+$("#playBtn").addEventListener("click", () => Film.start(true));
+$("#quietBtn").addEventListener("click", () => { muted = true; Film.start(false); });
+
+addEventListener("keydown", e => {
+  if ($("#gate").classList.contains("gone") === false){
+    if (e.key === "Enter" || e.key === " "){ e.preventDefault(); Film.start(true); }
+    return;
+  }
+  if (e.key === " "){ e.preventDefault(); Film.toggle(); }
+  else if (e.key === "ArrowRight") Film.next();
+  else if (e.key === "ArrowLeft")  Film.prev();
+  else if (e.key.toLowerCase() === "m") $("#soundBtn").click();
+  else if (e.key.toLowerCase() === "r") Film.replay();
+  else if (e.key.toLowerCase() === "f"){
+    document.fullscreenElement ? document.exitFullscreen()
+                               : document.documentElement.requestFullscreen?.();
+  }
+});
+
+/* touch: swipe between scenes */
+let tx = 0, ty = 0;
+addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; },
+                 { passive:true });
+addEventListener("touchend", e => {
+  const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) dx < 0 ? Film.next() : Film.prev();
+}, { passive:true });
+
+/* pause when the tab is hidden — a film nobody is watching should not run */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && Film.isPlaying()) Film.toggle();
+});
+
+/* ═══ DUST ════════════════════════════════════════════════════════════ */
+(function dust(){
+  const cv = $("#dust"), ctx = cv.getContext("2d");
+  let W = 0, H = 0, p = [];
+  function layout(){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W*dpr; cv.height = H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    const n = W < 760 ? 80 : 170;
+    p = [];
+    for (let i = 0; i < n; i++) p.push({
+      x: Math.random()*W, y: Math.random()*H, z:.3+Math.random()*.9,
+      r:.4+Math.random()*1.4, vx:(Math.random()-.5)*.09, vy:-.05*(.5+Math.random())
+    });
+  }
+  function frame(){
+    requestAnimationFrame(frame);
+    const day = document.body.classList.contains("day");
+    ctx.clearRect(0,0,W,H);
+    p.forEach(d => {
+      d.x += d.vx*d.z; d.y += d.vy*d.z;
+      if (d.y < -8){ d.y = H+8; d.x = Math.random()*W; }
+      if (d.x < -8) d.x = W+8; if (d.x > W+8) d.x = -8;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r*d.z, 0, 7);
+      ctx.fillStyle = day ? `rgba(120,132,146,${0.05 + d.z*.12})`
+                          : `rgba(255,186,110,${0.06 + d.z*.18})`;
+      ctx.fill();
+    });
+  }
+  addEventListener("resize", layout); layout();
+  if (!REDUCED) frame(); else frame.call(null);
+})();
+
+/* split headlines into words so they can arrive as language */
+document.querySelectorAll("[data-split]").forEach(h => {
+  (function walk(node){
+    [...node.childNodes].forEach(c => {
+      if (c.nodeType === 1 && (c.classList.contains("hi") || c.classList.contains("dim"))){
+        const w = document.createElement("span"); w.className = "w";
+        c.replaceWith(w); w.appendChild(c); return;
+      }
+      if (c.nodeType === 3){
+        const f = document.createDocumentFragment();
+        c.textContent.split(/(\s+)/).forEach(tok => {
+          if (!tok.trim()){ f.appendChild(document.createTextNode(tok)); return; }
+          const s = document.createElement("span"); s.className = "w"; s.textContent = tok;
+          f.appendChild(s);
+        });
+        c.replaceWith(f);
+      } else if (c.nodeType === 1) walk(c);
+    });
+  })(h);
+  h.querySelectorAll(".w").forEach((w,i) => w.style.animationDelay = (.35 + i*.07) + "s");
+});
+</script>
+</body>
+</html>
