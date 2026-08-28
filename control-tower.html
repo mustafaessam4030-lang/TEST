@@ -171,14 +171,35 @@ a{color:inherit;text-decoration:none;}
 .lane{position:absolute;left:0;top:50%;width:240%;height:3px;transform:translateY(-50%);
   background:repeating-linear-gradient(90deg,
     rgba(255,255,255,.92) 0 52px, transparent 52px 124px);
-  filter:drop-shadow(0 0 6px rgba(255,255,255,.28));will-change:transform;}
+  filter:drop-shadow(0 0 6px rgba(255,255,255,.28));will-change:transform;
+  /* GSAP owns the transform, so the idle stream rides background-position */
+  animation:laneRun 1.9s linear infinite;}
+@keyframes laneRun{to{background-position-x:-124px;}}
 .lane.edge{top:12px;height:1px;opacity:.3;background:rgba(255,255,255,.6);}
 .lane.edge.b{top:auto;bottom:12px;}
 .band-meta{position:absolute;left:var(--pad);top:16px;color:rgba(255,255,255,.5);z-index:3;}
 .band-meta b{color:#fff;}
 .rig{position:absolute;left:0;bottom:calc(50% - min(20vh,160px) - 4px);
   width:clamp(360px,54vw,820px);will-change:transform;z-index:4;}
+/* the wrapper is scrubbed by scroll; the svg inside is never still */
+.rig svg{display:block;animation:rigRun 1.15s ease-in-out infinite;}
+@keyframes rigRun{
+  0%,100%{transform:translateY(0) rotate(0deg);}
+  30%{transform:translateY(-2.5px) rotate(-.13deg);}
+  65%{transform:translateY(1.8px) rotate(.1deg);}}
 .road-cap{position:absolute;left:var(--pad);bottom:calc(var(--pad) + 4px);max-width:34ch;}
+
+.play{position:fixed;right:var(--pad);bottom:var(--pad);z-index:90;
+  display:inline-flex;align-items:center;gap:10px;cursor:pointer;
+  font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+  padding:11px 16px;border:1px solid currentColor;background:transparent;color:var(--ink);
+  mix-blend-mode:difference;filter:invert(1);transition:opacity .25s;}
+.play:hover{opacity:.6;}
+.play i{display:block;width:0;height:0;font-style:normal;
+  border-left:8px solid currentColor;border-top:5px solid transparent;border-bottom:5px solid transparent;}
+.play.on i{width:8px;height:10px;border:none;
+  background:linear-gradient(90deg,currentColor 0 3px,transparent 3px 5px,currentColor 5px 8px);}
+@media(prefers-reduced-motion:reduce){.play{display:none;}}
 
 /* ═══ 03 · CLIPPED STATEMENT ══════════════════════════════════════════ */
 .stmt{padding:clamp(70px,16vh,190px) 0;overflow:hidden;position:relative;}
@@ -374,6 +395,7 @@ a{color:inherit;text-decoration:none;}
 <div id="grain" aria-hidden="true"></div>
 <div id="vig" aria-hidden="true"></div>
 <div class="prog" id="prog"></div>
+<button class="play" id="play" type="button" aria-live="polite"><i></i><span>Play film</span></button>
 
 <header class="top">
   <div class="mark">CONTROL TOWER<span>Shipment visibility</span></div>
@@ -1022,6 +1044,105 @@ function countUp(el) {
     el.textContent = fmt(to*(1-Math.pow(1-k,3))); if(k<1) requestAnimationFrame(step); })(performance.now());
 }
 
+/* ═══ FILM MODE ════════════════════════════════════════════════════
+   The whole piece is scrubbed to scroll, which is what makes it feel cut
+   rather than looped — but it also means a page nobody touches never
+   moves. So the scroll can drive itself: ~150px a second, the pace of a
+   slow dolly. Any wheel, drag or key hands control straight back, and
+   nothing about the choreography knows the difference between this and a
+   real scroll. */
+const Film = (() => {
+  const btn = document.getElementById("play");
+  const lbl = btn && btn.querySelector("span");
+  let on = false, raf = 0, last = 0;
+  const SPEED = 152;                       // px per second
+
+  function step(now) {
+    if (!on) return;
+    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    const max = document.documentElement.scrollHeight - innerHeight;
+    const y = scrollY + SPEED * dt;
+    if (y >= max) { scrollTo(0, max); stop(); return; }
+    scrollTo(0, y);
+    raf = requestAnimationFrame(step);
+  }
+  function start() {
+    if (on || RM) return;
+    const max = document.documentElement.scrollHeight - innerHeight;
+    if (scrollY >= max - 2) scrollTo(0, 0);
+    on = true; last = performance.now();
+    btn && btn.classList.add("on"); if (lbl) lbl.textContent = "Pause";
+    raf = requestAnimationFrame(step);
+  }
+  function stop() {
+    if (!on) return;
+    on = false; cancelAnimationFrame(raf);
+    btn && btn.classList.remove("on"); if (lbl) lbl.textContent = "Play film";
+  }
+  btn && btn.addEventListener("click", () => on ? stop() : start());
+  /* the viewer always wins */
+  ["wheel", "touchstart", "pointerdown", "keydown"].forEach(e =>
+    addEventListener(e, ev => { if (ev.type !== "keydown" || ev.key !== " ") stop(); },
+      { passive: true }));
+  addEventListener("keydown", e => {
+    if (e.key === " " && e.target === document.body) { e.preventDefault(); on ? stop() : start(); }
+  });
+  return { start, stop, get playing() { return on; } };
+})();
+/* it plays itself once the title cards have landed — the answer to
+   "why isn't it moving" should not be "because you haven't scrolled yet" */
+if (!RM) setTimeout(() => { if (scrollY < 4) Film.start(); }, 2600);
+
+/* ═══ THE AMBIENT CLOCK ════════════════════════════════════════════
+   Scroll tells the story. This keeps the world alive while the story is
+   standing still — otherwise the sea freezes the moment you stop moving
+   the wheel, which is exactly how the first cut felt: dead.
+   Every job is gated on its own section being on screen, so an idle
+   page off in another scene costs nothing. */
+const Live = (() => {
+  const jobs = [];
+  let t0 = performance.now();
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    for (let i = 0; i < jobs.length; i++) {
+      const j = jobs[i];
+      if (!j.on) continue;
+      if (t - j.last < j.gap) continue;
+      j.last = t; j.fn(t);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  return {
+    add(el, fn, fps) {
+      if (!el || RM) return;                       // reduced motion keeps still
+      const j = { fn, on: false, last: 0, gap: fps ? 1 / fps : 0 };
+      jobs.push(j);
+      new IntersectionObserver(e => { j.on = e[0].isIntersecting; },
+        { rootMargin: "15% 0px" }).observe(el);
+    }
+  };
+})();
+
+/* the scroll position each pinned canvas was last told about; the ambient
+   job redraws that same frame with the clock moved on */
+const At = { yard: 0, sea: 0 };
+
+Live.add(document.getElementById("s-sea"), t => {
+  if (!Sea.draw) return;
+  const sec = document.getElementById("s-sea").getBoundingClientRect();
+  const v   = document.getElementById("vessel").getBoundingClientRect();
+  Sea.draw(t * 0.9 + At.sea * 9,
+           Math.max(.30, Math.min(1.1, (v.top + v.height * .963 - sec.top) / sec.height)),
+           (v.left + v.width / 2) / Math.max(1, sec.width));
+});
+
+/* the terminal creeps past even at rest — a camera on a dolly that never
+   quite stops. 30fps: it is 700-odd boxes and nobody can see the difference. */
+Live.add(document.getElementById("s-yard"), t => {
+  if (Yard.draw) Yard.draw(At.yard + t * 0.010);
+}, 30);
+
 /* ═══ CHOREOGRAPHY ═════════════════════════════════════════════════ */
 if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
   document.documentElement.classList.add("no-gsap");
@@ -1062,7 +1183,7 @@ if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
   /* 04 — pinned yard: the terminal travels past, type holds still */
   ScrollTrigger.create({
     trigger:"#s-yard", start:"top top", end:"+=210%", pin:true, scrub:.55,
-    onUpdate: self => Yard.draw && Yard.draw(self.progress)
+    onUpdate: self => { At.yard = self.progress; if (RM && Yard.draw) Yard.draw(self.progress); }
   });
   gsap.from("#yardType", { yPercent:26, opacity:0, duration:1.1, ease:"power4.out",
     scrollTrigger:{ trigger:"#s-yard", start:"top 40%" }});
@@ -1081,12 +1202,8 @@ if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
     /* the wake has to start at the actual stern, and the stern moves as the
        vessel scales — so measure it rather than guessing a constant */
     onUpdate: self => {
-      if (!Sea.draw) return;
-      const sec = document.getElementById("s-sea").getBoundingClientRect();
-      const v   = document.getElementById("vessel").getBoundingClientRect();
-      const stern = (v.top + v.height * 0.963 - sec.top) / sec.height;
-      const axis  = (v.left + v.width / 2) / Math.max(1, sec.width);
-      Sea.draw(self.progress * 9, Math.max(.30, Math.min(1.1, stern)), axis);
+      At.sea = self.progress;
+      if (RM && Sea.draw) Sea.draw(self.progress * 9, .56, .5);
     },
     animation: gsap.timeline()
       .fromTo("#vessel", { scale:1.9, y:"26%" }, { scale:.52, y:"-4%", ease:"power1.inOut" }, 0)
