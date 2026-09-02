@@ -195,6 +195,17 @@ HUB_POLL_MS = 120                  # cheap: one DOM read per poll
 # False means update and save the real internal ETA.
 DRY_RUN = False
 
+# Reload the Manage page after a save and confirm the value is actually there.
+#
+# The architecture map turned this up as the one real gap: save_manage_page()
+# proves the POSTBACK completed (the Save control goes away, or the table comes
+# back), which is not the same as proving the value persisted. Off by default
+# because switching it on adds a reload to every successful write and so
+# changes the shape of a run that already works. Turn it on with
+# VERIFY_AFTER_SAVE=1, and for the real-hub E2E procedure.
+VERIFY_AFTER_SAVE = (os.environ.get("VERIFY_AFTER_SAVE", "").strip().lower()
+                     in ("1", "true", "yes", "on"))
+
 # On an unexpected fatal error, keep Edge and CMD open so the exact problem
 # remains visible instead of closing immediately.
 PAUSE_ON_FATAL_ERROR = True
@@ -818,6 +829,114 @@ def run_with_retry(operation_name, carrier, reference, call,
             time.sleep(delay)
 
     raise last_error
+
+
+# ============================================================
+# THE OPTIONAL LEARNING LAYER
+# ============================================================
+#
+# Imported defensively. If the ml package is absent, broken, or half-installed
+# the automation runs exactly as it did before it existed — that is the whole
+# contract, and it is enforced here rather than trusted to the package.
+#
+# With ML_ENABLED off (the default) the predictor answers "no opinion" to
+# everything, so an enabled install with no model behaves identically to one
+# with no package at all.
+
+try:
+    from ml import config as ml_config
+    from ml import features as ml_features
+    from ml import predictor as ml_predictor
+    from ml import telemetry as ml_telemetry
+    ML_AVAILABLE = True
+except Exception as _ml_import_error:      # pragma: no cover - environment
+    ML_AVAILABLE = False
+    ml_config = ml_features = ml_predictor = ml_telemetry = None
+    _ML_IMPORT_ERROR = str(_ml_import_error)
+
+
+def ml_context(**kwargs):
+    """A feature context, or None when the layer is not available."""
+    if not ML_AVAILABLE:
+        return None
+    try:
+        return ml_features.context(**kwargs)
+    except Exception:
+        return None
+
+
+def ml_record(context, strategy, success, duration_ms=None,
+              category="OK", detail="", reference=None, rank=None):
+    """
+    Record one interaction. Never raises, never changes control flow.
+
+    Telemetry is collected even when ML_ENABLED is off — you cannot train a
+    model without data, and collecting it does not alter a single decision.
+    """
+    if not ML_AVAILABLE:
+        return
+    try:
+        ml_telemetry.interaction(
+            context or {}, strategy, success, duration_ms=duration_ms,
+            category=category, detail=detail, reference=reference,
+            rank=rank, redactor=redact_secrets)
+    except Exception:
+        pass
+
+
+def ml_category(error):
+    """The fine-grained telemetry category for an exception."""
+    if not ML_AVAILABLE:
+        return "OK"
+    try:
+        return ml_telemetry.classify_exception(error)
+    except Exception:
+        return "OK"
+
+
+def ml_order(named_candidates, context):
+    """
+    Reorder a list of (name, locator) pairs using the model.
+
+    Returns the pairs in the order to try them, and the name of the strategy
+    the model put first (or None when it had no opinion). The SET of
+    candidates is never changed — only their order — so every selector-level
+    ETA/ATA guard the caller built still applies exactly as written.
+    """
+    if not ML_AVAILABLE or context is None or len(named_candidates) < 2:
+        return named_candidates, None
+    try:
+        names = [name for name, _ in named_candidates]
+        recommendation = ml_predictor.recommend_strategy(
+            context, names, log=write_log)
+        if not recommendation.used:
+            return named_candidates, None
+        by_name = dict(named_candidates)
+        reordered = [(name, by_name[name]) for name in recommendation.order
+                     if name in by_name]
+        if len(reordered) != len(named_candidates):
+            return named_candidates, None
+        return reordered, recommendation.top
+    except Exception as error:
+        note_suppressed("asking the model for a candidate order", error)
+        return named_candidates, None
+
+
+def ml_wait_budget(context, default_ms, floor_ms=500):
+    """
+    A wait budget for this context. Never longer than `default_ms`.
+
+    The call site's own constant remains the ceiling; the model can only ever
+    propose something shorter, and only from observed successful waits.
+    """
+    if not ML_AVAILABLE or context is None:
+        return default_ms
+    try:
+        budget, _reason = ml_predictor.recommend_wait(
+            context, default_ms, floor_ms=floor_ms, log=write_log)
+        return budget
+    except Exception:
+        return default_ms
 
 
 # ============================================================
@@ -4302,10 +4421,21 @@ def select_shipment_info_tab(page, view_name, field_name=None):
                        lambda: panel_has_field(page, field_name)))
     checks.append(("editable fields", lambda: manage_form_ready(page)))
 
+    # The budget may be shortened by evidence, never lengthened:
+    # HUB_FORM_READY_MAX_MS stays the ceiling and the floor is 3s, so the
+    # deterministic worst case is unchanged.
+    panel_context = ml_context(provider="HUB", page="tab_panel",
+                               field=field_name, view=view_name)
+    panel_budget = ml_wait_budget(panel_context, HUB_FORM_READY_MAX_MS,
+                                  floor_ms=3000)
+    panel_started = time.time()
     settled = wait_for_any(
-        page, checks, HUB_FORM_READY_MAX_MS,
+        page, checks, int(panel_budget),
         reason=f"the {view_name} Shipment Info panel",
     )
+    ml_record(panel_context, "tab_postback", settled is not None,
+              (time.time() - panel_started) * 1000.0,
+              "OK" if settled else "PAGE_NOT_READY")
     if settled is None:
         write_log(
             f"'{view_name} Shipment Info' tab was clicked but its panel did not "
@@ -4318,26 +4448,37 @@ def select_shipment_info_tab(page, view_name, field_name=None):
 
 
 def fill_date_field(page, field_name, date_value):
+    # Each candidate is NAMED. The names are what telemetry records and what
+    # the model reorders; the selectors, their order and every ETA/ATA guard
+    # inside them are exactly as they were.
     if field_name == "ETA":
-        candidates = [
-            page.get_by_label(re.compile(r"^\s*ETA\s*(?:Date)?\s*:?\s*\*?\s*$", re.I)),
-            page.locator("input[id*='ETA' i]:not([id*='ATA' i]):visible"),
-            page.locator("input[name*='ETA' i]:not([name*='ATA' i]):visible"),
-            page.get_by_label("ETA", exact=False),
-            page.locator("input:not([type='hidden'])[id*='ETA' i]:not([id*='ATA' i])"),
-            page.locator("input:not([type='hidden'])[name*='ETA' i]:not([name*='ATA' i])"),
-            page.locator(
-                "xpath=//*[self::label or self::span or self::div or self::td]"
-                "[normalize-space()='ETA']/following::input[not(@type='hidden')][1]"
-            ),
+        named = [
+            ("label_exact",
+             page.get_by_label(re.compile(r"^\s*ETA\s*(?:Date)?\s*:?\s*\*?\s*$", re.I))),
+            ("css_id_visible",
+             page.locator("input[id*='ETA' i]:not([id*='ATA' i]):visible")),
+            ("css_name_visible",
+             page.locator("input[name*='ETA' i]:not([name*='ATA' i]):visible")),
+            ("label_loose",
+             page.get_by_label("ETA", exact=False)),
+            ("css_id_any",
+             page.locator("input:not([type='hidden'])[id*='ETA' i]:not([id*='ATA' i])")),
+            ("css_name_any",
+             page.locator("input:not([type='hidden'])[name*='ETA' i]:not([name*='ATA' i])")),
+            ("xpath_exact_label",
+             page.locator(
+                 "xpath=//*[self::label or self::span or self::div or self::td]"
+                 "[normalize-space()='ETA']/following::input[not(@type='hidden')][1]"
+             )),
             # The live page labels the field "ETA : *", not "ETA", so the
             # exact-match xpath above never fired. starts-with keeps ETD and
             # ATA out while tolerating the colon and the required-marker.
-            page.locator(
-                "xpath=//*[self::label or self::span or self::div or self::td]"
-                "[starts-with(normalize-space(),'ETA')]"
-                "/following::input[not(@type='hidden')][1]"
-            ),
+            ("xpath_starts_with",
+             page.locator(
+                 "xpath=//*[self::label or self::span or self::div or self::td]"
+                 "[starts-with(normalize-space(),'ETA')]"
+                 "/following::input[not(@type='hidden')][1]"
+             )),
         ]
     else:
         # The BU Shipment Info tab labels this field "ATA Date :", sitting in
@@ -4349,28 +4490,64 @@ def fill_date_field(page, field_name, date_value):
         # :visible matters as much as the selector: the inactive COE panel's
         # inputs come first in the DOM, so an unfiltered match lands on a
         # hidden field.
-        candidates = [
-            page.get_by_label(re.compile(r"^\s*ATA\s*(?:Date)?\s*:?\s*\*?\s*$", re.I)),
-            page.locator(
-                "xpath=//*[self::label or self::span or self::div or self::td]"
-                "[starts-with(normalize-space(),'ATA Date')]"
-                "/following::input[not(@type='hidden')][1]"
-            ),
-            page.locator(
-                "xpath=//*[self::label or self::span or self::div or self::td]"
-                "[starts-with(normalize-space(),'ATA')]"
-                "/following::input[not(@type='hidden')][1]"
-            ),
-            page.locator("input[id*='ATA' i]:visible"),
-            page.locator("input[name*='ATA' i]:visible"),
-            page.get_by_label("ATA Date", exact=False),
-            page.get_by_label("ATA", exact=False),
+        named = [
+            ("label_exact",
+             page.get_by_label(re.compile(r"^\s*ATA\s*(?:Date)?\s*:?\s*\*?\s*$", re.I))),
+            ("xpath_ata_date",
+             page.locator(
+                 "xpath=//*[self::label or self::span or self::div or self::td]"
+                 "[starts-with(normalize-space(),'ATA Date')]"
+                 "/following::input[not(@type='hidden')][1]"
+             )),
+            ("xpath_starts_with",
+             page.locator(
+                 "xpath=//*[self::label or self::span or self::div or self::td]"
+                 "[starts-with(normalize-space(),'ATA')]"
+                 "/following::input[not(@type='hidden')][1]"
+             )),
+            ("css_id_visible", page.locator("input[id*='ATA' i]:visible")),
+            ("css_name_visible", page.locator("input[name*='ATA' i]:visible")),
+            ("label_ata_date", page.get_by_label("ATA Date", exact=False)),
+            ("label_loose", page.get_by_label("ATA", exact=False)),
         ]
+
+    context = ml_context(
+        provider="HUB", page="manage", field=field_name,
+        view=("COE" if field_name == "ETA" else "BU"),
+        page_ready=page_is_settled(page), frames=len(all_scopes(page)))
+
+    # The model may only REORDER these; it cannot add, drop or rewrite one.
+    named, predicted = ml_order(named, context)
+    candidates = [locator for _name, locator in named]
 
     # The panel is confirmed ready before this runs, so a generous per-candidate
     # timeout only adds latency. Seven candidates at 3500ms cost 25s of probing
     # on the failing run.
+    started = time.time()
     field = first_visible(candidates, 1500)
+    elapsed_ms = (time.time() - started) * 1000.0
+
+    if field is not None:
+        # Which named candidate actually won. Recording the losers too is what
+        # gives the model something to learn from: a strategy that is never
+        # tried is not the same as one that is tried and fails.
+        winner = None
+        for index, (name, locator) in enumerate(named):
+            if locator is field or getattr(locator, "_impl_obj", locator) is field:
+                winner = name
+                break
+        if winner is None:
+            winner = predicted or named[0][0]
+        for rank, (name, _locator) in enumerate(named):
+            if name == winner:
+                ml_record(context, name, True, elapsed_ms, "OK", rank=rank)
+                break
+            ml_record(context, name, False, None, "FIELD_NOT_VISIBLE", rank=rank)
+    else:
+        for rank, (name, _locator) in enumerate(named):
+            ml_record(context, name, False, elapsed_ms, "FIELD_NOT_VISIBLE",
+                      rank=rank)
+
     if field is None:
         # Before declaring it missing, look for it without the :visible gate.
         # A panel that renders inside a collapsed container has real inputs
@@ -4382,6 +4559,9 @@ def fill_date_field(page, field_name, date_value):
                 "The {0} field is present but not reported visible; writing to "
                 "it directly.".format(field_name)
             )
+            ml_record(context, "ignore_visibility", True, None, "SCROLL_REQUIRED")
+        else:
+            ml_record(context, "ignore_visibility", False, None, "FIELD_NOT_FOUND")
 
     if field is None:
         describe_manage_fields(page, field_name)
@@ -4440,6 +4620,9 @@ def write_date_value(field, value, field_name):
     normal path cannot interact with the element — an ASP.NET date box inside a
     panel the browser considers off-screen accepts this and rejects a click.
     """
+    context = ml_context(provider="HUB", page="manage", field=field_name)
+    started = time.time()
+    method = "click_fill"
     try:
         field.click(timeout=2500)
         field.fill("")
@@ -4447,8 +4630,13 @@ def write_date_value(field, value, field_name):
         field.dispatch_event("input")
         field.dispatch_event("change")
         field.press("Tab")
+        ml_record(context, "click_fill", True,
+                  (time.time() - started) * 1000.0, "OK")
     except Exception as error:
         note_suppressed("typing the {0} normally".format(field_name), error)
+        ml_record(context, "click_fill", False, None, ml_category(error),
+                  detail=str(error)[:200])
+        method = "scripted_events"
         field.evaluate(
             "(el, v) => { const setter = Object.getOwnPropertyDescriptor("
             "window.HTMLInputElement.prototype, 'value').set;"
@@ -4463,6 +4651,10 @@ def write_date_value(field, value, field_name):
         landed = (field.input_value() or "").strip()
     except Exception:
         landed = ""
+    if method == "scripted_events":
+        ml_record(context, "scripted_events", bool(landed),
+                  (time.time() - started) * 1000.0,
+                  "OK" if landed else "INPUT_REJECTED")
     if not landed:
         raise Exception(
             "{0} field was found but would not accept {1}.".format(field_name, value))
@@ -4510,6 +4702,55 @@ def save_manage_page(page):
         )
     else:
         write_log(f"Manage page saved successfully ({settled}).")
+
+
+def verify_saved_date(page, shipment, view_name, field_name, expected):
+    """
+    Reopen the shipment and confirm `expected` is what the Hub now holds.
+
+    Returns (ok, detail). A mismatch RAISES in the caller rather than being
+    logged and forgotten, because a write that silently did not stick is the
+    one failure this automation must never report as success.
+
+    Deterministic throughout. The model has no say in whether a value is
+    correct, only — elsewhere — in what order to look for the field.
+    """
+    bol_awb = shipment["bol_awb"]
+    context = ml_context(provider="HUB", page="manage", field=field_name,
+                         view=view_name)
+    started = time.time()
+    try:
+        click_manage_in_view(page, view_name, bol_awb, shipment["table_page"])
+        select_shipment_info_tab(page, view_name, field_name)
+
+        field = first_visible(
+            [page.locator("input[id*='{0}' i]:not([id*='{1}' i]):visible".format(
+                field_name, "ATA" if field_name == "ETA" else "ETA")),
+             page.locator("input[name*='{0}' i]:not([name*='{1}' i]):visible".format(
+                 field_name, "ATA" if field_name == "ETA" else "ETA"))],
+            2000)
+        if field is None:
+            field = find_field_ignoring_visibility(page, field_name)
+        if field is None:
+            ml_record(context, "verify_reload", False, None, "VERIFICATION_FAILURE")
+            return False, "the {0} field could not be found on reload".format(field_name)
+
+        actual = (field.input_value() or "").strip()
+        # The page may hand it back in either format; compare on the date, not
+        # on the string.
+        normalised = normalize_date(actual) or actual
+        ok = normalised == expected or actual == expected
+        ml_record(context, "verify_reload", ok,
+                  (time.time() - started) * 1000.0,
+                  "OK" if ok else "VERIFICATION_FAILURE")
+        if ok:
+            write_log("Verified: {0} {1} is {2} in the Hub after reload."
+                      .format(view_name, field_name, actual))
+            return True, actual
+        return False, "the Hub holds {0!r}, not {1!r}".format(actual, expected)
+    except Exception as error:
+        ml_record(context, "verify_reload", False, None, ml_category(error))
+        return False, "verification could not be completed: {0}".format(error)
 
 
 def update_one_view(page, shipment, view_name, field_name, date_value,
@@ -4571,6 +4812,16 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
         return f"DRY RUN - {field_name} {date_value} filled, not saved"
 
     save_manage_page(page)
+
+    if VERIFY_AFTER_SAVE:
+        verified, detail = verify_saved_date(
+            page, shipment, view_name, field_name, date_value)
+        if not verified:
+            # Refuse to report a success that cannot be proven.
+            raise Exception(
+                "{0} {1} was saved but not verified for {2}: {3}".format(
+                    view_name, field_name, bol_awb, detail))
+
     tower.view_updated(view_name, field_name, date_value)
     action = f"{view_name} {field_name} updated with {date_value} and saved"
     write_log(f"{action} for {bol_awb}.")
@@ -4709,6 +4960,23 @@ def main():
     write_log("Automation started in DHL and Qatar Airways COE ETA / BU ATA mode.")
     username, password = load_credentials()
     write_log("Local smart extraction is active; no LLM or external AI service is used.")
+    if ML_AVAILABLE:
+        _ml_status = ml_predictor.status()
+        write_log(
+            "Learning layer: ML_ENABLED={0}, model={1}, telemetry={2}. {3}".format(
+                _ml_status["enabled"],
+                "loaded" if _ml_status["model_loaded"] else (
+                    _ml_status["error"] or "none"),
+                ml_config.TELEMETRY_PATH,
+                "Strategy order and wait budgets are the automation's own."
+                if not _ml_status["enabled"] or not _ml_status["model_loaded"]
+                else "The model may reorder candidates; it decides nothing else.",
+            )
+        )
+    else:
+        write_log("Learning layer not present; running the deterministic path.")
+    if VERIFY_AFTER_SAVE:
+        write_log("VERIFY_AFTER_SAVE is on: every write is re-read from the Hub.")
 
     successful = 0
     failed = 0
