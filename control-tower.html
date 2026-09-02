@@ -122,9 +122,15 @@ a{color:inherit;text-decoration:none;}
 .top{
   position:fixed;top:0;left:0;right:0;z-index:80;display:flex;
   justify-content:space-between;align-items:flex-start;gap:16px;
-  padding:var(--pad);pointer-events:none;mix-blend-mode:difference;color:#fff;
+  padding:var(--pad);pointer-events:none;color:var(--ink);
+  transition:color .25s ease;
 }
-.top .meta{color:rgba(255,255,255,.72);} .top .meta b{color:#fff;}
+.top .meta{color:var(--muted);} .top .meta b{color:var(--ink);}
+/* toggled by the sections themselves — cheaper than blending, and it never
+   inverts a headline into mush the way difference did */
+.dark-chrome .top{color:#fff;}
+.dark-chrome .top .meta{color:rgba(255,255,255,.72);}
+.dark-chrome .top .meta b{color:#fff;}
 .mark{font-size:13px;font-weight:800;letter-spacing:-.02em;text-transform:uppercase;line-height:1.15;}
 .mark span{display:block;font-family:var(--mono);font-size:9px;font-weight:400;
   letter-spacing:.2em;opacity:.6;margin-top:3px;}
@@ -192,8 +198,10 @@ a{color:inherit;text-decoration:none;}
 .play{position:fixed;right:var(--pad);bottom:var(--pad);z-index:90;
   display:inline-flex;align-items:center;gap:10px;cursor:pointer;
   font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
-  padding:11px 16px;border:1px solid currentColor;background:transparent;color:var(--ink);
-  mix-blend-mode:difference;filter:invert(1);transition:opacity .25s;}
+  padding:11px 16px;border:1px solid currentColor;color:var(--ink);
+  background:rgba(239,235,227,.55);backdrop-filter:none;
+  transition:opacity .25s,color .25s ease,background .25s ease;}
+.dark-chrome .play{color:#fff;background:rgba(10,10,11,.5);}
 .play:hover{opacity:.6;}
 .play i{display:block;width:0;height:0;font-style:normal;
   border-left:8px solid currentColor;border-top:5px solid transparent;border-bottom:5px solid transparent;}
@@ -259,8 +267,12 @@ a{color:inherit;text-decoration:none;}
   background:linear-gradient(180deg,var(--ink) 4%,rgba(10,10,11,.62) 44%,transparent);}
 .sea-stage{position:absolute;inset:0;display:grid;align-items:center;
   justify-items:end;padding-right:clamp(20px,9vw,150px);z-index:1;}
-.vessel{width:min(34vw,236px);will-change:transform;
-  filter:drop-shadow(0 30px 70px rgba(0,0,0,.85));}
+.vessel{width:min(34vw,236px);will-change:transform;position:relative;}
+/* a baked ellipse instead of drop-shadow(): the filter was re-blurring a
+   scaling element on every single frame, which cost a third of the scene */
+.vessel::before{content:'';position:absolute;left:-40%;right:-40%;top:6%;bottom:-6%;
+  background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,.85),rgba(0,0,0,0) 70%);
+  z-index:-1;}
 .sea-type{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
   padding:0 var(--pad);pointer-events:none;color:var(--bone);z-index:3;}
 /* a scrim from the left so the statement holds against moving water */
@@ -365,8 +377,6 @@ a{color:inherit;text-decoration:none;}
   /* the desktop min-height leaves dead space under the map once it stacks */
   .map{min-height:0;}
   .auto-in .r2{align-self:flex-start;text-align:left;}
-  .top{mix-blend-mode:normal;color:var(--ink);}
-  .top .meta{color:var(--muted);} .top .meta b{color:var(--ink);}
   .top-hide{display:none;}
   .yard-meta{display:none;}
   .vessel{width:min(46vw,168px);}
@@ -442,7 +452,7 @@ a{color:inherit;text-decoration:none;}
   </linearGradient>
   <filter id="soft"><feGaussianBlur stdDeviation="7"/></filter>
   <filter id="grime" x="-10%" y="-10%" width="120%" height="120%">
-    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="4" seed="9"/>
+    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="9"/>
     <feColorMatrix type="saturate" values="0"/>
     <feComponentTransfer><feFuncA type="linear" slope=".16"/></feComponentTransfer>
     <feComposite operator="in" in2="SourceGraphic"/>
@@ -797,47 +807,87 @@ asphalt(document.getElementById("stripTex"));
 const Yard = (() => {
   const cv = document.getElementById("yardCv"); if (!cv) return {};
   const x = cv.getContext("2d");
-  let W = 0, H = 0, boxes = [], cranes = [];
+  let W = 0, H = 0, rows = [], cranes = [], dpr = 1;
   const PAL = ["#C7352A","#1B34E8","#D89B06","#0F7A50","#D6D0C0","#B8357F","#D95A15","#2A6FA8","#7A2E20"];
 
+  /* Every box in a row is static — only the row's horizontal offset changes.
+     So each row is painted once into its own tile and the frame becomes 26
+     drawImage calls instead of ~4000 rects. The tile's width is the row's
+     exact repeat period, which also closes the seam the per-box wrap used
+     to leave when the period and the layout pitch disagreed. */
   function build() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    dpr = Math.min(devicePixelRatio || 1, 1.25);   // dark textured field; 2x buys nothing
     const r = cv.getBoundingClientRect();
     W = r.width; H = r.height;
-    cv.width = W * dpr; cv.height = H * dpr;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
-    boxes = []; cranes = [];
+    rows = []; cranes = [];
+
     const ROWS = 13;
     for (let r0 = 0; r0 < ROWS; r0++) {
       const t = r0 / (ROWS - 1);              // 0 = far, 1 = near
       const scale = 0.13 + Math.pow(t, 2.35) * 1.5;
       const y = H * (0.44 + Math.pow(t, 1.5) * 0.62);
       const bw = 132 * scale, bh = 56 * scale;
-      const n = Math.ceil(W / (bw * 0.92)) + 3;
-      const off = rnd() * bw;
+      const pitch = bw * 0.92;
+      const n = Math.ceil(W / pitch) + 3;
+      const P = n * pitch;                    // exact repeat period
+      const maxStack = t > .55 ? 4 : 3;
+      const top = y - (maxStack - 1) * bh * 0.96;
+      const th = (maxStack - 1) * bh * 0.96 + bh + 2;
+
+      const tile = document.createElement("canvas");
+      tile.width  = Math.max(1, Math.round(P  * dpr));
+      tile.height = Math.max(1, Math.round(th * dpr));
+      const c = tile.getContext("2d");
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const corrGap = Math.max(3, bw / 14), corrW = Math.max(1.4, bw / 40);
+      const haze = t < .74 ? `rgba(20,22,26,${((0.74 - t) * 1.05).toFixed(3)})` : null;
+
       for (let i = 0; i < n; i++) {
-        const stack = 1 + Math.floor(rnd() * (t > .55 ? 4 : 3));
-        boxes.push({ x: i * bw * 0.92 - off, y, w: bw, h: bh, stack, t,
-                     cols: Array.from({length: stack}, () => PAL[Math.floor(rnd()*PAL.length)]) });
+        const X = i * pitch;
+        const stack = 1 + Math.floor(rnd() * maxStack);
+        for (let sI = 0; sI < stack; sI++) {
+          const Y = (y - top) - sI * bh * 0.96;
+          c.fillStyle = PAL[Math.floor(rnd() * PAL.length)];
+          c.fillRect(X, Y, bw, bh);
+          c.fillStyle = "rgba(0,0,0,.16)";
+          for (let k = 0; k < bw; k += corrGap) c.fillRect(X + k, Y, corrW, bh);
+          c.fillStyle = "rgba(255,255,255,.26)"; c.fillRect(X, Y, bw, Math.max(1, bh * .1));
+          c.fillStyle = "rgba(0,0,0,.42)";       c.fillRect(X, Y + bh * .88, bw, bh * .12);
+          c.strokeStyle = "rgba(0,0,0,.55)"; c.lineWidth = 1;
+          c.strokeRect(X + .5, Y + .5, bw - 1, bh - 1);
+          if (haze) { c.fillStyle = haze; c.fillRect(X, Y, bw, bh); }
+        }
       }
+      rows.push({ tile, P, top, speed: 60 + t * 620 });
     }
+
     for (let i = 0; i < 5; i++)
-      cranes.push({ x: W * (0.08 + i * 0.23) + rnd()*60, s: 0.5 + rnd()*0.5 });
+      cranes.push({ x: W * (0.08 + i * 0.23) + rnd() * 60, s: 0.5 + rnd() * 0.5 });
+
+    // the sky and the two atmospheric washes never change — bake them too
+    sky = x.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "#0A0A0B"); sky.addColorStop(.34, "#1B1C20");
+    sky.addColorStop(.46, "#3A3A3C"); sky.addColorStop(.62, "#17181B");
+    sky.addColorStop(1, "#070708");
+    fog = x.createLinearGradient(0, H * .55, 0, H);
+    fog.addColorStop(0, "rgba(7,7,8,0)"); fog.addColorStop(1, "rgba(7,7,8,.92)");
+    crush = x.createLinearGradient(0, 0, 0, H * .3);
+    crush.addColorStop(0, "rgba(7,7,8,.95)"); crush.addColorStop(1, "rgba(7,7,8,0)");
   }
+  let sky, fog, crush;
 
   function draw(prog) {
     if (!W) return;
-    // sky / haze
-    const g = x.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#0A0A0B"); g.addColorStop(.34, "#1B1C20");
-    g.addColorStop(.46, "#3A3A3C"); g.addColorStop(.62, "#17181B");
-    g.addColorStop(1, "#070708");
-    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = sky; x.fillRect(0, 0, W, H);
 
-    // gantry cranes on the horizon
+    const hy = H * 0.44;
+    x.strokeStyle = "rgba(255,255,255,.13)";
     cranes.forEach(c => {
-      const cx = c.x - prog * 210 * c.s, hy = H * 0.44, s = c.s;
-      x.strokeStyle = "rgba(255,255,255,.13)"; x.lineWidth = 2.4 * s;
+      const cx = c.x - prog * 210 * c.s, s = c.s;
+      x.lineWidth = 2.4 * s;
       x.beginPath();
       x.moveTo(cx - 70*s, hy); x.lineTo(cx - 70*s, hy - 120*s);
       x.lineTo(cx + 130*s, hy - 120*s); x.moveTo(cx + 55*s, hy);
@@ -846,35 +896,17 @@ const Yard = (() => {
       x.stroke();
     });
 
-    boxes.forEach(b => {
-      // parallax: near rows travel further than far rows
-      const px = b.x - prog * (60 + b.t * 620);
-      const w = b.w, wrap = W + w * 3;
-      let X = ((px % wrap) + wrap) % wrap - w * 1.5;
-      for (let s = 0; s < b.stack; s++) {
-        const Y = b.y - s * b.h * 0.96;
-        const col = b.cols[s];
-        x.fillStyle = col; x.fillRect(X, Y, w, b.h);
-        // corrugation
-        x.fillStyle = "rgba(0,0,0,.16)";
-        for (let r0 = 0; r0 < w; r0 += Math.max(3, w / 14)) x.fillRect(X + r0, Y, Math.max(1.4, w/40), b.h);
-        // top light + bottom occlusion
-        x.fillStyle = "rgba(255,255,255,.26)"; x.fillRect(X, Y, w, Math.max(1, b.h * .1));
-        x.fillStyle = "rgba(0,0,0,.42)"; x.fillRect(X, Y + b.h * .88, w, b.h * .12);
-        x.strokeStyle = "rgba(0,0,0,.55)"; x.lineWidth = 1; x.strokeRect(X + .5, Y + .5, w - 1, b.h - 1);
-        // atmospheric haze on distant rows
-        if (b.t < .74) { x.fillStyle = `rgba(20,22,26,${(0.74 - b.t) * 1.05})`; x.fillRect(X, Y, w, b.h); }
-      }
-    });
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i], P = r.P;
+      const off = ((-prog * r.speed) % P + P) % P - P;   // in [-P, 0)
+      const w = P, h = r.tile.height / dpr;
+      for (let k = off; k < W; k += P) x.drawImage(r.tile, k, r.top, w, h);
+    }
 
-    // ground fog + top crush
-    const f = x.createLinearGradient(0, H * .55, 0, H);
-    f.addColorStop(0, "rgba(7,7,8,0)"); f.addColorStop(1, "rgba(7,7,8,.92)");
-    x.fillStyle = f; x.fillRect(0, H * .55, W, H * .45);
-    const t2 = x.createLinearGradient(0, 0, 0, H * .3);
-    t2.addColorStop(0, "rgba(7,7,8,.95)"); t2.addColorStop(1, "rgba(7,7,8,0)");
-    x.fillStyle = t2; x.fillRect(0, 0, W, H * .3);
+    x.fillStyle = fog;   x.fillRect(0, H * .55, W, H * .45);
+    x.fillStyle = crush; x.fillRect(0, 0, W, H * .3);
   }
+
   addEventListener("resize", () => { build(); draw(0); });
   build(); draw(0);
   return { draw, build };
@@ -892,7 +924,7 @@ const Sea = (() => {
   let W = 0, H = 0, DPR = 1;
   function build() {
     const r = cv.getBoundingClientRect();
-    DPR = Math.min(2, devicePixelRatio || 1);
+    DPR = Math.min(1.25, devicePixelRatio || 1);   // line art, and 5.2M px a frame was the whole cost
     W = Math.max(2, Math.round(r.width  * DPR));
     H = Math.max(2, Math.round(r.height * DPR));
     cv.width = W; cv.height = H;
@@ -904,7 +936,7 @@ const Sea = (() => {
      perspective curve so they crowd at the horizon and open up in the
      foreground. Line work cannot alias into plaid, and it belongs to the
      same bone-on-ink world as the rest of the film. */
-  const LINES = 62;
+  const LINES = 54;
   const HORIZON = 0.30;
 
   const lift = (wx, u, t) =>
@@ -922,9 +954,9 @@ const Sea = (() => {
 
     x.fillStyle = "#0A0A0B";
     x.fillRect(0, 0, W, H);
-    x.lineCap = "round";
+    x.lineCap = "butt";   // round caps on 300-segment polylines are not free
 
-    const step = Math.max(2, Math.round(3 * DPR));
+    const step = Math.max(3, Math.round(5 * DPR));
 
     for (let i = 0; i < LINES; i++) {
       const u = i / (LINES - 1);
@@ -962,9 +994,9 @@ const Sea = (() => {
 
       /* foreground crests catch a hard highlight — short dashes only where the
          swell is actually rising, which is what makes it read as engraved */
-      if (u > 0.52) {
+      if (u > 0.62) {
         x.beginPath();
-        for (let px = 0; px <= W; px += step * 3) {
+        for (let px = 0; px <= W; px += step * 4) {
           const wx = px / DPR + drift * 2.1;
           const h1 = lift(wx, u, t), h2 = lift(wx + 9, u, t);
           if (h1 > 1.05 && h2 < h1) {
@@ -1054,29 +1086,32 @@ function countUp(el) {
 const Film = (() => {
   const btn = document.getElementById("play");
   const lbl = btn && btn.querySelector("span");
-  let on = false, raf = 0, last = 0;
+  let on = false, pos = 0;
   const SPEED = 152;                       // px per second
 
-  function step(now) {
+  /* Driven off GSAP's ticker, not its own rAF: the scroll write then lands in
+     the same frame the ScrollTriggers read it, so the picture never trails the
+     scroll by a frame. Position is carried as a float — rounding it to whole
+     pixels every frame is what makes slow autoscroll stutter. */
+  function step() {
     if (!on) return;
-    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    const dt = Math.min(.05, gsap.ticker.deltaRatio() / 60);
     const max = document.documentElement.scrollHeight - innerHeight;
-    const y = scrollY + SPEED * dt;
-    if (y >= max) { scrollTo(0, max); stop(); return; }
-    scrollTo(0, y);
-    raf = requestAnimationFrame(step);
+    pos += SPEED * dt;
+    if (pos >= max) { scrollTo(0, max); stop(); return; }
+    scrollTo(0, pos);
   }
   function start() {
     if (on || RM) return;
     const max = document.documentElement.scrollHeight - innerHeight;
     if (scrollY >= max - 2) scrollTo(0, 0);
-    on = true; last = performance.now();
+    pos = scrollY; on = true;
+    gsap.ticker.add(step);
     btn && btn.classList.add("on"); if (lbl) lbl.textContent = "Pause";
-    raf = requestAnimationFrame(step);
   }
   function stop() {
     if (!on) return;
-    on = false; cancelAnimationFrame(raf);
+    on = false; gsap.ticker.remove(step);
     btn && btn.classList.remove("on"); if (lbl) lbl.textContent = "Play film";
   }
   btn && btn.addEventListener("click", () => on ? stop() : start());
@@ -1110,9 +1145,12 @@ const Live = (() => {
       if (t - j.last < j.gap) continue;
       j.last = t; j.fn(t);
     }
-    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  /* GSAP's ticker is already running one rAF for the whole page; hanging the
+     ambient work off it keeps the canvas redraw in the same frame as the
+     ScrollTrigger update instead of racing it. */
+  if (typeof gsap !== "undefined") gsap.ticker.add(() => frame(performance.now()));
+  else (function loop(n) { frame(n); requestAnimationFrame(loop); })(performance.now());
   return {
     add(el, fn, fps) {
       if (!el || RM) return;                       // reduced motion keeps still
@@ -1141,7 +1179,7 @@ Live.add(document.getElementById("s-sea"), t => {
    quite stops. 30fps: it is 700-odd boxes and nobody can see the difference. */
 Live.add(document.getElementById("s-yard"), t => {
   if (Yard.draw) Yard.draw(At.yard + t * 0.010);
-}, 30);
+});
 
 /* ═══ CHOREOGRAPHY ═════════════════════════════════════════════════ */
 if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
@@ -1153,7 +1191,18 @@ if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
   gsap.registerPlugin(ScrollTrigger);
   const S = gsap.utils.toArray.bind(gsap.utils);
 
-  gsap.to("#prog", { width:"100%", ease:"none", scrollTrigger:{ scrub:.3, start:0, end:"max" }});
+  gsap.to("#prog", { width:"100%", ease:"none", scrollTrigger:{ scrub:.2, start:0, end:"max" }});
+
+  /* the chrome follows the ground it is sitting on. A class swap costs one
+     paint at the boundary; the difference blend it replaces cost a full-page
+     composite on every frame of the film. */
+  ["#s-yard", "#s-sea", "#s-tower", "#s-cta"].forEach(sel => {
+    const el = document.querySelector(sel); if (!el) return;
+    ScrollTrigger.create({
+      trigger: el, start: "top 56px", end: "bottom 56px",
+      onToggle: self => document.documentElement.classList.toggle("dark-chrome", self.isActive)
+    });
+  });
 
   /* 01 — lines rise out of their own mask */
   const intro = gsap.timeline({ delay:.12 });
@@ -1165,7 +1214,7 @@ if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
 
   /* 02 — pinned road. Three speeds off one gear = parallax. */
   ScrollTrigger.create({
-    trigger:"#s-road", start:"top top", end:"+=200%", pin:true, scrub:.6,
+    trigger:"#s-road", start:"top top", end:"+=200%", pin:true, scrub:.32,
     animation: gsap.timeline()
       .fromTo("#rig",       { x:"-52vw" }, { x:"108vw", ease:"none" }, 0)
       .fromTo("#lane",      { x:0 },       { x:"-26vw", ease:"none" }, 0)
@@ -1177,12 +1226,12 @@ if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
   S("#s-stmt .row").forEach(row => {
     const d = +row.dataset.dir;
     gsap.fromTo(row, { x: d>0 ? "-18vw" : "8vw" }, { x: d>0 ? "8vw" : "-24vw", ease:"none",
-      scrollTrigger:{ trigger:"#s-stmt", start:"top bottom", end:"bottom top", scrub:.5 }});
+      scrollTrigger:{ trigger:"#s-stmt", start:"top bottom", end:"bottom top", scrub:.28 }});
   });
 
   /* 04 — pinned yard: the terminal travels past, type holds still */
   ScrollTrigger.create({
-    trigger:"#s-yard", start:"top top", end:"+=210%", pin:true, scrub:.55,
+    trigger:"#s-yard", start:"top top", end:"+=210%", pin:true, scrub:.3,
     onUpdate: self => { At.yard = self.progress; if (RM && Yard.draw) Yard.draw(self.progress); }
   });
   gsap.from("#yardType", { yPercent:26, opacity:0, duration:1.1, ease:"power4.out",
@@ -1190,15 +1239,15 @@ if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
 
   /* 05 — the hauler runs the strip */
   gsap.fromTo("#hauler", { y:"-32vh" }, { y:"120vh", ease:"none",
-    scrollTrigger:{ trigger:"#s-mile", start:"top bottom", end:"bottom top", scrub:.5 }});
+    scrollTrigger:{ trigger:"#s-mile", start:"top bottom", end:"bottom top", scrub:.28 }});
   gsap.fromTo("#strip-lane", { y:"-22%" }, { y:"0%", ease:"none",
-    scrollTrigger:{ trigger:"#s-mile", start:"top bottom", end:"bottom top", scrub:.5 }});
+    scrollTrigger:{ trigger:"#s-mile", start:"top bottom", end:"bottom top", scrub:.28 }});
   gsap.from("#s-mile .mega .l > span", { yPercent:112, duration:1.15, stagger:.08, ease:"power4.out",
     scrollTrigger:{ trigger:"#s-mile", start:"top 62%" }});
 
   /* 06 — pinned sea: macro to speck, one scrubbed move */
   ScrollTrigger.create({
-    trigger:"#s-sea", start:"top top", end:"+=240%", pin:true, scrub:.7,
+    trigger:"#s-sea", start:"top top", end:"+=240%", pin:true, scrub:.35,
     /* the wake has to start at the actual stern, and the stern moves as the
        vessel scales — so measure it rather than guessing a constant */
     onUpdate: self => {
