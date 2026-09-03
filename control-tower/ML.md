@@ -1,9 +1,9 @@
 # The learning layer
 
-An optional layer that sits **beside** the Control Tower, not inside it. With
-its switch off — which is the default — the automation behaves exactly as it
-did before the layer existed, and the test suite proves that rather than
-asserting it.
+A layer that sits **beside** the Control Tower, not inside it. It is on by
+default, but "on" only means it will consult a model if one exists: with no
+trained model the automation behaves exactly as it did before the layer
+existed, and the test suite proves that rather than asserting it.
 
 ## What it does and does not decide
 
@@ -73,8 +73,8 @@ REM 3 · Prove it beats the automation's own order. Trains on the earlier
 REM     rows, scores the later ones. Read the VERDICT line.
 python -m ml.evaluator
 
-REM 4 · Only if the verdict is BETTER:
-set ML_ENABLED=1
+REM 4 · Nothing to switch on — the next run picks the model up by itself.
+REM     But only do step 2 at all once the evaluator says BETTER.
 python update_eta.py
 ```
 
