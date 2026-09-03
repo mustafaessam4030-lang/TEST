@@ -50,6 +50,16 @@ else:
     from . import feedback as feedback_store
     from . import mlstatus
 
+# An iPhone ringtone (.m4r) is plain AAC in an MP4 container — the same bytes
+# a browser happily plays as .m4a — but Python's mimetypes has never heard of
+# the extension, so it went out as application/octet-stream and was refused.
+# Registering the type is enough; the file itself is untouched.
+mimetypes.add_type("audio/mp4", ".m4r")
+mimetypes.add_type("audio/mp4", ".m4a")
+mimetypes.add_type("audio/mpeg", ".mp3")
+mimetypes.add_type("audio/ogg", ".ogg")
+
+
 def _find_static():
     """Locate the folder holding index.html, whatever the layout."""
     here = Path(__file__).resolve().parent
@@ -217,18 +227,55 @@ class Handler(BaseHTTPRequestHandler):
             self._set_cookie = False
 
     def _send_file(self, path):
+        """
+        Serve a file, honouring Range.
+
+        This used to advertise `Accept-Ranges: bytes` and then ignore the
+        Range header, answering every request with a full 200. Chromium asks
+        for a range when it loads media, got a whole-file 200 back instead of
+        a 206, and errored — which is precisely why the intro's soundtrack
+        never played. Claiming to support ranges and not supporting them is
+        worse than not claiming it.
+        """
         if not path.exists() or not path.is_file():
             self._send(404, json.dumps({"error": "not found"}))
             return
         guessed = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
         data = path.read_bytes()
-        self.send_response(200)
+        total = len(data)
+
+        start, end = 0, total - 1
+        partial = False
+        header = self.headers.get("Range") or ""
+        match = re.match(r"bytes=(\d*)-(\d*)\s*$", header.strip())
+        if match and total:
+            first, last = match.group(1), match.group(2)
+            if first:
+                start = int(first)
+                end = int(last) if last else total - 1
+            elif last:                       # a suffix range: last N bytes
+                start = max(0, total - int(last))
+                end = total - 1
+            if start >= total or start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */{0}".format(total))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            end = min(end, total - 1)
+            partial = True
+
+        body = data[start:end + 1]
+        self.send_response(206 if partial else 200)
         self.send_header("Content-Type", guessed)
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Accept-Ranges", "bytes")
+        if partial:
+            self.send_header("Content-Range",
+                             "bytes {0}-{1}/{2}".format(start, end, total))
         self._maybe_set_cookie()
         self.end_headers()
-        self.wfile.write(data)
+        self.wfile.write(body)
 
     # -- routes ------------------------------------------------------------
 
@@ -571,19 +618,22 @@ def find_music():
     folder.mkdir(parents=True, exist_ok=True)
     intro_folder = STATIC_DIR / "assets" / "audio"
 
-    AUDIO = (".mp3", ".m4a", ".ogg", ".wav", ".flac")
+    AUDIO = (".mp3", ".m4a", ".m4r", ".ogg", ".wav", ".flac")
     ART = (".jpg", ".jpeg", ".png", ".webp")
 
     audio = art = source = None
+    every = []
     for base, url_prefix in ((folder, "/static/music/"),
                              (intro_folder, "/static/assets/audio/")):
         if not base.is_dir():
             continue
         for item in sorted(base.iterdir()):
             suffix = item.suffix.lower()
-            if audio is None and suffix in AUDIO:
-                audio = url_prefix + item.name
-                source = item
+            if suffix in AUDIO:
+                every.append(url_prefix + item.name)
+                if audio is None:
+                    audio = url_prefix + item.name
+                    source = item
             if art is None and suffix in ART:
                 art = url_prefix + item.name
         if audio:
@@ -603,6 +653,10 @@ def find_music():
 
     return {
         "audio": audio,
+        # Every playable file, not just the first. A browser without the
+        # proprietary codecs cannot decode AAC, so handing it the whole list
+        # lets it pick one it can actually play instead of falling silent.
+        "audio_all": every,
         "art": art,
         "title": title,
         "artist": artist,

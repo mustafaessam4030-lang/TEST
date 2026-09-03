@@ -39,12 +39,26 @@ print("1. THE INTRO")
 print("=" * 72)
 check("It is the first thing in the body",
       INDEX.index('id="gate"') < INDEX.index('id="app"'))
-check("Five scenes", INDEX.count('class="g-s"') == 5, str(INDEX.count('class="g-s"')))
-check("Runs about 6.4s, inside the 5-8s the brief asked for",
-      "const TOTAL = 6400;" in INDEX)
+import re as _re
+_scenes = _re.findall(r'<div class="g-s(?:\s[^"]*)?"', INDEX)
+check("Five scenes", len(_scenes) == 5, str(len(_scenes)))
+check("Runs about 6.6s, inside the 5-8s the brief asked for",
+      "const TOTAL = 6600;" in INDEX)
+check("It ends ON the Open dashboard scene rather than dismissing itself",
+      "function hold()" in INDEX and "gate.classList.add('ended')" in INDEX)
+check("OPEN DASHBOARD exists", 'id="openDash"' in INDEX
+      and "Open dashboard" in INDEX)
+check("...and it dismisses the intro without a reload",
+      "$('openDash').addEventListener('click', finish)" in INDEX
+      and "location.href" not in INDEX.split("function intro()")[1][:6000])
+check("The scenes are tied together by one spine, not five loose cards",
+      "@keyframes gspine" in INDEX and 'class="g-spine"' in INDEX)
+check("The sidebar Introduction replays THIS intro, not a second page",
+      "if (p.film){ if (window.ctReplayIntro) window.ctReplayIntro(); return; }"
+      in INDEX)
 check("There is a skip control", 'id="skip"' in INDEX)
 check("Escape also skips", "e.key === 'Escape'" in INDEX)
-check("It finishes on its own", "setTimeout(finish, reduced ? 400 : TOTAL)" in INDEX)
+check("It reaches its close on its own", "lastTimer = setTimeout(hold, TOTAL)" in INDEX)
 check("It is CSS animation, not a video file",
       "@keyframes gscene" in INDEX and "<video" not in INDEX)
 check("No animation library was added",
@@ -54,8 +68,8 @@ check("It plays once per browser session",
       "sessionStorage.getItem('ct-intro')" in INDEX)
 check("It can be replayed from settings",
       "ctReplayIntro" in INDEX and "Replay intro" in INDEX)
-check("Reduced motion skips almost all of it",
-      "prefers-reduced-motion" in INDEX and "reduced ? 400 : TOTAL" in INDEX)
+check("Reduced motion goes straight to the close",
+      "prefers-reduced-motion" in INDEX and "if (reduced){ hold(); return; }" in INDEX)
 
 print()
 print("=" * 72)
@@ -64,13 +78,14 @@ print("=" * 72)
 check("No audio src is hardcoded in the markup",
       'src="' not in INDEX.split('id="introAudio"')[1].split(">")[0])
 check("The track is discovered from the server, so any filename works",
-      "fetch('/api/music')" in INDEX and "sources.unshift(d.audio)" in INDEX)
+      "fetch('/api/music')" in INDEX and "d.audio_all" in INDEX)
 check("...with the fixed intro.* names as a fallback",
       "/static/assets/audio/intro.mp3" in INDEX)
 check("More than one container is accepted",
-      "intro.m4a" in INDEX and "intro.ogg" in INDEX)
-check("A blocked autoplay falls back to muted rather than failing",
-      "play.catch(() =>" in INDEX and "audio.muted = true" in INDEX)
+      "intro.m4a" in INDEX and "intro.m4r" in INDEX and "intro.ogg" in INDEX)
+check("A blocked autoplay falls back to muted, then offers a real control",
+      "audio.muted = true" in INDEX and "needs-sound" in INDEX
+      and 'id="enableSound"' in INDEX)
 check("Every play() rejection is caught",
       INDEX.count("catch(() => {})") >= 2 or INDEX.count(".catch(") >= 3)
 check("preload is none, so it cannot delay the dashboard",
@@ -79,19 +94,38 @@ check("There is a mute control", 'id="introMute"' in INDEX)
 check("The mute choice is remembered across sessions",
       "localStorage.setItem('ct-intro-mute'" in INDEX)
 check("Sound fades in and out rather than cutting",
-      "audio.volume = v" in INDEX and "stopAudio" in INDEX)
-check("The sound stops before the dashboard appears",
-      "setTimeout(stopAudio, TOTAL - 700)" in INDEX)
+      "function fadeTo(" in INDEX and "stopAudio" in INDEX)
+check("The sound fades out before the sequence ends",
+      "setTimeout(stopAudio, Math.max(0, TOTAL - 900))" in INDEX)
+check("Playback starts at the configured offset",
+      "const START_AT = 45;" in INDEX)
+check("...only after the browser knows the duration",
+      "audio.readyState >= 1" in INDEX
+      and "loadedmetadata" in INDEX)
+check("...and the offset is clamped when the track is shorter than it",
+      "START_AT >= length - 1.5" in INDEX)
+check("Formats the browser cannot decode are skipped",
+      "audio.canPlayType(type) !== ''" in INDEX)
+check("An undecodable soundtrack is reported, not hidden",
+      "no-audio" in INDEX and "format not supported" in INDEX.lower())
+check("The server offers every candidate, not just the first",
+      "audio_all" in INDEX and "audio_all" in SERVER)
+check("Range requests are honoured, so media actually loads",
+      '206 if partial else 200' in SERVER and 'Content-Range' in SERVER)
+check(".m4r is registered as an audio type",
+      'mimetypes.add_type("audio/mp4", ".m4r")' in SERVER)
 audio_dir = HERE / "dashboard" / "static" / "assets" / "audio"
 check("The asset folder exists so a file can simply be dropped in",
       audio_dir.is_dir(), str(audio_dir))
 tracks = [f for f in audio_dir.glob("*")
-          if f.suffix.lower() in (".mp3", ".m4a", ".ogg", ".wav", ".flac")]
+          if f.suffix.lower() in (".mp3", ".m4a", ".m4r", ".ogg", ".wav", ".flac")]
 check("An audio file is actually installed", bool(tracks),
       "no audio in " + str(audio_dir))
 check("...and it is a real file, not a placeholder",
       bool(tracks) and tracks[0].stat().st_size > 100000,
       str(tracks[0].stat().st_size) if tracks else "0")
+check("No test fixture was left in the shipped assets",
+      not any("fixture" in f.name for f in audio_dir.glob("*")))
 
 from dashboard import server as _server                                  # noqa: E402
 _music = _server.find_music()

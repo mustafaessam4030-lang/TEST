@@ -109,67 +109,120 @@ input,textarea,select{font-family:inherit}
   border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink)}
 .fb-done{font-size:11px;color:var(--grn)}
 /* ═══ INTRO ═══════════════════════════════════════════════════════════
-   A short film made of slides. Every scene is one absolutely-positioned
-   layer that fades and lifts on a CSS animation with its own delay — no
-   timers driving the picture, no library, no video file. The whole thing
-   is a few hundred bytes of DOM, so it cannot delay the dashboard. */
+   A short film made of slides, in the dashboard's own language: same paper,
+   same ink, same mono kickers. What makes it read as ONE sequence rather
+   than five unrelated cards is the spine — a rule that grows across the
+   whole run — and the fact that every scene enters and leaves on the same
+   short, hard cut. No library, no video, ~700 bytes of DOM. */
 #gate{position:fixed;inset:0;z-index:100;overflow:hidden;
-  background:radial-gradient(ellipse 60% 50% at 50% 8%,rgba(255,150,60,.13),transparent 62%),
-             radial-gradient(ellipse 50% 40% at 50% 100%,rgba(90,80,240,.10),transparent 60%),
+  background:radial-gradient(ellipse 62% 52% at 50% 6%,rgba(255,150,60,.13),transparent 62%),
+             radial-gradient(ellipse 52% 42% at 50% 100%,rgba(90,80,240,.09),transparent 60%),
              var(--paper);
   display:grid;place-items:center;
-  transition:opacity .55s var(--e),visibility .55s}
+  transition:opacity .5s var(--e),visibility .5s}
 #gate.gone{opacity:0;visibility:hidden;pointer-events:none}
-.g-stage{position:relative;width:min(820px,88vw);height:min(360px,54vh);
+
+/* the spine: one line drawn across the whole sequence, so each cut lands
+   on a picture that is visibly further along than the last */
+.g-spine{position:absolute;left:50%;top:calc(50% + 132px);width:min(560px,74vw);
+  height:1px;transform:translateX(-50%);background:var(--line);overflow:hidden}
+.g-spine::after{content:"";position:absolute;inset:0;background:var(--vio);
+  transform:scaleX(0);transform-origin:left}
+#gate.play .g-spine::after{animation:gspine var(--total,6600ms) cubic-bezier(.6,0,.2,1) forwards}
+@keyframes gspine{to{transform:scaleX(1)}}
+.g-mark{position:absolute;top:-3px;width:7px;height:7px;border-radius:50%;
+  background:var(--vio);opacity:.35}
+.g-mark.m1{left:22%}.g-mark.m2{left:46%}.g-mark.m3{left:70%}
+
+.g-stage{position:relative;width:min(880px,90vw);height:min(300px,46vh);
   display:grid;place-items:center;text-align:center}
 .g-s{position:absolute;inset:0;display:grid;place-items:center;align-content:center;
-  gap:14px;opacity:0;pointer-events:none}
-#gate.play .g-s{animation:gscene var(--dur,1.5s) var(--e) var(--at,0s) both}
+  gap:13px;opacity:0;pointer-events:none}
+/* Short in, hold, short out — a cut, not a dissolve. The blur is 3px and
+   brief; anything more starts to feel like a screensaver. */
+#gate.play .g-s{animation:gscene var(--dur,1.3s) cubic-bezier(.22,1,.32,1) var(--at,0s) both}
 @keyframes gscene{
-  0%{opacity:0;transform:translateY(14px) scale(.985);filter:blur(6px)}
-  14%,74%{opacity:1;transform:none;filter:blur(0)}
-  100%{opacity:0;transform:translateY(-10px) scale(1.004);filter:blur(4px)}
+  0%{opacity:0;transform:translateY(10px) scale(.99);filter:blur(3px)}
+  12%,80%{opacity:1;transform:none;filter:blur(0)}
+  100%{opacity:0;transform:translateY(-7px) scale(1.006);filter:blur(2px)}
 }
-.g-kick{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.15vw,13px);
-  font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--vio)}
-.g-t{font-size:clamp(26px,4.2vw,50px);font-weight:800;letter-spacing:-.04em;
-  line-height:1.02;color:var(--ink);max-width:18ch}
-.g-h1{font-size:clamp(34px,6.4vw,74px);font-weight:800;letter-spacing:-.055em;
-  line-height:.96;color:var(--ink)}
+/* the words arrive a beat apart, which is what stops a line landing flat */
+#gate.play .g-s > *{animation:grise .5s cubic-bezier(.22,1,.32,1) both;
+  animation-delay:calc(var(--at,0s) + var(--i,0) * .07s)}
+@keyframes grise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+
+.g-kick{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(10px,1.05vw,12px);
+  font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--vio)}
+.g-h1{font-size:clamp(38px,7.2vw,88px);font-weight:800;letter-spacing:-.058em;
+  line-height:.94;color:var(--ink)}
 .g-h1 .l{font-weight:300;color:var(--faint)}
-.g-h2{font-size:clamp(20px,3.4vw,40px);font-weight:750;letter-spacing:-.035em;
-  line-height:1.08;color:var(--ink);max-width:16ch}
-.g-p{font-size:clamp(13px,1.35vw,16px);color:var(--mid);max-width:46ch;line-height:1.5}
-.g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:2px}
+.g-t{font-size:clamp(28px,4.6vw,56px);font-weight:800;letter-spacing:-.042em;
+  line-height:1.0;color:var(--ink);max-width:17ch}
+.g-p{font-size:clamp(13px,1.3vw,16px);color:var(--mid);max-width:46ch;line-height:1.5}
+.g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .g-chip{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.2vw,14px);
-  font-weight:700;letter-spacing:.16em;padding:9px 16px;border:1px solid var(--line);border-radius:999px;
-  color:var(--mid);background:rgba(255,255,255,.55)}
-.g-list{display:grid;gap:9px;font-size:clamp(13px,1.5vw,17px);color:var(--mid);justify-items:center}
-.g-list b{color:var(--ink);font-weight:600}
-.g-flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
-  font-family:var(--mono,ui-monospace,monospace);font-size:clamp(12px,1.5vw,17px);
+  font-weight:700;letter-spacing:.16em;padding:8px 15px;border:1px solid var(--line);
+  border-radius:999px;color:var(--mid);background:rgba(255,255,255,.6)}
+.g-list{display:flex;flex-wrap:wrap;gap:7px 22px;justify-content:center;
+  font-size:clamp(13px,1.45vw,17px);color:var(--mid)}
+.g-list b{color:var(--ink);font-weight:650}
+.g-flow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;
+  font-family:var(--mono,ui-monospace,monospace);font-size:clamp(12px,1.45vw,17px);
   font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid)}
 .g-flow i{font-style:normal;color:var(--vio)}
-.g-flow b{color:var(--ink);font-weight:700}
-.g-ok{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono,ui-monospace,monospace);
-  font-size:clamp(11px,1.2vw,14px);font-weight:700;letter-spacing:.2em;
+.g-flow b{color:var(--ink)}
+.g-ok{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:clamp(11px,1.15vw,13px);font-weight:700;letter-spacing:.2em;
   text-transform:uppercase;color:var(--grn)}
 .g-ok::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--grn)}
-/* progress + controls */
+
+/* OPEN DASHBOARD — the conclusion, not a control bolted on */
+.g-open{margin-top:6px;display:inline-flex;align-items:center;gap:10px;
+  font-family:var(--mono,ui-monospace,monospace);font-size:12px;font-weight:700;
+  letter-spacing:.18em;text-transform:uppercase;color:#fff;background:var(--ink);
+  border:none;border-radius:999px;padding:15px 30px;cursor:pointer;
+  box-shadow:0 10px 30px rgba(0,0,0,.16);
+  transition:transform .18s var(--e),box-shadow .18s var(--e),background .18s}
+.g-open:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,.22)}
+.g-open:active{transform:translateY(0)}
+.g-open svg{width:15px;height:15px}
+/* It appears with the last scene and then STAYS — the sequence ends on it. */
+.g-last{opacity:0;pointer-events:none}
+#gate.play .g-last{animation:glast .55s cubic-bezier(.22,1,.32,1) var(--lastAt,5.3s) forwards}
+#gate.ended .g-last{opacity:1;pointer-events:auto;animation:none;filter:none;transform:none}
+#gate.ended .g-s:not(.g-last){opacity:0;animation:none}
+@keyframes glast{from{opacity:0;transform:translateY(10px);filter:blur(3px)}
+                 to{opacity:1;transform:none;filter:blur(0)}}
+#gate.play .g-last{pointer-events:auto}
+
 .g-bar{position:fixed;left:0;top:0;height:2px;width:0;background:var(--vio);z-index:101}
-#gate.play .g-bar{animation:gbar var(--total,6.4s) linear forwards}
+#gate.play .g-bar{animation:gbar var(--total,6600ms) linear forwards}
 @keyframes gbar{to{width:100%}}
 .g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
 .g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:10px;font-weight:700;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(255,255,255,.7);
+  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(255,255,255,.72);
   border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
   transition:color .2s,border-color .2s,background .2s}
 .g-btn:hover{color:var(--ink);border-color:var(--faint);background:#fff}
 .g-btn .on-i{display:none}.g-btn.muted .on-i{display:inline}.g-btn.muted .off-i{display:none}
+/* Shown only when the browser refuses to start audio on its own. */
+.g-sound{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:102;
+  display:none;align-items:center;gap:9px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:#fff;background:var(--vio);border:none;border-radius:999px;
+  padding:12px 22px;cursor:pointer;box-shadow:0 10px 28px rgba(90,80,240,.35)}
+#gate.needs-sound .g-sound{display:inline-flex}
+.g-noaudio{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:102;
+  display:none;font-family:var(--mono,ui-monospace,monospace);font-size:10px;
+  font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+#gate.no-audio .g-noaudio{display:block}
+#gate.no-audio .g-sound{display:none}
+@media(max-width:640px){.g-spine{top:calc(50% + 116px)}}
 @media(prefers-reduced-motion:reduce){
-  #gate.play .g-s{animation:none}
-  #gate.play .g-s:last-of-type{opacity:1}
+  #gate.play .g-s,#gate.play .g-s > *,#gate.play .g-spine::after{animation:none}
   #gate.play .g-bar{animation:none;width:100%}
+  #gate .g-last{opacity:1;pointer-events:auto}
+}
 }
 
 /* ═══════════ SHELL ═══════════ */
@@ -581,58 +634,78 @@ tr.r-partial .err{color:var(--y)}
 <div class="grain" aria-hidden="true"></div>
 
 <!-- ═══ INTRO ═══════════════════════════════════════════════════════
-     Five scenes, ~6.4s. Pure CSS animation on a handful of divs: no video,
-     no library, nothing to download before the dashboard is usable. The
-     audio is optional and its absence is not an error. -->
+     Five scenes over ~6.6s, cut rather than dissolved, tied together by a
+     spine that grows across the whole run. No video, no library. The audio
+     is fetched only when the sequence starts, so nothing here can sit in
+     the critical path. -->
 <div id="gate" aria-label="Control Tower startup">
   <div class="g-bar"></div>
   <div class="g-stage">
 
-    <div class="g-s" style="--at:.0s;--dur:1.5s">
-      <div class="g-kick">Mantrac Logistics</div>
-      <h1 class="g-h1">Control <span class="l">Tower</span></h1>
-      <p class="g-p">Shipment intelligence &amp; automation</p>
+    <div class="g-s" style="--at:0s;--dur:1.25s">
+      <div class="g-kick" style="--i:0">Mantrac Logistics</div>
+      <h1 class="g-h1" style="--i:1">Control <span class="l">Tower</span></h1>
+      <p class="g-p" style="--i:2">Shipment intelligence &amp; automation</p>
     </div>
 
-    <div class="g-s" style="--at:1.25s;--dur:1.35s">
-      <div class="g-t">Real-time shipment processing</div>
-      <div class="g-chips">
+    <div class="g-s" style="--at:1.15s;--dur:1.2s">
+      <div class="g-t" style="--i:0">Real-time shipment processing</div>
+      <div class="g-chips" style="--i:1">
         <span class="g-chip">DHL</span><span class="g-chip">AFKL</span>
         <span class="g-chip">QATAR</span><span class="g-chip">ASTRAL</span>
       </div>
-      <p class="g-p">Carrier tracking reconciled against the clearance hub</p>
     </div>
 
-    <div class="g-s" style="--at:2.45s;--dur:1.45s">
-      <div class="g-t">AI-assisted automation</div>
-      <div class="g-list">
-        <div><b>Adaptive</b> execution</div>
-        <div><b>Smart</b> field detection</div>
-        <div><b>Intelligent</b> retries</div>
-        <div>Learning from <b>telemetry</b></div>
+    <div class="g-s" style="--at:2.25s;--dur:1.2s">
+      <div class="g-t" style="--i:0">AI-assisted automation</div>
+      <div class="g-list" style="--i:1">
+        <span><b>Adaptive</b> execution</span>
+        <span><b>Smart</b> field detection</span>
+        <span><b>Intelligent</b> retries</span>
+        <span>Learns from <b>telemetry</b></span>
       </div>
     </div>
 
-    <div class="g-s" style="--at:3.75s;--dur:1.4s">
-      <div class="g-t">Verify everything</div>
-      <div class="g-flow"><b>Write</b><i>&rarr;</i><b>Save</b><i>&rarr;</i>
+    <div class="g-s" style="--at:3.35s;--dur:1.25s">
+      <div class="g-t" style="--i:0">Verify everything</div>
+      <div class="g-flow" style="--i:1"><b>Write</b><i>&rarr;</i><b>Save</b><i>&rarr;</i>
         <b>Reload</b><i>&rarr;</i><b>Verify</b></div>
-      <p class="g-p">A completed postback is not a completed write</p>
+      <p class="g-p" style="--i:2">A completed postback is not a completed write</p>
     </div>
 
-    <div class="g-s" style="--at:5.0s;--dur:1.4s">
-      <h1 class="g-h1">Control <span class="l">Tower</span></h1>
-      <div class="g-ok">Ready</div>
+    <!-- The close. It arrives with the music and then holds, so OPEN
+         DASHBOARD is where the sequence lands rather than an escape hatch. -->
+    <div class="g-s g-last" id="gLast">
+      <h1 class="g-h1" style="--i:0">Control <span class="l">Tower</span></h1>
+      <div class="g-ok" style="--i:1">Ready</div>
+      <button class="g-open" id="openDash" style="--i:2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        Open dashboard
+      </button>
     </div>
 
   </div>
+
+  <div class="g-spine"><span class="g-mark m1"></span><span class="g-mark m2"></span>
+    <span class="g-mark m3"></span></div>
+
+  <button class="g-sound" id="enableSound">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+      stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>
+    Play with sound
+  </button>
+
+  <!-- Shown when the browser genuinely cannot decode what is on disk. A
+       "play with sound" button there would be a lie: clicking cannot help. -->
+  <div class="g-noaudio" id="noAudio">Soundtrack format not supported by this browser</div>
+
   <div class="g-ctl">
     <button class="g-btn" id="introMute" aria-label="Mute or unmute the intro">
       <span class="off-i">Sound on</span><span class="on-i">Sound off</span></button>
     <button class="g-btn" id="skip">Skip</button>
   </div>
-  <!-- Drop any intro.mp3 / .ogg / .m4a into static/assets/audio/ and it
-       plays. Nothing breaks if the folder is empty. -->
   <audio id="introAudio" preload="none" playsinline></audio>
 </div>
 
@@ -913,119 +986,211 @@ const $ = (id) => document.getElementById(id);
 /* ═══ INTRO ═══ */
 (function intro(){
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const TOTAL = 6400;                       // must match --total below
+  const TOTAL = 6600;            // must match --total / the CSS delays
+  const LAST_AT = 5300;          // when the closing scene arrives
+  const START_AT = 45;           // where in the track to begin, in seconds
   const gate = $('gate'), audio = $('introAudio'), muteBtn = $('introMute');
-  let done = false, fade = null;
+  let done = false, fade = null, endTimer = null, lastTimer = null;
 
-  /* Seen already this session? Then straight in. A startup sequence is a
-     welcome, not a toll gate. */
   const seen = (() => { try { return sessionStorage.getItem('ct-intro') === '1'; }
                         catch (e) { return false; } })();
   const muted = (() => { try { return localStorage.getItem('ct-intro-mute') === '1'; }
-                         catch (e) { return true; } })();
-
-  function stopAudio(){
-    if (!audio || audio.paused) return;
-    clearInterval(fade);
-    let v = audio.volume;
-    fade = setInterval(() => {
-      v -= 0.08;
-      if (v <= 0) { clearInterval(fade); try { audio.pause(); } catch (e) {} return; }
-      try { audio.volume = Math.max(0, v); } catch (e) {}
-    }, 45);
-  }
-
-  function finish(){
-    if (done) return;
-    done = true;
-    stopAudio();
-    try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
-    gate.classList.add('gone');
-    $('app').classList.add('on');
-    setTimeout(() => $('app').classList.add('settled'), 700);
-    setTimeout(() => { gate.style.display = 'none'; }, 560);
-  }
+                         catch (e) { return false; } })();
 
   function applyMute(){
     muteBtn.classList.toggle('muted', audio.muted);
     try { localStorage.setItem('ct-intro-mute', audio.muted ? '1' : '0'); } catch (e) {}
   }
 
-  /* Audio is entirely optional. A missing file, an unsupported codec or a
-     blocked autoplay all end the same way: the intro plays silently. The
-     picture never waits on the sound. */
-  function startAudio(){
-    if (!audio) return;
-    // Whatever audio is actually on disk. The server reports it, so any
-    // filename works and the track keeps its own name in the player; the
-    // fixed intro.* names remain as a fallback if the lookup fails.
-    // Attached here, not in the markup, so the file is only fetched once the
-    // intro is genuinely running and its size can never delay first paint.
-    const sources = ['/static/assets/audio/intro.mp3',
-                     '/static/assets/audio/intro.m4a',
-                     '/static/assets/audio/intro.ogg'];
-    let which = 0;
-    audio.onerror = () => {                  // missing or unsupported: try next
-      which += 1;
-      if (which < sources.length){ audio.src = sources[which]; audio.load();
-        const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
-    };
-    fetch('/api/music')
-      .then((r) => r.json())
-      .then((d) => { if (d && d.audio) sources.unshift(d.audio); })
-      .catch(() => {})
-      .finally(() => { audio.src = sources[0]; begin(); });
-    return;
-    audio.muted = muted;
-    audio.volume = 0;
-  }
-
-  function begin(){
-    if (done) return;                        // skipped before the lookup landed
-    const play = audio.play();
-    if (play && play.catch) {
-      play.catch(() => {
-        // Autoplay with sound refused: fall back to muted, which browsers
-        // do allow, and leave the button as the way to turn it on.
-        audio.muted = true; applyMute();
-        const retry = audio.play();
-        if (retry && retry.catch) retry.catch(() => {});
-      });
-    }
-    let v = 0;                               // fade in
+  function fadeTo(target, step, after){
     clearInterval(fade);
     fade = setInterval(() => {
-      v += 0.07;
-      if (v >= 0.7) { v = 0.7; clearInterval(fade); }
-      try { audio.volume = v; } catch (e) {}
-    }, 60);
-    // Stop a little before the picture ends so the cut is clean.
-    setTimeout(stopAudio, TOTAL - 700);
+      const v = audio.volume + step;
+      const arrived = step > 0 ? v >= target : v <= target;
+      try { audio.volume = Math.max(0, Math.min(1, arrived ? target : v)); } catch (e) {}
+      if (arrived){ clearInterval(fade); if (after) after(); }
+    }, 55);
+  }
+
+  function stopAudio(){
+    if (!audio || audio.paused) { clearInterval(fade); return; }
+    fadeTo(0, -0.08, () => { try { audio.pause(); } catch (e) {} });
+  }
+
+  /* Seek to START_AT, but only once the browser knows how long the track is.
+     Setting currentTime before metadata arrives is ignored, which is one of
+     the ways a "synchronised" intro ends up silent. And a ringtone is often
+     shorter than the offset asked for — seeking past the end gives silence,
+     so the offset is clamped and the reason is logged rather than hidden. */
+  function seekThenPlay(){
+    const go = () => {
+      const length = audio.duration;
+      let at = START_AT;
+      if (!isFinite(length) || length <= 0){
+        at = 0;
+      } else if (START_AT >= length - 1.5){
+        at = 0;
+        console.info('[intro] track is ' + length.toFixed(1) + 's, so ' +
+          START_AT + 's does not exist in it — starting at 0:00.');
+      }
+      try { audio.currentTime = at; } catch (e) {}
+      attemptPlay();
+    };
+    if (audio.readyState >= 1) { go(); return; }
+    audio.addEventListener('loadedmetadata', go, {once: true});
+    audio.addEventListener('error', attemptPlay, {once: true});
+    try { audio.load(); } catch (e) { attemptPlay(); }
+  }
+
+  /* Autoplay: try with sound, fall back to muted (which browsers do allow),
+     and if even that is refused surface a real control rather than running
+     the picture in silence and pretending it was scored. */
+  function attemptPlay(){
+    audio.volume = 0;
+    const play = audio.play();
+    if (play && play.then){
+      play.then(() => {
+        gate.classList.remove('needs-sound');
+        fadeTo(audio.muted ? 0 : 0.75, 0.07);
+      }).catch(() => {
+        audio.muted = true; applyMute();
+        const retry = audio.play();
+        if (retry && retry.then){
+          retry.then(() => { gate.classList.add('needs-sound'); })
+               .catch(() => { gate.classList.add('needs-sound'); });
+        } else {
+          gate.classList.add('needs-sound');
+        }
+      });
+    }
+    setTimeout(stopAudio, Math.max(0, TOTAL - 900));
+  }
+
+  function startAudio(){
+    if (!audio) return;
+    const fallbacks = ['/static/assets/audio/intro.mp3',
+                       '/static/assets/audio/intro.m4a',
+                       '/static/assets/audio/intro.m4r',
+                       '/static/assets/audio/intro.ogg'];
+    /* Skip anything this browser cannot decode. Chromium builds without the
+       proprietary codecs report '' for AAC, so an .m4a/.m4r would otherwise
+       be attempted, fail with DEMUXER_ERROR_NO_SUPPORTED_STREAMS, and take
+       the whole soundtrack down with it. Chrome and Edge do ship AAC. */
+    const TYPES = {mp3: 'audio/mpeg', m4a: 'audio/mp4; codecs="mp4a.40.2"',
+                   m4r: 'audio/mp4; codecs="mp4a.40.2"', ogg: 'audio/ogg; codecs="vorbis"',
+                   wav: 'audio/wav', flac: 'audio/flac'};
+    const playable = (url) => {
+      const ext = (url.split('.').pop() || '').toLowerCase();
+      const type = TYPES[ext];
+      return !type || audio.canPlayType(type) !== '';
+    };
+    let list = fallbacks.slice(), which = 0;
+    // Walk the list only while there is a next candidate, and NEVER leave a
+    // source that failed as the final state — the previous version chained
+    // all the way down to a name that does not exist and then reported a
+    // silent intro as if that were normal.
+    audio.onerror = () => {
+      if (which + 1 < list.length){
+        which += 1;
+        console.info('[intro] ' + list[which - 1] + ' would not load; trying '
+                     + list[which]);
+        audio.src = list[which];
+        seekThenPlay();
+      } else {
+        console.warn('[intro] no playable audio source: ' + list.join(', '));
+        gate.classList.add('no-audio');
+      }
+    };
+    audio.muted = muted;
+    // Ask the server what is really on disk, so any filename works. The
+    // request is tiny and the audio itself is only fetched after it.
+    fetch('/api/music')
+      .then((r) => r.json())
+      .then((d) => {
+        const found = (d && d.audio_all && d.audio_all.length)
+          ? d.audio_all : (d && d.audio ? [d.audio] : []);
+        if (found.length) list = found.concat(fallbacks);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (done) return;
+        const usable = list.filter(playable);
+        if (!usable.length){
+          // Not an autoplay problem — a codec one. Say which, rather than
+          // offering a button that cannot change the outcome.
+          console.warn('[intro] this browser cannot decode any available '
+            + 'audio format (' + list.join(', ') + ')');
+          gate.classList.add('no-audio');
+          return;
+        }
+        list = usable; which = 0;
+        audio.src = list[0];
+        seekThenPlay();
+      });
+  }
+
+  function finish(){
+    if (done) return;
+    done = true;
+    clearTimeout(endTimer); clearTimeout(lastTimer);
+    stopAudio();
+    try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
+    gate.classList.remove('needs-sound');
+    gate.classList.add('gone');
+    $('app').classList.add('on');
+    setTimeout(() => $('app').classList.add('settled'), 700);
+    setTimeout(() => { gate.style.display = 'none'; }, 520);
+  }
+
+  /* The sequence ENDS on the closing scene and waits there. It does not
+     dismiss itself — Open dashboard is the conclusion, so the operator
+     decides when the picture gives way. */
+  function hold(){
+    gate.classList.add('ended');
+    gate.classList.remove('play');
   }
 
   function run(){
     gate.style.setProperty('--total', TOTAL + 'ms');
+    gate.style.setProperty('--lastAt', LAST_AT + 'ms');
     gate.style.display = '';
-    gate.classList.remove('gone');
+    gate.classList.remove('gone', 'ended', 'needs-sound');
     done = false;
     void gate.offsetWidth;                   // restart the CSS animations
     gate.classList.add('play');
     startAudio();
-    setTimeout(finish, reduced ? 400 : TOTAL);
+    clearTimeout(lastTimer); clearTimeout(endTimer);
+    if (reduced){ hold(); return; }
+    lastTimer = setTimeout(hold, TOTAL);
   }
 
   muteBtn.addEventListener('click', () => {
     audio.muted = !audio.muted;
-    if (!audio.muted && audio.paused) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
     applyMute();
+    if (!audio.muted){
+      gate.classList.remove('needs-sound');
+      if (audio.paused){ const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
+      fadeTo(0.75, 0.09);
+    }
   });
+
+  // A real click is a gesture, which is all a browser wants before it will
+  // start audio. Restart the sound from the same offset, in step.
+  $('enableSound').addEventListener('click', () => {
+    audio.muted = false; applyMute();
+    gate.classList.remove('needs-sound');
+    seekThenPlay();
+  });
+
+  $('openDash').addEventListener('click', finish);
   $('skip').addEventListener('click', finish);
   addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(); });
 
   audio.muted = muted; applyMute();
-  if (seen || reduced) { finish(); } else { run(); }
+  if (seen) { finish(); } else { run(); }
 
-  // Replay, from the About/settings area.
+  // The sidebar's Introduction and the Settings replay both call this. There
+  // is one intro, and this is it.
   window.ctReplayIntro = function(){
     try { sessionStorage.removeItem('ct-intro'); } catch (e) {}
     $('app').classList.remove('on', 'settled');
@@ -1126,7 +1291,10 @@ PAGES.forEach((p) => {
   b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' +
     p.i + '"/></svg><span>' + p.t + '</span><span class="nav-c" id="n-' + p.id + '" hidden></span>';
   b.addEventListener('click', () => {
-    if (p.film){ window.location.href = '/intro'; return; }
+    // Introduction replays the same cinematic intro. It used to navigate to
+    // /intro, which was a second implementation of the same idea and left
+    // the dashboard behind; now there is one intro and this is it.
+    if (p.film){ if (window.ctReplayIntro) window.ctReplayIntro(); return; }
     go(p.id);
   });
   $('navList').appendChild(b);
