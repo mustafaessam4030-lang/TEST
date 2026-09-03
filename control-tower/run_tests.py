@@ -23,6 +23,7 @@ SUITES = [
     ("test_hub_waits.py",       "wait and readiness logic"),
     ("test_logging.py",         "logging and redaction"),
     ("test_assistant.py",       "dashboard assistant"),
+    ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
 ]

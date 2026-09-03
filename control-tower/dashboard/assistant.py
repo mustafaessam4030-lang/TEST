@@ -38,6 +38,15 @@ STATE_WORDS = {
 PROVIDER_NAMES = {"DHL": "DHL", "QATAR": "Qatar Airways Cargo", "hub": "Mantrac Logistics Hub"}
 
 
+try:
+    from . import insights
+except Exception:                       # pragma: no cover - flat layout
+    try:
+        import insights
+    except Exception:
+        insights = None
+
+
 def _has(value):
     return value not in (None, "", UNKNOWN)
 
@@ -373,6 +382,26 @@ INTENTS = [
                      "everything for"]),
     ("download",    ["download", "export", "csv", "spreadsheet", "excel",
                      "send me the data", "give me the data", "report"]),
+    # Questions about measured history rather than this run's snapshot.
+    # These are answered from the telemetry file, with sample sizes, or not
+    # at all — see dashboard/insights.py.
+    ("carrier_timing", ["why is afkl slow", "why is dhl slow", "which carrier is slowest",
+                        "carrier timing", "compare carriers", "carrier performance",
+                        "slowest carrier", "fastest carrier", "carrier speed",
+                        "which carrier has the highest failure",
+                        "carrier failure rate", "carrier statistics"]),
+    ("strategy_perf",  ["strategy performance", "which strategy", "which locator",
+                        "locator performance", "field detection performance",
+                        "how does it find the field", "strategy success"]),
+    ("failure_cats",   ["failure categories", "what goes wrong", "why do writes fail",
+                        "what kind of failures", "failure breakdown",
+                        "common failures"]),
+    ("verification",   ["was the ata verified", "was it verified", "verification result",
+                        "did the write persist", "was the eta verified",
+                        "read back", "read-back"]),
+    ("ml_recs",        ["ml recommendation", "what did the model", "model recommendation",
+                        "is ml being used", "did ml help", "model decisions",
+                        "ai recommendation"]),
     ("slowest",     ["slowest", "took the longest", "longest", "taking so long",
                      "which was slow"]),
     ("fastest",     ["fastest", "quickest", "shortest"]),
@@ -525,6 +554,26 @@ def _answer_download(data):
             "{0} processed · {1} written to the Hub · {2} skipped · {3} failed"
             ).format(counters.get("processed", 0), counters.get("successful", 0),
                      counters.get("skipped", 0), counters.get("failed", 0))
+
+
+def _from_telemetry(kind, produce, topic):
+    """
+    Run one telemetry answer and carry its provenance.
+
+    Returns (text, sources). A None from `produce` means the file held nothing
+    to count, and the caller says so plainly rather than filling the gap.
+    """
+    if insights is None:
+        return ("The telemetry reader is not available on this machine, so I "
+                "cannot answer {0} from measured data.".format(topic), [])
+    try:
+        text = produce()
+    except Exception as error:
+        return ("I could not read the telemetry to answer {0}: {1}".format(
+            topic, error), [])
+    if not text:
+        return (insights.no_data_answer(topic), [])
+    return (text, insights.sources_used(kind))
 
 
 def _answer_slowest(data):
@@ -1083,10 +1132,12 @@ def answer(question, state, context=None):
     so every chip is backed by data the assistant has already seen.
     """
     reply = _answer_core(question, state, context)
+    reply.setdefault("sources", ["bridge.snapshot"])
     try:
         data = RunData(state)
         record = data.find(reply.get("reference")) if reply.get("reference") else None
         intent = detect_intent((question or "").strip())
+        reply.setdefault("intent", intent)
         reply["suggestions"] = follow_ups(data, record, intent)
         reply["downloads"] = downloads_for(data, intent, record)
     except Exception:
@@ -1248,11 +1299,36 @@ def _answer_core(question, state, context=None):
             "system": lambda: _answer_system(data, question),
             "latest_event": lambda: _answer_latest_event(data),
             "logs": lambda: _answer_logs(data),
+            # Telemetry-backed. Each returns a counted answer or an explicit
+            # "there is nothing measured to answer that from".
+            "carrier_timing": lambda: _from_telemetry(
+                "carrier_timing", lambda: insights.carrier_timing(),
+                "how the carriers compare"),
+            "strategy_perf": lambda: _from_telemetry(
+                "strategy_performance", lambda: insights.strategy_performance(),
+                "which strategies work"),
+            "failure_cats": lambda: _from_telemetry(
+                "failure_categories", lambda: insights.failure_categories(),
+                "what goes wrong"),
+            "verification": lambda: _from_telemetry(
+                "verification", lambda: insights.verification_summary(),
+                "whether writes were verified"),
+            "ml_recs": lambda: _from_telemetry(
+                "ml_recommendations", lambda: insights.ml_recommendations(),
+                "what the model recommended"),
         }
 
         if intent in handlers:
-            return {"answer": handlers[intent](), "card": None,
-                    "reference": context.get("reference"), "grounded": True}
+            produced = handlers[intent]()
+            # The telemetry handlers return (text, sources) so the answer can
+            # say what it was built from; the run-scoped ones return text.
+            if isinstance(produced, tuple):
+                text, sources = produced
+            else:
+                text, sources = produced, ["bridge.snapshot"]
+            return {"answer": text, "card": None,
+                    "reference": context.get("reference"), "grounded": True,
+                    "sources": sources, "intent": intent}
 
         if intent in ("eta", "carrier", "why", "shipment"):
             return {

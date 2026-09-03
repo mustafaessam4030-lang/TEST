@@ -35,14 +35,20 @@ if __package__ in (None, ""):
         from dashboard.bridge import bridge
         from dashboard import assistant
         from dashboard.control import control
+        from dashboard import feedback as feedback_store
+        from dashboard import mlstatus
     except ImportError:
         from bridge import bridge
         import assistant
         from control import control
+        import feedback as feedback_store
+        import mlstatus
 else:
     from .bridge import bridge
     from . import assistant
     from .control import control
+    from . import feedback as feedback_store
+    from . import mlstatus
 
 def _find_static():
     """Locate the folder holding index.html, whatever the layout."""
@@ -315,6 +321,14 @@ class Handler(BaseHTTPRequestHandler):
             }))
             return
 
+        if route == "/api/ml":
+            # Real values from the live ml package. Nothing here is a demo
+            # figure: an unknown is null, not zero.
+            payload = mlstatus.snapshot()
+            payload["feedback"] = feedback_store.stats()
+            self._send(200, json.dumps(payload))
+            return
+
         if route == "/api/music":
             self._send(200, json.dumps(find_music()))
             return
@@ -338,6 +352,33 @@ class Handler(BaseHTTPRequestHandler):
                 return
             accepted, message = control.request(action, reference)
             self._send(200, json.dumps({"accepted": accepted, "message": message}))
+            return
+
+        if route == "/api/feedback":
+            # Feedback is stored as material for a later, deliberate training
+            # and evaluation pass. It never reaches a production model on its
+            # own.
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 8000:
+                    self._send(413, json.dumps({"error": "feedback too long"}))
+                    return
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                self._send(400, json.dumps({"error": "bad request"}))
+                return
+            accepted, message = feedback_store.record(
+                question=payload.get("question"),
+                answer=payload.get("answer"),
+                verdict=payload.get("verdict"),
+                correction=payload.get("correction"),
+                sources=payload.get("sources"),
+                confidence=payload.get("confidence"),
+                intent=payload.get("intent"),
+                reference=payload.get("reference"),
+            )
+            self._send(200 if accepted else 400,
+                       json.dumps({"accepted": accepted, "message": message}))
             return
 
         if route != "/api/ask":
