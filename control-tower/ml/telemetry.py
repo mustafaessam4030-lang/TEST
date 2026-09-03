@@ -115,6 +115,20 @@ def _safe(value, redactor=None, depth=0):
     return str(value)[:200]
 
 
+def test_source():
+    """
+    True when this process is a test run.
+
+    Telemetry written by the suite is tagged so the dataset can refuse it. The
+    alternative — tests quietly appending fixtures to the file a model is
+    trained from — is how a model ends up confidently wrong about a page it has
+    never actually seen.
+    """
+    import sys
+    argv0 = (sys.argv[0] if sys.argv else "") or ""
+    return "test_" in os.path.basename(argv0) or "run_tests" in argv0
+
+
 def record(event, redactor=None):
     """
     Append one event. Returns True when it was written.
@@ -128,6 +142,8 @@ def record(event, redactor=None):
     try:
         payload = _safe(dict(event), redactor)
         payload.setdefault("ts", time.strftime("%Y-%m-%dT%H:%M:%S"))
+        if test_source():
+            payload["source"] = "test"
         path = Path(config.TELEMETRY_PATH)
         path.parent.mkdir(parents=True, exist_ok=True)
         # Rotate rather than grow without limit.

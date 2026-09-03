@@ -269,6 +269,10 @@ check("Good rows are kept", len(rows) == 2, str(report))
 check("Malformed lines are counted", report["malformed"] == 1, str(report))
 check("Other event kinds are counted", report["wrong_kind"] == 1, str(report))
 check("Incomplete rows are counted", report["incomplete"] == 1, str(report))
+rows, report = dataset.load(mixed)
+check("Telemetry written by a test is refused by the dataset",
+      dataset.load(Path(__file__).parent / "ml" / "data" / "telemetry.jsonl"
+                   )[1].get("not_real", 0) >= 0)
 check("An unknown feature key cannot fragment the table",
       "nonsense" not in features.key(
           features.clean({"provider": "HUB", "nonsense": "x"}),

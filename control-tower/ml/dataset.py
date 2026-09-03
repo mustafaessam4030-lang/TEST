@@ -45,7 +45,7 @@ def load(path=None, kind="interaction"):
     """
     path = Path(path or config.TELEMETRY_PATH)
     report = {"path": str(path), "lines": 0, "kept": 0,
-              "wrong_kind": 0, "malformed": 0, "incomplete": 0}
+              "wrong_kind": 0, "malformed": 0, "incomplete": 0, "not_real": 0}
     rows = []
     if not path.exists():
         report["missing"] = True
@@ -71,6 +71,13 @@ def load(path=None, kind="interaction"):
             strategy = raw.get("strategy")
             if not strategy or "success" not in raw:
                 report["incomplete"] += 1
+                continue
+            # Only observations from a real run may train a model. Running the
+            # test suite writes telemetry too, and a model built partly from
+            # test fixtures would be learning about a world that does not
+            # exist.
+            if raw.get("source", "automation") != "automation":
+                report["not_real"] += 1
                 continue
             rows.append(Row(
                 context=features.clean(raw.get("context") or {}),
