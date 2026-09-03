@@ -61,9 +61,12 @@ print()
 print("=" * 72)
 print("2. THE AUDIO CANNOT BREAK THE INTRO")
 print("=" * 72)
-check("The audio path is configurable, not hardcoded into the markup",
-      "/static/assets/audio/intro.mp3" in INDEX and 'src="' not in
-      INDEX.split('id="introAudio"')[1].split(">")[0])
+check("No audio src is hardcoded in the markup",
+      'src="' not in INDEX.split('id="introAudio"')[1].split(">")[0])
+check("The track is discovered from the server, so any filename works",
+      "fetch('/api/music')" in INDEX and "sources.unshift(d.audio)" in INDEX)
+check("...with the fixed intro.* names as a fallback",
+      "/static/assets/audio/intro.mp3" in INDEX)
 check("More than one container is accepted",
       "intro.m4a" in INDEX and "intro.ogg" in INDEX)
 check("A blocked autoplay falls back to muted rather than failing",
@@ -82,6 +85,19 @@ check("The sound stops before the dashboard appears",
 audio_dir = HERE / "dashboard" / "static" / "assets" / "audio"
 check("The asset folder exists so a file can simply be dropped in",
       audio_dir.is_dir(), str(audio_dir))
+tracks = [f for f in audio_dir.glob("*")
+          if f.suffix.lower() in (".mp3", ".m4a", ".ogg", ".wav", ".flac")]
+check("An audio file is actually installed", bool(tracks),
+      "no audio in " + str(audio_dir))
+check("...and it is a real file, not a placeholder",
+      bool(tracks) and tracks[0].stat().st_size > 100000,
+      str(tracks[0].stat().st_size) if tracks else "0")
+
+from dashboard import server as _server                                  # noqa: E402
+_music = _server.find_music()
+check("The dashboard player finds it too", bool(_music["audio"]), str(_music))
+check("...and names it from the filename, not a hardcoded track",
+      _music["title"] not in ("", "No audio file found", "Lilith"), str(_music))
 
 print()
 print("=" * 72)

@@ -554,23 +554,59 @@ def film_scenes():
 
 
 def find_music():
-    """Report which audio and artwork files are actually present on disk."""
+    """
+    Report which audio and artwork files are actually present on disk.
+
+    Two folders are searched. `static/music/` is the player's own, and takes
+    precedence. If it is empty the intro's track is used instead, so a single
+    file dropped in for the startup sequence also gives the player something
+    to play rather than leaving it reading "No audio file found" — which is
+    exactly what it did.
+
+    Title and artist are derived from the FILENAME. They used to be hardcoded
+    to one particular track, so the player named that track whatever you
+    actually put in the folder.
+    """
     folder = STATIC_DIR / "music"
     folder.mkdir(parents=True, exist_ok=True)
-    audio = None
-    art = None
-    for item in sorted(folder.iterdir()):
-        suffix = item.suffix.lower()
-        if audio is None and suffix in (".mp3", ".m4a", ".ogg", ".wav", ".flac"):
-            audio = "/static/music/" + item.name
-        if art is None and suffix in (".jpg", ".jpeg", ".png", ".webp"):
-            art = "/static/music/" + item.name
+    intro_folder = STATIC_DIR / "assets" / "audio"
+
+    AUDIO = (".mp3", ".m4a", ".ogg", ".wav", ".flac")
+    ART = (".jpg", ".jpeg", ".png", ".webp")
+
+    audio = art = source = None
+    for base, url_prefix in ((folder, "/static/music/"),
+                             (intro_folder, "/static/assets/audio/")):
+        if not base.is_dir():
+            continue
+        for item in sorted(base.iterdir()):
+            suffix = item.suffix.lower()
+            if audio is None and suffix in AUDIO:
+                audio = url_prefix + item.name
+                source = item
+            if art is None and suffix in ART:
+                art = url_prefix + item.name
+        if audio:
+            break
+
+    # "Inner_Light.mp3" -> "Inner Light"; "01 - Artist - Title.mp3" -> both.
+    title, artist = "No audio file found", ""
+    if source is not None:
+        stem = source.stem.replace("_", " ").strip()
+        parts = [p.strip() for p in stem.split(" - ") if p.strip()]
+        if len(parts) >= 2:
+            artist, title = parts[-2], parts[-1]
+        elif parts:
+            title = parts[0]
+        if title.lower() == "intro":
+            title = "Startup sequence"
+
     return {
         "audio": audio,
         "art": art,
-        "title": "Lilith",
-        "artist": "Saint Avangeline",
-        "album": "Gardener of Eden",
+        "title": title,
+        "artist": artist,
+        "album": "",
         "folder": str(folder),
     }
 

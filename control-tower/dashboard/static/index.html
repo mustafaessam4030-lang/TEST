@@ -956,8 +956,11 @@ const $ = (id) => document.getElementById(id);
      picture never waits on the sound. */
   function startAudio(){
     if (!audio) return;
-    // Attached here, not in the markup: the file is only fetched once the
-    // intro is genuinely running, so its size can never delay first paint.
+    // Whatever audio is actually on disk. The server reports it, so any
+    // filename works and the track keeps its own name in the player; the
+    // fixed intro.* names remain as a fallback if the lookup fails.
+    // Attached here, not in the markup, so the file is only fetched once the
+    // intro is genuinely running and its size can never delay first paint.
     const sources = ['/static/assets/audio/intro.mp3',
                      '/static/assets/audio/intro.m4a',
                      '/static/assets/audio/intro.ogg'];
@@ -967,9 +970,18 @@ const $ = (id) => document.getElementById(id);
       if (which < sources.length){ audio.src = sources[which]; audio.load();
         const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
     };
-    audio.src = sources[0];
+    fetch('/api/music')
+      .then((r) => r.json())
+      .then((d) => { if (d && d.audio) sources.unshift(d.audio); })
+      .catch(() => {})
+      .finally(() => { audio.src = sources[0]; begin(); });
+    return;
     audio.muted = muted;
     audio.volume = 0;
+  }
+
+  function begin(){
+    if (done) return;                        // skipped before the lookup landed
     const play = audio.play();
     if (play && play.catch) {
       play.catch(() => {
