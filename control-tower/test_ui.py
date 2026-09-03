@@ -135,6 +135,39 @@ check("...and names it from the filename, not a hardcoded track",
 
 print()
 print("=" * 72)
+print("2b. THE STYLESHEET PARSES")
+print("=" * 72)
+# A stray brace at the top level of a stylesheet makes the browser drop the
+# rules after it, silently. One left over from an edit killed #app, .nav and
+# .main — the entire desktop shell — and nothing failed, nothing logged, and
+# the page still rendered, just wrongly. Counting braces is cheap; finding
+# this by eye cost a release.
+_style_start = INDEX.index("<style>") + len("<style>")
+_style_end = INDEX.index("</style>", _style_start)
+_css = INDEX[_style_start:_style_end]
+_depth = 0
+_first_negative = None
+for _i, _ch in enumerate(_css):
+    if _ch == "{":
+        _depth += 1
+    elif _ch == "}":
+        _depth -= 1
+        if _depth < 0 and _first_negative is None:
+            _first_negative = INDEX[:_style_start + _i].count("\n") + 1
+check("Braces balance across the whole stylesheet", _depth == 0,
+      "final depth {0}".format(_depth))
+check("No stray closing brace at the top level", _first_negative is None,
+      "first one at line {0}".format(_first_negative))
+
+# The rules the shell depends on must survive to the end of the sheet.
+for _sel in ("#app{", ".nav{", ".main{", ".card{"):
+    check("{0!r} is present after the intro block".format(_sel.rstrip("{")),
+          _sel in _css and _css.index(_sel) > _css.index("#gate{"))
+check("The desktop grid is defined",
+      "grid-template-areas:\"nav main\"" in _css)
+
+print()
+print("=" * 72)
 print("3. THE ML PANEL SHOWS REAL VALUES")
 print("=" * 72)
 snapshot = mlstatus.snapshot()
