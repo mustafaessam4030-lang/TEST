@@ -16,6 +16,7 @@ SUITES = [
     ("test_automation.py",      "carriers, routing, portals"),
     ("test_dhl_data.py",        "DHL event log extraction"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
+    ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_ata_field.py",       "ATA field lookup and guards"),
     ("test_coe_fallback.py",    "COE view fallback"),
     ("test_hub_nav.py",         "hub navigation"),

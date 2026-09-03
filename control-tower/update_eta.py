@@ -3677,13 +3677,31 @@ def get_qatar_result(page, tracking_number):
 #                  its input (a redirect, a region gate, or a layout change)
 # Trying both costs nothing on the happy path and saves the run when AFKL
 # reshuffles its site, which cargo portals do without notice.
+# The direct shipment page (see build_afkl_detail_url) is the primary route.
+# singlesearch stays as the one fallback if that page cannot be confirmed.
+# The homepage is deliberately NOT here any more: it never carried the
+# shipment, and reaching for it after a transport error is what turned one
+# failed navigation into a lost shipment.
 AFKL_URLS = [
     "https://www.afklcargo.com/mycargo/shipment/singlesearch",
-    "https://www.afklcargo.com/WW/en/homepage/homepage",
 ]
 AFKL_BASE_URL = AFKL_URLS[0]
 AFKL_RESULT_WAIT_SECONDS = 40
 AFKL_MAX_ATTEMPTS = 2
+
+# The shipment page can be addressed directly, which is the route a person
+# uses and the one that works. The search form remains only as a last resort.
+AFKL_DETAIL_ATTEMPTS = 3
+AFKL_DETAIL_READY_MS = 30000
+
+# Chromium raises these against some carrier servers on a rapid second
+# navigation. They mean "the transport had a bad moment", not "the page is
+# wrong", so the same url is retried rather than a different one being tried.
+TRANSIENT_NAV_ERRORS = (
+    "ERR_HTTP2_PROTOCOL_ERROR", "ERR_CONNECTION_RESET", "ERR_NETWORK_CHANGED",
+    "ERR_EMPTY_RESPONSE", "ERR_CONNECTION_CLOSED", "ERR_TIMED_OUT",
+    "ERR_CONNECTION_TIMED_OUT", "ERR_SOCKET_NOT_CONNECTED",
+)
 
 # ============================================================
 # SIMPLE AWB PORTALS
@@ -3733,6 +3751,9 @@ PORTALS = {
         # _read_afkl_page instead. Kept as a flag rather than a callable so
         # PORTALS stays plain data.
         "own_reader": True,
+        # The shipment page can be opened directly by air waybill, which is
+        # what a person does and what actually works. See open_afkl_detail.
+        "detail_url": True,
     },
     "ASTRAL": {
         "label": "Astral Aviation",
@@ -3745,6 +3766,134 @@ PORTALS = {
         "attempts": 2,
     },
 }
+
+
+AFKL_DETAIL_URL = "https://www.afklcargo.com/mycargo/shipment/detail/{0}"
+
+
+def build_afkl_detail_url(tracking_number):
+    """
+    The direct shipment page for an air waybill.
+
+        05705765454   -> .../detail/057-05765454
+        057-05765454  -> .../detail/057-05765454
+        057 0576 5454 -> .../detail/057-05765454
+
+    Returns None when the reference cannot be a valid 11-digit AWB, so the
+    caller falls back to the search form rather than requesting a URL built
+    from a number that was never an air waybill. The AWB itself is never
+    altered — only its punctuation is normalised.
+    """
+    digits = re.sub(r"\D", "", str(tracking_number or ""))
+    if len(digits) != 11:
+        return None
+    return AFKL_DETAIL_URL.format("{0}-{1}".format(digits[:3], digits[3:11]))
+
+
+def page_is_afkl_detail(page, tracking_number):
+    """
+    Is this really the requested shipment's page?
+
+    Two things have to hold: the air waybill has to appear on the page, and
+    the page has to carry the furniture of a result rather than an error or a
+    still-booting shell. Navigating successfully is not the same as arriving
+    at the right shipment, and a wrong-shipment page must never reach the
+    extraction step.
+    """
+    try:
+        text = _page_text(page)
+    except Exception:
+        return False
+    if len(text.strip()) < 120:
+        return False
+
+    digits = re.sub(r"\D", "", str(tracking_number or ""))
+    stripped = re.sub(r"\D", "", text)
+    if digits and digits not in stripped:
+        return False
+
+    return bool(re.search(
+        r"Progress\s+details|Flight\s+schedule|Estimated\s+Pick\s*up\s+time|"
+        r"Checked-in|EN\s+ROUTE|DELIVERED", text, re.I))
+
+
+def open_afkl_detail(page, config, tracking_number):
+    """
+    Go straight to the shipment page.
+
+    The search form was the original route and it is why 057-05765454 was
+    lost: the form was filled, the result never rendered where the extractor
+    was looking, and the retry then died on ERR_HTTP2_PROTOCOL_ERROR against
+    the entry pages. The detail URL removes the form, the submit and the
+    result-page transition from the path entirely.
+
+    Returns True when the page is confirmed to be the requested shipment.
+    Retries the SAME url on transport errors using the existing bounded
+    backoff; it never wanders off to the homepage.
+    """
+    url = build_afkl_detail_url(tracking_number)
+    if url is None:
+        write_log(
+            "{0}: {1} is not an 11-digit air waybill, so no detail URL can be "
+            "built. Falling back to the search form."
+            .format(config["label"], tracking_number))
+        return False
+
+    problems = []
+    for attempt in range(1, AFKL_DETAIL_ATTEMPTS + 1):
+        try:
+            write_log("{0}: opening the shipment page directly — {1}".format(
+                config["label"], url))
+            page.goto(url, wait_until="domcontentloaded",
+                      timeout=NAVIGATION_TIMEOUT_MS)
+        except Exception as error:
+            message = str(error)
+            problems.append(message[:120])
+            transient = any(token in message for token in TRANSIENT_NAV_ERRORS)
+            if transient and attempt < AFKL_DETAIL_ATTEMPTS:
+                delay = attempt * 3
+                write_log(
+                    "{0}: {1} on the detail URL (attempt {2}). Backing off {3}s "
+                    "and retrying the SAME url.".format(
+                        config["label"], message.split(" at ")[0][:60],
+                        attempt, delay))
+                page.wait_for_timeout(delay * 1000)
+                continue
+            write_log("{0}: the detail URL could not be opened: {1}".format(
+                config["label"], message[:160]))
+            break
+
+        wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+        accept_cookie_banner(page, config["label"])
+
+        # The shipment renders after the app fetches it, so confirm identity
+        # rather than assuming the navigation was the whole job.
+        settled = wait_for_any(
+            page,
+            [("the shipment detail page",
+              lambda: page_is_afkl_detail(page, tracking_number))],
+            AFKL_DETAIL_READY_MS,
+            poll_ms=500,
+            reason="the {0} shipment page for {1}".format(
+                config["label"], tracking_number),
+        )
+        if settled:
+            write_log("{0}: shipment page confirmed for {1}.".format(
+                config["label"], tracking_number))
+            return True
+
+        problems.append("the page loaded but is not {0}'s".format(tracking_number))
+        if attempt < AFKL_DETAIL_ATTEMPTS:
+            write_log(
+                "{0}: the detail page did not show {1} within {2}ms. Retrying "
+                "the same url.".format(config["label"], tracking_number,
+                                       AFKL_DETAIL_READY_MS))
+            page.wait_for_timeout(2000)
+
+    save_page_text(page, tracking_number, "afkl_detail_not_confirmed")
+    write_log("{0}: the direct shipment page did not work for {1}: {2}".format(
+        config["label"], tracking_number, " | ".join(problems[:3])))
+    return False
 
 
 def portal_awb(tracking_number, dashed=True):
@@ -3784,10 +3933,8 @@ def open_portal(page, config, tracking_number):
                 break
             except Exception as error:
                 message = str(error)
-                transient = any(token in message for token in (
-                    "ERR_HTTP2_PROTOCOL_ERROR", "ERR_CONNECTION_RESET",
-                    "ERR_NETWORK_CHANGED", "ERR_EMPTY_RESPONSE",
-                    "ERR_CONNECTION_CLOSED", "ERR_TIMED_OUT"))
+                transient = any(token in message
+                                for token in TRANSIENT_NAV_ERRORS)
                 if transient and nav_attempt < 3:
                     write_log(
                         "{0}: {1} on {2} (attempt {3}). Backing off {4}s."
@@ -4122,8 +4269,20 @@ def get_portal_result(page, provider, tracking_number):
     page.bring_to_front()
 
     for attempt in range(1, config.get("attempts", 2) + 1):
-        field = open_portal(page, config, tracking_number)
-        submit_portal_awb(page, field, config, tracking_number)
+        # AFKL: go straight to the shipment page. Everything after this point
+        # — the wait loop, the extraction, the ETA/ATA rules — is unchanged and
+        # simply runs against the right page instead of a search form.
+        direct = False
+        if config.get("detail_url"):
+            direct = open_afkl_detail(page, config, tracking_number)
+
+        if not direct:
+            if config.get("detail_url"):
+                write_log(
+                    "{0}: falling back to the search form for {1}.".format(
+                        config["label"], tracking_number))
+            field = open_portal(page, config, tracking_number)
+            submit_portal_awb(page, field, config, tracking_number)
 
         end_time = time.time() + config.get("wait", 40)
         while time.time() < end_time:
