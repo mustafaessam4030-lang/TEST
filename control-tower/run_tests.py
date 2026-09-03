@@ -17,6 +17,7 @@ SUITES = [
     ("test_dhl_data.py",        "DHL event log extraction"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
+    ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),
     ("test_ata_field.py",       "ATA field lookup and guards"),
     ("test_coe_fallback.py",    "COE view fallback"),
     ("test_hub_nav.py",         "hub navigation"),
@@ -79,6 +80,8 @@ def main():
     print("      python proof_runtime.py")
     print("  Live ML demonstration against a stand-in Manage page:")
     print("      python demo_ml_live.py")
+    print("  AFKL navigation diagnostic (real site, run it on the automation PC):")
+    print("      python diagnose_afkl.py 057-05765454")
     print("=" * 74)
     print("  {0} passed, {1} failed, {2} suite(s) with problems".format(
         total_passed, total_failed, len(broken)))

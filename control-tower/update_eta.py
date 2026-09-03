@@ -746,6 +746,10 @@ TIMEOUT = "TIMEOUT"
 TEMPORARY_WEBSITE_ISSUE = "TEMPORARY WEBSITE ISSUE"
 AUTHENTICATION_ISSUE = "AUTHENTICATION ISSUE"
 UNEXPECTED_PAGE_STATE = "UNEXPECTED PAGE STATE"
+# A transport failure reaching the carrier is its own thing. It used to fall
+# through to NO RESULT, which reads as "the carrier has no such air waybill" —
+# a statement about the shipment made on the strength of a broken connection.
+AFKL_NAVIGATION_ERROR = "AFKL NAVIGATION ERROR"
 FAILED = "FAILED"
 
 # Only these are worth a second attempt. Everything else is permanent for this
@@ -757,6 +761,10 @@ def classify_failure(error):
     """Map an exception onto one of the named operational outcomes."""
     text = "{0} {1}".format(type(error).__name__, error).casefold()
 
+    # Checked FIRST: the message carries its own verdict, and it must not be
+    # re-read as "no result" just because it also mentions a carrier.
+    if "afkl navigation error" in text or "afkl_navigation_error" in text:
+        return AFKL_NAVIGATION_ERROR
     if "no estimated" in text or "returned no" in text or "did not provide" in text:
         return NO_RESULT
     if "login" in text or "credential" in text or "sign in" in text or "unauthor" in text:
@@ -3822,83 +3830,281 @@ def page_is_afkl_detail(page, tracking_number):
         r"Checked-in|EN\s+ROUTE|DELIVERED", text, re.I))
 
 
+# ── The navigation ladder ────────────────────────────────────────────
+#
+# Four strategies, one attempt each, in order, stopping the moment one loads
+# the requested shipment. Bounded and deterministic: no strategy is tried
+# twice and there is no fifth.
+#
+#   1  the browser we already have, direct detail URL
+#   2  a FRESH context on that browser, same URL      (state/connection reuse)
+#   3  a Chromium launched with --disable-http2       (HTTP/2 framing)
+#   4  branded Microsoft Edge, channel="msedge"       (browser build)
+#
+# Each step targets a different hypothesis, so whichever one succeeds tells us
+# what was actually wrong. Applying all of them at once would fix the symptom
+# and teach us nothing.
+
+AFKL_NAV_TIMEOUT_MS = 45000
+
+
+class AfklNavigationError(Exception):
+    """
+    Could not reach the AFKL page. Says nothing about the air waybill.
+
+    Carries the per-attempt diagnostics so the run log can show which
+    strategies were tried and how each one failed.
+    """
+
+    def __init__(self, tracking_number, attempts):
+        self.tracking_number = tracking_number
+        self.attempts = attempts
+        Exception.__init__(self, (
+            "AFKL NAVIGATION ERROR for {0}: none of the {1} navigation "
+            "strategies could load the shipment page. {2}"
+        ).format(tracking_number, len(attempts),
+                 " | ".join("#{0} {1}: {2}".format(
+                     a["attempt"], a["strategy"], a["error"] or a["outcome"])
+                     for a in attempts)))
+
+
+def _afkl_attempt(page, url, tracking_number, label, strategy, number,
+                  http2_disabled=False, channel="chromium"):
+    """
+    One navigation attempt. Returns a diagnostic record; never raises.
+
+    Everything the brief asked to see is recorded: which strategy, whether
+    HTTP/2 was disabled, the URL, the exception, the response status, the
+    final URL, whether the document reached DOMContentLoaded, and how long it
+    took.
+    """
+    record = {
+        "attempt": number, "strategy": strategy, "channel": channel,
+        "http2_disabled": http2_disabled, "url": url,
+        "error": None, "status": None, "final_url": None,
+        "dom_content_loaded": False, "loaded": False,
+        "awb_verified": False, "elapsed_ms": None, "outcome": "not run",
+    }
+    started = time.time()
+    try:
+        response = page.goto(url, wait_until="domcontentloaded",
+                             timeout=AFKL_NAV_TIMEOUT_MS)
+        record["dom_content_loaded"] = True
+        if response is not None:
+            record["status"] = response.status
+        record["final_url"] = page.url
+        try:
+            page.wait_for_load_state("load", timeout=8000)
+            record["loaded"] = True
+        except Exception:
+            pass
+
+        wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+        accept_cookie_banner(page, label)
+
+        # The shipment renders after the app fetches it, so identity is
+        # confirmed rather than assumed from a 200.
+        settled = wait_for_any(
+            page,
+            [("the shipment detail page",
+              lambda: page_is_afkl_detail(page, tracking_number))],
+            AFKL_DETAIL_READY_MS, poll_ms=500,
+            reason="the {0} shipment page for {1}".format(label, tracking_number),
+        )
+        record["awb_verified"] = bool(settled)
+        record["final_url"] = page.url
+        record["outcome"] = "loaded and verified" if settled else (
+            "page loaded but {0} could not be confirmed on it".format(tracking_number))
+    except Exception as error:
+        record["error"] = str(error).split("\n")[0][:200]
+        record["outcome"] = "navigation exception"
+    record["elapsed_ms"] = int((time.time() - started) * 1000)
+    return record
+
+
+def _log_afkl_attempt(record):
+    write_log(
+        "AFKL nav | attempt={attempt} | strategy={strategy} | channel={channel} | "
+        "http2_disabled={http2_disabled} | status={status} | dcl={dom_content_loaded} | "
+        "load={loaded} | awb_verified={awb_verified} | {elapsed_ms}ms | "
+        "final_url={final_url} | outcome={outcome}{err}".format(
+            err=(" | error=" + record["error"]) if record["error"] else "",
+            **record))
+
+
 def open_afkl_detail(page, config, tracking_number):
     """
-    Go straight to the shipment page.
+    Go straight to the shipment page, through a bounded fallback ladder.
 
-    The search form was the original route and it is why 057-05765454 was
-    lost: the form was filled, the result never rendered where the extractor
-    was looking, and the retry then died on ERR_HTTP2_PROTOCOL_ERROR against
-    the entry pages. The detail URL removes the form, the submit and the
-    result-page transition from the path entirely.
+    Returns the page that holds the confirmed shipment — usually the one
+    passed in, but a later strategy may hand back a page on a different
+    browser, which the caller then reads instead.
 
-    Returns True when the page is confirmed to be the requested shipment.
-    Retries the SAME url on transport errors using the existing bounded
-    backoff; it never wanders off to the homepage.
+    Raises AfklNavigationError when every strategy fails. That is deliberately
+    NOT "no shipment found": the difference between "the carrier says this AWB
+    does not exist" and "we could not reach the carrier" is the difference
+    between a real answer and a broken pipe, and 057-05765454 was reported as
+    the former on the strength of the latter.
     """
     url = build_afkl_detail_url(tracking_number)
     if url is None:
         write_log(
             "{0}: {1} is not an 11-digit air waybill, so no detail URL can be "
-            "built. Falling back to the search form."
-            .format(config["label"], tracking_number))
-        return False
+            "built.".format(config["label"], tracking_number))
+        return None
 
-    problems = []
-    for attempt in range(1, AFKL_DETAIL_ATTEMPTS + 1):
+    label = config["label"]
+    attempts = []
+    write_log("{0}: opening the shipment page directly — {1}".format(label, url))
+
+    # ── 1 · the browser we already have ─────────────────────────────
+    record = _afkl_attempt(page, url, tracking_number, label,
+                           "existing page", 1)
+    _log_afkl_attempt(record)
+    attempts.append(record)
+    if record["awb_verified"]:
+        write_log("{0}: shipment page confirmed on attempt 1.".format(label))
+        return page
+
+    # ── 2 · a fresh context on the same browser ─────────────────────
+    # Connection reuse and cached state are the cheapest explanations for a
+    # protocol error on one page and not another, so this is tried before
+    # anything heavier.
+    extra_pages = []
+    browser = None
+    try:
+        browser = page.context.browser
+    except Exception as error:
+        note_suppressed("reaching the browser for a fresh AFKL context", error)
+
+    if browser is not None:
         try:
-            write_log("{0}: opening the shipment page directly — {1}".format(
-                config["label"], url))
-            page.goto(url, wait_until="domcontentloaded",
-                      timeout=NAVIGATION_TIMEOUT_MS)
+            context = browser.new_context()
+            fresh = context.new_page()
+            extra_pages.append((context, fresh))
+            record = _afkl_attempt(fresh, url, tracking_number, label,
+                                   "fresh context", 2)
+            _log_afkl_attempt(record)
+            attempts.append(record)
+            if record["awb_verified"]:
+                write_log("{0}: shipment page confirmed on attempt 2 "
+                          "(a fresh context was enough).".format(label))
+                return fresh
         except Exception as error:
-            message = str(error)
-            problems.append(message[:120])
-            transient = any(token in message for token in TRANSIENT_NAV_ERRORS)
-            if transient and attempt < AFKL_DETAIL_ATTEMPTS:
-                delay = attempt * 3
-                write_log(
-                    "{0}: {1} on the detail URL (attempt {2}). Backing off {3}s "
-                    "and retrying the SAME url.".format(
-                        config["label"], message.split(" at ")[0][:60],
-                        attempt, delay))
-                page.wait_for_timeout(delay * 1000)
-                continue
-            write_log("{0}: the detail URL could not be opened: {1}".format(
-                config["label"], message[:160]))
-            break
+            attempts.append({"attempt": 2, "strategy": "fresh context",
+                             "channel": "chromium", "http2_disabled": False,
+                             "url": url, "error": str(error)[:200],
+                             "status": None, "final_url": None,
+                             "dom_content_loaded": False, "loaded": False,
+                             "awb_verified": False, "elapsed_ms": None,
+                             "outcome": "could not create a context"})
+            _log_afkl_attempt(attempts[-1])
 
-        wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
-        accept_cookie_banner(page, config["label"])
+    # Attempts 3 and 4 need their own browser. They are only worth the launch
+    # cost when the failure so far looks like transport rather than content.
+    transport = any(a["error"] and any(t in a["error"] for t in TRANSIENT_NAV_ERRORS)
+                    for a in attempts)
 
-        # The shipment renders after the app fetches it, so confirm identity
-        # rather than assuming the navigation was the whole job.
-        settled = wait_for_any(
-            page,
-            [("the shipment detail page",
-              lambda: page_is_afkl_detail(page, tracking_number))],
-            AFKL_DETAIL_READY_MS,
-            poll_ms=500,
-            reason="the {0} shipment page for {1}".format(
-                config["label"], tracking_number),
-        )
-        if settled:
-            write_log("{0}: shipment page confirmed for {1}.".format(
-                config["label"], tracking_number))
-            return True
+    # ── 3 · Chromium with HTTP/2 disabled ───────────────────────────
+    if transport:
+        record, kept = _afkl_side_browser(
+            page, url, tracking_number, label, 3,
+            "chromium --disable-http2", channel=None,
+            args=["--disable-http2"], http2_disabled=True)
+        attempts.append(record)
+        if record["awb_verified"] and kept is not None:
+            write_log("{0}: shipment page confirmed on attempt 3 — HTTP/2 was "
+                      "the problem.".format(label))
+            return kept
+    else:
+        write_log("{0}: skipping the HTTP/2 strategy — the failures so far are "
+                  "not transport errors.".format(label))
 
-        problems.append("the page loaded but is not {0}'s".format(tracking_number))
-        if attempt < AFKL_DETAIL_ATTEMPTS:
-            write_log(
-                "{0}: the detail page did not show {1} within {2}ms. Retrying "
-                "the same url.".format(config["label"], tracking_number,
-                                       AFKL_DETAIL_READY_MS))
-            page.wait_for_timeout(2000)
+    # ── 4 · branded Microsoft Edge ──────────────────────────────────
+    record, kept = _afkl_side_browser(
+        page, url, tracking_number, label, 4,
+        "microsoft edge (msedge channel)", channel="msedge",
+        args=[], http2_disabled=False)
+    attempts.append(record)
+    if record["awb_verified"] and kept is not None:
+        write_log("{0}: shipment page confirmed on attempt 4 — the bundled "
+                  "Chromium was the problem, branded Edge works.".format(label))
+        return kept
 
-    save_page_text(page, tracking_number, "afkl_detail_not_confirmed")
-    write_log("{0}: the direct shipment page did not work for {1}: {2}".format(
-        config["label"], tracking_number, " | ".join(problems[:3])))
-    return False
+    save_page_text(page, tracking_number, "afkl_navigation_error")
+    take_screenshot(page, tracking_number, "afkl_navigation_error")
+    raise AfklNavigationError(tracking_number, attempts)
+
+
+def _afkl_side_browser(page, url, tracking_number, label, number, strategy,
+                       channel=None, args=None, http2_disabled=False):
+    """
+    Run one attempt in a browser of its own. Returns (record, page_or_None).
+
+    A clean temporary profile every time — Playwright's default. The operator's
+    own Edge profile is never touched.
+    """
+    record = {"attempt": number, "strategy": strategy,
+              "channel": channel or "chromium", "http2_disabled": http2_disabled,
+              "url": url, "error": None, "status": None, "final_url": None,
+              "dom_content_loaded": False, "loaded": False,
+              "awb_verified": False, "elapsed_ms": None, "outcome": "not run"}
+    started = time.time()
+    try:
+        playwright = getattr(page.context.browser, "_playwright", None)
+    except Exception:
+        playwright = None
+    if playwright is None:
+        record["outcome"] = "no playwright handle available for a side browser"
+        record["elapsed_ms"] = int((time.time() - started) * 1000)
+        _log_afkl_attempt(record)
+        return record, None
+
+    launch = {"headless": True}
+    if channel:
+        launch["channel"] = channel
+    if args:
+        launch["args"] = list(args)
+
+    browser = None
+    try:
+        browser = playwright.chromium.launch(**launch)
+        side = browser.new_page()
+        inner = _afkl_attempt(side, url, tracking_number, label,
+                              strategy, number, http2_disabled=http2_disabled,
+                              channel=channel or "chromium")
+        _log_afkl_attempt(inner)
+        if inner["awb_verified"]:
+            # The caller reads this page, so the browser must stay open. It is
+            # closed by the caller's own cleanup at the end of the shipment.
+            AFKL_SIDE_BROWSERS.append(browser)
+            return inner, side
+        browser.close()
+        return inner, None
+    except Exception as error:
+        record["error"] = str(error).split("\n")[0][:200]
+        record["outcome"] = "could not launch"
+        record["elapsed_ms"] = int((time.time() - started) * 1000)
+        _log_afkl_attempt(record)
+        try:
+            if browser is not None:
+                browser.close()
+        except Exception:
+            pass
+        return record, None
+
+
+# Side browsers opened by strategies 3 and 4, closed when the run ends.
+AFKL_SIDE_BROWSERS = []
+
+
+def close_afkl_side_browsers():
+    while AFKL_SIDE_BROWSERS:
+        browser = AFKL_SIDE_BROWSERS.pop()
+        try:
+            browser.close()
+        except Exception as error:
+            note_suppressed("closing an AFKL side browser", error)
 
 
 def portal_awb(tracking_number, dashed=True):
@@ -4279,13 +4485,19 @@ def get_portal_result(page, provider, tracking_number):
         # simply runs against the right page instead of a search form.
         direct = False
         if config.get("detail_url"):
-            direct = open_afkl_detail(page, config, tracking_number)
+            # A navigation failure is raised, not swallowed. The search form is
+            # only reached when the AWB could not produce a detail URL at all —
+            # never as a way of papering over a transport error.
+            landed = open_afkl_detail(page, config, tracking_number)
+            if landed is not None:
+                page = landed          # a later strategy may hand back its own page
+                direct = True
 
         if not direct:
             if config.get("detail_url"):
                 write_log(
-                    "{0}: falling back to the search form for {1}.".format(
-                        config["label"], tracking_number))
+                    "{0}: no detail URL could be built for {1}; using the "
+                    "search form.".format(config["label"], tracking_number))
             field = open_portal(page, config, tracking_number)
             submit_portal_awb(page, field, config, tracking_number)
 
@@ -5261,6 +5473,27 @@ def main():
                         tower.shipment_finished(bol_awb, "SUCCESS", "", action)
                         tower.counters(successful, failed, skipped, partial)
 
+                    except AfklNavigationError as error:
+                        # NOT "no shipment found". The carrier was never
+                        # reached, so nothing has been learned about the AWB.
+                        failed += 1
+                        write_log("AFKL NAVIGATION ERROR for {0}: {1}".format(
+                            bol_awb, error))
+                        log_operation_failure(
+                            shipment.get("carrier"), bol_awb, "carrier navigation",
+                            error, 1, 1, AFKL_NAVIGATION_ERROR, final=True,
+                        )
+                        save_result(shipment, dhl_result, "No update",
+                                    "FAILED", str(error))
+                        tower.shipment_finished(
+                            bol_awb, "FAILED", str(error),
+                            outcome=AFKL_NAVIGATION_ERROR)
+                        tower.counters(successful, failed, skipped, partial)
+                        try:
+                            ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                        except Exception as restore_error:
+                            write_log(f"Internal page restore warning: {restore_error}")
+
                     except SkipShipment as error:
                         skipped += 1
                         write_log(f"SKIPPED {bol_awb}: {error}")
@@ -5389,6 +5622,10 @@ def main():
                 input("Press ENTER only after reviewing/copying the error...")
 
         finally:
+            # Strategies 3 and 4 may have left a browser of their own open so
+            # the caller could read the page they landed on. They close here,
+            # with everything else.
+            close_afkl_side_browsers()
             browser.close()
             write_log("Microsoft Edge closed automatically.")
 

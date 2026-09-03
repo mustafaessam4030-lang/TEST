@@ -178,10 +178,16 @@ print()
 print("=" * 72)
 print("7. A FAILED NAVIGATION CAN NEVER BE A SUCCESS")
 print("=" * 72)
-check("An unconfirmed page is dumped for evidence",
-      'save_page_text(page, tracking_number, "afkl_detail_not_confirmed")' in SRC)
-check("open_afkl_detail returns False rather than raising past the caller",
-      "return False" in SRC.split("def open_afkl_detail")[1].split("\ndef ")[0])
+check("An unreachable page is dumped for evidence",
+      'save_page_text(page, tracking_number, "afkl_navigation_error")' in SRC)
+# This used to assert the opposite. A quiet False let the caller fall through
+# to the search form and report "no result" for a shipment whose page had
+# never loaded — which is the bug. It now raises, and the raise is the point.
+check("Exhausting the ladder RAISES rather than returning quietly",
+      "raise AfklNavigationError(tracking_number, attempts)"
+      in SRC.split("def open_afkl_detail")[1].split("\ndef ")[0])
+check("...and the caller treats that as a navigation error, not a skip",
+      "except AfklNavigationError as error:" in SRC)
 check("An unreadable result still ends in SkipShipment",
       "returned no arrival date that could be read" in SRC)
 check("A no-result page is still recognised",
