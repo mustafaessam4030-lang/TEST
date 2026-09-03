@@ -74,6 +74,11 @@ def main():
                 name, passed, description))
 
     print("=" * 74)
+    print("  Runtime proof (spawns the real `python update_eta.py`):")
+    print("      python proof_runtime.py")
+    print("  Live ML demonstration against a stand-in Manage page:")
+    print("      python demo_ml_live.py")
+    print("=" * 74)
     print("  {0} passed, {1} failed, {2} suite(s) with problems".format(
         total_passed, total_failed, len(broken)))
     print("=" * 74)
