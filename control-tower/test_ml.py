@@ -45,7 +45,7 @@ STRATEGIES = ["label_exact", "xpath_ata_date", "css_id_visible"]
 print("=" * 70)
 print("1. WITH ML OFF, THE LAYER HAS NO OPINION")
 print("=" * 70)
-with_env(ML_ENABLED=None)
+with_env(ML_ENABLED=0)
 r = predictor.recommend_strategy(CTX, STRATEGIES)
 check("recommend_strategy declines", r.used is False, repr(r))
 check("...and names the reason", "ML_ENABLED" in r.reason, r.reason)
@@ -329,6 +329,37 @@ check("...and finds the model better on data where it should be",
           outcome["verdict"], outcome["verdict_reason"]))
 check("The baseline it compares against comes from the recorded rank",
       outcome["baseline_first_try"] < outcome["model_first_try"])
+
+print()
+print("=" * 70)
+print("14. THE DEFAULT IS ON, AND ON ALONE CHANGES NOTHING")
+print("=" * 70)
+with_env(ML_ENABLED=None, ML_MODEL_PATH=missing, ML_CONFIDENCE_THRESHOLD=None)
+check("ML_ENABLED defaults to true", config.ML_ENABLED is True)
+check("...but active() is False without a model", predictor.active() is False)
+check("...so a recommendation is still declined",
+      predictor.recommend_strategy(CTX, STRATEGIES).used is False)
+lines = []
+check("initialize() reports FALLBACK, not ENABLED",
+      predictor.initialize(log=lines.append) is False
+      and any("Status: FALLBACK" in l for l in lines), " / ".join(lines))
+lines = []
+with_env(ML_ENABLED=1, ML_MODEL_PATH=model_path, ML_CONFIDENCE_THRESHOLD=0.5)
+check("initialize() reports ENABLED once a model loads",
+      predictor.initialize(log=lines.append) is True
+      and any("Status: ENABLED" in l for l in lines), " / ".join(lines))
+check("...and prints the model version",
+      any("Model version" in l for l in lines), " / ".join(lines))
+check("...and the confidence threshold",
+      any("Confidence threshold" in l for l in lines), " / ".join(lines))
+bad = tmp / "corrupt.json"
+bad.write_text("{{{", encoding="utf-8")
+lines = []
+with_env(ML_ENABLED=1, ML_MODEL_PATH=bad)
+check("A corrupt model reports the failure then FALLBACK",
+      predictor.initialize(log=lines.append) is False
+      and any("Model load failed" in l for l in lines)
+      and any("Status: FALLBACK" in l for l in lines), " / ".join(lines))
 
 with_env(ML_ENABLED=None, ML_MODEL_PATH=None, ML_CONFIDENCE_THRESHOLD=None,
          ML_MAX_WAIT=None, ML_TELEMETRY_PATH=None)

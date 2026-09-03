@@ -21,7 +21,38 @@ smaller than one you already had*.
 
 ## Current state
 
-**Not trained, not enabled.** There is no model file, because there is no
+`ML_ENABLED` now defaults to **true**, so `python update_eta.py` consults the
+model with nothing to set. That is safe to default on because the switch alone
+activates nothing: without a valid trained model the predictor answers "no
+opinion" to every question. Enabled means *"consult the model if there is
+one"*, not *"behave differently"*. `ML_ENABLED=0` silences it completely.
+
+Every run prints its own state before it starts:
+
+```
+[ML] Initializing...
+[ML] Model found: ml\models\strategy_model.json
+[ML] Model loaded successfully
+[ML] Model version: 3   built: 2026-09-03 06:48:35
+[ML] Model contents: 7 contexts, 4900 observations
+[ML] Status: ENABLED
+[ML] Confidence threshold: 0.65
+```
+
+or, with no model yet:
+
+```
+[ML] Initializing...
+[ML] No trained model found at ml\models\strategy_model.json
+[ML] Status: FALLBACK
+[ML] Using deterministic automation
+```
+
+Training is never triggered by a run. `python -m ml.trainer` is a separate,
+deliberate act — a model that retrained itself on the way past would be a
+different model every time and impossible to hold responsible for anything.
+
+**Not trained yet.** There is no model file, because there is no
 telemetry yet. `python -m ml.trainer` will refuse and tell you how many rows
 short you are. That refusal is the design working, not a bug: a model built
 from a handful of rows would pass every smoke test and then make confident,
@@ -57,7 +88,7 @@ behaviour.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `ML_ENABLED` | `false` | The master switch. Off = the original Control Tower. |
+| `ML_ENABLED` | `true` | Consult the model if there is one. `0` silences the layer entirely. |
 | `ML_CONFIDENCE_THRESHOLD` | `0.65` | A recommendation below this is discarded. |
 | `ML_MODEL_PATH` | `ml/models/strategy_model.json` | Where the model lives. |
 | `ML_FALLBACK_ENABLED` | `true` | A prediction error falls back. Off makes it fatal — for tests only. |
@@ -121,3 +152,29 @@ field is read back. A mismatch raises, so the run cannot report a success it
 cannot prove. Off by default because it adds a reload to every successful
 write and so changes the shape of a run that already works. Turn it on for the
 real-hub E2E check.
+
+
+## Proving it is really being used
+
+`python demo_ml_live.py` runs the production functions against a stand-in
+Manage page — two tabs, an ETA field and an ATA field, the ATA one labelled by
+a table cell rather than a `<label for=…>`, exactly the shape that made
+`get_by_label` miss it on the real page. No Hub, no credentials, no internet.
+
+It trains a model with the ordinary trainer, prints the startup block, shows
+the model's actual scores, then runs `fill_date_field` twice — once with the
+model choosing the order and once with `ML_ENABLED=0` — and times both. On that
+page the fixed order spends a 1500ms timeout on `label_exact` before reaching
+the candidate that works:
+
+```
+took  109ms with the model choosing the order
+took 1592ms with the fixed order (ML_ENABLED=0)
+```
+
+It then checks the ETA field and the three other date fields on the panel were
+untouched, saves, reloads, reads the value back, and confirms a value that did
+NOT persist is rejected.
+
+That page is a stand-in, not your Hub. It proves the layer is wired in and the
+guards hold; only a run against the real Hub proves your markup.

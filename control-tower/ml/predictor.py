@@ -107,6 +107,74 @@ def status():
     }
 
 
+def initialize(log=print):
+    """
+    Load the model once at startup and say plainly what state the layer is in.
+
+    Called from update_eta.py's main(). Returns True when the model is loaded
+    AND the switch is on — that is the only combination in which anything
+    changes. Never raises: an unreadable model file means FALLBACK, not a
+    failed run.
+    """
+    def emit(text):
+        try:
+            log("[ML] " + text)
+        except Exception:
+            pass
+
+    emit("Initializing...")
+    try:
+        if not config.ML_ENABLED:
+            emit("ML_ENABLED is off")
+            emit("Status: DISABLED")
+            emit("Using deterministic automation")
+            return False
+
+        model, error = load_model(force=True)
+        if model is None:
+            if error and "no model file" in error:
+                emit("No trained model found at {0}".format(config.ML_MODEL_PATH))
+                emit("Status: FALLBACK")
+                emit("Using deterministic automation")
+                emit("Telemetry is being collected; run "
+                     "'python -m ml.trainer' once there is enough of it")
+            else:
+                emit("Model load failed: {0}".format(error))
+                emit("Status: FALLBACK")
+                emit("Using deterministic automation")
+            return False
+
+        summary = model.summary()
+        emit("Model found: {0}".format(config.ML_MODEL_PATH))
+        emit("Model loaded successfully")
+        emit("Model version: {0}   built: {1}".format(
+            model_module.MODEL_VERSION,
+            (summary.get("meta") or {}).get("built_at", "unknown")))
+        emit("Model contents: {0} contexts, {1} observations".format(
+            summary["cells"], summary["observations"]))
+        emit("Status: ENABLED")
+        emit("Confidence threshold: {0}".format(config.ML_CONFIDENCE_THRESHOLD))
+        emit("Exploration: {0}".format(
+            "on ({0:.0%})".format(config.ML_EXPLORATION_RATE)
+            if config.ML_EXPLORATION_ENABLED else "off"))
+        emit("The model may reorder candidates and shorten waits. "
+             "It decides nothing else.")
+        return True
+    except Exception as error:              # pragma: no cover - belt and braces
+        emit("Initialization failed: {0}".format(error))
+        emit("Status: FALLBACK")
+        emit("Using deterministic automation")
+        return False
+
+
+def active():
+    """True when a recommendation could actually be acted on right now."""
+    if not config.ML_ENABLED:
+        return False
+    model, _error = load_model()
+    return model is not None
+
+
 def recommend_strategy(context, strategies, log=None):
     """
     Rank `strategies` for `context`.

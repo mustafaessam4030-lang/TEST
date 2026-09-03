@@ -855,6 +855,11 @@ except Exception as _ml_import_error:      # pragma: no cover - environment
     _ML_IMPORT_ERROR = str(_ml_import_error)
 
 
+# Set once at startup by main(). True only when the switch is on AND a valid
+# model actually loaded — the switch alone changes nothing.
+ML_ACTIVE = False
+
+
 def ml_context(**kwargs):
     """A feature context, or None when the layer is not available."""
     if not ML_AVAILABLE:
@@ -5119,21 +5124,19 @@ def main():
     write_log("Automation started in DHL and Qatar Airways COE ETA / BU ATA mode.")
     username, password = load_credentials()
     write_log("Local smart extraction is active; no LLM or external AI service is used.")
+    # The learning layer announces its own state. It loads the model ONCE, here
+    # — training is never triggered by a run, and never will be: a model that
+    # retrained itself on the way past would be a different model every time
+    # and impossible to hold responsible for anything.
+    global ML_ACTIVE
     if ML_AVAILABLE:
-        _ml_status = ml_predictor.status()
-        write_log(
-            "Learning layer: ML_ENABLED={0}, model={1}, telemetry={2}. {3}".format(
-                _ml_status["enabled"],
-                "loaded" if _ml_status["model_loaded"] else (
-                    _ml_status["error"] or "none"),
-                ml_config.TELEMETRY_PATH,
-                "Strategy order and wait budgets are the automation's own."
-                if not _ml_status["enabled"] or not _ml_status["model_loaded"]
-                else "The model may reorder candidates; it decides nothing else.",
-            )
-        )
+        ML_ACTIVE = ml_predictor.initialize(log=write_log)
+        write_log("[ML] Telemetry: {0}".format(ml_config.TELEMETRY_PATH))
     else:
-        write_log("Learning layer not present; running the deterministic path.")
+        ML_ACTIVE = False
+        write_log("[ML] Package not present")
+        write_log("[ML] Status: FALLBACK")
+        write_log("[ML] Using deterministic automation")
     if VERIFY_AFTER_SAVE:
         write_log("VERIFY_AFTER_SAVE is on: every write is re-read from the Hub.")
 

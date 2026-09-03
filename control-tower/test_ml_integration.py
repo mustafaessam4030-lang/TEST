@@ -31,9 +31,11 @@ def check(name, condition, detail=""):
 
 
 print("=" * 70)
-print("1. WITH ML OFF THE AUTOMATION IS THE ORIGINAL AUTOMATION")
+print("1. ON BY DEFAULT, BUT INERT WITHOUT A MODEL")
 print("=" * 70)
-check("ML defaults to off", config.ML_ENABLED is False)
+check("ML defaults to ON", config.ML_ENABLED is True)
+check("...but the switch alone activates nothing without a model",
+      predictor.active() is False, str(predictor.status()["error"]))
 check("The adapter reports the layer is present", A.ML_AVAILABLE is True)
 
 fake = [("first", "L1"), ("second", "L2"), ("third", "L3")]
@@ -185,7 +187,7 @@ for key in ("ML_ENABLED", "ML_MODEL_PATH", "ML_CONFIDENCE_THRESHOLD"):
     os.environ.pop(key, None)
 config.reload_from_environment()
 predictor.reset()
-check("The switch goes back off cleanly", config.ML_ENABLED is False)
+check("The switch returns to its default", config.ML_ENABLED is True)
 
 print()
 print("=" * 70)

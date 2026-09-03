@@ -30,9 +30,13 @@ def _number(name, default, cast=float):
 
 
 # ── the master switch ────────────────────────────────────────────────
-# OFF. The layer is inert until someone has telemetry, has trained a model,
-# and has seen the evaluator say it beats the baseline.
-ML_ENABLED = _flag("ML_ENABLED", False)
+# ON by default, because a layer nobody remembers to switch on is a layer
+# nobody uses. It is safe to default on because the switch alone activates
+# nothing: without a valid trained model the predictor answers "no opinion"
+# to every question and the automation follows its own hand-tuned order.
+# Enabled means "consult the model if there is one", not "behave differently".
+# Set ML_ENABLED=0 to silence it completely.
+ML_ENABLED = _flag("ML_ENABLED", True)
 
 # A recommendation is only used when the model is this sure. Below it the
 # automation keeps its own order. 0.65 is deliberately cautious: at the
@@ -93,7 +97,7 @@ def snapshot():
 def reload_from_environment():
     """Re-read the environment. Used by the tests to flip flags in-process."""
     module = globals()
-    module["ML_ENABLED"] = _flag("ML_ENABLED", False)
+    module["ML_ENABLED"] = _flag("ML_ENABLED", True)
     module["ML_CONFIDENCE_THRESHOLD"] = _number("ML_CONFIDENCE_THRESHOLD", 0.65)
     module["ML_MODEL_PATH"] = Path(os.environ.get("ML_MODEL_PATH")
                                    or (HERE / "models" / "strategy_model.json"))
