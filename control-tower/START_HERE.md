@@ -146,3 +146,69 @@ python test_assistant.py       the assistant, including anti-fabrication
 
 374 tests. They run without a browser or credentials, so they are safe to run
 on any machine at any time.
+
+---
+
+## 9. Checking the install
+
+Before a real run, from `C:\Automation`:
+
+```bat
+run_tests.bat
+```
+
+603 tests, no browser and no network needed. It should end with
+`603 passed, 0 failed`. If Python or Playwright is missing it will say so.
+
+If this is a fresh machine:
+
+```bat
+pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+---
+
+## 10. The learning layer
+
+`ml\` is an optional layer that can, once trained, reorder the field-lookup
+candidates and shorten waits based on what has actually worked. **It is off.**
+With `ML_ENABLED` unset the automation behaves exactly as it did before the
+layer existed.
+
+Telemetry is collected from the first run — it changes nothing, it only
+records what was tried and what happened, so a model can eventually be built
+from real evidence rather than guesses.
+
+```bat
+REM after some runs, see how much data there is
+python -c "from ml import telemetry; print(telemetry.stats())"
+
+REM train (refuses, and says why, until there is enough)
+python -m ml.trainer --show
+
+REM prove it beats the current order before trusting it
+python -m ml.evaluator
+```
+
+Only switch it on if the evaluator prints `VERDICT: BETTER`.
+
+Full detail, including every setting and what the model is never allowed to
+decide, is in `ML.md`. The map of how the existing automation works is in
+`ARCHITECTURE.md`.
+
+---
+
+## 11. Proving a write really landed
+
+`VERIFY_AFTER_SAVE` reopens each shipment after saving and reads the field back
+from the Hub, failing the shipment if the value is not there. It is off by
+default because it adds a reload to every write.
+
+```bat
+set VERIFY_AFTER_SAVE=1
+python update_eta.py
+```
+
+Use it for a first run on a new environment, or whenever you want proof rather
+than a completed postback.

@@ -1,0 +1,9 @@
+# The automation's only third-party dependency.
+#
+# The learning layer in ml/ deliberately adds nothing here: it is standard
+# library only, so upgrading the Control Tower does not mean installing a
+# toolchain on the machine that runs it.
+playwright>=1.40
+
+# After installing, fetch the browser once:
+#     python -m playwright install chromium
