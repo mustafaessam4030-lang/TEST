@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+# Test runs create this on non-Windows hosts because BASE_FOLDER is a
+# Windows path; it is run output, not source.
+C:\Automation/
+ml/data/*.jsonl
+ml/models/*.json

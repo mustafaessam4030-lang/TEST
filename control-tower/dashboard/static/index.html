@@ -1,0 +1,1911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#F5F1E8" />
+<title>Control Tower — Mantrac Logistics</title>
+<!-- Inter is loaded WITHOUT blocking the render.
+     As a plain stylesheet this cost 12.6 seconds to first paint on a machine
+     that cannot reach Google — a corporate network, an offline terminal, or
+     any site where fonts.googleapis.com is filtered. The browser will not
+     paint until a <link rel=stylesheet> in the head resolves or times out.
+     media="print" makes it non-blocking; onload promotes it to "all" once it
+     has actually arrived. If it never arrives the dashboard renders anyway,
+     in the system font stack, at full speed. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+<noscript><link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"></noscript>
+<style>
+/* ══════════════════════════════════════════════════════════════
+   CONTROL TOWER — MAIA design language
+
+   Paper and ink, not chrome. The type does the work: huge tight
+   numerals (-.05em, 700/800) against tiny wide-tracked kickers
+   (.22em, 10.5px). Violet is the system, amber is the value that
+   matters, green/red are outcomes. 14px cards, 100px pills.
+
+   PERFORMANCE: render is rAF-batched and rate-limited; each
+   section repaints only when its own slice of state changed;
+   lists are capped; only transform/opacity animate.
+══════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Bone and ink, with electric blue as the system colour — the same
+     palette as the intro film, so the two read as one product. */
+  --paper:#EFEBE3; --bone:#E3DED2; --card:#F6F3EC;
+  --ink:#0A0A0B; --mid:#6B6862; --faint:#8E8A82;
+  --line:#D8D2C4; --line-2:#E3DED2;
+
+  --vio:#1B34E8; --vio-wash:rgba(27,52,232,.08); --vio-line:rgba(27,52,232,.32);
+  --y:#B96A00;   --y-wash:rgba(185,106,0,.10);   --y-line:rgba(185,106,0,.34);
+  --grn:#0F7A50; --grn-wash:rgba(15,122,80,.10);
+  --red:#C2261C; --red-wash:rgba(194,38,28,.10);
+  --blu:#1B34E8; --blu-wash:rgba(27,52,232,.08);
+
+  --s:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+  --e:cubic-bezier(.16,1,.3,1);
+  --r:14px; --r-sm:10px;
+  --sidebar:238px; --player:64px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{
+  background:var(--paper);
+  color:var(--ink);font-family:var(--s);
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,textarea,select{font-family:inherit}
+:focus-visible{outline:2px solid var(--vio);outline-offset:2px;border-radius:4px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#C6C0B2;border-radius:10px;border:3px solid var(--paper)}
+::-webkit-scrollbar-thumb:hover{background:#A9A294}
+
+/* Film grain, as in the reference. Cheap: one tiled SVG, transform-only. */
+.grain{position:fixed;inset:0;z-index:95;pointer-events:none;opacity:.025;
+  mix-blend-mode:overlay;background-size:170px;animation:grain .5s steps(4) infinite;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+@keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-2px,1px)}100%{transform:translate(0,0)}}
+
+.kick{font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--mid)}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ═══════════ INTRO ═══════════ */
+/* ═══ AI ENGINE CARD ═══ */
+.ml-pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mid)}
+.ml-pill .d{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.ml-pill.on{color:var(--grn)} .ml-pill.on .d{background:var(--grn)}
+.ml-pill.warn{color:#946200} .ml-pill.warn .d{background:#d99400}
+.ml-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));
+  border-top:1px solid var(--line)}
+.ml-k{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ml-k:last-child{border-right:none}
+.ml-k b{display:block;font-size:19px;font-weight:750;letter-spacing:-.02em;color:var(--ink);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.ml-k span{display:block;font-family:var(--mono,ui-monospace,monospace);font-size:9px;
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid);margin-top:5px}
+.ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
+/* ═══ ASSISTANT FEEDBACK ═══ */
+.fb{display:flex;align-items:center;gap:6px;margin-top:8px;opacity:.75}
+.fb button{font-size:11px;line-height:1;padding:5px 9px;border:1px solid var(--line);
+  border-radius:8px;background:transparent;color:var(--mid);cursor:pointer;
+  transition:color .18s,border-color .18s,background .18s}
+.fb button:hover{color:var(--ink);border-color:var(--faint)}
+.fb button.picked{color:var(--vio);border-color:var(--vio);background:rgba(90,80,240,.07)}
+.fb .fb-t{font-family:var(--mono,ui-monospace,monospace);font-size:9px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:2px}
+.fb-in{width:100%;margin-top:7px;font:inherit;font-size:12px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink)}
+.fb-done{font-size:11px;color:var(--grn)}
+/* ═══ INTRO ═══════════════════════════════════════════════════════════
+   A short film made of slides. Every scene is one absolutely-positioned
+   layer that fades and lifts on a CSS animation with its own delay — no
+   timers driving the picture, no library, no video file. The whole thing
+   is a few hundred bytes of DOM, so it cannot delay the dashboard. */
+#gate{position:fixed;inset:0;z-index:100;overflow:hidden;
+  background:radial-gradient(ellipse 60% 50% at 50% 8%,rgba(255,150,60,.13),transparent 62%),
+             radial-gradient(ellipse 50% 40% at 50% 100%,rgba(90,80,240,.10),transparent 60%),
+             var(--paper);
+  display:grid;place-items:center;
+  transition:opacity .55s var(--e),visibility .55s}
+#gate.gone{opacity:0;visibility:hidden;pointer-events:none}
+.g-stage{position:relative;width:min(820px,88vw);height:min(360px,54vh);
+  display:grid;place-items:center;text-align:center}
+.g-s{position:absolute;inset:0;display:grid;place-items:center;align-content:center;
+  gap:14px;opacity:0;pointer-events:none}
+#gate.play .g-s{animation:gscene var(--dur,1.5s) var(--e) var(--at,0s) both}
+@keyframes gscene{
+  0%{opacity:0;transform:translateY(14px) scale(.985);filter:blur(6px)}
+  14%,74%{opacity:1;transform:none;filter:blur(0)}
+  100%{opacity:0;transform:translateY(-10px) scale(1.004);filter:blur(4px)}
+}
+.g-kick{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.15vw,13px);
+  font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--vio)}
+.g-t{font-size:clamp(26px,4.2vw,50px);font-weight:800;letter-spacing:-.04em;
+  line-height:1.02;color:var(--ink);max-width:18ch}
+.g-h1{font-size:clamp(34px,6.4vw,74px);font-weight:800;letter-spacing:-.055em;
+  line-height:.96;color:var(--ink)}
+.g-h1 .l{font-weight:300;color:var(--faint)}
+.g-h2{font-size:clamp(20px,3.4vw,40px);font-weight:750;letter-spacing:-.035em;
+  line-height:1.08;color:var(--ink);max-width:16ch}
+.g-p{font-size:clamp(13px,1.35vw,16px);color:var(--mid);max-width:46ch;line-height:1.5}
+.g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:2px}
+.g-chip{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.2vw,14px);
+  font-weight:700;letter-spacing:.16em;padding:9px 16px;border:1px solid var(--line);border-radius:999px;
+  color:var(--mid);background:rgba(255,255,255,.55)}
+.g-list{display:grid;gap:9px;font-size:clamp(13px,1.5vw,17px);color:var(--mid);justify-items:center}
+.g-list b{color:var(--ink);font-weight:600}
+.g-flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+  font-family:var(--mono,ui-monospace,monospace);font-size:clamp(12px,1.5vw,17px);
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid)}
+.g-flow i{font-style:normal;color:var(--vio)}
+.g-flow b{color:var(--ink);font-weight:700}
+.g-ok{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:clamp(11px,1.2vw,14px);font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--grn)}
+.g-ok::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--grn)}
+/* progress + controls */
+.g-bar{position:fixed;left:0;top:0;height:2px;width:0;background:var(--vio);z-index:101}
+#gate.play .g-bar{animation:gbar var(--total,6.4s) linear forwards}
+@keyframes gbar{to{width:100%}}
+.g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
+.g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:10px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(255,255,255,.7);
+  border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
+  transition:color .2s,border-color .2s,background .2s}
+.g-btn:hover{color:var(--ink);border-color:var(--faint);background:#fff}
+.g-btn .on-i{display:none}.g-btn.muted .on-i{display:inline}.g-btn.muted .off-i{display:none}
+@media(prefers-reduced-motion:reduce){
+  #gate.play .g-s{animation:none}
+  #gate.play .g-s:last-of-type{opacity:1}
+  #gate.play .g-bar{animation:none;width:100%}
+}
+
+/* ═══════════ SHELL ═══════════ */
+#app{height:100%;display:grid;grid-template-columns:var(--sidebar) 1fr;
+  grid-template-rows:1fr var(--player);
+  grid-template-areas:"nav main" "player player";opacity:0}
+#app.on{animation:rise .5s var(--e) both}
+/* Once the entrance has played the animation is removed in JS; a filling
+   transform animation keeps #app as a containing block for fixed children,
+   which broke the mobile drawer. */
+#app.settled{animation:none;opacity:1}
+
+.nav{grid-area:nav;background:var(--card);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;overflow:hidden}
+.nav-b{padding:20px 20px 18px;border-bottom:1px solid var(--line-2)}
+.nav-n{font-size:16px;font-weight:800;letter-spacing:-.04em;line-height:1}
+.nav-n i{color:var(--vio);font-style:normal}
+.nav-o{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);margin-top:7px}
+.nav-l{padding:14px 12px;overflow-y:auto;flex:1}
+.nav-i{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;
+  border-radius:var(--r-sm);margin-bottom:1px;font-size:13.5px;font-weight:500;
+  color:var(--mid);text-align:left;transition:background .16s,color .16s}
+.nav-i:hover{background:var(--bone);color:var(--ink)}
+.nav-i.on{background:var(--vio-wash);color:var(--vio);font-weight:600}
+.nav-i svg{width:16px;height:16px;flex:none}
+.nav-c{margin-left:auto;font-family:var(--mono);font-size:10px;padding:1px 7px;
+  border-radius:100px;background:var(--bone);color:var(--mid)}
+.nav-c.bad{background:var(--red-wash);color:var(--red)}
+.nav-f{padding:13px 20px;border-top:1px solid var(--line-2);font-size:11.5px;color:var(--faint)}
+
+.main{grid-area:main;overflow-y:auto}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;
+  flex-wrap:wrap;padding:16px 28px;background:rgba(239,235,227,.92);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.top-t{font-size:20px;font-weight:700;letter-spacing:-.04em}
+.sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);font-size:11.5px;font-weight:600;color:var(--mid)}
+.pill .d{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+.pill.run{border-color:var(--grn);color:var(--grn);background:var(--grn-wash)}
+.pill.run .d{background:var(--grn);animation:blip 2s infinite}
+.pill.bad{border-color:var(--red);color:var(--red);background:var(--red-wash)}
+.pill.bad .d{background:var(--red)}
+.pill.fin{border-color:var(--blu);color:var(--blu);background:var(--blu-wash)}
+.pill.fin .d{background:var(--blu)}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.3}}
+.burger{display:none}
+.ctlbar{display:none;align-items:center;gap:7px}
+.ctlbar.on{display:inline-flex}
+.cbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);color:var(--mid);
+  font-size:11.5px;font-weight:700;transition:all .16s}
+.cbtn:hover{color:var(--ink);border-color:var(--faint)}
+.cbtn.warn{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
+.cbtn.warn:hover{background:rgba(255,178,89,.2)}
+.cbtn.go{border-color:rgba(47,181,116,.5);color:var(--grn);background:var(--grn-wash)}
+.cbtn.go:hover{background:rgba(47,181,116,.2)}
+.cbtn:disabled{opacity:.4;cursor:default}
+.cbtn.stop{border-color:rgba(255,90,78,.45);color:var(--red);background:var(--red-wash)}
+.cbtn.stop:hover{background:rgba(255,90,78,.2)}
+.cbtn svg{width:12px;height:12px}
+.share{display:none;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
+  border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
+  font-size:11.5px;font-weight:700;transition:background .16s}
+.share.on{display:inline-flex}
+.share:hover{background:rgba(255,122,0,.2)}
+.share svg{width:13px;height:13px}
+
+.page{padding:24px 28px 40px;display:none}
+.page.on{display:block;animation:rise .35s var(--e)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.card-h{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
+.card-t{font-size:13px;font-weight:700;letter-spacing:-.02em}
+.card-b{padding:18px}
+
+/* hero */
+.ctl{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
+.ctl .card{display:flex;flex-direction:column}
+.ctl .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
+.hero{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:24px;position:relative;overflow:hidden}
+/* Linework corridor: a dashed route with a container running it, and a slow
+   radar sweep. Transform/opacity only, and paused when the tab is hidden. */
+/* Kept to the right third and faded at both ends so it never crosses the
+   readable copy — decoration must not compete with the numbers. */
+.hero-fx{position:absolute;top:0;bottom:0;right:0;width:46%;pointer-events:none;
+  z-index:0;overflow:hidden;
+  mask-image:linear-gradient(90deg,transparent,#000 32%,#000 88%,transparent);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 32%,#000 88%,transparent)}
+.hero-fx .rail{position:absolute;left:0;right:0;height:1px;opacity:.5;
+  background:repeating-linear-gradient(90deg,rgba(255,122,0,.55) 0 7px,transparent 7px 16px)}
+.hero-fx .rail.r1{top:26%} .hero-fx .rail.r2{top:74%}
+.hero-fx .pod{position:absolute;left:0;width:15px;height:10px;
+  border:1px solid rgba(255,122,0,.8);border-radius:2px;background:rgba(255,122,0,.16)}
+.hero-fx .pod.p1{top:calc(26% - 5px);animation:haul 14s linear infinite}
+.hero-fx .pod.p2{top:calc(74% - 5px);animation:haul 21s linear infinite 5s}
+@keyframes haul{from{transform:translateX(-30px)}to{transform:translateX(700px)}}
+.hero-fx .sweep{position:absolute;top:-40%;bottom:-40%;width:40%;
+  background:linear-gradient(90deg,transparent,rgba(255,178,89,.09),transparent);
+  transform:translateX(-120%);animation:sweep 9s var(--e) infinite}
+@keyframes sweep{to{transform:translateX(340%)}}
+.hero-v{font-size:clamp(34px,4.4vw,54px);font-weight:800;letter-spacing:-.055em;
+  line-height:1;margin:12px 0 6px;position:relative;z-index:1}
+.hero-s{font-size:13px;color:var(--mid);margin-bottom:24px;position:relative;z-index:1}
+.hero-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:20px 18px;position:relative;z-index:1}
+.fk{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:5px}
+.fv{font-size:14.5px;font-weight:500;word-break:break-word}
+.fv.hi{color:var(--vio);font-weight:600}
+
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+.kpi-k{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.kpi-v{font-size:38px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin-top:10px;
+  font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
+.kpi-n{font-size:11.5px;color:var(--mid);margin-top:4px}
+
+.bar{height:6px;border-radius:100px;background:var(--bone);overflow:hidden}
+.bar-f{height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
+.bar.ind .bar-f{width:30%;animation:slide 1.6s linear infinite}
+@keyframes slide{from{transform:translateX(-110%)}to{transform:translateX(350%)}}
+.leg{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  font-size:12px;color:var(--mid);margin-top:12px}
+.leg b{font-weight:700}
+
+.g2{display:grid;grid-template-columns:1.45fr 1fr;gap:14px;align-items:start}
+.g2>*{min-width:0}
+
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;
+  font-size:10.5px;font-weight:700;white-space:nowrap}
+.tag::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.tag.updated{color:var(--grn);background:var(--grn-wash)}
+.tag.processing{color:var(--blu);background:var(--blu-wash)}
+.tag.skipped{color:var(--y);background:var(--y-wash)}
+.tag.partial{color:var(--y);background:var(--y-wash)}
+.tag.failed{color:var(--red);background:var(--red-wash)}
+.tag.unknown{color:var(--mid);background:var(--bone)}
+
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--bone)}
+td{padding:12px 15px;border-bottom:1px solid var(--line-2);color:var(--mid)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--bone)}
+td.ref{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:600;white-space:nowrap}
+td.dt{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:nowrap}
+td.n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.err{font-size:12px;max-width:240px;display:block;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--faint)}
+tr.r-failed .err{color:var(--red)}
+tr.r-skipped .err{color:var(--y)}
+tr.r-partial .err{color:var(--y)}
+
+.tl{max-height:390px;overflow-y:auto;padding:6px 0;contain:content}
+.tlr{display:grid;grid-template-columns:58px 16px 1fr;gap:11px;padding:7px 18px;font-size:13px}
+.tlr time{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:2px}
+.tlr i{font-style:normal;text-align:center;font-size:11px;line-height:1.5}
+.tlr.ok i{color:var(--grn)} .tlr.warn i{color:#C48A00} .tlr.error i{color:var(--red)}
+.tlr.shipment i,.tlr.scan i{color:var(--vio)} .tlr.start i,.tlr.stop i{color:var(--blu)}
+.tlr span{color:var(--mid)}
+
+.sys{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:center;
+  padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.sys:last-child{border-bottom:none}
+.led{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.sys.st-connected .led{background:var(--grn)}
+.sys.st-processing .led{background:var(--vio);animation:blip 1.6s infinite}
+.sys.st-error .led{background:var(--red)}
+.sys.st-warning .led{background:var(--y)}
+.sys-n{font-size:13.5px;font-weight:600}
+.sys-m{font-size:12px;color:var(--faint);margin-top:2px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.sys-m.bad{color:var(--red)}
+.sys-r{text-align:right;font-size:10px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);line-height:1.7}
+
+.exc{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;
+  padding:14px 18px;border-left:3px solid var(--red);border-bottom:1px solid var(--line-2)}
+.exc.warning{border-left-color:var(--y)}
+.exc-i{color:var(--red);font-size:12px}
+.exc.warning .exc-i{color:#C48A00}
+.exc-m{font-size:13px;color:var(--ink);font-weight:500}
+.exc-d{font-size:11.5px;color:var(--faint);margin-top:4px}
+.exc-t{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+.tools{display:flex;gap:8px;flex-wrap:wrap;padding:13px 18px;border-bottom:1px solid var(--line-2);
+  align-items:center}
+.in{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 12px;color:var(--ink);font-size:13px;min-width:170px;flex:1}
+.in::placeholder{color:var(--faint)}
+.in:focus{border-color:var(--vio);outline:none}
+.chip{padding:6px 13px;border-radius:100px;border:1px solid var(--line);font-size:11.5px;
+  font-weight:600;color:var(--mid);background:var(--card);transition:all .16s;white-space:nowrap}
+.chip:hover{background:var(--y-wash);border-color:var(--y-line);color:var(--ink)}
+.chip.on{background:var(--vio-wash);border-color:var(--vio-line);color:var(--vio)}
+.btn{padding:8px 15px;border-radius:100px;font-size:12px;font-weight:700;
+  background:var(--ink);color:var(--paper);transition:transform .2s var(--e),background .2s;
+  display:inline-flex;align-items:center;gap:7px}
+.btn:hover{transform:translateY(-1px);background:var(--vio)}
+.btn svg{width:13px;height:13px}
+.btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--bone)}
+
+.logs{max-height:540px;overflow-y:auto;font-family:var(--mono);font-size:12px;contain:content}
+.log{display:grid;grid-template-columns:58px 62px 1fr;gap:10px;padding:6px 18px;
+  border-bottom:1px solid var(--line-2)}
+.log time{color:var(--faint)}
+.log b{font-size:9.5px;font-weight:800;letter-spacing:.06em}
+.log.info b{color:var(--blu)} .log.success b{color:var(--grn)}
+.log.warning b{color:#C48A00} .log.error b{color:var(--red)}
+.log p{color:var(--mid);word-break:break-word}
+.log.error p{color:var(--red)}
+
+.live{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}
+.live-r{font-family:var(--mono);font-size:clamp(22px,3vw,32px);font-weight:700;
+  letter-spacing:-.04em;color:var(--vio);margin-bottom:20px}
+.steps div{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:8px 0 8px 14px;
+  font-size:13px;color:var(--faint);border-left:2px solid var(--line);margin-left:3px}
+.steps div:last-child{color:var(--ink);border-left-color:var(--vio)}
+.steps time{font-family:var(--mono);font-size:11px}
+
+.empty{padding:44px 20px;text-align:center;color:var(--faint)}
+.empty h3{font-size:13.5px;font-weight:700;color:var(--mid);margin-bottom:6px}
+.empty p{font-size:13px;max-width:400px;margin:0 auto}
+.empty code{font-family:var(--mono);font-size:12px;color:var(--vio);
+  background:var(--vio-wash);padding:1px 6px;border-radius:5px}
+
+.row{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--line-2)}
+.row:last-child{border-bottom:none}
+.row .a{width:160px;font-size:13px;color:var(--mid);flex:none;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.row .t{flex:1;height:8px;border-radius:100px;background:var(--bone);overflow:hidden}
+.row .t i{display:block;height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
+.row .t i.ok{background:var(--grn)}
+.row .v{width:66px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink)}
+.health{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;padding:18px}
+.health div{background:var(--bone);border-radius:var(--r-sm);padding:13px 15px}
+.health b{display:block;font-size:24px;font-weight:800;letter-spacing:-.045em;margin-top:6px;
+  font-variant-numeric:tabular-nums}
+
+/* ═══════════ ANALYSIS ═══════════ */
+.an-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+  padding:16px 18px;border-bottom:1px solid var(--line-2)}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.sel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 11px;font-size:13px;color:var(--ink);min-width:140px}
+.sel:focus{border-color:var(--vio);outline:none}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;
+  padding:18px;border-bottom:1px solid var(--line-2)}
+.stat{background:var(--bone);border-radius:var(--r-sm);padding:14px 16px}
+.stat b{display:block;font-size:28px;font-weight:800;letter-spacing:-.05em;margin-top:6px;
+  font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
+.dl-note{font-size:12px;color:var(--faint);margin-top:10px}
+
+/* ═══════════ CHAT ═══════════ */
+.fab{position:fixed;right:22px;bottom:calc(var(--player) + 18px);z-index:70;
+  height:38px;padding:0 14px;border-radius:100px;background:var(--ink);color:var(--paper);
+  display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;
+  box-shadow:0 6px 18px rgba(10,10,11,.2);transition:transform .24s var(--e)}
+.fab:hover{transform:translateY(-2px)}
+/* No position:relative here — it would override the fixed positioning above
+   and drop the launcher into normal flow, stretching it across the window.
+   position:fixed already establishes the containing block the pulse needs. */
+.fab svg{width:15px;height:15px}
+.fab::after{content:"";position:absolute;inset:-4px;border-radius:100px;
+  border:1px solid var(--ink);opacity:.22;animation:ping 2.8s var(--e) infinite;
+  pointer-events:none}
+@keyframes ping{0%{transform:scale(.95);opacity:.5}70%{transform:scale(1.12);opacity:0}
+  100%{opacity:0}}
+.fab.hide{display:none}
+.chat{position:fixed;right:24px;bottom:calc(var(--player) + 22px);z-index:71;
+  width:396px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 150px);
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:0 22px 60px rgba(0,0,0,.6);display:none;flex-direction:column;overflow:hidden}
+.chat.on{display:flex;animation:rise .3s var(--e)}
+.ch-h{display:flex;align-items:center;gap:11px;padding:14px 16px;
+  background:var(--ink);color:var(--paper);border-bottom:1px solid var(--line)}
+.ch-av{width:34px;height:34px;border-radius:10px;background:var(--vio);display:grid;
+  place-items:center;color:#fff;flex:none}
+.ch-av svg{width:21px;height:21px}
+.ch-nm{font-size:13.5px;font-weight:700}
+.ch-rl{font-size:10px;color:rgba(239,235,227,.55);margin-top:1px}
+.ch-ty{font-size:10px;color:#6BE0A0;margin-top:1px;display:none}
+.ch-ty.show{display:block}
+.ch-x{margin-left:auto;color:rgba(239,235,227,.6);padding:5px;border-radius:6px}
+.ch-x:hover{color:#fff;background:rgba(255,255,255,.1)}
+.ch-b{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
+  background:var(--paper)}
+/* Flex children shrink by default, which squashed the shipment card to a
+   sliver once the thread overflowed. Nothing in a chat log should compress. */
+.ch-b > *{flex:0 0 auto}
+.msg{display:flex;gap:9px;max-width:94%;animation:msgIn .32s var(--e) both}
+.msg.me{align-self:flex-end;flex-direction:row-reverse}
+.m-av{width:28px;height:28px;border-radius:8px;flex:none;display:grid;place-items:center;
+  font-size:9px;font-weight:800;background:var(--vio);color:#fff}
+.m-av svg{width:18px;height:18px}
+.msg.me .m-av{background:var(--ink);color:var(--paper)}
+.bub{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
+  padding:11px 14px;font-size:13.5px;line-height:1.65;border-radius:0 12px 12px 12px;
+  color:var(--ink);white-space:pre-wrap;word-break:break-word}
+.msg.me .bub{background:var(--ink);color:var(--paper);border:none;border-radius:12px 0 12px 12px;font-weight:450}
+.bub strong{font-weight:700}
+.bub code{font-family:var(--mono);background:var(--bone);padding:2px 6px;border-radius:4px;font-size:12px}
+.cur{display:inline-block;width:7px;height:14px;background:var(--ink);vertical-align:middle;
+  margin-left:2px;animation:bc .8s infinite}
+@keyframes bc{50%{opacity:0}}
+.td-b{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
+  padding:13px 16px;display:flex;gap:5px;border-radius:0 12px 12px 12px}
+.td-b span{width:7px;height:7px;border-radius:50%;background:var(--y);
+  animation:tdA 1.4s infinite ease-in-out}
+.td-b span:nth-child(2){animation-delay:.2s}
+.td-b span:nth-child(3){animation-delay:.4s}
+@keyframes tdA{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-6px);opacity:1}}
+.mini{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:9px;background:var(--card)}
+.mini-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bone);
+  border-bottom:1px solid var(--line-2)}
+.mini-r{font-family:var(--mono);font-size:12px;font-weight:700}
+.mini-b{padding:5px 12px 9px}
+.mini-row{display:flex;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid var(--line-2)}
+.mini-row:last-child{border-bottom:none}
+.mini-k{width:104px;flex:none;color:var(--faint)}
+.mini-v{color:var(--ink);min-width:0;word-break:break-word}
+.dl-row{display:flex;gap:6px;flex-wrap:wrap;max-width:94%}
+.dl{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:100px;
+  border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
+  font-size:11.5px;font-weight:700;transition:background .16s;text-decoration:none}
+.dl:hover{background:rgba(255,122,0,.2)}
+.dl svg{width:12px;height:12px}
+.ch-s{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;background:var(--paper)}
+.ch-f{display:flex;gap:8px;padding:11px 14px;border-top:1px solid var(--line-2);
+  background:var(--card);align-items:flex-end}
+.ch-ta{flex:1;border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 13px;
+  font-size:13.5px;resize:none;min-height:42px;max-height:110px;background:var(--paper);
+  color:var(--ink);outline:none;line-height:1.5}
+.ch-ta:focus{border-color:var(--vio)}
+.send{width:36px;height:36px;border-radius:50%;background:var(--ink);color:var(--paper);
+  display:grid;place-items:center;flex:none;transition:transform .2s var(--e)}
+.send:hover{transform:scale(1.06)}
+.send svg{width:15px;height:15px}
+
+/* ═══════════ PLAYER ═══════════ */
+.pl{grid-area:player;display:grid;
+  grid-template-columns:minmax(170px,1fr) minmax(250px,1.7fr) minmax(120px,1fr);
+  gap:16px;align-items:center;padding:0 22px;background:var(--card);border-top:1px solid var(--line)}
+.pl-now{display:flex;align-items:center;gap:11px;min-width:0}
+.pl-art{width:36px;height:36px;border-radius:8px;flex:none;object-fit:cover;
+  background:var(--bone);border:1px solid var(--line-2)}
+.pl-s{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-a{font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;margin-top:1px}
+.pl-c{display:flex;flex-direction:column;align-items:center;gap:5px;width:100%}
+.pl-btns{display:flex;align-items:center;gap:13px}
+.pb{color:var(--faint);display:flex;padding:3px;transition:color .16s}
+.pb:hover{color:var(--ink)}
+.pb.on{color:var(--vio)}
+.pb svg{width:15px;height:15px}
+.pb-play{width:30px;height:30px;border-radius:50%;background:var(--ink);color:var(--paper);
+  align-items:center;justify-content:center;padding:0;transition:transform .2s var(--e)}
+.pb-play:hover{transform:scale(1.07)}
+.pb-play svg{width:12px;height:12px}
+.pl-seek{display:flex;align-items:center;gap:9px;width:100%;max-width:420px}
+.pl-seek span{font-family:var(--mono);font-size:10px;color:var(--faint);width:30px;text-align:center;flex:none}
+.trk{flex:1;height:4px;border-radius:100px;background:var(--bone);cursor:pointer}
+.trk i{display:block;height:100%;border-radius:100px;background:var(--faint);width:0}
+.trk:hover i{background:var(--vio)}
+.pl-r{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.vol{width:68px;accent-color:var(--vio)}
+.hint{font-size:11px;font-weight:700;color:var(--vio);border:1px solid var(--vio-line);
+  background:var(--vio-wash);border-radius:100px;padding:5px 12px}
+.pl.off .pl-c,.pl.off .pl-r{opacity:.4;pointer-events:none}
+
+/* ═══════════ RESPONSIVE ═══════════ */
+@media(max-width:1180px){.g2,.live,.ctl{grid-template-columns:1fr}}
+@media(max-width:880px){
+  :root{--player:100px}
+  #app{grid-template-columns:1fr;grid-template-areas:"main" "player"}
+  /* height, not top+bottom: #app keeps a filling entrance animation on
+     transform, which makes it a containing block for fixed children, so
+     bottom:0 stopped resolving against the viewport and the drawer
+     collapsed to zero height. */
+  .nav{position:fixed;left:0;top:0;height:100vh;height:100dvh;width:250px;z-index:60;
+    transform:translateX(-100%);transition:transform .32s var(--e);
+    box-shadow:0 0 40px rgba(0,0,0,.6)}
+  .nav.open{transform:none}
+  .burger{display:flex;align-items:center;padding:5px;color:var(--mid)}
+  .burger svg{width:20px;height:20px}
+  .page{padding:18px 15px 28px}
+  .top{padding:12px 15px}.top-t{font-size:17px}
+  .pl{grid-template-columns:1fr;grid-template-rows:auto auto;gap:7px;padding:9px 15px}
+  .pl-r{display:none}
+  .chat{right:10px;left:10px;width:auto;height:min(72vh,520px)}
+  .fab{right:16px}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;opacity:0;
+    pointer-events:none;transition:opacity .25s}
+  .scrim.on{opacity:1;pointer-events:auto}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<!-- ═══ INTRO ═══════════════════════════════════════════════════════
+     Five scenes, ~6.4s. Pure CSS animation on a handful of divs: no video,
+     no library, nothing to download before the dashboard is usable. The
+     audio is optional and its absence is not an error. -->
+<div id="gate" aria-label="Control Tower startup">
+  <div class="g-bar"></div>
+  <div class="g-stage">
+
+    <div class="g-s" style="--at:.0s;--dur:1.5s">
+      <div class="g-kick">Mantrac Logistics</div>
+      <h1 class="g-h1">Control <span class="l">Tower</span></h1>
+      <p class="g-p">Shipment intelligence &amp; automation</p>
+    </div>
+
+    <div class="g-s" style="--at:1.25s;--dur:1.35s">
+      <div class="g-t">Real-time shipment processing</div>
+      <div class="g-chips">
+        <span class="g-chip">DHL</span><span class="g-chip">AFKL</span>
+        <span class="g-chip">QATAR</span><span class="g-chip">ASTRAL</span>
+      </div>
+      <p class="g-p">Carrier tracking reconciled against the clearance hub</p>
+    </div>
+
+    <div class="g-s" style="--at:2.45s;--dur:1.45s">
+      <div class="g-t">AI-assisted automation</div>
+      <div class="g-list">
+        <div><b>Adaptive</b> execution</div>
+        <div><b>Smart</b> field detection</div>
+        <div><b>Intelligent</b> retries</div>
+        <div>Learning from <b>telemetry</b></div>
+      </div>
+    </div>
+
+    <div class="g-s" style="--at:3.75s;--dur:1.4s">
+      <div class="g-t">Verify everything</div>
+      <div class="g-flow"><b>Write</b><i>&rarr;</i><b>Save</b><i>&rarr;</i>
+        <b>Reload</b><i>&rarr;</i><b>Verify</b></div>
+      <p class="g-p">A completed postback is not a completed write</p>
+    </div>
+
+    <div class="g-s" style="--at:5.0s;--dur:1.4s">
+      <h1 class="g-h1">Control <span class="l">Tower</span></h1>
+      <div class="g-ok">Ready</div>
+    </div>
+
+  </div>
+  <div class="g-ctl">
+    <button class="g-btn" id="introMute" aria-label="Mute or unmute the intro">
+      <span class="off-i">Sound on</span><span class="on-i">Sound off</span></button>
+    <button class="g-btn" id="skip">Skip</button>
+  </div>
+  <!-- Drop any intro.mp3 / .ogg / .m4a into static/assets/audio/ and it
+       plays. Nothing breaks if the folder is empty. -->
+  <audio id="introAudio" preload="none" playsinline></audio>
+</div>
+
+<!-- ═══ APP ═══ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="ct-mark" viewBox="0 0 32 32">
+    <path d="M16 3.2 5.4 9v14L16 28.8 26.6 23V9L16 3.2Z" fill="none"
+      stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+    <path d="M5.4 9 16 15.1 26.6 9" fill="none" stroke="currentColor"
+      stroke-width="1.5" opacity=".55"/>
+    <path d="M16 15.1V28.8" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/>
+    <circle cx="16" cy="15.1" r="2.6" fill="currentColor"/>
+  </symbol>
+</defs></svg>
+
+<div id="app">
+  <div class="scrim" id="scrim"></div>
+
+  <nav class="nav" id="nav">
+    <div class="nav-b">
+      <div class="nav-n">Control Tower<i>.</i></div>
+      <div class="nav-o">Mantrac Logistics</div>
+    </div>
+    <div class="nav-l" id="navList"></div>
+    <div class="nav-f" id="navFoot">Standing by</div>
+  </nav>
+
+  <main class="main" id="main">
+    <header class="top">
+      <button class="burger" id="burger" aria-label="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <div class="top-t" id="pageTitle">Overview</div>
+      <div class="sp"></div>
+      <span class="ctlbar" id="ctlbar">
+        <button class="cbtn go" id="btnStart">Start run</button>
+        <button class="cbtn warn" id="btnPause">Pause</button>
+        <button class="cbtn stop" id="btnStop">Stop after this shipment</button>
+      </span>
+      <button class="share" id="shareBtn" title="Copy the link colleagues should use">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg>
+        <span id="shareTxt">Copy share link</span></button>
+      <div class="pill" id="runPill"><span class="d"></span><span id="runTxt">Connecting</span></div>
+      <div class="pill" id="beatPill"><span class="d"></span><span id="beatTxt">No heartbeat</span></div>
+    </header>
+
+    <section class="page on" data-p="overview">
+      <div class="ctl">
+        <div class="hero">
+          <div class="hero-fx" aria-hidden="true">
+            <div class="rail r1"></div><div class="rail r2"></div>
+            <div class="pod p1"></div><div class="pod p2"></div>
+            <div class="sweep"></div>
+          </div>
+          <div class="kick" style="position:relative">Automation status</div>
+          <div class="hero-v" id="bigState" style="position:relative">Standing by</div>
+          <div class="hero-s" id="dryFlag"></div>
+          <div class="hero-g" style="position:relative">
+            <div><div class="fk">Current operation</div><div class="fv" id="cOp">—</div></div>
+            <div><div class="fk">Current carrier</div><div class="fv" id="cSys">—</div></div>
+            <div><div class="fk">Current action</div><div class="fv" id="cAct">—</div></div>
+            <div><div class="fk">Runtime</div><div class="fv mono" id="cRun">00:00:00</div></div>
+            <div><div class="fk">Last heartbeat</div><div class="fv mono" id="cBeat">—</div></div>
+            <div><div class="fk">Hub list page</div><div class="fv mono" id="cPage">—</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-t">Run progress</div></div>
+          <div class="card-b">
+            <div class="bar" id="pBar"><div class="bar-f" id="pFill" style="width:0%"></div></div>
+            <div class="leg"><span id="pTxt">Waiting for the first page scan</span><span id="pPct"></span></div>
+            <div style="height:16px"></div>
+            <div class="leg" style="margin:0">
+              <span>Updated <b style="color:var(--grn)" id="nS">0</b></span>
+              <span>Skipped <b style="color:#946200" id="nK">0</b></span>
+              <span>Failed <b style="color:var(--red)" id="nF">0</b></span>
+              <span>Remaining <b id="nR">—</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-h"><div class="card-t">Operations timeline</div><div class="sp"></div><div class="kick" id="tlN"></div></div>
+          <div class="tl" id="timeline"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-t">Systems</div></div>
+          <div id="sysMini"></div>
+        </div>
+        <!-- Every number in here comes from /api/ml, which reads the live ml
+             package. An unknown shows as a dash, never as a zero. -->
+        <div class="card" id="mlCard">
+          <div class="card-h"><div class="card-t">AI engine</div><div class="sp"></div>
+            <span class="ml-pill" id="mlPill"><span class="d"></span><span id="mlPillT">…</span></span>
+          </div>
+          <div class="ml-g" id="mlGrid"></div>
+          <div class="ml-note" id="mlNote"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" data-p="live">
+      <div class="live">
+        <div class="card">
+          <div class="card-h"><div class="card-t">Shipment in progress</div><div class="sp"></div><span id="liveTag"></span></div>
+          <div class="card-b" id="liveBody"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-t">Step trace</div></div>
+          <div class="card-b"><div class="steps" id="steps"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" data-p="shipments">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Shipments this run</div><div class="sp"></div>
+          <input class="in" id="shipQ" placeholder="Search BOL / AWB, carrier, error" style="max-width:250px" /></div>
+        <div class="tools" id="shipF"></div>
+        <div class="tw"><table>
+          <thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Hub ETA</th><th>Carrier status</th>
+          <th>Carrier ETA</th><th>Carrier ATA</th><th>Result</th><th>Outcome</th><th>Time</th><th>Detail</th></tr></thead>
+          <tbody id="shipRows"></tbody></table></div>
+        <div id="shipEmpty"></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="analysis">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="card-t">Custom analysis</div><div class="sp"></div>
+          <div class="kick" id="anCount"></div></div>
+        <div class="an-bar">
+          <div class="fld"><label for="anState">Result</label>
+            <select class="sel" id="anState">
+              <option value="all" selected>All results</option>
+              <option value="updated">Updated in hub</option>
+              <option value="skipped">Skipped</option>
+              <option value="partial">Partly updated</option>
+              <option value="failed">Failed</option>
+              <option value="processing">Processing</option>
+            </select></div>
+          <div class="fld"><label for="anCarrier">Carrier</label>
+            <select class="sel" id="anCarrier"><option value="all">All carriers</option></select></div>
+          <div class="fld"><label for="anField">Date written</label>
+            <select class="sel" id="anField">
+              <option value="any">Any</option>
+              <option value="eta">Carrier ETA present</option>
+              <option value="ata">Carrier ATA present</option>
+              <option value="noeta">No carrier ETA</option>
+            </select></div>
+          <div class="fld"><label for="anGroup">Group by</label>
+            <select class="sel" id="anGroup">
+              <option value="carrier">Carrier</option>
+              <option value="provider">Tracking provider</option>
+              <option value="outcome">Outcome class</option>
+              <option value="state">Result</option>
+              <option value="page">Hub list page</option>
+            </select></div>
+          <div class="sp"></div>
+          <button class="btn" id="dlBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Download CSV</button>
+        </div>
+        <div class="stat-grid" id="anStats"></div>
+        <div class="card-b" id="anGroups"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">Matching shipments</div><div class="sp"></div>
+          <button class="btn ghost" id="dlAll">Export every shipment</button></div>
+        <div class="tw"><table>
+          <thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Carrier ETA</th><th>Carrier ATA</th>
+          <th>Result</th><th>Written to hub</th><th>Time</th></tr></thead>
+          <tbody id="anRows"></tbody></table></div>
+        <div id="anEmpty"></div>
+        <div class="card-b" style="padding-top:0"><div class="dl-note" id="dlNote"></div></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="systems">
+      <div class="g2">
+        <div class="card"><div class="card-h"><div class="card-t">Integration status</div></div>
+          <div id="sysFull"></div></div>
+        <div class="card"><div class="card-h"><div class="card-t">Runner health</div></div>
+          <div id="health"></div></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="exceptions">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Exceptions</div><div class="sp"></div><div class="kick" id="excN"></div></div>
+        <div id="excList"></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="logs">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Activity log</div><div class="sp"></div><div class="kick" id="logN"></div></div>
+        <div class="tools">
+          <input class="in" id="logQ" placeholder="Search log messages" />
+          <button class="chip on" data-lv="all">All</button>
+          <button class="chip" data-lv="info">Info</button>
+          <button class="chip" data-lv="success">Success</button>
+          <button class="chip" data-lv="warning">Warning</button>
+          <button class="chip" data-lv="error">Error</button>
+        </div>
+        <div class="logs" id="logList"></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="settings">
+      <div class="card"><div class="card-h"><div class="card-t">Run configuration</div></div>
+        <div class="card-b" id="settings"></div></div>
+          <div class="card" style="margin-top:14px">
+        <div class="card-h"><div class="card-t">Startup sequence</div></div>
+        <div class="card-b" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <button class="cbtn" onclick="window.ctReplayIntro && window.ctReplayIntro()">Replay intro</button>
+          <span class="kick" style="color:var(--mid)">Plays once per browser session. The
+            sound button remembers your choice.</span>
+        </div>
+      </div>
+</section>
+  </main>
+
+  <div class="pl" id="player">
+    <div class="pl-now">
+      <img class="pl-art" id="pArt" alt="" />
+      <div style="min-width:0">
+        <div class="pl-s" id="pTitle">Lilith</div>
+        <div class="pl-a"><span id="pArtist">Saint Avangeline</span><span id="pSep"> · </span><span id="pAlbum">Gardener of Eden</span></div>
+      </div>
+    </div>
+    <div class="pl-c">
+      <div class="pl-btns">
+        <button class="pb" id="pShuf" aria-label="Shuffle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
+        <button class="pb" id="pPrev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg></button>
+        <button class="pb pb-play" id="pPlay" aria-label="Play"><svg viewBox="0 0 24 24" fill="currentColor" id="pIcon"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="pb" id="pNext" aria-label="Next"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+        <button class="pb" id="pRep" aria-label="Repeat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      </div>
+      <div class="pl-seek"><span id="pCur">0:00</span><div class="trk" id="pTrk"><i id="pTrkF"></i></div><span id="pDur">0:00</span></div>
+    </div>
+    <div class="pl-r">
+      <button class="pb" id="pMute" aria-label="Mute"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg></button>
+      <input type="range" class="vol" id="pVol" min="0" max="1" step="0.01" value="0.55" aria-label="Volume" />
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+
+  <button class="fab" id="fab">
+    <svg><use href="#ct-mark"/></svg>
+    Ask
+  </button>
+  <div class="chat" id="chat">
+    <div class="ch-h">
+      <div class="ch-av"><svg><use href="#ct-mark"/></svg></div>
+      <div><div class="ch-nm">Shipment Assistant</div>
+        <div class="ch-rl" id="chRole">Answers only from this run's data</div>
+        <div class="ch-ty" id="chTy">typing…</div></div>
+      <button class="ch-x" id="chatX" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="ch-b" id="chatBody"></div>
+    <div class="ch-s" id="chatSug"></div>
+    <div class="ch-f">
+      <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask about a shipment…"></textarea>
+      <button class="send" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+/* ═══ INTRO ═══ */
+(function intro(){
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TOTAL = 6400;                       // must match --total below
+  const gate = $('gate'), audio = $('introAudio'), muteBtn = $('introMute');
+  let done = false, fade = null;
+
+  /* Seen already this session? Then straight in. A startup sequence is a
+     welcome, not a toll gate. */
+  const seen = (() => { try { return sessionStorage.getItem('ct-intro') === '1'; }
+                        catch (e) { return false; } })();
+  const muted = (() => { try { return localStorage.getItem('ct-intro-mute') === '1'; }
+                         catch (e) { return true; } })();
+
+  function stopAudio(){
+    if (!audio || audio.paused) return;
+    clearInterval(fade);
+    let v = audio.volume;
+    fade = setInterval(() => {
+      v -= 0.08;
+      if (v <= 0) { clearInterval(fade); try { audio.pause(); } catch (e) {} return; }
+      try { audio.volume = Math.max(0, v); } catch (e) {}
+    }, 45);
+  }
+
+  function finish(){
+    if (done) return;
+    done = true;
+    stopAudio();
+    try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
+    gate.classList.add('gone');
+    $('app').classList.add('on');
+    setTimeout(() => $('app').classList.add('settled'), 700);
+    setTimeout(() => { gate.style.display = 'none'; }, 560);
+  }
+
+  function applyMute(){
+    muteBtn.classList.toggle('muted', audio.muted);
+    try { localStorage.setItem('ct-intro-mute', audio.muted ? '1' : '0'); } catch (e) {}
+  }
+
+  /* Audio is entirely optional. A missing file, an unsupported codec or a
+     blocked autoplay all end the same way: the intro plays silently. The
+     picture never waits on the sound. */
+  function startAudio(){
+    if (!audio) return;
+    // Whatever audio is actually on disk. The server reports it, so any
+    // filename works and the track keeps its own name in the player; the
+    // fixed intro.* names remain as a fallback if the lookup fails.
+    // Attached here, not in the markup, so the file is only fetched once the
+    // intro is genuinely running and its size can never delay first paint.
+    const sources = ['/static/assets/audio/intro.mp3',
+                     '/static/assets/audio/intro.m4a',
+                     '/static/assets/audio/intro.ogg'];
+    let which = 0;
+    audio.onerror = () => {                  // missing or unsupported: try next
+      which += 1;
+      if (which < sources.length){ audio.src = sources[which]; audio.load();
+        const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
+    };
+    fetch('/api/music')
+      .then((r) => r.json())
+      .then((d) => { if (d && d.audio) sources.unshift(d.audio); })
+      .catch(() => {})
+      .finally(() => { audio.src = sources[0]; begin(); });
+    return;
+    audio.muted = muted;
+    audio.volume = 0;
+  }
+
+  function begin(){
+    if (done) return;                        // skipped before the lookup landed
+    const play = audio.play();
+    if (play && play.catch) {
+      play.catch(() => {
+        // Autoplay with sound refused: fall back to muted, which browsers
+        // do allow, and leave the button as the way to turn it on.
+        audio.muted = true; applyMute();
+        const retry = audio.play();
+        if (retry && retry.catch) retry.catch(() => {});
+      });
+    }
+    let v = 0;                               // fade in
+    clearInterval(fade);
+    fade = setInterval(() => {
+      v += 0.07;
+      if (v >= 0.7) { v = 0.7; clearInterval(fade); }
+      try { audio.volume = v; } catch (e) {}
+    }, 60);
+    // Stop a little before the picture ends so the cut is clean.
+    setTimeout(stopAudio, TOTAL - 700);
+  }
+
+  function run(){
+    gate.style.setProperty('--total', TOTAL + 'ms');
+    gate.style.display = '';
+    gate.classList.remove('gone');
+    done = false;
+    void gate.offsetWidth;                   // restart the CSS animations
+    gate.classList.add('play');
+    startAudio();
+    setTimeout(finish, reduced ? 400 : TOTAL);
+  }
+
+  muteBtn.addEventListener('click', () => {
+    audio.muted = !audio.muted;
+    if (!audio.muted && audio.paused) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
+    applyMute();
+  });
+  $('skip').addEventListener('click', finish);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(); });
+
+  audio.muted = muted; applyMute();
+  if (seen || reduced) { finish(); } else { run(); }
+
+  // Replay, from the About/settings area.
+  window.ctReplayIntro = function(){
+    try { sessionStorage.removeItem('ct-intro'); } catch (e) {}
+    $('app').classList.remove('on', 'settled');
+    run();
+  };
+})();
+
+/* ═══ AI ENGINE ═══════════════════════════════════════════════════════
+   Real values only. A field the ML layer cannot answer for shows a dash;
+   writing a 0 there would claim a measurement nobody took. Polled every
+   20s because a model does not change between frames. */
+(function mlPanel(){
+  const pill = $('mlPill'), pillT = $('mlPillT'), grid = $('mlGrid'), note = $('mlNote');
+  if (!pill) return;
+  const dash = (v) => (v === null || v === undefined || v === '') ? '—' : v;
+  const num = (v) => (typeof v === 'number') ? v.toLocaleString() : dash(v);
+
+  function paint(d){
+    const status = d.status || 'UNAVAILABLE';
+    pillT.textContent = status;
+    pill.className = 'ml-pill' + (status === 'ENABLED' ? ' on'
+                                 : status === 'UNAVAILABLE' ? '' : ' warn');
+    const model = d.model || {};
+    const tel = d.telemetry || {};
+    const cfg = d.config || {};
+    const fb = d.feedback || {};
+    const cells = [
+      ['Model', model.version ? ('v' + model.version) : '—'],
+      ['Contexts', num(model.contexts)],
+      ['Observations', num(model.observations)],
+      ['Confidence', dash(cfg.confidence_threshold)],
+      ['Recommended', num(tel.used)],
+      ['Fallbacks', num(tel.declined)],
+      ['Telemetry rows', num(tel.usable_rows !== undefined ? tel.usable_rows : tel.rows)],
+      ['Feedback', num(fb.total)]
+    ];
+    grid.innerHTML = cells.map(([k, v]) =>
+      '<div class="ml-k"><b>' + v + '</b><span>' + k + '</span></div>').join('');
+
+    let text;
+    if (status === 'ENABLED'){
+      text = 'The model may reorder field candidates and shorten waits. '
+           + 'It never decides ETA vs ATA, what to write, or whether a write is safe.';
+      if (model.built_at) text += ' Built ' + model.built_at + '.';
+    } else if (status === 'FALLBACK'){
+      text = 'Running the deterministic automation. ' + (d.error || '');
+      if (d.trainable === false && d.trainable_reason)
+        text += ' ' + d.trainable_reason;
+    } else if (status === 'DISABLED'){
+      text = 'ML_ENABLED is off, so the automation uses its own hand-tuned order.';
+    } else {
+      text = 'The learning package is not installed. ' + (d.error || '');
+    }
+    note.textContent = text;
+  }
+
+  function load(){
+    fetch('/api/ml').then((r) => r.json()).then(paint).catch(() => {
+      pillT.textContent = 'UNREACHABLE'; pill.className = 'ml-pill warn';
+    });
+  }
+  load();
+  setInterval(load, 20000);
+})();
+
+/* ═══ HELPERS ═══ */
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g,
+  (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dash = (v) => (v === null || v === undefined || v === '' ? '—' : esc(v));
+const clock = (s) => {
+  if (s == null) return '00:00:00';
+  const p = (n) => String(Math.floor(n)).padStart(2, '0');
+  return p(s / 3600) + ':' + p((s % 3600) / 60) + ':' + p(s % 60);
+};
+const ms = (v) => (v == null ? '—' : (v < 1000 ? v + ' ms' : (v / 1000).toFixed(1) + ' s'));
+const has = (v) => v !== null && v !== undefined && v !== '' && v !== '—';
+function put(el, v){ if (el && el.textContent !== v) el.textContent = v; }
+function putHTML(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; } }
+function cls(el, n){ if (el && el.className !== n) el.className = n; }
+
+/* ═══ NAV ═══ */
+const PAGES = [
+  {id:'overview',  t:'Overview',      i:'M3 12h4l3 8 4-16 3 8h4'},
+  {id:'live',      t:'Live operation',i:'M12 3v3m0 12v3M3 12h3m12 0h3M6.5 6.5l2 2m7 7 2 2m0-11-2 2m-7 7-2 2'},
+  {id:'shipments', t:'Shipments',     i:'M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4'},
+  {id:'analysis',  t:'Analysis',      i:'M4 20V11m6 9V4m6 16v-6m4 6V8'},
+  {id:'systems',   t:'Systems',       i:'M4 6h16M4 12h16M4 18h16'},
+  {id:'exceptions',t:'Exceptions',    i:'M12 3l9 16H3L12 3zm0 6v5m0 3v.5'},
+  {id:'logs',      t:'Activity log',  i:'M4 4h16v16H4zM8 9h8M8 13h8M8 17h5'},
+  {id:'settings',  t:'Settings',      i:'M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2m12 0h2M12 4v2m0 12v2'},
+  {id:'film',      t:'Introduction',  i:'M4 4h16v16H4zM4 9h16M9 4v16', film:true}
+];
+let activePage = 'overview';
+PAGES.forEach((p) => {
+  const b = document.createElement('button');
+  b.className = 'nav-i' + (p.id === 'overview' ? ' on' : '');
+  b.dataset.go = p.id;
+  b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' +
+    p.i + '"/></svg><span>' + p.t + '</span><span class="nav-c" id="n-' + p.id + '" hidden></span>';
+  b.addEventListener('click', () => {
+    if (p.film){ window.location.href = '/intro'; return; }
+    go(p.id);
+  });
+  $('navList').appendChild(b);
+});
+function go(id){
+  activePage = id;
+  document.querySelectorAll('.nav-i').forEach((n) => n.classList.toggle('on', n.dataset.go === id));
+  document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.dataset.p === id));
+  put($('pageTitle'), (PAGES.find((p) => p.id === id) || {}).t || '');
+  $('nav').classList.remove('open'); $('scrim').classList.remove('on');
+  $('main').scrollTop = 0;
+  if (S) paint(true);
+}
+$('burger').addEventListener('click', () => {
+  $('nav').classList.add('open'); $('scrim').classList.add('on');
+});
+$('scrim').addEventListener('click', () => {
+  $('nav').classList.remove('open'); $('scrim').classList.remove('on');
+});
+
+/* ═══ STATE ═══ */
+let S = null, logLevel = 'all', logQ = '', shipQ = '', shipF = 'all';
+const sig = {};
+const TAGS = {updated:'Updated', processing:'Processing', skipped:'Skipped',
+              partial:'Partly updated', failed:'Failed', unknown:'Unknown'};
+const tag = (s) => '<span class="tag ' + (TAGS[s] ? s : 'unknown') + '">' + (TAGS[s] || 'Unknown') + '</span>';
+const empty = (t, b) => '<div class="empty"><h3>' + t + '</h3><p>' + b + '</p></div>';
+function changed(k, v){ if (sig[k] === v) return false; sig[k] = v; return true; }
+
+function paint(force){
+  if (!S) return;
+  if (force) for (const k in sig) delete sig[k];
+  const run = S.run, cur = S.current, c = S.counters, pr = S.progress;
+
+  const map = {running:['run','Running'], finished:['fin','Run complete'],
+               fatal:['bad','Stopped on error'], idle:['','Standing by']};
+  const st = map[run.status] || map.idle;
+  cls($('runPill'), 'pill ' + st[0]); put($('runTxt'), st[1]);
+  put($('bigState'), st[1]);
+  $('bigState').style.color = run.status === 'running' ? 'var(--grn)'
+    : run.status === 'fatal' ? 'var(--red)' : run.status === 'finished' ? 'var(--blu)' : 'var(--ink)';
+
+  const age = run.heartbeat_age;
+  put($('beatTxt'), age == null ? 'No heartbeat'
+    : (age < 5 ? Math.max(0, Math.round(age)) + 's ago' : age.toFixed(0) + 's ago — stalled?'));
+  cls($('beatPill'), 'pill' + (age != null && age < 5 ? ' run' : (age != null ? ' bad' : '')));
+
+  put($('dryFlag'), run.dry_run === true ? 'Dry run — nothing is saved'
+    : run.dry_run === false ? 'Live — hub records are saved' : '');
+  put($('cOp'), cur.shipment ? cur.shipment.reference
+    : (run.status === 'running' ? 'Scanning hub list' : '—'));
+  cls($('cOp'), cur.shipment ? 'fv mono hi' : 'fv');
+  put($('cSys'), cur.system ? sysName(cur.system) : '—');
+  put($('cAct'), cur.step || '—');
+  put($('cRun'), clock(run.runtime_seconds));
+  put($('cBeat'), age == null ? '—' : Math.max(0, Math.round(age)) + 's ago');
+  put($('cPage'), cur.page == null ? '—' : 'Page ' + cur.page + ' of max ' + (run.max_pages || '?'));
+
+  const bar = $('pBar'), fill = $('pFill');
+  if (pr.determinate && pr.total){
+    bar.classList.remove('ind');
+    const pct = Math.min(100, Math.round(pr.processed / pr.total * 100));
+    if (fill.style.width !== pct + '%') fill.style.width = pct + '%';
+    put($('pTxt'), pr.processed + ' of ' + pr.total + ' shipments processed');
+    put($('pPct'), pct + '%');
+  } else {
+    bar.classList.add('ind');
+    put($('pTxt'), run.status === 'running'
+      ? pr.processed + ' processed · ' + pr.discovered + ' queued from ' + pr.pages_scanned +
+        ' page(s) — total unknown until pagination ends' : 'No active run');
+    put($('pPct'), '');
+  }
+  put($('nS'), String(c.successful)); put($('nK'), String(c.skipped));
+  put($('nF'), String(c.failed));
+  put($('nR'), pr.remaining == null ? '—' : String(pr.remaining));
+
+  if (changed('kpi', [c.processed,c.successful,c.skipped,c.failed,c.success_rate,
+                      pr.discovered,pr.pages_scanned].join('|'))){
+    const K = [
+      {k:'Processed', v:c.processed, n:'Under Clearance rows handled', c:'var(--vio)'},
+      {k:'Hub records updated', v:c.successful, n:'COE ETA / BU ATA written', c:'var(--grn)'},
+      {k:'Skipped', v:c.skipped, n:'Carrier gave no ETA or ATA', c:'var(--y)'},
+      {k:'Partly updated', v:c.partial || 0, n:'One field written, one failed', c:'var(--y)'},
+      {k:'Failed', v:c.failed, n:'Errors during processing', c:'var(--red)'},
+      {k:'Success rate', v:c.success_rate == null ? '—' : c.success_rate + '%',
+       n:'Of shipments processed', c:'var(--blu)'},
+      {k:'Queued from hub', v:pr.discovered, n:pr.pages_scanned + ' list page(s) scanned', c:'var(--ink)'}
+    ];
+    putHTML($('kpis'), K.map((x) =>
+      '<div class="kpi"><div class="kpi-k">' + x.k + '</div><div class="kpi-v" style="--c:' +
+      x.c + '">' + x.v + '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
+  }
+
+  if (changed('tl', S.timeline.length + ':' + (S.timeline[0] || {}).text)){
+    const I = {ok:'✓', warn:'!', error:'✕', shipment:'▸', scan:'◇', start:'●', stop:'■'};
+    put($('tlN'), S.timeline.length ? S.timeline.length + ' events' : '');
+    putHTML($('timeline'), S.timeline.length
+      ? S.timeline.slice(0, 60).map((t) => '<div class="tlr ' + t.icon + '"><time>' + esc(t.time) +
+          '</time><i>' + (I[t.icon] || '·') + '</i><span>' + esc(t.text) + '</span></div>').join('')
+      : empty('Nothing yet', 'Events appear as soon as the automation scans the hub list.'));
+  }
+
+  const sysSig = S.systems.map((x) => x.key + x.state + x.activity + x.last_success).join('|');
+  if (changed('sys', sysSig)){
+    const html = S.systems.map((x) =>
+      '<div class="sys st-' + x.state + '"><div class="led"></div><div style="min-width:0">' +
+      '<div class="sys-n">' + esc(x.name) + '</div><div class="sys-m' +
+      (x.state === 'error' ? ' bad' : '') + '">' +
+      esc(x.state === 'error' ? (x.last_error || 'Error') : (x.activity || x.role)) +
+      '</div></div><div class="sys-r">' + esc(x.state) + '<br>' +
+      (x.last_success ? 'ok ' + esc(x.last_success) : '—') + '</div></div>').join('');
+    putHTML($('sysMini'), html); putHTML($('sysFull'), html);
+  }
+
+  if (changed('health', JSON.stringify(S.health || {}))){
+    const h = S.health || {};
+    putHTML($('health'), h.available
+      ? '<div class="health"><div><div class="kpi-k">CPU</div><b>' + h.cpu_percent +
+        '%</b></div><div><div class="kpi-k">Memory</div><b>' + h.memory_percent +
+        '%</b></div><div><div class="kpi-k">Runner RAM</div><b>' + h.process_memory_mb +
+        '</b></div><div><div class="kpi-k">Threads</div><b>' + h.threads + '</b></div></div>'
+      : empty('Machine metrics off',
+          'Install <code>psutil</code> on the runner to report CPU and memory.'));
+  }
+
+  paintControl();
+  paintLive(); paintShips(); paintAnalysis(); paintExc(); paintLogs(); paintSettings();
+
+  const ne = $('n-exceptions');
+  ne.hidden = !S.exceptions.length; put(ne, String(S.exceptions.length)); ne.className = 'nav-c bad';
+  const ns = $('n-shipments');
+  ns.hidden = !S.shipments.length; put(ns, String(S.shipments.length));
+  put($('navFoot'), run.status === 'running' ? 'Live · ' + clock(run.runtime_seconds)
+    : 'Updated ' + S.generated_at);
+}
+function sysName(k){ const f = (S.systems || []).find((x) => x.key === k); return f ? f.name : k; }
+
+/* ═══ LIVE ═══ */
+function paintLive(){
+  if (activePage !== 'live' && sig.liveInit) return;
+  sig.liveInit = 1;
+  const cur = S.current.shipment || S.shipments[0];
+  const isLive = !!S.current.shipment;
+  const key = cur ? cur.reference + cur.state + cur.step + (cur.steps || []).length : 'none';
+  if (!changed('live', key)) return;
+  if (!cur){
+    putHTML($('liveTag'), '');
+    putHTML($('liveBody'), empty('No shipment in progress',
+      S.run.status === 'running' ? 'The runner is between shipments or scanning the next page.'
+        : 'Start <code>update_eta.py</code> to watch shipments move through.'));
+    putHTML($('steps'), ''); return;
+  }
+  putHTML($('liveTag'), tag(cur.state));
+  putHTML($('liveBody'),
+    (isLive ? '' : '<div class="kick" style="margin-bottom:12px">Most recent shipment</div>') +
+    '<div class="live-r">' + esc(cur.reference) + '</div><div class="hero-g" style="position:relative">' +
+    f('Carrier', cur.carrier) + f('Tracking provider', cur.provider === 'QATAR' ? 'Qatar Airways Cargo' : cur.provider) +
+    f('Hub status filter', cur.hub_status) + f('Hub list page', cur.table_page) +
+    f('Existing hub ETA', cur.internal_eta) + f('Carrier status', cur.provider_status) +
+    f('Carrier ETA', cur.provider_eta) + f('Carrier ATA', cur.provider_ata) +
+    f('COE view', cur.coe_action) + f('BU view', cur.bu_action) + f('Outcome', cur.outcome) +
+    '</div><div style="margin-top:20px"><div class="fk">Current step</div>' +
+    '<div style="font-size:14.5px;color:var(--vio);margin-top:5px;font-weight:500">' +
+    dash(cur.step) + '</div></div>');
+  putHTML($('steps'), (cur.steps || []).length
+    ? cur.steps.map((x) => '<div><time>' + esc(x.time) + '</time><span>' + esc(x.text) + '</span></div>').join('')
+    : '<div style="color:var(--faint);font-size:13px">Waiting for the first step</div>');
+}
+function f(k, v){ return '<div><div class="fk">' + k + '</div><div class="fv">' + dash(v) + '</div></div>'; }
+
+/* ═══ SHIPMENTS ═══ */
+$('shipF').innerHTML = [['all','All'],['processing','Processing'],['updated','Updated'],
+  ['skipped','Skipped'],['partial','Partly updated'],['failed','Failed']]
+  .map((p) => '<button class="chip' + (p[0] === 'all' ? ' on' : '') + '" data-s="' + p[0] + '">' + p[1] + '</button>').join('');
+$('shipF').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-s]'); if (!b) return;
+  shipF = b.dataset.s;
+  $('shipF').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === b));
+  delete sig.ships; paintShips();
+});
+let shipT = 0;
+$('shipQ').addEventListener('input', (e) => {
+  clearTimeout(shipT);
+  shipT = setTimeout(() => { shipQ = e.target.value.toLowerCase(); delete sig.ships; paintShips(); }, 140);
+});
+function paintShips(){
+  if (!S) return;
+  if (activePage !== 'shipments' && sig.shipInit) return;
+  sig.shipInit = 1;
+  let rows = S.shipments;
+  if (shipF !== 'all') rows = rows.filter((r) => r.state === shipF);
+  if (shipQ) rows = rows.filter((r) =>
+    [r.reference, r.carrier, r.error, r.provider_status].join(' ').toLowerCase().includes(shipQ));
+  const key = shipF + '|' + shipQ + '|' + rows.map((r) => r.reference + r.state).join(',');
+  if (!changed('ships', key)) return;
+  putHTML($('shipRows'), rows.map((r) =>
+    '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
+    '<td>' + dash(r.carrier) + '</td><td class="dt">' + dash(r.internal_eta) + '</td>' +
+    '<td>' + dash(r.provider_status) + '</td><td class="dt">' + dash(r.provider_eta) + '</td>' +
+    '<td class="dt">' + dash(r.provider_ata) + '</td><td>' + tag(r.state) + '</td>' +
+    '<td style="font-size:11.5px">' + dash(r.outcome) + '</td>' +
+    '<td class="n">' + ms(r.duration_ms) + '</td>' +
+    '<td><span class="err" title="' + esc(r.error || '') + '">' + dash(r.error) + '</span></td></tr>').join(''));
+  putHTML($('shipEmpty'), rows.length ? '' : empty('No shipments match',
+    S.shipments.length ? 'Clear the search or pick another filter.'
+      : 'Shipments appear as soon as the runner picks up the first Under Clearance row.'));
+}
+
+/* ═══ ANALYSIS ═══
+   Every figure is computed from the same shipment records the table shows, so
+   the CSV, the totals and the rows can never disagree. */
+['anState','anCarrier','anField','anGroup'].forEach((id) =>
+  $(id).addEventListener('change', () => { delete sig.an; paintAnalysis(); }));
+
+function analysisRows(){
+  const state = $('anState').value, carrier = $('anCarrier').value, field = $('anField').value;
+  return (S.shipments || []).filter((r) => {
+    if (state !== 'all' && r.state !== state) return false;
+    if (carrier !== 'all' && (r.carrier || 'Unknown') !== carrier) return false;
+    if (field === 'eta' && !has(r.provider_eta)) return false;
+    if (field === 'ata' && !has(r.provider_ata)) return false;
+    if (field === 'noeta' && has(r.provider_eta)) return false;
+    return true;
+  });
+}
+
+function paintAnalysis(){
+  if (!S) return;
+  if (activePage !== 'analysis' && sig.anInit) return;
+  sig.anInit = 1;
+
+  // Keep the carrier list in step with the run without losing the selection.
+  const carriers = Array.from(new Set((S.shipments || [])
+    .map((r) => r.carrier || 'Unknown'))).sort();
+  const sel = $('anCarrier');
+  if (sel._list !== carriers.join('|')){
+    sel._list = carriers.join('|');
+    const keep = sel.value;
+    sel.innerHTML = '<option value="all">All carriers</option>' +
+      carriers.map((c) => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+    if (carriers.indexOf(keep) >= 0 || keep === 'all') sel.value = keep;
+  }
+
+  const rows = analysisRows();
+  const key = [$('anState').value, $('anCarrier').value, $('anField').value,
+               $('anGroup').value, rows.length,
+               rows.map((r) => r.reference + r.state).join(',')].join('|');
+  if (!changed('an', key)) return;
+
+  put($('anCount'), rows.length + ' of ' + (S.shipments || []).length + ' shipments');
+
+  const withEta = rows.filter((r) => has(r.provider_eta)).length;
+  const withAta = rows.filter((r) => has(r.provider_ata)).length;
+  // A partial DID write a date to the Hub, so it counts here — otherwise this
+  // panel and the Overview KPI would disagree about the same run.
+  const written = rows.filter(
+    (r) => r.state === 'updated' || r.state === 'partial').length;
+  const timed = rows.filter((r) => r.duration_ms != null);
+  const avg = timed.length
+    ? Math.round(timed.reduce((a, r) => a + r.duration_ms, 0) / timed.length) : null;
+  const rate = rows.length ? Math.round(written / rows.length * 100) : null;
+
+  putHTML($('anStats'), [
+    {k:'Matching', v:rows.length, c:'var(--ink)'},
+    {k:'Written to hub', v:written, c:'var(--grn)'},
+    {k:'Carrier ETA found', v:withEta, c:'var(--vio)'},
+    {k:'Carrier ATA found', v:withAta, c:'var(--blu)'},
+    {k:'Success rate', v:rate == null ? '—' : rate + '%', c:'var(--ink)'},
+    {k:'Avg processing', v:avg == null ? '—' : ms(avg), c:'var(--ink)'}
+  ].map((s) => '<div class="stat"><div class="kpi-k">' + s.k + '</div><b style="--c:' +
+    s.c + '">' + s.v + '</b></div>').join(''));
+
+  const groupBy = $('anGroup').value;
+  const keyFor = (r) => ({
+    carrier: r.carrier || 'Unknown carrier',
+    provider: r.provider === 'QATAR' ? 'Qatar Airways Cargo' : (r.provider || 'Unknown'),
+    outcome: r.outcome || (r.state === 'updated' ? 'SUCCESS' : 'Unclassified'),
+    state: TAGS[r.state] || 'Unknown',
+    page: 'Hub page ' + (r.table_page == null ? '?' : r.table_page)
+  })[groupBy];
+
+  const groups = {};
+  rows.forEach((r) => {
+    const g = groups[keyFor(r)] || (groups[keyFor(r)] = {total:0, ok:0});
+    g.total++; if (r.state === 'updated' || r.state === 'partial') g.ok++;
+  });
+  const entries = Object.entries(groups).sort((a, b) => b[1].total - a[1].total);
+  const max = entries.length ? entries[0][1].total : 1;
+  putHTML($('anGroups'), entries.length
+    ? entries.map((e) =>
+        '<div class="row"><div class="a" title="' + esc(e[0]) + '">' + esc(e[0]) + '</div>' +
+        '<div class="t"><i class="' + (e[1].ok === e[1].total ? 'ok' : '') +
+        '" style="width:' + (e[1].total / max * 100) + '%"></i></div>' +
+        '<div class="v">' + e[1].ok + '/' + e[1].total + '</div></div>').join('')
+    : empty('Nothing to group', 'Widen the filters above, or wait for the run to process shipments.'));
+
+  putHTML($('anRows'), rows.map((r) =>
+    '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
+    '<td>' + dash(r.carrier) + '</td><td class="dt">' + dash(r.provider_eta) + '</td>' +
+    '<td class="dt">' + dash(r.provider_ata) + '</td><td>' + tag(r.state) + '</td>' +
+    '<td style="font-size:12px">' + dash(r.coe_action || r.bu_action) + '</td>' +
+    '<td class="n">' + ms(r.duration_ms) + '</td></tr>').join(''));
+  putHTML($('anEmpty'), rows.length ? '' : empty(
+    (S.shipments || []).length ? 'No shipments match these filters'
+                              : 'No shipments processed yet',
+    (S.shipments || []).length
+      ? 'This run has ' + (S.shipments || []).length + ' shipment(s) in total — '
+        + 'set Result to <code>All results</code> to see them.'
+      : 'The Analysis page fills in as the run processes shipments.'));
+  put($('dlNote'), 'The CSV contains exactly these ' + rows.length +
+    ' shipment(s), with every field the automation collected. Empty cells mean the ' +
+    'automation never had that value — nothing is filled in.');
+}
+
+$('dlBtn').addEventListener('click', () => {
+  // The server owns the CSV so the file matches the state, not the DOM.
+  window.location.href = '/api/export.csv?state=' + encodeURIComponent($('anState').value);
+});
+$('dlAll').addEventListener('click', () => {
+  window.location.href = '/api/export.csv?state=all';
+});
+
+/* ═══ EXCEPTIONS ═══ */
+function paintExc(){
+  if (activePage !== 'exceptions' && sig.excInit) return;
+  sig.excInit = 1;
+  if (!changed('exc', S.exceptions.length + ':' + (S.exceptions[0] || {}).message)) return;
+  put($('excN'), S.exceptions.length ? S.exceptions.length + ' open' : '');
+  putHTML($('excList'), S.exceptions.length
+    ? S.exceptions.slice(0, 100).map((x) => '<div class="exc ' + x.severity + '"><div class="exc-i">' +
+        (x.severity === 'warning' ? '!' : '✕') + '</div><div><div class="exc-m">' + esc(x.message) +
+        '</div><div class="exc-d">' + (x.reference ? esc(x.reference) + ' · ' : '') +
+        (x.outcome ? esc(x.outcome) + ' · ' : '') +
+        (x.system ? esc(sysName(x.system)) + ' · ' : '') + dash(x.step) +
+        '</div></div><div class="exc-t">' + esc(x.time) + '</div></div>').join('')
+    : empty('No exceptions', 'Skipped and failed shipments land here with the carrier, step and reason.'));
+}
+
+/* ═══ LOGS ═══ */
+document.querySelectorAll('[data-lv]').forEach((b) => b.addEventListener('click', () => {
+  logLevel = b.dataset.lv;
+  document.querySelectorAll('[data-lv]').forEach((x) => x.classList.toggle('on', x === b));
+  delete sig.logs; paintLogs();
+}));
+let logT = 0;
+$('logQ').addEventListener('input', (e) => {
+  clearTimeout(logT);
+  logT = setTimeout(() => { logQ = e.target.value.toLowerCase(); delete sig.logs; paintLogs(); }, 140);
+});
+function paintLogs(){
+  if (!S) return;
+  if (activePage !== 'logs' && sig.logInit) return;
+  sig.logInit = 1;
+  let rows = S.logs;
+  if (logLevel !== 'all') rows = rows.filter((l) => l.level === logLevel);
+  if (logQ) rows = rows.filter((l) => l.message.toLowerCase().includes(logQ));
+  const shown = rows.slice(0, 200);
+  if (!changed('logs', logLevel + '|' + logQ + '|' + rows.length + '|' + (shown[0] || {}).id)) return;
+  put($('logN'), rows.length + ' lines' + (rows.length > 200 ? ' (newest 200 shown)' : ''));
+  putHTML($('logList'), shown.length
+    ? shown.map((l) => '<div class="log ' + l.level + '"><time>' + esc(l.time) + '</time><b>' +
+        l.level.toUpperCase() + '</b><p>' + esc(l.message) + '</p></div>').join('')
+    : empty('Nothing logged yet', 'Every line the automation writes appears here in real time.'));
+}
+
+/* ═══ SETTINGS ═══ */
+function paintSettings(){
+  if (activePage !== 'settings' && sig.setInit) return;
+  sig.setInit = 1;
+  const r = S.run;
+  if (!changed('settings', JSON.stringify(r))) return;
+  const rows = [
+    ['Hub status filter', r.target_status],
+    ['Mode', r.dry_run === true ? 'Dry run — dates filled but not saved'
+      : r.dry_run === false ? 'Live — dates saved to the hub' : null],
+    ['Max shipments per run', r.max_records], ['Max hub list pages', r.max_pages],
+    ['Run log file', r.log_file], ['Results file', r.results_file],
+    ['Run started', r.started_at ? r.started_at.replace('T', ' ').slice(0, 19) : null],
+    ['Run finished', r.finished_at ? r.finished_at.replace('T', ' ').slice(0, 19) : null]
+  ];
+  putHTML($('settings'), rows.map((p) =>
+    '<div class="row"><div class="a" style="width:196px">' + p[0] +
+    '</div><div style="flex:1;font-family:var(--mono);font-size:12px;color:' +
+    (p[1] == null ? 'var(--faint)' : 'var(--ink)') + ';word-break:break-all">' +
+    dash(p[1]) + '</div></div>').join(''));
+}
+
+/* ═══ TRANSPORT ═══ */
+let queued = false, lastPaint = 0;
+const MIN_GAP = 140;
+function schedule(state){
+  S = state;
+  if (queued) return;
+  queued = true;
+  requestAnimationFrame(function frame(){
+    queued = false;
+    if (document.hidden) return;
+    const now = performance.now();
+    if (now - lastPaint < MIN_GAP){
+      queued = true;
+      setTimeout(() => requestAnimationFrame(frame), MIN_GAP - (now - lastPaint));
+      return;
+    }
+    lastPaint = now;
+    try { paint(); } catch (err) { console.error('paint', err); }
+  });
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S) paint(true); });
+function connect(){
+  try {
+    const s = new EventSource('/api/stream');
+    s.addEventListener('state', (e) => { try { schedule(JSON.parse(e.data)); } catch (err) {} });
+    s.onerror = () => { try { s.close(); } catch (e) {} setTimeout(poll, 1500); };
+  } catch (err) { poll(); }
+}
+function poll(){
+  fetch('/api/state').then((r) => r.json()).then(schedule).catch(() => {});
+  setTimeout(poll, 2000);
+}
+connect();
+setInterval(() => {
+  if (S && S.run.status === 'running' && S.run.started_at && !document.hidden)
+    put($('cRun'), clock(Math.floor((Date.now() - new Date(S.run.started_at).getTime()) / 1000)));
+}, 1000);
+
+/* ═══ RUN CONTROL ═══
+   The buttons only appear when control has been enabled in update_eta.py.
+   Nothing here touches the automation directly — each click posts a request
+   that the run picks up between shipments, never mid-write. */
+function sendControl(action, reference){
+  return fetch('/api/control', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action: action, reference: reference || ''})
+  }).then((r) => r.json());
+}
+function paintControl(){
+  const c = (S && S.control) || {};
+  $('ctlbar').classList.toggle('on', !!c.enabled);
+  if (!c.enabled) return;
+
+  // Under the supervisor the dashboard outlives the run, so Start is offered
+  // when nothing is running. In-process there is nothing to start.
+  const supervised = !!c.supervised;
+  const running = supervised ? !!c.running : (S.run.status === 'running');
+  const pausing = !!c.paused, stopping = !!c.stopping;
+
+  $('btnStart').style.display = supervised ? '' : 'none';
+  $('btnStart').disabled = running;
+  put($('btnStart'), running ? 'Running' : 'Start run');
+
+  $('btnPause').style.display = running ? '' : 'none';
+  $('btnStop').style.display = running ? '' : 'none';
+  put($('btnPause'), stopping ? 'Stopping…' : (pausing ? 'Resume' : 'Pause'));
+  $('btnPause').className = 'cbtn ' + (pausing ? 'go' : 'warn');
+  $('btnPause').disabled = stopping;
+  $('btnStop').disabled = stopping;
+  const queued = (c.queued || []).length;
+  put($('btnStop'), stopping ? 'Stopping after this shipment'
+    : (queued ? 'Stop  ·  ' + queued + ' queued' : 'Stop after this shipment'));
+}
+$('btnStart').addEventListener('click', () => {
+  put($('btnStart'), 'Starting…');
+  sendControl('start').then((r) => {
+    if (!r.accepted) window.alert(r.message);
+    paintControl();
+  });
+});
+$('btnPause').addEventListener('click', () => {
+  const paused = S && S.control && S.control.paused;
+  sendControl(paused ? 'resume' : 'pause').then(paintControl);
+});
+$('btnStop').addEventListener('click', () => {
+  if (!window.confirm('Stop the run after the current shipment finishes?\n\n'
+      + 'Everything already written to the Hub is kept.')) return;
+  sendControl('stop').then(paintControl);
+});
+
+/* ═══ SHARE LINK ═══
+   127.0.0.1 means "this computer" on whichever machine opens it, so pasting
+   that link elsewhere always fails. This copies the LAN link instead. */
+(function share(){
+  let links = [];
+  fetch('/api/share').then((r) => r.json()).then((d) => {
+    if (!d.shared || !d.links || !d.links.length) return;
+    links = d.links;
+    $('shareBtn').classList.add('on');
+    $('shareBtn').title = 'Copy: ' + links[0];
+  }).catch(() => {});
+
+  $('shareBtn').addEventListener('click', () => {
+    if (!links.length) return;
+    // Prefer the hostname link: it survives DHCP handing out a new IP, and
+    // it is what a colleague can retype from memory.
+    const link = links[0];
+    const done = () => {
+      put($('shareTxt'), 'Copied');
+      setTimeout(() => put($('shareTxt'), 'Copy share link'), 1800);
+    };
+    if (navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(link).then(done).catch(() => window.prompt('Copy this link:', link));
+    } else {
+      // Plain HTTP on a LAN is not a secure context, so the async API is
+      // unavailable — fall back to a selectable prompt.
+      window.prompt('Send this link to colleagues:', link);
+      done();
+    }
+  });
+})();
+
+/* ═══ CHAT ═══
+   Typing indicator, then the answer streams in character by character with a
+   blinking cursor. Suggestions come from the backend and are grounded in the
+   run's own data, so a chip can never lead somewhere the assistant refuses. */
+(function chat(){
+  const body = $('chatBody'), input = $('chatIn');
+  let busy = false, lastReference = null;
+
+  const OPENERS = [
+    ['How is it going?', 'How is it going?'],
+    ['Which shipments failed?', 'Which shipments failed?'],
+    ['Compare the carriers', 'Compare the carriers'],
+    ['Download the data', 'Download the data']
+  ];
+
+  function chips(list){
+    $('chatSug').innerHTML = (list || []).map((q) =>
+      '<button class="chip" data-q="' + esc(q) + '">' + esc(q) + '</button>').join('');
+  }
+  $('chatSug').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-q]');
+    if (b){ input.value = b.dataset.q; send(); }
+  });
+
+  /* Feedback is MATERIAL for a later, deliberate training pass — never a
+     live edit to a model. A thumbs-down changes nothing about the next
+     answer; it changes what a human has to look at. */
+  function feedbackRow(bubbleEl, question, reply){
+    const row = document.createElement('div');
+    row.className = 'fb';
+    row.innerHTML = '<span class="fb-t">Useful?</span>'
+      + '<button data-v="helpful" title="Helpful">&#128077;</button>'
+      + '<button data-v="not_helpful" title="Not helpful">&#128078;</button>';
+    bubbleEl.appendChild(row);
+
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-v]');
+      if (!btn || row.dataset.sent) return;
+      const verdict = btn.dataset.v;
+      row.querySelectorAll('button').forEach((b) => b.classList.remove('picked'));
+      btn.classList.add('picked');
+
+      const post = (correction) => {
+        row.dataset.sent = '1';
+        fetch('/api/feedback', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            question: question,
+            answer: reply.answer || '',
+            verdict: verdict,
+            correction: correction || '',
+            sources: reply.sources || reply.data_sources || [],
+            confidence: (reply.confidence === undefined ? null : reply.confidence),
+            intent: reply.intent || '',
+            reference: reply.reference || ''
+          })
+        }).then((r) => r.json()).then((d) => {
+          row.innerHTML = '<span class="fb-done">' +
+            (d.message || 'Recorded.') + '</span>';
+        }).catch(() => {
+          row.innerHTML = '<span class="fb-t">Could not record that.</span>';
+        });
+      };
+
+      if (verdict === 'not_helpful'){
+        // Ask what was wrong. A correction is worth far more than a count.
+        const box = document.createElement('input');
+        box.className = 'fb-in';
+        box.placeholder = 'What should it have said? (optional — press Enter)';
+        bubbleEl.appendChild(box);
+        box.focus();
+        let sent = false;
+        const finish = () => { if (sent) return; sent = true;
+          const text = box.value; box.remove(); post(text); };
+        box.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter'){ ev.preventDefault(); finish(); }
+        });
+        box.addEventListener('blur', finish);
+      } else {
+        post('');
+      }
+    });
+  }
+
+  function bubble(who){
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + who;
+    wrap.innerHTML = who === 'me'
+      ? '<div class="m-av">You</div>'
+      : '<div class="m-av"><svg><use href="#ct-mark"/></svg></div>';
+    const b = document.createElement('div');
+    b.className = 'bub';
+    wrap.appendChild(b);
+    body.appendChild(wrap);
+    body.scrollTop = body.scrollHeight;
+    return b;
+  }
+  const fmt = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                           .replace(/`(.+?)`/g, '<code>$1</code>');
+
+  function typeOut(el, text){
+    // ~9ms/char, capped so a long answer never feels slow.
+    return new Promise((done) => {
+      const total = Math.min(text.length * 9, 1100);
+      const step = Math.max(1, Math.ceil(text.length / (total / 16)));
+      let i = 0;
+      (function tick(){
+        i = Math.min(text.length, i + step);
+        el.innerHTML = fmt(text.slice(0, i)) + (i < text.length ? '<span class="cur"></span>' : '');
+        body.scrollTop = body.scrollHeight;
+        if (i < text.length) setTimeout(tick, 16); else done();
+      })();
+    });
+  }
+
+  const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
+
+  function downloads(list){
+    const row = document.createElement('div');
+    row.className = 'dl-row';
+    row.style.marginLeft = '39px';
+    row.innerHTML = list.map((d) =>
+      '<a class="dl" href="' + esc(d.url) + '">' + DL_ICON + esc(d.label) + '</a>').join('');
+    body.appendChild(row);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function card(spec){
+    if (!spec || spec.type !== 'shipment') return;
+    const el = document.createElement('div');
+    el.className = 'mini';
+    el.innerHTML = '<div class="mini-h"><span class="mini-r">' + esc(spec.reference) +
+      '</span>' + tag(spec.state) + '</div><div class="mini-b">' +
+      spec.rows.map((r) => '<div class="mini-row"><span class="mini-k">' + esc(r[0]) +
+        '</span><span class="mini-v">' + esc(r[1]) + '</span></div>').join('') + '</div>';
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function send(){
+    const q = input.value.trim();
+    if (!q || busy) return;
+    input.value = ''; input.style.height = 'auto';
+    busy = true;
+    const mine = bubble('me'); mine.innerHTML = fmt(q);
+
+    const wait = document.createElement('div');
+    wait.className = 'msg';
+    wait.innerHTML = '<div class="m-av"><svg><use href="#ct-mark"/></svg></div>' +
+      '<div class="td-b"><span></span><span></span><span></span></div>';
+    body.appendChild(wait);
+    body.scrollTop = body.scrollHeight;
+    $('chTy').classList.add('show');
+
+    fetch('/api/ask', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: q, context: {reference: lastReference}})
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        wait.remove(); $('chTy').classList.remove('show');
+        const b = bubble('bot');
+        return typeOut(b, d.answer || 'No answer came back.').then(() => {
+          if (d.card) card(d.card);
+          if (d.downloads && d.downloads.length) downloads(d.downloads);
+          if (d.reference) lastReference = d.reference;
+          feedbackRow(b, q, d);
+          chips(d.suggestions && d.suggestions.length
+            ? d.suggestions : OPENERS.map((o) => o[1]));
+        });
+      })
+      .catch(() => {
+        wait.remove(); $('chTy').classList.remove('show');
+        bubble('bot').innerHTML = fmt(
+          'I could not reach the Control Tower backend, so I have no data to answer from.');
+      })
+      .finally(() => { busy = false; body.scrollTop = body.scrollHeight; });
+  }
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  $('chatSend').addEventListener('click', send);
+
+  $('fab').addEventListener('click', () => {
+    $('chat').classList.add('on'); $('fab').classList.add('hide');
+    if (!body.children.length){
+      const b = bubble('bot');
+      typeOut(b, "Hello. I read this run's data and answer from it — nothing else.\n\n"
+                 + "Ask about a shipment, how the run is going, how the carriers "
+                 + "compare, or say \u201cdownload the data\u201d. If I don't have "
+                 + "something, I'll tell you rather than guess.");
+      chips(OPENERS.map((o) => o[1]));
+    }
+    input.focus();
+  });
+  $('chatX').addEventListener('click', () => {
+    $('chat').classList.remove('on'); $('fab').classList.remove('hide');
+  });
+})();
+
+/* ═══ PLAYER ═══ */
+(function player(){
+  const a = $('audio'), box = $('player');
+  let repeat = false, shuffle = false, lastVol = 0.55, seeking = false;
+  fetch('/api/music').then((r) => r.json()).then((m) => {
+    put($('pTitle'), m.title); put($('pArtist'), m.artist); put($('pAlbum'), m.album);
+    if (m.art) $('pArt').src = m.art;
+    if (!m.audio){
+      box.classList.add('off'); put($('pTitle'), 'No audio file found');
+      put($('pArtist'), 'Drop Lilith into static/music'); put($('pAlbum'), ''); put($('pSep'), '');
+      return;
+    }
+    a.src = m.audio; a.volume = lastVol; a.play().catch(hint);
+  }).catch(() => box.classList.add('off'));
+  function hint(){
+    if ($('mHint')) return;
+    const b = document.createElement('button');
+    b.className = 'hint'; b.id = 'mHint'; b.textContent = 'Play music';
+    b.addEventListener('click', () => a.play().catch(() => {}));
+    document.querySelector('.pl-now').appendChild(b);
+    const once = () => { a.play().then(() => b.remove()).catch(() => {}); };
+    document.addEventListener('click', once, {once:true});
+    document.addEventListener('keydown', once, {once:true});
+  }
+  const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+  a.addEventListener('play', () => {
+    $('pIcon').innerHTML = PAUSE; const h = $('mHint'); if (h) h.remove();
+  });
+  a.addEventListener('pause', () => { $('pIcon').innerHTML = PLAY; });
+  a.addEventListener('error', () => box.classList.add('off'));
+  const t = (v) => isFinite(v) ? Math.floor(v / 60) + ':' + String(Math.floor(v % 60)).padStart(2, '0') : '0:00';
+  a.addEventListener('loadedmetadata', () => put($('pDur'), t(a.duration)));
+  a.addEventListener('timeupdate', () => {
+    if (seeking) return;
+    put($('pCur'), t(a.currentTime));
+    if (a.duration) $('pTrkF').style.width = (a.currentTime / a.duration * 100) + '%';
+  });
+  a.addEventListener('ended', () => { if (repeat || shuffle){ a.currentTime = 0; a.play().catch(() => {}); } });
+  $('pPlay').addEventListener('click', () => { a.paused ? a.play().catch(() => {}) : a.pause(); });
+  $('pPrev').addEventListener('click', () => { a.currentTime = 0; });
+  $('pNext').addEventListener('click', () => { if (a.duration) a.currentTime = Math.max(0, a.duration - .4); });
+  $('pRep').addEventListener('click', (e) => { repeat = !repeat; a.loop = repeat; e.currentTarget.classList.toggle('on', repeat); });
+  $('pShuf').addEventListener('click', (e) => { shuffle = !shuffle; e.currentTarget.classList.toggle('on', shuffle); });
+  const trk = $('pTrk');
+  const seek = (e) => {
+    const r = trk.getBoundingClientRect();
+    const x = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
+    if (a.duration){ a.currentTime = x * a.duration; $('pTrkF').style.width = (x * 100) + '%'; }
+  };
+  trk.addEventListener('pointerdown', (e) => { seeking = true; seek(e); });
+  addEventListener('pointermove', (e) => { if (seeking) seek(e); });
+  addEventListener('pointerup', () => { seeking = false; });
+  $('pVol').addEventListener('input', (e) => {
+    a.volume = parseFloat(e.target.value); a.muted = a.volume === 0;
+    if (a.volume > 0) lastVol = a.volume;
+    $('pMute').classList.toggle('on', a.muted);
+  });
+  $('pMute').addEventListener('click', () => {
+    a.muted = !a.muted; $('pVol').value = a.muted ? 0 : lastVol;
+    if (!a.muted) a.volume = lastVol;
+    $('pMute').classList.toggle('on', a.muted);
+  });
+})();
+</script>
+</body>
+</html>
