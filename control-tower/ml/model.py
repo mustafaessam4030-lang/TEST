@@ -1,5 +1,5 @@
 """
-The estimator.
+The ATLAS estimator.
 
 WHAT IT IS
 
@@ -56,6 +56,8 @@ Standard library only — the arithmetic is a handful of divisions.
 import json
 import math
 import time
+
+from . import identity
 
 # 4: counts became weighted floats, the feature space lost `visible`, and the
 # label became verified-persisted-success. A version 3 file describes a
@@ -182,6 +184,8 @@ class StrategyModel:
         for key in self.timings:
             self.timings[key].sort()
         self.meta.setdefault("built_at", time.strftime("%Y-%m-%d %H:%M:%S"))
+        self.meta["engine"] = identity.NAME
+        self.meta["engine_full_name"] = identity.FULL_NAME
         self.meta["version"] = MODEL_VERSION
         self.meta["cells"] = len(self.counts)
         self.meta["observations"] = round(sum(
@@ -381,8 +385,15 @@ class StrategyModel:
                    recent=raw.get("recent") or {},
                    streaks=raw.get("streaks") or {})
 
+    def identifier(self):
+        """`ATLAS/4.2` — schema version and feature space, from this file."""
+        return identity.identifier(
+            MODEL_VERSION, self.meta.get("feature_version", "?"))
+
     def summary(self):
         return {
+            "engine": identity.NAME,
+            "identifier": self.identifier(),
             "cells": len(self.counts),
             "observations": round(sum(entry[1] for cell in self.counts.values()
                                       for entry in cell.values()), 3),

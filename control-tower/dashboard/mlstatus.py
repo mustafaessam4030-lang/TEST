@@ -1,5 +1,5 @@
 """
-Real numbers from the learning layer, for the dashboard.
+Real numbers from ATLAS, for the dashboard.
 
 Every value here is read from the live ml package — the loaded model, the
 telemetry file on disk, the configuration actually in force. Nothing is
@@ -17,6 +17,8 @@ from pathlib import Path
 try:
     from ml import config as ml_config
     from ml import episodes as ml_episodes
+    from ml import identity as ml_identity
+    from ml import model as ml_model
     from ml import predictor as ml_predictor
     from ml import telemetry as ml_telemetry
     from ml import trainer as ml_trainer
@@ -25,7 +27,13 @@ try:
 except Exception as error:      # pragma: no cover - environment dependent
     AVAILABLE = False
     IMPORT_ERROR = str(error)
-    ml_config = ml_episodes = ml_predictor = ml_telemetry = ml_trainer = None
+    ml_config = ml_episodes = ml_identity = ml_model = None
+    ml_predictor = ml_telemetry = ml_trainer = None
+
+# Shown when the package cannot be imported at all — the panel still needs a
+# name for the thing that is missing.
+ENGINE_NAME = "ATLAS"
+ENGINE_FULL_NAME = "Adaptive Logistics Strategy Engine"
 
 
 def _telemetry_summary(limit_bytes=6 * 1024 * 1024):
@@ -110,6 +118,7 @@ def snapshot():
     if not AVAILABLE:
         return {
             "available": False, "status": "UNAVAILABLE", "online": False,
+            "engine": ENGINE_NAME, "engine_full_name": ENGINE_FULL_NAME,
             "error": IMPORT_ERROR, "model": None, "telemetry": _telemetry_summary(),
             "config": {},
         }
@@ -119,6 +128,7 @@ def snapshot():
     except Exception as error:
         return {
             "available": True, "status": "FALLBACK", "online": False,
+            "engine": ENGINE_NAME, "engine_full_name": ENGINE_FULL_NAME,
             "error": str(error), "model": None,
             "telemetry": _telemetry_summary(), "config": {},
         }
@@ -144,6 +154,11 @@ def snapshot():
     if loaded:
         model = {
             "path": state.get("loaded_from"),
+            "name": ENGINE_NAME,
+            # `ATLAS/4.2` — file schema and feature space. One string an
+            # operator can quote when asking why a model was refused.
+            "identifier": summary.get("identifier") or ml_identity.identifier(
+                ml_model.MODEL_VERSION, meta.get("feature_version", "?")),
             "version": meta.get("version"),
             "built_at": meta.get("built_at"),
             "contexts": summary.get("cells"),
@@ -182,6 +197,9 @@ def snapshot():
         "available": True,
         "status": status,
         "online": status == "ENABLED",
+        "engine": ml_identity.NAME,
+        "engine_full_name": ml_identity.FULL_NAME,
+        "engine_role": ml_identity.ROLE,
         "mode": mode,
         # Never overstate this. True only when a promotion recorded a BETTER
         # verdict against real held-out telemetry, and it was not forced.

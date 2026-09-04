@@ -169,33 +169,67 @@ python -m playwright install chromium
 
 ---
 
-## 10. The learning layer
+## 10. ATLAS — the strategy engine
 
-`ml\` is an optional layer that can, once trained, reorder the field-lookup
-candidates and shorten waits based on what has actually worked. **It is off.**
-With `ML_ENABLED` unset the automation behaves exactly as it did before the
-layer existed.
+`ml\` is **ATLAS, the Adaptive Logistics Strategy Engine**. Once trained it can
+reorder the field-lookup candidates and shorten waits based on what has
+actually worked.
 
-Telemetry is collected from the first run — it changes nothing, it only
-records what was tried and what happened, so a model can eventually be built
-from real evidence rather than guesses.
+**It is in SHADOW mode, which means it changes nothing.** It watches, it
+records what it *would* have chosen, and the automation runs its own hand-tuned
+order exactly as it always has. There is also no trained model yet, so at the
+moment it has no opinion to discard either.
 
-```bat
-REM after some runs, see how much data there is
-python -c "from ml import telemetry; print(telemetry.stats())"
+Every run tells you which it is, in its own words:
 
-REM train (refuses, and says why, until there is enough)
-python -m ml.trainer --show
-
-REM prove it beats the current order before trusting it
-python -m ml.evaluator
+```
+[ATLAS] Adaptive Logistics Strategy Engine
+[ATLAS] Mode: SHADOW
+[ATLAS] Status: FALLBACK
+ATLAS → Deterministic fallback: no trained model; the automation uses its
+                                own hand-tuned order
 ```
 
-Only switch it on if the evaluator prints `VERDICT: BETTER`.
+On the dashboard, the ATLAS card lists what it did this run, and every shipment
+carries a small tag: **ATLAS** if the engine steered that write, **Deterministic**
+if the automation did it alone. `ATLAS → Action completed` appears only after
+the date has been read back out of the Hub and confirmed — it is never written
+for a save nobody checked.
 
-Full detail, including every setting and what the model is never allowed to
-decide, is in `ML.md`. The map of how the existing automation works is in
-`ARCHITECTURE.md`.
+Telemetry is collected from the first run. It changes nothing; it records what
+was tried and what happened, so a model can eventually be built from real
+evidence rather than guesses.
+
+```bat
+REM 1 - collect, WITH verification on. Without this nothing is trainable:
+REM     a locator only counts as having worked if the date it wrote was
+REM     still in the Hub when the automation looked again.
+set VERIFY_AFTER_SAVE=1
+python update_eta.py
+
+REM 2 - see how much usable data there is
+python -c "from ml import episodes; print(episodes.join()[1])"
+
+REM 3 - train a challenger (refuses, and says exactly why, until there
+REM     is enough). This does NOT go live.
+python -m ml.trainer --show
+
+REM 4 - prove it beats the current order
+python -m ml.evaluator
+
+REM 5 - promote. Only happens if step 4 said BETTER.
+python -m ml.trainer --promote
+```
+
+Only after all of that, and only when you want ATLAS to actually steer:
+
+```bat
+set ML_MODE=active
+```
+
+Full detail — every setting, the exact truth condition behind each `ATLAS →`
+line, and what ATLAS is never allowed to decide — is in `ML.md`. The map of how
+the existing automation works is in `ARCHITECTURE.md`.
 
 ---
 

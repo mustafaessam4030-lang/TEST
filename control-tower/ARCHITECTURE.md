@@ -142,7 +142,13 @@ Every one of these is prose aimed at a human reader. None of it is
 machine-readable, which is why telemetry is added alongside rather than by
 reshaping these.
 
-## Where the ML layer attaches
+## Where ATLAS attaches
+
+ATLAS — Adaptive Logistics Strategy Engine — is the strategy layer. Its name,
+its version scheme and the vocabulary of things it is allowed to say about
+itself all live in `ml/identity.py`; `update_eta.py` and `dashboard/bridge.py`
+mirror the constants so they still work with the package absent, and
+`test_atlas.py` checks the mirrors against the original.
 
 Three seams, all of them places where the code already makes an ordered guess:
 
@@ -156,6 +162,26 @@ In all three the ML output is an **ordering or a number**, never a decision
 about which field to write or what to write into it. And in the shipped
 default (`ML_MODE=shadow`) it is not even that: the recommendation is recorded
 and discarded, and the deterministic order runs.
+
+## What ATLAS is allowed to claim
+
+`atlas_log(label, detail)` is the only way an ATLAS event reaches the log or
+the dashboard, and every call site passes a label constant rather than a
+string. The set of claims is closed, and each has one truth condition:
+
+| Emitted from | Label | Condition |
+| --- | --- | --- |
+| `predictor._log_decision` | `Strategy selected` | the recommendation was **used** |
+| `predictor._log_decision` | `Deterministic fallback` | declined, or shadow |
+| `fill_date_field` | `Strategy failed` | ATLAS's pick was not the strategy that found the field |
+| `fill_date_field` | `Fallback activated` | the visibility-free lookup rescued an ATLAS-ordered attempt |
+| `verify_saved_date` | `Verification passed` | read-back confirmed, on an influenced write |
+| `ml_episode_end` | `Action completed` | `verified is True` **and** `atlas_influenced` |
+| `ml_episode_end` | `Action unverified` | saved, never read back |
+
+`episode.atlas_influenced` is set in exactly one place — `ml_order`, after the
+recommendation is confirmed `used` and the reordered list is proven complete.
+Nothing else in the run sets it, and nothing reads it before that point.
 
 ## Episodes: how an attempt becomes evidence
 

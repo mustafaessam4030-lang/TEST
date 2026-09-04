@@ -1,13 +1,75 @@
-# The learning layer
+# ATLAS
+
+**Adaptive Logistics Strategy Engine.**
 
 A layer that sits **beside** the Control Tower, not inside it. It is on by
 default, but "on" only means it will consult a model if one exists: with no
-trained model the automation behaves exactly as it did before the layer
-existed, and the test suite proves that rather than asserting it.
+trained model the automation behaves exactly as it did before ATLAS existed,
+and the test suite proves that rather than asserting it.
+
+ATLAS is **not a second automation.** It chooses the ORDER in which known-safe
+candidates are tried, and nothing else. Delete `ml/` and the Control Tower runs
+exactly as it always has.
+
+```
+Deterministic Safety      the candidate SET, the ETA/ATA guards
+        |                 — ATLAS cannot touch any of this
+   Safe Candidates
+        |
+     ATLAS               an ORDER, and a wait no longer than the call
+        |                site's own constant
+Existing Automation      unchanged; it does the work
+        |
+      Save
+        |
+Read-back Verification   deterministic; ATLAS has no say
+        |
+ Verified Result
+```
+
+## What ATLAS says about itself
+
+Every line beginning `ATLAS →` is a claim that ATLAS did something, and each
+one has exactly one truth condition:
+
+| Line | Written when |
+| --- | --- |
+| `ATLAS → Strategy selected` | its order was **used** — the automation really did reorder because of it |
+| `ATLAS → Strategy failed` | the strategy it put first was tried and did not work, or its value did not persist |
+| `ATLAS → Fallback activated` | it steered, its candidates missed, and the automation's own visibility-free lookup took over |
+| `ATLAS → Deterministic fallback` | it did **not** steer: no model, thin evidence, below threshold, drift, or shadow mode |
+| `ATLAS → Verification passed` | read-back confirmed a value on a write it influenced |
+| `ATLAS → Action completed` | read-back **confirmed** the value **and** ATLAS influenced the write |
+| `ATLAS → Action unverified` | the write was saved but nothing read it back |
+
+`Action completed` is the only success claim in the vocabulary and it is the
+most tightly guarded line in the system: there is exactly one place in
+`update_eta.py` that can emit it, it sits behind
+`if verified is True and episode.atlas_influenced:`, and a test pins both
+halves. With `VERIFY_AFTER_SAVE` off it can never be reached — the run says
+`Action unverified` instead.
+
+Shadow mode never says `Strategy selected`. It used nothing, so it selected
+nothing, and the honest line is `Deterministic fallback` with the choice it
+*would* have made named as detail.
+
+## Where you see it
+
+* **Run log** — the `[ATLAS]` startup block and the `ATLAS →` event lines.
+* **Dashboard** — the ATLAS card, with a live feed of the run's events;
+  influenced ones in the accent colour, fallbacks muted.
+* **Shipments table and live panel** — a small `ATLAS` tag on rows the engine
+  steered, and a muted `Deterministic` tag on the rest. Never blank: "the
+  deterministic order did this" is a statement, not an absence.
+* **Telemetry** — every row carries `engine`, every episode carries
+  `atlas_influenced`, `atlas_chosen` and `atlas_mode`, and every decision
+  carries the vocabulary `label` it was announced under.
+* **Model file** — `engine`, `engine_full_name`, and the identifier
+  `ATLAS/<model version>.<feature version>`, e.g. `ATLAS/4.2`.
 
 ## What it does and does not decide
 
-| The model may | The model may never |
+| ATLAS may | ATLAS may never |
 | --- | --- |
 | Reorder the field-lookup candidates | Decide whether a field is ETA or ATA |
 | Choose which write method to try first | Decide which shipment a field belongs to |
@@ -16,8 +78,8 @@ existed, and the test suite proves that rather than asserting it.
 | | Decide whether verification can be skipped |
 
 Everything in the right-hand column is a deterministic rule in `update_eta.py`
-and stays there. The layer's entire output is *an ordering* and *a number
-smaller than one you already had*.
+and stays there. ATLAS's entire output is *an ordering* and *a number smaller
+than one you already had*.
 
 ## Status: READY FOR LEARNING — NOT YET PROVEN SUPERIOR
 

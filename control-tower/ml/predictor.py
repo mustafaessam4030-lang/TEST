@@ -1,5 +1,5 @@
 """
-The one interface the automation talks to.
+ATLAS — the one interface the automation talks to.
 
 Everything here answers with an opinion the caller is free to ignore, and
 every path — no model, bad model, thin evidence, unknown context, an outright
@@ -37,7 +37,7 @@ import os
 import random
 import threading
 
-from . import config, features, model as model_module, telemetry
+from . import config, features, identity, model as model_module, telemetry
 
 _lock = threading.Lock()
 _model = None
@@ -161,16 +161,26 @@ def initialize(log=print):
     """
     def emit(text):
         try:
-            log("[ML] " + text)
+            log("[{0}] {1}".format(identity.NAME, text))
         except Exception:
             pass
 
+    def announce(label, detail=""):
+        """An ATLAS-vocabulary line. Same shape as the ones a run emits."""
+        try:
+            log(identity.line(label, detail))
+        except Exception:
+            pass
+
+    emit(identity.FULL_NAME)
     emit("Initializing...")
     try:
         if not config.ML_ENABLED:
             emit("ML_ENABLED is off")
             emit("Status: DISABLED")
-            emit("Using deterministic automation")
+            announce(identity.DETERMINISTIC_FALLBACK,
+                     "the engine is switched off; the automation uses its own "
+                     "hand-tuned order")
             return False
 
         emit("Mode: {0}".format(config.ML_MODE.upper()))
@@ -180,19 +190,24 @@ def initialize(log=print):
                 emit("No trained model found at {0}".format(
                     config.active_model_path()))
                 emit("Status: FALLBACK")
-                emit("Using deterministic automation")
+                announce(identity.DETERMINISTIC_FALLBACK,
+                         "no trained model; the automation uses its own "
+                         "hand-tuned order")
                 emit("Telemetry is being collected; run "
                      "'python -m ml.trainer' once there is enough of it")
             else:
                 emit("Model load failed: {0}".format(error))
                 emit("Status: FALLBACK")
-                emit("Using deterministic automation")
+                announce(identity.DETERMINISTIC_FALLBACK,
+                         "the model could not be loaded")
             return False
 
         summary = model.summary()
         meta = summary.get("meta") or {}
         emit("Model found: {0}".format(config.active_model_path()))
         emit("Model loaded successfully")
+        emit("Model: {0}".format(identity.describe(
+            model_module.MODEL_VERSION, features.FEATURE_VERSION)))
         emit("Model version: {0}   feature space: v{1}   built: {2}".format(
             model_module.MODEL_VERSION, features.FEATURE_VERSION,
             meta.get("built_at", "unknown")))
@@ -226,14 +241,19 @@ def initialize(log=print):
             emit("SHADOW: recommendations are recorded and DISCARDED. The "
                  "deterministic order runs. Nothing this model says changes "
                  "what the automation does.")
+            announce(identity.DETERMINISTIC_FALLBACK,
+                     "shadow mode; every write this run is completed by the "
+                     "deterministic order")
         else:
-            emit("The model may reorder candidates and shorten waits. "
-                 "It decides nothing else.")
+            emit("{0} may reorder candidates and shorten waits. It decides "
+                 "nothing else — not which field, not what to write, not "
+                 "whether a write is safe.".format(identity.NAME))
         return True
     except Exception as error:              # pragma: no cover - belt and braces
         emit("Initialization failed: {0}".format(error))
         emit("Status: FALLBACK")
-        emit("Using deterministic automation")
+        announce(identity.DETERMINISTIC_FALLBACK,
+                 "initialisation failed; the automation uses its own order")
         return False
 
 
@@ -404,14 +424,24 @@ def recommend_wait(context, default_ms, floor_ms=500, log=None):
         if config.ML_MODE != "active":
             if log:
                 try:
-                    log("ML: shadow — would have shortened this wait to "
-                        "{0:.0f}ms (p90 of {1} successful waits was {2:.0f}ms); "
-                        "keeping {3:.0f}ms".format(capped, samples, observed,
-                                                   float(default_ms)))
+                    log(identity.line(
+                        identity.DETERMINISTIC_FALLBACK,
+                        "shadow; kept the {0:.0f}ms wait. Would have proposed "
+                        "{1:.0f}ms (p90 of {2} successful waits was {3:.0f}ms)"
+                        .format(float(default_ms), capped, samples, observed)))
                 except Exception:
                     pass
             return default_ms, "shadow: would have proposed {0:.0f}ms".format(capped)
 
+        if log:
+            try:
+                log(identity.line(
+                    identity.STRATEGY_SELECTED,
+                    "wait shortened to {0:.0f}ms from {1:.0f}ms (p90 of {2} "
+                    "successful waits was {3:.0f}ms)".format(
+                        capped, float(default_ms), samples, observed)))
+            except Exception:
+                pass
         return capped, "p90 of {0} successful waits was {1:.0f}ms".format(
             samples, observed)
     except Exception as error:
@@ -423,26 +453,39 @@ def recommend_wait(context, default_ms, floor_ms=500, log=None):
 def _log_decision(context, chosen, scores, used, reason, log,
                   verdict=None, shadow=False):
     """
-    Record the decision, including the ones where the model stood down.
+    Record the decision, including the ones where ATLAS stood down.
 
     Declines are as informative as choices: a log full of "not enough
     evidence" is what tells an operator the layer is behaving, and a log full
     of shadow choices is the material the next evaluation is built from.
+
+    THE ATTRIBUTION RULE LIVES HERE. `Strategy selected` is written only when
+    `used` is true — when the automation really did reorder its candidates
+    because of this. Shadow mode produces a choice and uses none of it, so it
+    gets `Deterministic fallback` with the choice named as detail. Calling
+    that "selected" would be the single easiest lie in the whole system to
+    tell, and it would make every downstream count wrong.
     """
     try:
+        if used:
+            label = identity.STRATEGY_SELECTED
+            detail = "{0} — {1}".format(chosen, reason)
+        elif shadow:
+            label = identity.DETERMINISTIC_FALLBACK
+            detail = ("shadow; the automation's own order ran. Would have "
+                      "selected {0}".format(chosen))
+        else:
+            label = identity.DETERMINISTIC_FALLBACK
+            detail = reason
+
         telemetry.decision(context, chosen, scores, used, reason,
                            mode=config.ML_MODE, shadow=shadow,
                            support=(verdict or {}).get("has_support"),
                            trials=(verdict or {}).get("trials"),
-                           level_key=(verdict or {}).get("level_key"))
+                           level_key=(verdict or {}).get("level_key"),
+                           label=label)
         if log:
-            if used:
-                outcome = chosen
-            elif shadow:
-                outcome = "SHADOW would have chosen {0}".format(chosen)
-            else:
-                outcome = "kept the original order"
-            log("ML: {0} -> {1} ({2})".format(
-                features.describe(context), outcome, reason))
+            log(identity.line(label, "{0} [{1}]".format(
+                detail, features.describe(context))))
     except Exception:
         pass

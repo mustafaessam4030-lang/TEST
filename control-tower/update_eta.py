@@ -854,13 +854,64 @@ def run_with_retry(operation_name, carrier, reference, call,
 try:
     from ml import config as ml_config
     from ml import features as ml_features
+    from ml import identity as ml_identity
     from ml import predictor as ml_predictor
     from ml import telemetry as ml_telemetry
     ML_AVAILABLE = True
 except Exception as _ml_import_error:      # pragma: no cover - environment
     ML_AVAILABLE = False
-    ml_config = ml_features = ml_predictor = ml_telemetry = None
+    ml_config = ml_features = ml_identity = ml_predictor = ml_telemetry = None
     _ML_IMPORT_ERROR = str(_ml_import_error)
+
+
+# ── ATLAS, named locally ─────────────────────────────────────────────
+#
+# The engine's own module is the source of truth, but the automation must be
+# able to talk about it when the package is missing — that is the whole point
+# of the defensive import above. These mirror ml/identity.py and the test
+# suite checks that they still agree.
+
+ATLAS_NAME = "ATLAS"
+ATLAS_FULL_NAME = "Adaptive Logistics Strategy Engine"
+
+ATLAS_STRATEGY_SELECTED = "Strategy selected"
+ATLAS_STRATEGY_FAILED = "Strategy failed"
+ATLAS_FALLBACK_ACTIVATED = "Fallback activated"
+ATLAS_DETERMINISTIC_FALLBACK = "Deterministic fallback"
+ATLAS_VERIFICATION_PASSED = "Verification passed"
+ATLAS_ACTION_COMPLETED = "Action completed"
+ATLAS_ACTION_UNVERIFIED = "Action unverified"
+
+
+def atlas_line(label, detail=""):
+    """`ATLAS → Strategy selected: ...`, from the engine's own formatter."""
+    if ML_AVAILABLE:
+        try:
+            return ml_identity.line(label, detail)
+        except Exception:
+            pass
+    text = "{0} \u2192 {1}".format(ATLAS_NAME, label)
+    detail = str(detail or "").strip()
+    return "{0}: {1}".format(text, detail) if detail else text
+
+
+def atlas_log(label, detail="", reference=None):
+    """
+    Announce one ATLAS event to the run log and the dashboard.
+
+    Every caller of this passes a label constant, never a string of its own.
+    An event is a CLAIM about what the engine did, and the set of claims it is
+    allowed to make is fixed above rather than open to whatever a call site
+    feels like writing.
+    """
+    try:
+        write_log(atlas_line(label, detail))
+    except Exception:
+        pass
+    try:
+        tower.atlas(label, detail, reference=reference)
+    except Exception:
+        pass
 
 
 # Set once at startup by main(). True only when the switch is on AND a valid
@@ -905,6 +956,13 @@ class _MlEpisode:
         self.attempts = {}      # what -> how many looks so far
         self.tries = {}         # strategy -> how many attempts so far
         self.closed = False
+        # Did ATLAS actually steer this write? Set only by ml_order(), and
+        # only when the recommendation was USED. Shadow mode, a declined
+        # recommendation and a missing model all leave this False, which is
+        # what stops an ATLAS success line being written for a write the
+        # deterministic order did on its own.
+        self.atlas_influenced = False
+        self.atlas_chosen = None
 
 
 def ml_episode_begin(reference, view, field, value):
@@ -924,6 +982,28 @@ def ml_episode_begin(reference, view, field, value):
 
 def ml_episode_current():
     return _ML_EPISODES[-1] if _ML_EPISODES else None
+
+
+def atlas_influenced():
+    """True when ATLAS steered the write currently in progress."""
+    episode = ml_episode_current()
+    return bool(episode and episode.atlas_influenced)
+
+
+def atlas_chosen():
+    """The strategy ATLAS put first for this write, or None."""
+    episode = ml_episode_current()
+    return episode.atlas_chosen if episode else None
+
+
+def atlas_mode():
+    """off | shadow | active — or 'unavailable' with no engine installed."""
+    if not ML_AVAILABLE:
+        return "unavailable"
+    try:
+        return ml_config.ML_MODE
+    except Exception:
+        return "unavailable"
 
 
 def ml_episode_id():
@@ -961,12 +1041,45 @@ def ml_episode_end(outcome, verified=None, detail=""):
     if episode.closed:
         return
     episode.closed = True
+
+    # THE OUTCOME LINE. This is the only place an ATLAS success is claimed,
+    # and it is guarded twice: the value must have been read back and
+    # CONFIRMED, and ATLAS must actually have steered the write. Either half
+    # missing and the honest line is written instead.
+    try:
+        if verified is True and episode.atlas_influenced:
+            atlas_log(ATLAS_ACTION_COMPLETED,
+                      "{0} {1} = {2} verified in the Hub (strategy: {3})".format(
+                          episode.view, episode.field, episode.value,
+                          episode.atlas_chosen),
+                      reference=episode.reference)
+        elif verified is True:
+            atlas_log(ATLAS_DETERMINISTIC_FALLBACK,
+                      "{0} {1} = {2} verified — completed by the deterministic "
+                      "order, not by {3}".format(
+                          episode.view, episode.field, episode.value, ATLAS_NAME),
+                      reference=episode.reference)
+        elif verified is None and outcome == ML_EPISODE_UNVERIFIED:
+            # Saved, but nobody read it back. Not a completion, and never
+            # reported as one.
+            atlas_log(ATLAS_ACTION_UNVERIFIED,
+                      "{0} {1} = {2} was saved but not read back "
+                      "(VERIFY_AFTER_SAVE is off)".format(
+                          episode.view, episode.field, episode.value),
+                      reference=episode.reference)
+    except Exception:
+        pass
+
     try:
         ml_telemetry.episode(
             episode.episode_id, episode.reference, episode.view,
             episode.field, episode.value, outcome, verified=verified,
             duration_ms=(time.time() - episode.started) * 1000.0,
-            detail=str(detail)[:200], redactor=redact_secrets)
+            detail=str(detail)[:200],
+            atlas_influenced=episode.atlas_influenced,
+            atlas_chosen=episode.atlas_chosen,
+            atlas_mode=atlas_mode(),
+            redactor=redact_secrets)
     except Exception:
         pass
 
@@ -1047,6 +1160,14 @@ def ml_order(named_candidates, context):
                      if name in by_name]
         if len(reordered) != len(named_candidates):
             return named_candidates, None
+
+        # The recommendation was taken. Record it on the episode so the
+        # outcome line can be attributed truthfully later — nothing else in
+        # the run sets this flag, and nothing reads it before this point.
+        episode = ml_episode_current()
+        if episode is not None:
+            episode.atlas_influenced = True
+            episode.atlas_chosen = recommendation.top
         return reordered, recommendation.top
     except Exception as error:
         note_suppressed("asking the model for a candidate order", error)
@@ -5042,10 +5163,22 @@ def fill_date_field(page, field_name, date_value):
                 ml_record(context, name, True, elapsed_ms, "OK", rank=rank)
                 break
             ml_record(context, name, False, None, "FIELD_NOT_VISIBLE", rank=rank)
+        # ATLAS put a strategy first and a different one did the work. Worth
+        # saying out loud: it is the cheapest early warning that a page has
+        # changed under a model that was trained before it did. Not an error —
+        # the automation found the field and carries on.
+        if atlas_influenced() and winner != atlas_chosen():
+            atlas_log(ATLAS_STRATEGY_FAILED,
+                      "{0} did not match; {1} found the {2} field".format(
+                          atlas_chosen(), winner, field_name))
     else:
         for rank, (name, _locator) in enumerate(named):
             ml_record(context, name, False, elapsed_ms, "FIELD_NOT_VISIBLE",
                       rank=rank)
+        if atlas_influenced():
+            atlas_log(ATLAS_STRATEGY_FAILED,
+                      "no candidate found the {0} field in the order {1} "
+                      "chose".format(field_name, ATLAS_NAME))
 
     if field is None:
         # Before declaring it missing, look for it without the :visible gate.
@@ -5059,6 +5192,13 @@ def fill_date_field(page, field_name, date_value):
                 "it directly.".format(field_name)
             )
             ml_record(context, "ignore_visibility", True, None, "SCROLL_REQUIRED")
+            # The deterministic safety net caught what the ordered candidates
+            # missed. Only attributed to ATLAS when ATLAS chose that order —
+            # otherwise this is simply the automation doing its job.
+            if atlas_influenced():
+                atlas_log(ATLAS_FALLBACK_ACTIVATED,
+                          "the visibility-free lookup found the {0} field "
+                          "after the ordered candidates missed".format(field_name))
         else:
             ml_record(context, "ignore_visibility", False, None, "FIELD_NOT_FOUND")
 
@@ -5254,7 +5394,18 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
         if ok:
             write_log("Verified: {0} {1} is {2} in the Hub after reload."
                       .format(view_name, field_name, actual))
+            # Verification itself is deterministic and ATLAS has no say in it.
+            # The line is only written when ATLAS influenced the write being
+            # verified, because otherwise there is nothing of its to confirm.
+            if atlas_influenced():
+                atlas_log(ATLAS_VERIFICATION_PASSED,
+                          "{0} {1} reads back as {2} after a full reload"
+                          .format(view_name, field_name, actual))
             return True, actual
+        if atlas_influenced():
+            atlas_log(ATLAS_STRATEGY_FAILED,
+                      "{0} {1} did not persist — the Hub holds {2!r}, not "
+                      "{3!r}".format(view_name, field_name, actual, expected))
         return False, "the Hub holds {0!r}, not {1!r}".format(actual, expected)
     except Exception as error:
         ml_record(context, "verify_reload", False, None, ml_category(error))
@@ -5508,12 +5659,15 @@ def main():
     global ML_ACTIVE
     if ML_AVAILABLE:
         ML_ACTIVE = ml_predictor.initialize(log=write_log)
-        write_log("[ML] Telemetry: {0}".format(ml_config.TELEMETRY_PATH))
+        write_log("[{0}] Telemetry: {1}".format(
+            ATLAS_NAME, ml_config.TELEMETRY_PATH))
     else:
         ML_ACTIVE = False
-        write_log("[ML] Package not present")
-        write_log("[ML] Status: FALLBACK")
-        write_log("[ML] Using deterministic automation")
+        write_log("[{0}] {1} is not installed".format(ATLAS_NAME, ATLAS_NAME))
+        write_log("[{0}] Status: FALLBACK".format(ATLAS_NAME))
+        atlas_log(ATLAS_DETERMINISTIC_FALLBACK,
+                  "the engine is not installed; the automation runs exactly as "
+                  "it did before it existed")
     if VERIFY_AFTER_SAVE:
         write_log("VERIFY_AFTER_SAVE is on: every write is re-read from the Hub.")
 

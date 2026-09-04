@@ -96,6 +96,27 @@ input,textarea,select{font-family:inherit}
 .ml-k span{display:block;font-family:var(--mono,ui-monospace,monospace);font-size:9px;
   font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid);margin-top:5px}
 .ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
+/* The ATLAS attribution tag. Deliberately quiet — a small mono capsule in the
+   existing palette, not a badge that competes with the shipment reference.
+   `.on` is the only state that says ATLAS steered something. */
+.atlas-t{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);
+  font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint);border:1px solid var(--line);border-radius:3px;
+  padding:2px 6px;white-space:nowrap;vertical-align:middle}
+.atlas-t.on{color:var(--vio);border-color:color-mix(in srgb,var(--vio) 34%,transparent)}
+.atlas-t .d{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.75}
+.atlas-sub{font-family:var(--mono);font-size:9px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);margin-top:3px}
+.atlas-f{max-height:188px;overflow:auto;border-top:1px solid var(--line)}
+.atlas-f .r{display:flex;gap:9px;align-items:baseline;padding:7px 14px;
+  border-bottom:1px solid var(--line);font-size:11.5px;line-height:1.45}
+.atlas-f .r:last-child{border-bottom:none}
+.atlas-f time{font-family:var(--mono);font-size:9.5px;color:var(--faint);
+  flex:0 0 46px;font-variant-numeric:tabular-nums}
+.atlas-f .lb{font-family:var(--mono);font-size:9.5px;font-weight:700;
+  letter-spacing:.06em;flex:0 0 108px;color:var(--faint)}
+.atlas-f .r.on .lb{color:var(--vio)}
+.atlas-f .dt{color:var(--mid);min-width:0;overflow-wrap:anywhere}
 /* ═══ ASSISTANT FEEDBACK ═══ */
 .fb{display:flex;align-items:center;gap:6px;margin-top:8px;opacity:.75}
 .fb button{font-size:11px;line-height:1;padding:5px 9px;border:1px solid var(--line);
@@ -800,11 +821,20 @@ tr.r-partial .err{color:var(--y)}
         <!-- Every number in here comes from /api/ml, which reads the live ml
              package. An unknown shows as a dash, never as a zero. -->
         <div class="card" id="mlCard">
-          <div class="card-h"><div class="card-t">AI engine</div><div class="sp"></div>
+          <div class="card-h">
+            <div>
+              <div class="card-t">ATLAS</div>
+              <div class="atlas-sub" id="mlSub">Adaptive Logistics Strategy Engine</div>
+            </div>
+            <div class="sp"></div>
             <span class="ml-pill" id="mlPill"><span class="d"></span><span id="mlPillT">…</span></span>
           </div>
           <div class="ml-g" id="mlGrid"></div>
           <div class="ml-note" id="mlNote"></div>
+          <!-- What ATLAS actually did this run, in its own words. Empty until
+               it says something — an empty feed is the truthful state before
+               the first decision, not a placeholder to fill. -->
+          <div class="atlas-f" id="atlasFeed" hidden></div>
         </div>
       </div>
     </section>
@@ -1197,12 +1227,13 @@ const $ = (id) => document.getElementById(id);
   };
 })();
 
-/* ═══ AI ENGINE ═══════════════════════════════════════════════════════
-   Real values only. A field the ML layer cannot answer for shows a dash;
-   writing a 0 there would claim a measurement nobody took. Polled every
-   20s because a model does not change between frames. */
+/* ═══ ATLAS — ADAPTIVE LOGISTICS STRATEGY ENGINE ══════════════════════
+   Real values only. A field ATLAS cannot answer for shows a dash; writing a 0
+   there would claim a measurement nobody took. Polled every 20s because a
+   model does not change between frames. */
 (function mlPanel(){
-  const pill = $('mlPill'), pillT = $('mlPillT'), grid = $('mlGrid'), note = $('mlNote');
+  const pill = $('mlPill'), pillT = $('mlPillT'), grid = $('mlGrid'),
+        note = $('mlNote'), sub = $('mlSub');
   if (!pill) return;
   const dash = (v) => (v === null || v === undefined || v === '') ? '—' : v;
   const num = (v) => (typeof v === 'number') ? v.toLocaleString() : dash(v);
@@ -1222,18 +1253,25 @@ const $ = (id) => document.getElementById(id);
     /* Labelled rows, not raw interactions. A file with thousands of
        interactions and no read-back verification has nothing to train on, and
        showing the bigger number would say the opposite. */
+    /* Two scopes, and they must not be mixed. The model cells describe the
+       model's whole history; the two run cells describe what ATLAS did on
+       THIS run, which is what the feed below them shows. Labelling both
+       "Fallbacks" without saying which is which is how a panel starts
+       answering a question nobody asked. */
+    const runAtlas = (typeof S !== 'undefined' && S && S.atlas) || null;
     const cells = [
-      ['Model', model.version ? ('v' + model.version) : '—'],
+      ['Model', model.identifier || (model.version ? ('v' + model.version) : '—')],
       ['Contexts', num(model.contexts)],
       ['Observations', num(model.observations)],
       ['Labelled rows', num(tel.usable_rows)],
       ['Verified writes', num(tel.episodes_with_verdict)],
-      ['Recommended', num(tel.used)],
-      ['Fallbacks', num(tel.declined)],
+      ['Steered this run', runAtlas ? num(runAtlas.influenced_actions) : '—'],
+      ['Fell back this run', runAtlas ? num(runAtlas.fallbacks) : '—'],
       ['Feedback', num(fb.total)]
     ];
     grid.innerHTML = cells.map(([k, v]) =>
       '<div class="ml-k"><b>' + v + '</b><span>' + k + '</span></div>').join('');
+    if (sub && d.engine_full_name) sub.textContent = d.engine_full_name;
 
     let text;
     if (status === 'ENABLED'){
@@ -1257,9 +1295,10 @@ const $ = (id) => document.getElementById(id);
       if (d.trainable === false && d.trainable_reason)
         text += ' ' + d.trainable_reason;
     } else if (status === 'DISABLED'){
-      text = 'ML_MODE is off, so the automation uses its own hand-tuned order.';
+      text = 'ATLAS is switched off, so the automation uses its own hand-tuned'
+           + ' order. Nothing else changes.';
     } else {
-      text = 'The learning package is not installed. ' + (d.error || '');
+      text = 'ATLAS is not installed. ' + (d.error || '');
     }
     note.textContent = text;
   }
@@ -1269,6 +1308,7 @@ const $ = (id) => document.getElementById(id);
       pillT.textContent = 'UNREACHABLE'; pill.className = 'ml-pill warn';
     });
   }
+  window.__mlReload = load;
   load();
   setInterval(load, 20000);
 })();
@@ -1338,6 +1378,24 @@ const sig = {};
 const TAGS = {updated:'Updated', processing:'Processing', skipped:'Skipped',
               partial:'Partly updated', failed:'Failed', unknown:'Unknown'};
 const tag = (s) => '<span class="tag ' + (TAGS[s] ? s : 'unknown') + '">' + (TAGS[s] || 'Unknown') + '</span>';
+
+/* ATLAS attribution. Rendered ONLY from what the automation actually
+   recorded: `r.atlas.influenced` is set by the engine's own emission points
+   and by nothing else. A shipment ATLAS did not steer gets the muted
+   "Deterministic" tag — not a blank, because "we don't know" and "the
+   deterministic order did this" are different statements and the second one
+   is the true one. */
+function atlasTag(record){
+  const a = (record && record.atlas) || null;
+  if (!a) return '';
+  return a.influenced
+    ? '<span class="atlas-t on" title="' + esc(a.chosen
+        ? 'ATLAS selected ' + a.chosen + ' for this shipment'
+        : 'ATLAS influenced the strategy for this shipment')
+      + '"><span class="d"></span>ATLAS</span>'
+    : '<span class="atlas-t" title="ATLAS stood down; the automation used its '
+      + 'own hand-tuned order">Deterministic</span>';
+}
 const empty = (t, b) => '<div class="empty"><h3>' + t + '</h3><p>' + b + '</p></div>';
 function changed(k, v){ if (sig[k] === v) return false; sig[k] = v; return true; }
 
@@ -1369,6 +1427,7 @@ function paint(force){
   put($('cRun'), clock(run.runtime_seconds));
   put($('cBeat'), age == null ? '—' : Math.max(0, Math.round(age)) + 's ago');
   put($('cPage'), cur.page == null ? '—' : 'Page ' + cur.page + ' of max ' + (run.max_pages || '?'));
+  paintAtlasFeed(S.atlas);
 
   const bar = $('pBar'), fill = $('pFill');
   if (pr.determinate && pr.total){
@@ -1464,7 +1523,7 @@ function paintLive(){
         : 'Start <code>update_eta.py</code> to watch shipments move through.'));
     putHTML($('steps'), ''); return;
   }
-  putHTML($('liveTag'), tag(cur.state));
+  putHTML($('liveTag'), atlasTag(cur) + tag(cur.state));
   putHTML($('liveBody'),
     (isLive ? '' : '<div class="kick" style="margin-bottom:12px">Most recent shipment</div>') +
     '<div class="live-r">' + esc(cur.reference) + '</div><div class="hero-g" style="position:relative">' +
@@ -1481,6 +1540,30 @@ function paintLive(){
     : '<div style="color:var(--faint);font-size:13px">Waiting for the first step</div>');
 }
 function f(k, v){ return '<div><div class="fk">' + k + '</div><div class="fv">' + dash(v) + '</div></div>'; }
+
+/* ATLAS activity, verbatim. Every row here was emitted by the engine during
+   the run — there is no client-side inference and nothing is synthesised to
+   fill the panel. With no events the feed stays hidden, which is the honest
+   state before ATLAS has said anything. */
+let atlasSig = '';
+function paintAtlasFeed(a){
+  const box = $('atlasFeed');
+  if (!box) return;
+  /* The grid's two run-scoped cells are painted by the 20s ML poll. Nudge it
+     when the counts move so the numbers above the feed match the rows in it
+     rather than trailing them by up to twenty seconds. */
+  const s = a ? (a.influenced_actions + '/' + a.fallbacks) : '';
+  if (s !== atlasSig){ atlasSig = s; if (window.__mlReload) window.__mlReload(); }
+  const events = (a && a.events) || [];
+  if (!events.length){ box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  putHTML(box, events.map((e) =>
+    '<div class="r' + (e.influenced ? ' on' : '') + '">' +
+      '<time>' + esc(e.time) + '</time>' +
+      '<span class="lb">' + esc(e.label) + '</span>' +
+      '<span class="dt">' + esc(e.detail || '') + '</span>' +
+    '</div>').join(''));
+}
 
 /* ═══ SHIPMENTS ═══ */
 $('shipF').innerHTML = [['all','All'],['processing','Processing'],['updated','Updated'],
@@ -1511,7 +1594,10 @@ function paintShips(){
     '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
     '<td>' + dash(r.carrier) + '</td><td class="dt">' + dash(r.internal_eta) + '</td>' +
     '<td>' + dash(r.provider_status) + '</td><td class="dt">' + dash(r.provider_eta) + '</td>' +
-    '<td class="dt">' + dash(r.provider_ata) + '</td><td>' + tag(r.state) + '</td>' +
+    '<td class="dt">' + dash(r.provider_ata) + '</td>' +
+    /* Attribution sits with the result, where an operator already looks to
+       find out what happened to a shipment — not in a column of its own. */
+    '<td>' + tag(r.state) + (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
     '<td style="font-size:11.5px">' + dash(r.outcome) + '</td>' +
     '<td class="n">' + ms(r.duration_ms) + '</td>' +
     '<td><span class="err" title="' + esc(r.error || '') + '">' + dash(r.error) + '</span></td></tr>').join(''));
@@ -1612,7 +1698,8 @@ function paintAnalysis(){
     '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
     '<td>' + dash(r.carrier) + '</td><td class="dt">' + dash(r.provider_eta) + '</td>' +
     '<td class="dt">' + dash(r.provider_ata) + '</td><td>' + tag(r.state) + '</td>' +
-    '<td style="font-size:12px">' + dash(r.coe_action || r.bu_action) + '</td>' +
+    '<td style="font-size:12px">' + dash(r.coe_action || r.bu_action) +
+      (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
     '<td class="n">' + ms(r.duration_ms) + '</td></tr>').join(''));
   putHTML($('anEmpty'), rows.length ? '' : empty(
     (S.shipments || []).length ? 'No shipments match these filters'

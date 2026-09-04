@@ -23,7 +23,7 @@ import os
 import time
 from pathlib import Path
 
-from . import config
+from . import config, identity
 
 # Categorised failure reasons. Deliberately finer-grained than the run's
 # operational outcomes (NO RESULT / TIMEOUT / ...) which are unchanged and
@@ -174,6 +174,10 @@ def record(event, redactor=None):
     try:
         payload = _safe(dict(event), redactor)
         payload.setdefault("ts", time.strftime("%Y-%m-%dT%H:%M:%S"))
+        # Which engine wrote this. One field, on every row, so a telemetry
+        # file is self-describing and a future second engine cannot be
+        # confused with this one after the fact.
+        payload.setdefault("engine", identity.NAME)
         if test_source():
             payload["source"] = "test"
         path = target_path()
@@ -235,7 +239,9 @@ def interaction(context, strategy, success, duration_ms=None,
 
 
 def episode(episode_id, reference, view, field, value, outcome,
-            verified=None, duration_ms=None, detail="", redactor=None):
+            verified=None, duration_ms=None, detail="", redactor=None,
+            atlas_influenced=False, atlas_chosen=None, atlas_mode=None,
+            label=None):
     """
     The result of one complete write: open Manage, find the field, type,
     save, read back.
@@ -264,12 +270,21 @@ def episode(episode_id, reference, view, field, value, outcome,
         "verified": verified,
         "duration_ms": None if duration_ms is None else round(float(duration_ms), 1),
         "detail": detail,
+        # Did ATLAS actually steer this write? False whenever the automation
+        # used its own order — which includes shadow mode, a declined
+        # recommendation, and having no model at all. Recorded rather than
+        # inferred later, because "was this ours" is not a question the
+        # telemetry can answer after the fact.
+        "atlas_influenced": bool(atlas_influenced),
+        "atlas_chosen": atlas_chosen,
+        "atlas_mode": atlas_mode,
+        "label": label,
     }, redactor=redactor)
 
 
 def decision(context, chosen, scores, used, reason, redactor=None,
              mode=None, shadow=False, support=None, trials=None,
-             level_key=None):
+             level_key=None, label=None):
     """
     What the predictor recommended and whether the automation took it.
 
@@ -282,6 +297,9 @@ def decision(context, chosen, scores, used, reason, redactor=None,
     return record({
         "kind": "decision",
         "context": context,
+        # The ATLAS vocabulary label this decision was announced under, so the
+        # telemetry and the run log can be reconciled line for line.
+        "label": label,
         "chosen": chosen,
         "scores": scores,
         "used": bool(used),

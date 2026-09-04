@@ -15,6 +15,22 @@ MAX_LOG_LINES = 800
 MAX_SHIPMENTS = 500
 MAX_EXCEPTIONS = 200
 MAX_TIMELINE = 300
+MAX_ATLAS_EVENTS = 200
+
+# ATLAS — Adaptive Logistics Strategy Engine. Mirrored from ml/identity.py so
+# the dashboard renders correctly with the ml package absent; the test suite
+# checks the two agree.
+ATLAS_NAME = "ATLAS"
+ATLAS_FULL_NAME = "Adaptive Logistics Strategy Engine"
+
+# Labels that assert ATLAS influenced an outcome. An event carrying one of
+# these marks its shipment as ATLAS-influenced; everything else does not.
+# `Deterministic fallback` is deliberately absent — it is the engine saying it
+# stood down, which is the opposite of a claim.
+ATLAS_INFLUENCE_LABELS = frozenset((
+    "Strategy selected", "Strategy failed", "Fallback activated",
+    "Verification passed", "Action completed",
+))
 
 
 def _now():
@@ -55,6 +71,13 @@ class ControlTowerState:
         self.max_pages = None
         self.results_file = None
         self.log_file = None
+
+        # ATLAS activity for this run. A feed the panel can read, plus the
+        # two counts that answer "how much of this run did the engine
+        # actually steer".
+        self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
+        self.atlas_influenced_actions = 0
+        self.atlas_fallbacks = 0
 
         self.current_step = None
         self.current_system = None
@@ -246,6 +269,46 @@ class ControlTowerState:
             self._touch()
 
     @_guard
+    def atlas(self, label, detail="", reference=None):
+        """
+        Record one ATLAS event.
+
+        The automation calls this from the engine's emission points and
+        nowhere else. `influenced` flips only for a label that actually
+        asserts ATLAS did something — a `Deterministic fallback` is ATLAS
+        saying it stood down, and marking a shipment as ATLAS-influenced
+        because the engine announced it was NOT involved would invert the one
+        distinction the panel exists to show.
+        """
+        with self._lock:
+            label = str(label or "").strip()
+            event = {
+                "time": _stamp(),
+                "label": label,
+                "detail": str(detail or "")[:400],
+                "reference": reference,
+                "influenced": label in ATLAS_INFLUENCE_LABELS,
+            }
+            self.atlas_events.appendleft(event)
+            if label in ATLAS_INFLUENCE_LABELS:
+                self.atlas_influenced_actions += 1
+            elif label == "Deterministic fallback":
+                self.atlas_fallbacks += 1
+
+            record = (self._index.get(reference) if reference
+                      else self._current_record())
+            if record is not None:
+                state = record.setdefault(
+                    "atlas", {"influenced": False, "chosen": None, "events": []})
+                state["events"].append(event)
+                del state["events"][:-12]
+                if event["influenced"]:
+                    state["influenced"] = True
+                if label == "Strategy selected" and detail:
+                    state["chosen"] = str(detail).split(" ")[0].strip(":,")
+            self._touch()
+
+    @_guard
     def register_system(self, key, name, role="Carrier AWB tracking"):
         """
         Add a carrier to the Systems panel.
@@ -324,6 +387,10 @@ class ControlTowerState:
                 "provider_ata": None,
                 "coe_action": None,
                 "bu_action": None,
+                # Did ATLAS steer any write on this shipment, and what did it
+                # say while doing so. Set only by atlas() below, which is only
+                # called by the engine's own emission points.
+                "atlas": {"influenced": False, "chosen": None, "events": []},
                 "error": None,
                 "outcome": None,
                 "started_at": _iso(_now()),
@@ -576,6 +643,13 @@ class ControlTowerState:
                     "system": self.current_system,
                     "page": self.current_page,
                     "shipment": current,
+                },
+                "atlas": {
+                    "name": ATLAS_NAME,
+                    "full_name": ATLAS_FULL_NAME,
+                    "influenced_actions": self.atlas_influenced_actions,
+                    "fallbacks": self.atlas_fallbacks,
+                    "events": list(self.atlas_events)[:40],
                 },
                 "progress": {
                     "discovered": self.discovered,

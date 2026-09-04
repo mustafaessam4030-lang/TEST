@@ -194,7 +194,10 @@ def run_production_entry_point(label, expect_model, mode=None):
 
 
 def ml_block(text):
-    return [line for line in text.splitlines() if "[ML]" in line]
+    # Both shapes the engine writes: the bracketed startup block and the
+    # "ATLAS → ..." event lines a run emits as it works.
+    return [line for line in text.splitlines()
+            if "[ATLAS]" in line or "ATLAS \u2192" in line]
 
 
 def main():
@@ -243,7 +246,11 @@ def _main():
     print("     --------------------------------------------------------")
 
     show(bool(lines), "[1] ML initialisation ran inside the production startup")
-    show(any("Initializing..." in l for l in lines), "[1] '[ML] Initializing...'")
+    show(any("Initializing..." in l for l in lines), "[1] '[ATLAS] Initializing...'")
+    show(any("[ATLAS] Adaptive Logistics Strategy Engine" in l for l in lines),
+         "[1] The engine introduces itself by name")
+    show(not any("[ML]" in l for l in lines),
+         "[1] Nothing still calls itself '[ML]'")
     show(any("Model loaded successfully" in l for l in lines),
          "[2] A valid model was loaded")
     show(any(str(MODEL) in l for l in lines),
@@ -261,6 +268,8 @@ def _main():
          "[3] The support requirement is reported")
     show(any("Promoted" in l for l in lines),
          "[3] The promotion that earned it production is named")
+    show(any("ATLAS/" in l for l in lines),
+         "[3] The model identifier is reported")
     show("ML_ENABLED" not in os.environ,
          "[3] ...with ML_ENABLED unset, so this is the DEFAULT")
 
@@ -286,6 +295,10 @@ def _main():
          "[9] ...and reports SHADOW, not ENABLED")
     show(any("DISCARDED" in l for l in lines_s),
          "[9] ...and says plainly that its recommendations change nothing")
+    show(any("ATLAS \u2192 Deterministic fallback" in l for l in lines_s),
+         "[9] ...in the ATLAS vocabulary, as a Deterministic fallback")
+    show(not any("ATLAS \u2192 Strategy selected" in l for l in lines_s),
+         "[9] A shadow run NEVER claims a strategy selection")
     show(not any("Status: ENABLED" in l for l in lines_s),
          "[9] A fresh install never claims to be steering the automation")
 
@@ -303,8 +316,8 @@ def _main():
     show(any("No trained model found" in l for l in lines2),
          "[7] The missing model is reported")
     show(any("Status: FALLBACK" in l for l in lines2), "[7] Status became FALLBACK")
-    show(any("Using deterministic automation" in l for l in lines2),
-         "[7] ...and it says it is using the deterministic path")
+    show(any("ATLAS \u2192 Deterministic fallback" in l for l in lines2),
+         "[7] ...and records a Deterministic fallback rather than staying quiet")
     show(not any("Status: ENABLED" in l for l in lines2),
          "[7] It never claimed ENABLED without a model")
     show(not MODEL.exists(),
@@ -365,7 +378,7 @@ def _main():
             browser.close()
             A.write_log = original_write_log
 
-    ml_lines = [l for l in captured if l.startswith("ML:")]
+    ml_lines = [l for l in captured if l.startswith("ATLAS ")]
     print("     ---- what the automation logged while writing the field ----")
     for line in captured:
         print("     " + line)
@@ -375,6 +388,10 @@ def _main():
          ml_lines[0] if ml_lines else "")
     show(any("xpath_ata_date" in l for l in ml_lines),
          "[5] The model's choice reached fill_date_field's candidate order")
+    show(any("Strategy selected" in l for l in ml_lines),
+         "[5] ...and it was announced as an ATLAS strategy selection")
+    show(not any("Action completed" in l for l in captured),
+         "[6] No completion was claimed — this write was never read back")
 
     decisions = []
     seam_file = WORK / "seam.jsonl"

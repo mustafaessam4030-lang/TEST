@@ -27,6 +27,7 @@ SUITES = [
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
+    ("test_atlas.py",           "ATLAS identity and attribution"),
 ]
 
 
