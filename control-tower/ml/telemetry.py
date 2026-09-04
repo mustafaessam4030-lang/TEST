@@ -48,6 +48,17 @@ CATEGORIES = (
     NETWORK_ERROR, VALIDATION_FAILURE, VERIFICATION_FAILURE, NONE,
 )
 
+# What became of a whole write operation. Coarser than the interaction
+# categories on purpose: an episode is the unit a label attaches to, and it has
+# exactly four ways to end.
+EPISODE_VERIFIED = "VERIFIED"        # saved and read back correct
+EPISODE_UNVERIFIED = "UNVERIFIED"    # saved, read-back did not run
+EPISODE_MISMATCH = "MISMATCH"        # saved, read back WRONG
+EPISODE_ERROR = "ERROR"              # never got as far as a save
+
+OUTCOMES = (EPISODE_VERIFIED, EPISODE_UNVERIFIED, EPISODE_MISMATCH,
+            EPISODE_ERROR)
+
 # Never serialise anything whose key looks like a secret, whatever a caller
 # passes. The layer has no need for any of it, so this is belt and braces
 # rather than the primary defence.
@@ -129,6 +140,27 @@ def test_source():
     return "test_" in os.path.basename(argv0) or "run_tests" in argv0
 
 
+def target_path():
+    """
+    Where this process writes.
+
+    Tagging test rows was necessary but not sufficient. The suite exercises the
+    real writer — that is the point of it — and every run was therefore
+    appending fixtures to the same file production data lands in. Nothing was
+    trained on them, but "the guard catches it downstream" is a worse answer
+    than not mixing them in the first place: an operator looking at the
+    telemetry file should see runs, not test runs.
+
+    So a test process writing to the DEFAULT location is redirected to a
+    sibling file. A test that sets ML_TELEMETRY_PATH explicitly still gets
+    exactly the path it asked for, because those tests are checking the writer.
+    """
+    path = Path(config.TELEMETRY_PATH)
+    if test_source() and not os.environ.get("ML_TELEMETRY_PATH"):
+        return path.with_name(path.stem + ".test" + path.suffix)
+    return path
+
+
 def record(event, redactor=None):
     """
     Append one event. Returns True when it was written.
@@ -144,7 +176,7 @@ def record(event, redactor=None):
         payload.setdefault("ts", time.strftime("%Y-%m-%dT%H:%M:%S"))
         if test_source():
             payload["source"] = "test"
-        path = Path(config.TELEMETRY_PATH)
+        path = target_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         # Rotate rather than grow without limit.
         try:
@@ -164,12 +196,20 @@ def record(event, redactor=None):
 
 def interaction(context, strategy, success, duration_ms=None,
                 category=NONE, detail="", reference=None, redactor=None,
-                source="automation", rank=None):
+                source="automation", rank=None, episode_id=None, retries=0):
     """
     The event shape the trainer expects.
 
     `context` is a features.context() dict, `strategy` the named approach that
     was tried, `success` whether it worked, `duration_ms` how long it took.
+
+    `episode_id` is what makes this row trainable. On its own an attempt says
+    "the locator matched something"; joined to its episode it says "the locator
+    matched, and the value it led to was read back out of the Hub afterwards
+    and was correct". Only the second of those is a success worth learning
+    from, and without the id the two cannot be told apart. A row with no
+    episode_id is still recorded — it is a real observation — but the dataset
+    cannot label it and will say so.
     """
     return record({
         "kind": "interaction",
@@ -181,6 +221,12 @@ def interaction(context, strategy, success, duration_ms=None,
         "detail": detail,
         "reference": reference,
         "source": source,
+        # Which write operation this attempt was part of. The episode event
+        # carries that write's verified outcome.
+        "episode_id": episode_id,
+        # How many times this same strategy had already been tried within the
+        # episode before this attempt.
+        "retries": int(retries or 0),
         # Where this strategy sat in the automation's OWN order. Recorded so
         # the evaluator can reconstruct the baseline from the data rather than
         # being told what it was.
@@ -188,14 +234,62 @@ def interaction(context, strategy, success, duration_ms=None,
     }, redactor=redactor)
 
 
-def decision(context, chosen, scores, used, reason, redactor=None):
-    """What the predictor recommended and whether the automation took it."""
+def episode(episode_id, reference, view, field, value, outcome,
+            verified=None, duration_ms=None, detail="", redactor=None):
+    """
+    The result of one complete write: open Manage, find the field, type,
+    save, read back.
+
+    `outcome` is one of the OUTCOMES below. `verified` is deliberately
+    three-valued:
+
+        True   read-back ran and confirmed the value is in the Hub
+        False  read-back ran and DISAGREED
+        None   read-back never ran (VERIFY_AFTER_SAVE off, or the episode
+               failed before reaching it)
+
+    None is not a soft False. An unverified episode is not evidence that the
+    write failed, and labelling it as one would put fabricated negatives into
+    the training data — so the dataset excludes those episodes entirely rather
+    than guessing which way they went.
+    """
+    return record({
+        "kind": "episode",
+        "episode_id": episode_id,
+        "reference": reference,
+        "view": view,
+        "field": field,
+        "value": value,
+        "outcome": outcome if outcome in OUTCOMES else EPISODE_ERROR,
+        "verified": verified,
+        "duration_ms": None if duration_ms is None else round(float(duration_ms), 1),
+        "detail": detail,
+    }, redactor=redactor)
+
+
+def decision(context, chosen, scores, used, reason, redactor=None,
+             mode=None, shadow=False, support=None, trials=None,
+             level_key=None):
+    """
+    What the predictor recommended and whether the automation took it.
+
+    In shadow mode `used` is False and `chosen` is still populated — that pair
+    is the whole point of the mode. Scoring those shadow choices against what
+    the run actually did is the unbiased evidence an off-policy replay of past
+    telemetry cannot give, because the replay only ever sees the situations the
+    deterministic order found hard.
+    """
     return record({
         "kind": "decision",
         "context": context,
         "chosen": chosen,
         "scores": scores,
         "used": bool(used),
+        "shadow": bool(shadow),
+        "mode": mode,
+        "has_support": support,
+        "trials": trials,
+        "level_key": level_key,
         "reason": reason,
     }, redactor=redactor)
 
@@ -205,7 +299,7 @@ def failures():
 
 
 def stats():
-    path = Path(config.TELEMETRY_PATH)
+    path = target_path()
     if not path.exists():
         return {"path": str(path), "exists": False, "lines": 0, "bytes": 0}
     try:

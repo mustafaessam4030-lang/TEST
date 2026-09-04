@@ -153,4 +153,43 @@ Three seams, all of them places where the code already makes an ordered guess:
 | `wait_for_any` budgets | fixed constant per call site | budget from the observed distribution, clamped to the same constant as its ceiling |
 
 In all three the ML output is an **ordering or a number**, never a decision
-about which field to write or what to write into it.
+about which field to write or what to write into it. And in the shipped
+default (`ML_MODE=shadow`) it is not even that: the recommendation is recorded
+and discarded, and the deterministic order runs.
+
+## Episodes: how an attempt becomes evidence
+
+`update_one_view` is the unit of learning. It opens an **episode** at the top
+and closes it in a `finally`, so every interaction recorded in between —
+the tab-panel wait, each locator tried, the write, the read-back — carries the
+same `episode_id`.
+
+```
+update_one_view(page, shipment, view, field, date)
+  ml_episode_begin(...)                     ← id issued
+  ├── select_shipment_info_tab              → interaction  (tab_postback)
+  ├── fill_date_field                       → interaction  (one per locator)
+  │     └── write_date_value                → interaction  (click_fill | scripted_events)
+  ├── save_manage_page
+  ├── verify_saved_date                     → interaction  (verify_reload)
+  └── ml_episode_end(outcome, verified)     ← VERIFIED | MISMATCH | UNVERIFIED | ERROR
+```
+
+The verdict lives on the episode, and `ml/episodes.py` joins the two back
+together at training time. A locator is a success only if the date it led to
+was still in the Hub when the automation looked again. An episode with no
+verdict — `VERIFY_AFTER_SAVE` off, or a run that died before the read-back —
+is **excluded** from training rather than counted as a failure.
+
+`ml_episode_end` is in a `finally` and swallows everything: an episode that
+cannot be recorded must never be able to take down a run that is otherwise
+doing its job.
+
+## What is written, and where it goes
+
+| File | Written by | Read by |
+| --- | --- | --- |
+| `ml/data/telemetry.jsonl` | the automation, during a run | the trainer, the evaluator, the dashboard |
+| `ml/data/telemetry.test.jsonl` | the test suite | nothing — it exists so the suite can exercise the real writer without contaminating the file above |
+| `ml/models/challenger.json` | `python -m ml.trainer` | the evaluator |
+| `ml/models/champion.json` | `python -m ml.trainer --promote`, only on a `BETTER` verdict | **the predictor** — this is the only file a run loads |

@@ -1210,20 +1210,26 @@ const $ = (id) => document.getElementById(id);
   function paint(d){
     const status = d.status || 'UNAVAILABLE';
     pillT.textContent = status;
+    /* SHADOW is not ENABLED. A loaded model that is learning but steering
+       nothing gets its own pill, because showing it as ENABLED would tell an
+       operator the automation is being driven when it is not. */
     pill.className = 'ml-pill' + (status === 'ENABLED' ? ' on'
                                  : status === 'UNAVAILABLE' ? '' : ' warn');
     const model = d.model || {};
     const tel = d.telemetry || {};
     const cfg = d.config || {};
     const fb = d.feedback || {};
+    /* Labelled rows, not raw interactions. A file with thousands of
+       interactions and no read-back verification has nothing to train on, and
+       showing the bigger number would say the opposite. */
     const cells = [
       ['Model', model.version ? ('v' + model.version) : '—'],
       ['Contexts', num(model.contexts)],
       ['Observations', num(model.observations)],
-      ['Confidence', dash(cfg.confidence_threshold)],
+      ['Labelled rows', num(tel.usable_rows)],
+      ['Verified writes', num(tel.episodes_with_verdict)],
       ['Recommended', num(tel.used)],
       ['Fallbacks', num(tel.declined)],
-      ['Telemetry rows', num(tel.usable_rows !== undefined ? tel.usable_rows : tel.rows)],
       ['Feedback', num(fb.total)]
     ];
     grid.innerHTML = cells.map(([k, v]) =>
@@ -1234,12 +1240,24 @@ const $ = (id) => document.getElementById(id);
       text = 'The model may reorder field candidates and shorten waits. '
            + 'It never decides ETA vs ATA, what to write, or whether a write is safe.';
       if (model.built_at) text += ' Built ' + model.built_at + '.';
+      /* The claim this panel is not allowed to overstate. */
+      text += d.proven
+        ? ' Promoted after beating the deterministic order on held-out data'
+          + (model.promoted_at ? ' on ' + model.promoted_at : '') + '.'
+        : ' READY FOR LEARNING, NOT YET PROVEN SUPERIOR — it has not passed an'
+          + ' evaluation gate against real production telemetry.';
+    } else if (status === 'SHADOW'){
+      text = 'Shadow mode: the model is consulted on every field lookup and its'
+           + ' choice is recorded, then discarded. The deterministic order runs.'
+           + ' Nothing it says changes what the automation does. This is how it'
+           + ' collects the unbiased evidence needed to earn ML_MODE=active.';
+      if (model.built_at) text += ' Built ' + model.built_at + '.';
     } else if (status === 'FALLBACK'){
       text = 'Running the deterministic automation. ' + (d.error || '');
       if (d.trainable === false && d.trainable_reason)
         text += ' ' + d.trainable_reason;
     } else if (status === 'DISABLED'){
-      text = 'ML_ENABLED is off, so the automation uses its own hand-tuned order.';
+      text = 'ML_MODE is off, so the automation uses its own hand-tuned order.';
     } else {
       text = 'The learning package is not installed. ' + (d.error || '');
     }

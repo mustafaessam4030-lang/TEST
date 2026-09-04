@@ -868,6 +868,109 @@ except Exception as _ml_import_error:      # pragma: no cover - environment
 ML_ACTIVE = False
 
 
+# ── episodes ─────────────────────────────────────────────────────────
+#
+# An EPISODE is one complete write: open Manage, select the tab, find the
+# field, type the date, save, read it back. It is the unit a label attaches
+# to, because "the locator matched an input" is not success — "the date was
+# in the Hub when we looked again" is.
+#
+# Every interaction recorded while an episode is open carries its id, so the
+# trainer can join the two. Without that join the layer can only learn whether
+# elements appear, which is not the question anyone asked.
+#
+# Hub writes are strictly serial — one page, one shipment, one field at a time
+# — so a single current episode is the whole truth. It is kept in a list so an
+# unbalanced end can never leave a stale id attached to later runs.
+
+ML_EPISODE_VERIFIED = "VERIFIED"      # saved, read back, correct
+ML_EPISODE_UNVERIFIED = "UNVERIFIED"  # saved, read-back did not run
+ML_EPISODE_MISMATCH = "MISMATCH"      # saved, read back WRONG
+ML_EPISODE_ERROR = "ERROR"            # never got as far as a save
+
+_ML_EPISODES = []
+_ML_EPISODE_SEQ = 0
+
+
+class _MlEpisode:
+    """Bookkeeping for one write. Holds no browser state and never raises."""
+
+    def __init__(self, episode_id, reference, view, field, value):
+        self.episode_id = episode_id
+        self.reference = reference
+        self.view = view
+        self.field = field
+        self.value = value
+        self.started = time.time()
+        self.attempts = {}      # what -> how many looks so far
+        self.tries = {}         # strategy -> how many attempts so far
+        self.closed = False
+
+
+def ml_episode_begin(reference, view, field, value):
+    """Open an episode. Returns its id, or None when the layer is absent."""
+    global _ML_EPISODE_SEQ
+    if not ML_AVAILABLE:
+        return None
+    try:
+        _ML_EPISODE_SEQ += 1
+        episode_id = "{0}-{1}-{2}".format(
+            time.strftime("%Y%m%dT%H%M%S"), os.getpid(), _ML_EPISODE_SEQ)
+        _ML_EPISODES.append(_MlEpisode(episode_id, reference, view, field, value))
+        return episode_id
+    except Exception:
+        return None
+
+
+def ml_episode_current():
+    return _ML_EPISODES[-1] if _ML_EPISODES else None
+
+
+def ml_episode_id():
+    episode = ml_episode_current()
+    return episode.episode_id if episode else None
+
+
+def ml_episode_attempt(what):
+    """
+    The ordinal of this look at `what` within the current episode.
+
+    1 for the first, 2+ for a retry after the panel re-rendered or for the
+    read-back pass. This is a real feature — the second look at a field happens
+    on a page that has already been through a postback, and it does not behave
+    the same as the first.
+    """
+    episode = ml_episode_current()
+    if episode is None:
+        return 1
+    episode.attempts[what] = episode.attempts.get(what, 0) + 1
+    return episode.attempts[what]
+
+
+def ml_episode_end(outcome, verified=None, detail=""):
+    """
+    Close the current episode and record its verdict.
+
+    `verified` is three-valued on purpose: True confirmed, False contradicted,
+    None never checked. None is not a soft False — the trainer excludes those
+    episodes rather than inventing a failure for them.
+    """
+    if not ML_AVAILABLE or not _ML_EPISODES:
+        return
+    episode = _ML_EPISODES.pop()
+    if episode.closed:
+        return
+    episode.closed = True
+    try:
+        ml_telemetry.episode(
+            episode.episode_id, episode.reference, episode.view,
+            episode.field, episode.value, outcome, verified=verified,
+            duration_ms=(time.time() - episode.started) * 1000.0,
+            detail=str(detail)[:200], redactor=redact_secrets)
+    except Exception:
+        pass
+
+
 def ml_context(**kwargs):
     """A feature context, or None when the layer is not available."""
     if not ML_AVAILABLE:
@@ -879,9 +982,15 @@ def ml_context(**kwargs):
 
 
 def ml_record(context, strategy, success, duration_ms=None,
-              category="OK", detail="", reference=None, rank=None):
+              category="OK", detail="", reference=None, rank=None,
+              retries=None):
     """
     Record one interaction. Never raises, never changes control flow.
+
+    The current episode's id is attached automatically, along with how many
+    times this same strategy has already been tried within it — the caller does
+    not have to remember either, which is why they are actually populated
+    rather than being two more optional arguments nobody passes.
 
     Telemetry is collected even when ML_ENABLED is off — you cannot train a
     model without data, and collecting it does not alter a single decision.
@@ -889,10 +998,19 @@ def ml_record(context, strategy, success, duration_ms=None,
     if not ML_AVAILABLE:
         return
     try:
+        episode = ml_episode_current()
+        if retries is None:
+            if episode is None:
+                retries = 0
+            else:
+                retries = episode.tries.get(strategy, 0)
+                episode.tries[strategy] = retries + 1
         ml_telemetry.interaction(
             context or {}, strategy, success, duration_ms=duration_ms,
-            category=category, detail=detail, reference=reference,
-            rank=rank, redactor=redact_secrets)
+            category=category, detail=detail,
+            reference=reference or (episode.reference if episode else None),
+            rank=rank, episode_id=(episode.episode_id if episode else None),
+            retries=retries, redactor=redact_secrets)
     except Exception:
         pass
 
@@ -4801,7 +4919,11 @@ def select_shipment_info_tab(page, view_name, field_name=None):
     # HUB_FORM_READY_MAX_MS stays the ceiling and the floor is 3s, so the
     # deterministic worst case is unchanged.
     panel_context = ml_context(provider="HUB", page="tab_panel",
-                               field=field_name, view=view_name)
+                               field=field_name, view=view_name,
+                               page_ready=page_is_settled(page),
+                               frames=len(all_scopes(page)),
+                               attempt=ml_episode_attempt(
+                                   "panel:{0}".format(view_name)))
     panel_budget = ml_wait_budget(panel_context, HUB_FORM_READY_MAX_MS,
                                   floor_ms=3000)
     panel_started = time.time()
@@ -4890,7 +5012,8 @@ def fill_date_field(page, field_name, date_value):
     context = ml_context(
         provider="HUB", page="manage", field=field_name,
         view=("COE" if field_name == "ETA" else "BU"),
-        page_ready=page_is_settled(page), frames=len(all_scopes(page)))
+        page_ready=page_is_settled(page), frames=len(all_scopes(page)),
+        attempt=ml_episode_attempt("find:{0}".format(field_name)))
 
     # The model may only REORDER these; it cannot add, drop or rewrite one.
     named, predicted = ml_order(named, context)
@@ -4950,7 +5073,7 @@ def fill_date_field(page, field_name, date_value):
         else date_value
     )
 
-    landed = write_date_value(field, value, field_name)
+    landed = write_date_value(field, value, field_name, context=context)
     write_log(f"Internal {field_name} overwritten with: {landed}")
 
 
@@ -4988,15 +5111,21 @@ def find_field_ignoring_visibility(page, field_name):
     return None
 
 
-def write_date_value(field, value, field_name):
+def write_date_value(field, value, field_name, context=None):
     """
     Put a date into the field and confirm it stuck.
 
     Falls back to a scripted write with real input/change events when the
     normal path cannot interact with the element — an ASP.NET date box inside a
     panel the browser considers off-screen accepts this and rejects a click.
+
+    `context` is the caller's feature context. It is passed in rather than
+    rebuilt because only the caller still has the page: this function holds an
+    element, and an element cannot be asked how many frames the page has or
+    whether it had finished loading.
     """
-    context = ml_context(provider="HUB", page="manage", field=field_name)
+    if context is None:
+        context = ml_context(provider="HUB", page="manage", field=field_name)
     started = time.time()
     method = "click_fill"
     try:
@@ -5093,7 +5222,10 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
     """
     bol_awb = shipment["bol_awb"]
     context = ml_context(provider="HUB", page="manage", field=field_name,
-                         view=view_name)
+                         view=view_name,
+                         page_ready=page_is_settled(page),
+                         frames=len(all_scopes(page)),
+                         attempt=ml_episode_attempt("find:{0}".format(field_name)))
     started = time.time()
     try:
         click_manage_in_view(page, view_name, bol_awb, shipment["table_page"])
@@ -5143,72 +5275,105 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
         return "No provider date available; no update"
 
     bol_awb = shipment["bol_awb"]
-    page_number = click_manage_in_view(
-        page,
-        view_name,
-        bol_awb,
-        shipment["table_page"],
-    )
 
-    tower.step(
-        f"Writing {field_name} {date_value} to the {view_name} view",
-        system="hub",
-    )
-    write_log(
-        f"Updating {view_name} Shipments View {field_name} for {bol_awb} "
-        f"with {date_value}."
-    )
-    # ETA is on the COE tab, ATA on the BU tab. Select it before filling.
-    if not select_shipment_info_tab(page, view_name, field_name):
-        # The panel did not render an editable field. An aborted or overlapping
-        # postback leaves the Manage page in exactly that state, and it does not
-        # recover on its own — but a clean reload of the page does. Try once.
-        write_log(
-            f"The {view_name} panel did not render. Reopening Manage for "
-            f"{bol_awb} and trying once more."
+    # One write = one episode. Everything recorded from here until the finally
+    # below carries this id, so the trainer can ask the only question worth
+    # asking of a locator: did the value it led to survive the save.
+    ml_episode_begin(bol_awb, view_name, field_name, date_value)
+    episode_outcome = ML_EPISODE_ERROR
+    episode_verified = None
+    episode_detail = ""
+    try:
+        page_number = click_manage_in_view(
+            page,
+            view_name,
+            bol_awb,
+            shipment["table_page"],
         )
-        try:
-            click_manage_in_view(page, view_name, bol_awb, page_number)
-            if select_shipment_info_tab(page, view_name, field_name):
-                write_log(f"The {view_name} panel rendered after reopening Manage.")
-            else:
-                write_log(
-                    f"The {view_name} panel still has no {field_name} field after "
-                    "reopening. Reporting what is on the page."
-                )
-        except Exception as error:
-            note_suppressed("reopening Manage to recover the panel", error)
 
-    fill_date_field(page, field_name, date_value)
+        tower.step(
+            f"Writing {field_name} {date_value} to the {view_name} view",
+            system="hub",
+        )
+        write_log(
+            f"Updating {view_name} Shipments View {field_name} for {bol_awb} "
+            f"with {date_value}."
+        )
+        # ETA is on the COE tab, ATA on the BU tab. Select it before filling.
+        if not select_shipment_info_tab(page, view_name, field_name):
+            # The panel did not render an editable field. An aborted or overlapping
+            # postback leaves the Manage page in exactly that state, and it does not
+            # recover on its own — but a clean reload of the page does. Try once.
+            write_log(
+                f"The {view_name} panel did not render. Reopening Manage for "
+                f"{bol_awb} and trying once more."
+            )
+            try:
+                click_manage_in_view(page, view_name, bol_awb, page_number)
+                if select_shipment_info_tab(page, view_name, field_name):
+                    write_log(f"The {view_name} panel rendered after reopening Manage.")
+                else:
+                    write_log(
+                        f"The {view_name} panel still has no {field_name} field after "
+                        "reopening. Reporting what is on the page."
+                    )
+            except Exception as error:
+                note_suppressed("reopening Manage to recover the panel", error)
 
-    if DRY_RUN:
-        take_screenshot(page, bol_awb, f"dry_run_{view_name.lower()}_{field_name.lower()}")
+        fill_date_field(page, field_name, date_value)
+
+        if DRY_RUN:
+            take_screenshot(page, bol_awb, f"dry_run_{view_name.lower()}_{field_name.lower()}")
+            if return_to_table:
+                ensure_filtered_page(page, view_name, page_number)
+            # Nothing was saved, so there is nothing to read back. The episode
+            # closes with no verdict and the trainer will exclude it — a dry
+            # run must not be able to teach the model anything.
+            episode_detail = "dry run; filled but not saved"
+            return f"DRY RUN - {field_name} {date_value} filled, not saved"
+
+        save_manage_page(page)
+
+        if VERIFY_AFTER_SAVE:
+            verified, detail = verify_saved_date(
+                page, shipment, view_name, field_name, date_value)
+            # The verdict, recorded before the raise below so that a write
+            # which did NOT stick is still learned from. That case is the most
+            # informative one there is and losing it to an exception would be
+            # throwing away the only negative the layer ever gets.
+            episode_outcome = (ML_EPISODE_VERIFIED if verified
+                               else ML_EPISODE_MISMATCH)
+            episode_verified = bool(verified)
+            episode_detail = str(detail)[:200]
+            if not verified:
+                # Refuse to report a success that cannot be proven.
+                raise Exception(
+                    "{0} {1} was saved but not verified for {2}: {3}".format(
+                        view_name, field_name, bol_awb, detail))
+        else:
+            # Saved, but nobody looked. Not evidence of success.
+            episode_outcome = ML_EPISODE_UNVERIFIED
+            episode_verified = None
+
+        tower.view_updated(view_name, field_name, date_value)
+        action = f"{view_name} {field_name} updated with {date_value} and saved"
+        write_log(f"{action} for {bol_awb}.")
         if return_to_table:
             ensure_filtered_page(page, view_name, page_number)
-        return f"DRY RUN - {field_name} {date_value} filled, not saved"
-
-    save_manage_page(page)
-
-    if VERIFY_AFTER_SAVE:
-        verified, detail = verify_saved_date(
-            page, shipment, view_name, field_name, date_value)
-        if not verified:
-            # Refuse to report a success that cannot be proven.
-            raise Exception(
-                "{0} {1} was saved but not verified for {2}: {3}".format(
-                    view_name, field_name, bol_awb, detail))
-
-    tower.view_updated(view_name, field_name, date_value)
-    action = f"{view_name} {field_name} updated with {date_value} and saved"
-    write_log(f"{action} for {bol_awb}.")
-    if return_to_table:
-        ensure_filtered_page(page, view_name, page_number)
-    else:
-        write_log(
-            f"Skipping the return trip to the {view_name} table: the next step "
-            "navigates to a different view and would discard it."
-        )
-    return action
+        else:
+            write_log(
+                f"Skipping the return trip to the {view_name} table: the next step "
+                "navigates to a different view and would discard it."
+            )
+        return action
+    except Exception as error:
+        # The episode ended before a verifiable write. Recorded as ERROR with
+        # no verdict — not as a failure of whatever locator happened to run
+        # last, which would blame a selector for a session that timed out.
+        episode_detail = str(error)[:200]
+        raise
+    finally:
+        ml_episode_end(episode_outcome, episode_verified, episode_detail)
 
 
 def update_internal_shipment(internal_page, shipment, dhl_result):

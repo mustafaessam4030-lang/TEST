@@ -1,5 +1,13 @@
 """
-Telemetry on disk turned into rows a trainer can use.
+Raw interaction rows off disk.
+
+NOT the training path any more. Training goes through ml/episodes.py, which
+joins each attempt to the write it caused and labels it on whether that write
+was read back from the Hub and confirmed. This module is the layer below that:
+it reads interactions as they were written, without a verdict attached, and it
+is what the dashboard's counts and the assistant's history answers are built
+from — questions about what the automation DID, rather than about what should
+be learned from it.
 
 Deliberately strict. A malformed line is dropped and counted rather than
 guessed at, and the counts are reported, because a dataset that quietly

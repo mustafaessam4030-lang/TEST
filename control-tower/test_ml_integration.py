@@ -8,6 +8,7 @@ still deterministic no matter what the model says.
 Run:  python test_ml_integration.py
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -18,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # Import with ML off, which is the default and the state that matters most.
 os.environ.pop("ML_ENABLED", None)
 import update_eta as A
-from ml import config, features, model as M, predictor
+from ml import config, episodes, features, model as M, predictor
 
 PASS, FAIL = [], []
 SRC = Path("update_eta.py").read_text(encoding="utf-8")
@@ -110,6 +111,31 @@ check("The model is never asked whether to skip verification",
       "recommend_verify" not in SRC and "ml_skip" not in SRC)
 check("ml_order only ever reorders",
       "The SET of\n    candidates is never changed" in SRC)
+check("...and refuses its own output if the set ever changed",
+      "internal ordering error" in Path("ml/predictor.py").read_text(encoding="utf-8"))
+
+# The new machinery gets the same treatment. Quarantine, drift and shadow are
+# all reasons the model may DECLINE or DEMOTE — none of them is a reason to
+# remove a candidate the caller offered.
+PRED = Path("ml/predictor.py").read_text(encoding="utf-8")
+check("A quarantined strategy is demoted, never removed",
+      "keep their place in the caller's list" in PRED
+      and "s in blocked" in PRED)
+ordered_names, _top = A.ml_order(
+    [("first", 1), ("second", 2), ("third", 3)],
+    A.ml_context(provider="HUB", page="manage", field="ATA"))
+check("...and the caller's list comes back complete no matter what",
+      [n for n, _ in ordered_names] == ["first", "second", "third"])
+check("Drift makes the model stand down, it does not change the write",
+      "keeping the original order" in PRED)
+check("The episode verdict is recorded, never consulted mid-write",
+      "ml_episode_end" in SRC and "ml_episode_end" not in
+      SRC.split("def write_date_value")[1].split("\ndef ")[0])
+check("Closing an episode cannot raise into the automation",
+      "except Exception:\n        pass" in
+      SRC.split("def ml_episode_end")[1].split("\ndef ")[0])
+check("The reward has no say in what gets written — it is a training signal",
+      "reward" not in SRC.split("def write_date_value")[1].split("\ndef ")[0])
 
 print()
 print("=" * 70)
@@ -152,18 +178,20 @@ print("6. WITH ML ON, A RECOMMENDATION REACHES THE AUTOMATION")
 print("=" * 70)
 tmp = Path(tempfile.mkdtemp())
 ctx = features.context(provider="HUB", page="manage", field="ATA", view="BU",
-                       visible="no", page_ready="yes", frames="one", attempt="first")
+                       page_ready="yes", frames="one", attempt="first")
 built = M.StrategyModel()
 for _ in range(50):
-    built.observe(features.keys(ctx), "third", True, 700)
+    built.observe(features.keys(ctx), "third", 1.0, duration_ms=700)
 for _ in range(50):
-    built.observe(features.keys(ctx), "first", False)
-    built.observe(features.keys(ctx), "second", False)
+    built.observe(features.keys(ctx), "first", 0.0)
+    built.observe(features.keys(ctx), "second", 0.0)
 built.finalise()
+built.meta["feature_version"] = features.FEATURE_VERSION
 path = tmp / "m.json"
 path.write_text(built.to_json(), encoding="utf-8")
 
 os.environ["ML_ENABLED"] = "1"
+os.environ["ML_MODE"] = "active"
 os.environ["ML_MODEL_PATH"] = str(path)
 os.environ["ML_CONFIDENCE_THRESHOLD"] = "0.5"
 config.reload_from_environment()
@@ -183,15 +211,105 @@ ordered, top = A.ml_order(fake, ctx)
 check("Below the confidence gate the automation keeps its own order",
       ordered == fake and top is None, str(ordered))
 
-for key in ("ML_ENABLED", "ML_MODEL_PATH", "ML_CONFIDENCE_THRESHOLD"):
+# SHADOW. Same model, same evidence, same threshold — and the automation's
+# list comes back untouched. This is the default the layer ships in.
+os.environ["ML_CONFIDENCE_THRESHOLD"] = "0.5"
+os.environ["ML_MODE"] = "shadow"
+config.reload_from_environment()
+predictor.reset()
+ordered, top = A.ml_order(fake, ctx)
+check("In SHADOW mode the automation's own order survives untouched",
+      ordered == fake and top is None, str(ordered))
+check("...even though the model had a clear opinion",
+      predictor.recommend_strategy(ctx, ["first", "second", "third"]
+                                   ).shadow_order[:1] == ["third"])
+
+for key in ("ML_ENABLED", "ML_MODE", "ML_MODEL_PATH", "ML_CONFIDENCE_THRESHOLD"):
     os.environ.pop(key, None)
 config.reload_from_environment()
 predictor.reset()
 check("The switch returns to its default", config.ML_ENABLED is True)
+check("...and the default MODE is shadow, so a fresh install changes nothing",
+      config.ML_MODE == "shadow")
 
 print()
 print("=" * 70)
-print("7. NOTHING THAT WORKED BEFORE WAS REMOVED")
+print("7. EVERY STRATEGY ATTEMPT IS JOINED TO THE WRITE IT CAUSED")
+print("=" * 70)
+check("update_one_view opens an episode", "ml_episode_begin(" in SRC)
+check("...and always closes it, even when the write raises",
+      "finally:" in SRC.split("def update_one_view")[1].split("\ndef ")[0]
+      and "ml_episode_end(" in SRC.split("def update_one_view")[1].split("\ndef ")[0])
+body = SRC.split("def update_one_view")[1].split("\ndef ")[0]
+check("A confirmed read-back is recorded as VERIFIED",
+      "ML_EPISODE_VERIFIED" in body)
+check("A read-back that disagreed is recorded as MISMATCH — and BEFORE the "
+      "raise, so the most informative failure there is survives",
+      body.index("ML_EPISODE_MISMATCH") < body.index("was saved but not verified"))
+check("A save nobody checked is UNVERIFIED with a null verdict, not a failure",
+      "ML_EPISODE_UNVERIFIED" in body and "episode_verified = None" in body)
+check("A dry run teaches the model nothing", "dry run; filled but not saved" in body)
+
+# The real adapter, writing to a real file, joined by the real trainer.
+telemetry_path = tmp / "episode_join.jsonl"
+os.environ["ML_TELEMETRY_PATH"] = str(telemetry_path)
+config.reload_from_environment()
+A.ml_episode_begin("9451291275", "COE", "ETA", "04/09/2026")
+first_ctx = A.ml_context(provider="HUB", page="manage", field="ETA", view="COE",
+                         page_ready=True, frames=1,
+                         attempt=A.ml_episode_attempt("find:ETA"))
+A.ml_record(first_ctx, "label_exact", False, None, "FIELD_NOT_VISIBLE", rank=0)
+A.ml_record(first_ctx, "css_id_visible", True, 700, "OK", rank=1)
+second_ctx = A.ml_context(provider="HUB", page="manage", field="ETA", view="COE",
+                          page_ready=True, frames=1,
+                          attempt=A.ml_episode_attempt("find:ETA"))
+A.ml_record(second_ctx, "verify_reload", True, 1500, "OK")
+A.ml_episode_end(A.ML_EPISODE_VERIFIED, True, "ok")
+
+check("The first look at a field is attempt=first",
+      first_ctx["attempt"] == "first", str(first_ctx))
+check("...and the read-back pass is attempt=later",
+      second_ctx["attempt"] == "later", str(second_ctx))
+check("page_ready and frames are actually populated now, not 'unknown'",
+      first_ctx["page_ready"] == "yes" and first_ctx["frames"] == "one",
+      str(first_ctx))
+
+written = [json.loads(line) for line in
+           telemetry_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+interactions = [e for e in written if e["kind"] == "interaction"]
+episode_events = [e for e in written if e["kind"] == "episode"]
+check("Every interaction carries an episode id",
+      interactions and all(e.get("episode_id") for e in interactions),
+      str(interactions))
+check("...all of them the SAME episode",
+      len({e["episode_id"] for e in interactions}) == 1)
+check("...matching the episode event that closed it",
+      len(episode_events) == 1
+      and episode_events[0]["episode_id"] == interactions[0]["episode_id"])
+check("The shipment reference is attached without the caller passing it",
+      all(e.get("reference") == "9451291275" for e in interactions))
+check("Retries are counted per strategy inside the episode",
+      all("retries" in e for e in interactions))
+
+# The suite tags its own telemetry, so join() must refuse it. Read the file
+# directly to confirm the JOIN itself works, then confirm the refusal.
+rows, report = episodes.join(events=[dict(e, source="automation") for e in written])
+check("The trainer joins those rows to the verified outcome",
+      report["kept"] == 3 and report["positive"] == 2 and report["negative"] == 1,
+      str(report))
+check("...the locator that missed is the negative",
+      [r.strategy for r in rows if not r.label] == ["label_exact"],
+      str([(r.strategy, r.label) for r in rows]))
+real_rows, real_report = episodes.join(path=telemetry_path)
+check("...but as written by a TEST run it is refused as training data",
+      real_report["kept"] == 0 and real_report["dropped_not_real"] == 3,
+      str(real_report))
+os.environ.pop("ML_TELEMETRY_PATH", None)
+config.reload_from_environment()
+
+print()
+print("=" * 70)
+print("8. NOTHING THAT WORKED BEFORE WAS REMOVED")
 print("=" * 70)
 for name in ("get_dhl_result", "get_qatar_result", "get_portal_result",
              "_read_afkl_page", "extract_afkl_result", "run_with_retry",

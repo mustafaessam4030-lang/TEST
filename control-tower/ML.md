@@ -19,31 +19,53 @@ Everything in the right-hand column is a deterministic rule in `update_eta.py`
 and stays there. The layer's entire output is *an ordering* and *a number
 smaller than one you already had*.
 
-## Current state
+## Status: READY FOR LEARNING — NOT YET PROVEN SUPERIOR
 
-`ML_ENABLED` now defaults to **true**, so `python update_eta.py` consults the
-model with nothing to set. That is safe to default on because the switch alone
-activates nothing: without a valid trained model the predictor answers "no
-opinion" to every question. Enabled means *"consult the model if there is
-one"*, not *"behave differently"*. `ML_ENABLED=0` silences it completely.
+This is the honest headline and it should stay there until real production
+telemetry says otherwise. Every mechanism below is built, wired and tested. No
+model has been trained from a real Hub run, so no model has beaten the
+hand-tuned order at anything. The layer's own startup log says exactly this,
+and so does the dashboard panel.
+
+## Three modes
+
+| `ML_MODE` | What happens |
+| --- | --- |
+| `off` | Inert. Identical to the package not being installed. |
+| `shadow` | **Default.** The model is consulted on every lookup and what it *would* have chosen is recorded — then discarded. The deterministic order runs. |
+| `active` | The recommendation is acted on, subject to every gate below. |
+
+Shadow is the default because a replay of past telemetry cannot settle whether
+the model is better. A candidate late in the automation's list is only ever
+observed when the earlier ones failed, so the holdout is a biased sample of the
+situations the deterministic order found *hard*. Shadow mode records a decision
+for every situation, easy ones included, and that log is the unbiased evidence
+the replay cannot be.
 
 Every run prints its own state before it starts:
 
 ```
 [ML] Initializing...
-[ML] Model found: ml\models\strategy_model.json
+[ML] Mode: SHADOW
+[ML] Model found: ml\models\champion.json
 [ML] Model loaded successfully
-[ML] Model version: 3   built: 2026-09-03 06:48:35
-[ML] Model contents: 7 contexts, 4900 observations
-[ML] Status: ENABLED
-[ML] Confidence threshold: 0.65
+[ML] Model version: 4   feature space: v2   built: 2026-09-04 07:41:12
+[ML] Label rule: verified_persisted_success
+[ML] Model contents: 8 contexts, 5567 observations
+[ML] Support required: 30 per cell, 8 per strategy
+[ML] Ranking score threshold: 0.65 (a Wilson lower bound, NOT a probability)
+[ML] Status: SHADOW
+[ML] READY FOR LEARNING, NOT YET PROVEN SUPERIOR
+[ML] This model has not passed an evaluation gate against real production telemetry.
+[ML] SHADOW: recommendations are recorded and DISCARDED. ...
 ```
 
 or, with no model yet:
 
 ```
 [ML] Initializing...
-[ML] No trained model found at ml\models\strategy_model.json
+[ML] Mode: SHADOW
+[ML] No trained model found at ml\models\champion.json
 [ML] Status: FALLBACK
 [ML] Using deterministic automation
 ```
@@ -52,34 +74,122 @@ Training is never triggered by a run. `python -m ml.trainer` is a separate,
 deliberate act — a model that retrained itself on the way past would be a
 different model every time and impossible to hold responsible for anything.
 
-**Not trained yet.** There is no model file, because there is no
-telemetry yet. `python -m ml.trainer` will refuse and tell you how many rows
-short you are. That refusal is the design working, not a bug: a model built
-from a handful of rows would pass every smoke test and then make confident,
-wrong recommendations on the Hub.
+**Not trained yet.** There is no model file, because there is no telemetry
+yet. `python -m ml.trainer` will refuse and tell you exactly what is missing.
+That refusal is the design working.
+
+## Champion and challenger
+
+`python -m ml.trainer` writes **`challenger.json`**. Always. It never touches
+production.
+
+`python -m ml.trainer --promote` runs the evaluator and copies the challenger
+to **`champion.json`** *only* if the verdict is `BETTER` on enough held-out
+observations. The predictor loads the champion. That separation is what makes
+the gate mean something — otherwise every training run would silently go live.
+The previous champion is kept alongside, timestamped, so a bad promotion is
+undoable without a retrain.
+
+## The label: verified persisted success
+
+A strategy attempt is a **positive** only when the write it belonged to was
+read back out of the Hub afterwards and confirmed. Not "the locator matched an
+element" — that was the old label and it measured the wrong thing.
+
+| Situation | Label |
+| --- | --- |
+| Found the field, write read back and correct | **positive** |
+| Tried and did not find the field | **negative** |
+| Found the field, write read back and **wrong** | **negative** (the heaviest penalty there is) |
+| Episode never read back at all | **excluded** — not a negative |
+
+That last row is the one that matters. An unverified episode is not a failed
+episode, and counting it as one would put invented failures into the training
+data — asymmetrically, because unverified episodes can only ever contribute
+negatives. The whole episode is dropped and the trainer reports how many.
+
+**This means `VERIFY_AFTER_SAVE=1` is what turns a run into training data.**
+Without it every episode is excluded and the trainer will keep refusing.
+
+## The reward
+
+A single success bit cannot tell a clean instant win from a nine-second one
+that needed three attempts. The reward can:
+
+```
+reward =  W_SUCCESS     * verified            (1.00)
+        - W_LATENCY     * latency_cost        (0.25)
+        - W_RETRY       * retry_cost          (0.15)
+        - W_FAILURE     * fault(category)     (0.20)
+        - W_VERIFY_FAIL * verification_failed (0.60)
+```
+
+`fault` is *how much of the failure belongs to the strategy*, not how bad it
+was. A locator that could not find a field is charged in full. A locator that
+never got the chance because the network dropped is charged nothing — charging
+it would teach the model that a good selector is unreliable on days when the
+VPN is flaky. The reward is bounded (`+1.00` to `-1.20`) and converted to
+fractional success credit, so a verified win that took eight seconds banks
+about 0.6 of a success rather than a flat 1.
+
+## Recency, drift and quarantine
+
+Observations are weighted `0.5 ** (age_days / 30)`. A cell's effective sample
+size shrinks as its evidence goes stale, which widens the Wilson interval on
+its own, which makes the gate decline — staleness turns into caution rather
+than into confident wrong answers.
+
+If a cell's recent-window rate disagrees with its history by more than
+`ML_DRIFT_THRESHOLD`, the model stands down for that decision and the
+hand-tuned order takes over until it is retrained. A strategy that has failed
+`ML_QUARANTINE_FAILURES` times in a row most recently is never recommended
+until it is seen to work again.
+
+## Support is not the same as score
+
+The Wilson lower bound is a *ranking score*, not a probability, and nothing in
+this codebase calls it one. A separate **support** gate decides whether a cell
+may have an opinion at all — `MIN_SUPPORT` across the cell and
+`MIN_SUPPORT_PER_ARM` on the arm being recommended — and it is checked *before*
+the score. A high score on four observations is arithmetic, not a finding.
+
+Whether the model's predicted rates are probabilities at all is a separate,
+measured question. `ml/calibration.py` bins predictions against held-out
+outcomes and reports ECE and Brier. Below `ML_CALIBRATION_MIN_ROWS` the answer
+is **unknown** — which is a different answer from "poorly calibrated" and is
+treated as one.
 
 ## Getting from here to a working model
 
 ```bat
-REM 1 · Collect. Telemetry is already on and changes nothing about the run.
+REM 1 · Collect, WITH VERIFICATION ON. Without this every episode is
+REM      unlabelled and nothing downstream will work.
+set VERIFY_AFTER_SAVE=1
 python update_eta.py
-python -c "from ml import telemetry; print(telemetry.stats())"
+python -c "from ml import episodes; print(episodes.join()[1])"
 
-REM 2 · Train, once there are enough rows (60 is the floor; a few hundred is
-REM     better). It refuses and says why if there are not.
+REM 2 · Train a challenger. 60 labelled rows is the floor; a few hundred is
+REM      better. It refuses and says exactly what is missing if there are not.
 python -m ml.trainer --show
 
 REM 3 · Prove it beats the automation's own order. Trains on the earlier
-REM     rows, scores the later ones. Read the VERDICT line.
+REM      rows, scores the later ones. Read the VERDICT line.
 python -m ml.evaluator
 
-REM 4 · Nothing to switch on — the next run picks the model up by itself.
-REM     But only do step 2 at all once the evaluator says BETTER.
+REM 4 · Promote — only happens if the evaluator says BETTER.
+python -m ml.trainer --promote
+python -m ml.trainer --status
+
+REM 5 · The champion is now loaded, in SHADOW. It still changes nothing.
+python update_eta.py
+
+REM 6 · Only after shadow decisions confirm it on real runs:
+set ML_MODE=active
 python update_eta.py
 ```
 
-Step 3 is not optional. `NO DIFFERENCE` and `INSUFFICIENT DATA` both mean
-leave it off.
+Steps 3 and 6 are not optional. `NO DIFFERENCE` and `INSUFFICIENT DATA` both
+mean leave it in shadow.
 
 ## Settings
 
@@ -88,9 +198,21 @@ behaviour.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `ML_MODE` | `shadow` | `off` / `shadow` / `active`. Only `active` changes what the automation does. |
 | `ML_ENABLED` | `true` | Consult the model if there is one. `0` silences the layer entirely. |
-| `ML_CONFIDENCE_THRESHOLD` | `0.65` | A recommendation below this is discarded. |
-| `ML_MODEL_PATH` | `ml/models/strategy_model.json` | Where the model lives. |
+| `ML_CONFIDENCE_THRESHOLD` | `0.65` | A ranking score below this is discarded. Not a probability. |
+| `ML_CHAMPION_PATH` | `ml/models/champion.json` | What the predictor loads. |
+| `ML_CHALLENGER_PATH` | `ml/models/challenger.json` | What the trainer writes. |
+| `ML_MODEL_PATH` | — | Overrides the champion path. For tests and one-offs. |
+| `ML_REQUIRE_VERIFIED_LABEL` | `true` | Strict labelling. `0` falls back to "found the field", and the model records that it did. |
+| `ML_MIN_SUPPORT` | `30` | Observations a cell needs before it may have an opinion. |
+| `ML_MIN_SUPPORT_PER_ARM` | `8` | Observations the recommended strategy itself needs. |
+| `ML_HALF_LIFE_DAYS` | `30` | Recency half-life for observation weights. |
+| `ML_DRIFT_WINDOW_DAYS` | `14` | The "recent" window drift is measured against. |
+| `ML_DRIFT_THRESHOLD` | `0.25` | Rate gap that makes the model stand down. |
+| `ML_QUARANTINE_FAILURES` | `5` | Consecutive recent failures that benches a strategy. |
+| `ML_CALIBRATION_MIN_ROWS` | `200` | Below this, calibration is reported as unknown. |
+| `ML_W_SUCCESS` / `ML_W_LATENCY` / `ML_W_RETRY` / `ML_W_FAILURE` / `ML_W_VERIFY_FAIL` | `1.0` / `0.25` / `0.15` / `0.20` / `0.60` | Reward weights. |
 | `ML_FALLBACK_ENABLED` | `true` | A prediction error falls back. Off makes it fatal — for tests only. |
 | `ML_EXPLORATION_ENABLED` | `false` | Occasionally try a strategy the model does not favour. |
 | `ML_EXPLORATION_RATE` | `0.10` | How often, when exploration is on. |

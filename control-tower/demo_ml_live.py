@@ -30,10 +30,16 @@ sys.path.insert(0, str(HERE))
 
 WORK = Path(tempfile.mkdtemp(prefix="ct_ml_demo_"))
 os.environ["ML_TELEMETRY_PATH"] = str(WORK / "telemetry.jsonl")
-os.environ["ML_MODEL_PATH"] = str(WORK / "strategy_model.json")
+os.environ["ML_CHAMPION_PATH"] = str(WORK / "champion.json")
+os.environ["ML_CHALLENGER_PATH"] = str(WORK / "challenger.json")
+os.environ.pop("ML_MODEL_PATH", None)       # resolve the champion normally
 os.environ.pop("ML_ENABLED", None)          # prove the DEFAULT is on
+# ACTIVE, explicitly. The shipped default is SHADOW — a demonstration that the
+# model can steer the field lookup has to turn steering on, and saying so is
+# part of the demonstration.
+os.environ["ML_MODE"] = "active"
 
-from ml import config, features, predictor, trainer          # noqa: E402
+from ml import config, features, model as M, predictor, trainer  # noqa: E402
 import update_eta as A                                       # noqa: E402
 
 STEPS = []
@@ -132,18 +138,36 @@ def build_model():
     path = Path(os.environ["ML_TELEMETRY_PATH"])
     with open(path, "w", encoding="utf-8") as handle:
         for index in range(700):
-            ctx = features.context(visible="no", page_ready="yes",
-                                   frames="one", attempt="first", **CTX)
+            ctx = features.context(page_ready="yes", frames="one",
+                                   attempt="first", **CTX)
             strategy = random.choice(ATA_STRATEGIES)
-            ok = random.random() < truth[strategy]
+            found = random.random() < truth[strategy]
+            # Every attempt belongs to a write whose value was read back. That
+            # is the only shape the trainer accepts, so the fixture has to have
+            # it too — otherwise this demonstration would train a model the
+            # real pipeline could never produce.
+            persisted = found and random.random() < 0.97
+            stamp = "2026-09-{0:02d}".format(index % 28 + 1)
+            episode_id = "demo-{0}".format(index)
             handle.write(json.dumps({
-                "kind": "interaction", "context": ctx, "strategy": strategy,
-                "success": ok, "rank": ATA_STRATEGIES.index(strategy),
-                "duration_ms": random.randint(250, 900) if ok else None,
-                "source": "automation",
-                "ts": "2026-09-{0:02d}".format(index % 28 + 1)}) + "\n")
+                "kind": "interaction", "episode_id": episode_id,
+                "context": ctx, "strategy": strategy, "success": found,
+                "rank": ATA_STRATEGIES.index(strategy),
+                "duration_ms": random.randint(250, 900) if found else None,
+                "category": "OK" if found else "FIELD_NOT_VISIBLE",
+                "source": "automation", "ts": stamp}) + "\n")
+            handle.write(json.dumps({
+                "kind": "episode", "episode_id": episode_id,
+                "outcome": "VERIFIED" if persisted else "MISMATCH",
+                "verified": bool(persisted), "source": "automation",
+                "ts": stamp}) + "\n")
     ok, message, _ = trainer.train(echo=lambda *a: None)
-    return ok, message
+    if not ok:
+        return ok, message
+    # The trainer writes a CHALLENGER. Nothing reaches production without
+    # passing the evaluation gate, so promote it the ordinary way.
+    promoted, promotion_message, _result = trainer.promote(echo=lambda *a: None)
+    return promoted, message + "  |  " + promotion_message
 
 
 def main():
@@ -162,11 +186,20 @@ def main():
         print("     " + line)
     show(active, "ML initialised and reported its own state")
     show(any("Status: ENABLED" in l for l in lines), "Status: ENABLED")
-    show(any("Model version: 3" in l for l in lines), "Model version reported")
-    show(any("Confidence threshold" in l for l in lines),
-         "Confidence threshold reported")
+    show(any("Model version: {0}".format(M.MODEL_VERSION) in l for l in lines),
+         "Model version reported")
+    show(any("Ranking score threshold" in l and "NOT a probability" in l
+             for l in lines),
+         "The score is named as a Wilson bound, not as a probability")
+    show(any("Label rule: verified_persisted_success" in l for l in lines),
+         "The label rule is the strict one")
+    show(any("Promoted" in l for l in lines),
+         "The model says which promotion put it in production")
     show("ML_ENABLED" not in os.environ,
          "This happened with ML_ENABLED UNSET — the default is on")
+    show(os.environ.get("ML_MODE") == "active",
+         "...and with ML_MODE=active, set here on purpose: the SHIPPED "
+         "default is shadow, which would change nothing")
 
     try:
         from playwright.sync_api import sync_playwright
@@ -187,8 +220,8 @@ def main():
         page = browser.new_page()
         try:
             rule("2. THE MODEL'S ACTUAL RECOMMENDATION FOR THIS PAGE")
-            ctx = A.ml_context(visible="no", page_ready="yes",
-                               frames="one", attempt="first", **CTX)
+            ctx = A.ml_context(page_ready="yes", frames="one",
+                               attempt="first", **CTX)
             recommendation = predictor.recommend_strategy(ctx, ATA_STRATEGIES)
             print("     context : {0}".format(features.describe(ctx)))
             print("     used    : {0}".format(recommendation.used))
