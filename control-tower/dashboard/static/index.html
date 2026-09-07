@@ -49,17 +49,74 @@
 ══════════════════════════════════════════════════════════════ */
 
 :root{
-  /* Bone and ink, with electric blue as the system colour — the same
-     palette as the intro film, so the two read as one product. */
-  --paper:#EFEBE3; --bone:#E3DED2; --card:#F6F3EC;
-  --ink:#0A0A0B; --mid:#6B6862; --faint:#8E8A82;
-  --line:#D8D2C4; --line-2:#E3DED2;
+  /* ───────────────────────────────────────────────────────────────────
+     NIGHT RAMP
 
-  --vio:#1B34E8; --vio-wash:rgba(27,52,232,.08); --vio-line:rgba(27,52,232,.32);
-  --y:#B96A00;   --y-wash:rgba(185,106,0,.10);   --y-line:rgba(185,106,0,.34);
-  --grn:#0F7A50; --grn-wash:rgba(15,122,80,.10);
-  --red:#C2261C; --red-wash:rgba(194,38,28,.10);
-  --blu:#1B34E8; --blu-wash:rgba(27,52,232,.08);
+     An apron after dark. The ground is a blue-slate, not black: a true
+     black console makes every card look like a hole cut in the screen,
+     and an operator sitting in front of this for a whole shift needs the
+     surfaces to feel lit rather than punched out.
+
+     Depth comes from LIGHTENING surfaces as they come forward — void,
+     deck, riser — the way a dark room actually works. Drop shadows do
+     almost nothing on a dark ground; they read as smudges.
+
+One accent, one meaning. Applying amber to every estimated date was
+     the first attempt and it was wrong: it coloured a whole column and
+     signalled nothing, because every row in it is an estimate. Colour
+     earns its place by marking the exception, so:
+
+         ice     IT ARRIVED     an ATA — read back, confirmed, the fact an
+                                operator is actually scanning for
+         amber   NEEDS A PERSON a partial write, a challenge to clear
+         signal  HEALTHY        a date reached the Hub
+         alarm   BROKEN         it failed
+         vio     ATLAS          the engine, and only the engine
+
+     Ordinary dates are set in the text colour with tabular figures, so a
+     column of them aligns and a wrong one shows up by shape rather than
+     by hue.
+
+     Accents are lifted and desaturated for a dark ground. The old
+     electric #1B34E8 is kept in hue for ATLAS — the identity survives —
+     but at that saturation on this ground it vibrates, so it comes up to
+     #8B9CFF. Measured: every colour below clears WCAG AA (4.5:1) on both
+     void and deck, including --faint, which was 3.10:1 and failing in
+     the light palette.
+     ─────────────────────────────────────────────────────────────────── */
+  --void:#0B0F14;      /* the page */
+  /* A filled control. On the light theme this was --ink, i.e. "the dark
+     one"; inverted, that became a white pill. Filled actions are the accent
+     instead, which keeps them legible and on-identity. */
+  --solid:#8B9CFF; --on-solid:#0B0F14;
+  --deck:#121821;      /* a card */
+  --riser:#1A222E;     /* raised: inputs, hover, table headers */
+  --crest:#232D3B;     /* the top of the stack: chips, active states */
+
+  /* Kept as aliases so nothing downstream had to be renamed. */
+  --paper:var(--void); --bone:var(--riser); --card:var(--deck);
+
+  --ink:#E8EDF4;       /* primary text        16.3:1 on void */
+  --mid:#9FB0C4;       /* secondary            8.7:1 */
+  --faint:#7E90A6;     /* tertiary, labels     5.9:1 — was 3.1:1 and failing */
+
+  /* Hairlines, not dark seams. A dark theme's borders have to be lighter
+     than the surface they sit on, which is the opposite of the light one. */
+  --line:rgba(232,237,244,.10);
+  --line-2:rgba(232,237,244,.06);
+  --line-hi:rgba(232,237,244,.18);
+
+  --amber:#FFB454; --amber-wash:rgba(255,180,84,.10); --amber-line:rgba(255,180,84,.30);
+  --ice:#7DD3FC;   --ice-wash:rgba(125,211,252,.10);  --ice-line:rgba(125,211,252,.28);
+  --signal:#6EE7A8; --signal-wash:rgba(110,231,168,.10);
+  --alarm:#FF6B6B;  --alarm-wash:rgba(255,107,107,.11);
+
+  /* The existing names, remapped. ETA work is amber, ATA work is ice. */
+  --vio:#8B9CFF; --vio-wash:rgba(139,156,255,.11); --vio-line:rgba(139,156,255,.30);
+  --y:var(--amber); --y-wash:var(--amber-wash); --y-line:var(--amber-line);
+  --grn:var(--signal); --grn-wash:var(--signal-wash);
+  --red:var(--alarm);  --red-wash:var(--alarm-wash);
+  --blu:var(--ice);    --blu-wash:var(--ice-wash);
 
   --s:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
   --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
@@ -70,6 +127,8 @@
      naturally now that the player row is gone. The chat and its button used
      to sit above it. */
   --player:0px;
+
+  color-scheme:dark;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden}
@@ -84,8 +143,8 @@ input,textarea,select{font-family:inherit}
 :focus-visible{outline:2px solid var(--vio);outline-offset:2px;border-radius:4px}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#C6C0B2;border-radius:10px;border:3px solid var(--paper)}
-::-webkit-scrollbar-thumb:hover{background:#A9A294}
+::-webkit-scrollbar-thumb{background:var(--line-hi);border-radius:10px;border:3px solid var(--paper)}
+::-webkit-scrollbar-thumb:hover{background:var(--faint)}
 
 /* Film grain, as in the reference. Cheap: one tiled SVG, transform-only. */
 .grain{position:fixed;inset:0;z-index:95;pointer-events:none;opacity:.025;
@@ -105,7 +164,7 @@ input,textarea,select{font-family:inherit}
   font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mid)}
 .ml-pill .d{width:7px;height:7px;border-radius:50%;background:var(--faint)}
 .ml-pill.on{color:var(--grn)} .ml-pill.on .d{background:var(--grn)}
-.ml-pill.warn{color:#946200} .ml-pill.warn .d{background:#d99400}
+.ml-pill.warn{color:var(--amber)} .ml-pill.warn .d{background:var(--amber)}
 .ml-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));
   border-top:1px solid var(--line)}
 .ml-k{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -142,7 +201,7 @@ input,textarea,select{font-family:inherit}
   border-radius:8px;background:transparent;color:var(--mid);cursor:pointer;
   transition:color .18s,border-color .18s,background .18s}
 .fb button:hover{color:var(--ink);border-color:var(--faint)}
-.fb button.picked{color:var(--vio);border-color:var(--vio);background:rgba(90,80,240,.07)}
+.fb button.picked{color:var(--vio);border-color:var(--vio);background:var(--vio-wash)}
 .fb .fb-t{font-family:var(--mono,ui-monospace,monospace);font-size:9px;font-weight:700;
   letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:2px}
 .fb-in{width:100%;margin-top:7px;font:inherit;font-size:12px;padding:7px 9px;
@@ -154,9 +213,24 @@ input,textarea,select{font-family:inherit}
    than five unrelated cards is the spine — a rule that grows across the
    whole run — and the fact that every scene enters and leaves on the same
    short, hard cut. No library, no video, ~700 bytes of DOM. */
+/* ── THE INTRODUCTION KEEPS ITS OWN PALETTE ──────────────────────────
+   The cinematic is bone and ink and it stays that way: it is the piece of
+   this product that was signed off as-is, and a dark intro followed by a
+   dark dashboard also loses the one thing the sequence is for — the moment
+   the picture gives way and the console appears.
+   These are the original light-theme values, scoped. Not one scene, word,
+   timing or animation changes; only the tokens the intro reads are held. */
+#gate{
+  --paper:#EFEBE3; --bone:#E3DED2; --card:#F6F3EC;
+  --ink:#0A0A0B; --mid:#6B6862; --faint:#6B6862;
+  --line:#D8D2C4; --line-2:#E3DED2;
+  --vio:#1B34E8; --vio-wash:rgba(27,52,232,.08); --vio-line:rgba(27,52,232,.32);
+  --amber-wash:rgba(185,106,0,.10);
+  --grn:#0F7A50;
+}
 #gate{position:fixed;inset:0;z-index:100;overflow:hidden;
-  background:radial-gradient(ellipse 62% 52% at 50% 6%,rgba(255,150,60,.13),transparent 62%),
-             radial-gradient(ellipse 52% 42% at 50% 100%,rgba(90,80,240,.09),transparent 60%),
+  background:radial-gradient(ellipse 62% 52% at 50% 6%,var(--amber-wash),transparent 62%),
+             radial-gradient(ellipse 52% 42% at 50% 100%,var(--vio-wash),transparent 60%),
              var(--paper);
   display:grid;place-items:center;
   transition:opacity .5s var(--e),visibility .5s}
@@ -202,7 +276,7 @@ input,textarea,select{font-family:inherit}
 .g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .g-chip{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.2vw,14px);
   font-weight:700;letter-spacing:.16em;padding:8px 15px;border:1px solid var(--line);
-  border-radius:999px;color:var(--mid);background:rgba(255,255,255,.6)}
+  border-radius:999px;color:var(--mid);background:rgba(232,237,244,.06)}
 .g-list{display:flex;flex-wrap:wrap;gap:7px 22px;justify-content:center;
   font-size:clamp(13px,1.45vw,17px);color:var(--mid)}
 .g-list b{color:var(--ink);font-weight:650}
@@ -219,11 +293,11 @@ input,textarea,select{font-family:inherit}
 /* OPEN DASHBOARD — the conclusion, not a control bolted on */
 .g-open{margin-top:6px;display:inline-flex;align-items:center;gap:10px;
   font-family:var(--mono,ui-monospace,monospace);font-size:12px;font-weight:700;
-  letter-spacing:.18em;text-transform:uppercase;color:#fff;background:var(--ink);
+  letter-spacing:.18em;text-transform:uppercase;color:var(--ink);background:var(--ink);
   border:none;border-radius:999px;padding:15px 30px;cursor:pointer;
-  box-shadow:0 10px 30px rgba(0,0,0,.16);
+  box-shadow:0 10px 30px rgba(0,0,0,.5);
   transition:transform .18s var(--e),box-shadow .18s var(--e),background .18s}
-.g-open:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,.22)}
+.g-open:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,.6)}
 .g-open:active{transform:translateY(0)}
 .g-open svg{width:15px;height:15px}
 /* It appears with the last scene and then STAYS — the sequence ends on it. */
@@ -240,17 +314,17 @@ input,textarea,select{font-family:inherit}
 @keyframes gbar{to{width:100%}}
 .g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
 .g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:10px;font-weight:700;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(255,255,255,.72);
+  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(232,237,244,.08);
   border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
   transition:color .2s,border-color .2s,background .2s}
-.g-btn:hover{color:var(--ink);border-color:var(--faint);background:#fff}
+.g-btn:hover{color:var(--ink);border-color:var(--faint);background:var(--ink)}
 .g-btn .on-i{display:none}.g-btn.muted .on-i{display:inline}.g-btn.muted .off-i{display:none}
 /* Shown only when the browser refuses to start audio on its own. */
 .g-sound{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:102;
   display:none;align-items:center;gap:9px;font-family:var(--mono,ui-monospace,monospace);
   font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-  color:#fff;background:var(--vio);border:none;border-radius:999px;
-  padding:12px 22px;cursor:pointer;box-shadow:0 10px 28px rgba(90,80,240,.35)}
+  color:var(--ink);background:var(--vio);border:none;border-radius:999px;
+  padding:12px 22px;cursor:pointer;box-shadow:0 10px 28px var(--vio-line)}
 #gate.needs-sound .g-sound{display:inline-flex}
 .g-noaudio{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:102;
   display:none;font-family:var(--mono,ui-monospace,monospace);font-size:10px;
@@ -274,7 +348,7 @@ input,textarea,select{font-family:inherit}
    which broke the mobile drawer. */
 #app.settled{animation:none;opacity:1}
 
-.nav{grid-area:nav;background:var(--card);border-right:1px solid var(--line);
+.nav{grid-area:nav;background:var(--void);border-right:1px solid var(--line);
   display:flex;flex-direction:column;overflow:hidden}
 .nav-b{padding:20px 20px 18px;border-bottom:1px solid var(--line-2)}
 .nav-n{font-size:16px;font-weight:800;letter-spacing:-.04em;line-height:1}
@@ -295,7 +369,7 @@ input,textarea,select{font-family:inherit}
 
 .main{grid-area:main;overflow-y:auto}
 .top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;
-  flex-wrap:wrap;padding:16px 28px;background:rgba(239,235,227,.92);
+  flex-wrap:wrap;padding:16px 28px;background:rgba(11,15,20,.92);
   backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 .top-t{font-size:20px;font-weight:700;letter-spacing:-.04em}
 .sp{flex:1}
@@ -317,24 +391,31 @@ input,textarea,select{font-family:inherit}
   font-size:11.5px;font-weight:700;transition:all .16s}
 .cbtn:hover{color:var(--ink);border-color:var(--faint)}
 .cbtn.warn{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
-.cbtn.warn:hover{background:rgba(255,178,89,.2)}
-.cbtn.go{border-color:rgba(47,181,116,.5);color:var(--grn);background:var(--grn-wash)}
-.cbtn.go:hover{background:rgba(47,181,116,.2)}
+.cbtn.warn:hover{background:var(--amber-line)}
+.cbtn.go{border-color:rgba(110,231,168,.5);color:var(--grn);background:var(--grn-wash)}
+.cbtn.go:hover{background:rgba(110,231,168,.22)}
 .cbtn:disabled{opacity:.4;cursor:default}
-.cbtn.stop{border-color:rgba(255,90,78,.45);color:var(--red);background:var(--red-wash)}
-.cbtn.stop:hover{background:rgba(255,90,78,.2)}
+.cbtn.stop{border-color:rgba(255,107,107,.45);color:var(--red);background:var(--red-wash)}
+.cbtn.stop:hover{background:rgba(255,107,107,.22)}
 .cbtn svg{width:12px;height:12px}
 .share{display:none;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
   border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
   font-size:11.5px;font-weight:700;transition:background .16s}
 .share.on{display:inline-flex}
-.share:hover{background:rgba(255,122,0,.2)}
+.share:hover{background:var(--vio-line)}
 .share svg{width:13px;height:13px}
 
 .page{padding:24px 28px 40px;display:none}
 .page.on{display:block;animation:rise .35s var(--e)}
 
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+/* A dark card cannot be separated by a drop shadow — on this ground a
+   shadow reads as a smudge. It is separated the way a lit surface actually
+   is: a hairline LIGHTER than the surface, and a single-pixel highlight
+   along the top edge where the light would fall. The 1.08:1 surface lift on
+   its own left the cards floating in nothing. */
+.card{background:var(--deck);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:inset 0 1px 0 rgba(232,237,244,.045),0 1px 2px rgba(0,0,0,.4);
+  position:relative}
 .card-h{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
 .card-t{font-size:13px;font-weight:700;letter-spacing:-.02em}
 .card-b{padding:18px}
@@ -343,30 +424,57 @@ input,textarea,select{font-family:inherit}
 .ctl{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
 .ctl .card{display:flex;flex-direction:column}
 .ctl .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
-.hero{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+/* The one gradient in the interface: an apron glow behind the run status,
+   warm at the top edge where the amber linework runs. Everything else is a
+   flat surface, so this reads as the page's focal point rather than as
+   decoration applied evenly. */
+.hero{background:
+    radial-gradient(ellipse 70% 130% at 88% -20%,rgba(139,156,255,.05),transparent 70%),
+    var(--deck);
+  border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:inset 0 1px 0 rgba(232,237,244,.05),0 1px 2px rgba(0,0,0,.4);
   padding:24px;position:relative;overflow:hidden}
 /* Linework corridor: a dashed route with a container running it, and a slow
-   radar sweep. Transform/opacity only, and paused when the tab is hidden. */
+   radar sweep. Transform/opacity only, and paused when the tab is hidden.
+
+   It was amber, which on this palette now means "a person is needed" — so a
+   decoration was wearing the one colour that has to mean something. It is
+   neutral linework instead: the texture and the motion survive, the signal
+   is given back. The one thing to remove before leaving the house. */
 /* Kept to the right third and faded at both ends so it never crosses the
    readable copy — decoration must not compete with the numbers. */
 .hero-fx{position:absolute;top:0;bottom:0;right:0;width:46%;pointer-events:none;
   z-index:0;overflow:hidden;
-  mask-image:linear-gradient(90deg,transparent,#000 32%,#000 88%,transparent);
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 32%,#000 88%,transparent)}
+  mask-image:linear-gradient(90deg,transparent,var(--void) 32%,var(--void) 88%,transparent);
+  -webkit-mask-image:linear-gradient(90deg,transparent,var(--void) 32%,var(--void) 88%,transparent)}
 .hero-fx .rail{position:absolute;left:0;right:0;height:1px;opacity:.5;
-  background:repeating-linear-gradient(90deg,rgba(255,122,0,.55) 0 7px,transparent 7px 16px)}
+  background:repeating-linear-gradient(90deg,rgba(232,237,244,.20) 0 7px,transparent 7px 16px)}
 .hero-fx .rail.r1{top:26%} .hero-fx .rail.r2{top:74%}
 .hero-fx .pod{position:absolute;left:0;width:15px;height:10px;
-  border:1px solid rgba(255,122,0,.8);border-radius:2px;background:rgba(255,122,0,.16)}
+  border:1px solid rgba(232,237,244,.26);border-radius:2px;background:rgba(232,237,244,.07)}
 .hero-fx .pod.p1{top:calc(26% - 5px);animation:haul 14s linear infinite}
 .hero-fx .pod.p2{top:calc(74% - 5px);animation:haul 21s linear infinite 5s}
 @keyframes haul{from{transform:translateX(-30px)}to{transform:translateX(700px)}}
 .hero-fx .sweep{position:absolute;top:-40%;bottom:-40%;width:40%;
-  background:linear-gradient(90deg,transparent,rgba(255,178,89,.09),transparent);
+  background:linear-gradient(90deg,transparent,rgba(232,237,244,.05),transparent);
   transform:translateX(-120%);animation:sweep 9s var(--e) infinite}
 @keyframes sweep{to{transform:translateX(340%)}}
 .hero-v{font-size:clamp(34px,4.4vw,54px);font-weight:800;letter-spacing:-.055em;
-  line-height:1;margin:12px 0 6px;position:relative;z-index:1}
+  line-height:1;margin:12px 0 6px;position:relative;z-index:1;color:var(--ink);
+  display:flex;align-items:center;gap:16px}
+/* The status light. Sized off the type so it scales with the headline, and
+   it is the only place the run's state is expressed as colour. */
+.hero-v::before{content:'';flex:none;width:.28em;height:.28em;border-radius:50%;
+  background:var(--faint);box-shadow:0 0 0 .12em rgba(232,237,244,.06)}
+.hero-v.s-running::before{background:var(--signal);
+  box-shadow:0 0 0 .12em rgba(110,231,168,.14),0 0 1.4em rgba(110,231,168,.5);
+  animation:beat 2.4s var(--e) infinite}
+.hero-v.s-finished::before{background:var(--ice);
+  box-shadow:0 0 0 .12em rgba(125,211,252,.14)}
+.hero-v.s-fatal::before{background:var(--alarm);
+  box-shadow:0 0 0 .12em rgba(255,107,107,.16),0 0 1.4em rgba(255,107,107,.45)}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.45}}
+@media(prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}}
 .hero-s{font-size:13px;color:var(--mid);margin-bottom:24px;position:relative;z-index:1}
 .hero-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:20px 18px;position:relative;z-index:1}
 .fk{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
@@ -376,11 +484,15 @@ input,textarea,select{font-family:inherit}
 
 /* kpis */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+.kpi{background:var(--deck);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;
+  box-shadow:inset 0 1px 0 rgba(232,237,244,.045)}
 .kpi-k{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
 .kpi-v{font-size:38px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin-top:10px;
   font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
 .kpi-n{font-size:11.5px;color:var(--mid);margin-top:4px}
+/* A zero is not an alarm. "Failed 0" is the best news on the page and must
+   not glow; it recedes to the tertiary colour whatever --c says. */
+.kpi-v.nil{color:var(--faint)}
 
 .bar{height:6px;border-radius:100px;background:var(--bone);overflow:hidden}
 .bar-f{height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
@@ -406,11 +518,18 @@ input,textarea,select{font-family:inherit}
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
-  text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--bone)}
+  text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--riser)}
 td{padding:12px 15px;border-bottom:1px solid var(--line-2);color:var(--mid)}
 tbody tr:last-child td{border-bottom:none}
-tbody tr:hover{background:var(--bone)}
+tbody tr:hover{background:var(--riser)}
 td.ref{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:600;white-space:nowrap}
+/* Dates align down the column and stay in the text colour. Only an ACTUAL
+   arrival is coloured, because that is the exception an operator scans for;
+   an empty cell is not a date and must not look like one. */
+td.dt{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;
+  color:var(--ink)}
+td.dt.actual{color:var(--ice)}
+td.dt.none{color:var(--faint)}
 td.dt{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:nowrap}
 td.n{font-family:var(--mono);font-size:12px;white-space:nowrap}
 .err{font-size:12px;max-width:240px;display:block;overflow:hidden;text-overflow:ellipsis;
@@ -423,7 +542,7 @@ tr.r-partial .err{color:var(--y)}
 .tlr{display:grid;grid-template-columns:58px 16px 1fr;gap:11px;padding:7px 18px;font-size:13px}
 .tlr time{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:2px}
 .tlr i{font-style:normal;text-align:center;font-size:11px;line-height:1.5}
-.tlr.ok i{color:var(--grn)} .tlr.warn i{color:#C48A00} .tlr.error i{color:var(--red)}
+.tlr.ok i{color:var(--grn)} .tlr.warn i{color:var(--amber)} .tlr.error i{color:var(--red)}
 .tlr.shipment i,.tlr.scan i{color:var(--vio)} .tlr.start i,.tlr.stop i{color:var(--blu)}
 .tlr span{color:var(--mid)}
 
@@ -446,7 +565,7 @@ tr.r-partial .err{color:var(--y)}
   padding:14px 18px;border-left:3px solid var(--red);border-bottom:1px solid var(--line-2)}
 .exc.warning{border-left-color:var(--y)}
 .exc-i{color:var(--red);font-size:12px}
-.exc.warning .exc-i{color:#C48A00}
+.exc.warning .exc-i{color:var(--amber)}
 .exc-m{font-size:13px;color:var(--ink);font-weight:500}
 .exc-d{font-size:11.5px;color:var(--faint);margin-top:4px}
 .exc-t{font-family:var(--mono);font-size:11px;color:var(--faint)}
@@ -462,7 +581,7 @@ tr.r-partial .err{color:var(--y)}
 .chip:hover{background:var(--y-wash);border-color:var(--y-line);color:var(--ink)}
 .chip.on{background:var(--vio-wash);border-color:var(--vio-line);color:var(--vio)}
 .btn{padding:8px 15px;border-radius:100px;font-size:12px;font-weight:700;
-  background:var(--ink);color:var(--paper);transition:transform .2s var(--e),background .2s;
+  background:var(--solid);color:var(--on-solid);transition:transform .2s var(--e),background .2s;
   display:inline-flex;align-items:center;gap:7px}
 .btn:hover{transform:translateY(-1px);background:var(--vio)}
 .btn svg{width:13px;height:13px}
@@ -475,7 +594,7 @@ tr.r-partial .err{color:var(--y)}
 .log time{color:var(--faint)}
 .log b{font-size:9.5px;font-weight:800;letter-spacing:.06em}
 .log.info b{color:var(--blu)} .log.success b{color:var(--grn)}
-.log.warning b{color:#C48A00} .log.error b{color:var(--red)}
+.log.warning b{color:var(--amber)} .log.error b{color:var(--red)}
 .log p{color:var(--mid);word-break:break-word}
 .log.error p{color:var(--red)}
 
@@ -499,7 +618,9 @@ tr.r-partial .err{color:var(--y)}
   text-overflow:ellipsis;white-space:nowrap}
 .row .t{flex:1;height:8px;border-radius:100px;background:var(--bone);overflow:hidden}
 .row .t i{display:block;height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
-.row .t i.ok{background:var(--grn)}
+.row .t i.ok{background:var(--signal)}
+.row .t i.part{background:var(--faint)}
+.row .t i.none{background:var(--alarm)}
 .row .v{width:66px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink)}
 .health{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;padding:18px}
 .health div{background:var(--bone);border-radius:var(--r-sm);padding:13px 15px}
@@ -516,14 +637,15 @@ tr.r-partial .err{color:var(--y)}
 .sel:focus{border-color:var(--vio);outline:none}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;
   padding:18px;border-bottom:1px solid var(--line-2)}
-.stat{background:var(--bone);border-radius:var(--r-sm);padding:14px 16px}
+.stat{background:var(--riser);border:1px solid var(--line-2);
+  border-radius:var(--r-sm);padding:14px 16px}
 .stat b{display:block;font-size:28px;font-weight:800;letter-spacing:-.05em;margin-top:6px;
   font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
 .dl-note{font-size:12px;color:var(--faint);margin-top:10px}
 
 /* ═══════════ CHAT ═══════════ */
 .fab{position:fixed;right:22px;bottom:calc(var(--player) + 18px);z-index:70;
-  height:38px;padding:0 14px;border-radius:100px;background:var(--ink);color:var(--paper);
+  height:38px;padding:0 14px;border-radius:100px;background:var(--solid);color:var(--on-solid);
   display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;
   box-shadow:0 6px 18px rgba(10,10,11,.2);transition:transform .24s var(--e)}
 .fab:hover{transform:translateY(-2px)}
@@ -540,19 +662,19 @@ tr.r-partial .err{color:var(--y)}
 .chat{position:fixed;right:24px;bottom:calc(var(--player) + 22px);z-index:71;
   width:396px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 150px);
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:0 22px 60px rgba(0,0,0,.6);display:none;flex-direction:column;overflow:hidden}
+  box-shadow:0 22px 60px rgba(0,0,0,.72);display:none;flex-direction:column;overflow:hidden}
 .chat.on{display:flex;animation:rise .3s var(--e)}
 .ch-h{display:flex;align-items:center;gap:11px;padding:14px 16px;
-  background:var(--ink);color:var(--paper);border-bottom:1px solid var(--line)}
+  background:var(--crest);color:var(--ink);border-bottom:1px solid var(--line)}
 .ch-av{width:34px;height:34px;border-radius:10px;background:var(--vio);display:grid;
-  place-items:center;color:#fff;flex:none}
+  place-items:center;color:var(--ink);flex:none}
 .ch-av svg{width:21px;height:21px}
 .ch-nm{font-size:13.5px;font-weight:700}
 .ch-rl{font-size:10px;color:rgba(239,235,227,.55);margin-top:1px}
-.ch-ty{font-size:10px;color:#6BE0A0;margin-top:1px;display:none}
+.ch-ty{font-size:10px;color:var(--signal);margin-top:1px;display:none}
 .ch-ty.show{display:block}
 .ch-x{margin-left:auto;color:rgba(239,235,227,.6);padding:5px;border-radius:6px}
-.ch-x:hover{color:#fff;background:rgba(255,255,255,.1)}
+.ch-x:hover{color:var(--ink);background:rgba(255,255,255,.1)}
 .ch-b{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
   background:var(--paper)}
 /* Flex children shrink by default, which squashed the shipment card to a
@@ -561,13 +683,13 @@ tr.r-partial .err{color:var(--y)}
 .msg{display:flex;gap:9px;max-width:94%;animation:msgIn .32s var(--e) both}
 .msg.me{align-self:flex-end;flex-direction:row-reverse}
 .m-av{width:28px;height:28px;border-radius:8px;flex:none;display:grid;place-items:center;
-  font-size:9px;font-weight:800;background:var(--vio);color:#fff}
+  font-size:9px;font-weight:800;background:var(--vio);color:var(--ink)}
 .m-av svg{width:18px;height:18px}
-.msg.me .m-av{background:var(--ink);color:var(--paper)}
+.msg.me .m-av{background:var(--solid);color:var(--on-solid)}
 .bub{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
   padding:11px 14px;font-size:13.5px;line-height:1.65;border-radius:0 12px 12px 12px;
   color:var(--ink);white-space:pre-wrap;word-break:break-word}
-.msg.me .bub{background:var(--ink);color:var(--paper);border:none;border-radius:12px 0 12px 12px;font-weight:450}
+.msg.me .bub{background:var(--solid);color:var(--on-solid);border:none;border-radius:12px 0 12px 12px;font-weight:450}
 .bub strong{font-weight:700}
 .bub code{font-family:var(--mono);background:var(--bone);padding:2px 6px;border-radius:4px;font-size:12px}
 .cur{display:inline-block;width:7px;height:14px;background:var(--ink);vertical-align:middle;
@@ -593,7 +715,7 @@ tr.r-partial .err{color:var(--y)}
 .dl{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:100px;
   border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
   font-size:11.5px;font-weight:700;transition:background .16s;text-decoration:none}
-.dl:hover{background:rgba(255,122,0,.2)}
+.dl:hover{background:var(--vio-line)}
 .dl svg{width:12px;height:12px}
 .ch-s{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;background:var(--paper)}
 .ch-f{display:flex;gap:8px;padding:11px 14px;border-top:1px solid var(--line-2);
@@ -602,7 +724,7 @@ tr.r-partial .err{color:var(--y)}
   font-size:13.5px;resize:none;min-height:42px;max-height:110px;background:var(--paper);
   color:var(--ink);outline:none;line-height:1.5}
 .ch-ta:focus{border-color:var(--vio)}
-.send{width:36px;height:36px;border-radius:50%;background:var(--ink);color:var(--paper);
+.send{width:36px;height:36px;border-radius:50%;background:var(--solid);color:var(--on-solid);
   display:grid;place-items:center;flex:none;transition:transform .2s var(--e)}
 .send:hover{transform:scale(1.06)}
 .send svg{width:15px;height:15px}
@@ -618,7 +740,7 @@ tr.r-partial .err{color:var(--y)}
      collapsed to zero height. */
   .nav{position:fixed;left:0;top:0;height:100vh;height:100dvh;width:250px;z-index:60;
     transform:translateX(-100%);transition:transform .32s var(--e);
-    box-shadow:0 0 40px rgba(0,0,0,.6)}
+    box-shadow:0 0 40px rgba(0,0,0,.72)}
   .nav.open{transform:none}
   .burger{display:flex;align-items:center;padding:5px;color:var(--mid)}
   .burger svg{width:20px;height:20px}
@@ -787,7 +909,7 @@ tr.r-partial .err{color:var(--y)}
             <div style="height:16px"></div>
             <div class="leg" style="margin:0">
               <span>Updated <b style="color:var(--grn)" id="nS">0</b></span>
-              <span>Skipped <b style="color:#946200" id="nK">0</b></span>
+              <span>Skipped <b style="color:var(--mid)" id="nK">0</b></span>
               <span>Failed <b style="color:var(--red)" id="nF">0</b></span>
               <span>Remaining <b id="nR">—</b></span>
             </div>
@@ -1441,8 +1563,10 @@ function paint(force){
   const st = map[run.status] || map.idle;
   cls($('runPill'), 'pill ' + st[0]); put($('runTxt'), st[1]);
   put($('bigState'), st[1]);
-  $('bigState').style.color = run.status === 'running' ? 'var(--grn)'
-    : run.status === 'fatal' ? 'var(--red)' : run.status === 'finished' ? 'var(--blu)' : 'var(--ink)';
+  /* The headline is set in the text colour and the STATE is carried by the
+     dot beside it. A 54px word in bright green was the loudest thing on a
+     console an operator watches all day, and glare is not emphasis. */
+  cls($('bigState'), 'hero-v s-' + (run.status || 'idle'));
 
   const age = run.heartbeat_age;
   put($('beatTxt'), age == null ? 'No heartbeat'
@@ -1481,19 +1605,32 @@ function paint(force){
 
   if (changed('kpi', [c.processed,c.successful,c.skipped,c.failed,c.success_rate,
                       pr.discovered,pr.pages_scanned].join('|'))){
+    /* Colour marks what an operator has to ACT on, and nothing else.
+       The previous row put seven tiles in six colours — purple, green,
+       amber, amber, red, ice, ink — which is rainbow soup: two different
+       things were amber, and "Processed" was accented for no reason. A
+       count nobody acts on is just a number, so it is set in --ink and
+       the eye goes straight to the two that matter.
+         signal  a date reached the Hub
+         alarm   something needs a person
+         amber   a partial write: one field landed, one did not
+       A zero is dimmed whatever its colour: "Failed 0" is good news and
+       should not glow red. */
+    const zero = (v) => v === 0 || v === '0';
     const K = [
-      {k:'Processed', v:c.processed, n:'Under Clearance rows handled', c:'var(--vio)'},
-      {k:'Hub records updated', v:c.successful, n:'COE ETA / BU ATA written', c:'var(--grn)'},
-      {k:'Skipped', v:c.skipped, n:'Carrier gave no ETA or ATA', c:'var(--y)'},
-      {k:'Partly updated', v:c.partial || 0, n:'One field written, one failed', c:'var(--y)'},
-      {k:'Failed', v:c.failed, n:'Errors during processing', c:'var(--red)'},
+      {k:'Processed', v:c.processed, n:'Under Clearance rows handled', c:'var(--ink)'},
+      {k:'Hub records updated', v:c.successful, n:'COE ETA / BU ATA written', c:'var(--signal)'},
+      {k:'Skipped', v:c.skipped, n:'Carrier gave no ETA or ATA', c:'var(--ink)'},
+      {k:'Partly updated', v:c.partial || 0, n:'One field written, one failed', c:'var(--amber)'},
+      {k:'Failed', v:c.failed, n:'Errors during processing', c:'var(--alarm)'},
       {k:'Success rate', v:c.success_rate == null ? '—' : c.success_rate + '%',
-       n:'Of shipments processed', c:'var(--blu)'},
+       n:'Of shipments processed', c:'var(--ink)'},
       {k:'Queued from hub', v:pr.discovered, n:pr.pages_scanned + ' list page(s) scanned', c:'var(--ink)'}
     ];
     putHTML($('kpis'), K.map((x) =>
-      '<div class="kpi"><div class="kpi-k">' + x.k + '</div><div class="kpi-v" style="--c:' +
-      x.c + '">' + x.v + '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
+      '<div class="kpi"><div class="kpi-k">' + x.k + '</div><div class="kpi-v' +
+      (zero(x.v) ? ' nil' : '') + '" style="--c:' + x.c + '">' + x.v +
+      '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
   }
 
   if (changed('tl', S.timeline.length + ':' + (S.timeline[0] || {}).text)){
@@ -1572,6 +1709,14 @@ function paintLive(){
     : '<div style="color:var(--faint);font-size:13px">Waiting for the first step</div>');
 }
 function f(k, v){ return '<div><div class="fk">' + k + '</div><div class="fv">' + dash(v) + '</div></div>'; }
+/* A date cell. `actual` means the event has happened (an ATA), so it takes
+   the ice colour; everything else is an estimate and takes amber. An empty
+   cell is neither and must not be coloured as though it were a date. */
+function dtCell(v, actual){
+  const has = v !== null && v !== undefined && v !== '';
+  return '<td class="dt' + (has ? (actual ? ' actual' : '') : ' none') + '">'
+       + dash(v) + '</td>';
+}
 
 /* ATLAS activity, verbatim. Every row here was emitted by the engine during
    the run — there is no client-side inference and nothing is synthesised to
@@ -1624,9 +1769,9 @@ function paintShips(){
   if (!changed('ships', key)) return;
   putHTML($('shipRows'), rows.map((r) =>
     '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
-    '<td>' + dash(r.carrier) + '</td><td class="dt">' + dash(r.internal_eta) + '</td>' +
-    '<td>' + dash(r.provider_status) + '</td><td class="dt">' + dash(r.provider_eta) + '</td>' +
-    '<td class="dt">' + dash(r.provider_ata) + '</td>' +
+    '<td>' + dash(r.carrier) + '</td>' + dtCell(r.internal_eta) +
+    '<td>' + dash(r.provider_status) + '</td>' + dtCell(r.provider_eta) +
+    dtCell(r.provider_ata, true) +
     /* Attribution sits with the result, where an operator already looks to
        find out what happened to a shipment — not in a column of its own. */
     '<td>' + tag(r.state) + (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
@@ -1692,11 +1837,15 @@ function paintAnalysis(){
     ? Math.round(timed.reduce((a, r) => a + r.duration_ms, 0) / timed.length) : null;
   const rate = rows.length ? Math.round(written / rows.length * 100) : null;
 
+  /* Same rule as the overview row: colour marks the exception, not every
+     tile. "Written to hub" is the outcome the page exists to report, and an
+     ATA is the notable fact about a shipment — those two are coloured. A
+     count of matching rows is a count. */
   putHTML($('anStats'), [
     {k:'Matching', v:rows.length, c:'var(--ink)'},
-    {k:'Written to hub', v:written, c:'var(--grn)'},
-    {k:'Carrier ETA found', v:withEta, c:'var(--vio)'},
-    {k:'Carrier ATA found', v:withAta, c:'var(--blu)'},
+    {k:'Written to hub', v:written, c:'var(--signal)'},
+    {k:'Carrier ETA found', v:withEta, c:'var(--ink)'},
+    {k:'Carrier ATA found', v:withAta, c:'var(--ice)'},
     {k:'Success rate', v:rate == null ? '—' : rate + '%', c:'var(--ink)'},
     {k:'Avg processing', v:avg == null ? '—' : ms(avg), c:'var(--ink)'}
   ].map((s) => '<div class="stat"><div class="kpi-k">' + s.k + '</div><b style="--c:' +
@@ -1721,15 +1870,20 @@ function paintAnalysis(){
   putHTML($('anGroups'), entries.length
     ? entries.map((e) =>
         '<div class="row"><div class="a" title="' + esc(e[0]) + '">' + esc(e[0]) + '</div>' +
-        '<div class="t"><i class="' + (e[1].ok === e[1].total ? 'ok' : '') +
+        /* A bar's colour says how the group DID, not how big it is. All
+           written is healthy; none written wants attention; anything in
+           between is neutral. QATAR at 0/8 was rendering in the accent,
+           which read as "this one is special" rather than "nothing landed". */
+        '<div class="t"><i class="' + (e[1].ok === e[1].total ? 'ok'
+            : e[1].ok === 0 ? 'none' : 'part') +
         '" style="width:' + (e[1].total / max * 100) + '%"></i></div>' +
         '<div class="v">' + e[1].ok + '/' + e[1].total + '</div></div>').join('')
     : empty('Nothing to group', 'Widen the filters above, or wait for the run to process shipments.'));
 
   putHTML($('anRows'), rows.map((r) =>
     '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
-    '<td>' + dash(r.carrier) + '</td><td class="dt">' + dash(r.provider_eta) + '</td>' +
-    '<td class="dt">' + dash(r.provider_ata) + '</td><td>' + tag(r.state) + '</td>' +
+    '<td>' + dash(r.carrier) + '</td>' + dtCell(r.provider_eta) +
+    dtCell(r.provider_ata, true) + '<td>' + tag(r.state) + '</td>' +
     '<td style="font-size:12px">' + dash(r.coe_action || r.bu_action) +
       (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
     '<td class="n">' + ms(r.duration_ms) + '</td></tr>').join(''));

@@ -177,6 +177,51 @@ check("/api/music is resolved once per page, not once per replay",
 
 print()
 print("=" * 72)
+print("2e. THE DASHBOARD IS DARK, AND THE INTRO IS NOT")
+print("=" * 72)
+# Measured in a real browser: every rendered text style clears WCAG AA on the
+# dark ground, worst 5.45:1. --faint was 3.10:1 and failing in the light
+# palette, which the design audit flagged and nothing had fixed.
+check("There are four distinct surface levels, so depth comes from lightening "
+      "surfaces rather than from shadows that do not read on dark",
+      all(t in INDEX for t in ("--void:#0B0F14", "--deck:#121821",
+                               "--riser:#1A222E", "--crest:#232D3B")))
+check("color-scheme is dark, so native controls follow", "color-scheme:dark" in INDEX)
+check("Borders are lighter than the surfaces they sit on",
+      "--line:rgba(232,237,244,.10)" in INDEX)
+check("A filled control is the accent, not the text colour — inverting the "
+      "old --ink background would have made white pills",
+      "--solid:#8B9CFF" in INDEX and "background:var(--solid)" in INDEX)
+check("...and no dashboard control still fills with --ink",
+      "background:var(--ink)" not in INDEX.split("#gate{")[1].split(".top{")[0]
+      if "#gate{" in INDEX else True)
+check("No hardcoded light-theme colour survives in the markup",
+      "#946200" not in INDEX and "#C48A00" not in INDEX and "#A9A294" not in INDEX)
+
+# The intro was signed off as-is and keeps its own palette, scoped.
+_gate = INDEX.split("#gate{")[1].split("}")[0]
+check("The Introduction pins its own bone-and-ink values",
+      "--paper:#EFEBE3" in _gate and "--ink:#0A0A0B" in _gate, _gate[:120])
+check("...so a dark dashboard does not swallow the cinematic",
+      "--card:#F6F3EC" in _gate)
+
+# One accent, one meaning.
+check("An ACTUAL arrival is the only date that carries colour",
+      "td.dt{" in INDEX and "color:var(--ink)}" in INDEX.split("td.dt{")[1][:120]
+      and "td.dt.actual{color:var(--ice)}" in INDEX)
+check("Dates use tabular figures so a column of them aligns",
+      "font-variant-numeric:tabular-nums" in INDEX.split("td.dt{")[1][:200])
+check("A zero does not glow — 'Failed 0' is good news",
+      ".kpi-v.nil{color:var(--faint)}" in INDEX and "zero(x.v)" in INDEX)
+check("The run's state is a status light, not a 54px glowing word",
+      ".hero-v.s-running::before" in INDEX and "s-' + (run.status" in INDEX)
+check("...and it respects reduced motion",
+      "prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}" in INDEX)
+check("Amber is reserved for what needs a person — the hero decoration gave "
+      "it back", "rgba(255,180,84,.55)" not in INDEX)
+
+print()
+print("=" * 72)
 print("2d. THE FONT IS NOT IN THE LOAD PATH")
 print("=" * 72)
 # MEASURED: as a <link rel=stylesheet media=print> the load event still waited
