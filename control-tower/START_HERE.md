@@ -227,6 +227,17 @@ Only after all of that, and only when you want ATLAS to actually steer:
 set ML_MODE=active
 ```
 
+To see the state of ATLAS on **this** machine — what it is allowed to claim,
+what it cannot override, how much real data exists — run:
+
+```bat
+verify_atlas.bat
+```
+
+It is read-only: it trains nothing, writes no model, and does not touch the
+telemetry file. If it prints anything other than `0 failed`, do not set
+`ML_MODE=active`; send the output back instead.
+
 Full detail — every setting, the exact truth condition behind each `ATLAS →`
 line, and what ATLAS is never allowed to decide — is in `ML.md`. The map of how
 the existing automation works is in `ARCHITECTURE.md`.

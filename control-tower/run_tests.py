@@ -77,6 +77,8 @@ def main():
                 name, passed, description))
 
     print("=" * 74)
+    print("  ATLAS evidence report for THIS machine (read-only, no browser):")
+    print("      python verify_atlas.py")
     print("  Runtime proof (spawns the real `python update_eta.py`):")
     print("      python proof_runtime.py")
     print("  Live ML demonstration against a stand-in Manage page:")
