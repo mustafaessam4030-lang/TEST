@@ -396,8 +396,14 @@ check("The activity feed renders only events the run emitted",
 check("There is no hardcoded ATLAS activity in the page",
       "Strategy selected'" not in UI.replace("e.label", "")
       or "atlasFeed" in UI)
+# This used to grep the whole file for the literal "font-size:9px", which
+# passed for any 9px rule anywhere and broke the moment the type scale was
+# consolidated. The intent is that the tag is a small quiet capsule, so
+# assert that against the tag's own rule.
+_tag = UI.split(".atlas-t{")[1].split("}")[0]
 check("The tag is styled, not shouted",
-      ".atlas-t{" in UI and "font-size:9px" in UI)
+      "font-size:11px" in _tag and "inline-flex" in _tag
+      and "background" not in _tag, _tag[:150])
 check("The influenced state uses the existing accent colour",
       "var(--vio)" in UI.split(".atlas-t.on{")[1][:120])
 check("Braces balance — a stray one silently drops every rule after it",

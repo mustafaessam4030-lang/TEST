@@ -177,21 +177,31 @@ check("/api/music is resolved once per page, not once per replay",
 
 print()
 print("=" * 72)
-print("2e. THE DASHBOARD IS DARK, AND THE INTRO IS NOT")
+print("2e. THE PALETTE IS A RESTRAINED LIGHT NEUTRAL, AND THE INTRO IS SEPARATE")
 print("=" * 72)
-# Measured in a real browser: every rendered text style clears WCAG AA on the
-# dark ground, worst 5.45:1. --faint was 3.10:1 and failing in the light
-# palette, which the design audit flagged and nothing had fixed.
-check("There are four distinct surface levels, so depth comes from lightening "
-      "surfaces rather than from shadows that do not read on dark",
-      all(t in INDEX for t in ("--void:#0B0F14", "--deck:#121821",
-                               "--riser:#1A222E", "--crest:#232D3B")))
-check("color-scheme is dark, so native controls follow", "color-scheme:dark" in INDEX)
-check("Borders are lighter than the surfaces they sit on",
-      "--line:rgba(232,237,244,.10)" in INDEX)
-check("A filled control is the accent, not the text colour — inverting the "
-      "old --ink background would have made white pills",
-      "--solid:#8B9CFF" in INDEX and "background:var(--solid)" in INDEX)
+# Measured on real pixels in a browser, not asserted from the source: every
+# rendered text style clears WCAG AA, worst 4.62:1. That worst case is the
+# run-state pill, whose green had to be darkened from #1B7F4B to #197746 —
+# it cleared AA on its wash over a card (4.52:1) but not over the page
+# ground (4.18:1), and the header pill sits on the page ground.
+check("There are four surface levels, so elevation is a step in the neutral "
+      "ramp plus one soft shadow, not a pile of shadows",
+      all(t in INDEX for t in ("--bg:#F5F5F7", "--surface:#FFFFFF",
+                               "--surface-2:#FAFAFA", "--surface-3:#F0F0F2")))
+check("color-scheme is light, so native controls follow",
+      "color-scheme:light" in INDEX)
+check("Hairlines are an alpha over whatever is behind them, so one token "
+      "works on every surface", "--line:rgba(0,0,0,.09)" in INDEX)
+check("A filled control is the accent on its own foreground token, so no "
+      "control fills with the text colour and becomes a white pill",
+      "--solid:var(--vio)" in INDEX and "--on-solid:#FFFFFF" in INDEX
+      and "background:var(--solid)" in INDEX)
+check("The green that failed AA over the page ground was corrected",
+      "--grn:#197746" in INDEX and "--grn:#1B7F4B" not in INDEX)
+check("The legacy semantic names still resolve, so nothing that referred to "
+      "them silently lost its colour",
+      all(t in INDEX for t in ("--signal:var(--grn)", "--alarm:var(--red)",
+                               "--amber:var(--y)", "--ice:var(--blu)")))
 check("...and no dashboard control still fills with --ink",
       "background:var(--ink)" not in INDEX.split("#gate{")[1].split(".top{")[0]
       if "#gate{" in INDEX else True)
@@ -212,13 +222,43 @@ check("An ACTUAL arrival is the only date that carries colour",
 check("Dates use tabular figures so a column of them aligns",
       "font-variant-numeric:tabular-nums" in INDEX.split("td.dt{")[1][:200])
 check("A zero does not glow — 'Failed 0' is good news",
-      ".kpi-v.nil{color:var(--faint)}" in INDEX and "zero(x.v)" in INDEX)
+      "color:var(--faint)" in INDEX.split(".kpi-v.nil{")[1][:80]
+      and "zero(x.v)" in INDEX)
 check("The run's state is a status light, not a 54px glowing word",
       ".hero-v.s-running::before" in INDEX and "s-' + (run.status" in INDEX)
 check("...and it respects reduced motion",
       "prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}" in INDEX)
 check("Amber is reserved for what needs a person — the hero decoration gave "
       "it back", "rgba(255,180,84,.55)" not in INDEX)
+
+# The responsive pass below was driven by measuring the real rendered layout
+# at 1440 / 1024 / 768 / 375, not by reading the CSS.
+check("The sidebar becomes a fixed overlay on a phone, so it needs its own "
+      "surface — transparent let the page show through the nav items",
+      "background:var(--surface);border-right:1px solid var(--line);" in INDEX)
+check("...and the active item inverts there, because a white pill is "
+      "invisible on a white drawer",
+      ".nav-i.on{background:var(--surface-3);box-shadow:none}" in INDEX)
+check("Ten columns are re-laid-out as labelled records on a phone rather "
+      "than left to scroll sideways, which put the ATLAS attribution "
+      "off-screen entirely", ".tw thead{display:none}" in INDEX
+      and ".tw td::before{content:attr(data-k)" in INDEX)
+check("...and the labels come from the table's own <thead>, so they cannot "
+      "drift from the header", "function stampRowLabels" in INDEX
+      and "querySelectorAll('thead th')" in INDEX)
+check("...and only while that layout is live, so a desktop pays nothing",
+      "if (!stackQ.matches" in INDEX)
+check("Grid hairlines are cast by the cells, not shown through gaps in the "
+      "container's background — seven metrics in an auto-fit row left the "
+      "tail of the last row as a solid grey block",
+      "box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)" in INDEX)
+check("Labels wrap instead of being clipped by an ellipsis, which hid the "
+      "one word that told 'Carrier ETA found' from 'Carrier ATA found'",
+      "text-overflow:ellipsis" not in INDEX.split(".kpi-k{")[1][:160])
+check("The step-trace placeholder opts out of the timestamp grid, which was "
+      "squeezing its sentence into a 54px column",
+      ".steps .step-none{display:block" in INDEX
+      and 'class="step-none"' in INDEX)
 
 print()
 print("=" * 72)
@@ -227,16 +267,20 @@ print("=" * 72)
 # MEASURED: as a <link rel=stylesheet media=print> the load event still waited
 # 12,599ms for fonts.googleapis.com on a machine that cannot reach it.
 # Blocking the two Google hosts gave 116ms, so the stylesheet was all of it.
-# Injecting it from script gives 127ms with the host unreachable.
+# Injecting it from script instead gave 127ms. The webfont has since been
+# dropped altogether: a system-first stack renders in the face the operating
+# system has already hinted and cached, which removes the third-party request
+# rather than merely moving it off the critical path.
 head = INDEX.split("<style>")[0]
 check("No <link rel=stylesheet> to Google Fonts in the head",
       "rel=\"stylesheet\"" not in head, head[-400:] if "rel=\"stylesheet\"" in head else "")
 check("...nor a noscript one, which loads the same way",
       "<noscript" not in head or "fonts.googleapis" not in head.split("<noscript")[1][:200])
-check("It is injected from script instead",
-      "requestIdleCallback" in head and "fonts.googleapis.com/css2" in head)
-check("preconnect is kept — it costs nothing and helps when reachable",
-      'rel="preconnect"' in head)
+check("The webfont is gone entirely, not deferred — no request, no idle "
+      "injector, no preconnect to a host that is no longer used",
+      "fonts.googleapis" not in INDEX and "fonts.gstatic" not in INDEX)
+check("...so there is no flash of unstyled text to manage either",
+      "font-display" not in INDEX)
 check("The system font stack is still the fallback",
       "-apple-system,BlinkMacSystemFont" in INDEX)
 

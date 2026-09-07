@@ -5,35 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#F5F1E8" />
 <title>Control Tower — Mantrac Logistics</title>
-<!-- Inter is loaded outside the document's load path entirely.
-     MEASURED, twice. As a plain stylesheet it cost 12.6s to first PAINT on a
-     machine that cannot reach Google — a corporate network, an offline
-     terminal, any site where fonts.googleapis.com is filtered.
-     media="print" fixed the paint (domInteractive 135ms) but NOT the load
-     event, which still waited for the request to time out: load was still
-     12,599ms, and the tab span its spinner for all of it. Blocking the two
-     Google hosts and remeasuring gave 116ms, so the stylesheet was the whole
-     of it and nothing else contributed.
-     Injecting the link from script after first paint takes it out of the load
-     path for good: a reachable Google still gets Inter a few hundred ms in,
-     and an unreachable one costs nothing at all. The system stack in --s is
-     the fallback either way, so the design holds. -->
-<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<script>
-  /* After first paint, never before, and never awaited. */
-  (function inter(){
-    var href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;'
-             + '500;600;700;800&display=swap';
-    function add(){
-      var l = document.createElement('link');
-      l.rel = 'stylesheet'; l.href = href; l.crossOrigin = 'anonymous';
-      document.head.appendChild(l);
-    }
-    if ('requestIdleCallback' in window) requestIdleCallback(add, {timeout: 1200});
-    else setTimeout(add, 200);
-  })();
-</script>
+<!-- No webfont. The interface uses the face the operating system already
+     has: Segoe UI Variable on Windows, SF on macOS, Roboto on Android. That
+     removes the last third-party request from the page, and with it the
+     preconnects, the idle-callback injection, and any chance of a font
+     swap landing after the operator has started reading.
+
+     Inter was the previous choice and it cost 12,599ms of load event on a
+     machine that cannot reach Google — measured, twice. A system stack
+     cannot fail that way because there is nothing to fetch. -->
 <style>
 /* ══════════════════════════════════════════════════════════════
    CONTROL TOWER — MAIA design language
@@ -50,85 +30,92 @@
 
 :root{
   /* ───────────────────────────────────────────────────────────────────
-     NIGHT RAMP
+     A CONSOLE THAT GETS OUT OF THE WAY
 
-     An apron after dark. The ground is a blue-slate, not black: a true
-     black console makes every card look like a hole cut in the screen,
-     and an operator sitting in front of this for a whole shift needs the
-     surfaces to feel lit rather than punched out.
+     The restraint here is the design. Almost everything is one of three
+     neutrals and one of eight type roles; colour appears only where it
+     carries meaning, and depth only where something genuinely sits above
+     something else. What is left is the data.
 
-     Depth comes from LIGHTENING surfaces as they come forward — void,
-     deck, riser — the way a dark room actually works. Drop shadows do
-     almost nothing on a dark ground; they read as smudges.
+     Surfaces: a grey-white page with white cards on it. The 1.09:1 step is
+     deliberately slight — a card is distinguished by its edge and its
+     padding, not by being a different colour. Depth is one soft shadow at
+     low opacity, never a stack.
 
-One accent, one meaning. Applying amber to every estimated date was
-     the first attempt and it was wrong: it coloured a whole column and
-     signalled nothing, because every row in it is an estimate. Colour
-     earns its place by marking the exception, so:
-
-         ice     IT ARRIVED     an ATA — read back, confirmed, the fact an
-                                operator is actually scanning for
-         amber   NEEDS A PERSON a partial write, a challenge to clear
-         signal  HEALTHY        a date reached the Hub
-         alarm   BROKEN         it failed
-         vio     ATLAS          the engine, and only the engine
-
-     Ordinary dates are set in the text colour with tabular figures, so a
-     column of them aligns and a wrong one shows up by shape rather than
-     by hue.
-
-     Accents are lifted and desaturated for a dark ground. The old
-     electric #1B34E8 is kept in hue for ATLAS — the identity survives —
-     but at that saturation on this ground it vibrates, so it comes up to
-     #8B9CFF. Measured: every colour below clears WCAG AA (4.5:1) on both
-     void and deck, including --faint, which was 3.10:1 and failing in
-     the light palette.
+     Measured: every colour below clears WCAG AA on both the page and a
+     card. The worst is --grn at 4.61:1.
      ─────────────────────────────────────────────────────────────────── */
-  --void:#0B0F14;      /* the page */
-  /* A filled control. On the light theme this was --ink, i.e. "the dark
-     one"; inverted, that became a white pill. Filled actions are the accent
-     instead, which keeps them legible and on-identity. */
-  --solid:#8B9CFF; --on-solid:#0B0F14;
-  --deck:#121821;      /* a card */
-  --riser:#1A222E;     /* raised: inputs, hover, table headers */
-  --crest:#232D3B;     /* the top of the stack: chips, active states */
+  --bg:#F5F5F7;         /* the page */
+  --surface:#FFFFFF;    /* a card */
+  --surface-2:#FAFAFA;  /* recessed: inputs, table headers, inner panels */
+  --surface-3:#F0F0F2;  /* pressed / active */
 
-  /* Kept as aliases so nothing downstream had to be renamed. */
-  --paper:var(--void); --bone:var(--riser); --card:var(--deck);
+  /* The old names, kept so nothing downstream had to be renamed. */
+  --paper:var(--bg); --card:var(--surface); --bone:var(--surface-2);
+  --void:var(--bg); --deck:var(--surface); --riser:var(--surface-2);
+  --crest:var(--surface-3);
 
-  --ink:#E8EDF4;       /* primary text        16.3:1 on void */
-  --mid:#9FB0C4;       /* secondary            8.7:1 */
-  --faint:#7E90A6;     /* tertiary, labels     5.9:1 — was 3.1:1 and failing */
+  --ink:#1D1D1F;        /* primary       15.5:1 on page */
+  --mid:#5E5E63;        /* secondary      5.9:1 */
+  --faint:#6E6E73;      /* labels         4.7:1 */
 
-  /* Hairlines, not dark seams. A dark theme's borders have to be lighter
-     than the surface they sit on, which is the opposite of the light one. */
-  --line:rgba(232,237,244,.10);
-  --line-2:rgba(232,237,244,.06);
-  --line-hi:rgba(232,237,244,.18);
+  /* Hairlines. A separator's job is to be found when looked for and
+     ignored otherwise, so it is an alpha over whatever is behind it
+     rather than a fixed grey that only works on one surface. */
+  --line:rgba(0,0,0,.09);
+  --line-2:rgba(0,0,0,.055);
+  --line-hi:rgba(0,0,0,.14);
 
-  --amber:#FFB454; --amber-wash:rgba(255,180,84,.10); --amber-line:rgba(255,180,84,.30);
-  --ice:#7DD3FC;   --ice-wash:rgba(125,211,252,.10);  --ice-line:rgba(125,211,252,.28);
-  --signal:#6EE7A8; --signal-wash:rgba(110,231,168,.10);
-  --alarm:#FF6B6B;  --alarm-wash:rgba(255,107,107,.11);
+  /* One accent. It marks ATLAS, the active nav item, and a primary action —
+     nothing else. */
+  --vio:#0B5FD9; --vio-wash:rgba(11,95,217,.07); --vio-line:rgba(11,95,217,.22);
+  --solid:var(--vio); --on-solid:#FFFFFF;
 
-  /* The existing names, remapped. ETA work is amber, ATA work is ice. */
-  --vio:#8B9CFF; --vio-wash:rgba(139,156,255,.11); --vio-line:rgba(139,156,255,.30);
-  --y:var(--amber); --y-wash:var(--amber-wash); --y-line:var(--amber-line);
-  --grn:var(--signal); --grn-wash:var(--signal-wash);
-  --red:var(--alarm);  --red-wash:var(--alarm-wash);
-  --blu:var(--ice);    --blu-wash:var(--ice-wash);
+  /* Semantics, and only semantics. */
+  /* Measured on real pixels: #1B7F4B cleared AA on its wash over a card
+     (4.52:1) but not over the page ground (4.18:1), and the run-state pill
+     sits on the page ground in the header. Two steps darker clears both. */
+  --grn:#197746; --grn-wash:rgba(27,127,75,.08);     /* verified, healthy */
+  --y:#8A5300;   --y-wash:rgba(138,83,0,.08);        /* needs a person */
+  --y-line:rgba(138,83,0,.22);
+  --red:#C0261C; --red-wash:rgba(192,38,28,.07);     /* failed */
+  --blu:#0A6E9E; --blu-wash:rgba(10,110,158,.07);    /* an ATA: it arrived */
+  --signal:var(--grn); --alarm:var(--red);
+  --amber:var(--y); --amber-wash:var(--y-wash); --amber-line:var(--y-line);
+  --ice:var(--blu);
 
-  --s:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
-  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
-  --e:cubic-bezier(.16,1,.3,1);
-  --r:14px; --r-sm:10px;
-  --sidebar:238px;
-  /* Kept at 0 so the two `calc(var(--player) + ...)` offsets below still read
-     naturally now that the player row is gone. The chat and its button used
-     to sit above it. */
+  /* ── TYPE ──────────────────────────────────────────────────────────
+     System-first: no webfont, no third-party request, no flash of
+     unstyled text, and the interface renders in the face the operating
+     system already has hinted and cached. Segoe UI Variable on Windows,
+     SF on macOS, Roboto on Android.
+
+     Nineteen ad-hoc pixel sizes collapsed into eight roles. A scale is
+     only a hierarchy if the steps are distinguishable, and 11.5 next to
+     12 next to 12.5 is not a step. */
+  --s:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Display','Segoe UI',
+      system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono','Cascadia Mono','Segoe UI Mono',
+      Menlo,Consolas,monospace;
+
+  --t-display:600 34px/1.12 var(--s);
+  --t-title:600 20px/1.3 var(--s);
+  --t-head:600 15px/1.4 var(--s);
+  --t-body:400 14px/1.5 var(--s);
+  --t-sub:400 13px/1.45 var(--s);
+  --t-small:400 12px/1.4 var(--s);
+  --t-label:590 11px/1.2 var(--s);
+  --t-data:400 13px/1.4 var(--mono);
+
+  --e:cubic-bezier(.32,.72,0,1);   /* a single easing, used everywhere */
+  --r:12px; --r-sm:8px; --r-lg:16px;
+  /* One shadow, one elevation. Anything that needs more than this is
+     asking to be a separate surface instead. */
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04);
+  --sidebar:246px;
   --player:0px;
 
-  color-scheme:dark;
+  color-scheme:light;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden}
@@ -152,7 +139,11 @@ input,textarea,select{font-family:inherit}
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 @keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-2px,1px)}100%{transform:translate(0,0)}}
 
-.kick{font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--mid)}
+/* The one eyebrow in the interface. Uppercase is reserved for structure —
+   this, a table column head, and the nav's section label — so it still
+   reads as a boundary rather than as decoration applied to every label. */
+.kick{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint)}
 .num{font-variant-numeric:tabular-nums;letter-spacing:-.04em}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -161,37 +152,36 @@ input,textarea,select{font-family:inherit}
 /* ═══════════ INTRO ═══════════ */
 /* ═══ AI ENGINE CARD ═══ */
 .ml-pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono,ui-monospace,monospace);
-  font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mid)}
+  font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mid)}
 .ml-pill .d{width:7px;height:7px;border-radius:50%;background:var(--faint)}
 .ml-pill.on{color:var(--grn)} .ml-pill.on .d{background:var(--grn)}
 .ml-pill.warn{color:var(--amber)} .ml-pill.warn .d{background:var(--amber)}
-.ml-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));
+.ml-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
   border-top:1px solid var(--line)}
 .ml-k{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
 .ml-k:last-child{border-right:none}
-.ml-k b{display:block;font-size:19px;font-weight:750;letter-spacing:-.02em;color:var(--ink);
+.ml-k b{display:block;font-size:20px;font-weight:750;letter-spacing:-.02em;color:var(--ink);
   font-variant-numeric:tabular-nums;line-height:1.1}
-.ml-k span{display:block;font-family:var(--mono,ui-monospace,monospace);font-size:9px;
-  font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid);margin-top:5px}
+.ml-k span{display:block;font-size:12px;font-weight:400;color:var(--faint);margin-top:5px}
 .ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
 /* The ATLAS attribution tag. Deliberately quiet — a small mono capsule in the
    existing palette, not a badge that competes with the shipment reference.
    `.on` is the only state that says ATLAS steered something. */
 .atlas-t{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);
-  font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
   color:var(--faint);border:1px solid var(--line);border-radius:3px;
   padding:2px 6px;white-space:nowrap;vertical-align:middle}
 .atlas-t.on{color:var(--vio);border-color:color-mix(in srgb,var(--vio) 34%,transparent)}
 .atlas-t .d{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.75}
-.atlas-sub{font-family:var(--mono);font-size:9px;letter-spacing:.11em;
+.atlas-sub{font-family:var(--mono);font-size:11px;letter-spacing:.11em;
   text-transform:uppercase;color:var(--faint);margin-top:3px}
 .atlas-f{max-height:188px;overflow:auto;border-top:1px solid var(--line)}
 .atlas-f .r{display:flex;gap:9px;align-items:baseline;padding:7px 14px;
-  border-bottom:1px solid var(--line);font-size:11.5px;line-height:1.45}
+  border-bottom:1px solid var(--line);font-size:12px;line-height:1.45}
 .atlas-f .r:last-child{border-bottom:none}
-.atlas-f time{font-family:var(--mono);font-size:9.5px;color:var(--faint);
+.atlas-f time{font-family:var(--mono);font-size:11px;color:var(--faint);
   flex:0 0 46px;font-variant-numeric:tabular-nums}
-.atlas-f .lb{font-family:var(--mono);font-size:9.5px;font-weight:700;
+.atlas-f .lb{font-family:var(--mono);font-size:11px;font-weight:700;
   letter-spacing:.06em;flex:0 0 108px;color:var(--faint)}
 .atlas-f .r.on .lb{color:var(--vio)}
 .atlas-f .dt{color:var(--mid);min-width:0;overflow-wrap:anywhere}
@@ -202,7 +192,7 @@ input,textarea,select{font-family:inherit}
   transition:color .18s,border-color .18s,background .18s}
 .fb button:hover{color:var(--ink);border-color:var(--faint)}
 .fb button.picked{color:var(--vio);border-color:var(--vio);background:var(--vio-wash)}
-.fb .fb-t{font-family:var(--mono,ui-monospace,monospace);font-size:9px;font-weight:700;
+.fb .fb-t{font-family:var(--mono,ui-monospace,monospace);font-size:11px;font-weight:700;
   letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:2px}
 .fb-in{width:100%;margin-top:7px;font:inherit;font-size:12px;padding:7px 9px;
   border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink)}
@@ -227,6 +217,11 @@ input,textarea,select{font-family:inherit}
   --vio:#1B34E8; --vio-wash:rgba(27,52,232,.08); --vio-line:rgba(27,52,232,.32);
   --amber-wash:rgba(185,106,0,.10);
   --grn:#0F7A50;
+  /* The cinematic was set in Inter and is not being redesigned, so it keeps
+     asking for it. With no webfont loaded it falls through to the system
+     stack, which is the same shapes at these sizes and weights. */
+  --s:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Display','Segoe UI',
+      system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
 }
 #gate{position:fixed;inset:0;z-index:100;overflow:hidden;
   background:radial-gradient(ellipse 62% 52% at 50% 6%,var(--amber-wash),transparent 62%),
@@ -313,7 +308,7 @@ input,textarea,select{font-family:inherit}
 #gate.play .g-bar{animation:gbar var(--total,6600ms) linear forwards}
 @keyframes gbar{to{width:100%}}
 .g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
-.g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:10px;font-weight:700;
+.g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:11px;font-weight:700;
   letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(232,237,244,.08);
   border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
   transition:color .2s,border-color .2s,background .2s}
@@ -327,7 +322,7 @@ input,textarea,select{font-family:inherit}
   padding:12px 22px;cursor:pointer;box-shadow:0 10px 28px var(--vio-line)}
 #gate.needs-sound .g-sound{display:inline-flex}
 .g-noaudio{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:102;
-  display:none;font-family:var(--mono,ui-monospace,monospace);font-size:10px;
+  display:none;font-family:var(--mono,ui-monospace,monospace);font-size:11px;
   font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
 #gate.no-audio .g-noaudio{display:block}
 #gate.no-audio .g-sound{display:none}
@@ -348,33 +343,47 @@ input,textarea,select{font-family:inherit}
    which broke the mobile drawer. */
 #app.settled{animation:none;opacity:1}
 
-.nav{grid-area:nav;background:var(--void);border-right:1px solid var(--line);
+/* The sidebar sits ON the page rather than on its own panel. It is
+   navigation: it should be findable and then forgotten, which means it does
+   not get a surface, a shadow or a colour of its own. */
+.nav{grid-area:nav;background:transparent;border-right:1px solid var(--line-2);
   display:flex;flex-direction:column;overflow:hidden}
-.nav-b{padding:20px 20px 18px;border-bottom:1px solid var(--line-2)}
-.nav-n{font-size:16px;font-weight:800;letter-spacing:-.04em;line-height:1}
+.nav-b{padding:24px 20px 20px;border-bottom:1px solid var(--line-2)}
+.nav-n{font-size:15px;font-weight:650;letter-spacing:-.02em;line-height:1}
 .nav-n i{color:var(--vio);font-style:normal}
-.nav-o{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+.nav-o{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
   color:var(--faint);margin-top:7px}
 .nav-l{padding:14px 12px;overflow-y:auto;flex:1}
-.nav-i{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;
-  border-radius:var(--r-sm);margin-bottom:1px;font-size:13.5px;font-weight:500;
-  color:var(--mid);text-align:left;transition:background .16s,color .16s}
-.nav-i:hover{background:var(--bone);color:var(--ink)}
-.nav-i.on{background:var(--vio-wash);color:var(--vio);font-weight:600}
-.nav-i svg{width:16px;height:16px;flex:none}
-.nav-c{margin-left:auto;font-family:var(--mono);font-size:10px;padding:1px 7px;
+.nav-i{display:flex;align-items:center;gap:12px;width:100%;padding:9px 12px;
+  border-radius:var(--r-sm);margin-bottom:2px;font-size:14px;font-weight:450;
+  color:var(--mid);text-align:left;
+  transition:background .18s var(--e),color .18s var(--e)}
+.nav-i:hover{background:rgba(0,0,0,.035);color:var(--ink)}
+/* The active item is the one that is DARKEST and heaviest, with a filled
+   surface behind it. It was accent-coloured text on an accent wash, which
+   made the current page the least legible item in the list. */
+.nav-i.on{background:var(--surface);color:var(--ink);font-weight:590;
+  box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.nav-i.on svg{color:var(--vio)}
+.nav-i svg{width:17px;height:17px;flex:none;opacity:.75;
+  transition:opacity .18s var(--e)}
+.nav-i:hover svg,.nav-i.on svg{opacity:1}
+.nav-c{margin-left:auto;font-family:var(--mono);font-size:11px;padding:1px 7px;
   border-radius:100px;background:var(--bone);color:var(--mid)}
 .nav-c.bad{background:var(--red-wash);color:var(--red)}
-.nav-f{padding:13px 20px;border-top:1px solid var(--line-2);font-size:11.5px;color:var(--faint)}
+.nav-f{padding:13px 20px;border-top:1px solid var(--line-2);font-size:12px;color:var(--faint)}
 
 .main{grid-area:main;overflow-y:auto}
 .top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;
-  flex-wrap:wrap;padding:16px 28px;background:rgba(11,15,20,.92);
-  backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  /* Solid, not blurred. A backdrop-filter forces a compositing layer and
+     repaints it on every scroll frame; a hairline over an opaque surface
+     costs nothing and reads more precisely. */
+  flex-wrap:wrap;padding:18px 32px;background:var(--bg);
+  border-bottom:1px solid var(--line-2)}
 .top-t{font-size:20px;font-weight:700;letter-spacing:-.04em}
 .sp{flex:1}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
-  border:1px solid var(--line);background:var(--card);font-size:11.5px;font-weight:600;color:var(--mid)}
+  border:1px solid var(--line);background:var(--card);font-size:12px;font-weight:600;color:var(--mid)}
 .pill .d{width:6px;height:6px;border-radius:50%;background:var(--faint)}
 .pill.run{border-color:var(--grn);color:var(--grn);background:var(--grn-wash)}
 .pill.run .d{background:var(--grn);animation:blip 2s infinite}
@@ -388,7 +397,7 @@ input,textarea,select{font-family:inherit}
 .ctlbar.on{display:inline-flex}
 .cbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:100px;
   border:1px solid var(--line);background:var(--card);color:var(--mid);
-  font-size:11.5px;font-weight:700;transition:all .16s}
+  font-size:12px;font-weight:700;transition:all .16s}
 .cbtn:hover{color:var(--ink);border-color:var(--faint)}
 .cbtn.warn{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
 .cbtn.warn:hover{background:var(--amber-line)}
@@ -400,7 +409,7 @@ input,textarea,select{font-family:inherit}
 .cbtn svg{width:12px;height:12px}
 .share{display:none;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
   border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
-  font-size:11.5px;font-weight:700;transition:background .16s}
+  font-size:12px;font-weight:700;transition:background .16s}
 .share.on{display:inline-flex}
 .share:hover{background:var(--vio-line)}
 .share svg{width:13px;height:13px}
@@ -408,14 +417,11 @@ input,textarea,select{font-family:inherit}
 .page{padding:24px 28px 40px;display:none}
 .page.on{display:block;animation:rise .35s var(--e)}
 
-/* A dark card cannot be separated by a drop shadow — on this ground a
-   shadow reads as a smudge. It is separated the way a lit surface actually
-   is: a hairline LIGHTER than the surface, and a single-pixel highlight
-   along the top edge where the light would fall. The 1.08:1 surface lift on
-   its own left the cards floating in nothing. */
-.card{background:var(--deck);border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:inset 0 1px 0 rgba(232,237,244,.045),0 1px 2px rgba(0,0,0,.4);
-  position:relative}
+/* A card is a hairline, a radius and room to breathe. One shadow at low
+   opacity so it sits a millimetre above the page — not a stack, not a glow,
+   and never a second border to do the same job twice. */
+.card{background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow);position:relative}
 .card-h{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
 .card-t{font-size:13px;font-weight:700;letter-spacing:-.02em}
 .card-b{padding:18px}
@@ -424,41 +430,20 @@ input,textarea,select{font-family:inherit}
 .ctl{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
 .ctl .card{display:flex;flex-direction:column}
 .ctl .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
-/* The one gradient in the interface: an apron glow behind the run status,
-   warm at the top edge where the amber linework runs. Everything else is a
-   flat surface, so this reads as the page's focal point rather than as
-   decoration applied evenly. */
-.hero{background:
-    radial-gradient(ellipse 70% 130% at 88% -20%,rgba(139,156,255,.05),transparent 70%),
-    var(--deck);
-  border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:inset 0 1px 0 rgba(232,237,244,.05),0 1px 2px rgba(0,0,0,.4);
-  padding:24px;position:relative;overflow:hidden}
-/* Linework corridor: a dashed route with a container running it, and a slow
-   radar sweep. Transform/opacity only, and paused when the tab is hidden.
+/* No gradient. The run status is the most important thing on the page and
+   it earns that with size and space, which is cheaper to render and
+   survives being looked at for eight hours. */
+.hero{background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow);
+  padding:28px 30px;position:relative;overflow:hidden}
+/* The hero's animated linework was removed.
+   It ran two dashed rails, two travelling pods and a nine-second sweep,
+   permanently, behind the one number an operator is trying to read. Ambient
+   motion in a monitoring interface competes with the motion that means
+   something — a status changing — and it costs a compositing layer and a
+   repaint for the whole life of the page. The status light on the headline
+   is the only thing that moves now, and it moves because the run is live. */
 
-   It was amber, which on this palette now means "a person is needed" — so a
-   decoration was wearing the one colour that has to mean something. It is
-   neutral linework instead: the texture and the motion survive, the signal
-   is given back. The one thing to remove before leaving the house. */
-/* Kept to the right third and faded at both ends so it never crosses the
-   readable copy — decoration must not compete with the numbers. */
-.hero-fx{position:absolute;top:0;bottom:0;right:0;width:46%;pointer-events:none;
-  z-index:0;overflow:hidden;
-  mask-image:linear-gradient(90deg,transparent,var(--void) 32%,var(--void) 88%,transparent);
-  -webkit-mask-image:linear-gradient(90deg,transparent,var(--void) 32%,var(--void) 88%,transparent)}
-.hero-fx .rail{position:absolute;left:0;right:0;height:1px;opacity:.5;
-  background:repeating-linear-gradient(90deg,rgba(232,237,244,.20) 0 7px,transparent 7px 16px)}
-.hero-fx .rail.r1{top:26%} .hero-fx .rail.r2{top:74%}
-.hero-fx .pod{position:absolute;left:0;width:15px;height:10px;
-  border:1px solid rgba(232,237,244,.26);border-radius:2px;background:rgba(232,237,244,.07)}
-.hero-fx .pod.p1{top:calc(26% - 5px);animation:haul 14s linear infinite}
-.hero-fx .pod.p2{top:calc(74% - 5px);animation:haul 21s linear infinite 5s}
-@keyframes haul{from{transform:translateX(-30px)}to{transform:translateX(700px)}}
-.hero-fx .sweep{position:absolute;top:-40%;bottom:-40%;width:40%;
-  background:linear-gradient(90deg,transparent,rgba(232,237,244,.05),transparent);
-  transform:translateX(-120%);animation:sweep 9s var(--e) infinite}
-@keyframes sweep{to{transform:translateX(340%)}}
 .hero-v{font-size:clamp(34px,4.4vw,54px);font-weight:800;letter-spacing:-.055em;
   line-height:1;margin:12px 0 6px;position:relative;z-index:1;color:var(--ink);
   display:flex;align-items:center;gap:16px}
@@ -477,22 +462,33 @@ input,textarea,select{font-family:inherit}
 @media(prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}}
 .hero-s{font-size:13px;color:var(--mid);margin-bottom:24px;position:relative;z-index:1}
 .hero-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:20px 18px;position:relative;z-index:1}
-.fk{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+.fk{font-size:12px;font-weight:450;letter-spacing:0;
   color:var(--faint);margin-bottom:5px}
-.fv{font-size:14.5px;font-weight:500;word-break:break-word}
+.fv{font-size:15px;font-weight:500;word-break:break-word}
 .fv.hi{color:var(--vio);font-weight:600}
 
 /* kpis */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
-.kpi{background:var(--deck);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;
-  box-shadow:inset 0 1px 0 rgba(232,237,244,.045)}
-.kpi-k{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
-.kpi-v{font-size:38px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin-top:10px;
+/* ONE card, divided — not seven cards in a row.
+   Seven bordered boxes made the run's numbers look like seven unrelated
+   facts, and it is the clearest case of the interface being a collection of
+   containers rather than a surface. The dividers are the 1px grid gaps
+   showing the container's own colour through, so they stay hairlines and
+   wrap correctly at any column count without a border landing on an edge. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(164px,1fr));
+  gap:1px;background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;
+  margin-bottom:20px}
+.kpi{background:var(--surface);padding:18px 20px 20px;
+  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
+.kpi-k{font-size:12px;font-weight:450;color:var(--faint);text-wrap:balance}
+.kpi-v{font-size:34px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin-top:10px;
   font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
-.kpi-n{font-size:11.5px;color:var(--mid);margin-top:4px}
+.kpi-n{font-size:12px;color:var(--mid);margin-top:4px}
 /* A zero is not an alarm. "Failed 0" is the best news on the page and must
    not glow; it recedes to the tertiary colour whatever --c says. */
-.kpi-v.nil{color:var(--faint)}
+.kpi-v.nil{color:var(--faint);font-weight:400}
+/* An em-dash set at 34px/600 looks like a rule, not an absence. */
+.kpi-v.none{color:var(--faint);font-size:24px;font-weight:400}
 
 .bar{height:6px;border-radius:100px;background:var(--bone);overflow:hidden}
 .bar-f{height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
@@ -506,7 +502,7 @@ input,textarea,select{font-family:inherit}
 .g2>*{min-width:0}
 
 .tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;
-  font-size:10.5px;font-weight:700;white-space:nowrap}
+  font-size:11px;font-weight:700;white-space:nowrap}
 .tag::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
 .tag.updated{color:var(--grn);background:var(--grn-wash)}
 .tag.processing{color:var(--blu);background:var(--blu-wash)}
@@ -517,16 +513,22 @@ input,textarea,select{font-family:inherit}
 
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
-  text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--riser)}
-td{padding:12px 15px;border-bottom:1px solid var(--line-2);color:var(--mid)}
-tbody tr:last-child td{border-bottom:none}
-tbody tr:hover{background:var(--riser)}
-td.ref{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:600;white-space:nowrap}
+/* Readability comes from row height and alignment. The header keeps a
+   single rule under it; the rows have none at all, because forty hairlines
+   down a table is a grid, and a grid is harder to scan than white space. */
+th{font:var(--t-label);letter-spacing:.055em;text-transform:uppercase;
+  color:var(--faint);text-align:left;padding:0 16px 10px;
+  border-bottom:1px solid var(--line);white-space:nowrap;background:transparent}
+td{padding:14px 16px;color:var(--mid);border:none}
+tbody tr{transition:background .14s var(--e)}
+tbody tr:hover{background:var(--surface-2)}
+thead th:first-child,tbody td:first-child{padding-left:22px}
+thead th:last-child,tbody td:last-child{padding-right:22px}
+td.ref{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap}
 /* Dates align down the column and stay in the text colour. Only an ACTUAL
    arrival is coloured, because that is the exception an operator scans for;
    an empty cell is not a date and must not look like one. */
-td.dt{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;
+td.dt{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;
   color:var(--ink)}
 td.dt.actual{color:var(--ice)}
 td.dt.none{color:var(--faint)}
@@ -554,11 +556,11 @@ tr.r-partial .err{color:var(--y)}
 .sys.st-processing .led{background:var(--vio);animation:blip 1.6s infinite}
 .sys.st-error .led{background:var(--red)}
 .sys.st-warning .led{background:var(--y)}
-.sys-n{font-size:13.5px;font-weight:600}
+.sys-n{font-size:14px;font-weight:600}
 .sys-m{font-size:12px;color:var(--faint);margin-top:2px;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .sys-m.bad{color:var(--red)}
-.sys-r{text-align:right;font-size:10px;font-weight:700;letter-spacing:.1em;
+.sys-r{text-align:right;font-size:11px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--faint);line-height:1.7}
 
 .exc{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;
@@ -567,7 +569,7 @@ tr.r-partial .err{color:var(--y)}
 .exc-i{color:var(--red);font-size:12px}
 .exc.warning .exc-i{color:var(--amber)}
 .exc-m{font-size:13px;color:var(--ink);font-weight:500}
-.exc-d{font-size:11.5px;color:var(--faint);margin-top:4px}
+.exc-d{font-size:12px;color:var(--faint);margin-top:4px}
 .exc-t{font-family:var(--mono);font-size:11px;color:var(--faint)}
 
 .tools{display:flex;gap:8px;flex-wrap:wrap;padding:13px 18px;border-bottom:1px solid var(--line-2);
@@ -576,7 +578,7 @@ tr.r-partial .err{color:var(--y)}
   padding:8px 12px;color:var(--ink);font-size:13px;min-width:170px;flex:1}
 .in::placeholder{color:var(--faint)}
 .in:focus{border-color:var(--vio);outline:none}
-.chip{padding:6px 13px;border-radius:100px;border:1px solid var(--line);font-size:11.5px;
+.chip{padding:6px 13px;border-radius:100px;border:1px solid var(--line);font-size:12px;
   font-weight:600;color:var(--mid);background:var(--card);transition:all .16s;white-space:nowrap}
 .chip:hover{background:var(--y-wash);border-color:var(--y-line);color:var(--ink)}
 .chip.on{background:var(--vio-wash);border-color:var(--vio-line);color:var(--vio)}
@@ -592,7 +594,7 @@ tr.r-partial .err{color:var(--y)}
 .log{display:grid;grid-template-columns:58px 62px 1fr;gap:10px;padding:6px 18px;
   border-bottom:1px solid var(--line-2)}
 .log time{color:var(--faint)}
-.log b{font-size:9.5px;font-weight:800;letter-spacing:.06em}
+.log b{font-size:11px;font-weight:800;letter-spacing:.06em}
 .log.info b{color:var(--blu)} .log.success b{color:var(--grn)}
 .log.warning b{color:var(--amber)} .log.error b{color:var(--red)}
 .log p{color:var(--mid);word-break:break-word}
@@ -604,10 +606,12 @@ tr.r-partial .err{color:var(--y)}
 .steps div{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:8px 0 8px 14px;
   font-size:13px;color:var(--faint);border-left:2px solid var(--line);margin-left:3px}
 .steps div:last-child{color:var(--ink);border-left-color:var(--vio)}
+.steps .step-none{display:block;border-left:none;margin-left:0;padding:6px 0;
+  font-size:13px;color:var(--faint)}
 .steps time{font-family:var(--mono);font-size:11px}
 
 .empty{padding:44px 20px;text-align:center;color:var(--faint)}
-.empty h3{font-size:13.5px;font-weight:700;color:var(--mid);margin-bottom:6px}
+.empty h3{font-size:14px;font-weight:700;color:var(--mid);margin-bottom:6px}
 .empty p{font-size:13px;max-width:400px;margin:0 auto}
 .empty code{font-family:var(--mono);font-size:12px;color:var(--vio);
   background:var(--vio-wash);padding:1px 6px;border-radius:5px}
@@ -631,22 +635,24 @@ tr.r-partial .err{color:var(--y)}
 .an-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
   padding:16px 18px;border-bottom:1px solid var(--line-2)}
 .fld{display:flex;flex-direction:column;gap:5px}
-.fld label{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.fld label{font-size:12px;font-weight:450;color:var(--faint)}
 .sel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
   padding:8px 11px;font-size:13px;color:var(--ink);min-width:140px}
 .sel:focus{border-color:var(--vio);outline:none}
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;
-  padding:18px;border-bottom:1px solid var(--line-2)}
-.stat{background:var(--riser);border:1px solid var(--line-2);
-  border-radius:var(--r-sm);padding:14px 16px}
-.stat b{display:block;font-size:28px;font-weight:800;letter-spacing:-.05em;margin-top:6px;
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));
+  gap:1px;background:var(--surface);border-bottom:1px solid var(--line-2);
+  overflow:hidden}
+.stat{background:var(--surface);padding:16px 18px 18px;
+  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
+.stat b{display:block;font-size:24px;font-weight:800;letter-spacing:-.05em;margin-top:6px;
   font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
 .dl-note{font-size:12px;color:var(--faint);margin-top:10px}
+.hint{font-size:12px;color:var(--mid);line-height:1.5}
 
 /* ═══════════ CHAT ═══════════ */
 .fab{position:fixed;right:22px;bottom:calc(var(--player) + 18px);z-index:70;
   height:38px;padding:0 14px;border-radius:100px;background:var(--solid);color:var(--on-solid);
-  display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;
+  display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
   box-shadow:0 6px 18px rgba(10,10,11,.2);transition:transform .24s var(--e)}
 .fab:hover{transform:translateY(-2px)}
 /* No position:relative here — it would override the fixed positioning above
@@ -669,9 +675,9 @@ tr.r-partial .err{color:var(--y)}
 .ch-av{width:34px;height:34px;border-radius:10px;background:var(--vio);display:grid;
   place-items:center;color:var(--ink);flex:none}
 .ch-av svg{width:21px;height:21px}
-.ch-nm{font-size:13.5px;font-weight:700}
-.ch-rl{font-size:10px;color:rgba(239,235,227,.55);margin-top:1px}
-.ch-ty{font-size:10px;color:var(--signal);margin-top:1px;display:none}
+.ch-nm{font-size:14px;font-weight:700}
+.ch-rl{font-size:11px;color:rgba(239,235,227,.55);margin-top:1px}
+.ch-ty{font-size:11px;color:var(--signal);margin-top:1px;display:none}
 .ch-ty.show{display:block}
 .ch-x{margin-left:auto;color:rgba(239,235,227,.6);padding:5px;border-radius:6px}
 .ch-x:hover{color:var(--ink);background:rgba(255,255,255,.1)}
@@ -683,11 +689,11 @@ tr.r-partial .err{color:var(--y)}
 .msg{display:flex;gap:9px;max-width:94%;animation:msgIn .32s var(--e) both}
 .msg.me{align-self:flex-end;flex-direction:row-reverse}
 .m-av{width:28px;height:28px;border-radius:8px;flex:none;display:grid;place-items:center;
-  font-size:9px;font-weight:800;background:var(--vio);color:var(--ink)}
+  font-size:11px;font-weight:800;background:var(--vio);color:var(--ink)}
 .m-av svg{width:18px;height:18px}
 .msg.me .m-av{background:var(--solid);color:var(--on-solid)}
 .bub{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
-  padding:11px 14px;font-size:13.5px;line-height:1.65;border-radius:0 12px 12px 12px;
+  padding:11px 14px;font-size:14px;line-height:1.65;border-radius:0 12px 12px 12px;
   color:var(--ink);white-space:pre-wrap;word-break:break-word}
 .msg.me .bub{background:var(--solid);color:var(--on-solid);border:none;border-radius:12px 0 12px 12px;font-weight:450}
 .bub strong{font-weight:700}
@@ -714,14 +720,14 @@ tr.r-partial .err{color:var(--y)}
 .dl-row{display:flex;gap:6px;flex-wrap:wrap;max-width:94%}
 .dl{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:100px;
   border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
-  font-size:11.5px;font-weight:700;transition:background .16s;text-decoration:none}
+  font-size:12px;font-weight:700;transition:background .16s;text-decoration:none}
 .dl:hover{background:var(--vio-line)}
 .dl svg{width:12px;height:12px}
 .ch-s{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;background:var(--paper)}
 .ch-f{display:flex;gap:8px;padding:11px 14px;border-top:1px solid var(--line-2);
   background:var(--card);align-items:flex-end}
 .ch-ta{flex:1;border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 13px;
-  font-size:13.5px;resize:none;min-height:42px;max-height:110px;background:var(--paper);
+  font-size:14px;resize:none;min-height:42px;max-height:110px;background:var(--paper);
   color:var(--ink);outline:none;line-height:1.5}
 .ch-ta:focus{border-color:var(--vio)}
 .send{width:36px;height:36px;border-radius:50%;background:var(--solid);color:var(--on-solid);
@@ -738,19 +744,58 @@ tr.r-partial .err{color:var(--y)}
      transform, which makes it a containing block for fixed children, so
      bottom:0 stopped resolving against the viewport and the drawer
      collapsed to zero height. */
+  .nav-i.on{background:var(--surface-3);box-shadow:none}
   .nav{position:fixed;left:0;top:0;height:100vh;height:100dvh;width:250px;z-index:60;
+    background:var(--surface);border-right:1px solid var(--line);
     transform:translateX(-100%);transition:transform .32s var(--e);
-    box-shadow:0 0 40px rgba(0,0,0,.72)}
+    box-shadow:16px 0 40px rgba(0,0,0,.10)}
   .nav.open{transform:none}
   .burger{display:flex;align-items:center;padding:5px;color:var(--mid)}
   .burger svg{width:20px;height:20px}
   .page{padding:18px 15px 28px}
-  .top{padding:12px 15px}.top-t{font-size:17px}
+  .top{padding:12px 15px}.top-t{font-size:20px}
   .chat{right:10px;left:10px;width:auto;height:min(72vh,520px)}
   .fab{right:16px}
-  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;opacity:0;
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:50;opacity:0;
     pointer-events:none;transition:opacity .25s}
   .scrim.on{opacity:1;pointer-events:auto}
+}
+@media(max-width:600px){
+  /* Ten columns cannot be read on a phone. Horizontal scrolling "worked" —
+     the scroller was measured and does scroll — but it pushed the
+     ATLAS / DETERMINISTIC attribution and the result pill completely
+     off-screen, which is the one thing an operator opens this page for.
+     Each row becomes a labelled record instead: the same fields, in the same
+     order, with nothing hidden and nothing to scroll sideways for. */
+  .tw{overflow-x:visible}
+  .tw table,.tw tbody,.tw tr,.tw td{display:block;width:auto}
+  .tw thead{display:none}
+  /* The card insets its own header by 18px; the stacked rows have to sit on
+     that same edge or the record headings hang outside the card's text. */
+  .tw tbody tr{padding:12px 18px;border-bottom:1px solid var(--line-2)}
+  .tw tbody tr:last-child{border-bottom:none}
+  .tw td,.tw thead th:first-child,.tw tbody td:first-child,
+  .tw thead th:last-child,.tw tbody td:last-child{padding:4px 0 4px 118px}
+  .tw td{position:relative;min-height:20px}
+  /* The column name comes from the table's own <thead> at render time, so a
+     label can never drift from the header it belongs to. It sits in a gutter
+     rather than in the flow, so a value that needs two lines — a result pill
+     next to its attribution pill — wraps without pushing anything sideways. */
+  /* Cells that carry figures set their value in the mono face, and the label
+     inherited it — so half the labels in a record were typeset differently
+     from the other half. The gutter always uses the text face. */
+  .tw td::before{content:attr(data-k);position:absolute;left:0;top:4px;
+    width:104px;font:400 12px/1.4 var(--s);color:var(--faint)}
+  /* `.tw tbody td:first-child` above matches the reference cell too and is
+     equally specific, so this has to name the row's tbody to win the gutter
+     back and let the AWB sit flush as the record's heading. */
+  .tw tbody td.ref{font-size:15px;padding:0 0 8px;min-height:0}
+  .tw tbody td.ref::before{display:none}
+}
+@media(max-width:430px){
+  /* One header row. #beatPill is an echo of the hero's "Last heartbeat"
+     field, which stays visible, so nothing is lost by folding it away. */
+  #beatPill{display:none}
 }
 @media(prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important;
@@ -884,15 +929,10 @@ tr.r-partial .err{color:var(--y)}
     <section class="page on" data-p="overview">
       <div class="ctl">
         <div class="hero">
-          <div class="hero-fx" aria-hidden="true">
-            <div class="rail r1"></div><div class="rail r2"></div>
-            <div class="pod p1"></div><div class="pod p2"></div>
-            <div class="sweep"></div>
-          </div>
-          <div class="kick" style="position:relative">Automation status</div>
-          <div class="hero-v" id="bigState" style="position:relative">Standing by</div>
+          <div class="kick">Automation status</div>
+          <div class="hero-v" id="bigState">Standing by</div>
           <div class="hero-s" id="dryFlag"></div>
-          <div class="hero-g" style="position:relative">
+          <div class="hero-g">
             <div><div class="fk">Current operation</div><div class="fv" id="cOp">—</div></div>
             <div><div class="fk">Current carrier</div><div class="fv" id="cSys">—</div></div>
             <div><div class="fk">Current action</div><div class="fv" id="cAct">—</div></div>
@@ -1063,7 +1103,7 @@ tr.r-partial .err{color:var(--y)}
         <div class="card-h"><div class="card-t">Startup sequence</div></div>
         <div class="card-b" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <button class="cbtn" onclick="window.ctReplayIntro && window.ctReplayIntro()">Replay intro</button>
-          <span class="kick" style="color:var(--mid)">Plays once per browser session. The
+          <span class="hint">Plays once per browser session. The
             sound button remembers your choice.</span>
         </div>
       </div>
@@ -1479,7 +1519,25 @@ const clock = (s) => {
 const ms = (v) => (v == null ? '—' : (v < 1000 ? v + ' ms' : (v / 1000).toFixed(1) + ' s'));
 const has = (v) => v !== null && v !== undefined && v !== '' && v !== '—';
 function put(el, v){ if (el && el.textContent !== v) el.textContent = v; }
-function putHTML(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; } }
+/* The stacked phone layout above needs every cell to carry its own column
+   name. Taking the names from the table's own <thead> keeps them in sync by
+   construction, and the stamping only runs while that layout is actually
+   active, so it costs nothing on a desktop. */
+const stackQ = window.matchMedia('(max-width:600px)');
+function stampRowLabels(tb){
+  if (!stackQ.matches || !tb || tb.tagName !== 'TBODY') return;
+  const table = tb.closest('table');
+  if (!table) return;
+  const heads = [].map.call(table.querySelectorAll('thead th'), (h) => h.textContent.trim());
+  if (!heads.length) return;
+  for (const tr of tb.rows)
+    for (let i = 0; i < tr.cells.length; i++)
+      if (heads[i]) tr.cells[i].setAttribute('data-k', heads[i]);
+}
+function putHTML(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; stampRowLabels(el); } }
+/* Crossing the breakpoint has to label rows that were rendered while the
+   wide layout was in force. One listener, registered once. */
+stackQ.addEventListener('change', () => document.querySelectorAll('.tw tbody').forEach(stampRowLabels));
 function cls(el, n){ if (el && el.className !== n) el.className = n; }
 
 /* ═══ NAV ═══ */
@@ -1617,6 +1675,7 @@ function paint(force){
        A zero is dimmed whatever its colour: "Failed 0" is good news and
        should not glow red. */
     const zero = (v) => v === 0 || v === '0';
+    const none = (v) => v === '—' || v === null || v === undefined || v === '';
     const K = [
       {k:'Processed', v:c.processed, n:'Under Clearance rows handled', c:'var(--ink)'},
       {k:'Hub records updated', v:c.successful, n:'COE ETA / BU ATA written', c:'var(--signal)'},
@@ -1628,8 +1687,9 @@ function paint(force){
       {k:'Queued from hub', v:pr.discovered, n:pr.pages_scanned + ' list page(s) scanned', c:'var(--ink)'}
     ];
     putHTML($('kpis'), K.map((x) =>
-      '<div class="kpi"><div class="kpi-k">' + x.k + '</div><div class="kpi-v' +
-      (zero(x.v) ? ' nil' : '') + '" style="--c:' + x.c + '">' + x.v +
+      '<div class="kpi"><div class="kpi-k" title="' + x.k + '">' + x.k +
+      '</div><div class="kpi-v' + (none(x.v) ? ' none' : zero(x.v) ? ' nil' : '') +
+      '" style="--c:' + x.c + '">' + x.v +
       '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
   }
 
@@ -1706,7 +1766,7 @@ function paintLive(){
     dash(cur.step) + '</div></div>');
   putHTML($('steps'), (cur.steps || []).length
     ? cur.steps.map((x) => '<div><time>' + esc(x.time) + '</time><span>' + esc(x.text) + '</span></div>').join('')
-    : '<div style="color:var(--faint);font-size:13px">Waiting for the first step</div>');
+    : '<div class="step-none">Waiting for the first step</div>');
 }
 function f(k, v){ return '<div><div class="fk">' + k + '</div><div class="fv">' + dash(v) + '</div></div>'; }
 /* A date cell. `actual` means the event has happened (an ATA), so it takes
