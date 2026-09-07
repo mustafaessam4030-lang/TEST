@@ -549,9 +549,20 @@ check("Enter is used when Track will not enable",
       "submitting with Enter instead" in SRC_F)
 check("A bare X can dismiss a cookie panel",
       "cookie close [" in SRC_F)
+# The INTENT is the ordering, not the adjacency: settle, then deal with
+# whatever is covering the page, then type. A human-verification check now
+# sits between the settle and the cookie banner, which is correct — a
+# challenge page has no form to find — and broke the old literal match.
+_open = SRC_F.split("def open_portal")[1].split("\ndef ")[0]
 check("The page is settled before anything is typed",
-      SRC_F.index("wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)\n        if not accept_cookie_banner")
-      < SRC_F.index("field = find_portal_input(page, config[\"placeholder\"])"))
+      _open.index("wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)")
+      < _open.index("field = find_portal_input(page, config[\"placeholder\"])"))
+check("The cookie banner is dealt with before the form is sought",
+      _open.index("accept_cookie_banner") 
+      < _open.index("field = find_portal_input(page, config[\"placeholder\"])"))
+check("A human-verification challenge is checked before either — a challenge "
+      "page has no air waybill box to find",
+      _open.index("captcha_on_page(page)") < _open.index("accept_cookie_banner"))
 
 
 print()

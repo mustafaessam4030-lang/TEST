@@ -75,6 +75,10 @@ class ControlTowerState:
         # ATLAS activity for this run. A feed the panel can read, plus the
         # two counts that answer "how much of this run did the engine
         # actually steer".
+        # None until a challenge is seen. The dashboard shows nothing at all
+        # rather than a reassuring "no captcha" that was never checked.
+        self.human_verification = None
+
         self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
         self.atlas_influenced_actions = 0
         self.atlas_fallbacks = 0
@@ -306,6 +310,45 @@ class ControlTowerState:
                     state["influenced"] = True
                 if label == "Strategy selected" and detail:
                     state["chosen"] = str(detail).split(" ")[0].strip(":,")
+            self._touch()
+
+    @_guard
+    def human_verification_required(self, reference=None, label=""):
+        """
+        The run is paused waiting for a person to clear a challenge.
+
+        Recorded as its own state, not as an error. The shipment was never
+        looked up, so calling it a failure would be wrong — and the operator
+        needs to know a browser is waiting for them, which an exception buried
+        in a log does not achieve.
+        """
+        with self._lock:
+            self.human_verification = {
+                "waiting": True, "reference": reference, "where": str(label)[:120],
+                "since": _stamp(), "cleared_after_s": None,
+            }
+            self.systems["browser"]["state"] = "waiting"
+            self.systems["browser"]["activity"] = (
+                "Human verification required" + (" for " + reference if reference else ""))
+            self._mark("warn", "Human verification required{0}{1}".format(
+                " on " + str(label) if label else "",
+                " for " + reference if reference else ""))
+            self._touch()
+
+    @_guard
+    def human_verification_cleared(self, reference=None, waited_seconds=None):
+        with self._lock:
+            self.human_verification = {
+                "waiting": False, "reference": reference,
+                "where": (self.human_verification or {}).get("where", ""),
+                "since": (self.human_verification or {}).get("since"),
+                "cleared_after_s": waited_seconds,
+            }
+            self.systems["browser"]["state"] = "connected"
+            self.systems["browser"]["activity"] = None
+            self._mark("ok", "Human verification cleared{0}{1}".format(
+                " after " + str(waited_seconds) + "s" if waited_seconds is not None else "",
+                " for " + reference if reference else ""))
             self._touch()
 
     @_guard
@@ -644,6 +687,7 @@ class ControlTowerState:
                     "page": self.current_page,
                     "shipment": current,
                 },
+                "human_verification": self.human_verification,
                 "atlas": {
                     "name": ATLAS_NAME,
                     "full_name": ATLAS_FULL_NAME,

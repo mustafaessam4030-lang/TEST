@@ -316,6 +316,30 @@ class SkipShipment(Exception):
     """Expected shipment skip; processing continues with the next shipment."""
 
 
+class CaptchaRequired(Exception):
+    """
+    The carrier asked a human to prove they are one, and nobody did.
+
+    Deliberately NOT a SkipShipment: a skip means "this shipment has nothing
+    for us", and that is a claim about the shipment. This says the lookup never
+    happened. The shipment is left for the next run, its outcome is recorded as
+    HUMAN VERIFICATION REQUIRED, and nothing about it is written to the Hub.
+
+    There is no automated solve here and there will not be one. The only thing
+    this class does is stop, say so clearly, and wait for a person.
+    """
+
+    def __init__(self, tracking_number, label="the carrier page"):
+        self.tracking_number = tracking_number
+        self.label = label
+        Exception.__init__(self, (
+            "HUMAN VERIFICATION REQUIRED on {0} for {1}. The page presented a "
+            "\"confirm you are human\" challenge and it was not completed "
+            "within the wait window. Complete it in the open browser and run "
+            "again; nothing was written for this shipment."
+        ).format(label, tracking_number))
+
+
 # ============================================================
 # GENERAL HELPERS
 # ============================================================
@@ -750,6 +774,11 @@ UNEXPECTED_PAGE_STATE = "UNEXPECTED PAGE STATE"
 # through to NO RESULT, which reads as "the carrier has no such air waybill" —
 # a statement about the shipment made on the strength of a broken connection.
 AFKL_NAVIGATION_ERROR = "AFKL NAVIGATION ERROR"
+# A challenge page is not a shipment problem. The air waybill was never looked
+# up, so calling it NO RESULT would be a statement about the shipment made on
+# the strength of a page that never showed one — and a person, not a retry, is
+# what resolves it.
+CAPTCHA_REQUIRED = "HUMAN VERIFICATION REQUIRED"
 FAILED = "FAILED"
 
 # Only these are worth a second attempt. Everything else is permanent for this
@@ -763,6 +792,8 @@ def classify_failure(error):
 
     # Checked FIRST: the message carries its own verdict, and it must not be
     # re-read as "no result" just because it also mentions a carrier.
+    if "human verification required" in text or "captcharequired" in text:
+        return CAPTCHA_REQUIRED
     if "afkl navigation error" in text or "afkl_navigation_error" in text:
         return AFKL_NAVIGATION_ERROR
     if "no estimated" in text or "returned no" in text or "did not provide" in text:
@@ -3875,6 +3906,15 @@ def get_qatar_result(page, tracking_number):
     page.goto(QATAR_BASE_URL, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(2500)
 
+    # Qatar navigates directly rather than through open_portal, so it needs
+    # its own challenge check — otherwise a Turnstile page here reports "the
+    # tracking field was not found", which blames the automation for something
+    # the carrier did.
+    if captcha_on_page(page):
+        if not await_human_verification(page, tracking_number,
+                                        "Qatar Airways Cargo"):
+            raise CaptchaRequired(tracking_number, "Qatar Airways Cargo")
+
     accept_cookie_banner(page, "Qatar Airways")
 
     for attempt in range(1, QATAR_MAX_ATTEMPTS + 1):
@@ -4003,6 +4043,10 @@ PORTALS = {
         # _read_afkl_page instead. Kept as a flag rather than a callable so
         # PORTALS stays plain data.
         "own_reader": True,
+        # Verify the rendered result carries the requested AWB before reading
+        # it. AFKL only: the other portals are one-shot pages whose identity
+        # their own readers establish.
+        "verify_identity": True,
         # The shipment page can be opened directly by air waybill, which is
         # what a person does and what actually works. See open_afkl_detail.
         "detail_url": True,
@@ -4042,6 +4086,191 @@ def build_afkl_detail_url(tracking_number):
     return AFKL_DETAIL_URL.format("{0}-{1}".format(digits[:3], digits[3:11]))
 
 
+# ============================================================
+# HUMAN VERIFICATION (CAPTCHA / CLOUDFLARE TURNSTILE)
+# ============================================================
+#
+# There is NO automated solve here, and there must never be one. Solving a
+# challenge on the operator's behalf defeats the thing the carrier put it there
+# to establish, and a bot that quietly gets past "confirm you are human" is
+# doing something nobody authorised. What this does instead:
+#
+#     detect  ->  stop  ->  say so, loudly and specifically  ->  wait for a
+#     person  ->  confirm the challenge is gone  ->  carry on
+#
+# The wait is bounded and there is no retry loop: either a human clears it
+# inside the window or the shipment is left alone with an honest outcome. It is
+# never recorded as a shipment failure, because the shipment was never looked
+# up.
+
+def _captcha_wait_ms():
+    """
+    How long a person gets. Bounded, and overridable for an unattended run.
+
+    CAPTCHA_WAIT_MS=0 makes the automation stop immediately on a challenge
+    rather than hold a browser open with nobody watching — which is what a
+    scheduled overnight run wants.
+    """
+    raw = (os.environ.get("CAPTCHA_WAIT_MS") or "").strip()
+    if not raw:
+        return 180000                  # 3 minutes
+    try:
+        return max(0, min(int(raw), 900000))   # never more than 15 minutes
+    except ValueError:
+        return 180000
+
+
+CAPTCHA_WAIT_MS = _captcha_wait_ms()
+CAPTCHA_POLL_MS = 2000
+
+# Selectors first: an iframe from a challenge provider, or a widget container,
+# is a structural fact about the page rather than a phrase that might appear in
+# ordinary prose.
+CAPTCHA_SELECTORS = (
+    "iframe[src*='challenges.cloudflare.com']",
+    "iframe[title*='Cloudflare']",
+    "iframe[src*='recaptcha']",
+    "iframe[title*='reCAPTCHA']",
+    "iframe[src*='hcaptcha']",
+    "div.cf-turnstile",
+    "div#cf-challenge-running",
+    "div.g-recaptcha",
+    "div.h-captcha",
+    "#challenge-form",
+    "input[name='cf-turnstile-response']",
+)
+
+# Text is the fallback, and it is deliberately narrow. "verify" on its own
+# appears all over a cargo site; these phrasings do not.
+CAPTCHA_PHRASES = re.compile(
+    r"confirm\s+you\s+are\s+(?:a\s+)?human|verify\s+you\s+are\s+(?:a\s+)?human|"
+    r"i'?m\s+not\s+a\s+robot|are\s+you\s+a\s+robot|"
+    r"checking\s+if\s+the\s+site\s+connection\s+is\s+secure|"
+    r"needs\s+to\s+review\s+the\s+security\s+of\s+your\s+connection|"
+    r"complete\s+the\s+security\s+check|unusual\s+traffic\s+from\s+your",
+    re.I)
+
+
+def captcha_on_page(page):
+    """
+    True when the page is presenting a human-verification challenge.
+
+    Structural first, text second, and never raises: a detector that can throw
+    would turn a challenge into a crash. A false negative just means the run
+    behaves as it did before this existed; a false positive costs one bounded
+    wait and a log line, so the text patterns are kept narrow on purpose.
+    """
+    try:
+        for selector in CAPTCHA_SELECTORS:
+            try:
+                if page.locator(selector).count() > 0:
+                    return True
+            except Exception:
+                continue
+        text = _page_text(page)
+        # A challenge page is short. Requiring that as well keeps a cargo page
+        # that merely quotes one of these phrases from being mistaken for one.
+        if len(text) < 4000 and CAPTCHA_PHRASES.search(text):
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def await_human_verification(page, tracking_number, label="the carrier page"):
+    """
+    Pause and let a person clear the challenge. Returns True if they did.
+
+    Nothing about the run's state is touched: no navigation, no reload, no
+    form resubmission. The browser is left exactly where the challenge
+    appeared so that completing it leaves the page the automation was already
+    working with — which is what makes resuming safe rather than a restart.
+    """
+    tower.step("Waiting for human verification on {0}".format(label),
+               system="browser")
+    try:
+        take_screenshot(page, tracking_number, "captcha_required")
+        save_page_text(page, tracking_number, "captcha_required")
+    except Exception:
+        pass
+
+    write_log("=" * 62)
+    write_log("HUMAN VERIFICATION REQUIRED")
+    write_log("{0} is asking to confirm a human is present, for {1}."
+              .format(label, tracking_number))
+    write_log("Please complete the check in the browser window that is open.")
+    write_log("This run will continue by itself within {0} seconds of it being "
+              "cleared, and will move on after {1} seconds if it is not."
+              .format(CAPTCHA_POLL_MS // 1000, CAPTCHA_WAIT_MS // 1000))
+    write_log("Nothing is being written to the Hub for this shipment until the "
+              "check is cleared. No attempt is made to solve it automatically.")
+    write_log("=" * 62)
+    try:
+        tower.human_verification_required(tracking_number, label)
+    except Exception:
+        pass
+
+    ml_record(ml_context(provider="BROWSER", page="portal_entry",
+                         field="captcha"),
+              "captcha_required", False, None, "BOT_CHALLENGE",
+              detail=label, reference=tracking_number)
+
+    deadline = time.time() + (CAPTCHA_WAIT_MS / 1000.0)
+    announced = 0
+    while time.time() < deadline:
+        try:
+            page.wait_for_timeout(CAPTCHA_POLL_MS)
+        except Exception:
+            break
+        if not captcha_on_page(page):
+            waited = int(CAPTCHA_WAIT_MS / 1000.0 - (deadline - time.time()))
+            write_log("Human verification cleared after {0}s. Continuing with "
+                      "{1}.".format(waited, tracking_number))
+            try:
+                tower.human_verification_cleared(tracking_number, waited)
+            except Exception:
+                pass
+            ml_record(ml_context(provider="BROWSER", page="portal_entry",
+                                 field="captcha"),
+                      "captcha_cleared", True, waited * 1000.0, "OK",
+                      detail=label, reference=tracking_number)
+            return True
+        remaining = int(deadline - time.time())
+        if remaining // 30 != announced:
+            announced = remaining // 30
+            write_log("Still waiting for human verification — {0}s left."
+                      .format(remaining))
+
+    write_log("Human verification was not completed within {0}s. Leaving {1} "
+              "for a later run; nothing was written."
+              .format(CAPTCHA_WAIT_MS // 1000, tracking_number))
+    return False
+
+
+def awb_on_page(page, tracking_number):
+    """
+    Does this page actually carry the requested air waybill?
+
+    Digits only, so 057-05765454, 057 0576 5454 and 05705765454 all match the
+    same shipment, and the airline prefix is part of what has to match — a
+    074 KLM waybill must not be satisfied by a 057 Air France page that
+    happens to share the serial.
+
+    This is the check that stops a result being read off the wrong shipment.
+    page_is_afkl_detail() has always applied it on the direct-URL path; the
+    search-form fallback did not, so a stale or mis-resolved result would have
+    been extracted and filed under the AWB that was asked for.
+    """
+    digits = re.sub(r"\D", "", str(tracking_number or ""))
+    if not digits:
+        return True                  # nothing to verify against
+    try:
+        text = _page_text(page)
+    except Exception:
+        return False
+    return digits in re.sub(r"\D", "", text)
+
+
 def page_is_afkl_detail(page, tracking_number):
     """
     Is this really the requested shipment's page?
@@ -4059,9 +4288,7 @@ def page_is_afkl_detail(page, tracking_number):
     if len(text.strip()) < 120:
         return False
 
-    digits = re.sub(r"\D", "", str(tracking_number or ""))
-    stripped = re.sub(r"\D", "", text)
-    if digits and digits not in stripped:
+    if not awb_on_page(page, tracking_number):
         return False
 
     return bool(re.search(
@@ -4400,6 +4627,18 @@ def open_portal(page, config, tracking_number):
         # Give the app a moment to hydrate before looking for anything: an
         # Angular form that has not booted yet will ignore whatever we type.
         wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+
+        # A challenge page has no air waybill box on it, so this has to be
+        # checked before the form is looked for — otherwise the run reports
+        # "the tracking field was not found", which is true and useless.
+        if captcha_on_page(page):
+            if not await_human_verification(page, tracking_number,
+                                            config["label"]):
+                raise CaptchaRequired(tracking_number, config["label"])
+            # Cleared. The page the person left behind is the page we use; no
+            # reload, no re-navigation, nothing that would discard it.
+            wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+
         if not accept_cookie_banner(page, config["label"]):
             # Not fatal — the panel sits at the bottom and rarely blocks the
             # form — but worth recording, because it was still on screen in the
@@ -4741,12 +4980,33 @@ def get_portal_result(page, provider, tracking_number):
             submit_portal_awb(page, field, config, tracking_number)
 
         end_time = time.time() + config.get("wait", 40)
+        identity_required = bool(config.get("verify_identity"))
         while time.time() < end_time:
+            # HUMAN VERIFICATION. Checked before extraction, because a
+            # challenge page carries no shipment data and reading it would
+            # produce "no result" for a shipment that was never looked up.
+            if captcha_on_page(page):
+                await_human_verification(page, tracking_number, config["label"])
+                if captcha_on_page(page):
+                    raise CaptchaRequired(tracking_number, config["label"])
+                continue
             result = extract_portal_result(page, provider)
             if result and result.get("no_result"):
                 save_page_text(page, tracking_number, slug + "_no_result")
                 raise SkipShipment(
                     f"{airline} reported no information for this air waybill.")
+            # IDENTITY. A result is only this shipment's if the page carries
+            # this air waybill. The direct-URL path already proved it via
+            # page_is_afkl_detail(); this covers the search-form fallback,
+            # where a stale result would otherwise be read and filed under the
+            # AWB that was requested.
+            if result and identity_required and not awb_on_page(page, tracking_number):
+                write_log(
+                    "{0}: a result rendered but it does not carry {1}. Not "
+                    "reading it — waiting for the requested shipment."
+                    .format(config["label"], tracking_number))
+                save_page_text(page, tracking_number, slug + "_wrong_awb")
+                result = None
             if result:
                 write_log(
                     f"{config['label']} result: status={result['tracking_status']} | "
@@ -5675,6 +5935,10 @@ def main():
     failed = 0
     skipped = 0
     partial = 0
+    # Its own counter. Rolling challenges into `skipped` would tell an
+    # operator the carrier had no data for those shipments, when in fact
+    # nobody ever asked it.
+    needs_human = 0
     processed_bols = set()
     stop_requested = False
 
@@ -5792,6 +6056,31 @@ def main():
                         tower.shipment_finished(bol_awb, "SUCCESS", "", action)
                         tower.counters(successful, failed, skipped, partial)
 
+                    except CaptchaRequired as error:
+                        # NOT a failure and NOT a skip. A skip says "this
+                        # shipment has nothing for us", which is a claim about
+                        # the shipment; this says the lookup never happened.
+                        # It is counted separately so a run full of challenges
+                        # cannot read as a run full of bad shipments, and the
+                        # Hub is left untouched.
+                        needs_human += 1
+                        write_log("HUMAN VERIFICATION REQUIRED for {0}: {1}"
+                                  .format(bol_awb, error))
+                        log_operation_failure(
+                            shipment.get("carrier"), bol_awb, "human verification",
+                            error, 1, 1, CAPTCHA_REQUIRED, final=True,
+                        )
+                        save_result(shipment, dhl_result, "No update",
+                                    "HUMAN VERIFICATION REQUIRED", str(error))
+                        tower.shipment_finished(
+                            bol_awb, "SKIPPED", str(error),
+                            outcome=CAPTCHA_REQUIRED)
+                        tower.counters(successful, failed, skipped, partial)
+                        try:
+                            ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                        except Exception as restore_error:
+                            write_log(f"Internal page restore warning: {restore_error}")
+
                     except AfklNavigationError as error:
                         # NOT "no shipment found". The carrier was never
                         # reached, so nothing has been learned about the AWB.
@@ -5881,7 +6170,8 @@ def main():
 
             write_log(
                 f"DHL/Qatar automation finished. Successful: {successful}, "
-                f"Failed: {failed}, Skipped: {skipped}, DRY_RUN={DRY_RUN}"
+                f"Failed: {failed}, Skipped: {skipped}, "
+                f"Human verification required: {needs_human}, DRY_RUN={DRY_RUN}"
             )
             total_hub_requests = _hub_stats["navigations"] + _hub_stats["reused"]
             if total_hub_requests:
