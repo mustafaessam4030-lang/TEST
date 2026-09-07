@@ -12,6 +12,7 @@ setting.
 """
 
 import json
+import threading
 from pathlib import Path
 
 try:
@@ -34,6 +35,50 @@ except Exception as error:      # pragma: no cover - environment dependent
 # name for the thing that is missing.
 ENGINE_NAME = "ATLAS"
 ENGINE_FULL_NAME = "Adaptive Logistics Strategy Engine"
+
+# ── the cache ────────────────────────────────────────────────────────
+#
+# MEASURED: on a 9.1 MB telemetry file (26,667 rows — a few weeks of real
+# running) one snapshot() costs 580ms, because it walks the whole file TWICE:
+# episodes.join() at 446ms and _telemetry_summary() at 99ms. At the 3
+# requests/minute the panel is designed for that is already 2.9% of a core
+# spent re-reading a file that only grows at the end.
+#
+# The key is the telemetry file's (size, mtime) plus the model files'. The
+# automation appends a row and both change, so a run invalidates this
+# naturally on its very next write — the panel cannot show a stale count for
+# longer than it takes the automation to record something. Nothing is cached
+# across a change, and nothing here decides anything: it is the same numbers,
+# computed once instead of once per request.
+_CACHE_LOCK = threading.Lock()
+_CACHE = {"key": None, "value": None}
+
+
+def _fingerprint():
+    """What the answer depends on. None disables caching."""
+    if not AVAILABLE:
+        return None
+    parts = []
+    for path in (ml_config.TELEMETRY_PATH, ml_config.CHAMPION_PATH,
+                 ml_config.CHALLENGER_PATH):
+        try:
+            stat = Path(path).stat()
+            parts.append((str(path), stat.st_size, stat.st_mtime_ns))
+        except OSError:
+            parts.append((str(path), -1, -1))
+    # The live config is part of the answer, so a flag change must invalidate.
+    try:
+        parts.append(("mode", ml_config.ML_MODE, ml_config.ML_ENABLED))
+    except Exception:
+        pass
+    return tuple(parts)
+
+
+def invalidate():
+    """Drop the cache. For tests and for anything that rewrites a model."""
+    with _CACHE_LOCK:
+        _CACHE["key"] = None
+        _CACHE["value"] = None
 
 
 def _telemetry_summary(limit_bytes=6 * 1024 * 1024):
@@ -106,6 +151,23 @@ def _telemetry_summary(limit_bytes=6 * 1024 * 1024):
 
 
 def snapshot():
+    """Cached wrapper. See _fingerprint() for what invalidates it."""
+    key = _fingerprint()
+    if key is None:
+        return _snapshot()
+    with _CACHE_LOCK:
+        if _CACHE["key"] == key and _CACHE["value"] is not None:
+            # A shallow copy, so a caller that mutates the dict for its own
+            # response cannot corrupt what the next caller reads.
+            return dict(_CACHE["value"])
+    value = _snapshot()
+    with _CACHE_LOCK:
+        _CACHE["key"] = key
+        _CACHE["value"] = value
+    return dict(value)
+
+
+def _snapshot():
     """
     The whole ML picture for the UI. Never raises.
 

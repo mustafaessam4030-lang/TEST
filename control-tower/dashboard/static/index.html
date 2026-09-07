@@ -5,20 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#F5F1E8" />
 <title>Control Tower — Mantrac Logistics</title>
-<!-- Inter is loaded WITHOUT blocking the render.
-     As a plain stylesheet this cost 12.6 seconds to first paint on a machine
-     that cannot reach Google — a corporate network, an offline terminal, or
-     any site where fonts.googleapis.com is filtered. The browser will not
-     paint until a <link rel=stylesheet> in the head resolves or times out.
-     media="print" makes it non-blocking; onload promotes it to "all" once it
-     has actually arrived. If it never arrives the dashboard renders anyway,
-     in the system font stack, at full speed. -->
+<!-- Inter is loaded outside the document's load path entirely.
+     MEASURED, twice. As a plain stylesheet it cost 12.6s to first PAINT on a
+     machine that cannot reach Google — a corporate network, an offline
+     terminal, any site where fonts.googleapis.com is filtered.
+     media="print" fixed the paint (domInteractive 135ms) but NOT the load
+     event, which still waited for the request to time out: load was still
+     12,599ms, and the tab span its spinner for all of it. Blocking the two
+     Google hosts and remeasuring gave 116ms, so the stylesheet was the whole
+     of it and nothing else contributed.
+     Injecting the link from script after first paint takes it out of the load
+     path for good: a reachable Google still gets Inter a few hundred ms in,
+     and an unreachable one costs nothing at all. The system stack in --s is
+     the fallback either way, so the design holds. -->
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
-<noscript><link rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"></noscript>
+<script>
+  /* After first paint, never before, and never awaited. */
+  (function inter(){
+    var href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;'
+             + '500;600;700;800&display=swap';
+    function add(){
+      var l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = href; l.crossOrigin = 'anonymous';
+      document.head.appendChild(l);
+    }
+    if ('requestIdleCallback' in window) requestIdleCallback(add, {timeout: 1200});
+    else setTimeout(add, 200);
+  })();
+</script>
 <style>
 /* ══════════════════════════════════════════════════════════════
    CONTROL TOWER — MAIA design language
@@ -50,7 +65,11 @@
   --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
   --e:cubic-bezier(.16,1,.3,1);
   --r:14px; --r-sm:10px;
-  --sidebar:238px; --player:64px;
+  --sidebar:238px;
+  /* Kept at 0 so the two `calc(var(--player) + ...)` offsets below still read
+     naturally now that the player row is gone. The chat and its button used
+     to sit above it. */
+  --player:0px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden}
@@ -247,8 +266,8 @@ input,textarea,select{font-family:inherit}
 
 /* ═══════════ SHELL ═══════════ */
 #app{height:100%;display:grid;grid-template-columns:var(--sidebar) 1fr;
-  grid-template-rows:1fr var(--player);
-  grid-template-areas:"nav main" "player player";opacity:0}
+  grid-template-rows:1fr;
+  grid-template-areas:"nav main";opacity:0}
 #app.on{animation:rise .5s var(--e) both}
 /* Once the entrance has played the animation is removed in JS; a filling
    transform animation keeps #app as a containing block for fixed children,
@@ -588,42 +607,11 @@ tr.r-partial .err{color:var(--y)}
 .send:hover{transform:scale(1.06)}
 .send svg{width:15px;height:15px}
 
-/* ═══════════ PLAYER ═══════════ */
-.pl{grid-area:player;display:grid;
-  grid-template-columns:minmax(170px,1fr) minmax(250px,1.7fr) minmax(120px,1fr);
-  gap:16px;align-items:center;padding:0 22px;background:var(--card);border-top:1px solid var(--line)}
-.pl-now{display:flex;align-items:center;gap:11px;min-width:0}
-.pl-art{width:36px;height:36px;border-radius:8px;flex:none;object-fit:cover;
-  background:var(--bone);border:1px solid var(--line-2)}
-.pl-s{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pl-a{font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;margin-top:1px}
-.pl-c{display:flex;flex-direction:column;align-items:center;gap:5px;width:100%}
-.pl-btns{display:flex;align-items:center;gap:13px}
-.pb{color:var(--faint);display:flex;padding:3px;transition:color .16s}
-.pb:hover{color:var(--ink)}
-.pb.on{color:var(--vio)}
-.pb svg{width:15px;height:15px}
-.pb-play{width:30px;height:30px;border-radius:50%;background:var(--ink);color:var(--paper);
-  align-items:center;justify-content:center;padding:0;transition:transform .2s var(--e)}
-.pb-play:hover{transform:scale(1.07)}
-.pb-play svg{width:12px;height:12px}
-.pl-seek{display:flex;align-items:center;gap:9px;width:100%;max-width:420px}
-.pl-seek span{font-family:var(--mono);font-size:10px;color:var(--faint);width:30px;text-align:center;flex:none}
-.trk{flex:1;height:4px;border-radius:100px;background:var(--bone);cursor:pointer}
-.trk i{display:block;height:100%;border-radius:100px;background:var(--faint);width:0}
-.trk:hover i{background:var(--vio)}
-.pl-r{display:flex;align-items:center;gap:8px;justify-content:flex-end}
 .vol{width:68px;accent-color:var(--vio)}
-.hint{font-size:11px;font-weight:700;color:var(--vio);border:1px solid var(--vio-line);
-  background:var(--vio-wash);border-radius:100px;padding:5px 12px}
-.pl.off .pl-c,.pl.off .pl-r{opacity:.4;pointer-events:none}
-
 /* ═══════════ RESPONSIVE ═══════════ */
 @media(max-width:1180px){.g2,.live,.ctl{grid-template-columns:1fr}}
 @media(max-width:880px){
-  :root{--player:100px}
-  #app{grid-template-columns:1fr;grid-template-areas:"main" "player"}
+  #app{grid-template-columns:1fr;grid-template-areas:"main"}
   /* height, not top+bottom: #app keeps a filling entrance animation on
      transform, which makes it a containing block for fixed children, so
      bottom:0 stopped resolving against the viewport and the drawer
@@ -636,8 +624,6 @@ tr.r-partial .err{color:var(--y)}
   .burger svg{width:20px;height:20px}
   .page{padding:18px 15px 28px}
   .top{padding:12px 15px}.top-t{font-size:17px}
-  .pl{grid-template-columns:1fr;grid-template-rows:auto auto;gap:7px;padding:9px 15px}
-  .pl-r{display:none}
   .chat{right:10px;left:10px;width:auto;height:min(72vh,520px)}
   .fab{right:16px}
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;opacity:0;
@@ -962,30 +948,16 @@ tr.r-partial .err{color:var(--y)}
 </section>
   </main>
 
-  <div class="pl" id="player">
-    <div class="pl-now">
-      <img class="pl-art" id="pArt" alt="" />
-      <div style="min-width:0">
-        <div class="pl-s" id="pTitle">Lilith</div>
-        <div class="pl-a"><span id="pArtist">Saint Avangeline</span><span id="pSep"> · </span><span id="pAlbum">Gardener of Eden</span></div>
-      </div>
-    </div>
-    <div class="pl-c">
-      <div class="pl-btns">
-        <button class="pb" id="pShuf" aria-label="Shuffle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
-        <button class="pb" id="pPrev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg></button>
-        <button class="pb pb-play" id="pPlay" aria-label="Play"><svg viewBox="0 0 24 24" fill="currentColor" id="pIcon"><path d="M8 5v14l11-7z"/></svg></button>
-        <button class="pb" id="pNext" aria-label="Next"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
-        <button class="pb" id="pRep" aria-label="Repeat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
-      </div>
-      <div class="pl-seek"><span id="pCur">0:00</span><div class="trk" id="pTrk"><i id="pTrkF"></i></div><span id="pDur">0:00</span></div>
-    </div>
-    <div class="pl-r">
-      <button class="pb" id="pMute" aria-label="Mute"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg></button>
-      <input type="range" class="vol" id="pVol" min="0" max="1" step="0.01" value="0.55" aria-label="Volume" />
-    </div>
-  </div>
-  <audio id="audio" preload="metadata"></audio>
+  <!-- The persistent music player was removed.
+       It was a SECOND audio element holding the same track as the intro,
+       with preload="metadata" and an unconditional play() on dashboard load —
+       which is why the song carried on past the cinematic. On a browser that
+       can decode AAC it simply started playing over the dashboard. It also
+       cost a 1.28MB fetch during load, a timeupdate handler writing to the
+       DOM about four times a second for as long as it played, and two global
+       pointer listeners for the seek bar.
+       The intro keeps its own #introAudio, which stops when the intro ends.
+       The dashboard is silent. -->
 
   <button class="fab" id="fab">
     <svg><use href="#ct-mark"/></svg>
@@ -1020,6 +992,13 @@ const $ = (id) => document.getElementById(id);
   const START_AT = 45;           // where in the track to begin, in seconds
   const gate = $('gate'), audio = $('introAudio'), muteBtn = $('introMute');
   let done = false, fade = null, endTimer = null, lastTimer = null;
+  /* Everything below exists so a REPLAY costs nothing new. Measured on the
+     previous build: each replay added 4 listeners, 4 timers and 2 play()
+     calls, none of them ever released. `pending` holds the one-shot media
+     listeners so they can be removed if the intro ends before they fire,
+     `stopTimer` is the scheduled fade-out, and `sources` caches the answer
+     from /api/music so a replay does not re-ask. */
+  let stopTimer = null, pending = null, sources = null;
 
   const seen = (() => { try { return sessionStorage.getItem('ct-intro') === '1'; }
                         catch (e) { return false; } })();
@@ -1041,9 +1020,32 @@ const $ = (id) => document.getElementById(id);
     }, 55);
   }
 
+  /* Release the one-shot media listeners. Without this, ending the intro
+     before metadata arrives leaves a loadedmetadata handler that will call
+     attemptPlay() later — on a dashboard that is supposed to be silent. */
+  function clearPending(){
+    if (!pending) return;
+    try {
+      audio.removeEventListener('loadedmetadata', pending.meta);
+      audio.removeEventListener('error', pending.err);
+    } catch (e) {}
+    pending = null;
+  }
+
+  /* A HARD stop. Fade if it is audible, then pause — and in either case take
+     away every route back to playing: the scheduled fade-out, the pending
+     metadata handlers, and the error chain that walks the source list and
+     calls play() again at the end of it. */
   function stopAudio(){
-    if (!audio || audio.paused) { clearInterval(fade); return; }
-    fadeTo(0, -0.08, () => { try { audio.pause(); } catch (e) {} });
+    clearTimeout(stopTimer); stopTimer = null;
+    clearPending();
+    audio.onerror = null;
+    if (!audio) return;
+    if (audio.paused){ clearInterval(fade); fade = null; return; }
+    fadeTo(0, -0.08, () => {
+      try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+      fade = null;
+    });
   }
 
   /* Seek to START_AT, but only once the browser knows how long the track is.
@@ -1066,6 +1068,9 @@ const $ = (id) => document.getElementById(id);
       attemptPlay();
     };
     if (audio.readyState >= 1) { go(); return; }
+    // Replace any previous pair rather than stacking another one.
+    clearPending();
+    pending = {meta: go, err: attemptPlay};
     audio.addEventListener('loadedmetadata', go, {once: true});
     audio.addEventListener('error', attemptPlay, {once: true});
     try { audio.load(); } catch (e) { attemptPlay(); }
@@ -1075,6 +1080,8 @@ const $ = (id) => document.getElementById(id);
      and if even that is refused surface a real control rather than running
      the picture in silence and pretending it was scored. */
   function attemptPlay(){
+    clearPending();
+    if (done) return;                 // the intro is over; do not start sound
     audio.volume = 0;
     const play = audio.play();
     if (play && play.then){
@@ -1092,7 +1099,10 @@ const $ = (id) => document.getElementById(id);
         }
       });
     }
-    setTimeout(stopAudio, Math.max(0, TOTAL - 900));
+    // One timer, replaced not stacked. The error chain can reach this
+    // function several times while it walks the source list.
+    clearTimeout(stopTimer);
+    stopTimer = setTimeout(stopAudio, Math.max(0, TOTAL - 900));
   }
 
   function startAudio(){
@@ -1131,16 +1141,21 @@ const $ = (id) => document.getElementById(id);
       }
     };
     audio.muted = muted;
-    // Ask the server what is really on disk, so any filename works. The
-    // request is tiny and the audio itself is only fetched after it.
-    fetch('/api/music')
-      .then((r) => r.json())
-      .then((d) => {
-        const found = (d && d.audio_all && d.audio_all.length)
-          ? d.audio_all : (d && d.audio ? [d.audio] : []);
-        if (found.length) list = found.concat(fallbacks);
-      })
-      .catch(() => {})
+    // Ask the server what is really on disk, so any filename works. Asked
+    // ONCE per page: the files do not change while the dashboard is open, and
+    // a replay that re-asked was one more request and one more chance to
+    // start a second playback.
+    const resolve = sources
+      ? Promise.resolve(sources)
+      : fetch('/api/music').then((r) => r.json()).then((d) => {
+          const found = (d && d.audio_all && d.audio_all.length)
+            ? d.audio_all : (d && d.audio ? [d.audio] : []);
+          sources = found.length ? found.concat(fallbacks) : fallbacks.slice();
+          return sources;
+        }).catch(() => { sources = fallbacks.slice(); return sources; });
+
+    resolve
+      .then((resolved) => { list = resolved.slice(); })
       .finally(() => {
         if (done) return;
         const usable = list.filter(playable);
@@ -1162,6 +1177,8 @@ const $ = (id) => document.getElementById(id);
     if (done) return;
     done = true;
     clearTimeout(endTimer); clearTimeout(lastTimer);
+    // done = true FIRST, so an in-flight attemptPlay() bails out instead of
+    // starting sound on a dashboard that is meant to be silent from here on.
     stopAudio();
     try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
     gate.classList.remove('needs-sound');
@@ -1180,6 +1197,12 @@ const $ = (id) => document.getElementById(id);
   }
 
   function run(){
+    // A replay must not inherit anything from the last one.
+    clearTimeout(stopTimer); stopTimer = null;
+    clearInterval(fade); fade = null;
+    clearPending();
+    audio.onerror = null;
+    try { audio.pause(); audio.currentTime = 0; } catch (e) {}
     gate.style.setProperty('--total', TOTAL + 'ms');
     gate.style.setProperty('--lastAt', LAST_AT + 'ms');
     gate.style.display = '';
@@ -1235,6 +1258,7 @@ const $ = (id) => document.getElementById(id);
   const pill = $('mlPill'), pillT = $('mlPillT'), grid = $('mlGrid'),
         note = $('mlNote'), sub = $('mlSub');
   if (!pill) return;
+  let last = null;
   const dash = (v) => (v === null || v === undefined || v === '') ? '—' : v;
   const num = (v) => (typeof v === 'number') ? v.toLocaleString() : dash(v);
 
@@ -1304,11 +1328,19 @@ const $ = (id) => document.getElementById(id);
   }
 
   function load(){
-    fetch('/api/ml').then((r) => r.json()).then(paint).catch(() => {
-      pillT.textContent = 'UNREACHABLE'; pill.className = 'ml-pill warn';
-    });
+    fetch('/api/ml').then((r) => r.json()).then((d) => { last = d; paint(d); })
+      .catch(() => {
+        pillT.textContent = 'UNREACHABLE'; pill.className = 'ml-pill warn';
+      });
   }
-  window.__mlReload = load;
+  /* Repaint from the payload already in hand.
+     The run-scoped cells come from S.atlas, which arrives on the state stream
+     the browser is already receiving — so a changing ATLAS count needs a
+     REPAINT, not a REQUEST. It used to trigger `load()`, which measured at 23
+     /api/ml requests per minute against a designed 3, and each of those costs
+     ~580ms server-side on a real telemetry file: about 22% of a core, spent
+     re-reading a file to learn something the browser was already being told. */
+  window.__mlRepaint = function(){ if (last) paint(last); };
   load();
   setInterval(load, 20000);
 })();
@@ -1553,7 +1585,7 @@ function paintAtlasFeed(a){
      when the counts move so the numbers above the feed match the rows in it
      rather than trailing them by up to twenty seconds. */
   const s = a ? (a.influenced_actions + '/' + a.fallbacks) : '';
-  if (s !== atlasSig){ atlasSig = s; if (window.__mlReload) window.__mlReload(); }
+  if (s !== atlasSig){ atlasSig = s; if (window.__mlRepaint) window.__mlRepaint(); }
   const events = (a && a.events) || [];
   if (!events.length){ box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
@@ -2115,69 +2147,6 @@ $('btnStop').addEventListener('click', () => {
   });
 })();
 
-/* ═══ PLAYER ═══ */
-(function player(){
-  const a = $('audio'), box = $('player');
-  let repeat = false, shuffle = false, lastVol = 0.55, seeking = false;
-  fetch('/api/music').then((r) => r.json()).then((m) => {
-    put($('pTitle'), m.title); put($('pArtist'), m.artist); put($('pAlbum'), m.album);
-    if (m.art) $('pArt').src = m.art;
-    if (!m.audio){
-      box.classList.add('off'); put($('pTitle'), 'No audio file found');
-      put($('pArtist'), 'Drop Lilith into static/music'); put($('pAlbum'), ''); put($('pSep'), '');
-      return;
-    }
-    a.src = m.audio; a.volume = lastVol; a.play().catch(hint);
-  }).catch(() => box.classList.add('off'));
-  function hint(){
-    if ($('mHint')) return;
-    const b = document.createElement('button');
-    b.className = 'hint'; b.id = 'mHint'; b.textContent = 'Play music';
-    b.addEventListener('click', () => a.play().catch(() => {}));
-    document.querySelector('.pl-now').appendChild(b);
-    const once = () => { a.play().then(() => b.remove()).catch(() => {}); };
-    document.addEventListener('click', once, {once:true});
-    document.addEventListener('keydown', once, {once:true});
-  }
-  const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
-  a.addEventListener('play', () => {
-    $('pIcon').innerHTML = PAUSE; const h = $('mHint'); if (h) h.remove();
-  });
-  a.addEventListener('pause', () => { $('pIcon').innerHTML = PLAY; });
-  a.addEventListener('error', () => box.classList.add('off'));
-  const t = (v) => isFinite(v) ? Math.floor(v / 60) + ':' + String(Math.floor(v % 60)).padStart(2, '0') : '0:00';
-  a.addEventListener('loadedmetadata', () => put($('pDur'), t(a.duration)));
-  a.addEventListener('timeupdate', () => {
-    if (seeking) return;
-    put($('pCur'), t(a.currentTime));
-    if (a.duration) $('pTrkF').style.width = (a.currentTime / a.duration * 100) + '%';
-  });
-  a.addEventListener('ended', () => { if (repeat || shuffle){ a.currentTime = 0; a.play().catch(() => {}); } });
-  $('pPlay').addEventListener('click', () => { a.paused ? a.play().catch(() => {}) : a.pause(); });
-  $('pPrev').addEventListener('click', () => { a.currentTime = 0; });
-  $('pNext').addEventListener('click', () => { if (a.duration) a.currentTime = Math.max(0, a.duration - .4); });
-  $('pRep').addEventListener('click', (e) => { repeat = !repeat; a.loop = repeat; e.currentTarget.classList.toggle('on', repeat); });
-  $('pShuf').addEventListener('click', (e) => { shuffle = !shuffle; e.currentTarget.classList.toggle('on', shuffle); });
-  const trk = $('pTrk');
-  const seek = (e) => {
-    const r = trk.getBoundingClientRect();
-    const x = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
-    if (a.duration){ a.currentTime = x * a.duration; $('pTrkF').style.width = (x * 100) + '%'; }
-  };
-  trk.addEventListener('pointerdown', (e) => { seeking = true; seek(e); });
-  addEventListener('pointermove', (e) => { if (seeking) seek(e); });
-  addEventListener('pointerup', () => { seeking = false; });
-  $('pVol').addEventListener('input', (e) => {
-    a.volume = parseFloat(e.target.value); a.muted = a.volume === 0;
-    if (a.volume > 0) lastVol = a.volume;
-    $('pMute').classList.toggle('on', a.muted);
-  });
-  $('pMute').addEventListener('click', () => {
-    a.muted = !a.muted; $('pVol').value = a.muted ? 0 : lastVol;
-    if (!a.muted) a.volume = lastVol;
-    $('pMute').classList.toggle('on', a.muted);
-  });
-})();
 </script>
 </body>
 </html>

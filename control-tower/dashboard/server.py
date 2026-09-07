@@ -533,20 +533,31 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
 
+        # The version is a plain integer the bridge bumps on every mutation.
+        # Reading it costs 0.00007ms; building and serialising the payload
+        # costs 1.54ms for 142KB. The loop used to do the second one every
+        # 0.35s and then throw the result away whenever the version had not
+        # moved — which, between shipments, is most of the time.
+        #
+        # Checking the integer instead makes the poll interval nearly free, so
+        # it can be tightened. That is where the latency went: a change had to
+        # wait up to 350ms for the next look. Measured update latency was
+        # 141-457ms against a 350ms floor that no amount of frontend work
+        # could have improved.
         last_version = -1
         last_push = 0.0
         try:
             while True:
-                payload = build_payload()
-                changed = payload["version"] != last_version
+                version = bridge.version
                 stale = (time.time() - last_push) > 2.0
-                if changed or stale:
+                if version != last_version or stale:
+                    payload = build_payload()
                     last_version = payload["version"]
                     last_push = time.time()
                     chunk = "event: state\ndata: {0}\n\n".format(json.dumps(payload))
                     self.wfile.write(chunk.encode("utf-8"))
                     self.wfile.flush()
-                time.sleep(0.35)
+                time.sleep(0.08)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 

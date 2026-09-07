@@ -14,6 +14,7 @@ directly. test_ui_browser.py drives the real page.
 
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -129,9 +130,70 @@ check("No test fixture was left in the shipped assets",
 
 from dashboard import server as _server                                  # noqa: E402
 _music = _server.find_music()
-check("The dashboard player finds it too", bool(_music["audio"]), str(_music))
+# /api/music is how the INTRO resolves its own source. The dashboard has no
+# player of its own any more — see section 2c.
+check("/api/music finds the track the intro will play",
+      bool(_music["audio"]), str(_music))
 check("...and names it from the filename, not a hardcoded track",
       _music["title"] not in ("", "No audio file found", "Lilith"), str(_music))
+
+print()
+print("=" * 72)
+print("2c. AUDIO BELONGS TO THE INTRO, AND NOWHERE ELSE")
+print("=" * 72)
+# MEASURED in a real browser with a decodable file and autoplay allowed: the
+# previous build played TWO tracks at once during the intro and left the
+# second one running on the dashboard at 22.7s and rising. The cause was a
+# persistent player: a second <audio> with preload="metadata" and an
+# unconditional play() on load. These pin its removal.
+_audio_tags = re.findall(r"<audio\s[^>]*>", INDEX)
+check("There is exactly ONE audio element in the page",
+      len(_audio_tags) == 1, str(len(_audio_tags)))
+check("...and it is the intro's",
+      'id="introAudio"' in INDEX and 'id="audio"' not in INDEX)
+check("...which does not preload — the track is not a dashboard resource",
+      'id="introAudio" preload="none"' in INDEX)
+check("The persistent player script is gone",
+      "function player()" not in INDEX)
+check("...along with its transport controls",
+      not any(x in INDEX for x in ('id="pPlay"', 'id="pVol"', 'id="pTrk"',
+                                'id="pTitle"', 'class="pl-now"')))
+check("...and its timeupdate handler, which wrote to the DOM ~4x/second",
+      "addEventListener('timeupdate'" not in INDEX)
+check("...and its grid row", '"player player"' not in INDEX)
+check("The intro stop is a HARD stop: it rewinds as well as pausing",
+      "audio.pause(); audio.currentTime = 0;" in INDEX)
+check("Ending the intro releases the pending media listeners",
+      "function clearPending()" in INDEX and "removeEventListener('loadedmetadata'" in INDEX)
+check("...and disarms the error chain that would call play() again",
+      "audio.onerror = null" in INDEX)
+check("The scheduled fade-out is replaced, never stacked",
+      "clearTimeout(stopTimer);" in INDEX)
+check("attemptPlay refuses to start sound once the intro is over",
+      "if (done) return;                 // the intro is over" in INDEX)
+check("/api/music is resolved once per page, not once per replay",
+      "sources\n      ? Promise.resolve(sources)" in INDEX
+      or "const resolve = sources" in INDEX)
+
+print()
+print("=" * 72)
+print("2d. THE FONT IS NOT IN THE LOAD PATH")
+print("=" * 72)
+# MEASURED: as a <link rel=stylesheet media=print> the load event still waited
+# 12,599ms for fonts.googleapis.com on a machine that cannot reach it.
+# Blocking the two Google hosts gave 116ms, so the stylesheet was all of it.
+# Injecting it from script gives 127ms with the host unreachable.
+head = INDEX.split("<style>")[0]
+check("No <link rel=stylesheet> to Google Fonts in the head",
+      "rel=\"stylesheet\"" not in head, head[-400:] if "rel=\"stylesheet\"" in head else "")
+check("...nor a noscript one, which loads the same way",
+      "<noscript" not in head or "fonts.googleapis" not in head.split("<noscript")[1][:200])
+check("It is injected from script instead",
+      "requestIdleCallback" in head and "fonts.googleapis.com/css2" in head)
+check("preconnect is kept — it costs nothing and helps when reachable",
+      'rel="preconnect"' in head)
+check("The system font stack is still the fallback",
+      "-apple-system,BlinkMacSystemFont" in INDEX)
 
 print()
 print("=" * 72)
