@@ -161,11 +161,45 @@ check("The candidate probe timeout is untouched",
 
 print()
 print("=" * 70)
-print("5. VERIFICATION IS OFF BY DEFAULT AND DETERMINISTIC WHEN ON")
+print("5. VERIFICATION IS ON BY DEFAULT, THREE-VALUED, AND DETERMINISTIC")
 print("=" * 70)
-check("VERIFY_AFTER_SAVE defaults to off", A.VERIFY_AFTER_SAVE is False)
+# Changed for the real-telemetry phase. Read-back is what turns a run into
+# trustworthy labels, so it is on unless explicitly switched off.
+check("VERIFY_AFTER_SAVE defaults to ON", A.VERIFY_AFTER_SAVE is True)
+check("...and is still config, not a hardcoded constant",
+      'os.environ.get("VERIFY_AFTER_SAVE", "1")' in SRC)
+check("...and can be switched off",
+      'not in ("0", "false", "no", "off")' in SRC)
+
+# THE LABEL-INTEGRITY RULE. verify_saved_date used to return False when the
+# read-back could not be PERFORMED at all — an unreachable Hub, a timeout, a
+# field missing on reload. The caller turned that into MISMATCH/verified=False
+# and therefore into a negative training label. A tunnel error produced three
+# fabricated negatives in testing. Only a value that was actually READ can
+# contradict the value that was written.
+check("A read-back that cannot be performed returns None, not False",
+      'return None, ("the {0} field could not be found on reload' in SRC
+      and 'return None, "verification could not be completed' in SRC)
+check("...and False is reserved for a value that WAS read and differs",
+      'return False, "the Hub holds {0!r}, not {1!r}"' in SRC)
+check("The caller maps all three verdicts separately",
+      "if verified is True:" in SRC and "elif verified is False:" in SRC)
+check("...UNKNOWN produces UNVERIFIED with no label, and does not raise",
+      SRC.split("elif verified is False:")[1].split("else:")[1]
+         .split("tower.view_updated")[0].count("raise") == 0)
 check("An unverified write raises rather than reporting success",
       "was saved but not verified for" in SRC)
+check("...and the unverified line says WHICH reason applies, rather than "
+      "always blaming the switch",
+      "was saved but not read back — {3}" in SRC
+      and 'else "VERIFY_AFTER_SAVE is off"' in SRC)
+check("What was read back is recorded next to what was written",
+      "read_back=episode_read_back" in SRC)
+
+# A read-back check is not a strategy competing for the write.
+check("Read-back checks are tagged as verification, not as strategies",
+      "role=ML_ROLE_VERIFICATION" in SRC
+      and SRC.count("role=ML_ROLE_VERIFICATION") >= 3)
 check("Verification compares dates, not strings",
       "normalize_date(actual) or actual" in SRC)
 check("The model has no say in verification",

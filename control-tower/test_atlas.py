@@ -30,12 +30,13 @@ sys.path.insert(0, str(HERE / "dashboard"))
 
 import update_eta as A                                          # noqa: E402
 from ml import config, features, identity, model as M           # noqa: E402
-from ml import predictor, telemetry                             # noqa: E402
+from ml import predictor, telemetry, trainer                    # noqa: E402
 import bridge as B                                              # noqa: E402
 
 PASS, FAIL = [], []
 SRC = (HERE / "update_eta.py").read_text(encoding="utf-8")
 UI = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+PRED = (HERE / "ml" / "predictor.py").read_text(encoding="utf-8")
 tmp = Path(tempfile.mkdtemp())
 
 
@@ -437,6 +438,94 @@ check("The architecture is written down where the name is defined",
       and "Read-back Verification" in identity.__doc__)
 check("...including that ATLAS is not a second automation",
       "not a second automation" in identity.__doc__)
+
+print()
+print("=" * 72)
+print("11. THE SIX TELEMETRY STATES, AND WHAT MAY NOT BE ADDED UP")
+print("=" * 72)
+# The real-telemetry phase needs the states written into the rows rather than
+# reconstructed by whoever is counting. The distinction that matters most is
+# the first two: a shadow recommendation is ATLAS having an opinion that
+# changed nothing.
+TEL = (HERE / "ml" / "telemetry.py").read_text(encoding="utf-8")
+MLS = (HERE / "dashboard" / "mlstatus.py").read_text(encoding="utf-8")
+EPI = (HERE / "ml" / "episodes.py").read_text(encoding="utf-8")
+
+check("All six states are defined once, in the engine's own vocabulary",
+      all(s in identity.STATES for s in (
+          "ATLAS_SHADOW_RECOMMENDATION", "DETERMINISTIC_EXECUTION",
+          "VERIFIED_SUCCESS", "VERIFIED_FAILURE", "UNVERIFIED", "FALLBACK")),
+      str(identity.STATES))
+check("A production selection has a state of its OWN, distinct from shadow",
+      identity.STATE_ATLAS_SELECTION == "ATLAS_PRODUCTION_SELECTION"
+      and identity.STATE_ATLAS_SELECTION != identity.STATE_SHADOW_RECOMMENDATION)
+check("A decision row is stamped with exactly one of selection/shadow/fallback",
+      'identity.STATE_ATLAS_SELECTION if used' in TEL
+      and 'else identity.STATE_SHADOW_RECOMMENDATION if shadow' in TEL
+      and 'else identity.STATE_FALLBACK' in TEL)
+_dec = TEL.split("def decision(")[1]
+check("...and `used` is what decides it — never the mode, never the score",
+      "identity.STATE_ATLAS_SELECTION if used" in _dec
+      and "config.ML_MODE" not in _dec.split('"state":')[1][:200])
+check("An episode row is stamped from the three-valued verdict alone",
+      'identity.STATE_VERIFIED_SUCCESS if verified is True' in TEL
+      and 'identity.STATE_VERIFIED_FAILURE if verified is False' in TEL
+      and 'else identity.STATE_UNVERIFIED' in TEL)
+check("An attempt is DETERMINISTIC unless the episode records ATLAS steering",
+      "ml_identity.STATE_ATLAS_SELECTION" in SRC
+      and "if (episode is not None and episode.atlas_influenced)" in SRC
+      and "else ml_identity.STATE_DETERMINISTIC_EXECUTION" in SRC)
+
+# The dashboard counts them, and must not conflate the two levels: one
+# decision produces several attempts.
+check("The panel counts decisions and attempts as separate scopes",
+      '"atlas_selections": 0' in MLS and '"atlas_steered_attempts": 0' in MLS
+      and '"deterministic_executions": 0' in MLS)
+check("...and shadow recommendations are never counted as selections",
+      'summary["shadow_recommendations"] += 1' in MLS
+      and 'summary["atlas_selections"] += 1' in MLS
+      and MLS.count('summary["atlas_selections"] += 1') == 1)
+check("The panel shows both, so an empty selection count is visible next to "
+      "the shadow count it must not be added to",
+      "'Shadow recommendations'" in UI and "'ATLAS selections'" in UI)
+check("...and shows verified beside unverified, so an empty training set "
+      "cannot look like a full one",
+      "'Verified labelled rows'" in UI and "'Unverified writes'" in UI)
+
+print()
+print("=" * 72)
+print("12. NO SYNTHETIC TELEMETRY, AND NO ACCIDENTAL STEERING")
+print("=" * 72)
+check("Test-sourced rows can never become training data",
+      'if raw.get("source", "automation") != "automation":' in EPI
+      and 'report["dropped_not_real"] += 1' in EPI)
+check("A read-back check is not a strategy that competed for the write",
+      'if role != "strategy":' in EPI
+      and 'report["dropped_verification_rows"] += 1' in EPI)
+check("...and rows written before the role field existed are filtered on the "
+      "same rule, not trusted",
+      '"verification" if raw.get("strategy") == "verify_reload"' in EPI)
+check("An unverified episode is excluded, never turned into a negative",
+      'if not episode.has_verdict:' in EPI
+      and 'report["dropped_unverified_episode"] += 1' in EPI)
+check("The label rule is still verified-persisted-success",
+      config.REQUIRE_VERIFIED_LABEL is True)
+check("The support thresholds were not lowered for this phase",
+      config.MIN_SUPPORT == 30 and config.MIN_SUPPORT_PER_ARM == 8)
+check("...nor the training floor", trainer.MINIMUM_ROWS == 60)
+CFG = (HERE / "ml" / "config.py").read_text(encoding="utf-8")
+check("The shipped mode is still shadow, so ATLAS cannot steer production",
+      'ML_MODE = (os.environ.get("ML_MODE") or "shadow")' in CFG
+      and 'ML_MODE = "shadow"' in CFG)
+check("...and shadow returns used=False, whatever it recommends",
+      'if config.ML_MODE != "active":' in PRED
+      and "used=False" in PRED.split('if config.ML_MODE != "active":')[1][:400])
+check("The only place that can claim ATLAS steered a write is ml_order()",
+      SRC.count("episode.atlas_influenced = True") == 1)
+check("...and it runs only after the recommendation was actually taken",
+      "if not recommendation.used:" in SRC
+      and SRC.index("if not recommendation.used:")
+          < SRC.index("episode.atlas_influenced = True"))
 
 with_env(ML_ENABLED=None, ML_MODE=None, ML_MODEL_PATH=None,
          ML_CONFIDENCE_THRESHOLD=None, ML_TELEMETRY_PATH=None)

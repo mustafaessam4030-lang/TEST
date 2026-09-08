@@ -200,7 +200,8 @@ def record(event, redactor=None):
 
 def interaction(context, strategy, success, duration_ms=None,
                 category=NONE, detail="", reference=None, redactor=None,
-                source="automation", rank=None, episode_id=None, retries=0):
+                source="automation", rank=None, episode_id=None, retries=0,
+                role=identity.ROLE_STRATEGY, state=None):
     """
     The event shape the trainer expects.
 
@@ -218,6 +219,13 @@ def interaction(context, strategy, success, duration_ms=None,
     return record({
         "kind": "interaction",
         "context": context,
+        # What this row was FOR. A read-back check is recorded but is not a
+        # strategy competing for the write, so the dataset must not turn it
+        # into a training arm — see episodes.join().
+        "role": role if role in identity.ROLES else identity.ROLE_STRATEGY,
+        # Which of the six explicit states this attempt belongs to. Written
+        # here rather than inferred by whoever is counting later.
+        "state": state,
         "strategy": strategy,
         "success": bool(success),
         "duration_ms": None if duration_ms is None else round(float(duration_ms), 1),
@@ -241,7 +249,7 @@ def interaction(context, strategy, success, duration_ms=None,
 def episode(episode_id, reference, view, field, value, outcome,
             verified=None, duration_ms=None, detail="", redactor=None,
             atlas_influenced=False, atlas_chosen=None, atlas_mode=None,
-            label=None):
+            label=None, read_back=None):
     """
     The result of one complete write: open Manage, find the field, type,
     save, read back.
@@ -265,9 +273,17 @@ def episode(episode_id, reference, view, field, value, outcome,
         "reference": reference,
         "view": view,
         "field": field,
+        # What was WRITTEN, and what was actually READ BACK out of the Hub.
+        # Both, so a label can be audited instead of trusted.
         "value": value,
+        "read_back": read_back,
         "outcome": outcome if outcome in OUTCOMES else EPISODE_ERROR,
         "verified": verified,
+        # VERIFIED_SUCCESS / VERIFIED_FAILURE / UNVERIFIED, decided by the
+        # three-valued verdict and nothing else.
+        "state": (identity.STATE_VERIFIED_SUCCESS if verified is True
+                  else identity.STATE_VERIFIED_FAILURE if verified is False
+                  else identity.STATE_UNVERIFIED),
         "duration_ms": None if duration_ms is None else round(float(duration_ms), 1),
         "detail": detail,
         # Did ATLAS actually steer this write? False whenever the automation
@@ -284,7 +300,7 @@ def episode(episode_id, reference, view, field, value, outcome,
 
 def decision(context, chosen, scores, used, reason, redactor=None,
              mode=None, shadow=False, support=None, trials=None,
-             level_key=None, label=None):
+             level_key=None, label=None, candidates=None):
     """
     What the predictor recommended and whether the automation took it.
 
@@ -297,6 +313,14 @@ def decision(context, chosen, scores, used, reason, redactor=None,
     return record({
         "kind": "decision",
         "context": context,
+        # The candidates the automation actually offered, in ITS order, so
+        # the baseline can be reconstructed from the row rather than assumed.
+        "candidates": list(candidates) if candidates else sorted(scores or {}),
+        # Exactly one of: a real production selection, a shadow opinion that
+        # changed nothing, or a fallback to the deterministic order.
+        "state": (identity.STATE_ATLAS_SELECTION if used
+                  else identity.STATE_SHADOW_RECOMMENDATION if shadow
+                  else identity.STATE_FALLBACK),
         # The ATLAS vocabulary label this decision was announced under, so the
         # telemetry and the run log can be reconciled line for line.
         "label": label,

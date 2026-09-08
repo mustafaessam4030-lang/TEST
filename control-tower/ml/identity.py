@@ -97,6 +97,33 @@ LABELS = (
 
 # Labels that assert ATLAS influenced the outcome. The tests check that none
 # of these can be emitted for an episode ATLAS did not steer.
+# ── THE SIX TELEMETRY STATES ────────────────────────────────────────
+#
+# Every real strategy attempt and every write lands in exactly one of these,
+# and they are written into the telemetry rather than being reconstructed
+# afterwards by whoever is counting. The distinction that matters most is the
+# first two: a shadow recommendation is ATLAS having an opinion that changed
+# nothing, and counting it as a production selection would make every
+# downstream number wrong.
+STATE_SHADOW_RECOMMENDATION = "ATLAS_SHADOW_RECOMMENDATION"
+STATE_DETERMINISTIC_EXECUTION = "DETERMINISTIC_EXECUTION"
+STATE_VERIFIED_SUCCESS = "VERIFIED_SUCCESS"
+STATE_VERIFIED_FAILURE = "VERIFIED_FAILURE"
+STATE_UNVERIFIED = "UNVERIFIED"
+STATE_FALLBACK = "FALLBACK"
+# The one state that means ATLAS really did steer a production write.
+STATE_ATLAS_SELECTION = "ATLAS_PRODUCTION_SELECTION"
+STATES = (STATE_SHADOW_RECOMMENDATION, STATE_DETERMINISTIC_EXECUTION,
+          STATE_VERIFIED_SUCCESS, STATE_VERIFIED_FAILURE, STATE_UNVERIFIED,
+          STATE_FALLBACK, STATE_ATLAS_SELECTION)
+
+# What a telemetry row was FOR. A read-back check is not a strategy competing
+# for the write, so it must never become a training arm or count toward the
+# support thresholds — it is recorded because the verification panel reads it.
+ROLE_STRATEGY = "strategy"
+ROLE_VERIFICATION = "verification"
+ROLES = (ROLE_STRATEGY, ROLE_VERIFICATION)
+
 INFLUENCE_LABELS = (
     STRATEGY_SELECTED, STRATEGY_FAILED, FALLBACK_ACTIVATED,
     VERIFICATION_PASSED, ACTION_COMPLETED,

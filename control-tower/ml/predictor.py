@@ -279,14 +279,26 @@ def recommend_strategy(context, strategies, log=None):
     them, are the caller's and are untouched.
     """
     try:
+        # These three declines used to return without recording anything, so
+        # the commonest state of all — no trained model yet — produced ZERO
+        # decision rows and the FALLBACK count had nothing behind it. A
+        # decline is evidence: it is how an operator can see the layer
+        # behaving rather than take it on trust.
         if not config.ML_ENABLED:
-            return _no("ML_ENABLED is off")
+            result = _no("ML_ENABLED is off")
+            _log_decision(context, None, {}, False, result.reason, log,
+                          candidates=list(strategies or ()))
+            return result
         if not strategies or len(strategies) < 2:
+            # Nothing was offered, so there is no decision to record.
             return _no("nothing to choose between")
 
         model, error = load_model()
         if model is None:
-            return _no(error or "no model")
+            result = _no(error or "no model")
+            _log_decision(context, None, {}, False, result.reason, log,
+                          candidates=list(strategies))
+            return result
 
         keys = features.keys(context)
         verdict = model.assess(
@@ -308,7 +320,7 @@ def recommend_strategy(context, strategies, log=None):
             result = _no("not enough evidence: {0}".format(
                 "; ".join(verdict["support_reasons"])))
             _log_decision(context, None, scores, False, result.reason, log,
-                          verdict=verdict)
+                          verdict=verdict, candidates=list(strategies))
             return result
 
         if best < config.ML_CONFIDENCE_THRESHOLD:
@@ -316,7 +328,7 @@ def recommend_strategy(context, strategies, log=None):
                          "threshold ({2:.0f} observations)".format(
                              best, config.ML_CONFIDENCE_THRESHOLD, trials))
             _log_decision(context, None, scores, False, result.reason, log,
-                          verdict=verdict)
+                          verdict=verdict, candidates=list(strategies))
             return result
 
         # Quarantined strategies keep their place in the caller's list; they
@@ -353,7 +365,7 @@ def recommend_strategy(context, strategies, log=None):
             result = _no("drift detected ({0}); keeping the original order"
                          .format(drift_detail))
             _log_decision(context, None, scores, False, result.reason, log,
-                          verdict=verdict)
+                          verdict=verdict, candidates=list(strategies))
             return result
 
         if set(order) != set(strategies) or len(order) != len(strategies):
@@ -374,14 +386,15 @@ def recommend_strategy(context, strategies, log=None):
                 level=level, trials=trials, would_have_used=True,
                 shadow_order=order)
             _log_decision(context, order[0], scores, False, result.reason, log,
-                          verdict=verdict, shadow=True)
+                          verdict=verdict, shadow=True,
+                          candidates=list(strategies))
             return result
 
         result = Recommendation(used=True, order=order, top=order[0],
                                 scores=scores, reason=reason, level=level,
                                 trials=trials)
         _log_decision(context, order[0], scores, True, reason, log,
-                      verdict=verdict)
+                      verdict=verdict, candidates=list(strategies))
         return result
     except Exception as error:
         if not config.ML_FALLBACK_ENABLED:
@@ -451,7 +464,7 @@ def recommend_wait(context, default_ms, floor_ms=500, log=None):
 
 
 def _log_decision(context, chosen, scores, used, reason, log,
-                  verdict=None, shadow=False):
+                  verdict=None, shadow=False, candidates=None):
     """
     Record the decision, including the ones where ATLAS stood down.
 
@@ -479,6 +492,7 @@ def _log_decision(context, chosen, scores, used, reason, log,
             detail = reason
 
         telemetry.decision(context, chosen, scores, used, reason,
+                           candidates=candidates,
                            mode=config.ML_MODE, shadow=shadow,
                            support=(verdict or {}).get("has_support"),
                            trials=(verdict or {}).get("trials"),

@@ -197,14 +197,16 @@ DRY_RUN = False
 
 # Reload the Manage page after a save and confirm the value is actually there.
 #
-# The architecture map turned this up as the one real gap: save_manage_page()
-# proves the POSTBACK completed (the Save control goes away, or the table comes
-# back), which is not the same as proving the value persisted. Off by default
-# because switching it on adds a reload to every successful write and so
-# changes the shape of a run that already works. Turn it on with
-# VERIFY_AFTER_SAVE=1, and for the real-hub E2E procedure.
-VERIFY_AFTER_SAVE = (os.environ.get("VERIFY_AFTER_SAVE", "").strip().lower()
-                     in ("1", "true", "yes", "on"))
+# save_manage_page() proves the POSTBACK completed (the Save control goes
+# away, or the table comes back). That is NOT proof the value persisted, and
+# persistence must never be inferred from the write action alone.
+#
+# ON by default from the real-telemetry phase onward: it is what turns a run
+# into trustworthy labels. Every successful write costs one extra reload.
+# Set VERIFY_AFTER_SAVE=0 to go back to writing without reading back, which
+# also means the learning layer gets nothing it can label.
+VERIFY_AFTER_SAVE = (os.environ.get("VERIFY_AFTER_SAVE", "1").strip().lower()
+                     not in ("0", "false", "no", "off"))
 
 # HTTP/2 is negotiated per connection, and some corporate TLS-inspecting
 # appliances re-frame it incorrectly. When that happens Chromium reports
@@ -1080,7 +1082,7 @@ def ml_episode_attempt(what):
     return episode.attempts[what]
 
 
-def ml_episode_end(outcome, verified=None, detail=""):
+def ml_episode_end(outcome, verified=None, detail="", read_back=None):
     """
     Close the current episode and record its verdict.
 
@@ -1113,12 +1115,15 @@ def ml_episode_end(outcome, verified=None, detail=""):
                           episode.view, episode.field, episode.value, ATLAS_NAME),
                       reference=episode.reference)
         elif verified is None and outcome == ML_EPISODE_UNVERIFIED:
-            # Saved, but nobody read it back. Not a completion, and never
-            # reported as one.
+            # Saved, but not read back. Not a completion, and never reported
+            # as one. There are two reasons for it and they are not the same
+            # thing: verification was switched off, or verification was
+            # attempted and could not be carried out.
+            why = (str(detail)[:110] if detail
+                   else "VERIFY_AFTER_SAVE is off")
             atlas_log(ATLAS_ACTION_UNVERIFIED,
-                      "{0} {1} = {2} was saved but not read back "
-                      "(VERIFY_AFTER_SAVE is off)".format(
-                          episode.view, episode.field, episode.value),
+                      "{0} {1} = {2} was saved but not read back — {3}".format(
+                          episode.view, episode.field, episode.value, why),
                       reference=episode.reference)
     except Exception:
         pass
@@ -1127,6 +1132,7 @@ def ml_episode_end(outcome, verified=None, detail=""):
         ml_telemetry.episode(
             episode.episode_id, episode.reference, episode.view,
             episode.field, episode.value, outcome, verified=verified,
+            read_back=read_back,
             duration_ms=(time.time() - episode.started) * 1000.0,
             detail=str(detail)[:200],
             atlas_influenced=episode.atlas_influenced,
@@ -1147,9 +1153,13 @@ def ml_context(**kwargs):
         return None
 
 
+ML_ROLE_STRATEGY = "strategy"
+ML_ROLE_VERIFICATION = "verification"
+
+
 def ml_record(context, strategy, success, duration_ms=None,
               category="OK", detail="", reference=None, rank=None,
-              retries=None):
+              retries=None, role=ML_ROLE_STRATEGY, state=None):
     """
     Record one interaction. Never raises, never changes control flow.
 
@@ -1171,12 +1181,21 @@ def ml_record(context, strategy, success, duration_ms=None,
             else:
                 retries = episode.tries.get(strategy, 0)
                 episode.tries[strategy] = retries + 1
+        # A strategy attempt that ran under the deterministic order is a
+        # DETERMINISTIC_EXECUTION; one that ran in an order ATLAS chose is an
+        # ATLAS_PRODUCTION_SELECTION. Which of the two is read off the
+        # episode, which only ml_order() can set, and only when the
+        # automation really did reorder its candidates.
+        if state is None and role == ML_ROLE_STRATEGY:
+            state = (ml_identity.STATE_ATLAS_SELECTION
+                     if (episode is not None and episode.atlas_influenced)
+                     else ml_identity.STATE_DETERMINISTIC_EXECUTION)
         ml_telemetry.interaction(
             context or {}, strategy, success, duration_ms=duration_ms,
             category=category, detail=detail,
             reference=reference or (episode.reference if episode else None),
             rank=rank, episode_id=(episode.episode_id if episode else None),
-            retries=retries, redactor=redact_secrets)
+            retries=retries, role=role, state=state, redactor=redact_secrets)
     except Exception:
         pass
 
@@ -5733,9 +5752,22 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
     """
     Reopen the shipment and confirm `expected` is what the Hub now holds.
 
-    Returns (ok, detail). A mismatch RAISES in the caller rather than being
-    logged and forgotten, because a write that silently did not stick is the
-    one failure this automation must never report as success.
+    Returns (verdict, detail) where verdict is THREE-VALUED:
+
+        True   the field was read and holds the expected date
+        False  the field was read and holds something else — it did not persist
+        None   the read-back could not be performed at all
+
+    None is not a soft False. "The Hub was unreachable", "the reload timed
+    out" and "the field was not on the page" say nothing whatsoever about
+    whether the write stuck, and returning False for them wrote fabricated
+    negatives into the training data — a tunnel error produced three negative
+    labels in testing. Only a value that was actually READ can contradict the
+    value that was written.
+
+    A mismatch RAISES in the caller rather than being logged and forgotten,
+    because a write that silently did not stick is the one failure this
+    automation must never report as success.
 
     Deterministic throughout. The model has no say in whether a value is
     correct, only — elsewhere — in what order to look for the field.
@@ -5760,8 +5792,11 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
         if field is None:
             field = find_field_ignoring_visibility(page, field_name)
         if field is None:
-            ml_record(context, "verify_reload", False, None, "VERIFICATION_FAILURE")
-            return False, "the {0} field could not be found on reload".format(field_name)
+            # Nothing was read, so nothing is known. Not a failed write.
+            ml_record(context, "verify_reload", False, None,
+                      "VERIFICATION_FAILURE", role=ML_ROLE_VERIFICATION)
+            return None, ("the {0} field could not be found on reload, so the "
+                          "saved value could not be read".format(field_name))
 
         actual = (field.input_value() or "").strip()
         # The page may hand it back in either format; compare on the date, not
@@ -5770,7 +5805,8 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
         ok = normalised == expected or actual == expected
         ml_record(context, "verify_reload", ok,
                   (time.time() - started) * 1000.0,
-                  "OK" if ok else "VERIFICATION_FAILURE")
+                  "OK" if ok else "VERIFICATION_FAILURE",
+                  role=ML_ROLE_VERIFICATION)
         if ok:
             write_log("Verified: {0} {1} is {2} in the Hub after reload."
                       .format(view_name, field_name, actual))
@@ -5788,8 +5824,10 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
                       "{3!r}".format(view_name, field_name, actual, expected))
         return False, "the Hub holds {0!r}, not {1!r}".format(actual, expected)
     except Exception as error:
-        ml_record(context, "verify_reload", False, None, ml_category(error))
-        return False, "verification could not be completed: {0}".format(error)
+        # The read-back itself broke. Says nothing about the write.
+        ml_record(context, "verify_reload", False, None, ml_category(error),
+                  role=ML_ROLE_VERIFICATION)
+        return None, "verification could not be completed: {0}".format(error)
 
 
 def update_one_view(page, shipment, view_name, field_name, date_value,
@@ -5814,6 +5852,9 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
     episode_outcome = ML_EPISODE_ERROR
     episode_verified = None
     episode_detail = ""
+    # What the Hub actually held when it was read back, recorded alongside
+    # what was written so a label can be audited rather than trusted.
+    episode_read_back = None
     try:
         page_number = click_manage_in_view(
             page,
@@ -5868,19 +5909,39 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
         if VERIFY_AFTER_SAVE:
             verified, detail = verify_saved_date(
                 page, shipment, view_name, field_name, date_value)
-            # The verdict, recorded before the raise below so that a write
-            # which did NOT stick is still learned from. That case is the most
+            episode_read_back = detail if verified is True else None
+            # THREE outcomes, because there are three things that can happen.
+            # The verdict is recorded before the raise below so that a write
+            # which did NOT stick is still learned from: that case is the most
             # informative one there is and losing it to an exception would be
             # throwing away the only negative the layer ever gets.
-            episode_outcome = (ML_EPISODE_VERIFIED if verified
-                               else ML_EPISODE_MISMATCH)
-            episode_verified = bool(verified)
-            episode_detail = str(detail)[:200]
-            if not verified:
+            if verified is True:
+                episode_outcome = ML_EPISODE_VERIFIED
+                episode_verified = True
+                episode_detail = str(detail)[:200]
+            elif verified is False:
+                # A value WAS read and it is not the one we wrote.
+                episode_outcome = ML_EPISODE_MISMATCH
+                episode_verified = False
+                episode_detail = str(detail)[:200]
                 # Refuse to report a success that cannot be proven.
                 raise Exception(
                     "{0} {1} was saved but not verified for {2}: {3}".format(
                         view_name, field_name, bol_awb, detail))
+            else:
+                # The read-back could not be performed. Nothing is known
+                # about persistence, so nothing is labelled — and the write
+                # is NOT reported as verified. Treated exactly like the
+                # nobody-looked case below rather than failing a shipment
+                # that may well have saved correctly.
+                episode_outcome = ML_EPISODE_UNVERIFIED
+                episode_verified = None
+                episode_detail = str(detail)[:200]
+                write_log(
+                    "{0} {1} for {2} was saved but could NOT be read back: "
+                    "{3}. Recorded as unverified — this is not evidence the "
+                    "write failed, and it will not be used as a training "
+                    "label.".format(view_name, field_name, bol_awb, detail))
         else:
             # Saved, but nobody looked. Not evidence of success.
             episode_outcome = ML_EPISODE_UNVERIFIED
@@ -5904,7 +5965,8 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
         episode_detail = str(error)[:200]
         raise
     finally:
-        ml_episode_end(episode_outcome, episode_verified, episode_detail)
+        ml_episode_end(episode_outcome, episode_verified, episode_detail,
+                       read_back=episode_read_back)
 
 
 def update_internal_shipment(internal_page, shipment, dhl_result):

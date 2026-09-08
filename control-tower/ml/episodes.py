@@ -189,6 +189,11 @@ def join(path=None, events=None, require_verified=None):
         "positive": 0,
         "negative": 0,
         "dropped_not_real": 0,
+        # Read-back checks. Real observations, recorded on purpose for the
+        # verification panel, but not strategies competing for the write — so
+        # they must never become training arms, and must never count toward
+        # the support thresholds or the labelled-row gates.
+        "dropped_verification_rows": 0,
         "dropped_no_episode_id": 0,
         "dropped_unknown_episode": 0,
         "dropped_unverified_episode": 0,
@@ -209,6 +214,23 @@ def join(path=None, events=None, require_verified=None):
         # pages that do not exist.
         if raw.get("source", "automation") != "automation":
             report["dropped_not_real"] += 1
+            continue
+
+        # A read-back check is not a candidate that competed for the write.
+        # It is recorded under the pseudo-strategy "verify_reload" so the
+        # verification panel can count it, and letting it through here would
+        # add an arm the automation never offers, inflate the per-cell support
+        # counts, and pad the labelled-row gates with rows that are not
+        # strategy competitions at all.
+        #
+        # Rows written before this field existed carry no role. They are
+        # matched by the strategy name instead, so old telemetry is filtered
+        # on the same rule as new telemetry rather than being trusted.
+        role = raw.get("role") or (
+            "verification" if raw.get("strategy") == "verify_reload"
+            else "strategy")
+        if role != "strategy":
+            report["dropped_verification_rows"] += 1
             continue
 
         episode_id = raw.get("episode_id")

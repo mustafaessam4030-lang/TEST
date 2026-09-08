@@ -1202,15 +1202,27 @@ const $ = (id) => document.getElementById(id);
        "Fallbacks" without saying which is which is how a panel starts
        answering a question nobody asked. */
     const runAtlas = (typeof S !== 'undefined' && S && S.atlas) || null;
+    /* Verified and unverified are shown side by side deliberately. During
+       the collection phase the second number is the one that says whether
+       read-back is actually running, and hiding it would make an empty
+       training set look like a full one.
+
+       "ATLAS selections" counts decisions the automation actually TOOK. In
+       shadow mode it is 0 by construction, and the shadow count next to it
+       is what ATLAS would have done. Those two must never be added up. */
     const cells = [
       ['Model', model.identifier || (model.version ? ('v' + model.version) : '—')],
       ['Contexts', num(model.contexts)],
       ['Observations', num(model.observations)],
-      ['Labelled rows', num(tel.usable_rows)],
-      ['Verified writes', num(tel.episodes_with_verdict)],
+      ['Verified labelled rows', num(tel.usable_rows)],
+      ['Verified writes', num(tel.verified_success)],
+      ['Unverified writes', num(tel.unverified)],
+      ['Shadow recommendations', num(tel.shadow_recommendations)],
+      ['ATLAS selections', num(tel.atlas_selections)],
+      ['Deterministic executions', num(tel.deterministic_executions)],
+      ['Fallbacks', num(tel.fallbacks)],
       ['Steered this run', runAtlas ? num(runAtlas.influenced_actions) : '—'],
-      ['Fell back this run', runAtlas ? num(runAtlas.fallbacks) : '—'],
-      ['Feedback', num(fb.total)]
+      ['Fell back this run', runAtlas ? num(runAtlas.fallbacks) : '—']
     ];
     grid.innerHTML = cells.map(([k, v]) =>
       '<div class="ml-k"><b>' + v + '</b><span>' + k + '</span></div>').join('');

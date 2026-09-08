@@ -129,6 +129,24 @@ def _telemetry_summary(limit_bytes=6 * 1024 * 1024):
     summary = {
         "path": None, "rows": 0, "interactions": 0, "decisions": 0,
         "used": 0, "declined": 0, "by_carrier": {}, "truncated": False,
+        # The six states, counted from what the rows SAY rather than
+        # reconstructed here. A shadow recommendation and a production
+        # selection are separate counters on purpose: conflating them is the
+        # single easiest way to make this panel lie.
+        # DECISION-level: one per time ATLAS was asked. These three are
+        # mutually exclusive and sum to `decisions`.
+        "shadow_recommendations": 0,
+        "atlas_selections": 0,
+        "fallbacks": 0,
+        # ATTEMPT-level: one per strategy actually tried. A single decision
+        # produces several of these, so they are counted apart from the
+        # decision counters rather than added to them.
+        "deterministic_executions": 0,
+        "atlas_steered_attempts": 0,
+        "verified_success": 0,
+        "verified_failure": 0,
+        "unverified": 0,
+        "verification_checks": 0,
     }
     if not AVAILABLE:
         return summary
@@ -153,13 +171,44 @@ def _telemetry_summary(limit_bytes=6 * 1024 * 1024):
                     continue
                 summary["rows"] += 1
                 kind = event.get("kind")
+                state = event.get("state")
                 if kind == "decision":
                     summary["decisions"] += 1
                     if event.get("used"):
                         summary["used"] += 1
                     else:
                         summary["declined"] += 1
+                    # `used` is the authority on whether ATLAS steered
+                    # anything. The state field is read only to separate the
+                    # two KINDS of decline from one another.
+                    if event.get("used"):
+                        summary["atlas_selections"] += 1
+                    elif (state == ml_identity.STATE_SHADOW_RECOMMENDATION
+                          or event.get("shadow")):  # noqa: E501
+                        summary["shadow_recommendations"] += 1
+                    else:
+                        summary["fallbacks"] += 1
+                elif kind == "episode":
+                    verified = event.get("verified")
+                    if verified is True:
+                        summary["verified_success"] += 1
+                    elif verified is False:
+                        summary["verified_failure"] += 1
+                    else:
+                        summary["unverified"] += 1
                 elif kind == "interaction":
+                    # A read-back check is counted, and counted separately: it
+                    # is not a strategy that competed for the write.
+                    role = event.get("role") or (
+                        "verification" if event.get("strategy") == "verify_reload"
+                        else "strategy")
+                    if role != "strategy":
+                        summary["verification_checks"] += 1
+                        continue
+                    if state == ml_identity.STATE_ATLAS_SELECTION:
+                        summary["atlas_steered_attempts"] += 1
+                    elif state == ml_identity.STATE_DETERMINISTIC_EXECUTION:
+                        summary["deterministic_executions"] += 1
                     summary["interactions"] += 1
                     # Whatever is in the file, this becomes a UI label. A
                     # carrier code is a short token; anything else is a stray
@@ -296,6 +345,8 @@ def _snapshot():
         telemetry["episodes"] = report.get("episodes", 0)
         telemetry["episodes_with_verdict"] = report.get("episodes_with_verdict", 0)
         telemetry["unverified_dropped"] = report.get("dropped_unverified_episode", 0)
+        telemetry["verification_rows_excluded"] = report.get(
+            "dropped_verification_rows", 0)
         telemetry["label_rule"] = report.get("label_rule")
     except Exception:
         pass
