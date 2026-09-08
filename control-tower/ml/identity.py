@@ -157,13 +157,14 @@ RECOVERY_FAILED = "Recovery failed"
 RECOVERY_EXHAUSTED = "No safe recovery succeeded"
 RECOVERY_NOT_POSSIBLE = "No safe recovery exists"
 RECOVERY_EVIDENCE = "Evidence"
+RECOVERY_HISTORY = "Recovery history"
 RECOVERY_HYPOTHESIS = "Likely cause"
 HUMAN_CHECKPOINT_REQUIRED = "Human checkpoint required"
 RECOVERY_LABELS = (RECOVERY_DIAGNOSED, RECOVERY_PLAN, RECOVERY_TRYING,
                    RECOVERY_WOULD_TRY, RECOVERY_SUCCEEDED, RECOVERY_FAILED,
                    RECOVERY_EXHAUSTED, RECOVERY_NOT_POSSIBLE,
                    RECOVERY_EVIDENCE, RECOVERY_HYPOTHESIS,
-                   HUMAN_CHECKPOINT_REQUIRED)
+                   RECOVERY_HISTORY, HUMAN_CHECKPOINT_REQUIRED)
 
 # Recovery announcements are part of the announceable vocabulary too.
 LABELS = LABELS + RECOVERY_LABELS

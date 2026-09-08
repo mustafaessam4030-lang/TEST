@@ -911,13 +911,14 @@ try:
     from ml import features as ml_features
     from ml import identity as ml_identity
     from ml import predictor as ml_predictor
+    from ml import memory as ml_memory
     from ml import recovery as ml_recovery
     from ml import telemetry as ml_telemetry
     ML_AVAILABLE = True
 except Exception as _ml_import_error:      # pragma: no cover - environment
     ML_AVAILABLE = False
     ml_config = ml_features = ml_identity = ml_predictor = ml_telemetry = None
-    ml_recovery = None
+    ml_recovery = ml_memory = None
     _ML_IMPORT_ERROR = str(_ml_import_error)
 
 
@@ -951,6 +952,7 @@ ATLAS_RECOVERY_NOT_POSSIBLE = "No safe recovery exists"
 ATLAS_RECOVERY_EVIDENCE = "Evidence"
 ATLAS_RECOVERY_HYPOTHESIS = "Likely cause"
 ATLAS_HUMAN_CHECKPOINT = "Human checkpoint required"
+ATLAS_RECOVERY_HISTORY = "Recovery history"
 
 
 def atlas_line(label, detail=""):
@@ -1554,7 +1556,7 @@ def atlas_recover(page, error, plan, verify=None, category=None):
     outcome = {"recovered": False, "verified": None, "attempts": 0,
                "reason": "recovery is not available", "plan": plan,
                "error_class": None, "considered": [], "evidence": None,
-               "hypotheses": [], "human_checkpoint": None}
+               "hypotheses": [], "human_checkpoint": None, "history": None}
     if not ML_AVAILABLE or ml_recovery is None or not ATLAS_RECOVERY_ENABLED:
         return outcome
 
@@ -1625,10 +1627,32 @@ def atlas_recover(page, error, plan, verify=None, category=None):
         return outcome
 
     context = plan.get("context") or {}
+
+    # ── FAILURE MEMORY. What actually worked, last time this went wrong.
+    #    Read-only, and only from rows that were ACTUALLY_TRIED and VERIFIED —
+    #    a shadow recommendation is an opinion, never history.
+    memory = None
+    history_scores = {}
+    try:
+        if ml_memory is not None:
+            memory = ml_memory.recall(signature, error_class, context)
+            atlas_log(ATLAS_RECOVERY_HISTORY, memory["reason"])
+            # Only a SUFFICIENT history is allowed to influence the ranking at
+            # all. A thin history moves nothing, rather than moving it a
+            # little — which is the difference between evidence and a hunch.
+            if memory["sufficient"]:
+                history_scores = {row["action"]: row["score"]
+                                  for row in memory["actions"]
+                                  if row["raw_successes"]}
+            outcome["history"] = memory
+    except Exception as inner:
+        note_suppressed("recalling recovery history", inner)
+
     recommendation = None
     try:
         recommendation = ml_predictor.recommend_recovery(
-            context, error_class, safe, log=write_log)
+            context, error_class, safe, log=write_log,
+            history=history_scores)
     except Exception as inner:
         note_suppressed("asking ATLAS to rank recovery options", inner)
 
@@ -1666,7 +1690,8 @@ def atlas_recover(page, error, plan, verify=None, category=None):
                         [a.name for a in order], scores, used,
                         evidence=facts, hypotheses=outcome["hypotheses"],
                         why_first=why_first,
-                        verifies=order[0].verifies)
+                        verifies=order[0].verifies,
+                        history=(memory or {}).get("reason"))
 
     for index, action in enumerate(order, start=1):
         spent = budget.exhausted()
@@ -1790,12 +1815,12 @@ def _recovery_telemetry(plan, error_class, signature, considered, chosen,
 
 def tower_recovery_plan(error_class, message, order, scores, used,
                         evidence=None, hypotheses=None, why_first=None,
-                        verifies=None, checkpoint=None):
+                        verifies=None, checkpoint=None, history=None):
     try:
         tower.recovery_plan(error_class, message, order, scores, used,
                             evidence=evidence, hypotheses=hypotheses,
                             why_first=why_first, verifies=verifies,
-                            checkpoint=checkpoint)
+                            checkpoint=checkpoint, history=history)
     except Exception:
         pass
 

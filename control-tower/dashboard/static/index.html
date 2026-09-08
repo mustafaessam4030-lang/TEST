@@ -1923,6 +1923,11 @@ function paintRecovery(){
     : '';
   const why = r.why_first
     ? '<div class="rcv-why">First choice: ' + esc(r.why_first) + '</div>' : '';
+  /* One sentence from failure memory. During the collection phase the honest
+     answer is "No verified recovery history for this failure signature." and
+     it is shown, not hidden — an absent history is information. */
+  const history = r.history
+    ? '<div class="rcv-o">History: ' + esc(r.history) + '</div>' : '';
   const willVerify = r.verifies
     ? '<div class="rcv-o">Will verify: <b>' + esc(r.verifies) + '</b></div>' : '';
   const verified = r.verified === true ? 'PASSED'
@@ -1945,7 +1950,7 @@ function paintRecovery(){
     evidence + hypos +
     (r.checkpoint
       ? '<div class="rcv-o">Stopped: ' + esc(r.checkpoint) + '</div>'
-      : (plan + attempts + why + (attempts ? '' : willVerify) +
+      : (plan + attempts + why + history + (attempts ? '' : willVerify) +
          (verified ? '<div class="rcv-o">Verification: <b>' + verified +
                      '</b></div>' : '') +
          (outcome ? '<div class="rcv-o">' + outcome + '</div>' : '')));

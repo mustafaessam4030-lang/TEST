@@ -605,10 +605,181 @@ check("Every executed row carries a latency",
 
 print()
 print("=" * 74)
+print("14. FAILURE MEMORY — ONLY VERIFIED HISTORY COUNTS")
+print("=" * 74)
+from ml import memory as MEM                                       # noqa: E402
+
+# Rows are built HERE, in the test, from the shapes the real writer produces.
+# They are a fixture for the retrieval logic and never touch production
+# telemetry: `labelled()` is called with events= rather than a path.
+def row(action, verified, execution=identity.STATE_RECOVERY_ACTUALLY_TRIED,
+        signature="ELEMENT_NOT_FOUND:ata_absent", latency=700.0,
+        source="automation", used=False, ts="2026-09-08T10:00:00",
+        error_class=recovery.ELEMENT_NOT_FOUND):
+    return {"kind": "recovery", "error_signature": signature,
+            "error_class": error_class, "chosen": action, "used": used,
+            "execution": execution, "verification": verified,
+            "latency_ms": latency, "ts": ts, "source": source,
+            "context": {"page": "manage", "field": "ATA"}}
+
+# THE CONTAMINATION TESTS. Each of these must contribute nothing.
+poison = [
+    row("reselect_tab", True, execution=identity.STATE_RECOVERY_WOULD_TRY),
+    row("reselect_tab", True, source="test"),
+    row("reselect_tab", None),
+    dict(row("reselect_tab", True), chosen=None),
+]
+examples, report = MEM.labelled(events=poison)
+check("A WOULD_TRY row is not history, however it turned out",
+      report["dropped_not_executed"] == 1)
+check("A test-sourced row never becomes history",
+      report["dropped_not_real"] == 1)
+check("An UNVERIFIED row is neither positive nor negative",
+      report["dropped_unverified"] == 1)
+check("A row with no action (fallback, checkpoint) is not about any action",
+      report["dropped_no_action"] == 1)
+check("...so four poisoned rows yield ZERO examples",
+      report["kept"] == 0 and examples == [], str(report))
+check("Every excluded row is accounted for",
+      report["rows"] == (report["kept"] + report["dropped_not_real"]
+                         + report["dropped_not_executed"]
+                         + report["dropped_unverified"]
+                         + report["dropped_no_action"]))
+
+good = ([row("reselect_tab", True) for _ in range(9)]
+        + [row("reselect_tab", False)]
+        + [row("reacquire_locator", False) for _ in range(4)]
+        + [row("switch_frame", True) for _ in range(2)])
+examples, report = MEM.labelled(events=good)
+check("Verified successes become positive labels", report["positive"] == 11)
+check("Verified failures become negative labels", report["negative"] == 5)
+
+mem = MEM.recall("ELEMENT_NOT_FOUND:ata_absent", recovery.ELEMENT_NOT_FOUND,
+                 {"page": "manage", "field": "ATA"}, events=good + poison)
+check("Retrieval matches on the exact signature first",
+      mem["level"] == 0, str(mem["level_name"]))
+check("It counts only the verified examples", mem["verified_examples"] == 11,
+      str(mem["verified_examples"]))
+check("The historical winner is the one that actually verified most",
+      mem["winner"] == "reselect_tab", str(mem["winner"]))
+check("An action that NEVER verified sorts below every one that did",
+      [r["action"] for r in mem["actions"]][-1] == "reacquire_locator",
+      str([r["action"] for r in mem["actions"]]))
+check("It reports the success rate", 
+      [r for r in mem["actions"] if r["action"] == "reselect_tab"][0]["success_rate"] == 0.9)
+check("...the median latency",
+      [r for r in mem["actions"] if r["action"] == "reselect_tab"][0]["median_latency_ms"] == 700.0)
+check("...and the recency", 
+      [r for r in mem["actions"] if r["action"] == "reselect_tab"][0]["age_days"] is not None)
+check("The score is a Wilson LOWER bound, so it is below the raw rate",
+      [r for r in mem["actions"] if r["action"] == "reselect_tab"][0]["score"] < 0.9)
+
+check("With no history at all it says so, in words",
+      MEM.recall("NOTHING:ever", "UNKNOWN", {}, events=[])["reason"]
+      == MEM.NO_HISTORY)
+check("With attempts but none verified, it says THAT instead — a different "
+      "thing from having no history",
+      "none of them verified" in MEM.recall(
+          "ELEMENT_NOT_FOUND:ata_absent", recovery.ELEMENT_NOT_FOUND, {},
+          events=[row("reselect_tab", False) for _ in range(3)])["reason"])
+
+check("11 verified examples is NOT sufficient — the existing thresholds "
+      "still apply", mem["sufficient"] is False, mem["reason"])
+check("...and the reason names what is still required",
+      str(MEM.MIN_VERIFIED_TOTAL) in mem["reason"], mem["reason"])
+check("Thresholds were not lowered for recovery",
+      MEM.MIN_VERIFIED_TOTAL == config.MIN_SUPPORT
+      and MEM.MIN_VERIFIED_EXAMPLES == config.MIN_SUPPORT_PER_ARM)
+check("An insufficient history contributes NO scores to the ranker",
+      MEM.scores("ELEMENT_NOT_FOUND:ata_absent", recovery.ELEMENT_NOT_FOUND,
+                 {}, events=good) == {})
+
+plenty = ([row("reselect_tab", True) for _ in range(28)]
+          + [row("reacquire_locator", True) for _ in range(9)])
+big = MEM.recall("ELEMENT_NOT_FOUND:ata_absent", recovery.ELEMENT_NOT_FOUND,
+                 {}, events=plenty)
+check("With enough verified history it becomes sufficient",
+      big["sufficient"] is True, big["reason"])
+check("...and only then does it offer scores to the ranker",
+      bool(MEM.scores("ELEMENT_NOT_FOUND:ata_absent",
+                      recovery.ELEMENT_NOT_FOUND, {}, events=plenty)))
+check("Backoff finds a broader match when the exact signature has nothing",
+      MEM.recall("SOMETHING:else", recovery.ELEMENT_NOT_FOUND,
+                 {"page": "manage", "field": "ATA"},
+                 events=plenty)["level"] in (1, 2))
+
+print()
+print("=" * 74)
+print("15. THE EVALUATOR")
+print("=" * 74)
+lines = []
+verdict = MEM.evaluate("ELEMENT_NOT_FOUND:ata_absent",
+                       recovery.ELEMENT_NOT_FOUND,
+                       {"page": "manage", "field": "ATA"},
+                       events=good, echo=lines.append)
+text = "\n".join(lines)
+for want in ("recovery rows on file", "usable examples", "excluded, WOULD_TRY",
+             "excluded, unverified", "matched at level",
+             "verified examples here", "would recommend",
+             "sufficient evidence"):
+    check("The evaluator reports: {0}".format(want), want in text)
+check("It shows the per-action evidence", "reselect_tab" in text
+      and "median ms" in text)
+check("It answers the question asked of it",
+      verdict["winner"] == "reselect_tab")
+check("...and refuses to call thin evidence sufficient",
+      verdict["sufficient"] is False)
+
+print()
+print("=" * 74)
+print("16. HISTORY CANNOT STEER PRODUCTION ON ITS OWN")
+print("=" * 74)
+RECPRED2 = PRED.split("def recommend_recovery")[1].split("def recovery_module")[0]
+check("History is offered to the ranker, not applied behind it",
+      "history=None" in RECPRED2 or "history" in RECPRED2)
+check("With no trained model the recommendation is still DECLINED, however "
+      "good the history is",
+      "no model" in RECPRED2 and "result = _no(" in RECPRED2)
+check("...and the history is reported rather than acted on",
+      "verified history favours" in PRED)
+check("Only a SUFFICIENT history reaches the ranker at all",
+      'if memory["sufficient"]:' in SRC)
+# Code only. The module's own docstring says it writes no telemetry, and
+# matching that would be a check passing for the wrong reason.
+_MEM_CODE = _code_only((HERE / "ml" / "memory.py").read_text(encoding="utf-8"))
+check("Failure memory never writes telemetry",
+      "record" not in _MEM_CODE and "telemetry" not in _MEM_CODE,
+      _MEM_CODE[:120])
+check("...and never invents a row",
+      "random" not in _MEM_CODE and "shuffle" not in _MEM_CODE)
+check("...it only ever reads", _MEM_CODE.count("open (") + _MEM_CODE.count("open(")
+      <= 1)
+
+print()
+print("=" * 74)
 print("13. PERFORMANCE")
 print("=" * 74)
-check("Recovery reads no telemetry file — it ranks from the loaded model",
-      "TELEMETRY_PATH" not in RCV and "open(" not in RCV)
+check("The recovery POLICY reads no telemetry file — it ranks from the "
+      "loaded model", "TELEMETRY_PATH" not in RCV and "open(" not in RCV)
+# Failure memory does read the file, because that is where history lives.
+# It must not re-read it once per failure.
+_MEM = (HERE / "ml" / "memory.py").read_text(encoding="utf-8")
+check("Failure memory caches the parsed rows against the file's identity, so "
+      "a run with several failures re-reads it once per change",
+      "_CACHE" in _MEM and "st_mtime_ns" in _MEM)
+check("...and the cache can be dropped explicitly", "def invalidate(" in _MEM)
+_t = tmp / "memcache.jsonl"
+_t.write_text('{"kind":"recovery","chosen":"x","execution":"ACTUALLY_TRIED",'
+              '"verification":true,"source":"automation"}\n')
+MEM.invalidate()
+import time as _time
+_t0 = _time.time(); MEM.labelled(path=_t); _cold = _time.time() - _t0
+_t0 = _time.time()
+for _ in range(50):
+    MEM.labelled(path=_t)
+_warm = (_time.time() - _t0) / 50
+check("...and the cached read is much cheaper than the first",
+      _warm <= _cold, "cold {0:.4f}ms warm {1:.4f}ms".format(_cold*1000, _warm*1000))
 check("The model is loaded through the existing cached loader",
       "load_model()" in RECPRED)
 check("No polling loop is introduced",

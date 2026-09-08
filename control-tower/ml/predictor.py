@@ -402,7 +402,7 @@ def recommend_strategy(context, strategies, log=None):
         return _no("prediction failed ({0}); using the original order".format(error))
 
 
-def recommend_recovery(context, error_class, actions, log=None):
+def recommend_recovery(context, error_class, actions, log=None, history=None):
     """
     Rank safe recovery actions for this error, or decline.
 
@@ -431,9 +431,17 @@ def recommend_recovery(context, error_class, actions, log=None):
 
         model, error = load_model()
         if model is None:
-            result = _no(error or "no model")
-            _log_recovery_decision(context, error_class, None, {}, False,
-                                   result.reason, log, candidates=names)
+            # No trained model. Verified HISTORY is still evidence, but it is
+            # evidence about what happened, not a promotion gate — so it is
+            # reported and the recommendation is still declined. Nothing
+            # steers production without a model that passed the evaluator.
+            result = _no("{0}{1}".format(
+                error or "no model",
+                "; verified history favours {0}".format(
+                    max(history, key=history.get)) if history else ""))
+            _log_recovery_decision(context, error_class, None, history or {},
+                                   False, result.reason, log,
+                                   candidates=names)
             return result
 
         keys = features.keys(recovery_module().recovery_context(

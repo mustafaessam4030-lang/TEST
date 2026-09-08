@@ -181,7 +181,7 @@ class ControlTowerState:
     @_guard
     def recovery_plan(self, error_class, message, order, scores, used,
                       evidence=None, hypotheses=None, why_first=None,
-                      verifies=None, checkpoint=None):
+                      verifies=None, checkpoint=None, history=None):
         """ATLAS has diagnosed an error and has a plan. Nothing tried yet."""
         with self._lock:
             self.recovery = {
@@ -193,6 +193,10 @@ class ControlTowerState:
                 "evidence": list(evidence or []),
                 "hypotheses": list(hypotheses or []),
                 "why_first": why_first,
+                # One sentence from failure memory. "No verified recovery
+                # history for this failure signature." is the honest and
+                # commonest answer during the collection phase.
+                "history": history,
                 "verifies": verifies,
                 "checkpoint": checkpoint,
                 # `used` is the only thing that says whether ATLAS's ranking
