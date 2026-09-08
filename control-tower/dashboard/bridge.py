@@ -60,6 +60,16 @@ class ControlTowerState:
     def __init__(self):
         self._lock = threading.RLock()
         self.version = 0
+        # MEASURED: the stream re-sent the WHOLE state on every change — 81
+        # pushes a minute during a run, 194KB each, 16.1 MB/min for the
+        # browser to parse. `shipments` alone is 68% of that and grows without
+        # bound (342KB at 400 shipments), and most of those pushes are a log
+        # line or a step, which do not touch a shipment at all.
+        #
+        # This version moves ONLY when the shipment records or the exception
+        # list actually change, so the expensive part of the payload is sent
+        # when it means something instead of ~80 times a minute.
+        self.cold_version = 0
 
         self.run_status = "idle"          # idle | running | finished | fatal
         self.started_at = None
@@ -164,6 +174,17 @@ class ControlTowerState:
         self.version += 1
         self.last_heartbeat = _now()
 
+    def _touch_cold(self):
+        """
+        Call from anything that changes a shipment record or an exception.
+
+        Missing a call here would leave the shipments table showing stale rows
+        until something else happened to bump it, so test_ui.py drives every
+        public method that can touch a record and asserts that a changed
+        payload always moved this number.
+        """
+        self.cold_version += 1
+
     def _mark(self, icon, text):
         self.timeline.appendleft({
             "time": _stamp(),
@@ -227,6 +248,7 @@ class ControlTowerState:
             })
             self._mark("error", "Fatal error — run stopped")
             self._touch()
+        self._touch_cold()
 
     @_guard
     def heartbeat(self):
@@ -311,6 +333,7 @@ class ControlTowerState:
                 if label == "Strategy selected" and detail:
                     state["chosen"] = str(detail).split(" ")[0].strip(":,")
             self._touch()
+        self._touch_cold()
 
     @_guard
     def human_verification_required(self, reference=None, label=""):
@@ -459,6 +482,7 @@ class ControlTowerState:
                 ),
             )
             self._touch()
+        self._touch_cold()
 
     @_guard
     def provider_result(self, result):
@@ -480,6 +504,7 @@ class ControlTowerState:
                 ),
             )
             self._touch()
+        self._touch_cold()
 
     @_guard
     def view_updated(self, view_name, field_name, value):
@@ -495,6 +520,7 @@ class ControlTowerState:
             self.systems["hub"]["last_success"] = _stamp()
             self._mark("ok", "{0} view {1} saved as {2}".format(view_name, field_name, value))
             self._touch()
+        self._touch_cold()
 
     @_guard
     def shipment_finished(self, reference, outcome, details="", actions=None,
@@ -576,6 +602,7 @@ class ControlTowerState:
             self.current_step = "Waiting before next shipment"
             self.current_system = None
             self._touch()
+        self._touch_cold()
 
     @_guard
     def counters(self, successful, failed, skipped, partial=None):
@@ -640,7 +667,17 @@ class ControlTowerState:
     WIRE_LOGS = 250
     WIRE_TIMELINE = 80
 
-    def snapshot(self, trim=False):
+    def snapshot(self, trim=False, since_cold=None):
+        """
+        The whole state, or everything except the expensive unchanged part.
+
+        `since_cold` is the cold_version a caller already holds. When it is
+        current, `shipments` and `exceptions` are left out and named in
+        `unchanged` instead, and the receiver keeps what it already has. The
+        rest of the payload — the run, the current step, the counters, the log
+        tail — is always present, so a stream frame is never ambiguous about
+        what it is asserting.
+        """
         with self._lock:
             now = _now()
             runtime = None
@@ -662,8 +699,9 @@ class ControlTowerState:
 
             current = self._index.get(self.current_shipment) if self.current_shipment else None
 
-            return {
+            payload = {
                 "version": self.version,
+                "cold_version": self.cold_version,
                 "generated_at": _stamp(now),
                 "run": {
                     "status": self.run_status,
@@ -719,9 +757,23 @@ class ControlTowerState:
                        if s["key"] not in ("hub", "browser")]
                     + [s for s in self.systems.values() if s["key"] == "browser"]
                 ),
+                # The record still being worked on is sent WITHOUT its
+                # live step, because that is the only part of this array that
+                # changes several times a second and nothing reads it from
+                # here: paintLive() takes the in-progress shipment from
+                # `current.shipment` above, and the shipments table has no
+                # step column. Leaving it in made the whole array — 68% of
+                # the payload — churn on every step, which is what stopped
+                # this section from being cold.
+                #
+                # A FINISHED record keeps its step, because by then
+                # `current.shipment` is null and the Live page falls back to
+                # this array to show how the last shipment ended. The
+                # assistant is unaffected: it reads the untrimmed snapshot.
                 "shipments": ([
-                    (dict(record, steps=[]) if record["reference"] != self.current_shipment
-                     else record)
+                    (dict(record, steps=[], step=None)
+                     if record["reference"] == self.current_shipment
+                     else dict(record, steps=[]))
                     for record in self.shipments
                 ] if trim else list(self.shipments)),
                 "logs": (list(self.logs)[:self.WIRE_LOGS] if trim
@@ -731,6 +783,15 @@ class ControlTowerState:
                 "timeline": (list(self.timeline)[:self.WIRE_TIMELINE] if trim
                              else list(self.timeline)),
             }
+            if since_cold is not None and since_cold == self.cold_version:
+                # Nothing about the shipments or the exceptions has changed
+                # since the receiver last saw them, so say so instead of
+                # re-sending them. This is the 68% of the payload that grows
+                # with the length of the run.
+                payload["unchanged"] = ["shipments", "exceptions"]
+                del payload["shipments"]
+                del payload["exceptions"]
+            return payload
 
 
 bridge = ControlTowerState()

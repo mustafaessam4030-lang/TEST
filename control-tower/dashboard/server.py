@@ -189,9 +189,9 @@ def machine_health():
         return {"available": False}
 
 
-def build_payload(trim=True):
+def build_payload(trim=True, since_cold=None):
     """The browser gets the trimmed view; the assistant gets everything."""
-    data = bridge.snapshot(trim=trim)
+    data = bridge.snapshot(trim=trim, since_cold=since_cold)
     data["control"] = control.snapshot()
     data["health"] = machine_health()
     return data
@@ -540,15 +540,25 @@ class Handler(BaseHTTPRequestHandler):
         # wait up to 350ms for the next look. Measured update latency was
         # 141-457ms against a 350ms floor that no amount of frontend work
         # could have improved.
+        #
+        # The second measurement: the payload itself. 81 pushes a minute at
+        # 194KB is 16.1 MB/min for the browser to parse, and `shipments` is
+        # 68% of it, growing with the run (342KB at 400 shipments). Most
+        # pushes are a log line or a step, which change no shipment at all —
+        # so the shipments and exceptions go out only when the bridge says
+        # they actually changed, and the frame names what it left out. The
+        # FIRST frame on a connection always carries everything.
         last_version = -1
         last_push = 0.0
+        sent_cold = None
         try:
             while True:
                 version = bridge.version
                 stale = (time.time() - last_push) > 2.0
                 if version != last_version or stale:
-                    payload = build_payload()
+                    payload = build_payload(since_cold=sent_cold)
                     last_version = payload["version"]
+                    sent_cold = payload.get("cold_version", sent_cold)
                     last_push = time.time()
                     chunk = "event: state\ndata: {0}\n\n".format(json.dumps(payload))
                     self.wfile.write(chunk.encode("utf-8"))

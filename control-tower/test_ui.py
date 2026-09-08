@@ -299,6 +299,93 @@ check("join() is NOT bounded to a tail — it feeds enough_to_train(), and a "
       "tail count would report 'not enough' on a history that has plenty",
       "ml_episodes.join()" in _MLSTATUS)
 
+# ── the live feed must not re-send the whole run on every log line ───
+# MEASURED in a browser over 60s of a run with 200 shipments on the page:
+# 81 state pushes a minute at a 194KB median — 16.1 MB/min for the browser to
+# parse. `shipments` was 68% of that and grows with the run (342KB at 400
+# shipments), while most pushes are a log line or a step that changes no
+# shipment at all. After: 5.2 MB/min, 45KB median.
+_BRIDGE = (HERE / "dashboard" / "bridge.py").read_text(encoding="utf-8")
+_SERVER_SRC = (HERE / "dashboard" / "server.py").read_text(encoding="utf-8")
+
+_bx = bridge.ControlTowerState()
+_bx.run_started(dry_run=False, target_status="EN ROUTE", max_records=50,
+                max_pages=4, results_file="r.csv", log_file="l.log")
+
+
+def _cold_of(snap):
+    return json.dumps([snap.get("shipments"), snap.get("exceptions")], default=str)
+
+
+def _changed_without_bump(action):
+    """True when `action` altered the cold section but did not bump."""
+    before, before_v = _cold_of(_bx.snapshot(trim=True)), _bx.cold_version
+    action()
+    after, after_v = _cold_of(_bx.snapshot(trim=True)), _bx.cold_version
+    return before != after and before_v == after_v
+
+
+# Every public method that can touch a shipment record or an exception. A new
+# one that forgets to bump freezes the shipments table, so this compares the
+# OBSERVABLE payload against the version rather than trusting the call sites.
+_missed = []
+for _label, _action in (
+    ("shipment_started", lambda: _bx.shipment_started(
+        {"bol_awb": "057-05765454", "carrier": "AFKL", "provider": "AFKL",
+         "table_page": 1})),
+    ("provider_result", lambda: _bx.provider_result(
+        {"tracking_status": "ARRIVED", "eta": "04/09/2026", "ata": "03/09/2026"})),
+    ("atlas", lambda: _bx.atlas("Strategy selected", "xpath_ata_date 0.84")),
+    ("view_updated", lambda: _bx.view_updated("COE", "ETA", "04/09/2026")),
+    ("shipment_finished", lambda: _bx.shipment_finished(
+        "057-05765454", "SUCCESS", actions={"coe": "COE ETA -> 04/09/2026"})),
+    ("run_fatal", lambda: _bx.run_fatal("boom")),
+):
+    if _changed_without_bump(_action):
+        _missed.append(_label)
+check("Every method that changes a shipment or an exception bumps "
+      "cold_version — otherwise the table silently freezes",
+      not _missed, "did not bump: {0}".format(_missed))
+
+_bx2 = bridge.ControlTowerState()
+_bx2.run_started(dry_run=False, target_status="EN ROUTE", max_records=50,
+                 max_pages=4, results_file="r.csv", log_file="l.log")
+_bx2.shipment_started({"bol_awb": "074-1", "carrier": "KLM",
+                       "provider": "AFKL", "table_page": 1})
+_v = _bx2.cold_version
+_before_log = _cold_of(_bx2.snapshot(trim=True))
+_bx2.log("a plain log line")
+_bx2.step("Reading the page", system="AFKL")
+check("...and a log line or a step does NOT, because it changes neither",
+      _bx2.cold_version == _v
+      and _cold_of(_bx2.snapshot(trim=True)) == _before_log)
+
+_full = _bx2.snapshot(trim=True)
+_lean = _bx2.snapshot(trim=True, since_cold=_bx2.cold_version)
+_behind = _bx2.snapshot(trim=True, since_cold=_bx2.cold_version - 1)
+check("A full frame carries the shipments and the exceptions",
+      "shipments" in _full and "exceptions" in _full
+      and isinstance(_full.get("cold_version"), int))
+check("An up-to-date receiver gets neither back, and is TOLD what was "
+      "left out — a frame is never ambiguous about what it asserts",
+      "shipments" not in _lean and "exceptions" not in _lean
+      and _lean.get("unchanged") == ["shipments", "exceptions"])
+check("...but still gets the run, the current step and the log tail",
+      all(k in _lean for k in ("run", "current", "logs", "counters", "progress")))
+check("A receiver that is behind gets the whole cold section",
+      "shipments" in _behind and "exceptions" in _behind
+      and "unchanged" not in _behind)
+check("The browser carries the omitted keys across rather than dropping them",
+      "state.unchanged" in INDEX and "state[key] = S[key]" in INDEX)
+check("...and only for keys the frame actually named, so a genuinely empty "
+      "list still clears the table",
+      "if (!(key in state) && (key in S))" in INDEX)
+check("The FIRST frame on a stream connection carries everything",
+      "sent_cold = None" in _SERVER_SRC
+      and "build_payload(since_cold=sent_cold)" in _SERVER_SRC)
+check("/api/state stays complete, so the poll fallback is unaffected",
+      "def build_payload(trim=True, since_cold=None)" in _SERVER_SRC)
+
 snapshot = mlstatus.snapshot()
 check("There is an /api/ml route", '"/api/ml"' in SERVER)
 check("The snapshot reports a status", snapshot.get("status") in

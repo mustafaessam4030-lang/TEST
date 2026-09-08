@@ -1792,7 +1792,18 @@ function paintSettings(){
 /* ═══ TRANSPORT ═══ */
 let queued = false, lastPaint = 0;
 const MIN_GAP = 140;
+/* The stream leaves out the shipments and the exceptions when they have not
+   changed, naming them in `unchanged` instead — they are 68% of the payload
+   and re-sending them on every log line cost 16.1 MB/min of parsing. Carry
+   the previous values across when a frame says it omitted them. A frame that
+   omits a key WITHOUT naming it stays a replacement, so a genuinely empty
+   list still clears the table. */
 function schedule(state){
+  if (state && state.unchanged && S){
+    for (const key of state.unchanged){
+      if (!(key in state) && (key in S)) state[key] = S[key];
+    }
+  }
   S = state;
   if (queued) return;
   queued = true;
