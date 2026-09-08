@@ -948,6 +948,9 @@ ATLAS_RECOVERY_SUCCEEDED = "Recovery succeeded"
 ATLAS_RECOVERY_FAILED = "Recovery failed"
 ATLAS_RECOVERY_EXHAUSTED = "No safe recovery succeeded"
 ATLAS_RECOVERY_NOT_POSSIBLE = "No safe recovery exists"
+ATLAS_RECOVERY_EVIDENCE = "Evidence"
+ATLAS_RECOVERY_HYPOTHESIS = "Likely cause"
+ATLAS_HUMAN_CHECKPOINT = "Human checkpoint required"
 
 
 def atlas_line(label, detail=""):
@@ -1257,6 +1260,165 @@ RECOVERY_MAX_RELOADS = 1
 RECOVERY_MAX_NAVIGATIONS = 2
 
 
+def collect_evidence(page, plan):
+    """
+    What is ACTUALLY on the page, right now. Read-only.
+
+    This is the difference between "the ATA locator failed" and "the ATA field
+    is absent because the COE panel is the one showing". Every value comes
+    from a real query; anything that could not be read stays None rather than
+    becoming False, because "we looked and it was not there" and "we could not
+    look" support different conclusions.
+
+    Compact by design: counts and booleans, no page HTML, no field values, no
+    shipment data beyond whether the expected reference appears somewhere.
+    """
+    field_name = plan.get("field_name") or ""
+    other = "ATA" if field_name == "ETA" else "ETA"
+    observed = {"recent_action": plan.get("recent_action"),
+                "attempt": plan.get("attempt"),
+                "expected_view": plan.get("view")}
+
+    def guarded(key, read):
+        try:
+            observed[key] = read()
+        except Exception:
+            observed[key] = None
+
+    guarded("url", lambda: page.url)
+    guarded("title", lambda: page.title())
+    guarded("page_ready", lambda: page_is_settled(page))
+    guarded("frames", lambda: len(all_scopes(page)))
+
+    if field_name:
+        # The same selectors the automation already trusts, counted rather
+        # than clicked. The cross-field guard is kept so ETA cannot be counted
+        # as ATA.
+        vis = "input[id*='{0}' i]:not([id*='{1}' i]):visible, " \
+              "input[name*='{0}' i]:not([name*='{1}' i]):visible"
+        anyq = "input[id*='{0}' i]:not([id*='{1}' i]), " \
+               "input[name*='{0}' i]:not([name*='{1}' i])"
+
+        def count(query, a, b):
+            total = 0
+            for scope in all_scopes(page):
+                try:
+                    total += scope.locator(query.format(a, b)).count()
+                except Exception:
+                    continue
+            return total
+
+        guarded("field_visible_count", lambda: count(vis, field_name, other))
+        guarded("field_any_count", lambda: count(anyq, field_name, other))
+        guarded("other_field_visible_count",
+                lambda: count(vis, other, field_name))
+        # Present but not usable is its own cause, so it is measured.
+        def disabled():
+            for scope in all_scopes(page):
+                try:
+                    found = scope.locator(anyq.format(field_name, other))
+                    for index in range(min(found.count(), 4)):
+                        if not found.nth(index).is_enabled(timeout=400):
+                            return True
+                except Exception:
+                    continue
+            return False
+        guarded("field_disabled", disabled)
+        # THE ONE THAT MATTERS MOST for this application: which panel is up.
+        # panel_has_field() is the automation's own honest check.
+        guarded("view_matches", lambda: panel_has_field(page, field_name))
+        guarded("active_view", lambda: (
+            plan.get("view") if panel_has_field(page, field_name)
+            else ("COE" if plan.get("view") == "BU" else "BU")
+            if panel_has_field(page, other) else None))
+
+    guarded("editable_inputs", lambda: manage_form_ready(page))
+    reference = (plan.get("shipment") or {}).get("bol_awb")
+    if reference:
+        guarded("shipment_marker_present",
+                lambda: page.get_by_text(str(reference), exact=False).count() > 0)
+    # Known blockers, using the detectors the automation already has.
+    guarded("consent_present", lambda: cookie_banner_present(page))
+    guarded("modal_present", lambda: modal_present(page))
+    guarded("login_present", lambda: login_form_present(page))
+    guarded("error_banner_present", lambda: error_banner_present(page))
+    return ml_recovery.evidence(**observed) if ml_recovery else observed
+
+
+def cookie_banner_present(page):
+    """A consent dialog, by the same markers accept_cookie_banner uses."""
+    try:
+        return page.locator(
+            "#onetrust-banner-sdk:visible, #onetrust-accept-btn-handler:visible, "
+            "[id*='cookie' i]:visible, [class*='cookie-banner' i]:visible"
+        ).count() > 0
+    except Exception:
+        return None
+
+
+def modal_present(page):
+    """A blocking overlay. Structural markers only — no text guessing."""
+    try:
+        return page.locator(
+            "[role='dialog']:visible, [aria-modal='true']:visible, "
+            ".modal.show:visible, .ui-dialog:visible"
+        ).count() > 0
+    except Exception:
+        return None
+
+
+def login_form_present(page):
+    try:
+        return page.locator(
+            "input[type='password']:visible").count() > 0
+    except Exception:
+        return None
+
+
+def error_banner_present(page):
+    try:
+        return page.locator(
+            "[class*='error' i]:visible, [role='alert']:visible").count() > 0
+    except Exception:
+        return None
+
+
+def _recover_dismiss_dialog(page, plan):
+    """Only the dialogs the automation already knows how to close."""
+    accept_cookie_banner(page, plan.get("view") or "the page")
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    return not bool(modal_present(page) or cookie_banner_present(page))
+
+
+def _recover_wait_for_enabled(page, plan):
+    field = plan.get("field")
+    if field is None:
+        field = find_field_ignoring_visibility(page, plan["field_name"])
+        plan["field"] = field
+    if field is None:
+        return False
+    deadline = time.time() + 4.0
+    while time.time() < deadline:
+        try:
+            if field.is_enabled(timeout=500):
+                return True
+        except Exception:
+            pass
+        page.wait_for_timeout(250)
+    return False
+
+
+def _recover_return_to_main_frame(page, plan):
+    """No frame switching to undo — Playwright locators are frame-scoped —
+    so this re-probes from the top document, which is the equivalent."""
+    field = first_visible(plan.get("candidates_locators") or [], 1200)
+    plan["field"] = field
+    return field is not None
+
+
 def _recover_wait_page_ready(page, plan):
     wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
     return page_is_settled(page)
@@ -1356,6 +1518,9 @@ def _recover_reread_state(page, plan):
 # refused — see atlas_recover().
 RECOVERY_ACTIONS = {
     "wait_for_page_ready": _recover_wait_page_ready,
+    "wait_for_enabled": _recover_wait_for_enabled,
+    "dismiss_dialog": _recover_dismiss_dialog,
+    "return_to_main_frame": _recover_return_to_main_frame,
     "wait_for_element_visible": _recover_wait_element_visible,
     "reacquire_locator": _recover_reacquire_locator,
     "try_alternate_locator": _recover_try_alternate_locator,
@@ -1373,36 +1538,54 @@ RECOVERY_ACTIONS = {
 
 def atlas_recover(page, error, plan, verify=None, category=None):
     """
-    Try to recover from `error`, bounded, and report honestly.
+    Diagnose, then recover — bounded, verified, and honest about who chose.
 
-    `plan` carries what the actions need — the field name, the view, the
-    shipment, the caller's own candidate locators. `verify` is the caller's
-    verification callable; an action that raises no exception is NOT a
-    success, and without a `verify` the outcome is UNVERIFIED rather than
-    assumed good.
+        evidence -> classify -> hypotheses -> safe actions -> rank
+        -> execute (the automation) -> verify (the caller's own check)
+        -> next candidate, or deterministic fallback / human checkpoint
 
-    Returns a dict: recovered (True/False), verified (True/False/None),
-    attempts, reason, and the plan (whose "field" the caller may now use).
+    ATLAS never executes. It returns a NAME from a fixed registry; only
+    RECOVERY_ACTIONS below can run anything, and every entry there is a
+    function the automation already had.
+
+    In SHADOW the deterministic order runs and ATLAS's ranking is recorded as
+    WOULD_TRY. Nothing here ever claims ATLAS tried something it did not.
     """
     outcome = {"recovered": False, "verified": None, "attempts": 0,
                "reason": "recovery is not available", "plan": plan,
-               "error_class": None, "considered": []}
+               "error_class": None, "considered": [], "evidence": None,
+               "hypotheses": [], "human_checkpoint": None}
     if not ML_AVAILABLE or ml_recovery is None or not ATLAS_RECOVERY_ENABLED:
         return outcome
 
+    # ── EVIDENCE FIRST. Never propose a recovery from the exception text
+    #    alone; look at the page and say what is actually true of it.
+    evidence = collect_evidence(page, plan)
+    outcome["evidence"] = evidence
+    facts = ml_recovery.describe_evidence(evidence)
     error_class, signature = ml_recovery.classify(error, category=category)
     outcome["error_class"] = error_class
+    atlas_log(ATLAS_RECOVERY_DIAGNOSED,
+              "{0} — {1}".format(error_class, str(error)[:100]))
+    if facts:
+        atlas_log(ATLAS_RECOVERY_EVIDENCE, "; ".join(facts[:6]))
 
-    # CAPTCHA is a person's job. It is not ranked, not retried, and not
-    # recovered — it is escalated, by the machinery that already exists.
-    if error_class == ml_recovery.HUMAN_VERIFICATION:
-        outcome["reason"] = ml_recovery.why_not(error_class)
-        atlas_log(ATLAS_RECOVERY_NOT_POSSIBLE,
-                  "{0}: {1}".format(error_class, outcome["reason"]))
+    # ── HUMAN CHECKPOINTS. Some failures must stop the automation and say so.
+    checkpoint = ml_recovery.HUMAN_CHECKPOINT.get(error_class)
+    if checkpoint:
+        outcome.update(reason=checkpoint, human_checkpoint=checkpoint)
+        atlas_log(ATLAS_HUMAN_CHECKPOINT,
+                  "{0}: {1}".format(error_class, checkpoint))
+        state = (ml_identity.STATE_HUMAN_VERIFICATION_REQUIRED
+                 if error_class == ml_recovery.HUMAN_VERIFICATION
+                 else ml_identity.STATE_HUMAN_CHECKPOINT)
         _recovery_telemetry(plan, error_class, signature, [], None, False, 0,
-                            None, "escalated to a person", None,
-                            ml_identity.STATE_HUMAN_VERIFICATION_REQUIRED,
-                            None, None)
+                            None, "human checkpoint", None, state, None,
+                            checkpoint, evidence=evidence)
+        tower_recovery_plan(error_class, str(error)[:120], [], {}, False,
+                            evidence=facts, hypotheses=[],
+                            checkpoint=checkpoint)
+        tower_recovery_done(False, checkpoint)
         return outcome
 
     reason_not = ml_recovery.why_not(error_class)
@@ -1412,8 +1595,18 @@ def atlas_recover(page, error, plan, verify=None, category=None):
                   "{0}: {1}".format(error_class, reason_not))
         _recovery_telemetry(plan, error_class, signature, [], None, False, 0,
                             None, "not recoverable", None,
-                            ml_identity.STATE_FALLBACK, None, reason_not)
+                            ml_identity.STATE_FALLBACK, None, reason_not,
+                            evidence=evidence)
         return outcome
+
+    # ── HYPOTHESES. Two to five plausible causes, from the evidence.
+    hypos = ml_recovery.hypotheses(error_class, evidence)
+    outcome["hypotheses"] = [
+        {"name": h.name, "cause": h.cause, "confidence": h.confidence,
+         "because": h.because} for h in hypos]
+    for h in hypos[:3]:
+        atlas_log(ATLAS_RECOVERY_HYPOTHESIS,
+                  "{0} ({1:.2f}) — {2}".format(h.cause, h.confidence, h.because))
 
     budget = ml_recovery.Budget(
         max_attempts=RECOVERY_MAX_ATTEMPTS,
@@ -1423,8 +1616,6 @@ def atlas_recover(page, error, plan, verify=None, category=None):
         max_navigations=RECOVERY_MAX_NAVIGATIONS)
     safe = ml_recovery.candidates(error_class, budget=budget,
                                   in_write=bool(plan.get("in_write")))
-    # Anything without a real implementation is not a candidate, whatever the
-    # policy says. The two lists are kept honest by a test.
     safe = [a for a in safe if a.name in RECOVERY_ACTIONS]
     outcome["considered"] = [a.name for a in safe]
     if not safe:
@@ -1443,36 +1634,39 @@ def atlas_recover(page, error, plan, verify=None, category=None):
 
     used = bool(recommendation is not None and recommendation.used)
     scores = dict(getattr(recommendation, "scores", {}) or {})
+    shadowing = bool(getattr(recommendation, "would_have_used", False))
+
+    # Hypothesis-first ordering, so a bounded budget spends its attempts on
+    # DIFFERENT causes instead of three variations of one.
+    deterministic = ml_recovery.rank(safe, scores=scores, hypos=hypos)
     if used:
-        # ATLAS's order, but only over names the automation offered.
         by_name = {a.name: a for a in safe}
         order = [by_name[n] for n in recommendation.order if n in by_name]
         if len(order) != len(safe):
-            order, used = ml_recovery.rank(safe), False
+            order, used = deterministic, False
     else:
-        order = ml_recovery.rank(safe)
+        order = deterministic
 
-    atlas_log(ATLAS_RECOVERY_DIAGNOSED,
-              "{0} — {1}".format(error_class, str(error)[:110]))
-    # "Recovery plan" when ATLAS's ranking is being followed; "Would try
-    # recovery" when it is shadowing and the deterministic order is what
-    # actually runs. The second must never read as the first.
-    shadowing = bool(getattr(recommendation, "would_have_used", False))
+    why_first = ml_recovery.explain_ranking(order[0], hypos, scores)
     plan_text = "; ".join("{0}. {1}{2}".format(
         i + 1, a.name,
         " (score {0:.2f})".format(scores[a.name]) if a.name in scores else "")
         for i, a in enumerate(order))
     if used:
-        atlas_log(ATLAS_RECOVERY_PLAN, plan_text)
+        atlas_log(ATLAS_RECOVERY_PLAN, "{0} | first because {1}".format(
+            plan_text, why_first))
     elif shadowing:
-        # ATLAS ranked these and none of it is being acted on. The wording
-        # has to say so: the deterministic order is what actually runs.
         atlas_log(ATLAS_RECOVERY_WOULD_TRY,
-                  "{0} (the deterministic order is what runs)".format(plan_text))
+                  "{0} | would try {1} because {2} (the deterministic order "
+                  "is what runs)".format(plan_text, order[0].name, why_first))
     else:
-        atlas_log(ATLAS_RECOVERY_PLAN, plan_text)
+        atlas_log(ATLAS_RECOVERY_PLAN, "{0} | first because {1}".format(
+            plan_text, why_first))
     tower_recovery_plan(error_class, str(error)[:120],
-                        [a.name for a in order], scores, used)
+                        [a.name for a in order], scores, used,
+                        evidence=facts, hypotheses=outcome["hypotheses"],
+                        why_first=why_first,
+                        verifies=order[0].verifies)
 
     for index, action in enumerate(order, start=1):
         spent = budget.exhausted()
@@ -1484,47 +1678,47 @@ def atlas_recover(page, error, plan, verify=None, category=None):
         budget.spend(action)
         outcome["attempts"] = budget.attempts
         atlas_log(ATLAS_RECOVERY_TRYING,
-                  "{0}/{1}: {2} — {3}".format(index, len(order), action.name,
-                                              action.detail))
+                  "{0}/{1}: {2} — {3}; will verify: {4}".format(
+                      index, len(order), action.name, action.detail,
+                      action.verifies))
         tower_recovery_attempt(index, len(order), action.name,
                                scores.get(action.name), "RUNNING", None)
-        ran = False
-        failure = None
+        ran, failure = False, None
         try:
             ran = bool(RECOVERY_ACTIONS[action.name](page, plan))
         except Exception as inner:
-            failure = inner
-            ran = False
+            failure, ran = inner, False
         latency = (time.time() - started) * 1000.0
 
-        # AN ACTION THAT DID NOT THROW HAS NOT RECOVERED ANYTHING. Success is
-        # whatever the caller's own verification says, and nothing else.
+        # AN ACTION THAT DID NOT THROW HAS NOT RECOVERED ANYTHING.
         verified = None
         if ran and verify is not None:
             try:
                 verified = verify()
             except Exception as inner:
-                failure = inner
-                verified = None
-        elif ran:
-            verified = None
+                failure, verified = inner, None
 
         good = bool(ran and verified is True)
+        # ACTUALLY_TRIED, always — this action really ran against a real page.
+        # Whether ATLAS CHOSE it is the separate `used` flag.
         state = (ml_identity.STATE_RECOVERY_SUCCEEDED if good and used
                  else ml_identity.STATE_RECOVERY_FAILED if used
                  else ml_identity.STATE_DETERMINISTIC_RECOVERY)
         _recovery_telemetry(
             plan, error_class, signature, [a.name for a in order],
             action.name, used, budget.attempts, latency,
-            "ok" if ran else "failed: {0}".format(str(failure)[:90]
-                                                  if failure else "no effect"),
+            "ok" if ran else "failed: {0}".format(
+                str(failure)[:90] if failure else "no effect"),
             verified, state, scores, None, budget=budget.snapshot(),
-            shadow=shadowing)
+            shadow=shadowing, evidence=evidence,
+            hypotheses=outcome["hypotheses"],
+            execution=ml_identity.STATE_RECOVERY_ACTUALLY_TRIED,
+            verifies=action.verifies)
 
         if good:
             atlas_log(ATLAS_RECOVERY_SUCCEEDED,
-                      "{0} recovered the {1} and the value was verified"
-                      .format(action.name, plan.get("field_name") or "field"))
+                      "{0} recovered the {1} and it verified".format(
+                          action.name, plan.get("field_name") or "field"))
             tower_recovery_attempt(index, len(order), action.name,
                                    scores.get(action.name), "SUCCESS", True)
             tower_recovery_done(True, "{0} succeeded and verified".format(
@@ -1534,16 +1728,11 @@ def atlas_recover(page, error, plan, verify=None, category=None):
             return outcome
 
         if ran and verify is None:
-            # It did what it was asked and there is nothing to verify against
-            # here. The caller's own verification runs later; this is reported
-            # as unverified, never as a success.
             atlas_log(ATLAS_RECOVERY_SUCCEEDED,
                       "{0} completed — not yet verified, the caller's own "
                       "check decides".format(action.name))
             tower_recovery_attempt(index, len(order), action.name,
                                    scores.get(action.name), "DONE", None)
-            # Reported as recovered but NOT verified. The caller's own check
-            # decides, and the panel says so rather than implying a pass.
             tower_recovery_done(True, "{0} completed; the caller's own "
                                 "verification decides".format(action.name),
                                 verified=None)
@@ -1553,8 +1742,7 @@ def atlas_recover(page, error, plan, verify=None, category=None):
             return outcome
 
         why = ("the value did not verify" if ran and verified is False
-               else str(failure)[:90] if failure
-               else "it had no effect")
+               else str(failure)[:90] if failure else "it had no effect")
         atlas_log(ATLAS_RECOVERY_FAILED,
                   "{0}/{1} {2} failed — {3}".format(index, len(order),
                                                     action.name, why))
@@ -1565,14 +1753,16 @@ def atlas_recover(page, error, plan, verify=None, category=None):
     exhausted = budget.exhausted() or outcome["reason"]
     atlas_log(ATLAS_RECOVERY_EXHAUSTED,
               "{0}; the deterministic outcome stands".format(exhausted))
-    tower_recovery_done(False, exhausted, verified=None)
+    tower_recovery_done(False, exhausted)
     outcome["reason"] = exhausted
     return outcome
 
 
 def _recovery_telemetry(plan, error_class, signature, considered, chosen,
                         used, attempt, latency, result, verified, state,
-                        scores, fallback_reason, budget=None, shadow=False):
+                        scores, fallback_reason, budget=None, shadow=False,
+                        evidence=None, hypotheses=None, execution=None,
+                        verifies=None):
     """Record one recovery attempt. Never raises into the automation."""
     if not ML_AVAILABLE:
         return
@@ -1586,14 +1776,26 @@ def _recovery_telemetry(plan, error_class, signature, considered, chosen,
             fallback_reason=fallback_reason, scores=scores,
             confidence=(scores or {}).get(chosen),
             budget=budget, mode=atlas_mode(), shadow=shadow,
+            evidence=evidence, hypotheses=hypotheses,
+            # WOULD_TRY vs ACTUALLY_TRIED, recorded separately from who chose.
+            # An action can be ACTUALLY_TRIED while ATLAS only watched.
+            execution=(execution or (
+                ml_identity.STATE_RECOVERY_WOULD_TRY if chosen is None
+                else ml_identity.STATE_RECOVERY_ACTUALLY_TRIED)),
+            verifies=verifies,
             redactor=redact_secrets)
     except Exception:
         pass
 
 
-def tower_recovery_plan(error_class, message, order, scores, used):
+def tower_recovery_plan(error_class, message, order, scores, used,
+                        evidence=None, hypotheses=None, why_first=None,
+                        verifies=None, checkpoint=None):
     try:
-        tower.recovery_plan(error_class, message, order, scores, used)
+        tower.recovery_plan(error_class, message, order, scores, used,
+                            evidence=evidence, hypotheses=hypotheses,
+                            why_first=why_first, verifies=verifies,
+                            checkpoint=checkpoint)
     except Exception:
         pass
 
@@ -5768,6 +5970,17 @@ def page_is_settled(page):
         return False
 
 
+def _panel_field_check_name(field_name):
+    """
+    The name of the readiness check that means THIS field actually rendered.
+
+    Defined once because two places compare against it, and a typo in either
+    would silently accept the wrong evidence — which is exactly the failure
+    this exists to prevent.
+    """
+    return "the {0} field".format(field_name)
+
+
 def select_shipment_info_tab(page, view_name, field_name=None):
     """
     Pick the COE or BU tab on the Modify Shipment page.
@@ -5844,7 +6057,7 @@ def select_shipment_info_tab(page, view_name, field_name=None):
     # "(no visible inputs)" diagnostic showed.
     checks = []
     if field_name:
-        checks.append(("the {0} field".format(field_name),
+        checks.append((_panel_field_check_name(field_name),
                        lambda: panel_has_field(page, field_name)))
     checks.append(("editable fields", lambda: manage_form_ready(page)))
 
@@ -5872,6 +6085,27 @@ def select_shipment_info_tab(page, view_name, field_name=None):
             f"'{view_name} Shipment Info' tab was clicked but its panel did not "
             f"render an editable field within {HUB_FORM_READY_MAX_MS}ms. The "
             "field lookup will report what is actually on the page."
+        )
+        return False
+
+    # THE BUG THIS FIXES, found on a real run. wait_for_any() returns whichever
+    # check passed FIRST, and manage_form_ready() is satisfied by any visible
+    # `input[type='text']` — which includes the COE panel's own boxes, still on
+    # screen while the BU postback is in flight. So the wait ended on "editable
+    # fields", this returned True, and the caller skipped its own
+    # reopen-and-retry at the `if not select_shipment_info_tab(...)` above.
+    # fill_date_field then ran against the COE panel and no ATA input existed
+    # anywhere: every candidate failed, and so did the visibility-free lookup
+    # and the frame sweep, because the field was genuinely not in the DOM.
+    #
+    # Generic editable fields are evidence the page is alive. They are NOT
+    # evidence that THIS field's panel rendered. panel_has_field() is the
+    # honest check and it is already the first one in the list.
+    if field_name and settled != _panel_field_check_name(field_name):
+        write_log(
+            f"'{view_name} Shipment Info' tab was clicked and the page has "
+            f"editable fields, but the {field_name} field has not rendered. "
+            "Treating the panel as not ready so it can be reopened."
         )
         return False
     write_log(f"'{view_name} Shipment Info' tab selected ({settled} present).")

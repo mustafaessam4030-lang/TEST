@@ -179,12 +179,22 @@ class ControlTowerState:
         self.last_heartbeat = _now()
 
     @_guard
-    def recovery_plan(self, error_class, message, order, scores, used):
+    def recovery_plan(self, error_class, message, order, scores, used,
+                      evidence=None, hypotheses=None, why_first=None,
+                      verifies=None, checkpoint=None):
         """ATLAS has diagnosed an error and has a plan. Nothing tried yet."""
         with self._lock:
             self.recovery = {
                 "error_class": error_class,
                 "message": message,
+                # Observed facts and the causes they point at. Both come from
+                # the runtime; neither is rendered if it is empty, because an
+                # invented diagnosis is worse than none.
+                "evidence": list(evidence or []),
+                "hypotheses": list(hypotheses or []),
+                "why_first": why_first,
+                "verifies": verifies,
+                "checkpoint": checkpoint,
                 # `used` is the only thing that says whether ATLAS's ranking
                 # is being followed. In shadow it is False and the plan is
                 # what ATLAS WOULD have done.

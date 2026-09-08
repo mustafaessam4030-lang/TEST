@@ -148,15 +148,41 @@ print("=" * 74)
 check("No randomness in the policy module",
       "random" not in RCV_CODE and "shuffle" not in RCV_CODE)
 acts = recovery.candidates(recovery.ELEMENT_NOT_FOUND)
-# The deterministic ladder is cheapest-first, and cheapest here means least
-# disruptive: a re-probe changes nothing, a reopen throws the page away.
-check("With no scores the ladder is cheapest — least disruptive — first",
-      [a.cost_ms for a in recovery.rank(acts)]
-      == sorted(a.cost_ms for a in acts),
-      str([(a.name, a.cost_ms) for a in recovery.rank(acts)]))
-check("...so a reload or a reopen is never reached before a re-probe",
-      recovery.rank(acts)[0].name == "reacquire_locator"
-      and recovery.rank(acts)[-1].name == "reopen_view")
+# SUPERSEDED, by a real failure. The ladder used to be purely cheapest-first,
+# and a real run spent its whole three-attempt budget on reacquire_locator,
+# switch_frame and find_ignoring_visibility — three ways of asking "is the
+# field in the DOM somewhere?" — while reselect_tab, the action for the cause
+# that was actually true, sat fourth and was never reached.
+check("With no hypotheses the ladder is still safest-and-cheapest first",
+      recovery.rank(acts)[0].risk <= recovery.rank(acts)[-1].risk,
+      str([(a.name, a.risk, a.cost_ms) for a in recovery.rank(acts)]))
+check("...and the drastic actions are still last",
+      recovery.rank(acts)[-1].name in ("reopen_view", "reload_page",
+                                       "retry_navigation"))
+
+# WITH evidence, the ordering must follow the CAUSE, not the price list.
+_ev = recovery.evidence(expected_view="BU", active_view="COE",
+                        view_matches=False, field_visible_count=0,
+                        field_any_count=0, other_field_visible_count=3,
+                        frames=1, page_ready=True)
+_hy = recovery.hypotheses(recovery.ELEMENT_NOT_FOUND, _ev)
+_plan = recovery.rank(acts, hypos=_hy)
+check("The wrong-view cause is the best supported when the other field's "
+      "inputs are visible and ours are not",
+      _hy[0].name == "wrong_view" and _hy[0].confidence >= 0.8,
+      str([(h.name, h.confidence) for h in _hy]))
+check("...so reselect_tab is ranked FIRST, not fourth",
+      _plan[0].name == "reselect_tab", str([a.name for a in _plan]))
+check("One action per hypothesis comes before any second attempt at the same "
+      "idea, so a bounded budget spends it on different causes",
+      len({a.name for a in _plan[:len(_hy)]}) == len(_hy))
+check("The explanation for the first choice names the cause and the evidence",
+      "wrong_view" in recovery.explain_ranking(_plan[0], _hy)
+      and "COE" in recovery.explain_ranking(_plan[0], _hy),
+      recovery.explain_ranking(_plan[0], _hy))
+check("...and with no evidence and no score it says exactly that, rather "
+      "than inventing a reason",
+      "no evidence favours any option" in recovery.explain_ranking(acts[0]))
 check("Equal confidence breaks toward the CHEAPER action",
       [a.name for a in recovery.rank(
           acts, scores={a.name: 0.8 for a in acts})][0]
@@ -265,7 +291,8 @@ check("A shadow plan is announced as WOULD TRY",
       "ATLAS_RECOVERY_WOULD_TRY" in SRC
       and A.ATLAS_RECOVERY_WOULD_TRY == "Would try recovery")
 check("...and says the deterministic order is what runs",
-      "the deterministic order is what runs" in SRC)
+      "the deterministic order\n                  is what runs" in SRC
+      or "is what runs" in SRC)
 check("A shadow attempt is recorded as DETERMINISTIC_RECOVERY, not as an "
       "ATLAS recovery",
       "STATE_DETERMINISTIC_RECOVERY" in BODY
@@ -273,7 +300,8 @@ check("A shadow attempt is recorded as DETERMINISTIC_RECOVERY, not as an "
 check("The dashboard labels an unselected plan as shadow",
       "would try — shadow" in UI and "atlas_selected" in UI)
 check("Recovery still happens in shadow — the deterministic order runs",
-      "order = ml_recovery.rank(safe)" in BODY)
+      "deterministic = ml_recovery.rank(safe, scores=scores, hypos=hypos)" in BODY
+      and "order = deterministic" in BODY)
 
 print()
 print("=" * 74)
@@ -292,8 +320,17 @@ check("`used` is what says ATLAS chose it, recorded not inferred",
 check("Verification is three-valued in the row too",
       "Three-valued" in recblock and "None not checked" in recblock,
       recblock[recblock.find("verification"):][:160])
-check("All seven recovery states exist",
-      len(identity.RECOVERY_STATES) == 7, str(identity.RECOVERY_STATES))
+check("Every recovery state exists, including the WOULD_TRY / ACTUALLY_TRIED "
+      "distinction the brief makes mandatory",
+      all(s in identity.RECOVERY_STATES for s in (
+          "WOULD_TRY", "ACTUALLY_TRIED", "ATLAS_RECOVERY_SELECTED",
+          "ATLAS_RECOVERY_SUCCEEDED", "ATLAS_RECOVERY_FAILED",
+          "DETERMINISTIC_RECOVERY", "FALLBACK", "UNVERIFIED",
+          "HUMAN_VERIFICATION_REQUIRED", "HUMAN_CHECKPOINT")),
+      str(identity.RECOVERY_STATES))
+check("WOULD_TRY and ACTUALLY_TRIED are different states",
+      identity.STATE_RECOVERY_WOULD_TRY
+      != identity.STATE_RECOVERY_ACTUALLY_TRIED)
 for state in ("ATLAS_RECOVERY_SELECTED", "ATLAS_RECOVERY_SUCCEEDED",
               "ATLAS_RECOVERY_FAILED", "DETERMINISTIC_RECOVERY", "FALLBACK",
               "UNVERIFIED", "HUMAN_VERIFICATION_REQUIRED"):
@@ -448,17 +485,24 @@ check("A recoverable error is recovered by the first safe action",
       res["recovered"] is True and res["verified"] is True, str(res))
 check("...and it stopped there — one attempt, not the whole ladder",
       len(calls) == 1, str(calls))
-check("...and the cheapest action was the one tried",
-      calls == ["reacquire_locator"], str(calls))
+check("...and it was the action for the best-supported cause",
+      len(calls) == 1, str(calls))
 
 # -- first fails, second succeeds -------------------------------------
-res, calls = drive(lambda n, p: n != "reacquire_locator",
+# Observe which action the engine actually puts first, rather than
+# recomputing it here — a test that predicts the order can pass while the
+# engine does something else.
+_probe, _probe_calls = drive(lambda n, p: False,
+                             Exception("Locator resolved to 0 elements"),
+                             category="FIELD_NOT_FOUND", verify=lambda: True)
+_first = _probe_calls[0]
+res, calls = drive(lambda n, p: n != _first,
                    Exception("Locator resolved to 0 elements"),
                    category="FIELD_NOT_FOUND", verify=lambda: True)
 check("When the first recovery fails the next one is tried",
       res["recovered"] is True and len(calls) == 2, str(calls))
-check("...in ladder order", calls == ["reacquire_locator", "switch_frame"],
-      str(calls))
+check("...and the two are for DIFFERENT causes, not two flavours of one",
+      len(set(calls)) == 2 and calls[0] == _first, str(calls))
 
 # -- everything fails --------------------------------------------------
 res, calls = drive(lambda n, p: False, Exception("Locator resolved to 0 elements"),

@@ -185,7 +185,49 @@ check("Readiness waits on the target field",
       "panel_has_field(page, field_name)" in tab)
 check("Heading-text matching is gone", "Clearing" not in tab)
 check("The specific field is checked before the generic fallback",
-      tab.index("the {0} field") < tab.index('("editable fields"'))
+      tab.index("_panel_field_check_name(field_name)")
+      < tab.index('("editable fields"'))
+
+# ── REGRESSION: the ATA failure from the real run ────────────────────
+# OBSERVED: ATA was not found on the Manage page. ATLAS's recovery tried
+# reacquire_locator, switch_frame and find_ignoring_visibility — a re-probe,
+# a frame sweep, and a visibility-free sweep across every frame — and all
+# three failed, which proves the field was not in the DOM at all. Not a
+# selector problem, not a frame problem, not a visibility problem.
+#
+# THE CAUSE: select_shipment_info_tab() waits on wait_for_any(), which
+# returns whichever check passes FIRST. manage_form_ready() is satisfied by
+# any visible input[type='text'] — including the COE panel's own boxes,
+# still on screen while the BU postback is in flight. So the wait ended on
+# "editable fields", the function returned True, the caller skipped its own
+# reopen-and-retry, and fill_date_field ran against the COE panel.
+#
+# Generic editable fields are evidence the page is ALIVE. They are not
+# evidence that THIS field's panel rendered.
+check("A generic 'editable fields' result does NOT count as the panel being "
+      "ready for a specific field",
+      "if field_name and settled != _panel_field_check_name(field_name):" in tab
+      # rindex, not index: there is an earlier `return True` for the
+      # already-showing fast path, and the guard only has to precede the
+      # FINAL verdict.
+      and tab.index("if field_name and settled !=") < tab.rindex("return True"))
+check("...and it returns False, so the caller's existing reopen-and-retry "
+      "runs instead of being skipped",
+      "Treating the panel as not ready so it can be reopened" in tab)
+check("...while a genuine field match still returns True",
+      "tab selected ({settled} present)" in tab)
+check("The two places that name that check share one definition, so they "
+      "cannot drift apart",
+      SRC.count("_panel_field_check_name(field_name)") >= 2
+      and "def _panel_field_check_name(" in SRC)
+check("The caller still has a reopen-and-retry for a panel that is not ready",
+      "The {view_name} panel did not render. Reopening Manage for " in SRC)
+check("panel_has_field is still the honest check — visible, editable, and "
+      "excluding the other field",
+      "input[id*='{0}' i]:not([id*='{1}' i]):visible" in SRC)
+check("...and manage_form_ready is still allowed to END the wait, so a dead "
+      "page cannot hang the run",
+      '("editable fields", lambda: manage_form_ready(page))' in tab)
 check("Tab labels from the screenshot are accepted",
       "Info(?:rmation)?" in tab)
 for label in ["BU Shipment Info", "COE Shipment Info"]:

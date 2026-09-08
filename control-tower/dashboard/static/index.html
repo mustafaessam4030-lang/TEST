@@ -182,6 +182,14 @@ input,textarea,select{font-family:inherit}
   flex:none;color:var(--faint)}
 .rcv-r.ok{color:var(--grn)} .rcv-r.no{color:var(--red)} .rcv-r.go{color:var(--blu)}
 .rcv-o{margin-top:9px;font-size:12px;color:var(--mid);line-height:1.45}
+.rcv-d{margin:2px 0 9px;font-size:12px;color:var(--mid);line-height:1.5}
+.rcv-d b{color:var(--ink);font-weight:590}
+.rcv-ev{margin:0;padding-left:15px;font-size:12px;color:var(--faint);
+  line-height:1.55}
+.rcv-why{margin-top:8px;font-size:12px;color:var(--mid);line-height:1.5;
+  padding-left:11px;border-left:2px solid var(--line)}
+.rcv-cp{font-family:var(--mono);font-size:10.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--red)}
 .rcv-shadow{font-family:var(--mono);font-size:10.5px;font-weight:700;
   letter-spacing:.1em;text-transform:uppercase;color:var(--y)}
 /* The ATLAS attribution tag. Deliberately quiet — a small mono capsule in the
@@ -1898,6 +1906,25 @@ function paintRecovery(){
         (p.confidence == null ? '' : Number(p.confidence).toFixed(2)) +
         '</span></div>').join('')
     : '';
+  /* Diagnosis, and only from what the runtime observed. Each block is
+     omitted entirely when its source is empty — an absent diagnosis reads as
+     absent, never as a confident one. */
+  const evidence = (r.evidence || []).length
+    ? '<div class="rcv-d"><b>Evidence</b></div><ul class="rcv-ev">' +
+      (r.evidence || []).map((e) => '<li>' + esc(e) + '</li>').join('') + '</ul>'
+    : '';
+  const hypos = (r.hypotheses || []).length
+    ? '<div class="rcv-d"><b>Likely cause</b></div>' +
+      (r.hypotheses || []).slice(0, 3).map((h) =>
+        '<div class="rcv-a"><span class="rcv-m">' + esc(h.cause) +
+        '</span><span class="rcv-c">' +
+        (h.confidence == null ? '' : Number(h.confidence).toFixed(2)) +
+        '</span></div>').join('')
+    : '';
+  const why = r.why_first
+    ? '<div class="rcv-why">First choice: ' + esc(r.why_first) + '</div>' : '';
+  const willVerify = r.verifies
+    ? '<div class="rcv-o">Will verify: <b>' + esc(r.verifies) + '</b></div>' : '';
   const verified = r.verified === true ? 'PASSED'
                  : r.verified === false ? 'FAILED' : null;
   let outcome = '';
@@ -1908,12 +1935,20 @@ function paintRecovery(){
             + esc(r.reason || 'the deterministic outcome stands') + '.';
   box.innerHTML =
     '<div class="rcv-h"><span class="rcv-k">ATLAS recovery</span>' +
-    (r.atlas_selected ? '' : '<span class="rcv-shadow">would try — shadow</span>') +
+    (r.checkpoint
+      ? '<span class="rcv-cp">human checkpoint</span>'
+      : r.atlas_selected
+        ? ''
+        : '<span class="rcv-shadow">would try — shadow</span>') +
     '</div>' +
     '<div class="rcv-e">' + esc(r.message || r.error_class || '') + '</div>' +
-    plan + attempts +
-    (verified ? '<div class="rcv-o">Verification: <b>' + verified + '</b></div>' : '') +
-    (outcome ? '<div class="rcv-o">' + outcome + '</div>' : '');
+    evidence + hypos +
+    (r.checkpoint
+      ? '<div class="rcv-o">Stopped: ' + esc(r.checkpoint) + '</div>'
+      : (plan + attempts + why + (attempts ? '' : willVerify) +
+         (verified ? '<div class="rcv-o">Verification: <b>' + verified +
+                     '</b></div>' : '') +
+         (outcome ? '<div class="rcv-o">' + outcome + '</div>' : '')));
   box.hidden = false;
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S) paint(true); });

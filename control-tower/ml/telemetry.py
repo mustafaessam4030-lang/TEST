@@ -340,7 +340,8 @@ def recovery(episode_id, error_class, error_signature, context,
              candidates, chosen, used, attempt, latency_ms, result,
              verification=None, outcome=None, fallback_reason=None,
              state=None, scores=None, confidence=None, budget=None,
-             mode=None, shadow=False, redactor=None, source="automation"):
+             mode=None, shadow=False, redactor=None, source="automation",
+             evidence=None, hypotheses=None, execution=None, verifies=None):
     """
     One recovery attempt, whatever became of it.
 
@@ -360,6 +361,17 @@ def recovery(episode_id, error_class, error_signature, context,
         "error_class": error_class,
         "error_signature": error_signature,
         "context": context,
+        # WHAT WAS OBSERVED, and what was concluded from it. Compact and
+        # structured: counts and booleans, never page content.
+        "evidence": evidence,
+        "hypotheses": hypotheses,
+        # WOULD_TRY or ACTUALLY_TRIED. Separate from `used`, which says who
+        # CHOSE it: in shadow an action is ACTUALLY_TRIED by the deterministic
+        # order while ATLAS only watched.
+        "execution": execution,
+        # What the caller checked to decide this worked. Recorded so a
+        # "success" can never mean "no exception was raised".
+        "verifies": verifies,
         # The safe actions that were available, in the order they were tried.
         "candidates": list(candidates or ()),
         "chosen": chosen,
