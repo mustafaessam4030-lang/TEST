@@ -13,6 +13,7 @@ setting.
 
 import json
 import threading
+import time
 from pathlib import Path
 
 try:
@@ -50,28 +51,64 @@ ENGINE_FULL_NAME = "Adaptive Logistics Strategy Engine"
 # longer than it takes the automation to record something. Nothing is cached
 # across a change, and nothing here decides anything: it is the same numbers,
 # computed once instead of once per request.
+# MEASURED AGAIN, and the note above was too optimistic. Invalidating on the
+# automation's next write is good for freshness and bad for cost: a run
+# appends a telemetry row per strategy attempt, so during a run EVERY request
+# recomputed from scratch. The recompute grows with the whole history,
+# because episodes.join() reads the entire file:
+#
+#     rows      file      one snapshot
+#      2,000    0.5 MB       17 ms
+#     10,000    2.6 MB       90 ms
+#     40,000   10.4 MB      310 ms
+#    100,000   26.0 MB      603 ms
+#
+# That is unbounded: the panel gets slower every week the automation runs,
+# for numbers that are counts of accumulated history and cannot meaningfully
+# change between one request and the next.
+#
+# So growth alone no longer forces an immediate recompute — it is allowed to
+# be up to _MAX_STALE_SECONDS old. Anything that changes MEANING rather than
+# magnitude (a model file, the mode, the enabled flag) still invalidates at
+# once, because those decide what the panel says rather than how much of it
+# there is.
+#
+# join() is deliberately NOT bounded to a tail here: it feeds
+# enough_to_train(), and counting only recent rows would report "not enough
+# to train" on a history that has plenty.
+_MAX_STALE_SECONDS = 20.0
+
 _CACHE_LOCK = threading.Lock()
-_CACHE = {"key": None, "value": None}
+_CACHE = {"key": None, "value": None, "at": 0.0}
 
 
 def _fingerprint():
-    """What the answer depends on. None disables caching."""
+    """
+    What the answer depends on, split by what a change MEANS.
+
+    Returns (meaning, growth). A change to `meaning` invalidates immediately.
+    A change to `growth` — the telemetry file getting longer — is allowed to
+    go unnoticed for up to _MAX_STALE_SECONDS. None disables caching.
+    """
     if not AVAILABLE:
         return None
-    parts = []
-    for path in (ml_config.TELEMETRY_PATH, ml_config.CHAMPION_PATH,
-                 ml_config.CHALLENGER_PATH):
+    meaning = []
+    for path in (ml_config.CHAMPION_PATH, ml_config.CHALLENGER_PATH):
         try:
             stat = Path(path).stat()
-            parts.append((str(path), stat.st_size, stat.st_mtime_ns))
+            meaning.append((str(path), stat.st_size, stat.st_mtime_ns))
         except OSError:
-            parts.append((str(path), -1, -1))
-    # The live config is part of the answer, so a flag change must invalidate.
+            meaning.append((str(path), -1, -1))
     try:
-        parts.append(("mode", ml_config.ML_MODE, ml_config.ML_ENABLED))
+        meaning.append(("mode", ml_config.ML_MODE, ml_config.ML_ENABLED))
     except Exception:
         pass
-    return tuple(parts)
+    try:
+        stat = Path(ml_config.TELEMETRY_PATH).stat()
+        growth = (str(ml_config.TELEMETRY_PATH), stat.st_size, stat.st_mtime_ns)
+    except OSError:
+        growth = (str(ml_config.TELEMETRY_PATH), -1, -1)
+    return (tuple(meaning), growth)
 
 
 def invalidate():
@@ -79,6 +116,7 @@ def invalidate():
     with _CACHE_LOCK:
         _CACHE["key"] = None
         _CACHE["value"] = None
+        _CACHE["at"] = 0.0
 
 
 def _telemetry_summary(limit_bytes=6 * 1024 * 1024):
@@ -155,15 +193,22 @@ def snapshot():
     key = _fingerprint()
     if key is None:
         return _snapshot()
+    now = time.time()
     with _CACHE_LOCK:
-        if _CACHE["key"] == key and _CACHE["value"] is not None:
-            # A shallow copy, so a caller that mutates the dict for its own
-            # response cannot corrupt what the next caller reads.
-            return dict(_CACHE["value"])
+        cached, value = _CACHE["key"], _CACHE["value"]
+        if value is not None and cached is not None:
+            fresh_enough = (cached == key
+                            or (cached[0] == key[0]
+                                and now - _CACHE["at"] < _MAX_STALE_SECONDS))
+            if fresh_enough:
+                # A shallow copy, so a caller that mutates the dict for its
+                # own response cannot corrupt what the next caller reads.
+                return dict(value)
     value = _snapshot()
     with _CACHE_LOCK:
         _CACHE["key"] = key
         _CACHE["value"] = value
+        _CACHE["at"] = time.time()
     return dict(value)
 
 

@@ -40,6 +40,16 @@ check("classify_failure returns it, not NO RESULT",
 check("The original transport error is preserved in the message",
       "ERR_HTTP2_PROTOCOL_ERROR" in str(error), str(error)[:160])
 check("The air waybill is named", "057-05765454" in str(error))
+# The summary used to be the whole per-attempt dump prefixed twice by the
+# caller, so the line an operator actually read was truncated mid-word
+# ("#4 micro"). It now leads with the diagnosis; the dump moved to .detail.
+check("The message leads with a cause an operator can act on",
+      "TLS-inspecting" in str(error) and "HTTP/1.1" in str(error))
+check("...and the per-attempt detail is still available, separately",
+      "ERR_HTTP2_PROTOCOL_ERROR" in error.detail
+      and "#1 existing page" in error.detail)
+check("...and the caller does not prefix a message that already carries the "
+      "prefix", 'write_log("AFKL NAVIGATION ERROR for {0}: {1}".format' not in SRC)
 check("It is NOT a SkipShipment, so it cannot be swallowed as a skip",
       not isinstance(error, A.SkipShipment))
 check("The run loop handles it as a navigation error",
@@ -53,16 +63,38 @@ print("=" * 74)
 print("2. THE LADDER IS BOUNDED AND ORDERED")
 print("=" * 74)
 body = SRC.split("def open_afkl_detail")[1].split("\ndef _afkl_side_browser")[0]
-check("Attempt 1 is the existing page", '"existing page", 1)' in body)
+check("Attempt 1 is the existing page", '"existing page", 1' in body)
 check("Attempt 2 is a fresh context", '"fresh context", 2)' in body)
-check("Attempt 3 disables HTTP/2",
-      '"--disable-http2"' in body and "http2_disabled=True" in body)
-check("Attempt 4 is the branded Edge channel", 'channel="msedge"' in body)
+# The ladder used to put the HTTP/2 strategy on Playwright's BUNDLED Chromium.
+# That browser is a separate download and is simply absent on a machine that
+# only ever launches channel="msedge" — which this automation does — so the
+# strategy died with "Executable doesn't exist" and was reported as a failed
+# attempt rather than a missing browser. The transport hypothesis now runs on
+# the browser the run is already using.
+check("Attempt 3 disables HTTP/2 on a browser known to be installed",
+      '"clean edge, HTTP/2 disabled", channel="msedge"' in body
+      and '"--disable-http2"' in body and "http2_disabled=True" in body)
+check("Attempt 4 is a genuinely different browser build, which is the only "
+      "hypothesis left once transport and profile are ruled out",
+      '"bundled chromium", channel=None' in body)
 check("There is no attempt 5", ", 5," not in body and '"5"' not in body)
 check("Each strategy runs once — no loop around them",
       "for attempt in range" not in body and "while " not in body)
 check("Attempt 3 only runs for transport errors",
-      "if transport:" in body)
+      "if transport and" in body or "if transport:" in body)
+# Strategies 3 and 4 previously cost nothing because they never launched: the
+# ladder looked for a private `_playwright` attribute that does not exist, so
+# both reported "no playwright handle available for a side browser". Now that
+# they really run, four attempts at ~40s each is over two minutes on a
+# shipment that will fail anyway, so the ladder is bounded as a whole.
+check("The ladder has a wall-clock budget, not just an attempt count",
+      "AFKL_NAV_BUDGET_MS" in SRC and "_afkl_budget_left(ladder_started" in body)
+check("...and a skipped attempt is recorded as skipped, never as an attempt "
+      "that ran and failed",
+      "skipped, navigation budget spent" in SRC)
+check("The budget is bounded, not shortening any single attempt — a shorter "
+      "per-attempt wait would turn a slow site into a false 'not found'",
+      "AFKL_DETAIL_READY_MS = 30000" in SRC)
 check("The AWB is never altered between attempts",
       body.count("build_afkl_detail_url(tracking_number)") == 1)
 check("The homepage is never used as a workaround",

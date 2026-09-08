@@ -206,9 +206,31 @@ DRY_RUN = False
 VERIFY_AFTER_SAVE = (os.environ.get("VERIFY_AFTER_SAVE", "").strip().lower()
                      in ("1", "true", "yes", "on"))
 
+# HTTP/2 is negotiated per connection, and some corporate TLS-inspecting
+# appliances re-frame it incorrectly. When that happens Chromium reports
+# ERR_HTTP2_PROTOCOL_ERROR for every request to the affected host, which
+# looks like the site being down and is not: the same URL loads fine over
+# HTTP/1.1. Observed against afklcargo.com — both the detail URL and
+# /mycargo/shipment/singlesearch failed this way in the same run.
+#
+# Disabling HTTP/2 costs a little parallelism and nothing else; HTTP/1.1 is
+# universally supported. It is on by default because a run that cannot reach
+# the carrier is worth far more than a few multiplexed sockets. Set
+# DISABLE_HTTP2=0 to negotiate HTTP/2 again.
+DISABLE_HTTP2 = (os.environ.get("DISABLE_HTTP2", "1").strip().lower()
+                 not in ("0", "false", "no", "off"))
+
 # On an unexpected fatal error, keep Edge and CMD open so the exact problem
 # remains visible instead of closing immediately.
 PAUSE_ON_FATAL_ERROR = True
+
+# Set once, inside the `with sync_playwright()` block in main(). The AFKL
+# navigation ladder needs it to launch a browser of its own, and there is no
+# public way to recover the driver handle from a Browser object — the previous
+# code guessed at a private `_playwright` attribute, which does not exist, so
+# strategies 3 and 4 reported "no playwright handle available for a side
+# browser" and never ran at all.
+_PLAYWRIGHT = None
 
 # Local deterministic intelligence only; no LLM or external AI service.
 
@@ -4313,6 +4335,15 @@ def page_is_afkl_detail(page, tracking_number):
 
 AFKL_NAV_TIMEOUT_MS = 45000
 
+# Each attempt can legitimately spend ~40s (45s goto ceiling, 8s load, 30s
+# waiting for the shipment to render), so four of them is over two minutes on
+# a shipment that is going to fail anyway. Strategies 3 and 4 also used to
+# cost nothing because they never launched; now that they do, the ladder needs
+# a ceiling. This bounds the ladder as a whole rather than shortening any
+# single attempt, because a shorter per-attempt wait would turn a slow site
+# into a false "shipment not found".
+AFKL_NAV_BUDGET_MS = 120000
+
 
 class AfklNavigationError(Exception):
     """
@@ -4325,13 +4356,54 @@ class AfklNavigationError(Exception):
     def __init__(self, tracking_number, attempts):
         self.tracking_number = tracking_number
         self.attempts = attempts
-        Exception.__init__(self, (
-            "AFKL NAVIGATION ERROR for {0}: none of the {1} navigation "
-            "strategies could load the shipment page. {2}"
-        ).format(tracking_number, len(attempts),
-                 " | ".join("#{0} {1}: {2}".format(
-                     a["attempt"], a["strategy"], a["error"] or a["outcome"])
-                     for a in attempts)))
+        self.detail = " | ".join(
+            "#{0} {1}: {2}".format(a["attempt"], a["strategy"],
+                                   a["error"] or a["outcome"])
+            for a in attempts)
+        # Lead with the diagnosis and the remedy. The per-attempt detail is
+        # kept on .detail for the run log, because the summary line the
+        # operator sees is truncated by the dashboard and by the failure
+        # report — and a truncated wall of strategy names told them nothing.
+        # The raw transport codes stay in the summary, not only in .detail:
+        # save_result() writes this string to the results CSV, and dropping
+        # the code would make the failure unsearchable after the run.
+        codes = []
+        for a in attempts:
+            for token in re.findall(r"(?:net::)?(ERR_[A-Z0-9_]+)", a.get("error") or ""):
+                if token not in codes:
+                    codes.append(token)
+        Exception.__init__(self, "{0} for {1}: {2}{3}".format(
+            AFKL_NAVIGATION_ERROR, tracking_number, self.advice(),
+            " [{0}]".format(", ".join(codes)) if codes else ""))
+
+    def advice(self):
+        """One sentence naming the likely cause and what to do about it."""
+        blob = " ".join((a.get("error") or "") for a in self.attempts)
+        if "ERR_HTTP2_PROTOCOL_ERROR" in blob:
+            return ("the carrier site could not be reached over HTTP/2. This is "
+                    "almost always a TLS-inspecting appliance on this network "
+                    "re-framing HTTP/2, not an outage — the same URL loads over "
+                    "HTTP/1.1. This run should already have HTTP/2 disabled; if "
+                    "this persists, confirm DISABLE_HTTP2 is not set to 0 and "
+                    "ask IT to exempt afklcargo.com from TLS inspection.")
+        if "ERR_NAME_NOT_RESOLVED" in blob or "ERR_INTERNET_DISCONNECTED" in blob:
+            return ("afklcargo.com could not be resolved, so this machine has "
+                    "no working DNS or no route out. Nothing about the air "
+                    "waybill has been learned.")
+        if "ERR_PROXY" in blob or "ERR_TUNNEL_CONNECTION_FAILED" in blob:
+            return ("the proxy refused the connection to afklcargo.com. Ask IT "
+                    "to allow it, or set the proxy for this machine.")
+        if "Timeout" in blob or "ERR_TIMED_OUT" in blob:
+            return ("the carrier site accepted the connection but never "
+                    "finished loading the shipment page. Usually the site is "
+                    "slow or partially down; it is worth re-running.")
+        if any(a.get("loaded") and not a.get("awb_verified") for a in self.attempts):
+            return ("the carrier site loaded but redirected away from the "
+                    "shipment page without showing {0}, so nothing was read. "
+                    "The air waybill has NOT been reported as missing — it was "
+                    "never actually looked up.".format(self.tracking_number))
+        return ("none of the {0} navigation strategies could load the shipment "
+                "page.".format(len(self.attempts)))
 
 
 def _afkl_attempt(page, url, tracking_number, label, strategy, number,
@@ -4421,11 +4493,13 @@ def open_afkl_detail(page, config, tracking_number):
 
     label = config["label"]
     attempts = []
+    ladder_started = time.time()
     write_log("{0}: opening the shipment page directly — {1}".format(label, url))
 
     # ── 1 · the browser we already have ─────────────────────────────
     record = _afkl_attempt(page, url, tracking_number, label,
-                           "existing page", 1)
+                           "existing page", 1,
+                           http2_disabled=DISABLE_HTTP2)
     _log_afkl_attempt(record)
     attempts.append(record)
     if record["awb_verified"]:
@@ -4472,10 +4546,10 @@ def open_afkl_detail(page, config, tracking_number):
                     for a in attempts)
 
     # ── 3 · Chromium with HTTP/2 disabled ───────────────────────────
-    if transport:
+    if transport and _afkl_budget_left(ladder_started, 3, attempts, label):
         record, kept = _afkl_side_browser(
             page, url, tracking_number, label, 3,
-            "chromium --disable-http2", channel=None,
+            "clean edge, HTTP/2 disabled", channel="msedge",
             args=["--disable-http2"], http2_disabled=True)
         attempts.append(record)
         if record["awb_verified"] and kept is not None:
@@ -4487,19 +4561,53 @@ def open_afkl_detail(page, config, tracking_number):
                   "not transport errors.".format(label))
 
     # ── 4 · branded Microsoft Edge ──────────────────────────────────
-    record, kept = _afkl_side_browser(
-        page, url, tracking_number, label, 4,
-        "microsoft edge (msedge channel)", channel="msedge",
-        args=[], http2_disabled=False)
-    attempts.append(record)
+    # A genuinely different browser build, which is the only hypothesis left
+    # once transport and profile have been ruled out. Playwright's bundled
+    # Chromium is a separate download and is legitimately absent on a machine
+    # that only ever runs the msedge channel, so its absence is reported as
+    # "not installed" rather than as a failed attempt.
+    if _afkl_budget_left(ladder_started, 4, attempts, label):
+        record, kept = _afkl_side_browser(
+            page, url, tracking_number, label, 4,
+            "bundled chromium", channel=None,
+            args=["--disable-http2"] if DISABLE_HTTP2 else [],
+            http2_disabled=DISABLE_HTTP2)
+        attempts.append(record)
+    else:
+        record, kept = {"awb_verified": False}, None
     if record["awb_verified"] and kept is not None:
-        write_log("{0}: shipment page confirmed on attempt 4 — the bundled "
-                  "Chromium was the problem, branded Edge works.".format(label))
+        write_log("{0}: shipment page confirmed on attempt 4 — Edge was the "
+                  "problem, the bundled Chromium works.".format(label))
         return kept
 
     save_page_text(page, tracking_number, "afkl_navigation_error")
     take_screenshot(page, tracking_number, "afkl_navigation_error")
     raise AfklNavigationError(tracking_number, attempts)
+
+
+def _afkl_budget_left(started, number, attempts, label):
+    """
+    True when there is still time to run attempt `number`.
+
+    A skipped attempt is recorded as skipped. It must never look like an
+    attempt that ran and failed, because the difference decides whether the
+    air waybill was actually looked up.
+    """
+    spent = int((time.time() - started) * 1000)
+    if spent < AFKL_NAV_BUDGET_MS:
+        return True
+    write_log("{0}: skipping navigation strategy {1} — the {2}s budget for "
+              "reaching this shipment is already spent ({3}s). The air waybill "
+              "has NOT been looked up.".format(
+                  label, number, AFKL_NAV_BUDGET_MS // 1000, spent // 1000))
+    attempts.append({"attempt": number, "strategy": "strategy {0}".format(number),
+                     "channel": None, "http2_disabled": False, "url": None,
+                     "error": None, "status": None, "final_url": None,
+                     "dom_content_loaded": False, "loaded": False,
+                     "awb_verified": False, "elapsed_ms": 0,
+                     "outcome": "skipped, navigation budget spent"})
+    _log_afkl_attempt(attempts[-1])
+    return False
 
 
 def _afkl_side_browser(page, url, tracking_number, label, number, strategy,
@@ -4516,10 +4624,14 @@ def _afkl_side_browser(page, url, tracking_number, label, number, strategy,
               "dom_content_loaded": False, "loaded": False,
               "awb_verified": False, "elapsed_ms": None, "outcome": "not run"}
     started = time.time()
-    try:
-        playwright = getattr(page.context.browser, "_playwright", None)
-    except Exception:
-        playwright = None
+    playwright = _PLAYWRIGHT
+    if playwright is None:
+        # Fall back to the private attribute rather than assuming: if a future
+        # Playwright exposes it, a caller outside main() still works.
+        try:
+            playwright = getattr(page.context.browser, "_playwright", None)
+        except Exception:
+            playwright = None
     if playwright is None:
         record["outcome"] = "no playwright handle available for a side browser"
         record["elapsed_ms"] = int((time.time() - started) * 1000)
@@ -4548,8 +4660,16 @@ def _afkl_side_browser(page, url, tracking_number, label, number, strategy,
         browser.close()
         return inner, None
     except Exception as error:
-        record["error"] = str(error).split("\n")[0][:200]
-        record["outcome"] = "could not launch"
+        first = str(error).split("\n")[0][:200]
+        record["error"] = first
+        lowered = str(error).lower()
+        if "executable doesn't exist" in lowered or "playwright install" in lowered:
+            record["outcome"] = ("{0} is not installed on this machine "
+                                 "(run: playwright install {1})").format(
+                                     channel or "the bundled chromium",
+                                     channel or "chromium")
+        else:
+            record["outcome"] = "could not launch"
         record["elapsed_ms"] = int((time.time() - started) * 1000)
         _log_afkl_attempt(record)
         try:
@@ -5943,10 +6063,25 @@ def main():
     stop_requested = False
 
     with sync_playwright() as playwright:
+        # The AFKL ladder launches browsers of its own; this is the only place
+        # the driver handle exists.
+        global _PLAYWRIGHT
+        _PLAYWRIGHT = playwright
+
+        launch_args = []
+        if DISABLE_HTTP2:
+            launch_args.append("--disable-http2")
+            write_log("HTTP/2 is disabled for this run (DISABLE_HTTP2=0 to "
+                      "re-enable). Some TLS-inspecting network appliances "
+                      "corrupt HTTP/2 framing, which Chromium reports as "
+                      "ERR_HTTP2_PROTOCOL_ERROR against every URL on the "
+                      "affected host.")
+
         browser = playwright.chromium.launch(
             channel="msedge",
             headless=False,
             slow_mo=SLOW_MO_MS,
+            args=launch_args,
         )
 
         context = browser.new_context(
@@ -6085,8 +6220,14 @@ def main():
                         # NOT "no shipment found". The carrier was never
                         # reached, so nothing has been learned about the AWB.
                         failed += 1
-                        write_log("AFKL NAVIGATION ERROR for {0}: {1}".format(
-                            bol_awb, error))
+                        # `error` already opens with "AFKL NAVIGATION ERROR
+                        # for <awb>", so prefixing it again produced the
+                        # doubled line in the run log. The per-attempt detail
+                        # goes on its own line rather than being truncated
+                        # into the summary.
+                        write_log(str(error))
+                        write_log("AFKL nav strategies tried | {0}".format(
+                            getattr(error, "detail", "")))
                         log_operation_failure(
                             shipment.get("carrier"), bol_awb, "carrier navigation",
                             error, 1, 1, AFKL_NAVIGATION_ERROR, final=True,

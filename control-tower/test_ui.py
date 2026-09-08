@@ -23,6 +23,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from dashboard import assistant, bridge, feedback, insights, mlstatus  # noqa: E402
+_MLSTATUS = (HERE / "dashboard" / "mlstatus.py").read_text(encoding="utf-8")
 
 PASS, FAIL = [], []
 INDEX = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
@@ -74,106 +75,60 @@ check("Reduced motion goes straight to the close",
 
 print()
 print("=" * 72)
-print("2. THE AUDIO CANNOT BREAK THE INTRO")
+print("2. THERE IS NO AUDIO ANYWHERE")
 print("=" * 72)
-check("No audio src is hardcoded in the markup",
-      'src="' not in INDEX.split('id="introAudio"')[1].split(">")[0])
-check("The track is discovered from the server, so any filename works",
-      "fetch('/api/music')" in INDEX and "d.audio_all" in INDEX)
-check("...with the fixed intro.* names as a fallback",
-      "/static/assets/audio/intro.mp3" in INDEX)
-check("More than one container is accepted",
-      "intro.m4a" in INDEX and "intro.m4r" in INDEX and "intro.ogg" in INDEX)
-check("A blocked autoplay falls back to muted, then offers a real control",
-      "audio.muted = true" in INDEX and "needs-sound" in INDEX
-      and 'id="enableSound"' in INDEX)
-check("Every play() rejection is caught",
-      INDEX.count("catch(() => {})") >= 2 or INDEX.count(".catch(") >= 3)
-check("preload is none, so it cannot delay the dashboard",
-      'preload="none"' in INDEX)
-check("There is a mute control", 'id="introMute"' in INDEX)
-check("The mute choice is remembered across sessions",
-      "localStorage.setItem('ct-intro-mute'" in INDEX)
-check("Sound fades in and out rather than cutting",
-      "function fadeTo(" in INDEX and "stopAudio" in INDEX)
-check("The sound fades out before the sequence ends",
-      "setTimeout(stopAudio, Math.max(0, TOTAL - 900))" in INDEX)
-check("Playback starts at the configured offset",
-      "const START_AT = 45;" in INDEX)
-check("...only after the browser knows the duration",
-      "audio.readyState >= 1" in INDEX
-      and "loadedmetadata" in INDEX)
-check("...and the offset is clamped when the track is shorter than it",
-      "START_AT >= length - 1.5" in INDEX)
-check("Formats the browser cannot decode are skipped",
-      "audio.canPlayType(type) !== ''" in INDEX)
-check("An undecodable soundtrack is reported, not hidden",
-      "no-audio" in INDEX and "format not supported" in INDEX.lower())
-check("The server offers every candidate, not just the first",
-      "audio_all" in INDEX and "audio_all" in SERVER)
-check("Range requests are honoured, so media actually loads",
-      '206 if partial else 200' in SERVER and 'Content-Range' in SERVER)
-check(".m4r is registered as an audio type",
-      'mimetypes.add_type("audio/mp4", ".m4r")' in SERVER)
-audio_dir = HERE / "dashboard" / "static" / "assets" / "audio"
-check("The asset folder exists so a file can simply be dropped in",
-      audio_dir.is_dir(), str(audio_dir))
-tracks = [f for f in audio_dir.glob("*")
-          if f.suffix.lower() in (".mp3", ".m4a", ".m4r", ".ogg", ".wav", ".flac")]
-check("An audio file is actually installed", bool(tracks),
-      "no audio in " + str(audio_dir))
-check("...and it is a real file, not a placeholder",
-      bool(tracks) and tracks[0].stat().st_size > 100000,
-      str(tracks[0].stat().st_size) if tracks else "0")
-check("No test fixture was left in the shipped assets",
-      not any("fixture" in f.name for f in audio_dir.glob("*")))
+# The soundtrack is gone by request. It is worth pinning the REMOVAL rather
+# than deleting these checks: an intro is exactly the sort of thing a future
+# change re-scores, and the previous build shipped two <audio> elements
+# playing at once, a track that carried on over the dashboard, a 1.28MB fetch
+# in the load path and ~180 lines of fade/seek/codec machinery. None of that
+# should be able to come back unnoticed.
+# Search the MARKUP, not the comments. The file carries a comment recording
+# that the audio was removed, and matching that is how a check passes for the
+# wrong reason.
+_bare = re.sub(r"<!--.*?-->", "", INDEX, flags=re.S)
+check("No <audio> element anywhere in the page",
+      not re.findall(r"<audio[\s>]", _bare))
+check("No audio element is referenced by script",
+      not any(x in INDEX for x in ("introAudio", "new Audio", ".play()",
+                                   "canPlayType", "currentTime")))
+# The only surviving mention is the comment recording the removal, so the
+# check is that nothing FETCHES it.
+check("No soundtrack is fetched",
+      "fetch('/api/music')" not in INDEX and 'fetch("/api/music")' not in INDEX)
+check("No mute or volume control survives",
+      not any(x in INDEX for x in ('id="introMute"', 'id="enableSound"',
+                                   'class="vol"', "ct-intro-mute")))
+check("No autoplay-refused or codec-warning state survives",
+      "needs-sound" not in INDEX and "no-audio" not in INDEX)
+check("The fade/seek/stop machinery is gone",
+      not any(x in INDEX for x in ("function fadeTo", "function seekThenPlay",
+                                   "function attemptPlay", "function startAudio",
+                                   "function stopAudio", "function applyMute")))
+check("The soundtrack asset is not in the build",
+      not [f for f in (HERE / "dashboard" / "static" / "assets" / "audio").glob("*")
+           if f.suffix.lower() in (".mp3", ".m4a", ".m4r", ".ogg", ".wav", ".flac")],
+      str(list((HERE / "dashboard" / "static" / "assets" / "audio").glob("*"))))
+check("...and the server no longer offers an endpoint for one",
+      "/api/music" not in SERVER and "def find_music" not in SERVER)
 
-from dashboard import server as _server                                  # noqa: E402
-_music = _server.find_music()
-# /api/music is how the INTRO resolves its own source. The dashboard has no
-# player of its own any more — see section 2c.
-check("/api/music finds the track the intro will play",
-      bool(_music["audio"]), str(_music))
-check("...and names it from the filename, not a hardcoded track",
-      _music["title"] not in ("", "No audio file found", "Lilith"), str(_music))
-
-print()
-print("=" * 72)
-print("2c. AUDIO BELONGS TO THE INTRO, AND NOWHERE ELSE")
-print("=" * 72)
-# MEASURED in a real browser with a decodable file and autoplay allowed: the
-# previous build played TWO tracks at once during the intro and left the
-# second one running on the dashboard at 22.7s and rising. The cause was a
-# persistent player: a second <audio> with preload="metadata" and an
-# unconditional play() on load. These pin its removal.
-_audio_tags = re.findall(r"<audio\s[^>]*>", INDEX)
-check("There is exactly ONE audio element in the page",
-      len(_audio_tags) == 1, str(len(_audio_tags)))
-check("...and it is the intro's",
-      'id="introAudio"' in INDEX and 'id="audio"' not in INDEX)
-check("...which does not preload — the track is not a dashboard resource",
-      'id="introAudio" preload="none"' in INDEX)
-check("The persistent player script is gone",
-      "function player()" not in INDEX)
-check("...along with its transport controls",
-      not any(x in INDEX for x in ('id="pPlay"', 'id="pVol"', 'id="pTrk"',
-                                'id="pTitle"', 'class="pl-now"')))
-check("...and its timeupdate handler, which wrote to the DOM ~4x/second",
-      "addEventListener('timeupdate'" not in INDEX)
-check("...and its grid row", '"player player"' not in INDEX)
-check("The intro stop is a HARD stop: it rewinds as well as pausing",
-      "audio.pause(); audio.currentTime = 0;" in INDEX)
-check("Ending the intro releases the pending media listeners",
-      "function clearPending()" in INDEX and "removeEventListener('loadedmetadata'" in INDEX)
-check("...and disarms the error chain that would call play() again",
-      "audio.onerror = null" in INDEX)
-check("The scheduled fade-out is replaced, never stacked",
-      "clearTimeout(stopTimer);" in INDEX)
-check("attemptPlay refuses to start sound once the intro is over",
-      "if (done) return;                 // the intro is over" in INDEX)
-check("/api/music is resolved once per page, not once per replay",
-      "sources\n      ? Promise.resolve(sources)" in INDEX
-      or "const resolve = sources" in INDEX)
+# The intro itself is UNCHANGED apart from losing the sound, and its one way
+# out has to be legible. Measured in a real browser: `color` and `background`
+# were both var(--ink), so the OPEN DASHBOARD label was black on black at
+# 1:1 — the operator was clicking a blank pill to get into the dashboard.
+check("The intro still exists and still runs once per session",
+      'id="gate"' in INDEX and "ct-intro" in INDEX and "function run()" in INDEX)
+check("Skip and Escape still end it",
+      "$('skip').addEventListener" in INDEX and "e.key === 'Escape'" in INDEX)
+check("The sidebar's Introduction still replays the same one intro",
+      "window.ctReplayIntro" in INDEX)
+# Scoped to the rule, and anchored so `border-color:var(--ink)` cannot
+# satisfy a substring search for `color:var(--ink)`.
+_gopen = INDEX.split(".g-open{")[1].split("}")[0]
+check("OPEN DASHBOARD is not black-on-black — a filled control carries its "
+      "own foreground",
+      "color:var(--paper)" in _gopen and "background:var(--ink)" in _gopen
+      and not re.search(r"(?<!-)color:var\(--ink\)", _gopen), _gopen[:120])
 
 print()
 print("=" * 72)
@@ -321,6 +276,29 @@ print()
 print("=" * 72)
 print("3. THE ML PANEL SHOWS REAL VALUES")
 print("=" * 72)
+# ── the panel must not get slower every week it runs ─────────────────
+# MEASURED: episodes.join() reads the whole telemetry file, so a snapshot
+# costs 17ms at 2,000 rows, 310ms at 40,000 and 603ms at 100,000. The cache
+# keyed on the file's (size, mtime) was invalidated by every appended row, so
+# during a run — when the automation appends per strategy attempt — every
+# request paid the full price. Twelve requests over an 8.7MB file cost
+# 3,387ms before and 2ms after.
+check("Telemetry GROWTH does not force an immediate recompute",
+      "_MAX_STALE_SECONDS" in _MLSTATUS
+      and "now - _CACHE[\"at\"] < _MAX_STALE_SECONDS" in _MLSTATUS)
+check("...but a change of MEANING still does, because those decide what the "
+      "panel says rather than how much of it there is",
+      "cached[0] == key[0]" in _MLSTATUS
+      and "return (tuple(meaning), growth)" in _MLSTATUS)
+check("The staleness window is bounded, and short enough to be invisible",
+      0 < mlstatus._MAX_STALE_SECONDS <= 60, str(mlstatus._MAX_STALE_SECONDS))
+check("The model files are part of MEANING, not growth",
+      "CHAMPION_PATH, ml_config.CHALLENGER_PATH" in _MLSTATUS
+      and "ml_config.TELEMETRY_PATH).stat()" in _MLSTATUS)
+check("join() is NOT bounded to a tail — it feeds enough_to_train(), and a "
+      "tail count would report 'not enough' on a history that has plenty",
+      "ml_episodes.join()" in _MLSTATUS)
+
 snapshot = mlstatus.snapshot()
 check("There is an /api/ml route", '"/api/ml"' in SERVER)
 check("The snapshot reports a status", snapshot.get("status") in

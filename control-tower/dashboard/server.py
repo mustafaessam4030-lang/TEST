@@ -376,10 +376,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(payload))
             return
 
-        if route == "/api/music":
-            self._send(200, json.dumps(find_music()))
-            return
-
         self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
@@ -609,73 +605,6 @@ def film_scenes():
         "have": len(found),
         "total": len(FILM_SLOTS),
     }
-
-
-def find_music():
-    """
-    Report which audio and artwork files are actually present on disk.
-
-    Two folders are searched. `static/music/` is the player's own, and takes
-    precedence. If it is empty the intro's track is used instead, so a single
-    file dropped in for the startup sequence also gives the player something
-    to play rather than leaving it reading "No audio file found" — which is
-    exactly what it did.
-
-    Title and artist are derived from the FILENAME. They used to be hardcoded
-    to one particular track, so the player named that track whatever you
-    actually put in the folder.
-    """
-    folder = STATIC_DIR / "music"
-    folder.mkdir(parents=True, exist_ok=True)
-    intro_folder = STATIC_DIR / "assets" / "audio"
-
-    AUDIO = (".mp3", ".m4a", ".m4r", ".ogg", ".wav", ".flac")
-    ART = (".jpg", ".jpeg", ".png", ".webp")
-
-    audio = art = source = None
-    every = []
-    for base, url_prefix in ((folder, "/static/music/"),
-                             (intro_folder, "/static/assets/audio/")):
-        if not base.is_dir():
-            continue
-        for item in sorted(base.iterdir()):
-            suffix = item.suffix.lower()
-            if suffix in AUDIO:
-                every.append(url_prefix + item.name)
-                if audio is None:
-                    audio = url_prefix + item.name
-                    source = item
-            if art is None and suffix in ART:
-                art = url_prefix + item.name
-        if audio:
-            break
-
-    # "Inner_Light.mp3" -> "Inner Light"; "01 - Artist - Title.mp3" -> both.
-    title, artist = "No audio file found", ""
-    if source is not None:
-        stem = source.stem.replace("_", " ").strip()
-        parts = [p.strip() for p in stem.split(" - ") if p.strip()]
-        if len(parts) >= 2:
-            artist, title = parts[-2], parts[-1]
-        elif parts:
-            title = parts[0]
-        if title.lower() == "intro":
-            title = "Startup sequence"
-
-    return {
-        "audio": audio,
-        # Every playable file, not just the first. A browser without the
-        # proprietary codecs cannot decode AAC, so handing it the whole list
-        # lets it pick one it can actually play instead of falling silent.
-        "audio_all": every,
-        "art": art,
-        "title": title,
-        "artist": artist,
-        "album": "",
-        "folder": str(folder),
-    }
-
-
 # ============================================================
 # REPLAY — rebuild state from a real finished run
 # ============================================================

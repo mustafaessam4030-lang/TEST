@@ -271,7 +271,7 @@ input,textarea,select{font-family:inherit}
 .g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .g-chip{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.2vw,14px);
   font-weight:700;letter-spacing:.16em;padding:8px 15px;border:1px solid var(--line);
-  border-radius:999px;color:var(--mid);background:rgba(232,237,244,.06)}
+  border-radius:999px;color:var(--mid);background:rgba(0,0,0,.03)}
 .g-list{display:flex;flex-wrap:wrap;gap:7px 22px;justify-content:center;
   font-size:clamp(13px,1.45vw,17px);color:var(--mid)}
 .g-list b{color:var(--ink);font-weight:650}
@@ -288,11 +288,11 @@ input,textarea,select{font-family:inherit}
 /* OPEN DASHBOARD — the conclusion, not a control bolted on */
 .g-open{margin-top:6px;display:inline-flex;align-items:center;gap:10px;
   font-family:var(--mono,ui-monospace,monospace);font-size:12px;font-weight:700;
-  letter-spacing:.18em;text-transform:uppercase;color:var(--ink);background:var(--ink);
+  letter-spacing:.18em;text-transform:uppercase;color:var(--paper);background:var(--ink);
   border:none;border-radius:999px;padding:15px 30px;cursor:pointer;
-  box-shadow:0 10px 30px rgba(0,0,0,.5);
+  box-shadow:0 8px 24px rgba(0,0,0,.18);
   transition:transform .18s var(--e),box-shadow .18s var(--e),background .18s}
-.g-open:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,.6)}
+.g-open:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.24)}
 .g-open:active{transform:translateY(0)}
 .g-open svg{width:15px;height:15px}
 /* It appears with the last scene and then STAYS — the sequence ends on it. */
@@ -309,23 +309,10 @@ input,textarea,select{font-family:inherit}
 @keyframes gbar{to{width:100%}}
 .g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
 .g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:11px;font-weight:700;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(232,237,244,.08);
+  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(0,0,0,.04);
   border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
   transition:color .2s,border-color .2s,background .2s}
-.g-btn:hover{color:var(--ink);border-color:var(--faint);background:var(--ink)}
-.g-btn .on-i{display:none}.g-btn.muted .on-i{display:inline}.g-btn.muted .off-i{display:none}
-/* Shown only when the browser refuses to start audio on its own. */
-.g-sound{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:102;
-  display:none;align-items:center;gap:9px;font-family:var(--mono,ui-monospace,monospace);
-  font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--ink);background:var(--vio);border:none;border-radius:999px;
-  padding:12px 22px;cursor:pointer;box-shadow:0 10px 28px var(--vio-line)}
-#gate.needs-sound .g-sound{display:inline-flex}
-.g-noaudio{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:102;
-  display:none;font-family:var(--mono,ui-monospace,monospace);font-size:11px;
-  font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
-#gate.no-audio .g-noaudio{display:block}
-#gate.no-audio .g-sound{display:none}
+.g-btn:hover{color:var(--paper);border-color:var(--ink);background:var(--ink)}
 @media(max-width:640px){.g-spine{top:calc(50% + 116px)}}
 @media(prefers-reduced-motion:reduce){
   #gate.play .g-s,#gate.play .g-s > *,#gate.play .g-spine::after{animation:none}
@@ -450,14 +437,14 @@ input,textarea,select{font-family:inherit}
 /* The status light. Sized off the type so it scales with the headline, and
    it is the only place the run's state is expressed as colour. */
 .hero-v::before{content:'';flex:none;width:.28em;height:.28em;border-radius:50%;
-  background:var(--faint);box-shadow:0 0 0 .12em rgba(232,237,244,.06)}
+  background:var(--faint);box-shadow:0 0 0 .12em rgba(0,0,0,.05)}
 .hero-v.s-running::before{background:var(--signal);
-  box-shadow:0 0 0 .12em rgba(110,231,168,.14),0 0 1.4em rgba(110,231,168,.5);
+  box-shadow:0 0 0 .12em var(--grn-wash);
   animation:beat 2.4s var(--e) infinite}
 .hero-v.s-finished::before{background:var(--ice);
-  box-shadow:0 0 0 .12em rgba(125,211,252,.14)}
+  box-shadow:0 0 0 .12em var(--blu-wash)}
 .hero-v.s-fatal::before{background:var(--alarm);
-  box-shadow:0 0 0 .12em rgba(255,107,107,.16),0 0 1.4em rgba(255,107,107,.45)}
+  box-shadow:0 0 0 .12em var(--red-wash)}
 @keyframes beat{0%,100%{opacity:1}50%{opacity:.45}}
 @media(prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}}
 .hero-s{font-size:13px;color:var(--mid);margin-bottom:24px;position:relative;z-index:1}
@@ -668,19 +655,20 @@ tr.r-partial .err{color:var(--y)}
 .chat{position:fixed;right:24px;bottom:calc(var(--player) + 22px);z-index:71;
   width:396px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 150px);
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:0 22px 60px rgba(0,0,0,.72);display:none;flex-direction:column;overflow:hidden}
+  box-shadow:0 12px 40px rgba(0,0,0,.14);display:none;flex-direction:column;overflow:hidden}
 .chat.on{display:flex;animation:rise .3s var(--e)}
 .ch-h{display:flex;align-items:center;gap:11px;padding:14px 16px;
   background:var(--crest);color:var(--ink);border-bottom:1px solid var(--line)}
 .ch-av{width:34px;height:34px;border-radius:10px;background:var(--vio);display:grid;
-  place-items:center;color:var(--ink);flex:none}
+  place-items:center;color:var(--on-solid);flex:none}
 .ch-av svg{width:21px;height:21px}
 .ch-nm{font-size:14px;font-weight:700}
-.ch-rl{font-size:11px;color:rgba(239,235,227,.55);margin-top:1px}
+.ch-rl{font-size:11px;color:var(--faint);margin-top:1px}
 .ch-ty{font-size:11px;color:var(--signal);margin-top:1px;display:none}
 .ch-ty.show{display:block}
-.ch-x{margin-left:auto;color:rgba(239,235,227,.6);padding:5px;border-radius:6px}
-.ch-x:hover{color:var(--ink);background:rgba(255,255,255,.1)}
+.ch-x{margin-left:auto;color:var(--mid);padding:5px;border-radius:6px;
+  transition:color .15s var(--e),background .15s var(--e)}
+.ch-x:hover{color:var(--ink);background:var(--surface-3)}
 .ch-b{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
   background:var(--paper)}
 /* Flex children shrink by default, which squashed the shipment card to a
@@ -735,7 +723,6 @@ tr.r-partial .err{color:var(--y)}
 .send:hover{transform:scale(1.06)}
 .send svg{width:15px;height:15px}
 
-.vol{width:68px;accent-color:var(--vio)}
 /* ═══════════ RESPONSIVE ═══════════ */
 @media(max-width:1180px){.g2,.live,.ctl{grid-template-columns:1fr}}
 @media(max-width:880px){
@@ -808,9 +795,8 @@ tr.r-partial .err{color:var(--y)}
 
 <!-- ═══ INTRO ═══════════════════════════════════════════════════════
      Five scenes over ~6.6s, cut rather than dissolved, tied together by a
-     spine that grows across the whole run. No video, no library. The audio
-     is fetched only when the sequence starts, so nothing here can sit in
-     the critical path. -->
+     spine that grows across the whole run. No video, no library, no audio,
+     and nothing here sits in the critical path. -->
 <div id="gate" aria-label="Control Tower startup">
   <div class="g-bar"></div>
   <div class="g-stage">
@@ -846,7 +832,7 @@ tr.r-partial .err{color:var(--y)}
       <p class="g-p" style="--i:2">A completed postback is not a completed write</p>
     </div>
 
-    <!-- The close. It arrives with the music and then holds, so OPEN
+    <!-- The close. It arrives and then holds, so OPEN
          DASHBOARD is where the sequence lands rather than an escape hatch. -->
     <div class="g-s g-last" id="gLast">
       <h1 class="g-h1" style="--i:0">Control <span class="l">Tower</span></h1>
@@ -863,23 +849,9 @@ tr.r-partial .err{color:var(--y)}
   <div class="g-spine"><span class="g-mark m1"></span><span class="g-mark m2"></span>
     <span class="g-mark m3"></span></div>
 
-  <button class="g-sound" id="enableSound">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-      stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>
-    Play with sound
-  </button>
-
-  <!-- Shown when the browser genuinely cannot decode what is on disk. A
-       "play with sound" button there would be a lie: clicking cannot help. -->
-  <div class="g-noaudio" id="noAudio">Soundtrack format not supported by this browser</div>
-
   <div class="g-ctl">
-    <button class="g-btn" id="introMute" aria-label="Mute or unmute the intro">
-      <span class="off-i">Sound on</span><span class="on-i">Sound off</span></button>
     <button class="g-btn" id="skip">Skip</button>
   </div>
-  <audio id="introAudio" preload="none" playsinline></audio>
 </div>
 
 <!-- ═══ APP ═══ -->
@@ -1110,16 +1082,9 @@ tr.r-partial .err{color:var(--y)}
 </section>
   </main>
 
-  <!-- The persistent music player was removed.
-       It was a SECOND audio element holding the same track as the intro,
-       with preload="metadata" and an unconditional play() on dashboard load —
-       which is why the song carried on past the cinematic. On a browser that
-       can decode AAC it simply started playing over the dashboard. It also
-       cost a 1.28MB fetch during load, a timeupdate handler writing to the
-       DOM about four times a second for as long as it played, and two global
-       pointer listeners for the seek bar.
-       The intro keeps its own #introAudio, which stops when the intro ends.
-       The dashboard is silent. -->
+  <!-- There is no audio anywhere in this dashboard, by request. The intro is
+       a silent cinematic: no <audio> element, no /api/music fetch, no codec
+       negotiation, no mute state, and no soundtrack asset in the build. -->
 
   <button class="fab" id="fab">
     <svg><use href="#ct-mark"/></svg>
@@ -1151,199 +1116,17 @@ const $ = (id) => document.getElementById(id);
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const TOTAL = 6600;            // must match --total / the CSS delays
   const LAST_AT = 5300;          // when the closing scene arrives
-  const START_AT = 45;           // where in the track to begin, in seconds
-  const gate = $('gate'), audio = $('introAudio'), muteBtn = $('introMute');
-  let done = false, fade = null, endTimer = null, lastTimer = null;
-  /* Everything below exists so a REPLAY costs nothing new. Measured on the
-     previous build: each replay added 4 listeners, 4 timers and 2 play()
-     calls, none of them ever released. `pending` holds the one-shot media
-     listeners so they can be removed if the intro ends before they fire,
-     `stopTimer` is the scheduled fade-out, and `sources` caches the answer
-     from /api/music so a replay does not re-ask. */
-  let stopTimer = null, pending = null, sources = null;
+  const gate = $('gate');
+  let done = false, endTimer = null, lastTimer = null;
 
   const seen = (() => { try { return sessionStorage.getItem('ct-intro') === '1'; }
                         catch (e) { return false; } })();
-  const muted = (() => { try { return localStorage.getItem('ct-intro-mute') === '1'; }
-                         catch (e) { return false; } })();
-
-  function applyMute(){
-    muteBtn.classList.toggle('muted', audio.muted);
-    try { localStorage.setItem('ct-intro-mute', audio.muted ? '1' : '0'); } catch (e) {}
-  }
-
-  function fadeTo(target, step, after){
-    clearInterval(fade);
-    fade = setInterval(() => {
-      const v = audio.volume + step;
-      const arrived = step > 0 ? v >= target : v <= target;
-      try { audio.volume = Math.max(0, Math.min(1, arrived ? target : v)); } catch (e) {}
-      if (arrived){ clearInterval(fade); if (after) after(); }
-    }, 55);
-  }
-
-  /* Release the one-shot media listeners. Without this, ending the intro
-     before metadata arrives leaves a loadedmetadata handler that will call
-     attemptPlay() later — on a dashboard that is supposed to be silent. */
-  function clearPending(){
-    if (!pending) return;
-    try {
-      audio.removeEventListener('loadedmetadata', pending.meta);
-      audio.removeEventListener('error', pending.err);
-    } catch (e) {}
-    pending = null;
-  }
-
-  /* A HARD stop. Fade if it is audible, then pause — and in either case take
-     away every route back to playing: the scheduled fade-out, the pending
-     metadata handlers, and the error chain that walks the source list and
-     calls play() again at the end of it. */
-  function stopAudio(){
-    clearTimeout(stopTimer); stopTimer = null;
-    clearPending();
-    audio.onerror = null;
-    if (!audio) return;
-    if (audio.paused){ clearInterval(fade); fade = null; return; }
-    fadeTo(0, -0.08, () => {
-      try { audio.pause(); audio.currentTime = 0; } catch (e) {}
-      fade = null;
-    });
-  }
-
-  /* Seek to START_AT, but only once the browser knows how long the track is.
-     Setting currentTime before metadata arrives is ignored, which is one of
-     the ways a "synchronised" intro ends up silent. And a ringtone is often
-     shorter than the offset asked for — seeking past the end gives silence,
-     so the offset is clamped and the reason is logged rather than hidden. */
-  function seekThenPlay(){
-    const go = () => {
-      const length = audio.duration;
-      let at = START_AT;
-      if (!isFinite(length) || length <= 0){
-        at = 0;
-      } else if (START_AT >= length - 1.5){
-        at = 0;
-        console.info('[intro] track is ' + length.toFixed(1) + 's, so ' +
-          START_AT + 's does not exist in it — starting at 0:00.');
-      }
-      try { audio.currentTime = at; } catch (e) {}
-      attemptPlay();
-    };
-    if (audio.readyState >= 1) { go(); return; }
-    // Replace any previous pair rather than stacking another one.
-    clearPending();
-    pending = {meta: go, err: attemptPlay};
-    audio.addEventListener('loadedmetadata', go, {once: true});
-    audio.addEventListener('error', attemptPlay, {once: true});
-    try { audio.load(); } catch (e) { attemptPlay(); }
-  }
-
-  /* Autoplay: try with sound, fall back to muted (which browsers do allow),
-     and if even that is refused surface a real control rather than running
-     the picture in silence and pretending it was scored. */
-  function attemptPlay(){
-    clearPending();
-    if (done) return;                 // the intro is over; do not start sound
-    audio.volume = 0;
-    const play = audio.play();
-    if (play && play.then){
-      play.then(() => {
-        gate.classList.remove('needs-sound');
-        fadeTo(audio.muted ? 0 : 0.75, 0.07);
-      }).catch(() => {
-        audio.muted = true; applyMute();
-        const retry = audio.play();
-        if (retry && retry.then){
-          retry.then(() => { gate.classList.add('needs-sound'); })
-               .catch(() => { gate.classList.add('needs-sound'); });
-        } else {
-          gate.classList.add('needs-sound');
-        }
-      });
-    }
-    // One timer, replaced not stacked. The error chain can reach this
-    // function several times while it walks the source list.
-    clearTimeout(stopTimer);
-    stopTimer = setTimeout(stopAudio, Math.max(0, TOTAL - 900));
-  }
-
-  function startAudio(){
-    if (!audio) return;
-    const fallbacks = ['/static/assets/audio/intro.mp3',
-                       '/static/assets/audio/intro.m4a',
-                       '/static/assets/audio/intro.m4r',
-                       '/static/assets/audio/intro.ogg'];
-    /* Skip anything this browser cannot decode. Chromium builds without the
-       proprietary codecs report '' for AAC, so an .m4a/.m4r would otherwise
-       be attempted, fail with DEMUXER_ERROR_NO_SUPPORTED_STREAMS, and take
-       the whole soundtrack down with it. Chrome and Edge do ship AAC. */
-    const TYPES = {mp3: 'audio/mpeg', m4a: 'audio/mp4; codecs="mp4a.40.2"',
-                   m4r: 'audio/mp4; codecs="mp4a.40.2"', ogg: 'audio/ogg; codecs="vorbis"',
-                   wav: 'audio/wav', flac: 'audio/flac'};
-    const playable = (url) => {
-      const ext = (url.split('.').pop() || '').toLowerCase();
-      const type = TYPES[ext];
-      return !type || audio.canPlayType(type) !== '';
-    };
-    let list = fallbacks.slice(), which = 0;
-    // Walk the list only while there is a next candidate, and NEVER leave a
-    // source that failed as the final state — the previous version chained
-    // all the way down to a name that does not exist and then reported a
-    // silent intro as if that were normal.
-    audio.onerror = () => {
-      if (which + 1 < list.length){
-        which += 1;
-        console.info('[intro] ' + list[which - 1] + ' would not load; trying '
-                     + list[which]);
-        audio.src = list[which];
-        seekThenPlay();
-      } else {
-        console.warn('[intro] no playable audio source: ' + list.join(', '));
-        gate.classList.add('no-audio');
-      }
-    };
-    audio.muted = muted;
-    // Ask the server what is really on disk, so any filename works. Asked
-    // ONCE per page: the files do not change while the dashboard is open, and
-    // a replay that re-asked was one more request and one more chance to
-    // start a second playback.
-    const resolve = sources
-      ? Promise.resolve(sources)
-      : fetch('/api/music').then((r) => r.json()).then((d) => {
-          const found = (d && d.audio_all && d.audio_all.length)
-            ? d.audio_all : (d && d.audio ? [d.audio] : []);
-          sources = found.length ? found.concat(fallbacks) : fallbacks.slice();
-          return sources;
-        }).catch(() => { sources = fallbacks.slice(); return sources; });
-
-    resolve
-      .then((resolved) => { list = resolved.slice(); })
-      .finally(() => {
-        if (done) return;
-        const usable = list.filter(playable);
-        if (!usable.length){
-          // Not an autoplay problem — a codec one. Say which, rather than
-          // offering a button that cannot change the outcome.
-          console.warn('[intro] this browser cannot decode any available '
-            + 'audio format (' + list.join(', ') + ')');
-          gate.classList.add('no-audio');
-          return;
-        }
-        list = usable; which = 0;
-        audio.src = list[0];
-        seekThenPlay();
-      });
-  }
 
   function finish(){
     if (done) return;
     done = true;
     clearTimeout(endTimer); clearTimeout(lastTimer);
-    // done = true FIRST, so an in-flight attemptPlay() bails out instead of
-    // starting sound on a dashboard that is meant to be silent from here on.
-    stopAudio();
     try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
-    gate.classList.remove('needs-sound');
     gate.classList.add('gone');
     $('app').classList.add('on');
     setTimeout(() => $('app').classList.add('settled'), 700);
@@ -1359,48 +1142,22 @@ const $ = (id) => document.getElementById(id);
   }
 
   function run(){
-    // A replay must not inherit anything from the last one.
-    clearTimeout(stopTimer); stopTimer = null;
-    clearInterval(fade); fade = null;
-    clearPending();
-    audio.onerror = null;
-    try { audio.pause(); audio.currentTime = 0; } catch (e) {}
     gate.style.setProperty('--total', TOTAL + 'ms');
     gate.style.setProperty('--lastAt', LAST_AT + 'ms');
     gate.style.display = '';
-    gate.classList.remove('gone', 'ended', 'needs-sound');
+    gate.classList.remove('gone', 'ended');
     done = false;
     void gate.offsetWidth;                   // restart the CSS animations
     gate.classList.add('play');
-    startAudio();
     clearTimeout(lastTimer); clearTimeout(endTimer);
     if (reduced){ hold(); return; }
     lastTimer = setTimeout(hold, TOTAL);
   }
 
-  muteBtn.addEventListener('click', () => {
-    audio.muted = !audio.muted;
-    applyMute();
-    if (!audio.muted){
-      gate.classList.remove('needs-sound');
-      if (audio.paused){ const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
-      fadeTo(0.75, 0.09);
-    }
-  });
-
-  // A real click is a gesture, which is all a browser wants before it will
-  // start audio. Restart the sound from the same offset, in step.
-  $('enableSound').addEventListener('click', () => {
-    audio.muted = false; applyMute();
-    gate.classList.remove('needs-sound');
-    seekThenPlay();
-  });
-
   $('openDash').addEventListener('click', finish);
   $('skip').addEventListener('click', finish);
   addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(); });
 
-  audio.muted = muted; applyMute();
   if (seen) { finish(); } else { run(); }
 
   // The sidebar's Introduction and the Settings replay both call this. There
