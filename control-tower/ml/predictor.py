@@ -402,6 +402,144 @@ def recommend_strategy(context, strategies, log=None):
         return _no("prediction failed ({0}); using the original order".format(error))
 
 
+def recommend_recovery(context, error_class, actions, log=None):
+    """
+    Rank safe recovery actions for this error, or decline.
+
+    `actions` is the list ml.recovery already filtered down to what is SAFE
+    for this error class and still inside the budget. This function can only
+    reorder that list — exactly like recommend_strategy, and for the same
+    reason: the set of things that may happen is the automation's to decide,
+    not the model's.
+
+    Returns a Recommendation. `used` is True only when the model had support,
+    cleared the threshold, was not drifting, AND the mode is active. In shadow
+    it comes back used=False with the order populated, which is what lets the
+    caller record "would try" without ever acting on it.
+    """
+    names = [a.name if hasattr(a, "name") else str(a) for a in actions]
+    try:
+        if not config.ML_ENABLED:
+            result = _no("ML_ENABLED is off")
+            _log_recovery_decision(context, error_class, None, {}, False,
+                                   result.reason, log, candidates=names)
+            return result
+        if len(names) < 2:
+            # One option, or none. There is no ranking decision to make and
+            # nothing to record a preference about.
+            return _no("only {0} safe recovery option".format(len(names)))
+
+        model, error = load_model()
+        if model is None:
+            result = _no(error or "no model")
+            _log_recovery_decision(context, error_class, None, {}, False,
+                                   result.reason, log, candidates=names)
+            return result
+
+        keys = features.keys(recovery_module().recovery_context(
+            context, error_class))
+        verdict = model.assess(
+            keys, names,
+            min_observations=int(config.ML_MIN_OBSERVATIONS),
+            min_support=int(config.MIN_SUPPORT),
+            min_support_per_arm=int(config.MIN_SUPPORT_PER_ARM),
+            quarantine_after=int(config.QUARANTINE_FAILURES))
+        scores = verdict["scores"]
+        best = max(scores.values()) if scores else 0.0
+
+        if not verdict["has_support"]:
+            result = _no("not enough evidence: {0}".format(
+                "; ".join(verdict["support_reasons"])))
+            _log_recovery_decision(context, error_class, None, scores, False,
+                                   result.reason, log, candidates=names,
+                                   verdict=verdict)
+            return result
+        if best < config.ML_CONFIDENCE_THRESHOLD:
+            result = _no("top ranking score {0:.2f} is below the {1:.2f} "
+                         "threshold".format(best,
+                                            config.ML_CONFIDENCE_THRESHOLD))
+            _log_recovery_decision(context, error_class, None, scores, False,
+                                   result.reason, log, candidates=names,
+                                   verdict=verdict)
+            return result
+
+        ordered = [a.name for a in recovery_module().rank(
+            actions, scores=scores, quarantined=verdict["quarantined"])]
+
+        drifted, drift_detail = model.drift(
+            keys, ordered[0], threshold=config.DRIFT_THRESHOLD)
+        if drifted:
+            result = _no("drift detected ({0}); keeping the deterministic "
+                         "recovery order".format(drift_detail))
+            _log_recovery_decision(context, error_class, None, scores, False,
+                                   result.reason, log, candidates=names,
+                                   verdict=verdict)
+            return result
+
+        if set(ordered) != set(names):
+            return _no("internal ordering error; kept the deterministic order")
+
+        reason = "top ranking score {0:.2f} at backoff level {1}".format(
+            best, verdict["level"])
+
+        # SHADOW. ATLAS has a plan and none of it is carried out. The caller
+        # records "would try", never "tried".
+        if config.ML_MODE != "active":
+            result = Recommendation(
+                used=False, order=[], top=None, scores=scores,
+                reason="shadow: would try {0} first ({1})".format(
+                    ordered[0], reason),
+                level=verdict["level"], trials=verdict["trials"],
+                would_have_used=True, shadow_order=ordered)
+            _log_recovery_decision(context, error_class, ordered[0], scores,
+                                   False, result.reason, log,
+                                   candidates=names, verdict=verdict,
+                                   shadow=True)
+            return result
+
+        result = Recommendation(used=True, order=ordered, top=ordered[0],
+                                scores=scores, reason=reason,
+                                level=verdict["level"],
+                                trials=verdict["trials"])
+        _log_recovery_decision(context, error_class, ordered[0], scores, True,
+                               reason, log, candidates=names, verdict=verdict)
+        return result
+    except Exception as error:
+        if not config.ML_FALLBACK_ENABLED:
+            raise
+        return _no("recovery ranking failed ({0}); using the deterministic "
+                   "order".format(error))
+
+
+def recovery_module():
+    """Imported lazily: ml.recovery imports features, not the predictor."""
+    from . import recovery
+    return recovery
+
+
+def _log_recovery_decision(context, error_class, chosen, scores, used, reason,
+                           log, candidates=None, verdict=None, shadow=False):
+    """
+    Announce a recovery ranking, under the same attribution rule as strategy
+    selection: only `used` may be called a selection.
+    """
+    try:
+        if used:
+            label = identity.RECOVERY_PLAN
+            detail = "{0}: {1} first — {2}".format(error_class, chosen, reason)
+        elif shadow:
+            label = identity.RECOVERY_WOULD_TRY
+            detail = "{0}: would try {1} — {2}".format(error_class, chosen,
+                                                       reason)
+        else:
+            label = identity.DETERMINISTIC_FALLBACK
+            detail = "{0}: {1}".format(error_class, reason)
+        if log:
+            log(identity.line(label, detail))
+    except Exception:
+        pass
+
+
 def recommend_wait(context, default_ms, floor_ms=500, log=None):
     """
     A wait budget for this context, or the caller's own default.

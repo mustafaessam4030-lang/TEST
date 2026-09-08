@@ -336,6 +336,54 @@ def decision(context, chosen, scores, used, reason, redactor=None,
     }, redactor=redactor)
 
 
+def recovery(episode_id, error_class, error_signature, context,
+             candidates, chosen, used, attempt, latency_ms, result,
+             verification=None, outcome=None, fallback_reason=None,
+             state=None, scores=None, confidence=None, budget=None,
+             mode=None, shadow=False, redactor=None, source="automation"):
+    """
+    One recovery attempt, whatever became of it.
+
+    `used` is the whole point of the row: it says whether ATLAS's ranking was
+    actually followed. In shadow mode it is False and `chosen` still holds
+    what ATLAS would have picked — recording that pair is how the ranking can
+    be evaluated later without ever having steered anything.
+
+    `result` is what the ACTION did. `verification` is what the existing
+    read-back said afterwards, and it is the only thing that may promote an
+    attempt to a success: an action that threw no exception has not recovered
+    anything.
+    """
+    return record({
+        "kind": "recovery",
+        "episode_id": episode_id,
+        "error_class": error_class,
+        "error_signature": error_signature,
+        "context": context,
+        # The safe actions that were available, in the order they were tried.
+        "candidates": list(candidates or ()),
+        "chosen": chosen,
+        # Did ATLAS's ranking actually decide this? False in shadow, false
+        # with no model, false when the deterministic ladder ran.
+        "used": bool(used),
+        "shadow": bool(shadow),
+        "attempt": attempt,
+        "latency_ms": None if latency_ms is None else round(float(latency_ms), 1),
+        "result": result,
+        # Three-valued, like every other verification in this system: True
+        # confirmed, False contradicted, None not checked.
+        "verification": verification,
+        "outcome": outcome,
+        "fallback_reason": fallback_reason,
+        "state": state,
+        "scores": scores,
+        "confidence": confidence,
+        "budget": budget,
+        "mode": mode,
+        "source": source,
+    }, redactor=redactor)
+
+
 def failures():
     return _failures
 

@@ -29,6 +29,7 @@ SUITES = [
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
     ("test_atlas.py",           "ATLAS identity and attribution"),
     ("test_captcha.py",         "human verification, AFKL URL and AWB prefix"),
+    ("test_recovery.py",        "safe error recovery, bounded and attributed"),
 ]
 
 

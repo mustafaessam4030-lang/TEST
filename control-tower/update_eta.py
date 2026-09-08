@@ -911,11 +911,13 @@ try:
     from ml import features as ml_features
     from ml import identity as ml_identity
     from ml import predictor as ml_predictor
+    from ml import recovery as ml_recovery
     from ml import telemetry as ml_telemetry
     ML_AVAILABLE = True
 except Exception as _ml_import_error:      # pragma: no cover - environment
     ML_AVAILABLE = False
     ml_config = ml_features = ml_identity = ml_predictor = ml_telemetry = None
+    ml_recovery = None
     _ML_IMPORT_ERROR = str(_ml_import_error)
 
 
@@ -936,6 +938,16 @@ ATLAS_DETERMINISTIC_FALLBACK = "Deterministic fallback"
 ATLAS_VERIFICATION_PASSED = "Verification passed"
 ATLAS_ACTION_COMPLETED = "Action completed"
 ATLAS_ACTION_UNVERIFIED = "Action unverified"
+# Recovery, same convention: the automation must be able to name every line
+# it prints even with the ml package missing.
+ATLAS_RECOVERY_DIAGNOSED = "Error diagnosed"
+ATLAS_RECOVERY_PLAN = "Recovery plan"
+ATLAS_RECOVERY_TRYING = "Trying recovery"
+ATLAS_RECOVERY_WOULD_TRY = "Would try recovery"
+ATLAS_RECOVERY_SUCCEEDED = "Recovery succeeded"
+ATLAS_RECOVERY_FAILED = "Recovery failed"
+ATLAS_RECOVERY_EXHAUSTED = "No safe recovery succeeded"
+ATLAS_RECOVERY_NOT_POSSIBLE = "No safe recovery exists"
 
 
 def atlas_line(label, detail=""):
@@ -1064,6 +1076,12 @@ def atlas_mode():
 def ml_episode_id():
     episode = ml_episode_current()
     return episode.episode_id if episode else None
+
+
+def ml_episode_reference():
+    """The reference of the write currently in flight, or None."""
+    episode = ml_episode_current()
+    return episode.reference if episode is not None else None
 
 
 def ml_episode_attempt(what):
@@ -1196,6 +1214,401 @@ def ml_record(context, strategy, success, duration_ms=None,
             reference=reference or (episode.reference if episode else None),
             rank=rank, episode_id=(episode.episode_id if episode else None),
             retries=retries, role=role, state=state, redactor=redact_secrets)
+    except Exception:
+        pass
+
+
+# ============================================================
+# ATLAS RECOVERY
+# ============================================================
+#
+# "Do not skip when a safe recovery is possible." Not "never skip".
+#
+# THE SHAPE, and the reason for it:
+#
+#   error
+#     -> ml_recovery.classify()        which known error class is this
+#     -> ml_recovery.candidates()      the SAFE actions for that class
+#     -> ml_predictor.recommend_recovery()   ATLAS ranks them
+#     -> RECOVERY_ACTIONS[name](...)   the automation executes, never ATLAS
+#     -> the caller's own verification decides success
+#     -> next candidate, or deterministic fallback when the budget is spent
+#
+# ATLAS never executes anything. It returns a NAME, and only a name that is
+# already a key of RECOVERY_ACTIONS below. Every function in that table is
+# one the automation already had. There is no way to express "click this
+# selector" or "go to this URL" anywhere in the recovery path, which is what
+# keeps this a recovery layer rather than an agent.
+#
+# In SHADOW mode — the shipped default — the deterministic registry order
+# runs and ATLAS's ranking is recorded as "would try". The recovery still
+# happens; ATLAS just does not choose it yet.
+
+ATLAS_RECOVERY_ENABLED = (
+    os.environ.get("ATLAS_RECOVERY", "1").strip().lower()
+    not in ("0", "false", "no", "off"))
+
+# The budget. Deliberately small: recovery exists to survive a flake, not to
+# grind at a page that has genuinely changed.
+RECOVERY_MAX_ATTEMPTS = 3
+RECOVERY_MAX_PER_ACTION = 1
+RECOVERY_MAX_SECONDS = 45.0
+RECOVERY_MAX_RELOADS = 1
+RECOVERY_MAX_NAVIGATIONS = 2
+
+
+def _recover_wait_page_ready(page, plan):
+    wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+    return page_is_settled(page)
+
+
+def _recover_wait_element_visible(page, plan):
+    field = first_visible(plan.get("candidates_locators") or [], 2500)
+    plan["field"] = field
+    return field is not None
+
+
+def _recover_reacquire_locator(page, plan):
+    field = first_visible(plan.get("candidates_locators") or [], 1500)
+    plan["field"] = field
+    return field is not None
+
+
+def _recover_try_alternate_locator(page, plan):
+    """The automation's own remaining candidates, one probe each."""
+    for locator in (plan.get("candidates_locators") or [])[1:]:
+        found = first_visible([locator], 900)
+        if found is not None:
+            plan["field"] = found
+            return True
+    return False
+
+
+def _recover_find_ignoring_visibility(page, plan):
+    field = find_field_ignoring_visibility(page, plan["field_name"])
+    plan["field"] = field
+    return field is not None
+
+
+def _recover_switch_frame(page, plan):
+    """Look in the frames this page already has. No new frames are created."""
+    other = "ATA" if plan["field_name"] == "ETA" else "ETA"
+    for scope in all_scopes(page):
+        try:
+            found = scope.locator(
+                "input[id*='{0}' i]:not([id*='{1}' i]):visible".format(
+                    plan["field_name"], other))
+            if found.count():
+                plan["field"] = found.first
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _recover_reselect_tab(page, plan):
+    return bool(select_shipment_info_tab(page, plan["view"],
+                                         plan["field_name"]))
+
+
+def _recover_reopen_view(page, plan):
+    shipment = plan.get("shipment") or {}
+    click_manage_in_view(page, plan["view"], shipment.get("bol_awb"),
+                         shipment.get("table_page") or 1)
+    select_shipment_info_tab(page, plan["view"], plan["field_name"])
+    return page_is_settled(page)
+
+
+def _recover_reload_page(page, plan):
+    page.reload(wait_until="domcontentloaded")
+    wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+    return page_is_settled(page)
+
+
+def _recover_retry_navigation(page, plan):
+    shipment = plan.get("shipment") or {}
+    ensure_filtered_page(page, plan["view"],
+                         shipment.get("table_page") or 1)
+    return page_is_settled(page)
+
+
+def _recover_retry_interaction(page, plan):
+    field = plan.get("field")
+    if field is None:
+        return False
+    return bool(write_date_value(field, plan["value"], plan["field_name"],
+                                 context=plan.get("context")))
+
+
+def _recover_retry_save(page, plan):
+    save_manage_page(page)
+    return True
+
+
+def _recover_reread_state(page, plan):
+    """Changes nothing. Re-reads, so the next decision is on fresh state."""
+    plan["page_ready"] = page_is_settled(page)
+    plan["frames"] = len(all_scopes(page))
+    return plan["page_ready"]
+
+
+# The ONLY actions that exist. A name ATLAS returns that is not a key here is
+# refused — see atlas_recover().
+RECOVERY_ACTIONS = {
+    "wait_for_page_ready": _recover_wait_page_ready,
+    "wait_for_element_visible": _recover_wait_element_visible,
+    "reacquire_locator": _recover_reacquire_locator,
+    "try_alternate_locator": _recover_try_alternate_locator,
+    "find_ignoring_visibility": _recover_find_ignoring_visibility,
+    "switch_frame": _recover_switch_frame,
+    "reselect_tab": _recover_reselect_tab,
+    "reopen_view": _recover_reopen_view,
+    "reload_page": _recover_reload_page,
+    "retry_navigation": _recover_retry_navigation,
+    "retry_interaction_once": _recover_retry_interaction,
+    "retry_save_once": _recover_retry_save,
+    "reread_page_state": _recover_reread_state,
+}
+
+
+def atlas_recover(page, error, plan, verify=None, category=None):
+    """
+    Try to recover from `error`, bounded, and report honestly.
+
+    `plan` carries what the actions need — the field name, the view, the
+    shipment, the caller's own candidate locators. `verify` is the caller's
+    verification callable; an action that raises no exception is NOT a
+    success, and without a `verify` the outcome is UNVERIFIED rather than
+    assumed good.
+
+    Returns a dict: recovered (True/False), verified (True/False/None),
+    attempts, reason, and the plan (whose "field" the caller may now use).
+    """
+    outcome = {"recovered": False, "verified": None, "attempts": 0,
+               "reason": "recovery is not available", "plan": plan,
+               "error_class": None, "considered": []}
+    if not ML_AVAILABLE or ml_recovery is None or not ATLAS_RECOVERY_ENABLED:
+        return outcome
+
+    error_class, signature = ml_recovery.classify(error, category=category)
+    outcome["error_class"] = error_class
+
+    # CAPTCHA is a person's job. It is not ranked, not retried, and not
+    # recovered — it is escalated, by the machinery that already exists.
+    if error_class == ml_recovery.HUMAN_VERIFICATION:
+        outcome["reason"] = ml_recovery.why_not(error_class)
+        atlas_log(ATLAS_RECOVERY_NOT_POSSIBLE,
+                  "{0}: {1}".format(error_class, outcome["reason"]))
+        _recovery_telemetry(plan, error_class, signature, [], None, False, 0,
+                            None, "escalated to a person", None,
+                            ml_identity.STATE_HUMAN_VERIFICATION_REQUIRED,
+                            None, None)
+        return outcome
+
+    reason_not = ml_recovery.why_not(error_class)
+    if reason_not:
+        outcome["reason"] = reason_not
+        atlas_log(ATLAS_RECOVERY_NOT_POSSIBLE,
+                  "{0}: {1}".format(error_class, reason_not))
+        _recovery_telemetry(plan, error_class, signature, [], None, False, 0,
+                            None, "not recoverable", None,
+                            ml_identity.STATE_FALLBACK, None, reason_not)
+        return outcome
+
+    budget = ml_recovery.Budget(
+        max_attempts=RECOVERY_MAX_ATTEMPTS,
+        max_per_action=RECOVERY_MAX_PER_ACTION,
+        max_seconds=RECOVERY_MAX_SECONDS,
+        max_reloads=RECOVERY_MAX_RELOADS,
+        max_navigations=RECOVERY_MAX_NAVIGATIONS)
+    safe = ml_recovery.candidates(error_class, budget=budget,
+                                  in_write=bool(plan.get("in_write")))
+    # Anything without a real implementation is not a candidate, whatever the
+    # policy says. The two lists are kept honest by a test.
+    safe = [a for a in safe if a.name in RECOVERY_ACTIONS]
+    outcome["considered"] = [a.name for a in safe]
+    if not safe:
+        outcome["reason"] = ("no safe recovery action applies to {0}"
+                             .format(error_class))
+        atlas_log(ATLAS_RECOVERY_NOT_POSSIBLE, outcome["reason"])
+        return outcome
+
+    context = plan.get("context") or {}
+    recommendation = None
+    try:
+        recommendation = ml_predictor.recommend_recovery(
+            context, error_class, safe, log=write_log)
+    except Exception as inner:
+        note_suppressed("asking ATLAS to rank recovery options", inner)
+
+    used = bool(recommendation is not None and recommendation.used)
+    scores = dict(getattr(recommendation, "scores", {}) or {})
+    if used:
+        # ATLAS's order, but only over names the automation offered.
+        by_name = {a.name: a for a in safe}
+        order = [by_name[n] for n in recommendation.order if n in by_name]
+        if len(order) != len(safe):
+            order, used = ml_recovery.rank(safe), False
+    else:
+        order = ml_recovery.rank(safe)
+
+    atlas_log(ATLAS_RECOVERY_DIAGNOSED,
+              "{0} — {1}".format(error_class, str(error)[:110]))
+    # "Recovery plan" when ATLAS's ranking is being followed; "Would try
+    # recovery" when it is shadowing and the deterministic order is what
+    # actually runs. The second must never read as the first.
+    shadowing = bool(getattr(recommendation, "would_have_used", False))
+    plan_text = "; ".join("{0}. {1}{2}".format(
+        i + 1, a.name,
+        " (score {0:.2f})".format(scores[a.name]) if a.name in scores else "")
+        for i, a in enumerate(order))
+    if used:
+        atlas_log(ATLAS_RECOVERY_PLAN, plan_text)
+    elif shadowing:
+        # ATLAS ranked these and none of it is being acted on. The wording
+        # has to say so: the deterministic order is what actually runs.
+        atlas_log(ATLAS_RECOVERY_WOULD_TRY,
+                  "{0} (the deterministic order is what runs)".format(plan_text))
+    else:
+        atlas_log(ATLAS_RECOVERY_PLAN, plan_text)
+    tower_recovery_plan(error_class, str(error)[:120],
+                        [a.name for a in order], scores, used)
+
+    for index, action in enumerate(order, start=1):
+        spent = budget.exhausted()
+        if spent or not budget.allows(action):
+            outcome["reason"] = spent or (
+                "the budget has no room for {0}".format(action.name))
+            break
+        started = time.time()
+        budget.spend(action)
+        outcome["attempts"] = budget.attempts
+        atlas_log(ATLAS_RECOVERY_TRYING,
+                  "{0}/{1}: {2} — {3}".format(index, len(order), action.name,
+                                              action.detail))
+        tower_recovery_attempt(index, len(order), action.name,
+                               scores.get(action.name), "RUNNING", None)
+        ran = False
+        failure = None
+        try:
+            ran = bool(RECOVERY_ACTIONS[action.name](page, plan))
+        except Exception as inner:
+            failure = inner
+            ran = False
+        latency = (time.time() - started) * 1000.0
+
+        # AN ACTION THAT DID NOT THROW HAS NOT RECOVERED ANYTHING. Success is
+        # whatever the caller's own verification says, and nothing else.
+        verified = None
+        if ran and verify is not None:
+            try:
+                verified = verify()
+            except Exception as inner:
+                failure = inner
+                verified = None
+        elif ran:
+            verified = None
+
+        good = bool(ran and verified is True)
+        state = (ml_identity.STATE_RECOVERY_SUCCEEDED if good and used
+                 else ml_identity.STATE_RECOVERY_FAILED if used
+                 else ml_identity.STATE_DETERMINISTIC_RECOVERY)
+        _recovery_telemetry(
+            plan, error_class, signature, [a.name for a in order],
+            action.name, used, budget.attempts, latency,
+            "ok" if ran else "failed: {0}".format(str(failure)[:90]
+                                                  if failure else "no effect"),
+            verified, state, scores, None, budget=budget.snapshot(),
+            shadow=shadowing)
+
+        if good:
+            atlas_log(ATLAS_RECOVERY_SUCCEEDED,
+                      "{0} recovered the {1} and the value was verified"
+                      .format(action.name, plan.get("field_name") or "field"))
+            tower_recovery_attempt(index, len(order), action.name,
+                                   scores.get(action.name), "SUCCESS", True)
+            tower_recovery_done(True, "{0} succeeded and verified".format(
+                action.name), verified=True)
+            outcome.update(recovered=True, verified=True,
+                           reason="{0} succeeded and verified".format(action.name))
+            return outcome
+
+        if ran and verify is None:
+            # It did what it was asked and there is nothing to verify against
+            # here. The caller's own verification runs later; this is reported
+            # as unverified, never as a success.
+            atlas_log(ATLAS_RECOVERY_SUCCEEDED,
+                      "{0} completed — not yet verified, the caller's own "
+                      "check decides".format(action.name))
+            tower_recovery_attempt(index, len(order), action.name,
+                                   scores.get(action.name), "DONE", None)
+            # Reported as recovered but NOT verified. The caller's own check
+            # decides, and the panel says so rather than implying a pass.
+            tower_recovery_done(True, "{0} completed; the caller's own "
+                                "verification decides".format(action.name),
+                                verified=None)
+            outcome.update(recovered=True, verified=None,
+                           reason="{0} completed; verification pending"
+                                  .format(action.name))
+            return outcome
+
+        why = ("the value did not verify" if ran and verified is False
+               else str(failure)[:90] if failure
+               else "it had no effect")
+        atlas_log(ATLAS_RECOVERY_FAILED,
+                  "{0}/{1} {2} failed — {3}".format(index, len(order),
+                                                    action.name, why))
+        tower_recovery_attempt(index, len(order), action.name,
+                               scores.get(action.name), "FAILED", verified)
+        outcome["reason"] = why
+
+    exhausted = budget.exhausted() or outcome["reason"]
+    atlas_log(ATLAS_RECOVERY_EXHAUSTED,
+              "{0}; the deterministic outcome stands".format(exhausted))
+    tower_recovery_done(False, exhausted, verified=None)
+    outcome["reason"] = exhausted
+    return outcome
+
+
+def _recovery_telemetry(plan, error_class, signature, considered, chosen,
+                        used, attempt, latency, result, verified, state,
+                        scores, fallback_reason, budget=None, shadow=False):
+    """Record one recovery attempt. Never raises into the automation."""
+    if not ML_AVAILABLE:
+        return
+    try:
+        episode = ml_episode_current()
+        ml_telemetry.recovery(
+            episode.episode_id if episode else None,
+            error_class, signature, plan.get("context") or {},
+            considered, chosen, used, attempt, latency, result,
+            verification=verified, outcome=state, state=state,
+            fallback_reason=fallback_reason, scores=scores,
+            confidence=(scores or {}).get(chosen),
+            budget=budget, mode=atlas_mode(), shadow=shadow,
+            redactor=redact_secrets)
+    except Exception:
+        pass
+
+
+def tower_recovery_plan(error_class, message, order, scores, used):
+    try:
+        tower.recovery_plan(error_class, message, order, scores, used)
+    except Exception:
+        pass
+
+
+def tower_recovery_attempt(index, total, action, confidence, result, verified):
+    try:
+        tower.recovery_attempt(index, total, action, confidence, result,
+                               verified)
+    except Exception:
+        pass
+
+
+def tower_recovery_done(recovered, reason, verified=None):
+    try:
+        tower.recovery_done(recovered, reason, verified=verified)
     except Exception:
         pass
 
@@ -5535,6 +5948,10 @@ def fill_date_field(page, field_name, date_value):
         page_ready=page_is_settled(page), frames=len(all_scopes(page)),
         attempt=ml_episode_attempt("find:{0}".format(field_name)))
 
+    # Set by the recovery pass below, when there is one. Read by the final
+    # give-up branch so it can say why recovery did not help.
+    result = None
+
     # The model may only REORDER these; it cannot add, drop or rewrite one.
     named, predicted = ml_order(named, context)
     candidates = [locator for _name, locator in named]
@@ -5602,6 +6019,40 @@ def fill_date_field(page, field_name, date_value):
             ml_record(context, "ignore_visibility", False, None, "FIELD_NOT_FOUND")
 
     if field is None:
+        # BEFORE giving up. The deterministic ladder above has run and found
+        # nothing, which is exactly the situation recovery exists for: the
+        # field is missing for a reason that may be a slow panel, a stale
+        # locator or the wrong tab, and skipping the shipment answers none of
+        # them. Bounded, and the caller's own guards still decide what may be
+        # written to whatever comes back.
+        # The view is taken from the context this function already built,
+        # never passed in: fill_date_field decides the field from the field
+        # NAME alone, and that property is what stops a view argument ever
+        # steering a date into the wrong box.
+        plan = {
+            "field_name": field_name, "view": context.get("view"),
+            "value": date_value, "context": context, "in_write": True,
+            "candidates_locators": [locator for _n, locator in named],
+            "shipment": {"bol_awb": ml_episode_reference(),
+                         "table_page": None},
+        }
+        result = atlas_recover(
+            page, Exception("the {0} field was not found on the Manage page"
+                            .format(field_name)),
+            plan, category="FIELD_NOT_FOUND")
+        field = plan.get("field") or field
+        if field is not None:
+            write_log("Recovery found the {0} field after the ordered "
+                      "candidates missed it ({1}).".format(
+                          field_name, result["reason"]))
+
+    if field is None:
+        # The failure message is unchanged on purpose: it is what the
+        # per-shipment handler and the tests match on. Why recovery could not
+        # help goes on its own line rather than into the exception.
+        if result is not None and result.get("error_class"):
+            write_log("No safe recovery succeeded for the missing {0} field: "
+                      "{1}".format(field_name, result["reason"]))
         describe_manage_fields(page, field_name)
         raise Exception(f"{field_name} field was not found on the Manage page.")
 

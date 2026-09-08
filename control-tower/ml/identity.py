@@ -124,6 +124,39 @@ ROLE_STRATEGY = "strategy"
 ROLE_VERIFICATION = "verification"
 ROLES = (ROLE_STRATEGY, ROLE_VERIFICATION)
 
+# ── RECOVERY STATES ─────────────────────────────────────────────────
+#
+# What actually happened to one recovery attempt. RECOVERY_SELECTED means
+# ATLAS's ranking was USED; DETERMINISTIC_RECOVERY means the registry's own
+# hand-tuned order ran and ATLAS only watched. In shadow mode every attempt
+# is the second of those, whatever ATLAS recommended, and the recommendation
+# is recorded as "would try" rather than "tried".
+STATE_RECOVERY_SELECTED = "ATLAS_RECOVERY_SELECTED"
+STATE_RECOVERY_SUCCEEDED = "ATLAS_RECOVERY_SUCCEEDED"
+STATE_RECOVERY_FAILED = "ATLAS_RECOVERY_FAILED"
+STATE_DETERMINISTIC_RECOVERY = "DETERMINISTIC_RECOVERY"
+STATE_HUMAN_VERIFICATION_REQUIRED = "HUMAN_VERIFICATION_REQUIRED"
+RECOVERY_STATES = (STATE_RECOVERY_SELECTED, STATE_RECOVERY_SUCCEEDED,
+                   STATE_RECOVERY_FAILED, STATE_DETERMINISTIC_RECOVERY,
+                   STATE_FALLBACK, STATE_UNVERIFIED,
+                   STATE_HUMAN_VERIFICATION_REQUIRED)
+
+# The operator-facing vocabulary for recovery, alongside the existing labels.
+RECOVERY_DIAGNOSED = "Error diagnosed"
+RECOVERY_PLAN = "Recovery plan"
+RECOVERY_TRYING = "Trying recovery"
+RECOVERY_WOULD_TRY = "Would try recovery"
+RECOVERY_SUCCEEDED = "Recovery succeeded"
+RECOVERY_FAILED = "Recovery failed"
+RECOVERY_EXHAUSTED = "No safe recovery succeeded"
+RECOVERY_NOT_POSSIBLE = "No safe recovery exists"
+RECOVERY_LABELS = (RECOVERY_DIAGNOSED, RECOVERY_PLAN, RECOVERY_TRYING,
+                   RECOVERY_WOULD_TRY, RECOVERY_SUCCEEDED, RECOVERY_FAILED,
+                   RECOVERY_EXHAUSTED, RECOVERY_NOT_POSSIBLE)
+
+# Recovery announcements are part of the announceable vocabulary too.
+LABELS = LABELS + RECOVERY_LABELS
+
 INFLUENCE_LABELS = (
     STRATEGY_SELECTED, STRATEGY_FAILED, FALLBACK_ACTIVATED,
     VERIFICATION_PASSED, ACTION_COMPLETED,

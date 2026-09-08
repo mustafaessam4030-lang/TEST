@@ -70,6 +70,10 @@ class ControlTowerState:
         # list actually change, so the expensive part of the payload is sent
         # when it means something instead of ~80 times a minute.
         self.cold_version = 0
+        # The recovery ATLAS is working on right now, or None. Replaced
+        # wholesale per error rather than accumulated: this is a live status
+        # panel, not a history, and the history is the activity feed.
+        self.recovery = None
 
         self.run_status = "idle"          # idle | running | finished | fatal
         self.started_at = None
@@ -173,6 +177,72 @@ class ControlTowerState:
     def _touch(self):
         self.version += 1
         self.last_heartbeat = _now()
+
+    @_guard
+    def recovery_plan(self, error_class, message, order, scores, used):
+        """ATLAS has diagnosed an error and has a plan. Nothing tried yet."""
+        with self._lock:
+            self.recovery = {
+                "error_class": error_class,
+                "message": message,
+                # `used` is the only thing that says whether ATLAS's ranking
+                # is being followed. In shadow it is False and the plan is
+                # what ATLAS WOULD have done.
+                "atlas_selected": bool(used),
+                "plan": [{"action": a,
+                          "confidence": (scores or {}).get(a)}
+                         for a in (order or [])],
+                "attempts": [],
+                "status": "PLANNED",
+                "recovered": None,
+                "verified": None,
+                "reason": None,
+                "started": _stamp(),
+            }
+            self._mark("warn", "ATLAS diagnosed {0}".format(error_class))
+            self._touch()
+
+    @_guard
+    def recovery_attempt(self, index, total, action, confidence, result,
+                         verified):
+        with self._lock:
+            if self.recovery is None:
+                return
+            attempts = self.recovery["attempts"]
+            for existing in attempts:
+                if existing["index"] == index:
+                    existing.update(result=result, verified=verified)
+                    break
+            else:
+                attempts.append({"index": index, "total": total,
+                                 "action": action, "confidence": confidence,
+                                 "result": result, "verified": verified,
+                                 "time": _stamp()})
+            self.recovery["status"] = "RUNNING"
+            self._touch()
+
+    @_guard
+    def recovery_done(self, recovered, reason, verified=None):
+        with self._lock:
+            if self.recovery is None:
+                return
+            # The verification belongs to the attempt that ended it, and it is
+            # three-valued like every other verification here: True confirmed,
+            # False contradicted, None never checked.
+            self.recovery.update(
+                status="RECOVERED" if recovered else "EXHAUSTED",
+                recovered=bool(recovered), reason=reason, verified=verified)
+            self._mark("ok" if recovered else "warn",
+                       "ATLAS recovery {0}".format(
+                           "succeeded" if recovered else "exhausted"))
+            self._touch()
+
+    @_guard
+    def recovery_cleared(self):
+        """The shipment moved on. The panel stops showing a stale error."""
+        with self._lock:
+            self.recovery = None
+            self._touch()
 
     def _touch_cold(self):
         """
@@ -726,6 +796,9 @@ class ControlTowerState:
                     "shipment": current,
                 },
                 "human_verification": self.human_verification,
+                # Live recovery status, or None. Small and bounded: one
+                # error, its plan, and the attempts made against it.
+                "recovery": self.recovery,
                 "atlas": {
                     "name": ATLAS_NAME,
                     "full_name": ATLAS_FULL_NAME,

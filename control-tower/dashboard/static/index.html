@@ -164,6 +164,26 @@ input,textarea,select{font-family:inherit}
   font-variant-numeric:tabular-nums;line-height:1.1}
 .ml-k span{display:block;font-size:12px;font-weight:400;color:var(--faint);margin-top:5px}
 .ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
+/* ATLAS RECOVERY. Quiet by construction: one hairline-topped block in the
+   existing ATLAS card, the same type roles as everything else, and no colour
+   except the semantic ones already defined. */
+.rcv{border-top:1px solid var(--line);padding:12px 14px}
+.rcv-h{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.rcv-k{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint)}
+.rcv-e{font-size:13px;color:var(--ink);margin-bottom:9px;line-height:1.45}
+.rcv-a{display:flex;align-items:baseline;gap:9px;padding:5px 0;font-size:12.5px;
+  border-top:1px solid var(--line-2)}
+.rcv-a:first-of-type{border-top:none}
+.rcv-n{font-family:var(--mono);font-size:11px;color:var(--faint);flex:none;width:26px}
+.rcv-m{color:var(--mid);flex:1}
+.rcv-c{font-family:var(--mono);font-size:11px;color:var(--faint);flex:none}
+.rcv-r{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;
+  flex:none;color:var(--faint)}
+.rcv-r.ok{color:var(--grn)} .rcv-r.no{color:var(--red)} .rcv-r.go{color:var(--blu)}
+.rcv-o{margin-top:9px;font-size:12px;color:var(--mid);line-height:1.45}
+.rcv-shadow{font-family:var(--mono);font-size:10.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--y)}
 /* The ATLAS attribution tag. Deliberately quiet — a small mono capsule in the
    existing palette, not a badge that competes with the shipment reference.
    `.on` is the only state that says ATLAS steered something. */
@@ -951,6 +971,10 @@ tr.r-partial .err{color:var(--y)}
           </div>
           <div class="ml-g" id="mlGrid"></div>
           <div class="ml-note" id="mlNote"></div>
+          <!-- Recovery. Hidden until there is a real error to show; it is a
+               live status, not a history, and it never renders a plan ATLAS
+               did not produce. -->
+          <div class="rcv" id="rcv" hidden></div>
           <!-- What ATLAS actually did this run, in its own words. Empty until
                it says something — an empty feed is the truthful state before
                the first decision, not a placeholder to fill. -->
@@ -1462,6 +1486,17 @@ function paint(force){
       '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
   }
 
+  /* Recovery arrives on the state stream, not on the /api/ml poll, so it is
+     painted here. Guarded on a small signature rather than the whole object:
+     a live recovery changes a few times per error, and re-rendering the block
+     on every unrelated frame would be work for nothing. */
+  const rcvSig = S.recovery
+    ? [S.recovery.error_class, S.recovery.status, S.recovery.recovered,
+       (S.recovery.attempts || []).length,
+       (S.recovery.attempts || []).map((a) => a.result).join(',')].join('|')
+    : 'none';
+  if (changed('rcv', rcvSig)) paintRecovery();
+
   if (changed('tl', S.timeline.length + ':' + (S.timeline[0] || {}).text)){
     const I = {ok:'✓', warn:'!', error:'✕', shipment:'▸', scan:'◇', start:'●', stop:'■'};
     put($('tlN'), S.timeline.length ? S.timeline.length + ' events' : '');
@@ -1831,6 +1866,55 @@ function schedule(state){
     lastPaint = now;
     try { paint(); } catch (err) { console.error('paint', err); }
   });
+}
+/* ═══ ATLAS RECOVERY ═══
+   Renders ONLY what the bridge recorded. There is no default plan, no
+   assumed confidence and no invented outcome: an attempt with no score
+   shows no score, and the panel stays hidden until a real error exists.
+
+   `atlas_selected` is the one flag that decides the wording. When it is
+   false ATLAS ranked the options and the deterministic order is what ran,
+   and the panel says WOULD TRY rather than implying ATLAS acted. */
+function paintRecovery(){
+  const box = $('rcv');
+  if (!box) return;
+  const r = (typeof S !== 'undefined' && S && S.recovery) || null;
+  if (!r){ box.hidden = true; box.innerHTML = ''; return; }
+  const RESULT = {SUCCESS:'ok', FAILED:'no', RUNNING:'go', DONE:'go'};
+  const attempts = (r.attempts || []).map((a) =>
+    '<div class="rcv-a"><span class="rcv-n">' + esc(String(a.index)) + '/' +
+    esc(String(a.total)) + '</span><span class="rcv-m">' + esc(a.action) +
+    '</span><span class="rcv-c">' +
+    (a.confidence == null ? '' : Number(a.confidence).toFixed(2)) +
+    '</span><span class="rcv-r ' + (RESULT[a.result] || '') + '">' +
+    esc(a.result || '') + '</span></div>').join('');
+  /* The plan is shown only while nothing has been tried yet — once there are
+     attempts, what happened matters more than what was intended. */
+  const plan = (!attempts && (r.plan || []).length)
+    ? (r.plan || []).map((p, i) =>
+        '<div class="rcv-a"><span class="rcv-n">' + (i + 1) +
+        '</span><span class="rcv-m">' + esc(p.action) +
+        '</span><span class="rcv-c">' +
+        (p.confidence == null ? '' : Number(p.confidence).toFixed(2)) +
+        '</span></div>').join('')
+    : '';
+  const verified = r.verified === true ? 'PASSED'
+                 : r.verified === false ? 'FAILED' : null;
+  let outcome = '';
+  if (r.status === 'RECOVERED')
+    outcome = 'Outcome: recovered, automation continued.';
+  else if (r.status === 'EXHAUSTED')
+    outcome = 'Outcome: no safe recovery succeeded — '
+            + esc(r.reason || 'the deterministic outcome stands') + '.';
+  box.innerHTML =
+    '<div class="rcv-h"><span class="rcv-k">ATLAS recovery</span>' +
+    (r.atlas_selected ? '' : '<span class="rcv-shadow">would try — shadow</span>') +
+    '</div>' +
+    '<div class="rcv-e">' + esc(r.message || r.error_class || '') + '</div>' +
+    plan + attempts +
+    (verified ? '<div class="rcv-o">Verification: <b>' + verified + '</b></div>' : '') +
+    (outcome ? '<div class="rcv-o">' + outcome + '</div>' : '');
+  box.hidden = false;
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S) paint(true); });
 function connect(){
