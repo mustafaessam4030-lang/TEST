@@ -1971,16 +1971,24 @@ def wait_for_any(page, checks, max_ms, poll_ms=None, reason=""):
     signal is one of several possibilities.
     """
     poll = HUB_POLL_MS if poll_ms is None else poll_ms
-    waited = 0
-    while waited < max_ms:
+    # WALL CLOCK, not accumulated sleeps. This used to add only the poll
+    # interval per iteration, so a check that is itself slow blew the budget
+    # by orders of magnitude: first_visible() applies its timeout PER
+    # candidate, so one three-candidate probe costs ~7s, and a nominal 4s
+    # budget with a 120ms poll took 268s to give up. Every caller's budget
+    # now means what it says.
+    deadline = time.time() + (max_ms / 1000.0)
+    while True:
         for name, check in checks:
             try:
                 if check():
                     return name
             except Exception:
                 continue
-        page.wait_for_timeout(poll)
-        waited += poll
+        if time.time() >= deadline:
+            break
+        page.wait_for_timeout(min(poll, max(1, int(
+            (deadline - time.time()) * 1000))))
     if reason:
         write_log("Timed out after {0}ms waiting for {1}.".format(max_ms, reason))
     return None
@@ -4667,6 +4675,16 @@ AFKL_MAX_ATTEMPTS = 2
 AFKL_DETAIL_ATTEMPTS = 3
 AFKL_DETAIL_READY_MS = 30000
 
+# How long to wait for a carrier portal to render its air waybill box, once
+# the document has committed. REPRODUCED against a local page shaped like
+# myCargo's: an inline splash paints immediately while DOMContentLoaded never
+# fires, because a deferred bundle request stalls. readyState sits at
+# "interactive" forever, goto times out at 60s, and the page is on screen and
+# queryable the whole time. So the wait is for the FORM — the thing actually
+# needed — rather than for a lifecycle event a stalled third-party request
+# can hold hostage.
+PORTAL_FORM_READY_MS = 45000
+
 # Chromium raises these against some carrier servers on a rapid second
 # navigation. They mean "the transport had a bad moment", not "the page is
 # wrong", so the same url is retried rather than a different one being tried.
@@ -5360,16 +5378,31 @@ def portal_awb(tracking_number, dashed=True):
     return "{0}-{1}".format(digits[:3], digits[3:11]) if dashed else digits[:11]
 
 
-def find_portal_input(page, placeholder):
-    return first_visible(
-        [
-            page.get_by_placeholder(re.compile(placeholder, re.I)),
-            page.get_by_label(re.compile(r"Air\s*waybill|AWB", re.I)),
-            page.locator("input[name*='awb' i], input[id*='awb' i]"),
-            page.locator("input[type='text']:visible"),
-        ],
-        PROBE_TIMEOUT_MS * 3,
-    )
+def find_portal_input(page, placeholder, strict=False, timeout_ms=None):
+    """
+    The air waybill box, or None.
+
+    `strict` drops the last candidate — a bare `input[type='text']:visible`,
+    which matches ANY visible text box. That catch-all is deliberate and
+    stays: some portals label their box in ways the placeholder pattern does
+    not predict, and it is the reason this works on more than one site.
+    But it must not be allowed to answer a WAIT: polling for "any text input"
+    on an app that is still booting will happily settle on a consent-panel
+    search box or a login field. So the wait polls strictly, and the
+    catch-all is consulted once at the end, as a last resort.
+    """
+    candidates = [
+        page.get_by_placeholder(re.compile(placeholder, re.I)),
+        page.get_by_label(re.compile(r"Air\s*waybill|AWB", re.I)),
+        page.locator("input[name*='awb' i], input[id*='awb' i]"),
+    ]
+    if not strict:
+        candidates.append(page.locator("input[type='text']:visible"))
+    # first_visible spends its timeout PER candidate, so a polled probe has
+    # to be given a small one or each poll costs seconds.
+    return first_visible(candidates,
+                         PROBE_TIMEOUT_MS * 3 if timeout_ms is None
+                         else timeout_ms)
 
 
 def open_portal(page, config, tracking_number):
@@ -5383,7 +5416,12 @@ def open_portal(page, config, tracking_number):
         navigated = False
         for nav_attempt in range(1, 4):
             try:
-                page.goto(url, wait_until="domcontentloaded",
+                # "commit", not "domcontentloaded". DCL waits for deferred
+                # scripts, so one stalled bundle request on a single-page app
+                # holds it open past any timeout while the page sits there
+                # rendered and usable. A real outage still fails here, because
+                # nothing commits without a response.
+                page.goto(url, wait_until="commit",
                           timeout=NAVIGATION_TIMEOUT_MS)
                 navigated = True
                 break
@@ -5424,6 +5462,23 @@ def open_portal(page, config, tracking_number):
             # failure screenshot and may cover controls on a small window.
             write_log(f"{config['label']}: no cookie panel was dismissed.")
 
+        # Patient, and bounded. find_portal_input's own probe is 2.4s, which
+        # is fine once an app has booted and far too short when it has not —
+        # and after the change above we no longer get DCL as a free hint that
+        # it has. wait_for_any polls, so a form that appears at second 20 is
+        # found at second 20 rather than missed at second 3.
+        # Poll STRICTLY for a real air waybill box. Then, only once the
+        # budget is spent, consult the catch-all — so a page that never shows
+        # an AWB box still falls back the way it always did, and a page that
+        # is merely slow is not mistaken for one that has the wrong form.
+        wait_for_any(
+            page,
+            [("the air waybill box",
+              lambda: find_portal_input(page, config["placeholder"],
+                                        strict=True,
+                                        timeout_ms=250) is not None)],
+            PORTAL_FORM_READY_MS,
+            reason="the {0} air waybill box".format(config["label"]))
         field = find_portal_input(page, config["placeholder"])
         if field is not None:
             if url != config["urls"][0]:

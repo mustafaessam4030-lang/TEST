@@ -564,6 +564,53 @@ check("A human-verification challenge is checked before either — a challenge "
       "page has no air waybill box to find",
       _open.index("captcha_on_page(page)") < _open.index("accept_cookie_banner"))
 
+# ── REGRESSION: myCargo stuck on its splash ─────────────────────────
+# OBSERVED: a run failed with "Page.goto: Timeout 60000ms exceeded" on
+# /mycargo/shipment/singlesearch while the screenshot showed the myCargo
+# splash rendered on screen the whole time.
+#
+# REPRODUCED locally: DOMContentLoaded waits for DEFERRED scripts, so one
+# stalled bundle request holds it open past any timeout while the inline
+# splash paints immediately. readyState sits at "interactive", the DOM stays
+# queryable, and goto still times out. Waiting on DCL means waiting on every
+# third-party request the page happens to make.
+check("Portal navigation no longer waits on DOMContentLoaded",
+      'wait_until="commit"' in _open
+      and 'wait_until="domcontentloaded"' not in _open)
+check("...and waits for the AIR WAYBILL BOX instead, which is the thing "
+      "actually needed",
+      "PORTAL_FORM_READY_MS" in _open and "the air waybill box" in _open)
+check("...with a budget generous enough for an app that boots slowly",
+      A.PORTAL_FORM_READY_MS >= 30000, str(A.PORTAL_FORM_READY_MS))
+check("A genuine outage still fails, because nothing commits without a "
+      "response", "timeout=NAVIGATION_TIMEOUT_MS" in _open)
+
+# The catch-all must not be allowed to answer a WAIT: polling for "any
+# visible text input" on an app that is still booting will settle on a
+# consent-panel search box or a login field.
+check("find_portal_input has a strict mode that drops the "
+      "any-visible-text-input catch-all",
+      "def find_portal_input(page, placeholder, strict=False" in SRC_F
+      and "if not strict:" in SRC_F)
+check("...and the poll uses it", "strict=True" in _open)
+check("...while the catch-all is still consulted once at the end, so "
+      "portals whose placeholder differs keep working",
+      _open.rindex('find_portal_input(page, config["placeholder"])')
+      > _open.index("strict=True"))
+check("The polled probe is cheap — first_visible spends its timeout PER "
+      "candidate", "timeout_ms=250" in _open)
+
+# ── REGRESSION: a wait budget that meant nothing ─────────────────────
+# wait_for_any() credited only the POLL INTERVAL per iteration, not the time
+# the check itself took. find_portal_input costs ~7s (three candidates at
+# 2.4s each), so a nominal 4s budget took 268s to give up. Measured.
+_wfa = SRC_F.split("def wait_for_any")[1].split("\ndef ")[0]
+check("wait_for_any measures wall clock, so a budget means what it says",
+      "deadline = time.time()" in _wfa and "time.time() >= deadline" in _wfa)
+check("...and no longer credits only the sleep", "waited += poll" not in _wfa)
+check("...and never sleeps past its own deadline",
+      "min(poll, max(1, int(" in _wfa)
+
 
 print()
 print("=" * 68)
