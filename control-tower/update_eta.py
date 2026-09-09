@@ -5173,6 +5173,15 @@ def open_afkl_detail(page, config, tracking_number):
     ladder_started = time.time()
     write_log("{0}: opening the shipment page directly — {1}".format(label, url))
 
+    # Free whatever a PREVIOUS shipment's ladder handed back. A kept context or
+    # side browser cannot be closed at the point it is returned — the caller is
+    # still reading the page it was given — so it is closed here, at the start
+    # of the next lookup, and again at run end. Without this, every AFKL
+    # shipment left a context alive holding an open page on the carrier, and
+    # the sockets behind those pages come out of the machine's ephemeral port
+    # pool, which is shared with every other program on the server.
+    release_afkl_helpers(keep_page=page)
+
     # ── 1 · the browser we already have ─────────────────────────────
     record = _afkl_attempt(page, url, tracking_number, label,
                            "existing page", 1,
@@ -5187,7 +5196,7 @@ def open_afkl_detail(page, config, tracking_number):
     # Connection reuse and cached state are the cheapest explanations for a
     # protocol error on one page and not another, so this is tried before
     # anything heavier.
-    extra_pages = []
+    extra_context = None
     browser = None
     try:
         browser = page.context.browser
@@ -5196,9 +5205,8 @@ def open_afkl_detail(page, config, tracking_number):
 
     if browser is not None:
         try:
-            context = browser.new_context()
-            fresh = context.new_page()
-            extra_pages.append((context, fresh))
+            extra_context = browser.new_context()
+            fresh = extra_context.new_page()
             record = _afkl_attempt(fresh, url, tracking_number, label,
                                    "fresh context", 2)
             _log_afkl_attempt(record)
@@ -5206,7 +5214,15 @@ def open_afkl_detail(page, config, tracking_number):
             if record["awb_verified"]:
                 write_log("{0}: shipment page confirmed on attempt 2 "
                           "(a fresh context was enough).".format(label))
+                # Handed to the caller, so it stays open — but it is now
+                # tracked, and the next lookup closes it.
+                AFKL_HELD_CONTEXTS.append(extra_context)
+                extra_context = None
                 return fresh
+            # Attempt 2 failed. Nothing will read this page again, so it goes
+            # now rather than at the end of the run.
+            _close_afkl_context(extra_context)
+            extra_context = None
         except Exception as error:
             attempts.append({"attempt": 2, "strategy": "fresh context",
                              "channel": "chromium", "http2_disabled": False,
@@ -5222,44 +5238,49 @@ def open_afkl_detail(page, config, tracking_number):
     transport = any(a["error"] and any(t in a["error"] for t in TRANSIENT_NAV_ERRORS)
                     for a in attempts)
 
-    # ── 3 · Chromium with HTTP/2 disabled ───────────────────────────
-    if transport and _afkl_budget_left(ladder_started, 3, attempts, label):
-        record, kept = _afkl_side_browser(
-            page, url, tracking_number, label, 3,
-            "clean edge, HTTP/2 disabled", channel="msedge",
-            args=["--disable-http2"], http2_disabled=True)
-        attempts.append(record)
+    try:
+        # ── 3 · Chromium with HTTP/2 disabled ───────────────────────────
+        if transport and _afkl_budget_left(ladder_started, 3, attempts, label):
+            record, kept = _afkl_side_browser(
+                page, url, tracking_number, label, 3,
+                "clean edge, HTTP/2 disabled", channel="msedge",
+                args=["--disable-http2"], http2_disabled=True)
+            attempts.append(record)
+            if record["awb_verified"] and kept is not None:
+                write_log("{0}: shipment page confirmed on attempt 3 — HTTP/2 "
+                          "was the problem.".format(label))
+                return kept
+        else:
+            write_log("{0}: skipping the HTTP/2 strategy — the failures so far "
+                      "are not transport errors.".format(label))
+
+        # ── 4 · branded Microsoft Edge ──────────────────────────────────
+        # A genuinely different browser build, which is the only hypothesis left
+        # once transport and profile have been ruled out. Playwright's bundled
+        # Chromium is a separate download and is legitimately absent on a machine
+        # that only ever runs the msedge channel, so its absence is reported as
+        # "not installed" rather than as a failed attempt.
+        if _afkl_budget_left(ladder_started, 4, attempts, label):
+            record, kept = _afkl_side_browser(
+                page, url, tracking_number, label, 4,
+                "bundled chromium", channel=None,
+                args=["--disable-http2"] if DISABLE_HTTP2 else [],
+                http2_disabled=DISABLE_HTTP2)
+            attempts.append(record)
+        else:
+            record, kept = {"awb_verified": False}, None
         if record["awb_verified"] and kept is not None:
-            write_log("{0}: shipment page confirmed on attempt 3 — HTTP/2 was "
-                      "the problem.".format(label))
+            write_log("{0}: shipment page confirmed on attempt 4 — Edge was the "
+                      "problem, the bundled Chromium works.".format(label))
             return kept
-    else:
-        write_log("{0}: skipping the HTTP/2 strategy — the failures so far are "
-                  "not transport errors.".format(label))
 
-    # ── 4 · branded Microsoft Edge ──────────────────────────────────
-    # A genuinely different browser build, which is the only hypothesis left
-    # once transport and profile have been ruled out. Playwright's bundled
-    # Chromium is a separate download and is legitimately absent on a machine
-    # that only ever runs the msedge channel, so its absence is reported as
-    # "not installed" rather than as a failed attempt.
-    if _afkl_budget_left(ladder_started, 4, attempts, label):
-        record, kept = _afkl_side_browser(
-            page, url, tracking_number, label, 4,
-            "bundled chromium", channel=None,
-            args=["--disable-http2"] if DISABLE_HTTP2 else [],
-            http2_disabled=DISABLE_HTTP2)
-        attempts.append(record)
-    else:
-        record, kept = {"awb_verified": False}, None
-    if record["awb_verified"] and kept is not None:
-        write_log("{0}: shipment page confirmed on attempt 4 — Edge was the "
-                  "problem, the bundled Chromium works.".format(label))
-        return kept
-
-    save_page_text(page, tracking_number, "afkl_navigation_error")
-    take_screenshot(page, tracking_number, "afkl_navigation_error")
-    raise AfklNavigationError(tracking_number, attempts)
+        save_page_text(page, tracking_number, "afkl_navigation_error")
+        take_screenshot(page, tracking_number, "afkl_navigation_error")
+        raise AfklNavigationError(tracking_number, attempts)
+    finally:
+        # Whichever way this ends — a later strategy won, or every strategy
+        # failed — attempt 2's context is not the page anybody will read.
+        _close_afkl_context(extra_context)
 
 
 def _afkl_budget_left(started, number, attempts, label):
@@ -5357,17 +5378,64 @@ def _afkl_side_browser(page, url, tracking_number, label, number, strategy,
         return record, None
 
 
-# Side browsers opened by strategies 3 and 4, closed when the run ends.
+# Contexts and browsers the ladder opened and handed back to the caller. They
+# cannot be closed where they are returned, because the caller still has to
+# read the page it was given, so they are closed at the start of the next
+# lookup and again when the run ends. A browser context is NOT freed by Python
+# garbage collection — it lives on the browser side until close() is called —
+# and each one here holds an open page on the carrier, so an unclosed context
+# is a set of live sockets against the same host for the rest of the run.
+AFKL_HELD_CONTEXTS = []
 AFKL_SIDE_BROWSERS = []
 
 
-def close_afkl_side_browsers():
-    while AFKL_SIDE_BROWSERS:
-        browser = AFKL_SIDE_BROWSERS.pop()
+def _close_afkl_context(context):
+    """Close one context, if there is one. Never raises."""
+    if context is None:
+        return
+    try:
+        context.close()
+    except Exception as error:
+        note_suppressed("closing a temporary AFKL context", error)
+
+
+def release_afkl_helpers(keep_page=None):
+    """
+    Close every context and side browser an earlier lookup handed back.
+
+    `keep_page` is the page the caller is using right now. Its context and its
+    browser are left alone: closing them would pull the page out from under a
+    read in progress. Everything else goes, so at most one helper context and
+    one side browser are ever alive at a time — not one per shipment.
+    """
+    keep_context = None
+    keep_browser = None
+    if keep_page is not None:
+        try:
+            keep_context = keep_page.context
+            keep_browser = keep_context.browser
+        except Exception as error:
+            note_suppressed("identifying the AFKL page still in use", error)
+
+    for context in list(AFKL_HELD_CONTEXTS):
+        if context is keep_context:
+            continue
+        AFKL_HELD_CONTEXTS.remove(context)
+        _close_afkl_context(context)
+
+    for browser in list(AFKL_SIDE_BROWSERS):
+        if browser is keep_browser:
+            continue
+        AFKL_SIDE_BROWSERS.remove(browser)
         try:
             browser.close()
         except Exception as error:
             note_suppressed("closing an AFKL side browser", error)
+
+
+def close_afkl_side_browsers():
+    """Release everything, keeping nothing. Called when the run ends."""
+    release_afkl_helpers()
 
 
 def portal_awb(tracking_number, dashed=True):
