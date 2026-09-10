@@ -4,6 +4,67 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ---
 
+## What changed in this build
+
+**1 · The AFKL lookup was leaking a browser context per shipment.** Each one
+stayed open for the rest of the run holding a page on the carrier, and behind
+it a live connection. That is the "Edge cannot open AFKL while the automation
+runs, and can again the moment it stops" you saw on the server. Measured over
+8 lookups: 9 contexts and 9 pages before, 1 and 1 after.
+
+**2 · myCargo has two forms, and the automation could not tell them apart.**
+When the air waybill box had not rendered yet, it typed the AWB into the
+flight number box and pressed Enter — which is the "Field is required" and
+"Please select a valid date" in your screenshot. It cannot reach that form by
+accident any more.
+
+**3 · The flight status card is now used on purpose**, and the Hub row decides
+which question the carrier gets asked:
+
+| The Hub row carries | What is asked |
+| --- | --- |
+| an air waybill | Track a shipment, as always |
+| a flight and a date | Check flight status |
+| both | both — air waybill first |
+
+A flight arrival is filed as an **estimate**, never as an actual arrival: a
+flight that landed proves the aircraft landed, and a shipment can be offloaded
+while its air waybill still names that flight. It never overwrites a date the
+shipment page gave. `AFKL_FLIGHT_STATUS=0` turns the whole path off.
+
+### Two things to run once, and send me the output
+
+```
+diagnose_flight_status.bat AF0877 04/09/2026
+```
+Opens the real myCargo page and prints every input on it. My selectors for the
+flight card are read off your screenshot, not the live page — this is what
+confirms them.
+
+```
+diagnose_server.bat A        with the automation OFF
+diagnose_server.bat B        running, but no AFKL lookup yet
+diagnose_server.bat C        running, after one AFKL lookup
+diagnose_server.bat D        stopped
+diagnose_server.bat report
+```
+Measures the server itself — sockets, ephemeral ports, connections to the
+carrier, browser processes and handles. **B is the one that decides it.** If
+the fix above is the whole story, B passes and C fails on the old build.
+
+There is also a line in every run log now saying which Hub columns were read
+and which were not:
+
+```
+Hub table: no flight column recognised.
+Hub table: columns present but not used — flt no, origin.
+```
+
+If your Hub prints the flight under a name I did not predict, that line is all
+I need to add it.
+
+---
+
 ## 1. Install
 
 Extract this ZIP into `C:\Automation`, using **Extract All** so the folders are
