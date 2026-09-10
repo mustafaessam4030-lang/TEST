@@ -3040,11 +3040,28 @@ def build_header_map(table):
             write_log("Hub table: no {0} column recognised."
                       .format(logical_name.replace("_", " ")))
 
+    # A Hub can print more than one air-waybill-ish column — "BOL/AWB Number"
+    # beside a plain "BOL / AWB" — and the number the CARRIER needs is not
+    # always in the one the table leads with. J859154 is a booking reference,
+    # not an air waybill, and no amount of retrying the carrier's form makes
+    # it into one. Every candidate column is remembered here; the row reader
+    # then picks per row, on the value rather than on the heading.
+    candidates = [resolved["bol_awb"]]
+    for name, index in sorted(raw_map.items(), key=lambda pair: pair[1]):
+        if index not in candidates and re.search(r"awb|bol", name or ""):
+            candidates.append(index)
+    resolved["bol_awb_columns"] = candidates
+    if len(candidates) > 1:
+        write_log("Hub table: {0} columns could hold an air waybill; the one "
+                  "that actually does is chosen per shipment."
+                  .format(len(candidates)))
+
     # Say what the Hub actually prints. When a column this automation could
     # use is there under a name nobody predicted — "Flt No", "Carrier Flight"
     # — this line is what turns the next run into the fix, instead of another
     # round of guessing at header names.
-    known = set(resolved.values())
+    known = {index for index in resolved.values() if isinstance(index, int)}
+    known.update(candidates)
     spare = sorted(name for name, index in raw_map.items()
                    if index not in known and name)
     if spare:
@@ -3170,6 +3187,31 @@ def report_unsupported():
     )
 
 
+def carrier_reference(cells, columns, fallback):
+    """
+    The number to give the CARRIER for this row.
+
+    Every column that could hold an air waybill is looked at, and the first
+    value that really is one — a recognised airline prefix on eleven digits —
+    wins. When none of them is, the Hub's own reference is returned unchanged
+    and the run behaves exactly as it did before.
+    """
+    for index in columns.get("bol_awb_columns", []):
+        try:
+            value = cells.nth(index).inner_text().strip()
+        except Exception:
+            continue
+        if not value:
+            continue
+        digits = re.sub(r"\D", "", value)
+        if len(digits) < 11:
+            continue
+        _prefix, entry = airline_from_awb(value)
+        if entry:
+            return value
+    return fallback
+
+
 def collect_supported_shipments(page, table_page):
     """Source list comes from BU Shipments View / Under Clearance."""
     table = find_shipments_table(page)
@@ -3177,9 +3219,11 @@ def collect_supported_shipments(page, table_page):
     rows = table.locator("tbody tr")
     shipments = []
 
+    widest = max(index for index in columns.values()
+                 if isinstance(index, int))
     for index in range(rows.count()):
         cells = rows.nth(index).locator("td")
-        if cells.count() <= max(columns.values()):
+        if cells.count() <= widest:
             continue
 
         status = cells.nth(columns["status"]).inner_text().strip()
@@ -3200,6 +3244,18 @@ def collect_supported_shipments(page, table_page):
                 "current_eta": current_eta,
                 "table_page": table_page,
             }
+            # The Hub identifies the shipment by whatever it leads with, and
+            # that stays the identifier: it is what finds the row again and
+            # what the results file records. The carrier, though, is asked
+            # about an air waybill, and if a different column is holding one
+            # that is the number that goes to the carrier.
+            reference = carrier_reference(cells, columns, bol_awb)
+            if reference != bol_awb:
+                row["tracking_reference"] = reference
+                write_log(
+                    "Hub row {0}: the carrier will be asked about {1}, which "
+                    "is the air waybill on this row — {0} is the Hub's own "
+                    "reference and is not one.".format(bol_awb, reference))
             # Whatever else the Hub prints about the flight comes with it.
             for extra in ("flight", "flight_date"):
                 if extra in columns:
@@ -6589,6 +6645,7 @@ def afkl_flight_status_rescue(page, tracking_number, shipment=None):
 
 
 PORTALS["AFKL"]["last_chance"] = afkl_flight_status_rescue
+PORTALS["AFKL"]["awb_only"] = True
 
 
 def get_afkl_result(page, tracking_number, shipment=None):
@@ -6630,20 +6687,32 @@ def describe_page_dates(page, label, tracking_number):
 
 
 def get_provider_result(provider_pages, shipment):
+    # The Hub's identifier and the carrier's are not always the same cell.
+    reference = shipment.get("tracking_reference") or shipment["bol_awb"]
     provider = shipment.get("provider") or carrier_provider(
-        shipment.get("carrier", ""), shipment.get("bol_awb"))
+        shipment.get("carrier", ""), reference)
 
     if provider == "DHL":
-        return get_dhl_result(provider_pages["DHL"], shipment["bol_awb"])
+        return get_dhl_result(provider_pages["DHL"], reference)
 
     if provider == "QATAR":
-        return get_qatar_result(provider_pages["QATAR"], shipment["bol_awb"])
+        return get_qatar_result(provider_pages["QATAR"], reference)
 
     if provider in PORTALS:
         page = provider_pages[provider]
+        # The AFKL form takes air waybills and nothing else — its own box
+        # says "AWB starts with 074 or 057". Putting a booking reference to
+        # it costs a minute of waiting and ends in "no air waybill box was
+        # found", which reads like a broken page and is nothing of the sort.
+        # Say what is actually wrong instead.
+        if PORTALS[provider].get("awb_only") and \
+                len(re.sub(r"\D", "", str(reference or ""))) < 11:
+            raise SkipShipment(
+                "{0} is not an air waybill, and {1} only tracks air waybills. "
+                "No column on this Hub row holds one, so the carrier was not "
+                "asked.".format(reference, PORTALS[provider]["label"]))
         try:
-            return get_portal_result(page, provider, shipment["bol_awb"],
-                                     shipment)
+            return get_portal_result(page, provider, reference, shipment)
         except SkipShipment as error:
             # The air waybill produced nothing readable. If the HUB names a
             # flight, that is a second question this shipment can still
@@ -6669,7 +6738,7 @@ def get_provider_result(provider_pages, shipment):
             raise
 
     raise SkipShipment(
-        describe_unsupported(shipment.get("bol_awb"), shipment.get("carrier")))
+        describe_unsupported(reference, shipment.get("carrier")))
 
 
 # ============================================================

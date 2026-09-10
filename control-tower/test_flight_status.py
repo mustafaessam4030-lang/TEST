@@ -144,7 +144,7 @@ check("apply_flight_status contains no path that writes an ATA",
 # ─────────────────────────────────────────────────────────────────────────
 print()
 print("=" * 74)
-print("2b. WHAT THE HUB CARRIES DECIDES WHICH FORM IS USED")
+print("2b. WHAT THE HUB CARRIES DECIDES WHAT GETS ASKED, AND OF WHICH FORM")
 print("=" * 74)
 
 
@@ -210,7 +210,8 @@ WITH_FLIGHT = ["BOL/AWB Number", "Carrier Name", "Flight Number",
 A.write_log = lambda *args, **kwargs: None
 plain_map = A.build_header_map(Table(PLAIN, []))
 check("A Hub with no flight columns still works",
-      set(plain_map) == {"bol_awb", "carrier", "eta", "status"},
+      set(plain_map) == {"bol_awb", "carrier", "eta", "status",
+                         "bol_awb_columns"},
       str(sorted(plain_map)))
 rich_map = A.build_header_map(Table(WITH_FLIGHT, []))
 check("A Hub that prints a flight column has it read",
@@ -247,6 +248,86 @@ check("With nothing from the Hub, the page's leg is used",
       A.combine_legs(None, leg) is leg)
 check("With nothing anywhere, nothing is asked",
       A.combine_legs(None, None) is None)
+
+# A real Hub prints more than one air-waybill-ish column. The run that
+# skipped J859154 asked the carrier about J859154 — the Hub's own booking
+# reference — while a column literally called "BOL / AWB" sat unread beside
+# it. No amount of retrying the carrier's form turns a booking reference
+# into an air waybill.
+TWO_AWB_COLUMNS = ["BOL/AWB Number", "Carrier Name", "BOL / AWB", "ETA",
+                   "Status"]
+two = A.build_header_map(Table(TWO_AWB_COLUMNS, []))
+check("Every column that could hold an air waybill is remembered",
+      two.get("bol_awb_columns") == [0, 2], str(two.get("bol_awb_columns")))
+check("A Hub with one such column is unchanged",
+      plain_map.get("bol_awb_columns") == [0],
+      str(plain_map.get("bol_awb_columns")))
+
+booking = Cells(["J859154", "KLM Royal Dutch Airlines", "057-05765454",
+                 "14/09/2026", "Under Clearance"])
+check("The carrier is asked about the air waybill, not the booking "
+      "reference",
+      A.carrier_reference(booking, two, "J859154") == "057-05765454")
+check("An empty second column changes nothing",
+      A.carrier_reference(
+          Cells(["J859154", "KLM", "", "14/09/2026", "Under Clearance"]),
+          two, "J859154") == "J859154")
+check("Neither column holding an air waybill changes nothing either",
+      A.carrier_reference(
+          Cells(["J859154", "KLM", "J999999", "14/09/2026", "x"]),
+          two, "J859154") == "J859154")
+check("A number that is not a known airline prefix is not used",
+      A.carrier_reference(
+          Cells(["J859154", "KLM", "999-88887777", "14/09/2026", "x"]),
+          two, "J859154") == "J859154")
+check("...nor is something too short to be one",
+      A.carrier_reference(
+          Cells(["J859154", "KLM", "057-1234", "14/09/2026", "x"]),
+          two, "J859154") == "J859154")
+
+asked = {}
+
+
+def remember(page, provider, number, shipment=None):
+    asked["number"] = number
+    return {"provider": provider, "tracking_status": "Estimated arrival",
+            "eta": "14/09/2026", "ata": None}
+
+
+real_get_portal_result = A.get_portal_result
+try:
+    A.get_portal_result = remember
+    A.get_provider_result(
+        {"AFKL": None},
+        {"bol_awb": "J859154", "carrier": "KLM", "provider": "AFKL",
+         "tracking_reference": "057-05765454"})
+    check("The carrier lookup uses the air waybill",
+          asked.get("number") == "057-05765454", str(asked))
+    asked.clear()
+    A.get_provider_result(
+        {"AFKL": None},
+        {"bol_awb": "05705765454", "carrier": "KLM", "provider": "AFKL"})
+    check("...and the Hub's own reference when there is no other",
+          asked.get("number") == "05705765454", str(asked))
+finally:
+    A.get_portal_result = real_get_portal_result
+
+refused = None
+try:
+    A.get_provider_result(
+        {"AFKL": None},
+        {"bol_awb": "J859154", "carrier": "KLM", "provider": "AFKL"})
+except Exception as error:
+    refused = error
+check("A booking reference is not put to a form that only takes air "
+      "waybills", isinstance(refused, A.SkipShipment), type(refused).__name__)
+check("...and the reason says so, instead of 'no air waybill box was found'",
+      "is not an air waybill" in str(refused)
+      and "not asked" in str(refused), str(refused))
+
+check("The Hub's identifier is still what the results file records",
+      '"BOL_AWB": shipment.get("bol_awb", "")'
+      in (HERE / "update_eta.py").read_text(encoding="utf-8"))
 
 
 # ─────────────────────────────────────────────────────────────────────────
