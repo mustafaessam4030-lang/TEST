@@ -226,11 +226,13 @@ check("...and anything that is not an AF/KL/MP flight is left alone",
       [A.normalise_flight_number(v) for v in
        ("EK0705", "", None, "TBA", "057-05765454")] == [None] * 5)
 
+direct = A.hub_flight_leg({"hub_flight": "AF0877",
+                           "hub_flight_date": "04/09/2026"})
 check("A Hub row naming a flight and a date is asked about directly",
-      A.hub_flight_leg({"hub_flight": "AF0877",
-                        "hub_flight_date": "04/09/2026"})
-      == {"flight": "AF0877", "date": "04/09/2026", "origin": None,
-          "destination": None, "source": "the Hub"})
+      (direct["flight"], direct["date"], direct["source"])
+      == ("AF0877", "04/09/2026", "the Hub"), str(direct))
+check("...and needs no candidate days, because it has the day",
+      not direct["date_candidates"], str(direct))
 check("A Hub row naming no flight yields nothing",
       A.hub_flight_leg({"bol_awb": "05705765454"}) is None)
 check("The Hub's flight outranks the page's",
@@ -322,7 +324,7 @@ except Exception as error:
 check("A booking reference is not put to a form that only takes air "
       "waybills", isinstance(refused, A.SkipShipment), type(refused).__name__)
 check("...and the reason says so, instead of 'no air waybill box was found'",
-      "is not an air waybill" in str(refused)
+      "neither an air waybill nor a flight number" in str(refused)
       and "not asked" in str(refused), str(refused))
 
 check("The Hub's identifier is still what the results file records",
@@ -360,6 +362,8 @@ PAGE = """<!doctype html><html><head><title>Track and Trace</title></head>
 // typed format this stand-in tolerates; everything else is refused the way
 // the real one refuses it, without moving.
 var ACCEPTED = %ACCEPTED%;
+var ONLYDATE = %ONLYDATE%;
+var ECHO = %ECHO%;
 function shows(id, on) { document.getElementById(id).hidden = !on; }
 function track(e) {
   e.preventDefault();
@@ -380,8 +384,15 @@ function checkflight(e) {
   shows('noerr', !n);
   shows('dateerr', !valid(d));
   if (!n || !valid(d)) { return; }
+  // A real card only knows about a flight on the day it actually flew.
+  if (ONLYDATE !== null && d !== ONLYDATE) {
+    document.getElementById('out').innerHTML =
+      '<div>No results found for this flight on that date.</div>' +
+      '<div>' + 'x'.repeat(200) + '</div>';
+    return;
+  }
   document.getElementById('out').innerHTML =
-    '<div>Flight ' + n + ' CDG - JRO</div>' +
+    '<div>Flight ' + (ECHO || n) + ' CDG - JRO</div>' +
     '<div>Scheduled arrival 04 Sep 2026 20:15</div>' +
     '<div>Actual arrival 04 Sep 2026 20:42</div>' +
     '<div>Landed</div>' +
@@ -438,7 +449,13 @@ class MyCargo(BaseHTTPRequestHandler):
             value = '"{0}"'.format(accepted)
         else:
             value = ACCEPTED_FORMAT["value"]
-        page = PAGE.replace("%ACCEPTED%", value).encode("utf-8")
+        only = query.get("only", [None])[0]
+        echo = query.get("echo", [None])[0]
+        page = PAGE.replace("%ACCEPTED%", value).replace(
+            "%ONLYDATE%", '"{0}"'.format(only) if only else "null"
+        ).replace(
+            "%ECHO%", '"{0}"'.format(echo) if echo else "null"
+        ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(page)))
@@ -678,6 +695,107 @@ else:
                       type(refused).__name__)
             finally:
                 A.get_portal_result = real_portal_result
+
+            # ── the reference's own shape picks the form ─────────────────
+            print()
+            print("=" * 74)
+            print("5. THE REFERENCE DECIDES WHICH FORM: 074/057 LEFT, "
+                  "AF/KL RIGHT")
+            print("=" * 74)
+            check("An air waybill is an air waybill",
+                  [A.hub_reference_kind(v) for v in
+                   ("057-05765454", "05705765454", "074-12345678")]
+                  == ["awb"] * 3)
+            check("A flight number is a flight number",
+                  [A.hub_reference_kind(v) for v in
+                   ("KL8246", "AF 3620", "kl0569", "MP-123")]
+                  == ["flight"] * 4)
+            check("A booking reference is neither",
+                  [A.hub_reference_kind(v) for v in
+                   ("J859154", "K067162", "", None)] == [None] * 4)
+
+            # The Hub names the flight but not the day. The shipment's ETA
+            # and the day before it are the candidates; the card decides.
+            leg_by_eta = A.hub_flight_leg({"hub_flight": "AF0877",
+                                           "current_eta": "05/09/2026"})
+            check("With no flight date, the Hub's ETA and the day before are "
+                  "the candidates",
+                  leg_by_eta["date_candidates"] == ["05/09/2026",
+                                                    "04/09/2026"],
+                  str(leg_by_eta))
+
+            # The card only knows this flight on 04/09. The first candidate
+            # must therefore come back empty and the second must answer.
+            A.PORTALS["AFKL"] = dict(A.PORTALS["AFKL"],
+                                     urls=[URL + "?only=04/09/2026"])
+            searched = A.check_afkl_flight_status(page, leg_by_eta)
+            check("The card is asked about each candidate day until it "
+                  "recognises the flight",
+                  searched is not None
+                  and searched.get("date_asked") == "04/09/2026",
+                  str(searched))
+            check("...and what it answered is read",
+                  searched and searched["actual_arrival"] == "04/09/2026")
+            check("...with nothing left open",
+                  len(context.pages) == before)
+
+            # Two candidates and neither is the day: nothing is invented.
+            nowhere = A.hub_flight_leg({"hub_flight": "AF0877",
+                                        "current_eta": "20/09/2026"})
+            check("A flight the card cannot place on either day yields "
+                  "nothing", A.check_afkl_flight_status(page, nowhere) is None)
+
+            # Identity: an answer about a different flight is not this
+            # flight's answer.
+            A.PORTALS["AFKL"] = dict(A.PORTALS["AFKL"],
+                                     urls=[URL + "?echo=AF0877"])
+            other = A.check_afkl_flight_status(
+                page, {"flight": "KL8246", "date": "04/09/2026"})
+            check("An answer that does not carry the flight asked about is "
+                  "refused", other is None, str(other))
+
+            # End to end: a Hub row whose reference IS a flight number goes
+            # to the right-hand form, and never to the air waybill box.
+            asked_form = {}
+            real_portal = A.get_portal_result
+
+            def must_not_run(*args, **kwargs):
+                asked_form["awb"] = True
+                raise A.SkipShipment("the air waybill form was used")
+
+            A.PORTALS["AFKL"] = dict(A.PORTALS["AFKL"],
+                                     urls=[URL + "?only=04/09/2026"])
+            try:
+                A.get_portal_result = must_not_run
+                flown = A.get_provider_result(
+                    {"AFKL": page},
+                    {"bol_awb": "AF0877", "carrier": "KLM",
+                     "provider": "AFKL", "current_eta": "05/09/2026"})
+                check("A Hub row whose reference is a flight goes to the "
+                      "flight card", flown is not None
+                      and flown.get("eta") == "04/09/2026", str(flown))
+                check("...and the air waybill form is never touched",
+                      "awb" not in asked_form)
+                check("...and it is still only an estimate",
+                      flown.get("ata") is None)
+
+                refused = None
+                try:
+                    A.get_provider_result(
+                        {"AFKL": page},
+                        {"bol_awb": "J859154", "carrier": "KLM",
+                         "provider": "AFKL", "current_eta": "05/09/2026"})
+                except Exception as error:
+                    refused = error
+                check("A reference that is neither is still refused up front",
+                      isinstance(refused, A.SkipShipment)
+                      and "neither an air waybill nor a flight number"
+                      in str(refused), str(refused))
+                check("...without touching either form",
+                      "awb" not in asked_form)
+            finally:
+                A.get_portal_result = real_portal
+                A.PORTALS["AFKL"] = dict(A.PORTALS["AFKL"], urls=[URL])
 
             # ── the switch ───────────────────────────────────────────────
             A.AFKL_FLIGHT_STATUS = False

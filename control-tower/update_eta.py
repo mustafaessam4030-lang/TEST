@@ -3,7 +3,7 @@ import random
 import re
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -3249,6 +3249,14 @@ def collect_supported_shipments(page, table_page):
             # what the results file records. The carrier, though, is asked
             # about an air waybill, and if a different column is holding one
             # that is the number that goes to the carrier.
+            # A flight number printed on the row is worth carrying even
+            # when an air waybill is there too: it is what answers if the
+            # shipment page gives no date.
+            if "hub_flight" not in row:
+                found_flight = hub_flight_in_row(cells, columns)
+                if found_flight:
+                    row["hub_flight"] = found_flight
+
             reference = carrier_reference(cells, columns, bol_awb)
             if reference != bol_awb:
                 row["tracking_reference"] = reference
@@ -6140,6 +6148,38 @@ def normalise_flight_number(text):
     return "{0}{1}".format(found.group(1), found.group(2))
 
 
+def hub_reference_kind(value):
+    """
+    Which of myCargo's two forms this reference belongs to.
+
+    "awb" for 074/057-style air waybills, "flight" for AF/KL/MP flight
+    numbers, None for anything else. The page itself makes the distinction —
+    one box says "AWB starts with 074 or 057", the other "Enter flight
+    number (eg AF3620 or KL8246)" — so the reference decides, not a guess.
+    """
+    if not value:
+        return None
+    digits = re.sub(r"\D", "", str(value))
+    if len(digits) >= 11 and airline_from_awb(value)[1]:
+        return "awb"
+    if normalise_flight_number(value):
+        return "flight"
+    return None
+
+
+def hub_flight_in_row(cells, columns):
+    """A flight number printed anywhere the Hub keeps references, or None."""
+    for index in columns.get("bol_awb_columns", []):
+        try:
+            value = cells.nth(index).inner_text().strip()
+        except Exception:
+            continue
+        flight = normalise_flight_number(value)
+        if flight:
+            return flight
+    return None
+
+
 def hub_flight_leg(shipment):
     """
     The flight the HUB names for this shipment, or None.
@@ -6160,8 +6200,22 @@ def hub_flight_leg(shipment):
         if parsed is not None:
             when = parsed.strftime("%d/%m/%Y")
             break
-    return {"flight": flight, "date": when, "origin": None,
-            "destination": None, "source": "the Hub"}
+
+    # The card will not answer without a date, and a Hub that names the
+    # flight does not always name the day. The shipment's own ETA is the one
+    # real signal available, so it and the day before it are offered as
+    # candidates — the card then either recognises the flight on one of them
+    # or it does not. Nothing is assumed: a date is only used if the card
+    # comes back naming that same flight.
+    candidates = []
+    if when is None:
+        eta = flight_date_value(shipment.get("current_eta"))
+        if eta is not None:
+            candidates = [eta.strftime("%d/%m/%Y"),
+                          (eta - timedelta(days=1)).strftime("%d/%m/%Y")]
+
+    return {"flight": flight, "date": when, "date_candidates": candidates,
+            "origin": None, "destination": None, "source": "the Hub"}
 
 
 def combine_legs(hub_leg, page_leg):
@@ -6175,6 +6229,10 @@ def combine_legs(hub_leg, page_leg):
     if hub_leg is None:
         return page_leg
     if hub_leg.get("date"):
+        return hub_leg
+    if hub_leg.get("date_candidates") and not (
+            page_leg and page_leg.get("flight") == hub_leg["flight"]
+            and page_leg.get("date")):
         return hub_leg
     if page_leg and page_leg.get("flight") == hub_leg["flight"] \
             and page_leg.get("date"):
@@ -6367,6 +6425,16 @@ def read_flight_status(page, flight, label):
                   .format(label, flight))
         return None
 
+    # IDENTITY, the same rule the air waybill path follows: an answer is
+    # only this flight's if the page carries this flight. Without it, a card
+    # still showing a previous search — or a generic "no results" panel with
+    # a date on it somewhere — would be read as an arrival.
+    squashed = re.sub(r"[\s\-]", "", text).upper()
+    if flight and flight.upper() not in squashed:
+        write_log("{0}: the card answered, but the page does not carry {1}. "
+                  "Not reading it.".format(label, flight))
+        return None
+
     scheduled = actual = None
     for line in text.splitlines():
         stripped = " ".join(line.split())
@@ -6425,11 +6493,14 @@ def check_afkl_flight_status(page, leg, label="AFKL myCargo"):
     """
     if not AFKL_FLIGHT_STATUS:
         return None
-    if not leg or not leg.get("flight") or not leg.get("date"):
-        write_log("{0}: no flight number and date on the air waybill, so the "
-                  "flight status card has nothing to be asked."
-                  .format(label))
+    dates = [leg["date"]] if (leg or {}).get("date") else list(
+        (leg or {}).get("date_candidates") or [])
+    if not leg or not leg.get("flight") or not dates:
+        write_log("{0}: no flight number and date, so the flight status card "
+                  "has nothing to be asked.".format(label))
         return None
+    # Two at most. This is a search over real candidate days, not a sweep.
+    dates = dates[:2]
     if not AFKL_FLIGHT_NUMBER.match(leg["flight"]):
         write_log("{0}: {1} is not an AF, KL or MP flight; the card does not "
                   "answer for it.".format(label, leg["flight"]))
@@ -6477,39 +6548,50 @@ def check_afkl_flight_status(page, leg, label="AFKL myCargo"):
                       "holds '{2}').".format(label, leg["flight"], landed))
             return None
 
-        if not set_flight_date(tab, fields["date"], leg["date"], label):
-            write_log("{0}: the flight date was refused, so the card was not "
-                      "submitted.".format(label))
-            return None
-
-        # Nothing is submitted until both required fields hold what was
-        # intended. A half-filled submit is what put "Field is required" and
-        # "Please select a valid date" on the operator's screen.
-        try:
-            still = (fields["number"].input_value() or "").replace(" ", "")
-        except Exception:
-            still = ""
-        if still.upper() != leg["flight"].upper():
-            write_log("{0}: the flight number did not survive the date entry; "
-                      "not submitting.".format(label))
-            return None
-
-        # Some cards only validate the date once the form is submitted, so a
-        # format that looked accepted can still come back "Please select a
-        # valid date". That earns exactly one more try, through the calendar,
-        # and then the card is left alone.
-        for attempt in (1, 2):
-            click_postback(fields["button"], "{0} flight status".format(label))
-            found, rejected = await_flight_status(tab, leg["flight"], label)
-            if found:
-                return found
-            if rejected == "date" and attempt == 1 and \
-                    pick_flight_date_from_calendar(tab, fields["date"],
-                                                   leg["date"], label):
-                write_log("{0}: the card refused the typed date on submit; "
-                          "re-submitting with the calendar's.".format(label))
+        for which, when in enumerate(dates, 1):
+            if len(dates) > 1:
+                write_log("{0}: asking about {1} on {2} ({3} of {4} candidate "
+                          "dates — the Hub named the flight but not the day)."
+                          .format(label, leg["flight"], when, which,
+                                  len(dates)))
+            if not set_flight_date(tab, fields["date"], when, label):
+                write_log("{0}: the card refused {1} as a date."
+                          .format(label, when))
                 continue
-            break
+
+            # Nothing is submitted until both required fields hold what was
+            # intended. A half-filled submit is what put "Field is required"
+            # and "Please select a valid date" on the operator's screen.
+            try:
+                still = (fields["number"].input_value() or "").replace(" ", "")
+            except Exception:
+                still = ""
+            if still.upper() != leg["flight"].upper():
+                write_log("{0}: the flight number did not survive the date "
+                          "entry; not submitting.".format(label))
+                return None
+
+            # Some cards only validate the date once the form is submitted,
+            # so a format that looked accepted can still come back "Please
+            # select a valid date". That earns one more try, through the
+            # calendar, and then this date is left alone.
+            for attempt in (1, 2):
+                click_postback(fields["button"],
+                               "{0} flight status".format(label))
+                found, rejected = await_flight_status(tab, leg["flight"],
+                                                      label)
+                if found:
+                    found["date_asked"] = when
+                    return found
+                if rejected == "date" and attempt == 1 and \
+                        pick_flight_date_from_calendar(tab, fields["date"],
+                                                       when, label):
+                    write_log("{0}: the card refused the typed date on "
+                              "submit; re-submitting with the calendar's."
+                              .format(label))
+                    continue
+                break
+
         save_page_text(tab, leg["flight"], "afkl_flight_status_no_result")
         return None
     except Exception as error:
@@ -6796,11 +6878,37 @@ def get_provider_result(provider_pages, shipment):
         # found", which reads like a broken page and is nothing of the sort.
         # Say what is actually wrong instead.
         if PORTALS[provider].get("awb_only") and \
-                len(re.sub(r"\D", "", str(reference or ""))) < 11:
+                hub_reference_kind(reference) != "awb":
+            # THE REFERENCE DECIDES WHICH FORM. myCargo's left box takes
+            # 074/057 air waybills; its right box takes AF/KL/MP flight
+            # numbers. A flight number is not a failed air waybill — it is a
+            # different question, with its own form, and it gets asked there.
+            # The flight may be named in a column of its own, or it may
+            # BE the reference — "KL8246" in the BOL/AWB cell is a flight
+            # number, not a broken air waybill.
+            leg = hub_flight_leg(shipment) or hub_flight_leg(
+                dict(shipment or {}, hub_flight=reference))
+            if leg and (leg.get("date") or leg.get("date_candidates")):
+                write_log(
+                    "{0}: {1} is a flight number, not an air waybill, so the "
+                    "flight status card is what answers for it."
+                    .format(PORTALS[provider]["label"], leg["flight"]))
+                status = check_afkl_flight_status(page, leg)
+                answered = apply_flight_status(
+                    {"provider": provider,
+                     "tracking_status": "Estimated arrival", "eta": None,
+                     "ata": None, "flight_leg": leg}, leg, status)
+                if answered.get("eta") or answered.get("ata"):
+                    return answered
+                raise SkipShipment(
+                    "{0} is a flight number and {1}'s flight status card gave "
+                    "no arrival for it.".format(reference,
+                                                PORTALS[provider]["label"]))
             raise SkipShipment(
-                "{0} is not an air waybill, and {1} only tracks air waybills. "
-                "No column on this Hub row holds one, so the carrier was not "
-                "asked.".format(reference, PORTALS[provider]["label"]))
+                "{0} is neither an air waybill nor a flight number, and {1} "
+                "tracks only those. No column on this Hub row holds either, "
+                "so the carrier was not asked."
+                .format(reference, PORTALS[provider]["label"]))
         try:
             return get_portal_result(page, provider, reference, shipment)
         except SkipShipment as error:
