@@ -3005,6 +3005,21 @@ def build_header_map(table):
         "status": ["status"],
     }
 
+    # Optional. The Hub is what decides which question the carrier gets
+    # asked: an air waybill is tracked as a shipment, a flight number is put
+    # to the flight status card, and a row carrying both gets both. None of
+    # these columns is required — a Hub that does not print them simply
+    # leaves the automation reading the flight off the carrier's own page,
+    # exactly as before.
+    optional_aliases = {
+        "flight": ["flight", "flight number", "flight no", "flight no.",
+                   "flight nbr", "carrier flight", "flight/voyage",
+                   "flight / voyage", "voyage/flight"],
+        "flight_date": ["flight date", "departure date", "dep date",
+                        "etd", "date of departure", "flight dep date",
+                        "departure"],
+    }
+
     resolved = {}
     for logical_name, names in aliases.items():
         for name in names:
@@ -3013,6 +3028,28 @@ def build_header_map(table):
                 break
         if logical_name not in resolved:
             raise Exception(f"Required table column was not found: {logical_name}")
+
+    for logical_name, names in optional_aliases.items():
+        for name in names:
+            if name in raw_map:
+                resolved[logical_name] = raw_map[name]
+                write_log("Hub table: reading the {0} column as well."
+                          .format(logical_name.replace("_", " ")))
+                break
+        else:
+            write_log("Hub table: no {0} column recognised."
+                      .format(logical_name.replace("_", " ")))
+
+    # Say what the Hub actually prints. When a column this automation could
+    # use is there under a name nobody predicted — "Flt No", "Carrier Flight"
+    # — this line is what turns the next run into the fix, instead of another
+    # round of guessing at header names.
+    known = set(resolved.values())
+    spare = sorted(name for name, index in raw_map.items()
+                   if index not in known and name)
+    if spare:
+        write_log("Hub table: columns present but not used — {0}."
+                  .format(", ".join(spare)))
     return resolved
 
 
@@ -3156,15 +3193,23 @@ def collect_supported_shipments(page, table_page):
         current_eta = cells.nth(columns["eta"]).inner_text().strip()
 
         if bol_awb:
-            shipments.append(
-                {
-                    "bol_awb": bol_awb,
-                    "carrier": carrier,
-                    "provider": provider,
-                    "current_eta": current_eta,
-                    "table_page": table_page,
-                }
-            )
+            row = {
+                "bol_awb": bol_awb,
+                "carrier": carrier,
+                "provider": provider,
+                "current_eta": current_eta,
+                "table_page": table_page,
+            }
+            # Whatever else the Hub prints about the flight comes with it.
+            for extra in ("flight", "flight_date"):
+                if extra in columns:
+                    try:
+                        row["hub_" + extra] = cells.nth(
+                            columns[extra]).inner_text().strip()
+                    except Exception as error:
+                        note_suppressed(
+                            "reading the {0} column".format(extra), error)
+            shipments.append(row)
 
     write_log(
         f"Supported Under Clearance rows found on BU page {table_page}: "
@@ -5932,6 +5977,74 @@ def afkl_last_leg(text):
     return legs[-1]
 
 
+def normalise_flight_number(text):
+    """
+    "AF 877", "af0877", "AF-0877" -> "AF0877". None when it is not one.
+
+    Only AF, KL and MP are recognised, because they are the only flights the
+    card answers for. A Hub cell holding anything else is left alone rather
+    than forced into a shape the carrier will reject.
+    """
+    if not text:
+        return None
+    squashed = re.sub(r"[\s\-/]", "", str(text)).upper()
+    found = re.match(r"^(AF|KL|MP)(\d{3,4})$", squashed)
+    if not found:
+        return None
+    return "{0}{1}".format(found.group(1), found.group(2))
+
+
+def hub_flight_leg(shipment):
+    """
+    The flight the HUB names for this shipment, or None.
+
+    The Hub is the operator's own record, so when it prints a flight that is
+    the flight to ask about — ahead of anything parsed off the carrier's
+    page. A flight with no date is still returned: the date can come from the
+    shipment page's own schedule for the same flight.
+    """
+    if not shipment:
+        return None
+    flight = normalise_flight_number(shipment.get("hub_flight"))
+    if flight is None:
+        return None
+    when = None
+    for candidate in (shipment.get("hub_flight_date"),):
+        parsed = flight_date_value(candidate) if candidate else None
+        if parsed is not None:
+            when = parsed.strftime("%d/%m/%Y")
+            break
+    return {"flight": flight, "date": when, "origin": None,
+            "destination": None, "source": "the Hub"}
+
+
+def combine_legs(hub_leg, page_leg):
+    """
+    One leg to ask about, from what the Hub said and what the page showed.
+
+    The Hub's flight wins. Its date wins too when it has one; when it does
+    not, the page's schedule supplies the date, but only for the SAME flight
+    — a date belonging to a different leg is worse than no date at all.
+    """
+    if hub_leg is None:
+        return page_leg
+    if hub_leg.get("date"):
+        return hub_leg
+    if page_leg and page_leg.get("flight") == hub_leg["flight"] \
+            and page_leg.get("date"):
+        merged = dict(hub_leg)
+        merged["date"] = page_leg["date"]
+        merged["origin"] = page_leg.get("origin")
+        merged["destination"] = page_leg.get("destination")
+        merged["source"] = "the Hub, dated from the shipment page"
+        return merged
+    write_log(
+        "The Hub names flight {0} but no date for it, and the shipment page "
+        "does not date that flight either. The flight status card needs "
+        "both, so it is not being asked.".format(hub_leg["flight"]))
+    return page_leg
+
+
 def find_flight_status_fields(page):
     """
     The three controls of the "Check flight status" card, or None.
@@ -6348,7 +6461,7 @@ def _read_generic_portal_page(page, provider):
     return {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata}
 
 
-def get_portal_result(page, provider, tracking_number):
+def get_portal_result(page, provider, tracking_number, shipment=None):
     config = PORTALS[provider]
     airline = (airline_from_awb(tracking_number)[1] or {}).get("name", config["label"])
     slug = provider.lower()
@@ -6431,7 +6544,7 @@ def get_portal_result(page, provider, tracking_number):
     # arrival. Whatever comes back is labelled with where it came from.
     rescue = config.get("last_chance")
     if rescue is not None:
-        rescued = rescue(page, tracking_number)
+        rescued = rescue(page, tracking_number, shipment)
         if rescued and (rescued.get("eta") or rescued.get("ata")):
             return rescued
 
@@ -6448,20 +6561,24 @@ def extract_afkl_result(page, provider="AFKL"):
     return _read_afkl_page(page, provider)
 
 
-def afkl_flight_status_rescue(page, tracking_number):
+def afkl_flight_status_rescue(page, tracking_number, shipment=None):
     """
     Last chance for an AFKL shipment whose page carried no arrival date.
 
-    The shipment page still names the flight the air waybill is booked on.
-    That flight has an arrival, and an estimate taken from it — labelled as
-    coming from the flight, not from the shipment — beats reporting nothing.
+    Which flight to ask about comes from the Hub when the Hub names one, and
+    from the shipment page's own schedule otherwise. Either way the arrival
+    is labelled as the flight's, not the shipment's.
     """
     if not AFKL_FLIGHT_STATUS:
         return None
-    leg = afkl_last_leg(_page_text(page))
+    page_leg = afkl_last_leg(_page_text(page))
+    leg = combine_legs(hub_flight_leg(shipment), page_leg)
+    if leg and leg.get("source"):
+        write_log("AFKL myCargo: the flight to ask about ({0}) comes from {1}."
+                  .format(leg["flight"], leg["source"]))
     if not leg:
-        write_log("AFKL myCargo: no flight leg on the page either, so there "
-                  "is nothing for the flight status card to answer.")
+        write_log("AFKL myCargo: neither the Hub nor the page names a flight, "
+                  "so there is nothing for the flight status card to answer.")
         return None
     status = check_afkl_flight_status(page, leg)
     if not status:
@@ -6474,17 +6591,17 @@ def afkl_flight_status_rescue(page, tracking_number):
 PORTALS["AFKL"]["last_chance"] = afkl_flight_status_rescue
 
 
-def get_afkl_result(page, tracking_number):
+def get_afkl_result(page, tracking_number, shipment=None):
     """
-    The shipment — and, only when its own page gave no date at all, the
-    arrival of the flight that page names.
+    The shipment — and, when its own page gave no date at all, the arrival of
+    the flight the Hub or the page names.
     """
-    result = get_portal_result(page, "AFKL", tracking_number)
+    result = get_portal_result(page, "AFKL", tracking_number, shipment)
     if not result or result.get("no_result"):
         return result
     if result.get("eta") or result.get("ata"):
         return result
-    leg = result.get("flight_leg")
+    leg = combine_legs(hub_flight_leg(shipment), result.get("flight_leg"))
     if not leg:
         return result
     return apply_flight_status(result, leg,
@@ -6523,8 +6640,33 @@ def get_provider_result(provider_pages, shipment):
         return get_qatar_result(provider_pages["QATAR"], shipment["bol_awb"])
 
     if provider in PORTALS:
-        return get_portal_result(provider_pages[provider], provider,
-                                 shipment["bol_awb"])
+        page = provider_pages[provider]
+        try:
+            return get_portal_result(page, provider, shipment["bol_awb"],
+                                     shipment)
+        except SkipShipment as error:
+            # The air waybill produced nothing readable. If the HUB names a
+            # flight, that is a second question this shipment can still
+            # answer — and it is the Hub's own data, not a guess. A
+            # navigation error is deliberately NOT caught here: when the
+            # carrier cannot be reached, its flight card cannot be either.
+            leg = hub_flight_leg(shipment) if provider == "AFKL" else None
+            if leg is None or not leg.get("date"):
+                raise
+            write_log(
+                "{0}: the air waybill gave nothing readable. The Hub names "
+                "flight {1} on {2}, so the flight status card is asked next."
+                .format(PORTALS[provider]["label"], leg["flight"],
+                        leg["date"]))
+            status = check_afkl_flight_status(page, leg)
+            if not status:
+                raise
+            answered = apply_flight_status(
+                {"provider": provider, "tracking_status": "Estimated arrival",
+                 "eta": None, "ata": None, "flight_leg": leg}, leg, status)
+            if answered.get("eta") or answered.get("ata"):
+                return answered
+            raise
 
     raise SkipShipment(
         describe_unsupported(shipment.get("bol_awb"), shipment.get("carrier")))

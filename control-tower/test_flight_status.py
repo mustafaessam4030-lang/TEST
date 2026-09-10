@@ -140,6 +140,116 @@ check("apply_flight_status contains no path that writes an ATA",
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# 2b · THE HUB DECIDES WHICH QUESTION GETS ASKED
+# ─────────────────────────────────────────────────────────────────────────
+print()
+print("=" * 74)
+print("2b. WHAT THE HUB CARRIES DECIDES WHICH FORM IS USED")
+print("=" * 74)
+
+
+class Cell(object):
+    def __init__(self, text):
+        self.text = text
+
+    def inner_text(self):
+        return self.text
+
+
+class Cells(object):
+    def __init__(self, texts):
+        self.texts = texts
+
+    def count(self):
+        return len(self.texts)
+
+    def nth(self, index):
+        return Cell(self.texts[index])
+
+
+class Row(object):
+    def __init__(self, texts):
+        self.texts = texts
+
+    def locator(self, selector):
+        return Cells(self.texts)
+
+
+class Rows(object):
+    def __init__(self, rows):
+        self.rows = rows
+
+    def count(self):
+        return len(self.rows)
+
+    def nth(self, index):
+        return Row(self.rows[index])
+
+
+class Table(object):
+    """Just enough of a Playwright table for the header map and row reader."""
+
+    def __init__(self, headers, rows):
+        self.headers = headers
+        self.rows = rows
+
+    def locator(self, selector):
+        if "th" in selector:
+            return Cells(self.headers)
+        if "tbody tr" in selector:
+            return Rows(self.rows)
+        if selector == "tr":
+            return Rows([self.headers])
+        return Cells([])
+
+
+PLAIN = ["BOL/AWB Number", "Carrier Name", "ETA", "Status"]
+WITH_FLIGHT = ["BOL/AWB Number", "Carrier Name", "Flight Number",
+               "Flight Date", "ETA", "Status"]
+
+A.write_log = lambda *args, **kwargs: None
+plain_map = A.build_header_map(Table(PLAIN, []))
+check("A Hub with no flight columns still works",
+      set(plain_map) == {"bol_awb", "carrier", "eta", "status"},
+      str(sorted(plain_map)))
+rich_map = A.build_header_map(Table(WITH_FLIGHT, []))
+check("A Hub that prints a flight column has it read",
+      rich_map.get("flight") == 2 and rich_map.get("flight_date") == 3,
+      str(rich_map))
+
+check("Flight numbers are normalised, whatever the Hub types",
+      [A.normalise_flight_number(v) for v in
+       ("AF 0877", "af0877", "KL-8246", "MP 123")]
+      == ["AF0877", "AF0877", "KL8246", "MP123"])
+check("...and anything that is not an AF/KL/MP flight is left alone",
+      [A.normalise_flight_number(v) for v in
+       ("EK0705", "", None, "TBA", "057-05765454")] == [None] * 5)
+
+check("A Hub row naming a flight and a date is asked about directly",
+      A.hub_flight_leg({"hub_flight": "AF0877",
+                        "hub_flight_date": "04/09/2026"})
+      == {"flight": "AF0877", "date": "04/09/2026", "origin": None,
+          "destination": None, "source": "the Hub"})
+check("A Hub row naming no flight yields nothing",
+      A.hub_flight_leg({"bol_awb": "05705765454"}) is None)
+check("The Hub's flight outranks the page's",
+      A.combine_legs(
+          {"flight": "KL8246", "date": "05/09/2026", "source": "the Hub"},
+          leg)["flight"] == "KL8246")
+check("A Hub flight with no date is dated from the page's own schedule, "
+      "but only for the SAME flight",
+      A.combine_legs({"flight": "AF0877", "date": None, "source": "the Hub"},
+                     leg)["date"] == "04/09/2026")
+check("...and never from a different flight's leg",
+      A.combine_legs({"flight": "KL8246", "date": None, "source": "the Hub"},
+                     leg)["flight"] == "AF0877")
+check("With nothing from the Hub, the page's leg is used",
+      A.combine_legs(None, leg) is leg)
+check("With nothing anywhere, nothing is asked",
+      A.combine_legs(None, None) is None)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # THE STAND-IN PAGE — both forms, as they appear on myCargo
 # ─────────────────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("MYCARGO_STUB_PORT", "9644"))
@@ -421,6 +531,72 @@ else:
                       page, {"flight": "AF0877", "date": None}) is None)
             check("Nothing was left open by either refusal",
                   len(context.pages) == before)
+
+            # ── the Hub decides, end to end ──────────────────────────────
+            print()
+            print("=" * 74)
+            print("4. THE HUB'S OWN FLIGHT, WHEN THE AIR WAYBILL GIVES "
+                  "NOTHING")
+            print("=" * 74)
+            real_portal_result = A.get_portal_result
+
+            def nothing_readable(*args, **kwargs):
+                raise A.SkipShipment("KLM returned no arrival date that "
+                                     "could be read.")
+
+            hub_row = {"bol_awb": "05705765454", "carrier": "KLM",
+                       "provider": "AFKL", "hub_flight": "AF 0877",
+                       "hub_flight_date": "04/09/2026"}
+            try:
+                A.get_portal_result = nothing_readable
+                answered = A.get_provider_result({"AFKL": page}, hub_row)
+                check("The Hub's flight is asked when the air waybill gives "
+                      "nothing readable",
+                      answered is not None and answered.get("eta")
+                      == "04/09/2026", str(answered))
+                check("...and it is still only an estimate",
+                      answered.get("ata") is None)
+                check("...attributed to the flight, not to the shipment",
+                      "AF0877" in (answered.get("eta_source") or ""),
+                      str(answered.get("eta_source")))
+
+                bare = dict(hub_row)
+                bare.pop("hub_flight")
+                refused = None
+                try:
+                    A.get_provider_result({"AFKL": page}, bare)
+                except Exception as error:
+                    refused = error
+                check("A Hub row with no flight still fails the way it always "
+                      "did", isinstance(refused, A.SkipShipment),
+                      type(refused).__name__)
+
+                undated = dict(hub_row)
+                undated.pop("hub_flight_date")
+                refused = None
+                try:
+                    A.get_provider_result({"AFKL": page}, undated)
+                except Exception as error:
+                    refused = error
+                check("A Hub flight with no date is not submitted on a guess",
+                      isinstance(refused, A.SkipShipment),
+                      type(refused).__name__)
+
+                def unreachable(*args, **kwargs):
+                    raise A.AfklNavigationError("057-05765454", [])
+
+                A.get_portal_result = unreachable
+                refused = None
+                try:
+                    A.get_provider_result({"AFKL": page}, hub_row)
+                except Exception as error:
+                    refused = error
+                check("When the carrier cannot be REACHED, the flight card is "
+                      "not tried either — it is on the same site",
+                      isinstance(refused, A.AfklNavigationError),
+                      type(refused).__name__)
+            finally:
+                A.get_portal_result = real_portal_result
 
             # ── the switch ───────────────────────────────────────────────
             A.AFKL_FLIGHT_STATUS = False
