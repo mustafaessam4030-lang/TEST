@@ -162,9 +162,10 @@ def tcp_picture(addresses):
     ephemeral port pool — the resource that is actually shared.
     """
     picture = {"by_state": {}, "total": None, "to_carrier": None,
-               "to_carrier_by_state": {}, "time_wait": None,
-               "ephemeral_range": None, "ephemeral_ports_in_use": None,
-               "ephemeral_headroom": None, "distinct_remote_hosts": None}
+               "to_carrier_by_state": {}, "to_carrier_by_process": [],
+               "time_wait": None, "ephemeral_range": None,
+               "ephemeral_ports_in_use": None, "ephemeral_headroom": None,
+               "distinct_remote_hosts": None}
     if WINDOWS:
         raw = ps("Get-NetTCPConnection | Group-Object State | "
                  "Select-Object Name,Count | ConvertTo-Json -Compress")
@@ -192,6 +193,23 @@ def tcp_picture(addresses):
                     str(g.get("Name")): int(g.get("Count") or 0) for g in groups}
                 picture["to_carrier"] = sum(
                     picture["to_carrier_by_state"].values())
+            except Exception:
+                pass
+            # WHICH program is holding them. "Our automation" and "something
+            # else on this server" are different problems with different
+            # fixes, and the owning process is what tells them apart.
+            raw = ps("Get-NetTCPConnection -RemoteAddress @({0}) "
+                     "-ErrorAction SilentlyContinue | Group-Object "
+                     "OwningProcess | ForEach-Object {{ "
+                     "[pscustomobject]@{{ pid = $_.Name; count = $_.Count; "
+                     "name = (Get-Process -Id $_.Name -ErrorAction "
+                     "SilentlyContinue).ProcessName }} }} | "
+                     "ConvertTo-Json -Compress".format(listed))
+            try:
+                owners = json.loads(raw) if raw.startswith(("{", "[")) else []
+                if isinstance(owners, dict):
+                    owners = [owners]
+                picture["to_carrier_by_process"] = owners
             except Exception:
                 pass
         # The ephemeral pool. Windows hands these out to every program on the
@@ -264,7 +282,22 @@ def network_configuration():
 # ─────────────────────────────────────────────────────────────────────────
 # the two probes
 # ─────────────────────────────────────────────────────────────────────────
-def raw_probe(timeout=20):
+CHALLENGE_MARKERS = (
+    "access denied", "reference #", "you don't have permission",
+    "request blocked", "forbidden", "unusual traffic", "bot detected",
+    "are you a human", "pardon our interruption", "incapsula", "cloudflare",
+)
+INTERESTING_HEADERS = (
+    "server", "content-type", "retry-after", "x-reference-error",
+    "x-akamai-request-id", "cf-ray", "x-cache", "via", "connection",
+    "x-frame-options", "set-cookie",
+)
+# A site that is not the carrier, to tell "this machine cannot reach the
+# internet" apart from "this machine cannot reach the carrier".
+CONTROL_HOST = os.environ.get("CONTROL_HOST", "www.microsoft.com")
+
+
+def raw_probe(timeout=20, host=None, path=None):
     """
     Reach the carrier with nothing but a socket: no browser, no Playwright.
 
@@ -274,12 +307,15 @@ def raw_probe(timeout=20):
     own front door. A raw probe that succeeds while Edge hangs points at the
     browser.
     """
-    result = {"dns_ms": None, "connect_ms": None, "tls_ms": None,
+    host = host or HOST
+    path = path or PATH
+    result = {"host": host, "dns_ms": None, "connect_ms": None, "tls_ms": None,
               "first_byte_ms": None, "status": None, "bytes": None,
-              "error": None, "local_port": None}
+              "error": None, "local_port": None, "headers": {},
+              "body_starts": None, "challenge": None, "tls_version": None}
     started = time.time()
     try:
-        addresses = socket.getaddrinfo(HOST, 443, socket.AF_INET,
+        addresses = socket.getaddrinfo(host, 443, socket.AF_INET,
                                        socket.SOCK_STREAM)
         result["dns_ms"] = int((time.time() - started) * 1000)
         family, kind, proto, _, address = addresses[0]
@@ -291,26 +327,60 @@ def raw_probe(timeout=20):
         result["local_port"] = sock.getsockname()[1]
         mark = time.time()
         wrapped = ssl.create_default_context().wrap_socket(
-            sock, server_hostname=HOST)
+            sock, server_hostname=host)
         result["tls_ms"] = int((time.time() - mark) * 1000)
+        try:
+            result["tls_version"] = wrapped.version()
+        except Exception:
+            pass
         mark = time.time()
+        # A browser's user agent, because a site that is refusing browsers
+        # will happily answer a probe that does not look like one — and then
+        # the probe proves nothing about what Edge is seeing.
         wrapped.sendall(
-            ("GET {0} HTTP/1.1\r\nHost: {1}\r\nUser-Agent: control-tower-probe"
-             "\r\nAccept: text/html\r\nConnection: close\r\n\r\n"
-             .format(PATH, HOST)).encode("ascii"))
-        chunk = wrapped.recv(4096)
+            ("GET {0} HTTP/1.1\r\nHost: {1}\r\nUser-Agent: Mozilla/5.0 "
+             "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like "
+             "Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0\r\n"
+             "Accept: text/html,application/xhtml+xml\r\n"
+             "Accept-Language: en-US,en;q=0.9\r\n"
+             "Connection: close\r\n\r\n".format(path, host)
+             ).encode("ascii"))
+        chunk = wrapped.recv(8192)
         result["first_byte_ms"] = int((time.time() - mark) * 1000)
-        result["status"] = number(chunk.split(b"\r\n")[0].decode(
-            "latin-1", "replace").split(" ")[1] if b" " in chunk else "")
+        head = chunk.split(b"\r\n\r\n")[0].decode("latin-1", "replace")
+        lines = head.split("\r\n")
+        result["status"] = number(lines[0].split(" ")[1]) if " " in lines[0] \
+            else None
+        for line in lines[1:]:
+            if ":" not in line:
+                continue
+            name, _, value = line.partition(":")
+            if name.strip().lower() in INTERESTING_HEADERS:
+                result["headers"][name.strip().lower()] = value.strip()[:120]
+        body = b""
         total = len(chunk)
+        if b"\r\n\r\n" in chunk:
+            body = chunk.split(b"\r\n\r\n", 1)[1]
         while True:
             more = wrapped.recv(65536)
             if not more:
                 break
             total += len(more)
+            if len(body) < 4000:
+                body += more
             if total > 400000:
                 break
         result["bytes"] = total
+        readable = " ".join(re.sub(r"<[^>]+>", " ", body.decode(
+            "utf-8", "replace")).split())
+        result["body_starts"] = readable[:300]
+        lowered = readable.lower()
+        # An edge that has decided this address is a robot says so, and the
+        # words it uses are the whole answer to "what is blocking us".
+        for marker in CHALLENGE_MARKERS:
+            if marker in lowered:
+                result["challenge"] = marker
+                break
         wrapped.close()
     except Exception as error:
         result["error"] = "{0}: {1}".format(
@@ -326,7 +396,9 @@ def edge_probe(timeout_ms=45000):
     whether a SECOND browser can still get through while the first one runs.
     """
     result = {"ran": False, "reached": False, "ms": None, "ready_state": None,
-              "title": None, "error": None, "final_url": None}
+              "title": None, "error": None, "final_url": None,
+              "requests": 0, "by_status": {}, "failed": [], "blocked": [],
+              "still_pending": []}
     try:
         from playwright.sync_api import sync_playwright
     except Exception as error:
@@ -341,6 +413,38 @@ def edge_probe(timeout_ms=45000):
             try:
                 page = browser.new_page()
                 result["ran"] = True
+
+                # A blank page is not one failure, it is a set of them. This
+                # records every request the page made, what came back, and
+                # what never came back at all — which is the difference
+                # between "the site refused us" and "the site never answered".
+                pending = {}
+
+                def started_request(request):
+                    result["requests"] += 1
+                    pending[request] = time.time()
+
+                def finished(response):
+                    pending.pop(response.request, None)
+                    code = str(response.status)
+                    result["by_status"][code] = \
+                        result["by_status"].get(code, 0) + 1
+                    if response.status in (401, 403, 405, 429) or \
+                            response.status >= 500:
+                        if len(result["blocked"]) < 8:
+                            result["blocked"].append("{0} {1}".format(
+                                response.status, response.url[:110]))
+
+                def failed(request):
+                    pending.pop(request, None)
+                    if len(result["failed"]) < 8:
+                        result["failed"].append("{0} {1}".format(
+                            (request.failure or "failed")[:40],
+                            request.url[:110]))
+
+                page.on("request", started_request)
+                page.on("response", finished)
+                page.on("requestfailed", failed)
                 try:
                     page.goto("https://{0}{1}".format(HOST, PATH),
                               wait_until="commit", timeout=timeout_ms)
@@ -358,6 +462,14 @@ def edge_probe(timeout_ms=45000):
                     result["reached"] = bool(
                         result["ready_state"] in ("interactive", "complete")
                         and text > 400)
+                    for request, when in list(pending.items())[:8]:
+                        try:
+                            result["still_pending"].append(
+                                "{0}ms {1}".format(
+                                    int((time.time() - when) * 1000),
+                                    request.url[:110]))
+                        except Exception:
+                            continue
                 except Exception as error:
                     result["error"] = (result["error"] or "") + " | read: " + \
                         str(error).split("\n")[0][:80]
@@ -386,6 +498,7 @@ def snapshot(phase, with_edge=True):
         "tcp": tcp_picture(addresses),
         "network": network_configuration(),
         "raw_probe": raw_probe(),
+        "control_probe": raw_probe(host=CONTROL_HOST, path="/"),
     }
     if with_edge:
         taken["edge_probe"] = edge_probe()
@@ -424,12 +537,34 @@ def describe(taken):
     print("  proxy in the environment  : {0}".format(
         ", ".join("{0}={1}".format(name, str(value)[:40])
                   for name, value in sorted(proxy.items())) or "none"))
+    if tcp.get("to_carrier_by_process"):
+        print("  ...held by                : {0}".format(", ".join(
+            "{0} (pid {1}) x{2}".format(owner.get("name") or "?",
+                                        owner.get("pid"), owner.get("count"))
+            for owner in tcp["to_carrier_by_process"])))
     raw = taken["raw_probe"]
     print("  raw socket probe          : {0}".format(
         "HTTP {0}, {1} bytes, connect {2}ms, TLS {3}ms, first byte {4}ms"
         .format(raw["status"], raw["bytes"], raw["connect_ms"], raw["tls_ms"],
                 raw["first_byte_ms"]) if not raw["error"]
         else "FAILED — {0}".format(raw["error"])))
+    if raw.get("headers"):
+        print("  ...its headers            : {0}".format(", ".join(
+            "{0}={1}".format(name, value)
+            for name, value in sorted(raw["headers"].items()))[:400]))
+    if raw.get("challenge"):
+        print("  ...THE SITE IS REFUSING US: it said {0!r}".format(
+            raw["challenge"]))
+    if raw.get("body_starts"):
+        print("  ...it answered            : {0}".format(
+            raw["body_starts"][:200]))
+    control = taken.get("control_probe") or {}
+    print("  a site that is NOT them   : {0} -> {1}".format(
+        control.get("host"),
+        "HTTP {0} in {1}ms".format(control.get("status"),
+                                   control.get("first_byte_ms"))
+        if not control.get("error") else "FAILED — {0}".format(
+            control.get("error"))))
     edge = taken.get("edge_probe")
     if edge:
         print("  Edge probe                : {0}".format(
@@ -438,6 +573,14 @@ def describe(taken):
             else "DID NOT REACH — {0} ({1}ms, readyState={2})".format(
                 edge["error"] or "no content", edge["ms"],
                 edge["ready_state"])))
+        print("  ...requests it made       : {0}   by status: {1}".format(
+            edge.get("requests"), edge.get("by_status")))
+        for line in edge.get("blocked") or []:
+            print("      REFUSED  {0}".format(line))
+        for line in edge.get("failed") or []:
+            print("      FAILED   {0}".format(line))
+        for line in edge.get("still_pending") or []:
+            print("      NEVER ANSWERED  {0}".format(line))
     print()
 
 
@@ -510,7 +653,17 @@ def report():
         ("raw probe", lambda s: ("HTTP {0}".format(s["raw_probe"]["status"])
                                  if not s["raw_probe"]["error"]
                                  else "FAILED")),
+        ("...refused us?", lambda s: s["raw_probe"].get("challenge") or "no"),
         ("raw connect ms", lambda s: s["raw_probe"]["connect_ms"]),
+        ("raw first byte ms", lambda s: s["raw_probe"]["first_byte_ms"]),
+        ("control site", lambda s: (
+            "HTTP {0}".format((s.get("control_probe") or {}).get("status"))
+            if not (s.get("control_probe") or {}).get("error") else "FAILED")),
+        ("Edge requests", lambda s: (s.get("edge_probe") or {}).get(
+            "requests")),
+        ("Edge refused/failed", lambda s: len(
+            ((s.get("edge_probe") or {}).get("blocked") or [])
+            + ((s.get("edge_probe") or {}).get("failed") or []))),
         ("Edge reached AFKL", lambda s: (s.get("edge_probe") or {}).get(
             "reached")),
         ("Edge ms", lambda s: (s.get("edge_probe") or {}).get("ms")),
@@ -552,7 +705,69 @@ def report():
 
     def raw_ok(phase):
         snap = taken.get(phase) or {}
-        return bool(snap and not snap["raw_probe"]["error"])
+        return bool(snap and not snap["raw_probe"]["error"]
+                    and (snap["raw_probe"].get("status") or 0) < 400)
+
+    def control_ok(phase):
+        snap = (taken.get(phase) or {}).get("control_probe") or {}
+        return bool(snap and not snap.get("error")
+                    and (snap.get("status") or 0) < 400)
+
+    def refused(phase):
+        return ((taken.get(phase) or {}).get("raw_probe") or {}).get(
+            "challenge")
+
+    # The three mechanisms this experiment can tell apart, checked in the
+    # order that makes each conclusion safe.
+    named = False
+    for phase in order:
+        if refused(phase):
+            snap = taken[phase]["raw_probe"]
+            print("  THE CARRIER IS REFUSING THIS ADDRESS. In phase {0} a "
+                  "plain".format(phase))
+            print("  socket request — no Playwright, no automation — came "
+                  "back HTTP {0}".format(snap.get("status")))
+            print("  saying {0!r}. That is the carrier's edge deciding this "
+                  "server".format(refused(phase)))
+            print("  is a robot and denying it, which denies Edge on the "
+                  "same address")
+            print("  just as thoroughly. Nothing inside the automation's "
+                  "process can")
+            print("  undo it; what matters is how much traffic, and how "
+                  "browser-like,")
+            print("  this machine sends the carrier.")
+            if snap.get("headers"):
+                print("  The edge identified itself as: {0}".format(
+                    snap["headers"].get("server")
+                    or snap["headers"].get("via") or "unnamed"))
+            named = True
+            break
+    if not named:
+        for phase in order:
+            if not raw_ok(phase) and control_ok(phase):
+                print("  IT IS THE CARRIER SPECIFICALLY, NOT THIS MACHINE'S "
+                      "NETWORK. In")
+                print("  phase {0} a plain socket request to the carrier "
+                      "failed while the".format(phase))
+                print("  same request to {0} succeeded from the".format(
+                    (taken[phase].get("control_probe") or {}).get("host")))
+                print("  same process, seconds apart. Sockets and ports are "
+                      "not exhausted;")
+                print("  the path to that one host is.")
+                named = True
+                break
+    if not named:
+        for phase in order:
+            if not raw_ok(phase) and not control_ok(phase):
+                print("  THIS MACHINE COULD NOT REACH ANYTHING in phase "
+                      "{0} — the carrier".format(phase))
+                print("  and the control site both failed. That is a "
+                      "machine-level limit,")
+                print("  not a carrier one: check the ephemeral port "
+                      "headroom and the")
+                print("  TIME_WAIT row above.")
+                named = True
+                break
 
     if reached("A") is False:
         print("  Phase A already failed, with the automation off. Whatever is")

@@ -407,6 +407,131 @@ else:
 
 server.shutdown()
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# 6 · THE A/B/C/D DIAGNOSTIC MUST NOT MISLABEL WHAT IT SEES
+# ─────────────────────────────────────────────────────────────────────────
+# The whole point of that tool is to name the mechanism. A tool that names
+# the wrong one is worse than no tool, so its verdict is pinned to the
+# evidence that produces it.
+print()
+print("=" * 74)
+print("6. THE SERVER DIAGNOSTIC NAMES THE RIGHT MECHANISM")
+print("=" * 74)
+
+import contextlib                                            # noqa: E402
+import io as _io                                             # noqa: E402
+import json                                                  # noqa: E402
+import tempfile                                              # noqa: E402
+
+try:
+    import diagnose_server as D                              # noqa: E402
+except Exception as error:                                   # pragma: no cover
+    D = None
+    check("The server diagnostic imports", False, str(error)[:100])
+
+
+def snapshot(phase, carrier=None, control=200, challenge=None, edge=None,
+             **extra):
+    """One phase's worth of evidence, shaped the way the tool writes it."""
+    taken = {
+        "phase": phase, "meaning": "", "at": "", "host": "t",
+        "windows": True,
+        "cpu_memory": {"cpu_percent": 5, "memory_free_mb": 4096},
+        "browsers": {"total": 3, "handles": 900, "by_name": []},
+        "automation": {"update_eta_running": phase in ("B", "C"),
+                       "update_eta_processes": 1},
+        "tcp": {"by_state": {}, "total": 120, "to_carrier": 2,
+                "to_carrier_by_state": {}, "to_carrier_by_process": [],
+                "time_wait": 40, "ephemeral_range": "49152-65535 (16384)",
+                "ephemeral_ports_in_use": 300, "ephemeral_headroom": 16084,
+                "distinct_remote_hosts": 30},
+        "network": {"env_proxy": {}, "carrier_addresses": ["1.2.3.4"]},
+        "raw_probe": {"host": "www.afklcargo.com", "status": carrier,
+                      "error": None if carrier else "timed out",
+                      "connect_ms": 20, "tls_ms": 30, "first_byte_ms": 40,
+                      "bytes": 100, "headers": {"server": "AkamaiGHost"},
+                      "challenge": challenge, "body_starts": "",
+                      "local_port": 50000, "dns_ms": 1, "tls_version": "1.3"},
+        "control_probe": {"host": "www.microsoft.com", "status": control,
+                          "error": None if control else "timed out",
+                          "connect_ms": 10, "first_byte_ms": 20,
+                          "challenge": None, "headers": {}},
+    }
+    if edge is not None:
+        taken["edge_probe"] = {"ran": True, "reached": edge, "ms": 900,
+                               "ready_state": "complete", "requests": 40,
+                               "by_status": {"200": 40}, "failed": [],
+                               "blocked": [], "still_pending": []}
+    taken.update(extra)
+    return taken
+
+
+def verdict(snapshots):
+    """Run the tool's own report over these phases and return what it said."""
+    folder = Path(tempfile.mkdtemp())
+    for taken in snapshots:
+        (folder / "phase_{0}.json".format(taken["phase"])).write_text(
+            json.dumps(taken), encoding="utf-8")
+    was, D.SNAPSHOTS = D.SNAPSHOTS, folder
+    buffer = _io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            D.report()
+    finally:
+        D.SNAPSHOTS = was
+    return buffer.getvalue()
+
+
+if D is not None:
+    said = verdict([snapshot("A", carrier=403, challenge="access denied",
+                             edge=False)])
+    check("A carrier that answers 'access denied' is reported as refusing "
+          "this address", "THE CARRIER IS REFUSING THIS ADDRESS" in said)
+    check("...and the tool says a plain socket saw it, not a browser",
+          "no Playwright, no automation" in said)
+
+    said = verdict([snapshot("A", carrier=200, control=200, edge=True),
+                    snapshot("C", carrier=None, control=200, edge=False)])
+    check("Carrier unreachable while a control site answers is reported as "
+          "carrier-specific",
+          "IT IS THE CARRIER SPECIFICALLY" in said, said[-300:])
+    check("...and it explicitly rules out port exhaustion",
+          "Sockets and ports are not exhausted" in said)
+
+    said = verdict([snapshot("C", carrier=None, control=None, edge=False)])
+    check("Nothing reachable at all is reported as a machine-level limit",
+          "THIS MACHINE COULD NOT REACH ANYTHING" in said, said[-300:])
+    check("...and points at the port pool rather than the carrier",
+          "ephemeral port headroom" in said)
+
+    said = verdict([snapshot("A", carrier=200, edge=True),
+                    snapshot("B", carrier=200, edge=True),
+                    snapshot("C", carrier=200, edge=False)])
+    check("B passing and C failing is reported as the AFKL path's own cost",
+          "B passed and C failed" in said, said[-400:])
+
+    said = verdict([snapshot("A", carrier=200, edge=False),
+                    snapshot("B", carrier=200, edge=False)])
+    check("A failing with the automation OFF is not blamed on the automation",
+          "not caused by the automation" in said, said[-300:])
+
+    said = verdict([snapshot("A", carrier=200)])
+    check("With no Edge measurement the tool says so rather than concluding",
+          "no Edge measurement" in said)
+    check("...and does not claim the automation is innocent or guilty",
+          "not caused by the automation" not in said
+          and "B passed and C failed" not in said)
+
+    said = verdict([snapshot("A", carrier=200, edge=True),
+                    snapshot("B", carrier=200, edge=True),
+                    snapshot("C", carrier=200, edge=True),
+                    snapshot("D", carrier=200, edge=True)])
+    check("A run that reproduced nothing is NOT reported as proof of a fix",
+          "did not reproduce the fault" in said
+          and "do not conclude it is fixed" in said, said[-400:])
+
+
 print()
 print("=" * 74)
 print("{0} passed, {1} failed{2}".format(
