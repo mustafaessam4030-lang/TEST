@@ -409,6 +409,62 @@ server.shutdown()
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# 5b · THE RUN LOG SAYS WHETHER THE MACHINE COULD REACH THE CARRIER AT ALL
+# ─────────────────────────────────────────────────────────────────────────
+# A carrier page that never renders and a carrier that never answers look
+# identical in a run log, and they are completely different problems. On the
+# failure path — and only there — the automation now asks a plain socket.
+print()
+print("=" * 74)
+print("5b. A FAILED CARRIER PAGE RECORDS WHETHER THE HOST ANSWERED")
+print("=" * 74)
+
+check("An edge refusing this address is recognised by what it says",
+      A.refusal_in("Access Denied You don't have permission Reference "
+                   "#18.abc") == "access denied")
+check("...including a bare Akamai reference",
+      A.refusal_in("Error Reference #18.7c1d0117") == "reference #")
+check("A normal page is not mistaken for a refusal",
+      A.refusal_in("myCargo Track and trace your shipment") is None)
+check("Neither is an empty reply", A.refusal_in("") is None
+      and A.refusal_in(None) is None)
+
+# Nothing listening: the probe has to come back with a sentence, not an
+# exception, or it would turn a carrier failure into a crash.
+dead = A.probe_host("127.0.0.1", "/")
+check("A host that does not answer produces a line, not an exception",
+      isinstance(dead, str) and "NO REPLY" in dead, dead[:80])
+
+lines = []
+real_probe, real_log = A.probe_host, A.write_log
+try:
+    A.probe_host = lambda host, path="/": "PROBED {0}{1}".format(host, path)
+    A.write_log = lambda message: lines.append(message)
+    A.log_reachability("https://www.afklcargo.com/mycargo/shipment/"
+                       "singlesearch", "AFKL myCargo")
+finally:
+    A.probe_host, A.write_log = real_probe, real_log
+
+check("The failing host is probed", any("www.afklcargo.com" in line
+                                        for line in lines), str(lines))
+check("...and so is a site that is NOT them, seconds apart",
+      any(A.REACHABILITY_CONTROL_HOST in line for line in lines), str(lines))
+check("Exactly two lines, so a failing run does not become a wall of text",
+      len(lines) == 2, str(len(lines)))
+check("A malformed URL is ignored rather than crashing the run",
+      A.log_reachability("", "AFKL myCargo") is None)
+
+# It must not run on the happy path: a healthy run makes no extra requests
+# to anybody.
+source = (HERE / "update_eta.py").read_text(encoding="utf-8")
+portal_body = source.split("def open_portal")[1].split("\ndef ")[0]
+check("It is only reached where the portal has already failed",
+      portal_body.count("log_reachability(") == 1
+      and portal_body.index("log_reachability(")
+      > portal_body.index("problems.append"))
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # 6 · THE A/B/C/D DIAGNOSTIC MUST NOT MISLABEL WHAT IT SEES
 # ─────────────────────────────────────────────────────────────────────────
 # The whole point of that tool is to name the mechanism. A tool that names

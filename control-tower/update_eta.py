@@ -5377,6 +5377,7 @@ def open_afkl_detail(page, config, tracking_number):
 
         save_page_text(page, tracking_number, "afkl_navigation_error")
         take_screenshot(page, tracking_number, "afkl_navigation_error")
+        log_reachability(url, label)
         raise AfklNavigationError(tracking_number, attempts)
     finally:
         # Whichever way this ends — a later strategy won, or every strategy
@@ -5585,6 +5586,94 @@ def find_portal_input(page, placeholder, strict=False, timeout_ms=None):
                          else timeout_ms)
 
 
+REACHABILITY_CONTROL_HOST = os.environ.get(
+    "CONTROL_HOST", "www.microsoft.com")
+REACHABILITY_TIMEOUT = 6
+# What an edge says when it has decided an address is a robot. Finding one of
+# these in a plain socket's reply is the difference between "the carrier is
+# refusing this machine" and "the carrier is slow".
+REFUSAL_WORDS = ("access denied", "reference #", "request blocked",
+                 "unusual traffic", "you don't have permission",
+                 "pardon our interruption", "bot detected")
+
+
+def refusal_in(text):
+    """The words an edge uses when it is refusing this address, or None."""
+    lowered = (text or "").lower()
+    return next((word for word in REFUSAL_WORDS if word in lowered), None)
+
+
+def probe_host(host, path="/"):
+    """
+    Reach a host with nothing but a socket — no browser, no Playwright.
+
+    Returns a one-line description. This exists because "the carrier's page
+    did not render" and "this machine cannot reach the carrier at all" look
+    identical in a run log and are completely different problems.
+    """
+    started = time.time()
+    try:
+        import socket as _socket
+        import ssl as _ssl
+        family, kind, proto, _canon, address = _socket.getaddrinfo(
+            host, 443, _socket.AF_INET, _socket.SOCK_STREAM)[0]
+        sock = _socket.socket(family, kind, proto)
+        sock.settimeout(REACHABILITY_TIMEOUT)
+        sock.connect(address)
+        connected = int((time.time() - started) * 1000)
+        wrapped = _ssl.create_default_context().wrap_socket(
+            sock, server_hostname=host)
+        # A browser's user agent, because a site refusing browsers will
+        # happily answer something that does not look like one.
+        wrapped.sendall(
+            ("GET {0} HTTP/1.1\r\nHost: {1}\r\nUser-Agent: Mozilla/5.0 "
+             "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like "
+             "Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0\r\n"
+             "Accept: text/html\r\nConnection: close\r\n\r\n"
+             .format(path, host)).encode("ascii"))
+        reply = wrapped.recv(8192)
+        total = int((time.time() - started) * 1000)
+        wrapped.close()
+        head = reply.split(b"\r\n\r\n")[0].decode("latin-1", "replace")
+        status = head.split("\r\n")[0][:60]
+        body = " ".join(re.sub(
+            r"<[^>]+>", " ", reply.decode("utf-8", "replace")).split())
+        refusal = refusal_in(body)
+        server = ""
+        for line in head.split("\r\n")[1:]:
+            if line.lower().startswith(("server:", "via:")):
+                server += " " + line.strip()[:60]
+        return "{0} | connected in {1}ms, replied in {2}ms{3}{4}".format(
+            status, connected, total, server,
+            " | IT IS REFUSING US: {0!r}".format(refusal) if refusal else "")
+    except Exception as error:
+        return "NO REPLY after {0}ms — {1}: {2}".format(
+            int((time.time() - started) * 1000), type(error).__name__,
+            str(error).split("\n")[0][:90])
+
+
+def log_reachability(url, label):
+    """
+    Say whether this machine can reach that host at all, and whether it can
+    reach a different one, seconds apart.
+
+    Called only when a carrier page has already failed, so it adds nothing to
+    a healthy run. Two lines in the log, and the question "is it us, this
+    machine, or that site" stops needing a separate investigation.
+    """
+    try:
+        host = re.sub(r"^https?://", "", url or "").split("/")[0]
+        if not host:
+            return
+        write_log("{0}: reachability of {1} — {2}".format(
+            label, host, probe_host(host)))
+        write_log("{0}: reachability of {1} (a site that is NOT them) — {2}"
+                  .format(label, REACHABILITY_CONTROL_HOST,
+                          probe_host(REACHABILITY_CONTROL_HOST)))
+    except Exception as error:
+        note_suppressed("probing reachability", error)
+
+
 def open_portal(page, config, tracking_number):
     """Open whichever entry point actually shows the air waybill box."""
     problems = []
@@ -5667,6 +5756,7 @@ def open_portal(page, config, tracking_number):
         problems.append("{0}: no air waybill box on the page".format(url))
 
     save_page_text(page, tracking_number, config["label"].lower() + "_no_input")
+    log_reachability(config["urls"][0], config["label"])
     raise SkipShipment(
         "No {0} air waybill box was found. Tried: {1}".format(
             config["label"], " | ".join(problems)))
