@@ -1,0 +1,59 @@
+{
+  "_source_document": "Ghana Revenue Authority (GRA) Customs Division — Declaration (Bill of Entry), page A-1",
+  "_note": "Transcribed from the BOE image embedded in the workbook. Every figure was read from a 4x upscaled crop of the tax table; the totals reconcile.",
+
+  "boe": {
+    "user_reference": "DDAO9116093",
+    "boe_no": "40726534505 / 00",
+    "bill_no": "KIA1-G-40726534505-01",
+    "bl_awb": "J552493",
+    "date": "2026-07-15",
+    "office_code": "KIA1",
+    "regime": "40",
+    "importer": "MANTRAC GHANA LIMITED",
+    "declarant": "DHL LOGISTICS GHANA LIMITED",
+    "delivery_terms": "CPT ACCRA",
+    "country_of_consignment": "BE Belgium",
+    "total_invoice_fcy": 174071.09,
+    "currency": "USD",
+    "boe_rate_of_xchange": 11.4857,
+    "gross_mass_kg": 1327.6,
+    "printed_total": 653670.54,
+
+    "tax_lines": [
+      { "code": "01", "name": "Import Duty",                              "payable": 163253.97 },
+      { "code": "02", "name": "Import VAT",                               "payable": 304446.44 },
+      { "code": "05", "name": "Processing Fee",                           "payable":   8315.97 },
+      { "code": "06", "name": "ECOWAS Levy",                              "payable":   9996.63 },
+      { "code": "32", "name": "Network Charge",                           "payable":   7106.49 },
+      { "code": "33", "name": "Network Charge VAT",                       "payable":   1066.03 },
+      { "code": "45", "name": "Ghana Shippers Authority SNF Fee",         "payable":     12.00 },
+      { "code": "47", "name": "Import NHIL",                              "payable":  50741.08 },
+      { "code": "48", "name": "Network Charge NHIL",                      "payable":    177.67 },
+      { "code": "56", "name": "1% Withholding Tax on Import",             "payable":      0.00 },
+      { "code": "63", "name": "GHS Disinfection Fee",                     "payable":   4712.12 },
+      { "code": "72", "name": "MoTI e-IDF Fee",                           "payable":      5.00 },
+      { "code": "78", "name": "Special Import Levy (2%)",                 "payable":  13931.55 },
+      { "code": "87", "name": "Ghana Export-Import Bank (EXIM) Levy",     "payable":  14994.97 },
+      { "code": "88", "name": "Ghana Education Trust (GET) Fund Import",  "payable":  50741.08 },
+      { "code": "89", "name": "Network Charge GET Fund Levy",             "payable":    177.67 },
+      { "code": "93", "name": "Inspection Fee",                           "payable":  19993.24 },
+      { "code": "98", "name": "African Union Import Levy",                "payable":   3998.63 }
+    ]
+  },
+
+  "manual": {
+    "_why": "These do NOT appear on the BOE. invoice_cfr_cif comes from the supplier invoice; bog_rate is the Bank of Ghana rate used for costing, which is not the BOE's own rate of exchange (11.4857).",
+    "invoice_cfr_cif": 169740.11,
+    "bog_rate": 11.2,
+    "payment_date": "2026-07-16",
+    "ref": "ETALATA:17/07",
+    "priority": "AIR FREIGHT - TOP URGENT",
+    "from_dept": "LOGISTICS",
+    "to_dept": "ACCOUNT DEPT",
+    "payable_to": "GHANA REVENUE AUTHORITY(CUSTOMS)",
+    "supplier": "CAT",
+    "receiving_branch": " ",
+    "charge_to": "32600.CPA.G005"
+  }
+}

@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="description" content="How Maia works — one message, eight steps, seven hundred milliseconds. The path a question takes through Snowflake, watched live."/>
+<meta name="theme-color" content="#14151A"/>
+<title>Inside One Maia Answer</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   INSIDE ONE MAIA ANSWER
+   -----------------------------------------------------------------------
+   THE WHOLE PAGE IS ONE SENTENCE: watch a message go in and an answer
+   come out, and see every place it stopped on the way.
+
+   That is why the centrepiece is not a diagram beside a chat — it is a
+   chat WIRED to a diagram. Press send and the same clock drives both: the
+   packet leaves the composer, lights each stage as it arrives, and the
+   reply only begins streaming when the pipeline actually reaches REPLY.
+   An architecture diagram that animates on its own is a decoration; one
+   that cannot run ahead of the conversation it is explaining is a model.
+
+   -----------------------------------------------------------------------
+   TWO BRANDS, TWO JOBS, AND THE COLOUR SAYS WHICH IS WHICH
+
+     CAT YELLOW (#FFCD11) is Mantrac's side — the dealer, the machine, the
+       person holding the phone. It owns the edge of the pipeline: what
+       arrives, what is screened, what is sent back.
+
+     SNOWFLAKE BLUE (#29B5E8) is the platform — embedding, retrieval,
+       the SQL that resolves a serial, the grounded generation, the
+       verification. It owns the middle.
+
+   Read the track and you can see, without a caption, exactly which
+   company's system is doing which piece of work. That is the entire
+   reason the two accents exist.
+
+   -----------------------------------------------------------------------
+   THE RULE THAT MAKES CATERPILLAR YELLOW WORK
+
+   #FFCD11 on white is 1.6:1. It is a FILL — buttons, avatars, rails,
+   bars — and it is glorious on near-black. Where the yellow must carry
+   type on a light ground it becomes --cat-text (#7A5C00): the same hue,
+   taken to 6.5:1. Nearly every unreadable Cat-branded page in the world
+   is one missing version of this rule.
+
+   Ground is warm cream, not cool grey — yellow over cool grey turns
+   green and the whole palette goes sour.
+═══════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --paper:#FFFFFF;
+  --cream:#F7F4EC;
+  --cream-2:#EFEADF;
+  --line:#E2DCCD;
+  --line-2:#BCB4A2;
+  --ink:#14151A;
+  --graphite:#4B4C52;
+  --muted:#807E78;
+
+  --cat:#FFCD11;
+  --cat-lit:#FFE45C;
+  --cat-wash:#FFF9E0;
+  --cat-text:#7A5C00;
+
+  --snow:#29B5E8;
+  --snow-deep:#0A6E93;
+  --snow-wash:#E9F7FD;
+
+  --dark:#14151A;
+  --dark-2:#1D1F25;
+  --ok:#0E7A4B;
+  --alert:#CF2A22;
+
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,"Helvetica Neue",sans-serif;
+  --ar:"SF Arabic","Geeza Pro","Segoe UI",Tahoma,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  --out:cubic-bezier(.22,1,.28,1);
+  --io:cubic-bezier(.62,0,.34,1);
+  --gutter:clamp(20px,4.4vw,80px);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html{background:var(--cream);scroll-behavior:smooth;}
+body{background:var(--cream);color:var(--graphite);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
+a{color:inherit;text-decoration:none;}
+svg{display:block;}
+::selection{background:var(--cat);color:var(--ink);}
+:focus-visible{outline:2px solid var(--snow-deep);outline-offset:3px;}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+
+/* ═══ TYPE ════════════════════════════════════════════════════════════ */
+.display{font-size:clamp(34px,5vw,68px);line-height:1.02;letter-spacing:-.042em;
+  font-weight:640;color:var(--ink);text-wrap:balance;}
+.h2{font-size:clamp(26px,3.5vw,46px);line-height:1.08;letter-spacing:-.036em;
+  font-weight:640;color:var(--ink);text-wrap:balance;}
+.lede{font-size:clamp(15px,1.2vw,18px);line-height:1.6;color:var(--graphite);
+  max-width:58ch;text-wrap:pretty;}
+.eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--cat-text);display:inline-flex;gap:12px;align-items:center;}
+.eyebrow i{width:22px;height:3px;background:var(--cat);border-radius:1px;display:block;}
+.data{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+
+.wrap{width:100%;max-width:1400px;margin:0 auto;padding:0 var(--gutter);}
+section.band{position:relative;padding:clamp(64px,9vh,120px) 0;}
+.band.paper{background:var(--paper);}
+.band.dark{background:var(--dark);color:rgba(255,255,255,.7);}
+.band.dark .h2,.band.dark .display{color:#fff;}
+.band.dark .eyebrow{color:var(--cat);}
+.head-block{max-width:820px;}
+.head-block .h2{margin-top:18px;}
+.head-block .lede{margin-top:18px;}
+
+[data-reveal]{opacity:0;transform:translateY(20px);
+  transition:opacity .7s var(--out),transform .9s var(--out);
+  transition-delay:calc(var(--i,0) * 70ms);}
+[data-reveal].in{opacity:1;transform:none;}
+
+.btn{display:inline-flex;align-items:center;gap:9px;padding:14px 24px;border-radius:4px;
+  font-size:14px;font-weight:600;letter-spacing:-.01em;transition:background .2s,border-color .2s;}
+.btn.p{background:var(--cat);color:var(--ink);}
+.btn.p:hover{background:var(--cat-lit);}
+.btn.g{border:1px solid var(--line);background:var(--paper);color:var(--ink);}
+.btn.g:hover{border-color:var(--ink);}
+.btn svg{width:15px;height:15px;}
+
+/* ═══ NAV ═════════════════════════════════════════════════════════════ */
+.nav{position:sticky;top:0;z-index:60;display:flex;align-items:center;justify-content:space-between;
+  gap:20px;padding:12px var(--gutter);background:rgba(247,244,236,.9);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-m{width:28px;height:28px;flex:0 0 28px;border-radius:5px;background:var(--cat);
+  display:grid;place-items:center;font-weight:800;font-size:15px;color:var(--ink);
+  letter-spacing:-.05em;}
+.brand-n{font-size:18px;font-weight:700;letter-spacing:-.04em;color:var(--ink);}
+.brand-t{font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;color:var(--muted);
+  text-transform:uppercase;border-left:1px solid var(--line);padding-left:10px;}
+
+/* ═══ HERO ════════════════════════════════════════════════════════════ */
+.hero{padding:clamp(48px,8vh,96px) 0 clamp(40px,6vh,72px);}
+.hero .display{margin-top:18px;}
+.hero .display .n{color:var(--cat-text);}
+.hero .lede{margin-top:18px;}
+.hero-legend{display:flex;gap:clamp(16px,3vw,40px);margin-top:34px;flex-wrap:wrap;
+  padding-top:22px;border-top:1px solid var(--line);}
+.leg{display:flex;gap:11px;align-items:flex-start;max-width:34ch;}
+.leg i{width:11px;height:11px;border-radius:3px;flex:0 0 11px;margin-top:5px;}
+.leg i.y{background:var(--cat);}
+.leg i.b{background:var(--snow);}
+.leg b{display:block;font-size:13.5px;color:var(--ink);font-weight:620;letter-spacing:-.014em;}
+.leg span{font-size:12.5px;color:var(--muted);line-height:1.5;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE LOOP — chat wired to the pipeline
+═══════════════════════════════════════════════════════════════════════ */
+.loop{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);
+  gap:clamp(20px,3vw,52px);margin-top:40px;align-items:start;}
+
+/* ── the phone ── */
+.phone{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper);
+  box-shadow:0 26px 60px rgba(20,21,26,.10);display:flex;flex-direction:column;
+  height:min(720px,84vh);}
+.ph-top{display:flex;align-items:center;gap:11px;padding:12px 14px;background:var(--dark);
+  color:#fff;flex:0 0 auto;}
+.av{width:38px;height:38px;flex:0 0 38px;border-radius:50%;background:var(--cat);
+  display:grid;place-items:center;position:relative;}
+.av svg{width:26px;height:26px;}
+.av .dot{position:absolute;right:0;bottom:1px;width:10px;height:10px;border-radius:50%;
+  background:#2ECC71;border:2px solid var(--dark);}
+.ph-name{font-size:15px;font-weight:640;letter-spacing:-.02em;}
+.ph-sub{font-size:11.5px;color:rgba(255,255,255,.55);}
+.ph-voice{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--mono);
+  font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.6);
+  border:1px solid rgba(255,255,255,.2);border-radius:100px;padding:6px 10px;}
+.ph-voice svg{width:12px;height:12px;}
+
+/* the memory strip — Maia carrying context between turns, which is the
+   thing customers actually notice and no diagram ever shows */
+.remember{background:var(--cat-wash);border-bottom:1px solid var(--line);padding:10px 14px;
+  flex:0 0 auto;}
+.remember-l{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;
+  color:var(--cat-text);text-transform:uppercase;margin-bottom:8px;}
+.mem{display:inline-flex;align-items:center;gap:9px;background:var(--paper);
+  border:1px solid var(--line);border-radius:100px;padding:6px 11px;font-size:11.5px;
+  color:var(--ink);max-width:100%;}
+.mem b{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;}
+.mem span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mem i{color:var(--muted);font-style:normal;}
+
+.thread{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:12px;
+  scroll-behavior:smooth;}
+.thread::-webkit-scrollbar{width:5px;}
+.thread::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+.msg{max-width:88%;font-size:13.5px;line-height:1.55;opacity:0;transform:translateY(8px);
+  transition:opacity .45s var(--out),transform .5s var(--out);}
+.msg.in{opacity:1;transform:none;}
+.msg.them{align-self:flex-start;border-left:3px solid var(--cat);
+  background:var(--cream);border-radius:0 10px 10px 0;padding:11px 13px;color:var(--ink);}
+.msg.me{align-self:flex-end;background:var(--dark);color:#fff;border-radius:10px 10px 2px 10px;
+  padding:11px 13px;}
+/* Arabic sets right-to-left with its own face — a bidi bubble that keeps
+   LTR alignment is the tell that nobody tested it */
+.msg[dir="rtl"]{font-family:var(--ar);text-align:right;font-size:14.5px;line-height:1.75;}
+.msg.them[dir="rtl"]{border-left:none;border-right:3px solid var(--cat);
+  border-radius:10px 0 0 10px;align-self:flex-start;}
+.msg .lat{font-family:var(--mono);direction:ltr;unicode-bidi:embed;}
+.msg-time{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:6px;
+  letter-spacing:.06em;direction:ltr;}
+
+.typing{align-self:flex-start;display:flex;gap:4px;padding:12px 14px;background:var(--cream);
+  border-left:3px solid var(--cat);border-radius:0 10px 10px 0;}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--line-2);
+  animation:blink 1.3s infinite;}
+.typing i:nth-child(2){animation-delay:.18s} .typing i:nth-child(3){animation-delay:.36s}
+@keyframes blink{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+/* the part card, inside a reply */
+.pcard{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:9px;
+  background:var(--paper);direction:ltr;text-align:left;}
+.pcard-t{background:var(--dark);color:#fff;padding:9px 11px;}
+.pcard-no{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--cat);
+  letter-spacing:.02em;}
+.pcard-nm{font-size:11px;color:rgba(255,255,255,.6);margin-top:2px;}
+.pcard-g{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);}
+.pcard-c{background:var(--paper);padding:8px 11px;}
+.pcard-c dt{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);}
+.pcard-c dd{font-family:var(--mono);font-size:11.5px;color:var(--ink);margin-top:3px;}
+.pcard-c dd.ok{color:var(--ok);}
+
+.chips{display:flex;gap:7px;padding:10px 14px;overflow-x:auto;border-top:1px solid var(--line);
+  flex:0 0 auto;scrollbar-width:none;}
+.chips::-webkit-scrollbar{display:none;}
+.chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;
+  border:1px solid var(--line);border-radius:100px;font-size:12.5px;color:var(--graphite);
+  white-space:nowrap;transition:border-color .2s,background .2s,color .2s;}
+.chip:hover{border-color:var(--ink);color:var(--ink);}
+.chip.on{border-color:var(--cat-text);background:var(--cat-wash);color:var(--cat-text);
+  font-weight:600;}
+.chip svg{width:12px;height:12px;}
+
+.composer{display:flex;align-items:center;gap:7px;padding:11px 12px;border-top:1px solid var(--line);
+  background:var(--cream);flex:0 0 auto;}
+.cinput{flex:1;min-width:0;border:1px solid var(--line);border-radius:100px;padding:10px 14px;
+  background:var(--paper);font-size:13px;color:var(--muted);font-family:var(--ar);
+  text-align:right;direction:rtl;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.cinput.en{font-family:var(--sans);text-align:left;direction:ltr;}
+.cinput.typed{color:var(--ink);}
+.cinput .caret{display:inline-block;width:1.5px;height:14px;background:var(--ink);
+  vertical-align:-2px;animation:caret 1s steps(2) infinite;}
+@keyframes caret{0%,50%{opacity:1}51%,100%{opacity:0}}
+.cbtn{width:38px;height:38px;flex:0 0 38px;border-radius:50%;border:1px solid var(--line);
+  display:grid;place-items:center;background:var(--paper);transition:border-color .2s;}
+.cbtn:hover{border-color:var(--ink);}
+.cbtn svg{width:16px;height:16px;stroke:var(--graphite);fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;}
+.send{background:var(--cat);border-color:var(--cat);width:auto;padding:0 18px;border-radius:100px;
+  height:38px;font-size:13.5px;font-weight:640;color:var(--ink);}
+.send:hover{background:var(--cat-lit);border-color:var(--cat-lit);}
+.send:disabled{opacity:.45;cursor:default;}
+.ph-foot{padding:9px 14px;background:var(--paper);border-top:1px solid var(--line);
+  font-size:10px;color:var(--muted);text-align:center;flex:0 0 auto;letter-spacing:.01em;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE TRACK
+   Eight stages. Yellow at the two ends because that is Mantrac's edge;
+   blue through the middle because that is Snowflake's. The rail on the
+   left is not decoration — it is the boundary of the data cloud, and it
+   is drawn so you can see exactly where the work moves house.
+═══════════════════════════════════════════════════════════════════════ */
+.track-wrap{position:relative;border:1px solid var(--line);border-radius:14px;
+  background:var(--paper);overflow:hidden;}
+.track-head{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:14px 20px;border-bottom:1px solid var(--line);background:var(--cream);flex-wrap:wrap;}
+.track-t{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);}
+.track-clock{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+.track-clock b{color:var(--cat-text);}
+
+.track{position:relative;padding:20px 20px 20px 0;}
+/* the Snowflake boundary */
+.cloud{position:absolute;left:calc(var(--gut) - 14px);top:var(--cloud-top,0);
+  height:var(--cloud-h,0);width:calc(100% - var(--gut) + 6px);
+  border:1px dashed rgba(41,181,232,.5);border-radius:10px;background:var(--snow-wash);
+  pointer-events:none;transition:opacity .5s;}
+.cloud-l{position:absolute;top:-9px;left:14px;background:var(--paper);padding:0 8px;
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--snow-deep);display:flex;align-items:center;gap:6px;}
+.cloud-l svg{width:12px;height:12px;}
+
+.stage{position:relative;display:grid;grid-template-columns:var(--gut) minmax(0,1fr) auto;
+  gap:14px;align-items:start;padding:11px 0;}
+/* the first stage inside the cloud gets extra headroom for the boundary label */
+.stage[data-side="snow"]{padding-top:11px;}
+.stage[data-side="edge"] + .stage[data-side="snow"]{padding-top:24px;}
+.stage-rail{position:relative;height:100%;display:flex;justify-content:flex-end;padding-right:0;}
+/* the spine */
+.spine{position:absolute;left:calc(var(--gut) - 15px);top:26px;bottom:26px;width:2px;
+  background:var(--line);}
+.spine-lit{position:absolute;left:calc(var(--gut) - 15px);top:26px;width:2px;height:0;
+  background:linear-gradient(180deg,var(--cat),var(--snow) 22%,var(--snow) 78%,var(--cat));
+  transition:height .18s linear;}
+.node{position:absolute;left:calc(var(--gut) - 22px);width:16px;height:16px;border-radius:50%;
+  background:var(--paper);border:2px solid var(--line-2);margin-top:2px;z-index:2;
+  transition:border-color .3s,background .3s,box-shadow .3s,transform .3s var(--out);}
+.stage.on .node{transform:scale(1.15);}
+.stage.on[data-side="edge"] .node{border-color:var(--cat);background:var(--cat);
+  box-shadow:0 0 0 5px rgba(255,205,17,.3);}
+.stage.on[data-side="snow"] .node{border-color:var(--snow);background:var(--snow);
+  box-shadow:0 0 0 5px rgba(41,181,232,.22);}
+.stage.done .node{border-color:var(--line-2);background:var(--line-2);box-shadow:none;}
+.stage.done[data-side="edge"] .node{background:var(--cat);border-color:var(--cat);}
+.stage.done[data-side="snow"] .node{background:var(--snow);border-color:var(--snow);}
+
+.stage-n{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--line-2);
+  text-align:right;padding-top:3px;padding-right:30px;transition:color .3s;}
+.stage.on .stage-n,.stage.done .stage-n{color:var(--muted);}
+.stage-t{font-size:15px;font-weight:640;letter-spacing:-.02em;color:var(--muted);
+  transition:color .3s;}
+.stage.on .stage-t,.stage.done .stage-t{color:var(--ink);}
+.stage-d{font-size:12.5px;line-height:1.5;color:var(--line-2);margin-top:3px;transition:color .3s;}
+.stage.on .stage-d,.stage.done .stage-d{color:var(--graphite);}
+.stage-code{display:inline-block;font-family:var(--mono);font-size:10.5px;margin-top:7px;
+  padding:4px 8px;border-radius:4px;background:var(--cream);color:var(--muted);
+  border:1px solid var(--line);opacity:.55;transition:opacity .3s,color .3s,border-color .3s,background .3s;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.stage.on .stage-code,.stage.done .stage-code{opacity:1;}
+.stage.on[data-side="snow"] .stage-code{background:var(--snow-wash);color:var(--snow-deep);
+  border-color:rgba(41,181,232,.4);}
+.stage.on[data-side="edge"] .stage-code{background:var(--cat-wash);color:var(--cat-text);
+  border-color:rgba(122,92,0,.3);}
+.stage-ms{font-family:var(--mono);font-size:12px;color:var(--line-2);white-space:nowrap;
+  padding-top:3px;font-variant-numeric:tabular-nums;transition:color .3s;}
+.stage.on .stage-ms{color:var(--ink);font-weight:600;}
+.stage.done .stage-ms{color:var(--muted);}
+
+/* the packet: the message itself, moving */
+.packet{position:absolute;left:calc(var(--gut) - 19px);width:10px;height:10px;border-radius:50%;
+  background:var(--ink);z-index:3;opacity:0;
+  box-shadow:0 0 0 4px rgba(20,21,26,.14);transition:opacity .3s;}
+.packet.on{opacity:1;}
+
+.track-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:13px 20px;border-top:1px solid var(--line);background:var(--cream);}
+.track-note{font-size:11.5px;color:var(--muted);}
+.track-ctl{display:flex;gap:8px;}
+.tbtn{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border:1px solid var(--line);
+  border-radius:4px;font-size:12.5px;background:var(--paper);color:var(--ink);
+  transition:border-color .2s,background .2s;}
+.tbtn:hover{border-color:var(--ink);}
+.tbtn svg{width:13px;height:13px;}
+
+/* ═══ STAGE DETAIL TABLE ══════════════════════════════════════════════ */
+.tbl{margin-top:36px;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:var(--paper);}
+.tbl-scroll{overflow-x:auto;}
+.tbl table{width:100%;border-collapse:collapse;min-width:760px;}
+.tbl th{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);text-align:left;padding:12px 16px;background:var(--cream);
+  border-bottom:1px solid var(--line);font-weight:600;white-space:nowrap;}
+.tbl td{padding:13px 16px;border-bottom:1px solid var(--line);font-size:13.5px;
+  vertical-align:top;color:var(--graphite);}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl td.n{font-family:var(--mono);font-size:10.5px;color:var(--line-2);width:1%;white-space:nowrap;}
+.tbl td.s{font-weight:640;color:var(--ink);letter-spacing:-.016em;white-space:nowrap;}
+.tbl td.c{font-family:var(--mono);font-size:11.5px;color:var(--snow-deep);white-space:nowrap;}
+.tbl td.c.edge{color:var(--cat-text);}
+.tbl td.ms{font-family:var(--mono);font-size:12px;color:var(--ink);text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tbl tr.sum td{background:var(--cat-wash);font-weight:640;color:var(--ink);}
+.tbl .where{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;}
+.tbl .where i{width:8px;height:8px;border-radius:2px;}
+.tbl .where.e i{background:var(--cat);} .tbl .where.s i{background:var(--snow);}
+
+/* ═══ WHAT LIVES IN SNOWFLAKE ═════════════════════════════════════════ */
+.tables{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  margin-top:36px;}
+.tbox{background:var(--paper);padding:22px;}
+.tbox-n{font-family:var(--mono);font-size:12.5px;color:var(--snow-deep);letter-spacing:-.01em;
+  font-weight:600;}
+.tbox-d{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:8px;}
+.tbox-r{font-family:var(--mono);font-size:11px;color:var(--ink);margin-top:12px;
+  padding-top:10px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;}
+
+/* ═══ GUARDRAILS ══════════════════════════════════════════════════════ */
+.rails{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1px;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.1);border-radius:12px;
+  overflow:hidden;margin-top:36px;}
+.rail{background:var(--dark-2);padding:24px 22px;}
+.rail-x{width:22px;height:22px;border-radius:5px;background:rgba(207,42,34,.16);
+  border:1px solid rgba(207,42,34,.4);display:grid;place-items:center;margin-bottom:14px;}
+.rail-x svg{width:9px;height:9px;stroke:#FF8A80;stroke-width:3;fill:none;stroke-linecap:round;}
+.rail h3{font-size:15px;font-weight:640;color:#fff;letter-spacing:-.02em;margin-bottom:7px;}
+.rail p{font-size:12.5px;line-height:1.55;color:rgba(255,255,255,.55);}
+
+/* ═══ CTA / FOOT ══════════════════════════════════════════════════════ */
+.cta{background:var(--cat);color:var(--ink);text-align:center;
+  padding:clamp(64px,10vh,110px) 0;}
+.cta .h2{color:var(--ink);}
+.cta .lede{color:rgba(20,21,26,.72);margin:16px auto 0;}
+.cta-row{display:flex;gap:12px;justify-content:center;margin-top:28px;flex-wrap:wrap;}
+.cta .btn.g{background:transparent;border-color:rgba(20,21,26,.3);}
+.cta .btn.g:hover{border-color:var(--ink);background:rgba(255,255,255,.3);}
+.cta .btn.p{background:var(--ink);color:#fff;}
+.cta .btn.p:hover{background:#000;}
+.foot{background:var(--dark);color:rgba(255,255,255,.4);padding:30px 0 40px;font-size:12px;}
+.foot-in{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+.foot p{max-width:64ch;line-height:1.6;}
+.foot b{color:rgba(255,255,255,.72);font-weight:600;}
+
+/* ═══ RESPONSIVE ══════════════════════════════════════════════════════ */
+@media(max-width:1080px){
+  .loop{grid-template-columns:1fr;}
+  .phone{height:auto;max-height:none;}
+  .thread{max-height:420px;}
+  .brand-t{display:none;}
+}
+@media(max-width:600px){
+  .stage{grid-template-columns:var(--gut) minmax(0,1fr);}
+  .stage-ms{grid-column:2;padding-top:0;font-size:11px;}
+  .track{padding-right:14px;}
+  .hero-legend{flex-direction:column;gap:14px;}
+  .cta-row .btn{flex:1 1 100%;justify-content:center;}
+}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  *{animation-duration:.01ms!important;transition-duration:.14s!important;}
+  [data-reveal]{opacity:1!important;transform:none!important;}
+  .msg{opacity:1!important;transform:none!important;}
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="#top">
+    <span class="brand-m">M</span>
+    <span class="brand-n">MAIA</span>
+    <span class="brand-t">Powered by Mantrac AI · Cat® dealer</span>
+  </a>
+  <a class="btn p" href="#loop" style="padding:9px 16px;font-size:13px;">
+    Watch one answer
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+  </a>
+</header>
+
+<main id="top">
+
+<!-- ═══ HERO ══════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow" data-reveal><i></i>How Maia works</span>
+    <h1 class="display" data-reveal style="--i:1">
+      One message.<br/>Eight steps.<br/><span class="n">Seven hundred milliseconds.</span>
+    </h1>
+    <p class="lede" data-reveal style="--i:2">
+      A technician sends a line of Egyptian Arabic from a site. Below, you can watch exactly
+      what happens to it — where it is screened, where it is embedded, which tables it touches,
+      and the moment the first word comes back. Nothing is simulated ahead of the conversation:
+      the reply only starts when the pipeline reaches it.
+    </p>
+    <div class="hero-legend" data-reveal style="--i:3">
+      <div class="leg"><i class="y"></i><div>
+        <b>Cat yellow is Mantrac's edge</b>
+        <span>What arrives, what gets screened for safety, and what is sent back to the person.</span>
+      </div></div>
+      <div class="leg"><i class="b"></i><div>
+        <b>Snowflake blue is the platform</b>
+        <span>Embedding, retrieval, the SQL that resolves a serial, grounded generation, verification.</span>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ THE LOOP ══════════════════════════════════════════════════════ -->
+<section class="band paper" id="loop">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><i></i>The loop</span>
+      <h2 class="h2" data-reveal style="--i:1">Press send. Watch it travel.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        The chat and the track run off the same clock. Switch the language with the chips —
+        Maia answers in whichever one the message arrived in.
+      </p>
+    </div>
+
+    <div class="loop" data-reveal style="--i:3">
+
+      <!-- ── the phone ────────────────────────────────────────────── -->
+      <div class="phone">
+        <div class="ph-top">
+          <span class="av">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M4 13h24a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2z" fill="#14151A"/>
+              <path d="M9 13a7 7 0 0 1 14 0z" fill="#14151A"/>
+              <circle cx="12" cy="20" r="1.6" fill="#14151A"/>
+              <circle cx="20" cy="20" r="1.6" fill="#14151A"/>
+              <path d="M12.5 24.5a5 5 0 0 0 7 0" stroke="#14151A" stroke-width="1.8"
+                    fill="none" stroke-linecap="round"/>
+            </svg>
+            <i class="dot"></i>
+          </span>
+          <div>
+            <p class="ph-name">Maia</p>
+            <p class="ph-sub">Cat® parts, service &amp; diagnostics</p>
+          </div>
+          <span class="ph-voice">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" aria-hidden="true">
+              <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/>
+            </svg>Voice
+          </span>
+        </div>
+
+        <div class="remember">
+          <p class="remember-l">Maia remembers</p>
+          <span class="mem"><b>Machine</b><span id="memText">CAT 320 · EX-4471 · 4 812 h</span><i>×</i></span>
+        </div>
+
+        <div class="thread" id="thread" aria-live="polite"></div>
+
+        <div class="chips" id="chips">
+          <button class="chip on" type="button" data-lang="ar">🇪🇬 عربي</button>
+          <button class="chip" type="button" data-lang="en">English</button>
+          <button class="chip" type="button" data-act="human">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+            Human</button>
+          <button class="chip" type="button" data-act="warranty">Warranty</button>
+          <button class="chip" type="button" data-act="parts">Parts</button>
+        </div>
+
+        <div class="composer">
+          <div class="cinput" id="cinput"></div>
+          <button class="cbtn" type="button" aria-label="Camera">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.4"/></svg>
+          </button>
+          <button class="cbtn" type="button" aria-label="Location">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+          </button>
+          <button class="cbtn send" id="sendBtn" type="button">Send</button>
+        </div>
+
+        <p class="ph-foot">Maia · Powered by Mantrac AI · Cat® Authorized Dealer · Egypt 🇪🇬</p>
+      </div>
+
+      <!-- ── the track ────────────────────────────────────────────── -->
+      <div class="track-wrap">
+        <div class="track-head">
+          <span class="track-t">Request path · <span id="reqId">req_8f2a1c</span></span>
+          <span class="track-clock"><b id="clockMs">0</b> ms elapsed</span>
+        </div>
+
+        <div class="track" id="track" style="--gut:78px">
+          <div class="cloud" id="cloud">
+            <span class="cloud-l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                   stroke-linecap="round" aria-hidden="true">
+                <path d="M12 3v18M3.5 7.5l17 9M20.5 7.5l-17 9"/>
+              </svg>Snowflake Data Cloud
+            </span>
+          </div>
+          <div class="spine"></div>
+          <div class="spine-lit" id="spineLit"></div>
+          <div class="packet" id="packet"></div>
+          <!-- stages injected here -->
+        </div>
+
+        <div class="track-foot">
+          <span class="track-note">Latency figures are design targets, to be validated in pilot.</span>
+          <div class="track-ctl">
+            <button class="tbtn" id="replayBtn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              Replay
+            </button>
+            <button class="tbtn" id="stepBtn" type="button">Step through</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══ THE STAGES ════════════════════════════════════════════════════ -->
+<section class="band">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><i></i>The eight steps</span>
+      <h2 class="h2" data-reveal style="--i:1">What runs, where it runs, and what it costs.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Five of the eight steps execute inside Snowflake, next to the data, so the manual
+        corpus and the ERP tables are never copied out to be searched.
+      </p>
+    </div>
+
+    <div class="tbl" data-reveal>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr>
+            <th>#</th><th>Step</th><th>What happens</th><th>Runs on</th><th>Primitive</th>
+            <th style="text-align:right">Budget</th>
+          </tr></thead>
+          <tbody id="tblBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ WHAT LIVES IN SNOWFLAKE ═══════════════════════════════════════ -->
+<section class="band paper">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><i></i>The data</span>
+      <h2 class="h2" data-reveal style="--i:1">What Maia is actually reading.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Four sets of tables, all in one account. The retrieval index and the transactional
+        lookup sit beside each other, which is the only reason a single answer can quote a
+        procedure and a live stock figure in the same breath.
+      </p>
+    </div>
+
+    <div class="tables" data-reveal>
+      <div class="tbox">
+        <p class="tbox-n">MANUAL_CHUNKS</p>
+        <p class="tbox-d">Service manuals, operation guides and bulletins, split into passages
+        with model and serial-range metadata. Indexed by Cortex Search.</p>
+        <p class="tbox-r"><span data-count="1284000">0</span> passages · 184 models</p>
+      </div>
+      <div class="tbox">
+        <p class="tbox-n">PARTS_CATALOGUE</p>
+        <p class="tbox-d">Part numbers, supersession chains, applicability by build variant,
+        and aftermarket cross-references.</p>
+        <p class="tbox-r"><span data-count="2400000">0</span> part numbers</p>
+      </div>
+      <div class="tbox">
+        <p class="tbox-n">FLEET_TELEMETRY</p>
+        <p class="tbox-d">Hour meters, fault-code history and service records per unit, so an
+        answer can be specific to the machine in front of you.</p>
+        <p class="tbox-r"><span data-count="9700">0</span> units under contract</p>
+      </div>
+      <div class="tbox">
+        <p class="tbox-n">ERP_STOCK</p>
+        <p class="tbox-d">Live availability and pricing by branch. Read at query time —
+        the model is never asked to remember a price.</p>
+        <p class="tbox-r"><span data-count="14">0</span> branches · Egypt</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ GUARDRAILS ════════════════════════════════════════════════════ -->
+<section class="band dark">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><i></i>Step 02 in detail</span>
+      <h2 class="h2" data-reveal style="--i:1">The screen that runs before anything else.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Guarding after generation is guarding too late. The safety screen runs on the raw
+        message, before a single token is retrieved — so where it fires, the answer is a
+        referral and no procedure is ever written.
+      </p>
+    </div>
+    <div class="rails" data-reveal>
+      <div class="rail">
+        <span class="rail-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+        <h3>Talk you through pressure testing</h3>
+        <p>Stored hydraulic energy is the most common serious injury on these machines.
+        The request is answered with a referral, not a procedure.</p>
+      </div>
+      <div class="rail">
+        <span class="rail-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+        <h3>Quote a price the ERP did not return</h3>
+        <p>Prices and stock are read live at step 05. If the query returns nothing,
+        Maia says so — it does not estimate.</p>
+      </div>
+      <div class="rail">
+        <span class="rail-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+        <h3>Give a part number before the serial is known</h3>
+        <p>Build variants differ inside the same model. The serial gates the answer,
+        and Maia asks for it rather than guessing.</p>
+      </div>
+      <div class="rail">
+        <span class="rail-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+        <h3>State anything step 07 cannot trace</h3>
+        <p>Every claim is matched back to the passage it came from. Unsupported sentences
+        are removed before the reply is streamed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap">
+    <h2 class="h2" data-reveal>Ask Maia.</h2>
+    <p class="lede" data-reveal style="--i:1">
+      In Egyptian Arabic or English, from the cab or from the workshop.
+    </p>
+    <div class="cta-row" data-reveal style="--i:2">
+      <a class="btn p" href="#loop">Watch one answer</a>
+      <a class="btn g" href="maia.html">See the product</a>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p><b>Maia · Powered by Mantrac AI · Cat® Authorized Dealer · Egypt.</b>
+    This page is a design prototype. Conversations, part numbers, table names, row counts and
+    latency figures are illustrative, created to show the architecture and the interface.
+    Caterpillar® and Cat® are trademarks of Caterpillar Inc.; Snowflake® is a trademark of
+    Snowflake Inc. Both are named here to describe the platforms this design targets.</p>
+  </div>
+</footer>
+
+</main>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   ONE CLOCK for the chat and the track. The chat cannot reply before the
+   pipeline reaches REPLY, because both read the same elapsed time — which
+   is the entire point of the section.
+═══════════════════════════════════════════════════════════════════════ */
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+
+/* ═══ THE EIGHT STEPS ═════════════════════════════════════════════════ */
+const STEPS = [
+  { n:"01", t:"Ingest",  side:"edge", ms:20,
+    d:"Message, photo and unit context arrive from WhatsApp or the web widget. Language detected.",
+    code:"lang = ar-EG · unit = EX-4471",
+    what:"Message and attachments received; language and unit resolved from the session.",
+    where:"Mantrac edge", prim:"API gateway" },
+
+  { n:"02", t:"Guard",   side:"edge", ms:15,
+    d:"Safety screen on the raw text — pressure testing, lifting, stored energy, anything that must not be talked through.",
+    code:"safety_screen() → pass",
+    what:"Red-flag patterns matched before retrieval. A hit ends the turn as a referral.",
+    where:"Mantrac edge", prim:"Rule set + classifier" },
+
+  { n:"03", t:"Embed",   side:"snow", ms:40,
+    d:"The question becomes a vector, in Arabic, without translating it first — translation loses the fault codes.",
+    code:"SNOWFLAKE.CORTEX.EMBED_TEXT_1024",
+    what:"Multilingual embedding computed in-database; no text leaves the account.",
+    where:"Snowflake", prim:"Cortex EMBED_TEXT_1024" },
+
+  { n:"04", t:"Retrieve",side:"snow", ms:90,
+    d:"Hybrid vector and keyword search across the manual corpus, filtered to this model and serial range.",
+    code:"CORTEX SEARCH · MANUAL_CHUNKS · top_k 128",
+    what:"1 284 000 passages narrowed to 128 candidates, then reranked to 8.",
+    where:"Snowflake", prim:"Cortex Search" },
+
+  { n:"05", t:"Resolve", side:"snow", ms:110,
+    d:"The structured half: serial to build variant, part supersession chain, live stock and price.",
+    code:"SELECT … FROM PARTS_CATALOGUE JOIN ERP_STOCK",
+    what:"Cortex Analyst writes the SQL; the warehouse returns facts the model may not invent.",
+    where:"Snowflake", prim:"Cortex Analyst → SQL" },
+
+  { n:"06", t:"Ground",  side:"snow", ms:400,
+    d:"The answer is written from the retrieved passages and the returned rows — and from nothing else.",
+    code:"SNOWFLAKE.CORTEX.COMPLETE(…)",
+    what:"Generation constrained to the retrieved context. First token at 400 ms.",
+    where:"Snowflake", prim:"Cortex COMPLETE" },
+
+  { n:"07", t:"Verify",  side:"snow", ms:25,
+    d:"Every claim is matched back to the passage or row it came from. Anything unsupported is cut.",
+    code:"claim ↔ chunk · 6/6 traced",
+    what:"Sentence-level attribution check. Unsupported sentences never reach the user.",
+    where:"Snowflake", prim:"Attribution pass" },
+
+  { n:"08", t:"Reply",   side:"edge", ms:0,
+    d:"Streamed back in the language it arrived in, with the part card and the source list attached.",
+    code:"stream → ar-EG",
+    what:"Response streamed to the device; the turn is written back to Snowflake for analytics.",
+    where:"Mantrac edge", prim:"Streaming transport" }
+];
+const TOTAL_MS = STEPS.reduce((a,s) => a + s.ms, 0);
+
+/* ═══ THE CONVERSATION ════════════════════════════════════════════════ */
+const SCRIPT = {
+  ar: {
+    dir:"rtl",
+    placeholder:"اسألني أي حاجة عن معداتك…",
+    ask:"المعدة واقفة وطالع كود E232 — أعمل إيه؟",
+    reply:[
+      { html:`كود <span class="lat">E232</span> على الـ <span class="lat">CAT 320</span> معناه ضغط الهيدروليك منخفض.
+              أغلب الحالات بتكون فلتر الرجوع مسدود أو حرارة الزيت عالية.<br><br>
+              ابدأ بالأرخص: اقرأ حرارة الزيت والماكينة سخنة، وبص على رادياتير التبريد.` },
+      { html:`الفلتر المناسب للسيريال بتاعك:`, card:true },
+      { html:`لو الضغط لسه منخفض بعد تغيير الفلتر، لازم اختبار ضغط — وده شغل فني معتمد،
+              مش هقولك تعمله بنفسك.` }
+    ]
+  },
+  en: {
+    dir:"ltr",
+    placeholder:"Ask me anything about your equipment…",
+    ask:"Machine is down with fault code E232 — what do I do?",
+    reply:[
+      { html:`Fault <span class="lat">E232</span> on a <span class="lat">CAT 320</span> is low hydraulic pressure.
+              Most of the time it is a restricted return filter or oil running too hot.<br><br>
+              Start with the cheap check: read the oil temperature at working heat and look at the cooler core.` },
+      { html:`The filter for your serial:`, card:true },
+      { html:`If pressure is still low after the filter change, it needs a pressure test — that is
+              qualified-technician work, and I will not talk you through it.` }
+    ]
+  }
+};
+
+const PART_CARD = `
+<div class="pcard">
+  <div class="pcard-t">
+    <p class="pcard-no">462-1171</p>
+    <p class="pcard-nm">Hydraulic Return Filter Element</p>
+  </div>
+  <dl class="pcard-g">
+    <div class="pcard-c"><dt>Fits</dt><dd>CAT 320 GC</dd></div>
+    <div class="pcard-c"><dt>Supersedes</dt><dd>338-3540</dd></div>
+    <div class="pcard-c"><dt>Branch</dt><dd>Cairo</dd></div>
+    <div class="pcard-c"><dt>Availability</dt><dd class="ok">● In stock</dd></div>
+  </dl>
+</div>`;
+
+/* ═══ BUILD THE TRACK ═════════════════════════════════════════════════ */
+const track = $("#track");
+const nodes = [];
+STEPS.forEach(s => {
+  const el = document.createElement("div");
+  el.className = "stage"; el.dataset.side = s.side;
+  el.innerHTML = `
+    <div class="node"></div>
+    <div class="stage-n">${s.n}</div>
+    <div>
+      <p class="stage-t">${s.t}</p>
+      <p class="stage-d">${s.d}</p>
+      <span class="stage-code">${s.code}</span>
+    </div>
+    <div class="stage-ms">${s.ms ? s.ms + " ms" : "stream"}</div>`;
+  track.appendChild(el);
+  nodes.push(el);
+});
+
+/* Draw the Snowflake boundary around exactly the stages that run there,
+   measured from the DOM rather than guessed — so it stays correct at any
+   width and after any content change. */
+function drawCloud(){
+  const snow = nodes.filter((_,i) => STEPS[i].side === "snow");
+  if (!snow.length) return;
+  const top = snow[0].offsetTop, bot = snow[snow.length-1].offsetTop + snow[snow.length-1].offsetHeight;
+  const c = $("#cloud");
+  c.style.setProperty("--cloud-top", (top - 17) + "px");
+  c.style.setProperty("--cloud-h", (bot - top + 30) + "px");
+}
+addEventListener("resize", drawCloud);
+
+/* ═══ THE STAGE TABLE ═════════════════════════════════════════════════ */
+$("#tblBody").innerHTML = STEPS.map(s => `
+  <tr>
+    <td class="n">${s.n}</td>
+    <td class="s">${s.t}</td>
+    <td>${s.what}</td>
+    <td><span class="where ${s.side === "snow" ? "s" : "e"}"><i></i>${s.where}</span></td>
+    <td class="c${s.side === "edge" ? " edge" : ""}">${s.prim}</td>
+    <td class="ms">${s.ms ? s.ms + " ms" : "—"}</td>
+  </tr>`).join("") + `
+  <tr class="sum">
+    <td class="n"></td><td class="s">To first word</td>
+    <td>Everything above, before a single character is shown to the user.</td>
+    <td></td><td></td><td class="ms">${TOTAL_MS} ms</td>
+  </tr>`;
+
+/* ═══ THE RUN ═════════════════════════════════════════════════════════ */
+const Run = (() => {
+  const thread = $("#thread"), cinput = $("#cinput"), sendBtn = $("#sendBtn");
+  const spine = $("#spineLit"), packet = $("#packet"), clock = $("#clockMs");
+  let lang = "ar", raf = 0, t0 = 0, running = false, stepping = false, stepIdx = 0;
+  let typed = 0, cues = [];
+
+  const el = (tag, cls, html) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls; if (html != null) n.innerHTML = html;
+    return n;
+  };
+  const scroll = () => { thread.scrollTop = thread.scrollHeight; };
+
+  function reset(){
+    cancelAnimationFrame(raf); raf = 0; running = false; cues = [];
+    thread.innerHTML = ""; typed = 0;
+    nodes.forEach(n => n.classList.remove("on","done"));
+    spine.style.height = "0px"; packet.classList.remove("on");
+    clock.textContent = "0";
+    sendBtn.disabled = false;
+    const S = SCRIPT[lang];
+    cinput.className = "cinput" + (lang === "en" ? " en" : "");
+    cinput.textContent = S.placeholder;
+    $("#reqId").textContent = "req_" + Math.random().toString(16).slice(2, 8);
+    drawCloud();
+  }
+
+  /* the message is typed into the composer before it is sent — the pause
+     before send is what makes the pipeline feel like a consequence */
+  function type(done){
+    const S = SCRIPT[lang], txt = S.ask;
+    cinput.className = "cinput typed" + (lang === "en" ? " en" : "");
+    let i = 0;
+    (function tick(){
+      i++;
+      cinput.innerHTML = txt.slice(0, i) + '<span class="caret"></span>';
+      if (i < txt.length) setTimeout(tick, REDUCED ? 0 : 26);
+      else setTimeout(done, REDUCED ? 60 : 420);
+    })();
+  }
+
+  function geometry(){
+    /* map each stage to a position on the spine, and each stage to the
+       cumulative millisecond at which the packet reaches it */
+    let acc = 0;
+    return nodes.map((n,i) => {
+      const at = acc; acc += STEPS[i].ms;
+      return { y: n.offsetTop + 10, at, dur: STEPS[i].ms };
+    });
+  }
+
+  function send(){
+    const S = SCRIPT[lang];
+    sendBtn.disabled = true;
+    cinput.className = "cinput" + (lang === "en" ? " en" : "");
+    cinput.textContent = S.placeholder;
+
+    const me = el("div", "msg me");
+    me.setAttribute("dir", S.dir);
+    me.innerHTML = S.ask + `<p class="msg-time">now</p>`;
+    thread.appendChild(me);
+    requestAnimationFrame(() => me.classList.add("in"));
+    scroll();
+
+    const typingEl = el("div", "typing", "<i></i><i></i><i></i>");
+    thread.appendChild(typingEl); scroll();
+
+    const geo = geometry();
+    const SPEED = REDUCED ? 0.06 : 1;      /* wall-clock ms per budget ms */
+    const WALL = 4.2;                       /* stretched so it is watchable */
+
+    cues = [];
+    /* reply blocks land after REPLY is reached */
+    S.reply.forEach((r, i) => {
+      cues.push({ at: TOTAL_MS + i * 90, fn: () => {
+        if (i === 0) typingEl.remove();
+        const m = el("div", "msg them");
+        m.setAttribute("dir", S.dir);
+        m.innerHTML = r.html + (r.card ? PART_CARD : "");
+        thread.appendChild(m);
+        requestAnimationFrame(() => m.classList.add("in"));
+        scroll();
+      }});
+    });
+    cues.push({ at: TOTAL_MS + S.reply.length * 90 + 40, fn: () => {
+      $("#memText").textContent = lang === "ar"
+        ? "CAT 320 · EX-4471 · كود E232"
+        : "CAT 320 · EX-4471 · fault E232";
+      sendBtn.disabled = false;
+    }});
+
+    packet.classList.add("on");
+    t0 = performance.now(); running = true;
+
+    (function frame(now){
+      raf = requestAnimationFrame(frame);
+      if (!running) return;
+      const wall = now - t0;
+      const ms = Math.min(wall / WALL, TOTAL_MS + 600);   /* budget-ms elapsed */
+      clock.textContent = Math.round(Math.min(ms, TOTAL_MS));
+
+      /* which stage is the packet in */
+      let idx = 0;
+      for (let i = 0; i < geo.length; i++) if (ms >= geo[i].at) idx = i;
+      nodes.forEach((n,i) => {
+        n.classList.toggle("done", i < idx);
+        n.classList.toggle("on", i === idx && ms <= TOTAL_MS + 200);
+      });
+
+      /* the packet slides between stage positions in proportion to the
+         budget it has consumed inside the current stage */
+      const g = geo[idx];
+      const nextY = geo[idx+1] ? geo[idx+1].y : g.y;
+      const k = g.dur ? clamp((ms - g.at) / g.dur, 0, 1) : 1;
+      const y = g.y + (nextY - g.y) * k;
+      packet.style.transform = `translateY(${y}px)`;
+      spine.style.height = Math.max(0, y - 26) + "px";
+
+      cues = cues.filter(c => { if (ms >= c.at){ c.fn(); return false; } return true; });
+
+      if (ms >= TOTAL_MS + 600){
+        running = false;
+        nodes.forEach(n => { n.classList.remove("on"); n.classList.add("done"); });
+        packet.classList.remove("on");
+      }
+    })(performance.now());
+  }
+
+  function play(){ reset(); type(send); }
+
+  /* step-through: one stage per click, for reading rather than watching */
+  function step(){
+    if (!stepping){ reset(); stepping = true; stepIdx = -1;
+      thread.innerHTML = ""; $("#stepBtn").textContent = "Next step"; }
+    stepIdx++;
+    if (stepIdx >= nodes.length){ stepping = false; $("#stepBtn").textContent = "Step through"; play(); return; }
+    const geo = geometry();
+    nodes.forEach((n,i) => { n.classList.toggle("done", i < stepIdx); n.classList.toggle("on", i === stepIdx); });
+    packet.classList.add("on");
+    packet.style.transform = `translateY(${geo[stepIdx].y}px)`;
+    spine.style.height = Math.max(0, geo[stepIdx].y - 26) + "px";
+    clock.textContent = geo[stepIdx].at + STEPS[stepIdx].ms;
+  }
+
+  $("#sendBtn").addEventListener("click", () => { if (!running) play(); });
+  $("#replayBtn").addEventListener("click", () => { stepping = false;
+    $("#stepBtn").textContent = "Step through"; play(); });
+  $("#stepBtn").addEventListener("click", step);
+  $("#chips").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    if (b.dataset.lang){
+      [...$("#chips").querySelectorAll("[data-lang]")].forEach(x => x.classList.toggle("on", x === b));
+      lang = b.dataset.lang;
+      play();
+    }
+  });
+
+  return { play, reset };
+})();
+
+/* ═══ PAGE ════════════════════════════════════════════════════════════ */
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); }
+}), { rootMargin:"-6% 0px" });
+document.querySelectorAll("[data-reveal]").forEach(n => io.observe(n));
+
+const cio = new IntersectionObserver(es => es.forEach(e => {
+  if (!e.isIntersecting) return; cio.unobserve(e.target);
+  const n = e.target, to = +n.dataset.count;
+  if (REDUCED){ n.textContent = to.toLocaleString("en-US").replace(/,/g," "); return; }
+  const t0 = performance.now();
+  (function s(t){
+    const k = clamp((t - t0)/1100, 0, 1);
+    n.textContent = Math.round(to * (1 - Math.pow(1-k,3))).toLocaleString("en-US").replace(/,/g," ");
+    if (k < 1) requestAnimationFrame(s);
+  })(performance.now());
+}), { rootMargin:"-10% 0px" });
+document.querySelectorAll("[data-count]").forEach(n => cio.observe(n));
+
+/* the loop runs itself the first time it is seen — a demo should not wait
+   for permission to be a demo */
+let started = false;
+new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting && !started){ started = true; Run.play(); }
+}), { rootMargin:"-10% 0px" }).observe($("#loop"));
+
+Run.reset();
+</script>
+</body>
+</html>

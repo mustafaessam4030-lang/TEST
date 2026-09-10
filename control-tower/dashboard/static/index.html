@@ -1,0 +1,2270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#F5F1E8" />
+<title>Control Tower — Mantrac Logistics</title>
+<!-- No webfont. The interface uses the face the operating system already
+     has: Segoe UI Variable on Windows, SF on macOS, Roboto on Android. That
+     removes the last third-party request from the page, and with it the
+     preconnects, the idle-callback injection, and any chance of a font
+     swap landing after the operator has started reading.
+
+     Inter was the previous choice and it cost 12,599ms of load event on a
+     machine that cannot reach Google — measured, twice. A system stack
+     cannot fail that way because there is nothing to fetch. -->
+<style>
+/* ══════════════════════════════════════════════════════════════
+   CONTROL TOWER — MAIA design language
+
+   Paper and ink, not chrome. The type does the work: huge tight
+   numerals (-.05em, 700/800) against tiny wide-tracked kickers
+   (.22em, 10.5px). Violet is the system, amber is the value that
+   matters, green/red are outcomes. 14px cards, 100px pills.
+
+   PERFORMANCE: render is rAF-batched and rate-limited; each
+   section repaints only when its own slice of state changed;
+   lists are capped; only transform/opacity animate.
+══════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ───────────────────────────────────────────────────────────────────
+     A CONSOLE THAT GETS OUT OF THE WAY
+
+     The restraint here is the design. Almost everything is one of three
+     neutrals and one of eight type roles; colour appears only where it
+     carries meaning, and depth only where something genuinely sits above
+     something else. What is left is the data.
+
+     Surfaces: a grey-white page with white cards on it. The 1.09:1 step is
+     deliberately slight — a card is distinguished by its edge and its
+     padding, not by being a different colour. Depth is one soft shadow at
+     low opacity, never a stack.
+
+     Measured: every colour below clears WCAG AA on both the page and a
+     card. The worst is --grn at 4.61:1.
+     ─────────────────────────────────────────────────────────────────── */
+  --bg:#F5F5F7;         /* the page */
+  --surface:#FFFFFF;    /* a card */
+  --surface-2:#FAFAFA;  /* recessed: inputs, table headers, inner panels */
+  --surface-3:#F0F0F2;  /* pressed / active */
+
+  /* The old names, kept so nothing downstream had to be renamed. */
+  --paper:var(--bg); --card:var(--surface); --bone:var(--surface-2);
+  --void:var(--bg); --deck:var(--surface); --riser:var(--surface-2);
+  --crest:var(--surface-3);
+
+  --ink:#1D1D1F;        /* primary       15.5:1 on page */
+  --mid:#5E5E63;        /* secondary      5.9:1 */
+  --faint:#6E6E73;      /* labels         4.7:1 */
+
+  /* Hairlines. A separator's job is to be found when looked for and
+     ignored otherwise, so it is an alpha over whatever is behind it
+     rather than a fixed grey that only works on one surface. */
+  --line:rgba(0,0,0,.09);
+  --line-2:rgba(0,0,0,.055);
+  --line-hi:rgba(0,0,0,.14);
+
+  /* One accent. It marks ATLAS, the active nav item, and a primary action —
+     nothing else. */
+  --vio:#0B5FD9; --vio-wash:rgba(11,95,217,.07); --vio-line:rgba(11,95,217,.22);
+  --solid:var(--vio); --on-solid:#FFFFFF;
+
+  /* Semantics, and only semantics. */
+  /* Measured on real pixels: #1B7F4B cleared AA on its wash over a card
+     (4.52:1) but not over the page ground (4.18:1), and the run-state pill
+     sits on the page ground in the header. Two steps darker clears both. */
+  --grn:#197746; --grn-wash:rgba(27,127,75,.08);     /* verified, healthy */
+  --y:#8A5300;   --y-wash:rgba(138,83,0,.08);        /* needs a person */
+  --y-line:rgba(138,83,0,.22);
+  --red:#C0261C; --red-wash:rgba(192,38,28,.07);     /* failed */
+  --blu:#0A6E9E; --blu-wash:rgba(10,110,158,.07);    /* an ATA: it arrived */
+  --signal:var(--grn); --alarm:var(--red);
+  --amber:var(--y); --amber-wash:var(--y-wash); --amber-line:var(--y-line);
+  --ice:var(--blu);
+
+  /* ── TYPE ──────────────────────────────────────────────────────────
+     System-first: no webfont, no third-party request, no flash of
+     unstyled text, and the interface renders in the face the operating
+     system already has hinted and cached. Segoe UI Variable on Windows,
+     SF on macOS, Roboto on Android.
+
+     Nineteen ad-hoc pixel sizes collapsed into eight roles. A scale is
+     only a hierarchy if the steps are distinguishable, and 11.5 next to
+     12 next to 12.5 is not a step. */
+  --s:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Display','Segoe UI',
+      system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono','Cascadia Mono','Segoe UI Mono',
+      Menlo,Consolas,monospace;
+
+  --t-display:600 34px/1.12 var(--s);
+  --t-title:600 20px/1.3 var(--s);
+  --t-head:600 15px/1.4 var(--s);
+  --t-body:400 14px/1.5 var(--s);
+  --t-sub:400 13px/1.45 var(--s);
+  --t-small:400 12px/1.4 var(--s);
+  --t-label:590 11px/1.2 var(--s);
+  --t-data:400 13px/1.4 var(--mono);
+
+  --e:cubic-bezier(.32,.72,0,1);   /* a single easing, used everywhere */
+  --r:12px; --r-sm:8px; --r-lg:16px;
+  /* One shadow, one elevation. Anything that needs more than this is
+     asking to be a separate surface instead. */
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04);
+  --sidebar:246px;
+  --player:0px;
+
+  color-scheme:light;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{
+  background:var(--paper);
+  color:var(--ink);font-family:var(--s);
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,textarea,select{font-family:inherit}
+:focus-visible{outline:2px solid var(--vio);outline-offset:2px;border-radius:4px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line-hi);border-radius:10px;border:3px solid var(--paper)}
+::-webkit-scrollbar-thumb:hover{background:var(--faint)}
+
+/* Film grain, as in the reference. Cheap: one tiled SVG, transform-only. */
+.grain{position:fixed;inset:0;z-index:95;pointer-events:none;opacity:.025;
+  mix-blend-mode:overlay;background-size:170px;animation:grain .5s steps(4) infinite;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+@keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-2px,1px)}100%{transform:translate(0,0)}}
+
+/* The one eyebrow in the interface. Uppercase is reserved for structure —
+   this, a table column head, and the nav's section label — so it still
+   reads as a boundary rather than as decoration applied to every label. */
+.kick{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint)}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ═══════════ INTRO ═══════════ */
+/* ═══ AI ENGINE CARD ═══ */
+.ml-pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mid)}
+.ml-pill .d{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.ml-pill.on{color:var(--grn)} .ml-pill.on .d{background:var(--grn)}
+.ml-pill.warn{color:var(--amber)} .ml-pill.warn .d{background:var(--amber)}
+.ml-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+  border-top:1px solid var(--line)}
+.ml-k{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ml-k:last-child{border-right:none}
+.ml-k b{display:block;font-size:20px;font-weight:750;letter-spacing:-.02em;color:var(--ink);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.ml-k span{display:block;font-size:12px;font-weight:400;color:var(--faint);margin-top:5px}
+.ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
+/* ATLAS RECOVERY. Quiet by construction: one hairline-topped block in the
+   existing ATLAS card, the same type roles as everything else, and no colour
+   except the semantic ones already defined. */
+.rcv{border-top:1px solid var(--line);padding:12px 14px}
+.rcv-h{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.rcv-k{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint)}
+.rcv-e{font-size:13px;color:var(--ink);margin-bottom:9px;line-height:1.45}
+.rcv-a{display:flex;align-items:baseline;gap:9px;padding:5px 0;font-size:12.5px;
+  border-top:1px solid var(--line-2)}
+.rcv-a:first-of-type{border-top:none}
+.rcv-n{font-family:var(--mono);font-size:11px;color:var(--faint);flex:none;width:26px}
+.rcv-m{color:var(--mid);flex:1}
+.rcv-c{font-family:var(--mono);font-size:11px;color:var(--faint);flex:none}
+.rcv-r{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;
+  flex:none;color:var(--faint)}
+.rcv-r.ok{color:var(--grn)} .rcv-r.no{color:var(--red)} .rcv-r.go{color:var(--blu)}
+.rcv-o{margin-top:9px;font-size:12px;color:var(--mid);line-height:1.45}
+.rcv-d{margin:2px 0 9px;font-size:12px;color:var(--mid);line-height:1.5}
+.rcv-d b{color:var(--ink);font-weight:590}
+.rcv-ev{margin:0;padding-left:15px;font-size:12px;color:var(--faint);
+  line-height:1.55}
+.rcv-why{margin-top:8px;font-size:12px;color:var(--mid);line-height:1.5;
+  padding-left:11px;border-left:2px solid var(--line)}
+.rcv-cp{font-family:var(--mono);font-size:10.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--red)}
+.rcv-shadow{font-family:var(--mono);font-size:10.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--y)}
+/* The ATLAS attribution tag. Deliberately quiet — a small mono capsule in the
+   existing palette, not a badge that competes with the shipment reference.
+   `.on` is the only state that says ATLAS steered something. */
+.atlas-t{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);
+  font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint);border:1px solid var(--line);border-radius:3px;
+  padding:2px 6px;white-space:nowrap;vertical-align:middle}
+.atlas-t.on{color:var(--vio);border-color:color-mix(in srgb,var(--vio) 34%,transparent)}
+.atlas-t .d{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.75}
+.atlas-sub{font-family:var(--mono);font-size:11px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);margin-top:3px}
+.atlas-f{max-height:188px;overflow:auto;border-top:1px solid var(--line)}
+.atlas-f .r{display:flex;gap:9px;align-items:baseline;padding:7px 14px;
+  border-bottom:1px solid var(--line);font-size:12px;line-height:1.45}
+.atlas-f .r:last-child{border-bottom:none}
+.atlas-f time{font-family:var(--mono);font-size:11px;color:var(--faint);
+  flex:0 0 46px;font-variant-numeric:tabular-nums}
+.atlas-f .lb{font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.06em;flex:0 0 108px;color:var(--faint)}
+.atlas-f .r.on .lb{color:var(--vio)}
+.atlas-f .dt{color:var(--mid);min-width:0;overflow-wrap:anywhere}
+/* ═══ ASSISTANT FEEDBACK ═══ */
+.fb{display:flex;align-items:center;gap:6px;margin-top:8px;opacity:.75}
+.fb button{font-size:11px;line-height:1;padding:5px 9px;border:1px solid var(--line);
+  border-radius:8px;background:transparent;color:var(--mid);cursor:pointer;
+  transition:color .18s,border-color .18s,background .18s}
+.fb button:hover{color:var(--ink);border-color:var(--faint)}
+.fb button.picked{color:var(--vio);border-color:var(--vio);background:var(--vio-wash)}
+.fb .fb-t{font-family:var(--mono,ui-monospace,monospace);font-size:11px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:2px}
+.fb-in{width:100%;margin-top:7px;font:inherit;font-size:12px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink)}
+.fb-done{font-size:11px;color:var(--grn)}
+/* ═══ INTRO ═══════════════════════════════════════════════════════════
+   A short film made of slides, in the dashboard's own language: same paper,
+   same ink, same mono kickers. What makes it read as ONE sequence rather
+   than five unrelated cards is the spine — a rule that grows across the
+   whole run — and the fact that every scene enters and leaves on the same
+   short, hard cut. No library, no video, ~700 bytes of DOM. */
+/* ── THE INTRODUCTION KEEPS ITS OWN PALETTE ──────────────────────────
+   The cinematic is bone and ink and it stays that way: it is the piece of
+   this product that was signed off as-is, and a dark intro followed by a
+   dark dashboard also loses the one thing the sequence is for — the moment
+   the picture gives way and the console appears.
+   These are the original light-theme values, scoped. Not one scene, word,
+   timing or animation changes; only the tokens the intro reads are held. */
+#gate{
+  --paper:#EFEBE3; --bone:#E3DED2; --card:#F6F3EC;
+  --ink:#0A0A0B; --mid:#6B6862; --faint:#6B6862;
+  --line:#D8D2C4; --line-2:#E3DED2;
+  --vio:#1B34E8; --vio-wash:rgba(27,52,232,.08); --vio-line:rgba(27,52,232,.32);
+  --amber-wash:rgba(185,106,0,.10);
+  --grn:#0F7A50;
+  /* The cinematic was set in Inter and is not being redesigned, so it keeps
+     asking for it. With no webfont loaded it falls through to the system
+     stack, which is the same shapes at these sizes and weights. */
+  --s:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Display','Segoe UI',
+      system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
+}
+#gate{position:fixed;inset:0;z-index:100;overflow:hidden;
+  background:radial-gradient(ellipse 62% 52% at 50% 6%,var(--amber-wash),transparent 62%),
+             radial-gradient(ellipse 52% 42% at 50% 100%,var(--vio-wash),transparent 60%),
+             var(--paper);
+  display:grid;place-items:center;
+  transition:opacity .5s var(--e),visibility .5s}
+#gate.gone{opacity:0;visibility:hidden;pointer-events:none}
+
+/* the spine: one line drawn across the whole sequence, so each cut lands
+   on a picture that is visibly further along than the last */
+.g-spine{position:absolute;left:50%;top:calc(50% + 132px);width:min(560px,74vw);
+  height:1px;transform:translateX(-50%);background:var(--line);overflow:hidden}
+.g-spine::after{content:"";position:absolute;inset:0;background:var(--vio);
+  transform:scaleX(0);transform-origin:left}
+#gate.play .g-spine::after{animation:gspine var(--total,6600ms) cubic-bezier(.6,0,.2,1) forwards}
+@keyframes gspine{to{transform:scaleX(1)}}
+.g-mark{position:absolute;top:-3px;width:7px;height:7px;border-radius:50%;
+  background:var(--vio);opacity:.35}
+.g-mark.m1{left:22%}.g-mark.m2{left:46%}.g-mark.m3{left:70%}
+
+.g-stage{position:relative;width:min(880px,90vw);height:min(300px,46vh);
+  display:grid;place-items:center;text-align:center}
+.g-s{position:absolute;inset:0;display:grid;place-items:center;align-content:center;
+  gap:13px;opacity:0;pointer-events:none}
+/* Short in, hold, short out — a cut, not a dissolve. The blur is 3px and
+   brief; anything more starts to feel like a screensaver. */
+#gate.play .g-s{animation:gscene var(--dur,1.3s) cubic-bezier(.22,1,.32,1) var(--at,0s) both}
+@keyframes gscene{
+  0%{opacity:0;transform:translateY(10px) scale(.99);filter:blur(3px)}
+  12%,80%{opacity:1;transform:none;filter:blur(0)}
+  100%{opacity:0;transform:translateY(-7px) scale(1.006);filter:blur(2px)}
+}
+/* the words arrive a beat apart, which is what stops a line landing flat */
+#gate.play .g-s > *{animation:grise .5s cubic-bezier(.22,1,.32,1) both;
+  animation-delay:calc(var(--at,0s) + var(--i,0) * .07s)}
+@keyframes grise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+
+.g-kick{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(10px,1.05vw,12px);
+  font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--vio)}
+.g-h1{font-size:clamp(38px,7.2vw,88px);font-weight:800;letter-spacing:-.058em;
+  line-height:.94;color:var(--ink)}
+.g-h1 .l{font-weight:300;color:var(--faint)}
+.g-t{font-size:clamp(28px,4.6vw,56px);font-weight:800;letter-spacing:-.042em;
+  line-height:1.0;color:var(--ink);max-width:17ch}
+.g-p{font-size:clamp(13px,1.3vw,16px);color:var(--mid);max-width:46ch;line-height:1.5}
+.g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.g-chip{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.2vw,14px);
+  font-weight:700;letter-spacing:.16em;padding:8px 15px;border:1px solid var(--line);
+  border-radius:999px;color:var(--mid);background:rgba(0,0,0,.03)}
+.g-list{display:flex;flex-wrap:wrap;gap:7px 22px;justify-content:center;
+  font-size:clamp(13px,1.45vw,17px);color:var(--mid)}
+.g-list b{color:var(--ink);font-weight:650}
+.g-flow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;
+  font-family:var(--mono,ui-monospace,monospace);font-size:clamp(12px,1.45vw,17px);
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid)}
+.g-flow i{font-style:normal;color:var(--vio)}
+.g-flow b{color:var(--ink)}
+.g-ok{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:clamp(11px,1.15vw,13px);font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--grn)}
+.g-ok::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--grn)}
+
+/* OPEN DASHBOARD — the conclusion, not a control bolted on */
+.g-open{margin-top:6px;display:inline-flex;align-items:center;gap:10px;
+  font-family:var(--mono,ui-monospace,monospace);font-size:12px;font-weight:700;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--paper);background:var(--ink);
+  border:none;border-radius:999px;padding:15px 30px;cursor:pointer;
+  box-shadow:0 8px 24px rgba(0,0,0,.18);
+  transition:transform .18s var(--e),box-shadow .18s var(--e),background .18s}
+.g-open:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.24)}
+.g-open:active{transform:translateY(0)}
+.g-open svg{width:15px;height:15px}
+/* It appears with the last scene and then STAYS — the sequence ends on it. */
+.g-last{opacity:0;pointer-events:none}
+#gate.play .g-last{animation:glast .55s cubic-bezier(.22,1,.32,1) var(--lastAt,5.3s) forwards}
+#gate.ended .g-last{opacity:1;pointer-events:auto;animation:none;filter:none;transform:none}
+#gate.ended .g-s:not(.g-last){opacity:0;animation:none}
+@keyframes glast{from{opacity:0;transform:translateY(10px);filter:blur(3px)}
+                 to{opacity:1;transform:none;filter:blur(0)}}
+#gate.play .g-last{pointer-events:auto}
+
+.g-bar{position:fixed;left:0;top:0;height:2px;width:0;background:var(--vio);z-index:101}
+#gate.play .g-bar{animation:gbar var(--total,6600ms) linear forwards}
+@keyframes gbar{to{width:100%}}
+.g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
+.g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:11px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(0,0,0,.04);
+  border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
+  transition:color .2s,border-color .2s,background .2s}
+.g-btn:hover{color:var(--paper);border-color:var(--ink);background:var(--ink)}
+@media(max-width:640px){.g-spine{top:calc(50% + 116px)}}
+@media(prefers-reduced-motion:reduce){
+  #gate.play .g-s,#gate.play .g-s > *,#gate.play .g-spine::after{animation:none}
+  #gate.play .g-bar{animation:none;width:100%}
+  #gate .g-last{opacity:1;pointer-events:auto}
+}
+
+/* ═══════════ SHELL ═══════════ */
+#app{height:100%;display:grid;grid-template-columns:var(--sidebar) 1fr;
+  grid-template-rows:1fr;
+  grid-template-areas:"nav main";opacity:0}
+#app.on{animation:rise .5s var(--e) both}
+/* Once the entrance has played the animation is removed in JS; a filling
+   transform animation keeps #app as a containing block for fixed children,
+   which broke the mobile drawer. */
+#app.settled{animation:none;opacity:1}
+
+/* The sidebar sits ON the page rather than on its own panel. It is
+   navigation: it should be findable and then forgotten, which means it does
+   not get a surface, a shadow or a colour of its own. */
+.nav{grid-area:nav;background:transparent;border-right:1px solid var(--line-2);
+  display:flex;flex-direction:column;overflow:hidden}
+.nav-b{padding:24px 20px 20px;border-bottom:1px solid var(--line-2)}
+.nav-n{font-size:15px;font-weight:650;letter-spacing:-.02em;line-height:1}
+.nav-n i{color:var(--vio);font-style:normal}
+.nav-o{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);margin-top:7px}
+.nav-l{padding:14px 12px;overflow-y:auto;flex:1}
+.nav-i{display:flex;align-items:center;gap:12px;width:100%;padding:9px 12px;
+  border-radius:var(--r-sm);margin-bottom:2px;font-size:14px;font-weight:450;
+  color:var(--mid);text-align:left;
+  transition:background .18s var(--e),color .18s var(--e)}
+.nav-i:hover{background:rgba(0,0,0,.035);color:var(--ink)}
+/* The active item is the one that is DARKEST and heaviest, with a filled
+   surface behind it. It was accent-coloured text on an accent wash, which
+   made the current page the least legible item in the list. */
+.nav-i.on{background:var(--surface);color:var(--ink);font-weight:590;
+  box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.nav-i.on svg{color:var(--vio)}
+.nav-i svg{width:17px;height:17px;flex:none;opacity:.75;
+  transition:opacity .18s var(--e)}
+.nav-i:hover svg,.nav-i.on svg{opacity:1}
+.nav-c{margin-left:auto;font-family:var(--mono);font-size:11px;padding:1px 7px;
+  border-radius:100px;background:var(--bone);color:var(--mid)}
+.nav-c.bad{background:var(--red-wash);color:var(--red)}
+.nav-f{padding:13px 20px;border-top:1px solid var(--line-2);font-size:12px;color:var(--faint)}
+
+.main{grid-area:main;overflow-y:auto}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;
+  /* Solid, not blurred. A backdrop-filter forces a compositing layer and
+     repaints it on every scroll frame; a hairline over an opaque surface
+     costs nothing and reads more precisely. */
+  flex-wrap:wrap;padding:18px 32px;background:var(--bg);
+  border-bottom:1px solid var(--line-2)}
+.top-t{font-size:20px;font-weight:700;letter-spacing:-.04em}
+.sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);font-size:12px;font-weight:600;color:var(--mid)}
+.pill .d{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+.pill.run{border-color:var(--grn);color:var(--grn);background:var(--grn-wash)}
+.pill.run .d{background:var(--grn);animation:blip 2s infinite}
+.pill.bad{border-color:var(--red);color:var(--red);background:var(--red-wash)}
+.pill.bad .d{background:var(--red)}
+.pill.fin{border-color:var(--blu);color:var(--blu);background:var(--blu-wash)}
+.pill.fin .d{background:var(--blu)}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.3}}
+.burger{display:none}
+.ctlbar{display:none;align-items:center;gap:7px}
+.ctlbar.on{display:inline-flex}
+.cbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);color:var(--mid);
+  font-size:12px;font-weight:700;transition:all .16s}
+.cbtn:hover{color:var(--ink);border-color:var(--faint)}
+.cbtn.warn{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
+.cbtn.warn:hover{background:var(--amber-line)}
+.cbtn.go{border-color:rgba(110,231,168,.5);color:var(--grn);background:var(--grn-wash)}
+.cbtn.go:hover{background:rgba(110,231,168,.22)}
+.cbtn:disabled{opacity:.4;cursor:default}
+.cbtn.stop{border-color:rgba(255,107,107,.45);color:var(--red);background:var(--red-wash)}
+.cbtn.stop:hover{background:rgba(255,107,107,.22)}
+.cbtn svg{width:12px;height:12px}
+.share{display:none;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
+  border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
+  font-size:12px;font-weight:700;transition:background .16s}
+.share.on{display:inline-flex}
+.share:hover{background:var(--vio-line)}
+.share svg{width:13px;height:13px}
+
+.page{padding:24px 28px 40px;display:none}
+.page.on{display:block;animation:rise .35s var(--e)}
+
+/* A card is a hairline, a radius and room to breathe. One shadow at low
+   opacity so it sits a millimetre above the page — not a stack, not a glow,
+   and never a second border to do the same job twice. */
+.card{background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow);position:relative}
+.card-h{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
+.card-t{font-size:13px;font-weight:700;letter-spacing:-.02em}
+.card-b{padding:18px}
+
+/* hero */
+.ctl{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
+.ctl .card{display:flex;flex-direction:column}
+.ctl .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
+/* No gradient. The run status is the most important thing on the page and
+   it earns that with size and space, which is cheaper to render and
+   survives being looked at for eight hours. */
+.hero{background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow);
+  padding:28px 30px;position:relative;overflow:hidden}
+/* The hero's animated linework was removed.
+   It ran two dashed rails, two travelling pods and a nine-second sweep,
+   permanently, behind the one number an operator is trying to read. Ambient
+   motion in a monitoring interface competes with the motion that means
+   something — a status changing — and it costs a compositing layer and a
+   repaint for the whole life of the page. The status light on the headline
+   is the only thing that moves now, and it moves because the run is live. */
+
+.hero-v{font-size:clamp(34px,4.4vw,54px);font-weight:800;letter-spacing:-.055em;
+  line-height:1;margin:12px 0 6px;position:relative;z-index:1;color:var(--ink);
+  display:flex;align-items:center;gap:16px}
+/* The status light. Sized off the type so it scales with the headline, and
+   it is the only place the run's state is expressed as colour. */
+.hero-v::before{content:'';flex:none;width:.28em;height:.28em;border-radius:50%;
+  background:var(--faint);box-shadow:0 0 0 .12em rgba(0,0,0,.05)}
+.hero-v.s-running::before{background:var(--signal);
+  box-shadow:0 0 0 .12em var(--grn-wash);
+  animation:beat 2.4s var(--e) infinite}
+.hero-v.s-finished::before{background:var(--ice);
+  box-shadow:0 0 0 .12em var(--blu-wash)}
+.hero-v.s-fatal::before{background:var(--alarm);
+  box-shadow:0 0 0 .12em var(--red-wash)}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.45}}
+@media(prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}}
+.hero-s{font-size:13px;color:var(--mid);margin-bottom:24px;position:relative;z-index:1}
+.hero-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:20px 18px;position:relative;z-index:1}
+.fk{font-size:12px;font-weight:450;letter-spacing:0;
+  color:var(--faint);margin-bottom:5px}
+.fv{font-size:15px;font-weight:500;word-break:break-word}
+.fv.hi{color:var(--vio);font-weight:600}
+
+/* kpis */
+/* ONE card, divided — not seven cards in a row.
+   Seven bordered boxes made the run's numbers look like seven unrelated
+   facts, and it is the clearest case of the interface being a collection of
+   containers rather than a surface. The dividers are the 1px grid gaps
+   showing the container's own colour through, so they stay hairlines and
+   wrap correctly at any column count without a border landing on an edge. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(164px,1fr));
+  gap:1px;background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;
+  margin-bottom:20px}
+.kpi{background:var(--surface);padding:18px 20px 20px;
+  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
+.kpi-k{font-size:12px;font-weight:450;color:var(--faint);text-wrap:balance}
+.kpi-v{font-size:34px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin-top:10px;
+  font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
+.kpi-n{font-size:12px;color:var(--mid);margin-top:4px}
+/* A zero is not an alarm. "Failed 0" is the best news on the page and must
+   not glow; it recedes to the tertiary colour whatever --c says. */
+.kpi-v.nil{color:var(--faint);font-weight:400}
+/* An em-dash set at 34px/600 looks like a rule, not an absence. */
+.kpi-v.none{color:var(--faint);font-size:24px;font-weight:400}
+
+.bar{height:6px;border-radius:100px;background:var(--bone);overflow:hidden}
+.bar-f{height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
+.bar.ind .bar-f{width:30%;animation:slide 1.6s linear infinite}
+@keyframes slide{from{transform:translateX(-110%)}to{transform:translateX(350%)}}
+.leg{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  font-size:12px;color:var(--mid);margin-top:12px}
+.leg b{font-weight:700}
+
+.g2{display:grid;grid-template-columns:1.45fr 1fr;gap:14px;align-items:start}
+.g2>*{min-width:0}
+
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;
+  font-size:11px;font-weight:700;white-space:nowrap}
+.tag::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.tag.updated{color:var(--grn);background:var(--grn-wash)}
+.tag.processing{color:var(--blu);background:var(--blu-wash)}
+.tag.skipped{color:var(--y);background:var(--y-wash)}
+.tag.partial{color:var(--y);background:var(--y-wash)}
+.tag.failed{color:var(--red);background:var(--red-wash)}
+.tag.unknown{color:var(--mid);background:var(--bone)}
+
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+/* Readability comes from row height and alignment. The header keeps a
+   single rule under it; the rows have none at all, because forty hairlines
+   down a table is a grid, and a grid is harder to scan than white space. */
+th{font:var(--t-label);letter-spacing:.055em;text-transform:uppercase;
+  color:var(--faint);text-align:left;padding:0 16px 10px;
+  border-bottom:1px solid var(--line);white-space:nowrap;background:transparent}
+td{padding:14px 16px;color:var(--mid);border:none}
+tbody tr{transition:background .14s var(--e)}
+tbody tr:hover{background:var(--surface-2)}
+thead th:first-child,tbody td:first-child{padding-left:22px}
+thead th:last-child,tbody td:last-child{padding-right:22px}
+td.ref{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap}
+/* Dates align down the column and stay in the text colour. Only an ACTUAL
+   arrival is coloured, because that is the exception an operator scans for;
+   an empty cell is not a date and must not look like one. */
+td.dt{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;
+  color:var(--ink)}
+td.dt.actual{color:var(--ice)}
+td.dt.none{color:var(--faint)}
+td.dt{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:nowrap}
+td.n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.err{font-size:12px;max-width:240px;display:block;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--faint)}
+tr.r-failed .err{color:var(--red)}
+tr.r-skipped .err{color:var(--y)}
+tr.r-partial .err{color:var(--y)}
+
+.tl{max-height:390px;overflow-y:auto;padding:6px 0;contain:content}
+.tlr{display:grid;grid-template-columns:58px 16px 1fr;gap:11px;padding:7px 18px;font-size:13px}
+.tlr time{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:2px}
+.tlr i{font-style:normal;text-align:center;font-size:11px;line-height:1.5}
+.tlr.ok i{color:var(--grn)} .tlr.warn i{color:var(--amber)} .tlr.error i{color:var(--red)}
+.tlr.shipment i,.tlr.scan i{color:var(--vio)} .tlr.start i,.tlr.stop i{color:var(--blu)}
+.tlr span{color:var(--mid)}
+
+.sys{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:center;
+  padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.sys:last-child{border-bottom:none}
+.led{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.sys.st-connected .led{background:var(--grn)}
+.sys.st-processing .led{background:var(--vio);animation:blip 1.6s infinite}
+.sys.st-error .led{background:var(--red)}
+.sys.st-warning .led{background:var(--y)}
+.sys-n{font-size:14px;font-weight:600}
+.sys-m{font-size:12px;color:var(--faint);margin-top:2px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.sys-m.bad{color:var(--red)}
+.sys-r{text-align:right;font-size:11px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);line-height:1.7}
+
+.exc{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;
+  padding:14px 18px;border-left:3px solid var(--red);border-bottom:1px solid var(--line-2)}
+.exc.warning{border-left-color:var(--y)}
+.exc-i{color:var(--red);font-size:12px}
+.exc.warning .exc-i{color:var(--amber)}
+.exc-m{font-size:13px;color:var(--ink);font-weight:500}
+.exc-d{font-size:12px;color:var(--faint);margin-top:4px}
+.exc-t{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+.tools{display:flex;gap:8px;flex-wrap:wrap;padding:13px 18px;border-bottom:1px solid var(--line-2);
+  align-items:center}
+.in{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 12px;color:var(--ink);font-size:13px;min-width:170px;flex:1}
+.in::placeholder{color:var(--faint)}
+.in:focus{border-color:var(--vio);outline:none}
+.chip{padding:6px 13px;border-radius:100px;border:1px solid var(--line);font-size:12px;
+  font-weight:600;color:var(--mid);background:var(--card);transition:all .16s;white-space:nowrap}
+.chip:hover{background:var(--y-wash);border-color:var(--y-line);color:var(--ink)}
+.chip.on{background:var(--vio-wash);border-color:var(--vio-line);color:var(--vio)}
+.btn{padding:8px 15px;border-radius:100px;font-size:12px;font-weight:700;
+  background:var(--solid);color:var(--on-solid);transition:transform .2s var(--e),background .2s;
+  display:inline-flex;align-items:center;gap:7px}
+.btn:hover{transform:translateY(-1px);background:var(--vio)}
+.btn svg{width:13px;height:13px}
+.btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--bone)}
+
+.logs{max-height:540px;overflow-y:auto;font-family:var(--mono);font-size:12px;contain:content}
+.log{display:grid;grid-template-columns:58px 62px 1fr;gap:10px;padding:6px 18px;
+  border-bottom:1px solid var(--line-2)}
+.log time{color:var(--faint)}
+.log b{font-size:11px;font-weight:800;letter-spacing:.06em}
+.log.info b{color:var(--blu)} .log.success b{color:var(--grn)}
+.log.warning b{color:var(--amber)} .log.error b{color:var(--red)}
+.log p{color:var(--mid);word-break:break-word}
+.log.error p{color:var(--red)}
+
+.live{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}
+.live-r{font-family:var(--mono);font-size:clamp(22px,3vw,32px);font-weight:700;
+  letter-spacing:-.04em;color:var(--vio);margin-bottom:20px}
+.steps div{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:8px 0 8px 14px;
+  font-size:13px;color:var(--faint);border-left:2px solid var(--line);margin-left:3px}
+.steps div:last-child{color:var(--ink);border-left-color:var(--vio)}
+.steps .step-none{display:block;border-left:none;margin-left:0;padding:6px 0;
+  font-size:13px;color:var(--faint)}
+.steps time{font-family:var(--mono);font-size:11px}
+
+.empty{padding:44px 20px;text-align:center;color:var(--faint)}
+.empty h3{font-size:14px;font-weight:700;color:var(--mid);margin-bottom:6px}
+.empty p{font-size:13px;max-width:400px;margin:0 auto}
+.empty code{font-family:var(--mono);font-size:12px;color:var(--vio);
+  background:var(--vio-wash);padding:1px 6px;border-radius:5px}
+
+.row{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--line-2)}
+.row:last-child{border-bottom:none}
+.row .a{width:160px;font-size:13px;color:var(--mid);flex:none;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.row .t{flex:1;height:8px;border-radius:100px;background:var(--bone);overflow:hidden}
+.row .t i{display:block;height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
+.row .t i.ok{background:var(--signal)}
+.row .t i.part{background:var(--faint)}
+.row .t i.none{background:var(--alarm)}
+.row .v{width:66px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink)}
+.health{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;padding:18px}
+.health div{background:var(--bone);border-radius:var(--r-sm);padding:13px 15px}
+.health b{display:block;font-size:24px;font-weight:800;letter-spacing:-.045em;margin-top:6px;
+  font-variant-numeric:tabular-nums}
+
+/* ═══════════ ANALYSIS ═══════════ */
+.an-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+  padding:16px 18px;border-bottom:1px solid var(--line-2)}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:12px;font-weight:450;color:var(--faint)}
+.sel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 11px;font-size:13px;color:var(--ink);min-width:140px}
+.sel:focus{border-color:var(--vio);outline:none}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));
+  gap:1px;background:var(--surface);border-bottom:1px solid var(--line-2);
+  overflow:hidden}
+.stat{background:var(--surface);padding:16px 18px 18px;
+  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
+.stat b{display:block;font-size:24px;font-weight:800;letter-spacing:-.05em;margin-top:6px;
+  font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
+.dl-note{font-size:12px;color:var(--faint);margin-top:10px}
+.hint{font-size:12px;color:var(--mid);line-height:1.5}
+
+/* ═══════════ CHAT ═══════════ */
+.fab{position:fixed;right:22px;bottom:calc(var(--player) + 18px);z-index:70;
+  height:38px;padding:0 14px;border-radius:100px;background:var(--solid);color:var(--on-solid);
+  display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+  box-shadow:0 6px 18px rgba(10,10,11,.2);transition:transform .24s var(--e)}
+.fab:hover{transform:translateY(-2px)}
+/* No position:relative here — it would override the fixed positioning above
+   and drop the launcher into normal flow, stretching it across the window.
+   position:fixed already establishes the containing block the pulse needs. */
+.fab svg{width:15px;height:15px}
+.fab::after{content:"";position:absolute;inset:-4px;border-radius:100px;
+  border:1px solid var(--ink);opacity:.22;animation:ping 2.8s var(--e) infinite;
+  pointer-events:none}
+@keyframes ping{0%{transform:scale(.95);opacity:.5}70%{transform:scale(1.12);opacity:0}
+  100%{opacity:0}}
+.fab.hide{display:none}
+.chat{position:fixed;right:24px;bottom:calc(var(--player) + 22px);z-index:71;
+  width:396px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 150px);
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:0 12px 40px rgba(0,0,0,.14);display:none;flex-direction:column;overflow:hidden}
+.chat.on{display:flex;animation:rise .3s var(--e)}
+.ch-h{display:flex;align-items:center;gap:11px;padding:14px 16px;
+  background:var(--crest);color:var(--ink);border-bottom:1px solid var(--line)}
+.ch-av{width:34px;height:34px;border-radius:10px;background:var(--vio);display:grid;
+  place-items:center;color:var(--on-solid);flex:none}
+.ch-av svg{width:21px;height:21px}
+.ch-nm{font-size:14px;font-weight:700}
+.ch-rl{font-size:11px;color:var(--faint);margin-top:1px}
+.ch-ty{font-size:11px;color:var(--signal);margin-top:1px;display:none}
+.ch-ty.show{display:block}
+.ch-x{margin-left:auto;color:var(--mid);padding:5px;border-radius:6px;
+  transition:color .15s var(--e),background .15s var(--e)}
+.ch-x:hover{color:var(--ink);background:var(--surface-3)}
+.ch-b{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
+  background:var(--paper)}
+/* Flex children shrink by default, which squashed the shipment card to a
+   sliver once the thread overflowed. Nothing in a chat log should compress. */
+.ch-b > *{flex:0 0 auto}
+.msg{display:flex;gap:9px;max-width:94%;animation:msgIn .32s var(--e) both}
+.msg.me{align-self:flex-end;flex-direction:row-reverse}
+.m-av{width:28px;height:28px;border-radius:8px;flex:none;display:grid;place-items:center;
+  font-size:11px;font-weight:800;background:var(--vio);color:var(--ink)}
+.m-av svg{width:18px;height:18px}
+.msg.me .m-av{background:var(--solid);color:var(--on-solid)}
+.bub{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
+  padding:11px 14px;font-size:14px;line-height:1.65;border-radius:0 12px 12px 12px;
+  color:var(--ink);white-space:pre-wrap;word-break:break-word}
+.msg.me .bub{background:var(--solid);color:var(--on-solid);border:none;border-radius:12px 0 12px 12px;font-weight:450}
+.bub strong{font-weight:700}
+.bub code{font-family:var(--mono);background:var(--bone);padding:2px 6px;border-radius:4px;font-size:12px}
+.cur{display:inline-block;width:7px;height:14px;background:var(--ink);vertical-align:middle;
+  margin-left:2px;animation:bc .8s infinite}
+@keyframes bc{50%{opacity:0}}
+.td-b{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
+  padding:13px 16px;display:flex;gap:5px;border-radius:0 12px 12px 12px}
+.td-b span{width:7px;height:7px;border-radius:50%;background:var(--y);
+  animation:tdA 1.4s infinite ease-in-out}
+.td-b span:nth-child(2){animation-delay:.2s}
+.td-b span:nth-child(3){animation-delay:.4s}
+@keyframes tdA{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-6px);opacity:1}}
+.mini{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:9px;background:var(--card)}
+.mini-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bone);
+  border-bottom:1px solid var(--line-2)}
+.mini-r{font-family:var(--mono);font-size:12px;font-weight:700}
+.mini-b{padding:5px 12px 9px}
+.mini-row{display:flex;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid var(--line-2)}
+.mini-row:last-child{border-bottom:none}
+.mini-k{width:104px;flex:none;color:var(--faint)}
+.mini-v{color:var(--ink);min-width:0;word-break:break-word}
+.dl-row{display:flex;gap:6px;flex-wrap:wrap;max-width:94%}
+.dl{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:100px;
+  border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
+  font-size:12px;font-weight:700;transition:background .16s;text-decoration:none}
+.dl:hover{background:var(--vio-line)}
+.dl svg{width:12px;height:12px}
+.ch-s{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;background:var(--paper)}
+.ch-f{display:flex;gap:8px;padding:11px 14px;border-top:1px solid var(--line-2);
+  background:var(--card);align-items:flex-end}
+.ch-ta{flex:1;border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 13px;
+  font-size:14px;resize:none;min-height:42px;max-height:110px;background:var(--paper);
+  color:var(--ink);outline:none;line-height:1.5}
+.ch-ta:focus{border-color:var(--vio)}
+.send{width:36px;height:36px;border-radius:50%;background:var(--solid);color:var(--on-solid);
+  display:grid;place-items:center;flex:none;transition:transform .2s var(--e)}
+.send:hover{transform:scale(1.06)}
+.send svg{width:15px;height:15px}
+
+/* ═══════════ RESPONSIVE ═══════════ */
+@media(max-width:1180px){.g2,.live,.ctl{grid-template-columns:1fr}}
+@media(max-width:880px){
+  #app{grid-template-columns:1fr;grid-template-areas:"main"}
+  /* height, not top+bottom: #app keeps a filling entrance animation on
+     transform, which makes it a containing block for fixed children, so
+     bottom:0 stopped resolving against the viewport and the drawer
+     collapsed to zero height. */
+  .nav-i.on{background:var(--surface-3);box-shadow:none}
+  .nav{position:fixed;left:0;top:0;height:100vh;height:100dvh;width:250px;z-index:60;
+    background:var(--surface);border-right:1px solid var(--line);
+    transform:translateX(-100%);transition:transform .32s var(--e);
+    box-shadow:16px 0 40px rgba(0,0,0,.10)}
+  .nav.open{transform:none}
+  .burger{display:flex;align-items:center;padding:5px;color:var(--mid)}
+  .burger svg{width:20px;height:20px}
+  .page{padding:18px 15px 28px}
+  .top{padding:12px 15px}.top-t{font-size:20px}
+  .chat{right:10px;left:10px;width:auto;height:min(72vh,520px)}
+  .fab{right:16px}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:50;opacity:0;
+    pointer-events:none;transition:opacity .25s}
+  .scrim.on{opacity:1;pointer-events:auto}
+}
+@media(max-width:600px){
+  /* Ten columns cannot be read on a phone. Horizontal scrolling "worked" —
+     the scroller was measured and does scroll — but it pushed the
+     ATLAS / DETERMINISTIC attribution and the result pill completely
+     off-screen, which is the one thing an operator opens this page for.
+     Each row becomes a labelled record instead: the same fields, in the same
+     order, with nothing hidden and nothing to scroll sideways for. */
+  .tw{overflow-x:visible}
+  .tw table,.tw tbody,.tw tr,.tw td{display:block;width:auto}
+  .tw thead{display:none}
+  /* The card insets its own header by 18px; the stacked rows have to sit on
+     that same edge or the record headings hang outside the card's text. */
+  .tw tbody tr{padding:12px 18px;border-bottom:1px solid var(--line-2)}
+  .tw tbody tr:last-child{border-bottom:none}
+  .tw td,.tw thead th:first-child,.tw tbody td:first-child,
+  .tw thead th:last-child,.tw tbody td:last-child{padding:4px 0 4px 118px}
+  .tw td{position:relative;min-height:20px}
+  /* The column name comes from the table's own <thead> at render time, so a
+     label can never drift from the header it belongs to. It sits in a gutter
+     rather than in the flow, so a value that needs two lines — a result pill
+     next to its attribution pill — wraps without pushing anything sideways. */
+  /* Cells that carry figures set their value in the mono face, and the label
+     inherited it — so half the labels in a record were typeset differently
+     from the other half. The gutter always uses the text face. */
+  .tw td::before{content:attr(data-k);position:absolute;left:0;top:4px;
+    width:104px;font:400 12px/1.4 var(--s);color:var(--faint)}
+  /* `.tw tbody td:first-child` above matches the reference cell too and is
+     equally specific, so this has to name the row's tbody to win the gutter
+     back and let the AWB sit flush as the record's heading. */
+  .tw tbody td.ref{font-size:15px;padding:0 0 8px;min-height:0}
+  .tw tbody td.ref::before{display:none}
+}
+@media(max-width:430px){
+  /* One header row. #beatPill is an echo of the hero's "Last heartbeat"
+     field, which stays visible, so nothing is lost by folding it away. */
+  #beatPill{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<!-- ═══ INTRO ═══════════════════════════════════════════════════════
+     Five scenes over ~6.6s, cut rather than dissolved, tied together by a
+     spine that grows across the whole run. No video, no library, no audio,
+     and nothing here sits in the critical path. -->
+<div id="gate" aria-label="Control Tower startup">
+  <div class="g-bar"></div>
+  <div class="g-stage">
+
+    <div class="g-s" style="--at:0s;--dur:1.25s">
+      <div class="g-kick" style="--i:0">Mantrac Logistics</div>
+      <h1 class="g-h1" style="--i:1">Control <span class="l">Tower</span></h1>
+      <p class="g-p" style="--i:2">Shipment intelligence &amp; automation</p>
+    </div>
+
+    <div class="g-s" style="--at:1.15s;--dur:1.2s">
+      <div class="g-t" style="--i:0">Real-time shipment processing</div>
+      <div class="g-chips" style="--i:1">
+        <span class="g-chip">DHL</span><span class="g-chip">AFKL</span>
+        <span class="g-chip">QATAR</span><span class="g-chip">ASTRAL</span>
+      </div>
+    </div>
+
+    <div class="g-s" style="--at:2.25s;--dur:1.2s">
+      <div class="g-t" style="--i:0">AI-assisted automation</div>
+      <div class="g-list" style="--i:1">
+        <span><b>Adaptive</b> execution</span>
+        <span><b>Smart</b> field detection</span>
+        <span><b>Intelligent</b> retries</span>
+        <span>Learns from <b>telemetry</b></span>
+      </div>
+    </div>
+
+    <div class="g-s" style="--at:3.35s;--dur:1.25s">
+      <div class="g-t" style="--i:0">Verify everything</div>
+      <div class="g-flow" style="--i:1"><b>Write</b><i>&rarr;</i><b>Save</b><i>&rarr;</i>
+        <b>Reload</b><i>&rarr;</i><b>Verify</b></div>
+      <p class="g-p" style="--i:2">A completed postback is not a completed write</p>
+    </div>
+
+    <!-- The close. It arrives and then holds, so OPEN
+         DASHBOARD is where the sequence lands rather than an escape hatch. -->
+    <div class="g-s g-last" id="gLast">
+      <h1 class="g-h1" style="--i:0">Control <span class="l">Tower</span></h1>
+      <div class="g-ok" style="--i:1">Ready</div>
+      <button class="g-open" id="openDash" style="--i:2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        Open dashboard
+      </button>
+    </div>
+
+  </div>
+
+  <div class="g-spine"><span class="g-mark m1"></span><span class="g-mark m2"></span>
+    <span class="g-mark m3"></span></div>
+
+  <div class="g-ctl">
+    <button class="g-btn" id="skip">Skip</button>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="ct-mark" viewBox="0 0 32 32">
+    <path d="M16 3.2 5.4 9v14L16 28.8 26.6 23V9L16 3.2Z" fill="none"
+      stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+    <path d="M5.4 9 16 15.1 26.6 9" fill="none" stroke="currentColor"
+      stroke-width="1.5" opacity=".55"/>
+    <path d="M16 15.1V28.8" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/>
+    <circle cx="16" cy="15.1" r="2.6" fill="currentColor"/>
+  </symbol>
+</defs></svg>
+
+<div id="app">
+  <div class="scrim" id="scrim"></div>
+
+  <nav class="nav" id="nav">
+    <div class="nav-b">
+      <div class="nav-n">Control Tower<i>.</i></div>
+      <div class="nav-o">Mantrac Logistics</div>
+    </div>
+    <div class="nav-l" id="navList"></div>
+    <div class="nav-f" id="navFoot">Standing by</div>
+  </nav>
+
+  <main class="main" id="main">
+    <header class="top">
+      <button class="burger" id="burger" aria-label="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <div class="top-t" id="pageTitle">Overview</div>
+      <div class="sp"></div>
+      <span class="ctlbar" id="ctlbar">
+        <button class="cbtn go" id="btnStart">Start run</button>
+        <button class="cbtn warn" id="btnPause">Pause</button>
+        <button class="cbtn stop" id="btnStop">Stop after this shipment</button>
+      </span>
+      <button class="share" id="shareBtn" title="Copy the link colleagues should use">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg>
+        <span id="shareTxt">Copy share link</span></button>
+      <div class="pill" id="runPill"><span class="d"></span><span id="runTxt">Connecting</span></div>
+      <div class="pill" id="beatPill"><span class="d"></span><span id="beatTxt">No heartbeat</span></div>
+    </header>
+
+    <section class="page on" data-p="overview">
+      <div class="ctl">
+        <div class="hero">
+          <div class="kick">Automation status</div>
+          <div class="hero-v" id="bigState">Standing by</div>
+          <div class="hero-s" id="dryFlag"></div>
+          <div class="hero-g">
+            <div><div class="fk">Current operation</div><div class="fv" id="cOp">—</div></div>
+            <div><div class="fk">Current carrier</div><div class="fv" id="cSys">—</div></div>
+            <div><div class="fk">Current action</div><div class="fv" id="cAct">—</div></div>
+            <div><div class="fk">Runtime</div><div class="fv mono" id="cRun">00:00:00</div></div>
+            <div><div class="fk">Last heartbeat</div><div class="fv mono" id="cBeat">—</div></div>
+            <div><div class="fk">Hub list page</div><div class="fv mono" id="cPage">—</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-t">Run progress</div></div>
+          <div class="card-b">
+            <div class="bar" id="pBar"><div class="bar-f" id="pFill" style="width:0%"></div></div>
+            <div class="leg"><span id="pTxt">Waiting for the first page scan</span><span id="pPct"></span></div>
+            <div style="height:16px"></div>
+            <div class="leg" style="margin:0">
+              <span>Updated <b style="color:var(--grn)" id="nS">0</b></span>
+              <span>Skipped <b style="color:var(--mid)" id="nK">0</b></span>
+              <span>Failed <b style="color:var(--red)" id="nF">0</b></span>
+              <span>Remaining <b id="nR">—</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-h"><div class="card-t">Operations timeline</div><div class="sp"></div><div class="kick" id="tlN"></div></div>
+          <div class="tl" id="timeline"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-t">Systems</div></div>
+          <div id="sysMini"></div>
+        </div>
+        <!-- Every number in here comes from /api/ml, which reads the live ml
+             package. An unknown shows as a dash, never as a zero. -->
+        <div class="card" id="mlCard">
+          <div class="card-h">
+            <div>
+              <div class="card-t">ATLAS</div>
+              <div class="atlas-sub" id="mlSub">Adaptive Logistics Strategy Engine</div>
+            </div>
+            <div class="sp"></div>
+            <span class="ml-pill" id="mlPill"><span class="d"></span><span id="mlPillT">…</span></span>
+          </div>
+          <div class="ml-g" id="mlGrid"></div>
+          <div class="ml-note" id="mlNote"></div>
+          <!-- Recovery. Hidden until there is a real error to show; it is a
+               live status, not a history, and it never renders a plan ATLAS
+               did not produce. -->
+          <div class="rcv" id="rcv" hidden></div>
+          <!-- What ATLAS actually did this run, in its own words. Empty until
+               it says something — an empty feed is the truthful state before
+               the first decision, not a placeholder to fill. -->
+          <div class="atlas-f" id="atlasFeed" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" data-p="live">
+      <div class="live">
+        <div class="card">
+          <div class="card-h"><div class="card-t">Shipment in progress</div><div class="sp"></div><span id="liveTag"></span></div>
+          <div class="card-b" id="liveBody"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-t">Step trace</div></div>
+          <div class="card-b"><div class="steps" id="steps"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" data-p="shipments">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Shipments this run</div><div class="sp"></div>
+          <input class="in" id="shipQ" placeholder="Search BOL / AWB, carrier, error" style="max-width:250px" /></div>
+        <div class="tools" id="shipF"></div>
+        <div class="tw"><table>
+          <thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Hub ETA</th><th>Carrier status</th>
+          <th>Carrier ETA</th><th>Carrier ATA</th><th>Result</th><th>Outcome</th><th>Time</th><th>Detail</th></tr></thead>
+          <tbody id="shipRows"></tbody></table></div>
+        <div id="shipEmpty"></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="analysis">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="card-t">Custom analysis</div><div class="sp"></div>
+          <div class="kick" id="anCount"></div></div>
+        <div class="an-bar">
+          <div class="fld"><label for="anState">Result</label>
+            <select class="sel" id="anState">
+              <option value="all" selected>All results</option>
+              <option value="updated">Updated in hub</option>
+              <option value="skipped">Skipped</option>
+              <option value="partial">Partly updated</option>
+              <option value="failed">Failed</option>
+              <option value="processing">Processing</option>
+            </select></div>
+          <div class="fld"><label for="anCarrier">Carrier</label>
+            <select class="sel" id="anCarrier"><option value="all">All carriers</option></select></div>
+          <div class="fld"><label for="anField">Date written</label>
+            <select class="sel" id="anField">
+              <option value="any">Any</option>
+              <option value="eta">Carrier ETA present</option>
+              <option value="ata">Carrier ATA present</option>
+              <option value="noeta">No carrier ETA</option>
+            </select></div>
+          <div class="fld"><label for="anGroup">Group by</label>
+            <select class="sel" id="anGroup">
+              <option value="carrier">Carrier</option>
+              <option value="provider">Tracking provider</option>
+              <option value="outcome">Outcome class</option>
+              <option value="state">Result</option>
+              <option value="page">Hub list page</option>
+            </select></div>
+          <div class="sp"></div>
+          <button class="btn" id="dlBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Download CSV</button>
+        </div>
+        <div class="stat-grid" id="anStats"></div>
+        <div class="card-b" id="anGroups"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">Matching shipments</div><div class="sp"></div>
+          <button class="btn ghost" id="dlAll">Export every shipment</button></div>
+        <div class="tw"><table>
+          <thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Carrier ETA</th><th>Carrier ATA</th>
+          <th>Result</th><th>Written to hub</th><th>Time</th></tr></thead>
+          <tbody id="anRows"></tbody></table></div>
+        <div id="anEmpty"></div>
+        <div class="card-b" style="padding-top:0"><div class="dl-note" id="dlNote"></div></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="systems">
+      <div class="g2">
+        <div class="card"><div class="card-h"><div class="card-t">Integration status</div></div>
+          <div id="sysFull"></div></div>
+        <div class="card"><div class="card-h"><div class="card-t">Runner health</div></div>
+          <div id="health"></div></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="exceptions">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Exceptions</div><div class="sp"></div><div class="kick" id="excN"></div></div>
+        <div id="excList"></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="logs">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Activity log</div><div class="sp"></div><div class="kick" id="logN"></div></div>
+        <div class="tools">
+          <input class="in" id="logQ" placeholder="Search log messages" />
+          <button class="chip on" data-lv="all">All</button>
+          <button class="chip" data-lv="info">Info</button>
+          <button class="chip" data-lv="success">Success</button>
+          <button class="chip" data-lv="warning">Warning</button>
+          <button class="chip" data-lv="error">Error</button>
+        </div>
+        <div class="logs" id="logList"></div>
+      </div>
+    </section>
+
+    <section class="page" data-p="settings">
+      <div class="card"><div class="card-h"><div class="card-t">Run configuration</div></div>
+        <div class="card-b" id="settings"></div></div>
+          <div class="card" style="margin-top:14px">
+        <div class="card-h"><div class="card-t">Startup sequence</div></div>
+        <div class="card-b" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <button class="cbtn" onclick="window.ctReplayIntro && window.ctReplayIntro()">Replay intro</button>
+          <span class="hint">Plays once per browser session. The
+            sound button remembers your choice.</span>
+        </div>
+      </div>
+</section>
+  </main>
+
+  <!-- There is no audio anywhere in this dashboard, by request. The intro is
+       a silent cinematic: no <audio> element, no /api/music fetch, no codec
+       negotiation, no mute state, and no soundtrack asset in the build. -->
+
+  <button class="fab" id="fab">
+    <svg><use href="#ct-mark"/></svg>
+    Ask
+  </button>
+  <div class="chat" id="chat">
+    <div class="ch-h">
+      <div class="ch-av"><svg><use href="#ct-mark"/></svg></div>
+      <div><div class="ch-nm">Shipment Assistant</div>
+        <div class="ch-rl" id="chRole">Answers only from this run's data</div>
+        <div class="ch-ty" id="chTy">typing…</div></div>
+      <button class="ch-x" id="chatX" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="ch-b" id="chatBody"></div>
+    <div class="ch-s" id="chatSug"></div>
+    <div class="ch-f">
+      <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask about a shipment…"></textarea>
+      <button class="send" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+/* ═══ INTRO ═══ */
+(function intro(){
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TOTAL = 6600;            // must match --total / the CSS delays
+  const LAST_AT = 5300;          // when the closing scene arrives
+  const gate = $('gate');
+  let done = false, endTimer = null, lastTimer = null;
+
+  const seen = (() => { try { return sessionStorage.getItem('ct-intro') === '1'; }
+                        catch (e) { return false; } })();
+
+  function finish(){
+    if (done) return;
+    done = true;
+    clearTimeout(endTimer); clearTimeout(lastTimer);
+    try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
+    gate.classList.add('gone');
+    $('app').classList.add('on');
+    setTimeout(() => $('app').classList.add('settled'), 700);
+    setTimeout(() => { gate.style.display = 'none'; }, 520);
+  }
+
+  /* The sequence ENDS on the closing scene and waits there. It does not
+     dismiss itself — Open dashboard is the conclusion, so the operator
+     decides when the picture gives way. */
+  function hold(){
+    gate.classList.add('ended');
+    gate.classList.remove('play');
+  }
+
+  function run(){
+    gate.style.setProperty('--total', TOTAL + 'ms');
+    gate.style.setProperty('--lastAt', LAST_AT + 'ms');
+    gate.style.display = '';
+    gate.classList.remove('gone', 'ended');
+    done = false;
+    void gate.offsetWidth;                   // restart the CSS animations
+    gate.classList.add('play');
+    clearTimeout(lastTimer); clearTimeout(endTimer);
+    if (reduced){ hold(); return; }
+    lastTimer = setTimeout(hold, TOTAL);
+  }
+
+  $('openDash').addEventListener('click', finish);
+  $('skip').addEventListener('click', finish);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(); });
+
+  if (seen) { finish(); } else { run(); }
+
+  // The sidebar's Introduction and the Settings replay both call this. There
+  // is one intro, and this is it.
+  window.ctReplayIntro = function(){
+    try { sessionStorage.removeItem('ct-intro'); } catch (e) {}
+    $('app').classList.remove('on', 'settled');
+    run();
+  };
+})();
+
+/* ═══ ATLAS — ADAPTIVE LOGISTICS STRATEGY ENGINE ══════════════════════
+   Real values only. A field ATLAS cannot answer for shows a dash; writing a 0
+   there would claim a measurement nobody took. Polled every 20s because a
+   model does not change between frames. */
+(function mlPanel(){
+  const pill = $('mlPill'), pillT = $('mlPillT'), grid = $('mlGrid'),
+        note = $('mlNote'), sub = $('mlSub');
+  if (!pill) return;
+  let last = null;
+  const dash = (v) => (v === null || v === undefined || v === '') ? '—' : v;
+  const num = (v) => (typeof v === 'number') ? v.toLocaleString() : dash(v);
+
+  function paint(d){
+    const status = d.status || 'UNAVAILABLE';
+    pillT.textContent = status;
+    /* SHADOW is not ENABLED. A loaded model that is learning but steering
+       nothing gets its own pill, because showing it as ENABLED would tell an
+       operator the automation is being driven when it is not. */
+    pill.className = 'ml-pill' + (status === 'ENABLED' ? ' on'
+                                 : status === 'UNAVAILABLE' ? '' : ' warn');
+    const model = d.model || {};
+    const tel = d.telemetry || {};
+    const cfg = d.config || {};
+    const fb = d.feedback || {};
+    /* Labelled rows, not raw interactions. A file with thousands of
+       interactions and no read-back verification has nothing to train on, and
+       showing the bigger number would say the opposite. */
+    /* Two scopes, and they must not be mixed. The model cells describe the
+       model's whole history; the two run cells describe what ATLAS did on
+       THIS run, which is what the feed below them shows. Labelling both
+       "Fallbacks" without saying which is which is how a panel starts
+       answering a question nobody asked. */
+    const runAtlas = (typeof S !== 'undefined' && S && S.atlas) || null;
+    /* Verified and unverified are shown side by side deliberately. During
+       the collection phase the second number is the one that says whether
+       read-back is actually running, and hiding it would make an empty
+       training set look like a full one.
+
+       "ATLAS selections" counts decisions the automation actually TOOK. In
+       shadow mode it is 0 by construction, and the shadow count next to it
+       is what ATLAS would have done. Those two must never be added up. */
+    const cells = [
+      ['Model', model.identifier || (model.version ? ('v' + model.version) : '—')],
+      ['Contexts', num(model.contexts)],
+      ['Observations', num(model.observations)],
+      ['Verified labelled rows', num(tel.usable_rows)],
+      ['Verified writes', num(tel.verified_success)],
+      ['Unverified writes', num(tel.unverified)],
+      ['Shadow recommendations', num(tel.shadow_recommendations)],
+      ['ATLAS selections', num(tel.atlas_selections)],
+      ['Deterministic executions', num(tel.deterministic_executions)],
+      ['Fallbacks', num(tel.fallbacks)],
+      ['Steered this run', runAtlas ? num(runAtlas.influenced_actions) : '—'],
+      ['Fell back this run', runAtlas ? num(runAtlas.fallbacks) : '—']
+    ];
+    grid.innerHTML = cells.map(([k, v]) =>
+      '<div class="ml-k"><b>' + v + '</b><span>' + k + '</span></div>').join('');
+    if (sub && d.engine_full_name) sub.textContent = d.engine_full_name;
+
+    let text;
+    if (status === 'ENABLED'){
+      text = 'The model may reorder field candidates and shorten waits. '
+           + 'It never decides ETA vs ATA, what to write, or whether a write is safe.';
+      if (model.built_at) text += ' Built ' + model.built_at + '.';
+      /* The claim this panel is not allowed to overstate. */
+      text += d.proven
+        ? ' Promoted after beating the deterministic order on held-out data'
+          + (model.promoted_at ? ' on ' + model.promoted_at : '') + '.'
+        : ' READY FOR LEARNING, NOT YET PROVEN SUPERIOR — it has not passed an'
+          + ' evaluation gate against real production telemetry.';
+    } else if (status === 'SHADOW'){
+      text = 'Shadow mode: the model is consulted on every field lookup and its'
+           + ' choice is recorded, then discarded. The deterministic order runs.'
+           + ' Nothing it says changes what the automation does. This is how it'
+           + ' collects the unbiased evidence needed to earn ML_MODE=active.';
+      if (model.built_at) text += ' Built ' + model.built_at + '.';
+    } else if (status === 'FALLBACK'){
+      text = 'Running the deterministic automation. ' + (d.error || '');
+      if (d.trainable === false && d.trainable_reason)
+        text += ' ' + d.trainable_reason;
+    } else if (status === 'DISABLED'){
+      text = 'ATLAS is switched off, so the automation uses its own hand-tuned'
+           + ' order. Nothing else changes.';
+    } else {
+      text = 'ATLAS is not installed. ' + (d.error || '');
+    }
+    note.textContent = text;
+  }
+
+  function load(){
+    fetch('/api/ml').then((r) => r.json()).then((d) => { last = d; paint(d); })
+      .catch(() => {
+        pillT.textContent = 'UNREACHABLE'; pill.className = 'ml-pill warn';
+      });
+  }
+  /* Repaint from the payload already in hand.
+     The run-scoped cells come from S.atlas, which arrives on the state stream
+     the browser is already receiving — so a changing ATLAS count needs a
+     REPAINT, not a REQUEST. It used to trigger `load()`, which measured at 23
+     /api/ml requests per minute against a designed 3, and each of those costs
+     ~580ms server-side on a real telemetry file: about 22% of a core, spent
+     re-reading a file to learn something the browser was already being told. */
+  window.__mlRepaint = function(){ if (last) paint(last); };
+  load();
+  setInterval(load, 20000);
+})();
+
+/* ═══ HELPERS ═══ */
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g,
+  (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dash = (v) => (v === null || v === undefined || v === '' ? '—' : esc(v));
+const clock = (s) => {
+  if (s == null) return '00:00:00';
+  const p = (n) => String(Math.floor(n)).padStart(2, '0');
+  return p(s / 3600) + ':' + p((s % 3600) / 60) + ':' + p(s % 60);
+};
+const ms = (v) => (v == null ? '—' : (v < 1000 ? v + ' ms' : (v / 1000).toFixed(1) + ' s'));
+const has = (v) => v !== null && v !== undefined && v !== '' && v !== '—';
+function put(el, v){ if (el && el.textContent !== v) el.textContent = v; }
+/* The stacked phone layout above needs every cell to carry its own column
+   name. Taking the names from the table's own <thead> keeps them in sync by
+   construction, and the stamping only runs while that layout is actually
+   active, so it costs nothing on a desktop. */
+const stackQ = window.matchMedia('(max-width:600px)');
+function stampRowLabels(tb){
+  if (!stackQ.matches || !tb || tb.tagName !== 'TBODY') return;
+  const table = tb.closest('table');
+  if (!table) return;
+  const heads = [].map.call(table.querySelectorAll('thead th'), (h) => h.textContent.trim());
+  if (!heads.length) return;
+  for (const tr of tb.rows)
+    for (let i = 0; i < tr.cells.length; i++)
+      if (heads[i]) tr.cells[i].setAttribute('data-k', heads[i]);
+}
+function putHTML(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; stampRowLabels(el); } }
+/* Crossing the breakpoint has to label rows that were rendered while the
+   wide layout was in force. One listener, registered once. */
+stackQ.addEventListener('change', () => document.querySelectorAll('.tw tbody').forEach(stampRowLabels));
+function cls(el, n){ if (el && el.className !== n) el.className = n; }
+
+/* ═══ NAV ═══ */
+const PAGES = [
+  {id:'overview',  t:'Overview',      i:'M3 12h4l3 8 4-16 3 8h4'},
+  {id:'live',      t:'Live operation',i:'M12 3v3m0 12v3M3 12h3m12 0h3M6.5 6.5l2 2m7 7 2 2m0-11-2 2m-7 7-2 2'},
+  {id:'shipments', t:'Shipments',     i:'M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4'},
+  {id:'analysis',  t:'Analysis',      i:'M4 20V11m6 9V4m6 16v-6m4 6V8'},
+  {id:'systems',   t:'Systems',       i:'M4 6h16M4 12h16M4 18h16'},
+  {id:'exceptions',t:'Exceptions',    i:'M12 3l9 16H3L12 3zm0 6v5m0 3v.5'},
+  {id:'logs',      t:'Activity log',  i:'M4 4h16v16H4zM8 9h8M8 13h8M8 17h5'},
+  {id:'settings',  t:'Settings',      i:'M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2m12 0h2M12 4v2m0 12v2'},
+  {id:'film',      t:'Introduction',  i:'M4 4h16v16H4zM4 9h16M9 4v16', film:true}
+];
+let activePage = 'overview';
+PAGES.forEach((p) => {
+  const b = document.createElement('button');
+  b.className = 'nav-i' + (p.id === 'overview' ? ' on' : '');
+  b.dataset.go = p.id;
+  b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' +
+    p.i + '"/></svg><span>' + p.t + '</span><span class="nav-c" id="n-' + p.id + '" hidden></span>';
+  b.addEventListener('click', () => {
+    // Introduction replays the same cinematic intro. It used to navigate to
+    // /intro, which was a second implementation of the same idea and left
+    // the dashboard behind; now there is one intro and this is it.
+    if (p.film){ if (window.ctReplayIntro) window.ctReplayIntro(); return; }
+    go(p.id);
+  });
+  $('navList').appendChild(b);
+});
+function go(id){
+  activePage = id;
+  document.querySelectorAll('.nav-i').forEach((n) => n.classList.toggle('on', n.dataset.go === id));
+  document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.dataset.p === id));
+  put($('pageTitle'), (PAGES.find((p) => p.id === id) || {}).t || '');
+  $('nav').classList.remove('open'); $('scrim').classList.remove('on');
+  $('main').scrollTop = 0;
+  if (S) paint(true);
+}
+$('burger').addEventListener('click', () => {
+  $('nav').classList.add('open'); $('scrim').classList.add('on');
+});
+$('scrim').addEventListener('click', () => {
+  $('nav').classList.remove('open'); $('scrim').classList.remove('on');
+});
+
+/* ═══ STATE ═══ */
+let S = null, logLevel = 'all', logQ = '', shipQ = '', shipF = 'all';
+const sig = {};
+const TAGS = {updated:'Updated', processing:'Processing', skipped:'Skipped',
+              partial:'Partly updated', failed:'Failed', unknown:'Unknown'};
+const tag = (s) => '<span class="tag ' + (TAGS[s] ? s : 'unknown') + '">' + (TAGS[s] || 'Unknown') + '</span>';
+
+/* ATLAS attribution. Rendered ONLY from what the automation actually
+   recorded: `r.atlas.influenced` is set by the engine's own emission points
+   and by nothing else. A shipment ATLAS did not steer gets the muted
+   "Deterministic" tag — not a blank, because "we don't know" and "the
+   deterministic order did this" are different statements and the second one
+   is the true one. */
+function atlasTag(record){
+  const a = (record && record.atlas) || null;
+  if (!a) return '';
+  return a.influenced
+    ? '<span class="atlas-t on" title="' + esc(a.chosen
+        ? 'ATLAS selected ' + a.chosen + ' for this shipment'
+        : 'ATLAS influenced the strategy for this shipment')
+      + '"><span class="d"></span>ATLAS</span>'
+    : '<span class="atlas-t" title="ATLAS stood down; the automation used its '
+      + 'own hand-tuned order">Deterministic</span>';
+}
+const empty = (t, b) => '<div class="empty"><h3>' + t + '</h3><p>' + b + '</p></div>';
+function changed(k, v){ if (sig[k] === v) return false; sig[k] = v; return true; }
+
+function paint(force){
+  if (!S) return;
+  if (force) for (const k in sig) delete sig[k];
+  const run = S.run, cur = S.current, c = S.counters, pr = S.progress;
+
+  const map = {running:['run','Running'], finished:['fin','Run complete'],
+               fatal:['bad','Stopped on error'], idle:['','Standing by']};
+  const st = map[run.status] || map.idle;
+  cls($('runPill'), 'pill ' + st[0]); put($('runTxt'), st[1]);
+  put($('bigState'), st[1]);
+  /* The headline is set in the text colour and the STATE is carried by the
+     dot beside it. A 54px word in bright green was the loudest thing on a
+     console an operator watches all day, and glare is not emphasis. */
+  cls($('bigState'), 'hero-v s-' + (run.status || 'idle'));
+
+  const age = run.heartbeat_age;
+  put($('beatTxt'), age == null ? 'No heartbeat'
+    : (age < 5 ? Math.max(0, Math.round(age)) + 's ago' : age.toFixed(0) + 's ago — stalled?'));
+  cls($('beatPill'), 'pill' + (age != null && age < 5 ? ' run' : (age != null ? ' bad' : '')));
+
+  put($('dryFlag'), run.dry_run === true ? 'Dry run — nothing is saved'
+    : run.dry_run === false ? 'Live — hub records are saved' : '');
+  put($('cOp'), cur.shipment ? cur.shipment.reference
+    : (run.status === 'running' ? 'Scanning hub list' : '—'));
+  cls($('cOp'), cur.shipment ? 'fv mono hi' : 'fv');
+  put($('cSys'), cur.system ? sysName(cur.system) : '—');
+  put($('cAct'), cur.step || '—');
+  put($('cRun'), clock(run.runtime_seconds));
+  put($('cBeat'), age == null ? '—' : Math.max(0, Math.round(age)) + 's ago');
+  put($('cPage'), cur.page == null ? '—' : 'Page ' + cur.page + ' of max ' + (run.max_pages || '?'));
+  paintAtlasFeed(S.atlas);
+
+  const bar = $('pBar'), fill = $('pFill');
+  if (pr.determinate && pr.total){
+    bar.classList.remove('ind');
+    const pct = Math.min(100, Math.round(pr.processed / pr.total * 100));
+    if (fill.style.width !== pct + '%') fill.style.width = pct + '%';
+    put($('pTxt'), pr.processed + ' of ' + pr.total + ' shipments processed');
+    put($('pPct'), pct + '%');
+  } else {
+    bar.classList.add('ind');
+    put($('pTxt'), run.status === 'running'
+      ? pr.processed + ' processed · ' + pr.discovered + ' queued from ' + pr.pages_scanned +
+        ' page(s) — total unknown until pagination ends' : 'No active run');
+    put($('pPct'), '');
+  }
+  put($('nS'), String(c.successful)); put($('nK'), String(c.skipped));
+  put($('nF'), String(c.failed));
+  put($('nR'), pr.remaining == null ? '—' : String(pr.remaining));
+
+  if (changed('kpi', [c.processed,c.successful,c.skipped,c.failed,c.success_rate,
+                      pr.discovered,pr.pages_scanned].join('|'))){
+    /* Colour marks what an operator has to ACT on, and nothing else.
+       The previous row put seven tiles in six colours — purple, green,
+       amber, amber, red, ice, ink — which is rainbow soup: two different
+       things were amber, and "Processed" was accented for no reason. A
+       count nobody acts on is just a number, so it is set in --ink and
+       the eye goes straight to the two that matter.
+         signal  a date reached the Hub
+         alarm   something needs a person
+         amber   a partial write: one field landed, one did not
+       A zero is dimmed whatever its colour: "Failed 0" is good news and
+       should not glow red. */
+    const zero = (v) => v === 0 || v === '0';
+    const none = (v) => v === '—' || v === null || v === undefined || v === '';
+    const K = [
+      {k:'Processed', v:c.processed, n:'Under Clearance rows handled', c:'var(--ink)'},
+      {k:'Hub records updated', v:c.successful, n:'COE ETA / BU ATA written', c:'var(--signal)'},
+      {k:'Skipped', v:c.skipped, n:'Carrier gave no ETA or ATA', c:'var(--ink)'},
+      {k:'Partly updated', v:c.partial || 0, n:'One field written, one failed', c:'var(--amber)'},
+      {k:'Failed', v:c.failed, n:'Errors during processing', c:'var(--alarm)'},
+      {k:'Success rate', v:c.success_rate == null ? '—' : c.success_rate + '%',
+       n:'Of shipments processed', c:'var(--ink)'},
+      {k:'Queued from hub', v:pr.discovered, n:pr.pages_scanned + ' list page(s) scanned', c:'var(--ink)'}
+    ];
+    putHTML($('kpis'), K.map((x) =>
+      '<div class="kpi"><div class="kpi-k" title="' + x.k + '">' + x.k +
+      '</div><div class="kpi-v' + (none(x.v) ? ' none' : zero(x.v) ? ' nil' : '') +
+      '" style="--c:' + x.c + '">' + x.v +
+      '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
+  }
+
+  /* Recovery arrives on the state stream, not on the /api/ml poll, so it is
+     painted here. Guarded on a small signature rather than the whole object:
+     a live recovery changes a few times per error, and re-rendering the block
+     on every unrelated frame would be work for nothing. */
+  const rcvSig = S.recovery
+    ? [S.recovery.error_class, S.recovery.status, S.recovery.recovered,
+       (S.recovery.attempts || []).length,
+       (S.recovery.attempts || []).map((a) => a.result).join(',')].join('|')
+    : 'none';
+  if (changed('rcv', rcvSig)) paintRecovery();
+
+  if (changed('tl', S.timeline.length + ':' + (S.timeline[0] || {}).text)){
+    const I = {ok:'✓', warn:'!', error:'✕', shipment:'▸', scan:'◇', start:'●', stop:'■'};
+    put($('tlN'), S.timeline.length ? S.timeline.length + ' events' : '');
+    putHTML($('timeline'), S.timeline.length
+      ? S.timeline.slice(0, 60).map((t) => '<div class="tlr ' + t.icon + '"><time>' + esc(t.time) +
+          '</time><i>' + (I[t.icon] || '·') + '</i><span>' + esc(t.text) + '</span></div>').join('')
+      : empty('Nothing yet', 'Events appear as soon as the automation scans the hub list.'));
+  }
+
+  const sysSig = S.systems.map((x) => x.key + x.state + x.activity + x.last_success).join('|');
+  if (changed('sys', sysSig)){
+    const html = S.systems.map((x) =>
+      '<div class="sys st-' + x.state + '"><div class="led"></div><div style="min-width:0">' +
+      '<div class="sys-n">' + esc(x.name) + '</div><div class="sys-m' +
+      (x.state === 'error' ? ' bad' : '') + '">' +
+      esc(x.state === 'error' ? (x.last_error || 'Error') : (x.activity || x.role)) +
+      '</div></div><div class="sys-r">' + esc(x.state) + '<br>' +
+      (x.last_success ? 'ok ' + esc(x.last_success) : '—') + '</div></div>').join('');
+    putHTML($('sysMini'), html); putHTML($('sysFull'), html);
+  }
+
+  if (changed('health', JSON.stringify(S.health || {}))){
+    const h = S.health || {};
+    putHTML($('health'), h.available
+      ? '<div class="health"><div><div class="kpi-k">CPU</div><b>' + h.cpu_percent +
+        '%</b></div><div><div class="kpi-k">Memory</div><b>' + h.memory_percent +
+        '%</b></div><div><div class="kpi-k">Runner RAM</div><b>' + h.process_memory_mb +
+        '</b></div><div><div class="kpi-k">Threads</div><b>' + h.threads + '</b></div></div>'
+      : empty('Machine metrics off',
+          'Install <code>psutil</code> on the runner to report CPU and memory.'));
+  }
+
+  paintControl();
+  paintLive(); paintShips(); paintAnalysis(); paintExc(); paintLogs(); paintSettings();
+
+  const ne = $('n-exceptions');
+  ne.hidden = !S.exceptions.length; put(ne, String(S.exceptions.length)); ne.className = 'nav-c bad';
+  const ns = $('n-shipments');
+  ns.hidden = !S.shipments.length; put(ns, String(S.shipments.length));
+  put($('navFoot'), run.status === 'running' ? 'Live · ' + clock(run.runtime_seconds)
+    : 'Updated ' + S.generated_at);
+}
+function sysName(k){ const f = (S.systems || []).find((x) => x.key === k); return f ? f.name : k; }
+
+/* ═══ LIVE ═══ */
+function paintLive(){
+  if (activePage !== 'live' && sig.liveInit) return;
+  sig.liveInit = 1;
+  const cur = S.current.shipment || S.shipments[0];
+  const isLive = !!S.current.shipment;
+  const key = cur ? cur.reference + cur.state + cur.step + (cur.steps || []).length : 'none';
+  if (!changed('live', key)) return;
+  if (!cur){
+    putHTML($('liveTag'), '');
+    putHTML($('liveBody'), empty('No shipment in progress',
+      S.run.status === 'running' ? 'The runner is between shipments or scanning the next page.'
+        : 'Start <code>update_eta.py</code> to watch shipments move through.'));
+    putHTML($('steps'), ''); return;
+  }
+  putHTML($('liveTag'), atlasTag(cur) + tag(cur.state));
+  putHTML($('liveBody'),
+    (isLive ? '' : '<div class="kick" style="margin-bottom:12px">Most recent shipment</div>') +
+    '<div class="live-r">' + esc(cur.reference) + '</div><div class="hero-g" style="position:relative">' +
+    f('Carrier', cur.carrier) + f('Tracking provider', cur.provider === 'QATAR' ? 'Qatar Airways Cargo' : cur.provider) +
+    f('Hub status filter', cur.hub_status) + f('Hub list page', cur.table_page) +
+    f('Existing hub ETA', cur.internal_eta) + f('Carrier status', cur.provider_status) +
+    f('Carrier ETA', cur.provider_eta) + f('Carrier ATA', cur.provider_ata) +
+    f('COE view', cur.coe_action) + f('BU view', cur.bu_action) + f('Outcome', cur.outcome) +
+    '</div><div style="margin-top:20px"><div class="fk">Current step</div>' +
+    '<div style="font-size:14.5px;color:var(--vio);margin-top:5px;font-weight:500">' +
+    dash(cur.step) + '</div></div>');
+  putHTML($('steps'), (cur.steps || []).length
+    ? cur.steps.map((x) => '<div><time>' + esc(x.time) + '</time><span>' + esc(x.text) + '</span></div>').join('')
+    : '<div class="step-none">Waiting for the first step</div>');
+}
+function f(k, v){ return '<div><div class="fk">' + k + '</div><div class="fv">' + dash(v) + '</div></div>'; }
+/* A date cell. `actual` means the event has happened (an ATA), so it takes
+   the ice colour; everything else is an estimate and takes amber. An empty
+   cell is neither and must not be coloured as though it were a date. */
+function dtCell(v, actual){
+  const has = v !== null && v !== undefined && v !== '';
+  return '<td class="dt' + (has ? (actual ? ' actual' : '') : ' none') + '">'
+       + dash(v) + '</td>';
+}
+
+/* ATLAS activity, verbatim. Every row here was emitted by the engine during
+   the run — there is no client-side inference and nothing is synthesised to
+   fill the panel. With no events the feed stays hidden, which is the honest
+   state before ATLAS has said anything. */
+let atlasSig = '';
+function paintAtlasFeed(a){
+  const box = $('atlasFeed');
+  if (!box) return;
+  /* The grid's two run-scoped cells are painted by the 20s ML poll. Nudge it
+     when the counts move so the numbers above the feed match the rows in it
+     rather than trailing them by up to twenty seconds. */
+  const s = a ? (a.influenced_actions + '/' + a.fallbacks) : '';
+  if (s !== atlasSig){ atlasSig = s; if (window.__mlRepaint) window.__mlRepaint(); }
+  const events = (a && a.events) || [];
+  if (!events.length){ box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  putHTML(box, events.map((e) =>
+    '<div class="r' + (e.influenced ? ' on' : '') + '">' +
+      '<time>' + esc(e.time) + '</time>' +
+      '<span class="lb">' + esc(e.label) + '</span>' +
+      '<span class="dt">' + esc(e.detail || '') + '</span>' +
+    '</div>').join(''));
+}
+
+/* ═══ SHIPMENTS ═══ */
+$('shipF').innerHTML = [['all','All'],['processing','Processing'],['updated','Updated'],
+  ['skipped','Skipped'],['partial','Partly updated'],['failed','Failed']]
+  .map((p) => '<button class="chip' + (p[0] === 'all' ? ' on' : '') + '" data-s="' + p[0] + '">' + p[1] + '</button>').join('');
+$('shipF').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-s]'); if (!b) return;
+  shipF = b.dataset.s;
+  $('shipF').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === b));
+  delete sig.ships; paintShips();
+});
+let shipT = 0;
+$('shipQ').addEventListener('input', (e) => {
+  clearTimeout(shipT);
+  shipT = setTimeout(() => { shipQ = e.target.value.toLowerCase(); delete sig.ships; paintShips(); }, 140);
+});
+function paintShips(){
+  if (!S) return;
+  if (activePage !== 'shipments' && sig.shipInit) return;
+  sig.shipInit = 1;
+  let rows = S.shipments;
+  if (shipF !== 'all') rows = rows.filter((r) => r.state === shipF);
+  if (shipQ) rows = rows.filter((r) =>
+    [r.reference, r.carrier, r.error, r.provider_status].join(' ').toLowerCase().includes(shipQ));
+  const key = shipF + '|' + shipQ + '|' + rows.map((r) => r.reference + r.state).join(',');
+  if (!changed('ships', key)) return;
+  putHTML($('shipRows'), rows.map((r) =>
+    '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
+    '<td>' + dash(r.carrier) + '</td>' + dtCell(r.internal_eta) +
+    '<td>' + dash(r.provider_status) + '</td>' + dtCell(r.provider_eta) +
+    dtCell(r.provider_ata, true) +
+    /* Attribution sits with the result, where an operator already looks to
+       find out what happened to a shipment — not in a column of its own. */
+    '<td>' + tag(r.state) + (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
+    '<td style="font-size:11.5px">' + dash(r.outcome) + '</td>' +
+    '<td class="n">' + ms(r.duration_ms) + '</td>' +
+    '<td><span class="err" title="' + esc(r.error || '') + '">' + dash(r.error) + '</span></td></tr>').join(''));
+  putHTML($('shipEmpty'), rows.length ? '' : empty('No shipments match',
+    S.shipments.length ? 'Clear the search or pick another filter.'
+      : 'Shipments appear as soon as the runner picks up the first Under Clearance row.'));
+}
+
+/* ═══ ANALYSIS ═══
+   Every figure is computed from the same shipment records the table shows, so
+   the CSV, the totals and the rows can never disagree. */
+['anState','anCarrier','anField','anGroup'].forEach((id) =>
+  $(id).addEventListener('change', () => { delete sig.an; paintAnalysis(); }));
+
+function analysisRows(){
+  const state = $('anState').value, carrier = $('anCarrier').value, field = $('anField').value;
+  return (S.shipments || []).filter((r) => {
+    if (state !== 'all' && r.state !== state) return false;
+    if (carrier !== 'all' && (r.carrier || 'Unknown') !== carrier) return false;
+    if (field === 'eta' && !has(r.provider_eta)) return false;
+    if (field === 'ata' && !has(r.provider_ata)) return false;
+    if (field === 'noeta' && has(r.provider_eta)) return false;
+    return true;
+  });
+}
+
+function paintAnalysis(){
+  if (!S) return;
+  if (activePage !== 'analysis' && sig.anInit) return;
+  sig.anInit = 1;
+
+  // Keep the carrier list in step with the run without losing the selection.
+  const carriers = Array.from(new Set((S.shipments || [])
+    .map((r) => r.carrier || 'Unknown'))).sort();
+  const sel = $('anCarrier');
+  if (sel._list !== carriers.join('|')){
+    sel._list = carriers.join('|');
+    const keep = sel.value;
+    sel.innerHTML = '<option value="all">All carriers</option>' +
+      carriers.map((c) => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+    if (carriers.indexOf(keep) >= 0 || keep === 'all') sel.value = keep;
+  }
+
+  const rows = analysisRows();
+  const key = [$('anState').value, $('anCarrier').value, $('anField').value,
+               $('anGroup').value, rows.length,
+               rows.map((r) => r.reference + r.state).join(',')].join('|');
+  if (!changed('an', key)) return;
+
+  put($('anCount'), rows.length + ' of ' + (S.shipments || []).length + ' shipments');
+
+  const withEta = rows.filter((r) => has(r.provider_eta)).length;
+  const withAta = rows.filter((r) => has(r.provider_ata)).length;
+  // A partial DID write a date to the Hub, so it counts here — otherwise this
+  // panel and the Overview KPI would disagree about the same run.
+  const written = rows.filter(
+    (r) => r.state === 'updated' || r.state === 'partial').length;
+  const timed = rows.filter((r) => r.duration_ms != null);
+  const avg = timed.length
+    ? Math.round(timed.reduce((a, r) => a + r.duration_ms, 0) / timed.length) : null;
+  const rate = rows.length ? Math.round(written / rows.length * 100) : null;
+
+  /* Same rule as the overview row: colour marks the exception, not every
+     tile. "Written to hub" is the outcome the page exists to report, and an
+     ATA is the notable fact about a shipment — those two are coloured. A
+     count of matching rows is a count. */
+  putHTML($('anStats'), [
+    {k:'Matching', v:rows.length, c:'var(--ink)'},
+    {k:'Written to hub', v:written, c:'var(--signal)'},
+    {k:'Carrier ETA found', v:withEta, c:'var(--ink)'},
+    {k:'Carrier ATA found', v:withAta, c:'var(--ice)'},
+    {k:'Success rate', v:rate == null ? '—' : rate + '%', c:'var(--ink)'},
+    {k:'Avg processing', v:avg == null ? '—' : ms(avg), c:'var(--ink)'}
+  ].map((s) => '<div class="stat"><div class="kpi-k">' + s.k + '</div><b style="--c:' +
+    s.c + '">' + s.v + '</b></div>').join(''));
+
+  const groupBy = $('anGroup').value;
+  const keyFor = (r) => ({
+    carrier: r.carrier || 'Unknown carrier',
+    provider: r.provider === 'QATAR' ? 'Qatar Airways Cargo' : (r.provider || 'Unknown'),
+    outcome: r.outcome || (r.state === 'updated' ? 'SUCCESS' : 'Unclassified'),
+    state: TAGS[r.state] || 'Unknown',
+    page: 'Hub page ' + (r.table_page == null ? '?' : r.table_page)
+  })[groupBy];
+
+  const groups = {};
+  rows.forEach((r) => {
+    const g = groups[keyFor(r)] || (groups[keyFor(r)] = {total:0, ok:0});
+    g.total++; if (r.state === 'updated' || r.state === 'partial') g.ok++;
+  });
+  const entries = Object.entries(groups).sort((a, b) => b[1].total - a[1].total);
+  const max = entries.length ? entries[0][1].total : 1;
+  putHTML($('anGroups'), entries.length
+    ? entries.map((e) =>
+        '<div class="row"><div class="a" title="' + esc(e[0]) + '">' + esc(e[0]) + '</div>' +
+        /* A bar's colour says how the group DID, not how big it is. All
+           written is healthy; none written wants attention; anything in
+           between is neutral. QATAR at 0/8 was rendering in the accent,
+           which read as "this one is special" rather than "nothing landed". */
+        '<div class="t"><i class="' + (e[1].ok === e[1].total ? 'ok'
+            : e[1].ok === 0 ? 'none' : 'part') +
+        '" style="width:' + (e[1].total / max * 100) + '%"></i></div>' +
+        '<div class="v">' + e[1].ok + '/' + e[1].total + '</div></div>').join('')
+    : empty('Nothing to group', 'Widen the filters above, or wait for the run to process shipments.'));
+
+  putHTML($('anRows'), rows.map((r) =>
+    '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
+    '<td>' + dash(r.carrier) + '</td>' + dtCell(r.provider_eta) +
+    dtCell(r.provider_ata, true) + '<td>' + tag(r.state) + '</td>' +
+    '<td style="font-size:12px">' + dash(r.coe_action || r.bu_action) +
+      (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
+    '<td class="n">' + ms(r.duration_ms) + '</td></tr>').join(''));
+  putHTML($('anEmpty'), rows.length ? '' : empty(
+    (S.shipments || []).length ? 'No shipments match these filters'
+                              : 'No shipments processed yet',
+    (S.shipments || []).length
+      ? 'This run has ' + (S.shipments || []).length + ' shipment(s) in total — '
+        + 'set Result to <code>All results</code> to see them.'
+      : 'The Analysis page fills in as the run processes shipments.'));
+  put($('dlNote'), 'The CSV contains exactly these ' + rows.length +
+    ' shipment(s), with every field the automation collected. Empty cells mean the ' +
+    'automation never had that value — nothing is filled in.');
+}
+
+$('dlBtn').addEventListener('click', () => {
+  // The server owns the CSV so the file matches the state, not the DOM.
+  window.location.href = '/api/export.csv?state=' + encodeURIComponent($('anState').value);
+});
+$('dlAll').addEventListener('click', () => {
+  window.location.href = '/api/export.csv?state=all';
+});
+
+/* ═══ EXCEPTIONS ═══ */
+function paintExc(){
+  if (activePage !== 'exceptions' && sig.excInit) return;
+  sig.excInit = 1;
+  if (!changed('exc', S.exceptions.length + ':' + (S.exceptions[0] || {}).message)) return;
+  put($('excN'), S.exceptions.length ? S.exceptions.length + ' open' : '');
+  putHTML($('excList'), S.exceptions.length
+    ? S.exceptions.slice(0, 100).map((x) => '<div class="exc ' + x.severity + '"><div class="exc-i">' +
+        (x.severity === 'warning' ? '!' : '✕') + '</div><div><div class="exc-m">' + esc(x.message) +
+        '</div><div class="exc-d">' + (x.reference ? esc(x.reference) + ' · ' : '') +
+        (x.outcome ? esc(x.outcome) + ' · ' : '') +
+        (x.system ? esc(sysName(x.system)) + ' · ' : '') + dash(x.step) +
+        '</div></div><div class="exc-t">' + esc(x.time) + '</div></div>').join('')
+    : empty('No exceptions', 'Skipped and failed shipments land here with the carrier, step and reason.'));
+}
+
+/* ═══ LOGS ═══ */
+document.querySelectorAll('[data-lv]').forEach((b) => b.addEventListener('click', () => {
+  logLevel = b.dataset.lv;
+  document.querySelectorAll('[data-lv]').forEach((x) => x.classList.toggle('on', x === b));
+  delete sig.logs; paintLogs();
+}));
+let logT = 0;
+$('logQ').addEventListener('input', (e) => {
+  clearTimeout(logT);
+  logT = setTimeout(() => { logQ = e.target.value.toLowerCase(); delete sig.logs; paintLogs(); }, 140);
+});
+function paintLogs(){
+  if (!S) return;
+  if (activePage !== 'logs' && sig.logInit) return;
+  sig.logInit = 1;
+  let rows = S.logs;
+  if (logLevel !== 'all') rows = rows.filter((l) => l.level === logLevel);
+  if (logQ) rows = rows.filter((l) => l.message.toLowerCase().includes(logQ));
+  const shown = rows.slice(0, 200);
+  if (!changed('logs', logLevel + '|' + logQ + '|' + rows.length + '|' + (shown[0] || {}).id)) return;
+  put($('logN'), rows.length + ' lines' + (rows.length > 200 ? ' (newest 200 shown)' : ''));
+  putHTML($('logList'), shown.length
+    ? shown.map((l) => '<div class="log ' + l.level + '"><time>' + esc(l.time) + '</time><b>' +
+        l.level.toUpperCase() + '</b><p>' + esc(l.message) + '</p></div>').join('')
+    : empty('Nothing logged yet', 'Every line the automation writes appears here in real time.'));
+}
+
+/* ═══ SETTINGS ═══ */
+function paintSettings(){
+  if (activePage !== 'settings' && sig.setInit) return;
+  sig.setInit = 1;
+  const r = S.run;
+  if (!changed('settings', JSON.stringify(r))) return;
+  const rows = [
+    ['Hub status filter', r.target_status],
+    ['Mode', r.dry_run === true ? 'Dry run — dates filled but not saved'
+      : r.dry_run === false ? 'Live — dates saved to the hub' : null],
+    ['Max shipments per run', r.max_records], ['Max hub list pages', r.max_pages],
+    ['Run log file', r.log_file], ['Results file', r.results_file],
+    ['Run started', r.started_at ? r.started_at.replace('T', ' ').slice(0, 19) : null],
+    ['Run finished', r.finished_at ? r.finished_at.replace('T', ' ').slice(0, 19) : null]
+  ];
+  putHTML($('settings'), rows.map((p) =>
+    '<div class="row"><div class="a" style="width:196px">' + p[0] +
+    '</div><div style="flex:1;font-family:var(--mono);font-size:12px;color:' +
+    (p[1] == null ? 'var(--faint)' : 'var(--ink)') + ';word-break:break-all">' +
+    dash(p[1]) + '</div></div>').join(''));
+}
+
+/* ═══ TRANSPORT ═══ */
+let queued = false, lastPaint = 0;
+const MIN_GAP = 140;
+/* The stream leaves out the shipments and the exceptions when they have not
+   changed, naming them in `unchanged` instead — they are 68% of the payload
+   and re-sending them on every log line cost 16.1 MB/min of parsing. Carry
+   the previous values across when a frame says it omitted them. A frame that
+   omits a key WITHOUT naming it stays a replacement, so a genuinely empty
+   list still clears the table. */
+function schedule(state){
+  if (state && state.unchanged && S){
+    for (const key of state.unchanged){
+      if (!(key in state) && (key in S)) state[key] = S[key];
+    }
+  }
+  S = state;
+  if (queued) return;
+  queued = true;
+  requestAnimationFrame(function frame(){
+    queued = false;
+    if (document.hidden) return;
+    const now = performance.now();
+    if (now - lastPaint < MIN_GAP){
+      queued = true;
+      setTimeout(() => requestAnimationFrame(frame), MIN_GAP - (now - lastPaint));
+      return;
+    }
+    lastPaint = now;
+    try { paint(); } catch (err) { console.error('paint', err); }
+  });
+}
+/* ═══ ATLAS RECOVERY ═══
+   Renders ONLY what the bridge recorded. There is no default plan, no
+   assumed confidence and no invented outcome: an attempt with no score
+   shows no score, and the panel stays hidden until a real error exists.
+
+   `atlas_selected` is the one flag that decides the wording. When it is
+   false ATLAS ranked the options and the deterministic order is what ran,
+   and the panel says WOULD TRY rather than implying ATLAS acted. */
+function paintRecovery(){
+  const box = $('rcv');
+  if (!box) return;
+  const r = (typeof S !== 'undefined' && S && S.recovery) || null;
+  if (!r){ box.hidden = true; box.innerHTML = ''; return; }
+  const RESULT = {SUCCESS:'ok', FAILED:'no', RUNNING:'go', DONE:'go'};
+  const attempts = (r.attempts || []).map((a) =>
+    '<div class="rcv-a"><span class="rcv-n">' + esc(String(a.index)) + '/' +
+    esc(String(a.total)) + '</span><span class="rcv-m">' + esc(a.action) +
+    '</span><span class="rcv-c">' +
+    (a.confidence == null ? '' : Number(a.confidence).toFixed(2)) +
+    '</span><span class="rcv-r ' + (RESULT[a.result] || '') + '">' +
+    esc(a.result || '') + '</span></div>').join('');
+  /* The plan is shown only while nothing has been tried yet — once there are
+     attempts, what happened matters more than what was intended. */
+  const plan = (!attempts && (r.plan || []).length)
+    ? (r.plan || []).map((p, i) =>
+        '<div class="rcv-a"><span class="rcv-n">' + (i + 1) +
+        '</span><span class="rcv-m">' + esc(p.action) +
+        '</span><span class="rcv-c">' +
+        (p.confidence == null ? '' : Number(p.confidence).toFixed(2)) +
+        '</span></div>').join('')
+    : '';
+  /* Diagnosis, and only from what the runtime observed. Each block is
+     omitted entirely when its source is empty — an absent diagnosis reads as
+     absent, never as a confident one. */
+  const evidence = (r.evidence || []).length
+    ? '<div class="rcv-d"><b>Evidence</b></div><ul class="rcv-ev">' +
+      (r.evidence || []).map((e) => '<li>' + esc(e) + '</li>').join('') + '</ul>'
+    : '';
+  const hypos = (r.hypotheses || []).length
+    ? '<div class="rcv-d"><b>Likely cause</b></div>' +
+      (r.hypotheses || []).slice(0, 3).map((h) =>
+        '<div class="rcv-a"><span class="rcv-m">' + esc(h.cause) +
+        '</span><span class="rcv-c">' +
+        (h.confidence == null ? '' : Number(h.confidence).toFixed(2)) +
+        '</span></div>').join('')
+    : '';
+  const why = r.why_first
+    ? '<div class="rcv-why">First choice: ' + esc(r.why_first) + '</div>' : '';
+  /* One sentence from failure memory. During the collection phase the honest
+     answer is "No verified recovery history for this failure signature." and
+     it is shown, not hidden — an absent history is information. */
+  const history = r.history
+    ? '<div class="rcv-o">History: ' + esc(r.history) + '</div>' : '';
+  const willVerify = r.verifies
+    ? '<div class="rcv-o">Will verify: <b>' + esc(r.verifies) + '</b></div>' : '';
+  const verified = r.verified === true ? 'PASSED'
+                 : r.verified === false ? 'FAILED' : null;
+  let outcome = '';
+  if (r.status === 'RECOVERED')
+    outcome = 'Outcome: recovered, automation continued.';
+  else if (r.status === 'EXHAUSTED')
+    outcome = 'Outcome: no safe recovery succeeded — '
+            + esc(r.reason || 'the deterministic outcome stands') + '.';
+  box.innerHTML =
+    '<div class="rcv-h"><span class="rcv-k">ATLAS recovery</span>' +
+    (r.checkpoint
+      ? '<span class="rcv-cp">human checkpoint</span>'
+      : r.atlas_selected
+        ? ''
+        : '<span class="rcv-shadow">would try — shadow</span>') +
+    '</div>' +
+    '<div class="rcv-e">' + esc(r.message || r.error_class || '') + '</div>' +
+    evidence + hypos +
+    (r.checkpoint
+      ? '<div class="rcv-o">Stopped: ' + esc(r.checkpoint) + '</div>'
+      : (plan + attempts + why + history + (attempts ? '' : willVerify) +
+         (verified ? '<div class="rcv-o">Verification: <b>' + verified +
+                     '</b></div>' : '') +
+         (outcome ? '<div class="rcv-o">' + outcome + '</div>' : '')));
+  box.hidden = false;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S) paint(true); });
+function connect(){
+  try {
+    const s = new EventSource('/api/stream');
+    s.addEventListener('state', (e) => { try { schedule(JSON.parse(e.data)); } catch (err) {} });
+    s.onerror = () => { try { s.close(); } catch (e) {} setTimeout(poll, 1500); };
+  } catch (err) { poll(); }
+}
+function poll(){
+  fetch('/api/state').then((r) => r.json()).then(schedule).catch(() => {});
+  setTimeout(poll, 2000);
+}
+connect();
+setInterval(() => {
+  if (S && S.run.status === 'running' && S.run.started_at && !document.hidden)
+    put($('cRun'), clock(Math.floor((Date.now() - new Date(S.run.started_at).getTime()) / 1000)));
+}, 1000);
+
+/* ═══ RUN CONTROL ═══
+   The buttons only appear when control has been enabled in update_eta.py.
+   Nothing here touches the automation directly — each click posts a request
+   that the run picks up between shipments, never mid-write. */
+function sendControl(action, reference){
+  return fetch('/api/control', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action: action, reference: reference || ''})
+  }).then((r) => r.json());
+}
+function paintControl(){
+  const c = (S && S.control) || {};
+  $('ctlbar').classList.toggle('on', !!c.enabled);
+  if (!c.enabled) return;
+
+  // Under the supervisor the dashboard outlives the run, so Start is offered
+  // when nothing is running. In-process there is nothing to start.
+  const supervised = !!c.supervised;
+  const running = supervised ? !!c.running : (S.run.status === 'running');
+  const pausing = !!c.paused, stopping = !!c.stopping;
+
+  $('btnStart').style.display = supervised ? '' : 'none';
+  $('btnStart').disabled = running;
+  put($('btnStart'), running ? 'Running' : 'Start run');
+
+  $('btnPause').style.display = running ? '' : 'none';
+  $('btnStop').style.display = running ? '' : 'none';
+  put($('btnPause'), stopping ? 'Stopping…' : (pausing ? 'Resume' : 'Pause'));
+  $('btnPause').className = 'cbtn ' + (pausing ? 'go' : 'warn');
+  $('btnPause').disabled = stopping;
+  $('btnStop').disabled = stopping;
+  const queued = (c.queued || []).length;
+  put($('btnStop'), stopping ? 'Stopping after this shipment'
+    : (queued ? 'Stop  ·  ' + queued + ' queued' : 'Stop after this shipment'));
+}
+$('btnStart').addEventListener('click', () => {
+  put($('btnStart'), 'Starting…');
+  sendControl('start').then((r) => {
+    if (!r.accepted) window.alert(r.message);
+    paintControl();
+  });
+});
+$('btnPause').addEventListener('click', () => {
+  const paused = S && S.control && S.control.paused;
+  sendControl(paused ? 'resume' : 'pause').then(paintControl);
+});
+$('btnStop').addEventListener('click', () => {
+  if (!window.confirm('Stop the run after the current shipment finishes?\n\n'
+      + 'Everything already written to the Hub is kept.')) return;
+  sendControl('stop').then(paintControl);
+});
+
+/* ═══ SHARE LINK ═══
+   127.0.0.1 means "this computer" on whichever machine opens it, so pasting
+   that link elsewhere always fails. This copies the LAN link instead. */
+(function share(){
+  let links = [];
+  fetch('/api/share').then((r) => r.json()).then((d) => {
+    if (!d.shared || !d.links || !d.links.length) return;
+    links = d.links;
+    $('shareBtn').classList.add('on');
+    $('shareBtn').title = 'Copy: ' + links[0];
+  }).catch(() => {});
+
+  $('shareBtn').addEventListener('click', () => {
+    if (!links.length) return;
+    // Prefer the hostname link: it survives DHCP handing out a new IP, and
+    // it is what a colleague can retype from memory.
+    const link = links[0];
+    const done = () => {
+      put($('shareTxt'), 'Copied');
+      setTimeout(() => put($('shareTxt'), 'Copy share link'), 1800);
+    };
+    if (navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(link).then(done).catch(() => window.prompt('Copy this link:', link));
+    } else {
+      // Plain HTTP on a LAN is not a secure context, so the async API is
+      // unavailable — fall back to a selectable prompt.
+      window.prompt('Send this link to colleagues:', link);
+      done();
+    }
+  });
+})();
+
+/* ═══ CHAT ═══
+   Typing indicator, then the answer streams in character by character with a
+   blinking cursor. Suggestions come from the backend and are grounded in the
+   run's own data, so a chip can never lead somewhere the assistant refuses. */
+(function chat(){
+  const body = $('chatBody'), input = $('chatIn');
+  let busy = false, lastReference = null;
+
+  const OPENERS = [
+    ['How is it going?', 'How is it going?'],
+    ['Which shipments failed?', 'Which shipments failed?'],
+    ['Compare the carriers', 'Compare the carriers'],
+    ['Download the data', 'Download the data']
+  ];
+
+  function chips(list){
+    $('chatSug').innerHTML = (list || []).map((q) =>
+      '<button class="chip" data-q="' + esc(q) + '">' + esc(q) + '</button>').join('');
+  }
+  $('chatSug').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-q]');
+    if (b){ input.value = b.dataset.q; send(); }
+  });
+
+  /* Feedback is MATERIAL for a later, deliberate training pass — never a
+     live edit to a model. A thumbs-down changes nothing about the next
+     answer; it changes what a human has to look at. */
+  function feedbackRow(bubbleEl, question, reply){
+    const row = document.createElement('div');
+    row.className = 'fb';
+    row.innerHTML = '<span class="fb-t">Useful?</span>'
+      + '<button data-v="helpful" title="Helpful">&#128077;</button>'
+      + '<button data-v="not_helpful" title="Not helpful">&#128078;</button>';
+    bubbleEl.appendChild(row);
+
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-v]');
+      if (!btn || row.dataset.sent) return;
+      const verdict = btn.dataset.v;
+      row.querySelectorAll('button').forEach((b) => b.classList.remove('picked'));
+      btn.classList.add('picked');
+
+      const post = (correction) => {
+        row.dataset.sent = '1';
+        fetch('/api/feedback', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            question: question,
+            answer: reply.answer || '',
+            verdict: verdict,
+            correction: correction || '',
+            sources: reply.sources || reply.data_sources || [],
+            confidence: (reply.confidence === undefined ? null : reply.confidence),
+            intent: reply.intent || '',
+            reference: reply.reference || ''
+          })
+        }).then((r) => r.json()).then((d) => {
+          row.innerHTML = '<span class="fb-done">' +
+            (d.message || 'Recorded.') + '</span>';
+        }).catch(() => {
+          row.innerHTML = '<span class="fb-t">Could not record that.</span>';
+        });
+      };
+
+      if (verdict === 'not_helpful'){
+        // Ask what was wrong. A correction is worth far more than a count.
+        const box = document.createElement('input');
+        box.className = 'fb-in';
+        box.placeholder = 'What should it have said? (optional — press Enter)';
+        bubbleEl.appendChild(box);
+        box.focus();
+        let sent = false;
+        const finish = () => { if (sent) return; sent = true;
+          const text = box.value; box.remove(); post(text); };
+        box.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter'){ ev.preventDefault(); finish(); }
+        });
+        box.addEventListener('blur', finish);
+      } else {
+        post('');
+      }
+    });
+  }
+
+  function bubble(who){
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + who;
+    wrap.innerHTML = who === 'me'
+      ? '<div class="m-av">You</div>'
+      : '<div class="m-av"><svg><use href="#ct-mark"/></svg></div>';
+    const b = document.createElement('div');
+    b.className = 'bub';
+    wrap.appendChild(b);
+    body.appendChild(wrap);
+    body.scrollTop = body.scrollHeight;
+    return b;
+  }
+  const fmt = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                           .replace(/`(.+?)`/g, '<code>$1</code>');
+
+  function typeOut(el, text){
+    // ~9ms/char, capped so a long answer never feels slow.
+    return new Promise((done) => {
+      const total = Math.min(text.length * 9, 1100);
+      const step = Math.max(1, Math.ceil(text.length / (total / 16)));
+      let i = 0;
+      (function tick(){
+        i = Math.min(text.length, i + step);
+        el.innerHTML = fmt(text.slice(0, i)) + (i < text.length ? '<span class="cur"></span>' : '');
+        body.scrollTop = body.scrollHeight;
+        if (i < text.length) setTimeout(tick, 16); else done();
+      })();
+    });
+  }
+
+  const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
+
+  function downloads(list){
+    const row = document.createElement('div');
+    row.className = 'dl-row';
+    row.style.marginLeft = '39px';
+    row.innerHTML = list.map((d) =>
+      '<a class="dl" href="' + esc(d.url) + '">' + DL_ICON + esc(d.label) + '</a>').join('');
+    body.appendChild(row);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function card(spec){
+    if (!spec || spec.type !== 'shipment') return;
+    const el = document.createElement('div');
+    el.className = 'mini';
+    el.innerHTML = '<div class="mini-h"><span class="mini-r">' + esc(spec.reference) +
+      '</span>' + tag(spec.state) + '</div><div class="mini-b">' +
+      spec.rows.map((r) => '<div class="mini-row"><span class="mini-k">' + esc(r[0]) +
+        '</span><span class="mini-v">' + esc(r[1]) + '</span></div>').join('') + '</div>';
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function send(){
+    const q = input.value.trim();
+    if (!q || busy) return;
+    input.value = ''; input.style.height = 'auto';
+    busy = true;
+    const mine = bubble('me'); mine.innerHTML = fmt(q);
+
+    const wait = document.createElement('div');
+    wait.className = 'msg';
+    wait.innerHTML = '<div class="m-av"><svg><use href="#ct-mark"/></svg></div>' +
+      '<div class="td-b"><span></span><span></span><span></span></div>';
+    body.appendChild(wait);
+    body.scrollTop = body.scrollHeight;
+    $('chTy').classList.add('show');
+
+    fetch('/api/ask', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: q, context: {reference: lastReference}})
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        wait.remove(); $('chTy').classList.remove('show');
+        const b = bubble('bot');
+        return typeOut(b, d.answer || 'No answer came back.').then(() => {
+          if (d.card) card(d.card);
+          if (d.downloads && d.downloads.length) downloads(d.downloads);
+          if (d.reference) lastReference = d.reference;
+          feedbackRow(b, q, d);
+          chips(d.suggestions && d.suggestions.length
+            ? d.suggestions : OPENERS.map((o) => o[1]));
+        });
+      })
+      .catch(() => {
+        wait.remove(); $('chTy').classList.remove('show');
+        bubble('bot').innerHTML = fmt(
+          'I could not reach the Control Tower backend, so I have no data to answer from.');
+      })
+      .finally(() => { busy = false; body.scrollTop = body.scrollHeight; });
+  }
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  $('chatSend').addEventListener('click', send);
+
+  $('fab').addEventListener('click', () => {
+    $('chat').classList.add('on'); $('fab').classList.add('hide');
+    if (!body.children.length){
+      const b = bubble('bot');
+      typeOut(b, "Hello. I read this run's data and answer from it — nothing else.\n\n"
+                 + "Ask about a shipment, how the run is going, how the carriers "
+                 + "compare, or say \u201cdownload the data\u201d. If I don't have "
+                 + "something, I'll tell you rather than guess.");
+      chips(OPENERS.map((o) => o[1]));
+    }
+    input.focus();
+  });
+  $('chatX').addEventListener('click', () => {
+    $('chat').classList.remove('on'); $('fab').classList.remove('hide');
+  });
+})();
+
+</script>
+</body>
+</html>
