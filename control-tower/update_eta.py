@@ -5465,7 +5465,18 @@ def find_portal_input(page, placeholder, strict=False, timeout_ms=None):
         page.locator("input[name*='awb' i], input[id*='awb' i]"),
     ]
     if not strict:
-        candidates.append(page.locator("input[type='text']:visible"))
+        # The catch-all, minus the flight status card. myCargo puts a second
+        # form beside the air waybill one — flight number, origin,
+        # destination, date — and "any visible text box" was happy to pick
+        # one of those, type an air waybill into it and press Enter. That is
+        # what put "Field is required" and "Please select a valid date" on
+        # the operator's screen, and it made the run report "no result" for a
+        # shipment that was never looked up.
+        candidates.append(page.locator(
+            "input[type='text']:visible"
+            ":not([placeholder*='flight' i]):not([placeholder*='origin' i])"
+            ":not([placeholder*='destination' i]):not([placeholder*='date' i])"
+            ":not([name*='flight' i]):not([id*='flight' i])"))
     # first_visible spends its timeout PER candidate, so a polled probe has
     # to be given a small one or each poll costs seconds.
     return first_visible(candidates,
@@ -5635,7 +5646,33 @@ def wait_until_enabled(page, locator, max_ms, description):
     return False
 
 
+def is_flight_status_field(field):
+    """
+    True when this input belongs to the flight status card.
+
+    Checked before anything is typed or submitted. The two forms sit side by
+    side and only one of them answers questions about air waybills.
+    """
+    for attribute in ("placeholder", "name", "id", "aria-label",
+                      "formcontrolname"):
+        try:
+            value = field.get_attribute(attribute, timeout=PROBE_TIMEOUT_MS)
+        except Exception:
+            continue
+        if value and FLIGHT_FIELD_WORDS.search(value):
+            return True
+    return False
+
+
 def submit_portal_awb(page, field, config, tracking_number):
+    if is_flight_status_field(field):
+        save_page_text(page, tracking_number,
+                       config["label"].lower() + "_wrong_form")
+        raise SkipShipment(
+            "The only box found on the {0} page belongs to the flight status "
+            "form, not to Track a shipment. Nothing was typed and nothing was "
+            "submitted.".format(config["label"]))
+
     formatted = portal_awb(tracking_number, config.get("dashed", True))
     landed = type_into(field, formatted, f"the {config['label']} air waybill box")
 
@@ -5648,9 +5685,14 @@ def submit_portal_awb(page, field, config, tracking_number):
 
     write_log(f"{config['label']} air waybill accepted: {landed}")
 
+    # `input[type='submit']` used to be in here unqualified, which on a page
+    # with two forms is a coin toss. Both fallbacks are now scoped to the
+    # form the air waybill box is actually in.
+    own_form = field.locator("xpath=ancestor::form[1]")
     button = first_visible(
         [page.get_by_role("button", name=re.compile(config["button"], re.I)),
-         page.locator("button:has-text('Track'), input[type='submit']")],
+         own_form.get_by_role("button", name=re.compile(r"Track", re.I)),
+         own_form.locator("input[type='submit']")],
         PROBE_TIMEOUT_MS * 3,
     )
 
@@ -5799,11 +5841,465 @@ def _read_afkl_page(page, provider):
     if ata and status == "Estimated arrival":
         status = "Arrived"
 
+    # The last leg is carried out with the result. It is what the flight
+    # status form on the same page needs, and reading it here costs nothing:
+    # the text is already in hand and the caller no longer has the page.
+    leg = afkl_last_leg(text)
     write_log(
-        "AFKL myCargo: destination={0} ETA={1} ATA={2} status={3}".format(
-            destination or "unknown", eta, ata, status))
+        "AFKL myCargo: destination={0} ETA={1} ATA={2} status={3}{4}".format(
+            destination or "unknown", eta, ata, status,
+            " last leg={0} {1}-{2} {3}".format(
+                leg["flight"], leg["origin"], leg["destination"],
+                leg["date"]) if leg else ""))
     return {"provider": provider, "tracking_status": status,
-            "eta": eta, "ata": ata}
+            "eta": eta, "ata": ata, "flight_leg": leg}
+
+
+# ============================================================
+# AFKL — CHECK FLIGHT STATUS
+# ============================================================
+# The myCargo landing page carries TWO forms side by side, and they answer
+# two different questions.
+#
+#   left   "Track a shipment"     AWB starts with 074 or 057   -> the SHIPMENT
+#   right  "Check flight status"  flight number and a date     -> the AIRCRAFT
+#
+# The air waybill form is the source of truth and stays that way. The flight
+# form is a second opinion, used when the shipment page names the leg the
+# shipment is booked on but prints no arrival for it. The aircraft still has
+# an arrival, and reading it beats reporting "no date".
+#
+# What comes back is filed as an ESTIMATE for the shipment and never as its
+# actual arrival, however definite the flight page is. A flight that landed
+# proves the aircraft landed; a shipment can be offloaded, short-shipped or
+# left on the ramp and its air waybill will still name that flight. Only the
+# shipment's own record can say the shipment arrived, so an ATA is only ever
+# taken from the air waybill page. The source is recorded on the result and
+# in the log, so no date is ever attributed to the shipment page that did not
+# come from it.
+
+AFKL_FLIGHT_STATUS = os.environ.get(
+    "AFKL_FLIGHT_STATUS", "1").strip().lower() not in ("0", "false", "no", "off")
+FLIGHT_STATUS_FORM_MS = 30000
+FLIGHT_STATUS_RESULT_MS = 25000
+# The card answers for AF, KL and MP (Martinair) — the group's own flights.
+# A leg on anybody else is not asked about, because the honest answer to
+# "when does that arrive" from this form is nothing at all.
+AFKL_FLIGHT_NUMBER = re.compile(r"\b(AF|KL|MP)\s?(\d{3,4})\b")
+FLIGHT_DATE_FORMATS = ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %b %Y",
+                       "%d.%m.%Y", "%m/%d/%Y")
+# Anything on the flight card. The air waybill matcher excludes these, so one
+# form can never answer for the other.
+FLIGHT_FIELD_WORDS = re.compile(r"flight|origin|destination|date", re.I)
+
+
+def afkl_last_leg(text):
+    """
+    The last flight leg printed on the shipment page, or None.
+
+    Reads lines shaped like the flight schedule prints them:
+
+        CDG - JRO   AF0877   04 SEP 10:15 - 04 SEP 20:15
+
+    Returns {"flight", "origin", "destination", "date", "line"}. The date is
+    the leg's DEPARTURE date, because that is the date the flight status form
+    asks for — it wants the day the flight left, not the day it lands.
+    """
+    destination = afkl_destination(text)
+    legs = []
+    for line in (text or "").splitlines():
+        stripped = " ".join(line.split())
+        flight = AFKL_FLIGHT_NUMBER.search(stripped)
+        stations = re.search(r"\b([A-Z]{3})\s*-\s*([A-Z]{3})\b", stripped)
+        if not flight or not stations:
+            continue
+        dates = extract_all_dates(stripped, allow_yearless=True)
+        legs.append({
+            "flight": "{0}{1}".format(flight.group(1).upper(), flight.group(2)),
+            "origin": stations.group(1).upper(),
+            "destination": stations.group(2).upper(),
+            "date": dates[0][1] if dates else None,
+            "line": stripped[:160],
+        })
+    if not legs:
+        return None
+    # The leg that ends where the air waybill ends is the one that matters;
+    # without a destination, the last leg printed is the best available.
+    if destination:
+        for leg in reversed(legs):
+            if leg["destination"] == destination:
+                return leg
+    return legs[-1]
+
+
+def find_flight_status_fields(page):
+    """
+    The three controls of the "Check flight status" card, or None.
+
+    Each is matched by its own placeholder or by the button's exact name, so
+    nothing here can reach the air waybill box on the other side of the page.
+    Origin and destination are left alone deliberately: the card marks only
+    the flight number and the date as required, and a wrong airport turns a
+    real flight into "no results".
+    """
+    number = first_visible([
+        page.get_by_placeholder(re.compile(r"flight\s*number", re.I)),
+        page.locator("input[formcontrolname*='flight' i], "
+                     "input[name*='flight' i], input[id*='flight' i]"),
+    ], PROBE_TIMEOUT_MS * 2)
+    if number is None:
+        return None
+
+    date = first_visible([
+        page.get_by_placeholder(re.compile(r"select\s+a\s+date", re.I)),
+        page.get_by_placeholder(re.compile(r"^\s*date\s*$", re.I)),
+        page.locator("input[formcontrolname*='date' i], "
+                     "input[name*='date' i], input[id*='date' i]"),
+    ], PROBE_TIMEOUT_MS * 2)
+
+    button = first_visible([
+        page.get_by_role("button", name=re.compile(
+            r"^\s*Check\s+flight\s+status\s*$", re.I)),
+        page.locator("button:text-matches('Check\\s+flight\\s+status', 'i')"),
+    ], PROBE_TIMEOUT_MS * 2)
+
+    if date is None or button is None:
+        return None
+    return {"number": number, "date": date, "button": button}
+
+
+def flight_date_rejected(page):
+    """True while the card is showing 'Please select a valid date'."""
+    try:
+        return page.get_by_text(
+            re.compile(r"Please\s+select\s+a\s+valid\s+date", re.I)
+        ).first.is_visible(timeout=PROBE_TIMEOUT_MS)
+    except Exception:
+        return False
+
+
+def flight_number_rejected(page):
+    """True while the card is showing its required-field error."""
+    try:
+        return page.get_by_text(
+            re.compile(r"Field\s+is\s+required", re.I)
+        ).first.is_visible(timeout=PROBE_TIMEOUT_MS)
+    except Exception:
+        return False
+
+
+def flight_date_value(when):
+    """
+    A datetime from whatever the leg carried, or None.
+
+    Dates travel through this automation as dd/mm/yyyy strings, which is what
+    the reader produces; a datetime is accepted too so this can be called
+    directly.
+    """
+    if isinstance(when, datetime):
+        return when
+    for pattern in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(str(when).strip(), pattern)
+        except Exception:
+            continue
+    return None
+
+
+def set_flight_date(page, field, when, label):
+    """
+    Put a date into the picker and CONFIRM the card accepted it.
+
+    The card rejects what it does not like with "Please select a valid date",
+    and it says so without moving, so a typed value that looks fine in the box
+    can still be refused. Each format is therefore checked against that
+    message rather than against the box. When none is accepted the calendar is
+    opened and the day is clicked, which is what the control is built for.
+    """
+    when = flight_date_value(when)
+    if when is None:
+        write_log("{0}: the leg carried no date that could be read.".format(label))
+        return False
+    for pattern in FLIGHT_DATE_FORMATS:
+        text = when.strftime(pattern)
+        landed = type_into(field, text, "the flight date")
+        # Leave the field, the way a person does. A reactive form marks the
+        # control touched on blur and only then prints "Please select a
+        # valid date", so a format checked while the cursor is still in the
+        # box always looks accepted — and is refused on submit instead.
+        try:
+            field.evaluate("el => el.blur()")
+        except Exception as error:
+            note_suppressed("leaving the flight date box", error)
+        if landed and not flight_date_rejected(page):
+            write_log("{0}: flight date accepted as {1}.".format(label, landed))
+            return True
+    write_log("{0}: no typed date format was accepted; opening the calendar."
+              .format(label))
+    return pick_flight_date_from_calendar(page, field, when, label)
+
+
+def pick_flight_date_from_calendar(page, field, when, label):
+    """Open the date picker, walk to the month, click the day. Bounded."""
+    when = flight_date_value(when)
+    if when is None:
+        return False
+    try:
+        field.click(timeout=CLICK_TIMEOUT_MS)
+    except Exception as error:
+        note_suppressed("opening the flight date calendar", error)
+        return False
+
+    wanted = re.compile(r"{0}\.?\s+{1}".format(
+        when.strftime("%B")[:3], when.strftime("%Y")), re.I)
+    for _ in range(13):
+        try:
+            if page.get_by_text(wanted).first.is_visible(
+                    timeout=PROBE_TIMEOUT_MS):
+                break
+        except Exception:
+            pass
+        forward = first_visible([
+            page.get_by_role("button", name=re.compile(
+                r"next\s+month|next", re.I)),
+            page.locator("[aria-label*='next' i]"),
+            page.locator("button.next, .next-month, [class*='next' i]"),
+        ], PROBE_TIMEOUT_MS)
+        if forward is None:
+            break
+        try:
+            forward.click(timeout=CLICK_TIMEOUT_MS)
+        except Exception as error:
+            note_suppressed("moving the calendar forward a month", error)
+            break
+
+    day = str(when.day)
+    cell = first_visible([
+        page.get_by_role("gridcell", name=day, exact=True),
+        page.locator("td:not([class*='disabled' i]):text-is('{0}')".format(day)),
+        page.locator("button:not([disabled]):text-is('{0}')".format(day)),
+        page.get_by_role("gridcell", name=day.zfill(2), exact=True),
+    ], PROBE_TIMEOUT_MS * 2)
+    if cell is None:
+        write_log("{0}: the calendar never offered day {1}.".format(label, day))
+        return False
+    try:
+        cell.click(timeout=CLICK_TIMEOUT_MS)
+    except Exception as error:
+        note_suppressed("clicking the flight date", error)
+        return False
+    return not flight_date_rejected(page)
+
+
+def read_flight_status(page, flight, label):
+    """
+    Read the arrival the card printed, or None.
+
+    Nothing is inferred. A line has to mention arrival and carry a date before
+    it is read at all, and "actual" and "scheduled" are kept apart because the
+    difference is the whole point of asking.
+    """
+    text = _page_text(page)
+    if len(text.strip()) < 120:
+        return None
+    if _matches(text, GENERIC_NO_RESULT) or re.search(
+            r"no\s+(?:flight|result)s?\s+(?:found|available)", text, re.I):
+        write_log("{0}: the flight status card reported nothing for {1}."
+                  .format(label, flight))
+        return None
+
+    scheduled = actual = None
+    for line in text.splitlines():
+        stripped = " ".join(line.split())
+        if not re.search(r"arriv|\bSTA\b|\bATA\b", stripped, re.I):
+            continue
+        dates = extract_all_dates(stripped, allow_yearless=True)
+        if not dates:
+            continue
+        value = dates[-1][1]
+        if re.search(r"\bactual\b|\bATA\b|\blanded\b|\barrived\b",
+                     stripped, re.I):
+            actual = actual or value
+        else:
+            scheduled = scheduled or value
+
+    if scheduled is None and actual is None:
+        return None
+    found = {"flight": flight, "scheduled_arrival": scheduled,
+             "actual_arrival": actual}
+    write_log("{0}: flight {1} — scheduled arrival {2}, actual arrival {3}."
+              .format(label, flight, scheduled, actual))
+    return found
+
+
+def await_flight_status(page, flight, label):
+    """
+    Wait for the card to answer. Returns (result, rejection).
+
+    `rejection` is "date", "flight" or None, so the caller can tell a card
+    that refused the input from a card that simply had nothing to say.
+    """
+    deadline = time.time() + (FLIGHT_STATUS_RESULT_MS / 1000.0)
+    while True:
+        if flight_date_rejected(page):
+            write_log("{0}: the card rejected the date.".format(label))
+            return None, "date"
+        if flight_number_rejected(page):
+            write_log("{0}: the card rejected the flight number.".format(label))
+            return None, "flight"
+        found = read_flight_status(page, flight, label)
+        if found:
+            return found, None
+        if time.time() >= deadline:
+            return None, None
+        page.wait_for_timeout(min(1000, max(
+            1, int((deadline - time.time()) * 1000))))
+
+
+def check_afkl_flight_status(page, leg, label="AFKL myCargo"):
+    """
+    Ask the "Check flight status" card when a flight arrives. Never raises.
+
+    Runs on a page of its own so the shipment page the caller is reading is
+    not navigated away from, and that page is closed on every path out — the
+    ladder's context leak was the same mistake and it cost the whole server.
+    """
+    if not AFKL_FLIGHT_STATUS:
+        return None
+    if not leg or not leg.get("flight") or not leg.get("date"):
+        write_log("{0}: no flight number and date on the air waybill, so the "
+                  "flight status card has nothing to be asked."
+                  .format(label))
+        return None
+    if not AFKL_FLIGHT_NUMBER.match(leg["flight"]):
+        write_log("{0}: {1} is not an AF, KL or MP flight; the card does not "
+                  "answer for it.".format(label, leg["flight"]))
+        return None
+
+    url = PORTALS["AFKL"]["urls"][0]
+    tab = None
+    try:
+        tab = page.context.new_page()
+    except Exception as error:
+        note_suppressed("opening a page for the flight status card", error)
+        return None
+
+    try:
+        try:
+            tab.goto(url, wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
+        except Exception as error:
+            write_log("{0}: could not open the flight status page — {1}"
+                      .format(label, str(error).split("\n")[0][:100]))
+            return None
+
+        wait_until_settled(tab, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+        if captcha_on_page(tab):
+            write_log("{0}: human verification stands in front of the flight "
+                      "status card; not attempting it.".format(label))
+            return None
+        accept_cookie_banner(tab, label)
+
+        wait_for_any(
+            tab,
+            [("the flight status card",
+              lambda: find_flight_status_fields(tab) is not None)],
+            FLIGHT_STATUS_FORM_MS,
+            reason="the {0} flight status card".format(label))
+        fields = find_flight_status_fields(tab)
+        if fields is None:
+            write_log("{0}: the flight status card was not on the page."
+                      .format(label))
+            return None
+
+        landed = type_into(fields["number"], leg["flight"],
+                           "the flight number box")
+        if landed.replace(" ", "").upper() != leg["flight"].upper():
+            write_log("{0}: the flight number box would not take {1} (it "
+                      "holds '{2}').".format(label, leg["flight"], landed))
+            return None
+
+        if not set_flight_date(tab, fields["date"], leg["date"], label):
+            write_log("{0}: the flight date was refused, so the card was not "
+                      "submitted.".format(label))
+            return None
+
+        # Nothing is submitted until both required fields hold what was
+        # intended. A half-filled submit is what put "Field is required" and
+        # "Please select a valid date" on the operator's screen.
+        try:
+            still = (fields["number"].input_value() or "").replace(" ", "")
+        except Exception:
+            still = ""
+        if still.upper() != leg["flight"].upper():
+            write_log("{0}: the flight number did not survive the date entry; "
+                      "not submitting.".format(label))
+            return None
+
+        # Some cards only validate the date once the form is submitted, so a
+        # format that looked accepted can still come back "Please select a
+        # valid date". That earns exactly one more try, through the calendar,
+        # and then the card is left alone.
+        for attempt in (1, 2):
+            click_postback(fields["button"], "{0} flight status".format(label))
+            found, rejected = await_flight_status(tab, leg["flight"], label)
+            if found:
+                return found
+            if rejected == "date" and attempt == 1 and \
+                    pick_flight_date_from_calendar(tab, fields["date"],
+                                                   leg["date"], label):
+                write_log("{0}: the card refused the typed date on submit; "
+                          "re-submitting with the calendar's.".format(label))
+                continue
+            break
+        save_page_text(tab, leg["flight"], "afkl_flight_status_no_result")
+        return None
+    except Exception as error:
+        note_suppressed("checking the {0} flight status".format(label), error)
+        return None
+    finally:
+        try:
+            if tab is not None:
+                tab.close()
+        except Exception as error:
+            note_suppressed("closing the flight status page", error)
+
+
+def apply_flight_status(result, leg, status, label="AFKL myCargo"):
+    """
+    Fold a flight arrival into a shipment result, as an ESTIMATE only.
+
+    Returns the result. An ATA is never written from here: the flight page
+    can prove the aircraft landed and cannot prove the shipment was on it.
+    An existing date from the shipment page is never overwritten either —
+    the air waybill outranks the aircraft.
+    """
+    if not result or not status:
+        return result
+    arrival = status.get("actual_arrival") or status.get("scheduled_arrival")
+    if arrival is None:
+        return result
+    if result.get("eta") or result.get("ata"):
+        write_log("{0}: the shipment page already carries a date; flight {1}'s "
+                  "arrival ({2}) is recorded but not used."
+                  .format(label, status["flight"], arrival))
+        result["flight_status"] = status
+        return result
+
+    result["eta"] = arrival
+    result["flight_status"] = status
+    result["eta_source"] = "flight status, {0}{1}".format(
+        status["flight"],
+        " (actually arrived)" if status.get("actual_arrival") else " (scheduled)")
+    if result.get("tracking_status") in (None, "", "Estimated arrival"):
+        result["tracking_status"] = "Estimated arrival"
+    write_log(
+        "{0}: the shipment page carried no date. Flight {1} {2} on {3} — "
+        "filed as the ESTIMATED arrival for this shipment, not as an actual "
+        "arrival: the flight page cannot say the shipment was aboard."
+        .format(label, status["flight"],
+                "arrived" if status.get("actual_arrival") else "is due",
+                arrival))
+    return result
 
 
 def extract_portal_result(page, provider):
@@ -5930,6 +6426,15 @@ def get_portal_result(page, provider, tracking_number):
             write_log(f"No {config['label']} result on attempt {attempt}. Retrying...")
             page.wait_for_timeout(3000)
 
+    # LAST CHANCE. The page carried no arrival date, but for AFKL it may
+    # still name the flight the shipment is booked on, and that flight has an
+    # arrival. Whatever comes back is labelled with where it came from.
+    rescue = config.get("last_chance")
+    if rescue is not None:
+        rescued = rescue(page, tracking_number)
+        if rescued and (rescued.get("eta") or rescued.get("ata")):
+            return rescued
+
     # Record exactly what the page did show, so labels are corrected from
     # evidence rather than guessed at a second time.
     take_screenshot(page, tracking_number, slug + "_no_result")
@@ -5943,8 +6448,47 @@ def extract_afkl_result(page, provider="AFKL"):
     return _read_afkl_page(page, provider)
 
 
+def afkl_flight_status_rescue(page, tracking_number):
+    """
+    Last chance for an AFKL shipment whose page carried no arrival date.
+
+    The shipment page still names the flight the air waybill is booked on.
+    That flight has an arrival, and an estimate taken from it — labelled as
+    coming from the flight, not from the shipment — beats reporting nothing.
+    """
+    if not AFKL_FLIGHT_STATUS:
+        return None
+    leg = afkl_last_leg(_page_text(page))
+    if not leg:
+        write_log("AFKL myCargo: no flight leg on the page either, so there "
+                  "is nothing for the flight status card to answer.")
+        return None
+    status = check_afkl_flight_status(page, leg)
+    if not status:
+        return None
+    return apply_flight_status(
+        {"provider": "AFKL", "tracking_status": "Estimated arrival",
+         "eta": None, "ata": None, "flight_leg": leg}, leg, status)
+
+
+PORTALS["AFKL"]["last_chance"] = afkl_flight_status_rescue
+
+
 def get_afkl_result(page, tracking_number):
-    return get_portal_result(page, "AFKL", tracking_number)
+    """
+    The shipment — and, only when its own page gave no date at all, the
+    arrival of the flight that page names.
+    """
+    result = get_portal_result(page, "AFKL", tracking_number)
+    if not result or result.get("no_result"):
+        return result
+    if result.get("eta") or result.get("ata"):
+        return result
+    leg = result.get("flight_leg")
+    if not leg:
+        return result
+    return apply_flight_status(result, leg,
+                               check_afkl_flight_status(page, leg))
 
 
 def describe_page_dates(page, label, tracking_number):
