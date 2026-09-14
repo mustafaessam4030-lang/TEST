@@ -437,6 +437,25 @@ check("A missing field still raises rather than writing elsewhere",
 check("Missing field still dumps the real page contents",
       "describe_manage_fields(page, field_name)" in fill)
 
+# Three runs have now ended with every input on the page belonging to the
+# COE control, none of them visible, and aria-selected claiming three tabs
+# were active at once. The dump has to answer the one question that decides
+# whether this is fixable in a locator: is the BU panel there and empty, or
+# was its markup never delivered?
+dump = SRC.split("def describe_manage_fields")[1].split("\ndef ")[0]
+check("The dump lists the panels behind the tabs, not just the tabs",
+      "role='tabpanel'" in dump and "panel : id=" in dump)
+check("...saying whether each is hidden", "hidden:" in dump)
+check("...how many inputs it holds", "inputs: el.querySelectorAll" in dump)
+check("...and how much text is in it", "text: (el.innerText" in dump)
+check("A document with no panels at all says so, rather than nothing",
+      "the tab strip has nothing behind it" in dump)
+check("The dump can never break the run it is explaining",
+      "note_suppressed(\"listing the Manage page's tab panels\"" in dump)
+check("It reads the page and changes nothing",
+      ".click(" not in dump and ".fill(" not in dump
+      and "goto(" not in dump)
+
 print()
 print("=" * 72)
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))

@@ -7013,6 +7013,50 @@ def describe_manage_fields(page, wanted):
             if text:
                 write_log(f"    tab   : {text!r} (aria-selected={state})")
 
+        # THE PANELS BEHIND THE TABS. Three runs have now ended here with
+        # every input on the page belonging to the COE control and none of
+        # them visible, while aria-selected said three tabs were active at
+        # once. That leaves one question unanswered: is the BU panel there
+        # and empty, or was its markup never delivered? A locator can be
+        # fixed; markup that does not exist cannot. This says which.
+        try:
+            panels = page.evaluate("""() => {
+                const out = [];
+                const seen = new Set();
+                const nodes = document.querySelectorAll(
+                    "[role='tabpanel'], [id*='Panel' i], [id*='tab' i]");
+                for (const el of nodes) {
+                    if (seen.has(el) || out.length >= 12) continue;
+                    seen.add(el);
+                    const box = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
+                    out.push({
+                        id: el.id || '(no id)',
+                        role: el.getAttribute('role') || '',
+                        hidden: el.hasAttribute('hidden')
+                                || style.display === 'none'
+                                || style.visibility === 'hidden',
+                        size: Math.round(box.width) + 'x' + Math.round(box.height),
+                        inputs: el.querySelectorAll(
+                            "input:not([type='hidden'])").length,
+                        text: (el.innerText || '').trim().length,
+                    });
+                }
+                return out;
+            }""")
+            if panels:
+                write_log("    --- the panels behind those tabs ---")
+                for panel in panels:
+                    write_log(
+                        "    panel : id={id!r} role={role!r} hidden={hidden} "
+                        "size={size} inputs={inputs} text={text} chars"
+                        .format(**panel))
+            else:
+                write_log("    (no tab panels of any kind in the document — "
+                          "the tab strip has nothing behind it)")
+        except Exception as error:
+            note_suppressed("listing the Manage page's tab panels", error)
+
         write_log(f"--- end of Manage page field list ---")
     except Exception as error:
         note_suppressed("listing Manage page fields", error)
