@@ -442,6 +442,49 @@ check("Missing field still dumps the real page contents",
 # were active at once. The dump has to answer the one question that decides
 # whether this is fixable in a locator: is the BU panel there and empty, or
 # was its markup never delivered?
+# THE CAUSE, found in the operator's own run log after three identical
+# failures: "BU Shipments View option was not separately displayed; using
+# the visible default shipment table". The BU view was never selected. The
+# default table's Manage page is the COE one — the field dump proves it,
+# every input on it is a COE_Shipment_Upsert1 control and txtETA is there
+# while no ATA input exists anywhere. So the ATA field was never on the
+# page to find, and seven locators, the visibility-free lookup and three
+# recovery actions were all searching for markup that does not exist.
+view = SRC.split("def select_shipments_view")[1].split("\ndef ")[0]
+check("The BU view is looked for under the names a Hub actually writes it",
+      "Business\\s+Unit" in view and "[-–—/:|]?" in view)
+check("...in both word orders",
+      view.count("Shipments?") >= 2)
+check("A view that was really selected is recorded as selected",
+      view.count('VIEW_SELECTION[requested] = "selected"') == 3)
+check("...and the default-table fallback is recorded as a fallback",
+      'VIEW_SELECTION[requested] = "fallback"' in view)
+check("The COE fallback is still allowed — its Manage page has the ETA field",
+      "if requested != COE_VIEW:" in view)
+check("...while the BU fallback now says it cannot work",
+      "cannot work for" in view and "carries ETA and no" in view)
+check("...and lists what the page DOES offer, which the old return skipped",
+      "describe_view_options(page, requested)" in view)
+
+fill_src = SRC.split("def fill_date_field")[1].split("\ndef ")[0]
+check("Recovery is not run against a page that cannot hold the field",
+      "if field is None and view_fell_back(context.get(\"view\")):" in fill_src)
+check("...and the log says why, rather than going quiet",
+      "change which page this is" in fill_src
+      and "Not attempting recovery for the missing" in fill_src)
+check("The failure names the real cause",
+      "The {1} view was" in fill_src and "never selected" in fill_src)
+check("...while keeping the sentence everything else matches on",
+      '"{0} field was not found on the Manage page.' in fill_src)
+check("view_fell_back only answers for a view that really fell back",
+      A.view_fell_back("BU") is False and A.view_fell_back(None) is False)
+A.VIEW_SELECTION["BU"] = "fallback"
+check("...and answers True once it has",
+      A.view_fell_back("BU") and A.view_fell_back("bu"))
+A.VIEW_SELECTION["BU"] = "selected"
+check("A real selection is not a fallback", not A.view_fell_back("BU"))
+A.VIEW_SELECTION.clear()
+
 dump = SRC.split("def describe_manage_fields")[1].split("\ndef ")[0]
 check("The dump lists the panels behind the tabs, not just the tabs",
       "role='tabpanel'" in dump and "panel : id=" in dump)

@@ -2543,19 +2543,23 @@ def select_shipments_view(page, view_name):
     if requested not in {COE_VIEW, BU_VIEW}:
         raise Exception(f"Unsupported internal shipment view: {view_name}")
 
-    exact_patterns = (
-        [
-            re.compile(r"^\s*COE\s*-\s*Shipment\s*$", re.I),
-            re.compile(r"^\s*COE\s+Shipments?\s+View\s*$", re.I),
-            re.compile(r"^\s*COE\s+Shipment\s*$", re.I),
-        ]
-        if requested == COE_VIEW
-        else [
-            re.compile(r"^\s*BU\s*-\s*Shipment\s*$", re.I),
-            re.compile(r"^\s*BU\s+Shipments?\s+View\s*$", re.I),
-            re.compile(r"^\s*BU\s+Shipment\s*$", re.I),
-        ]
-    )
+    # The Hub has never been seen to offer the BU view under any of the three
+    # names this looked for, so every run fell through to the default table —
+    # which is the COE one, whose Manage page has no ATA field at all. These
+    # patterns cover the separators and word orders the same label is written
+    # with, and "Business Unit" spelled out. Still anchored: they match a
+    # control that names the view, never a sentence that mentions it.
+    if requested == COE_VIEW:
+        word = r"COE"
+    else:
+        word = r"(?:BU|Business\s+Unit)"
+    exact_patterns = [
+        re.compile(r"^\s*{0}\s*[-–—/:|]?\s*Shipments?\s*(?:View)?\s*$"
+                   .format(word), re.I),
+        re.compile(r"^\s*Shipments?\s*[-–—/:|]?\s*{0}\s*(?:View)?\s*$"
+                   .format(word), re.I),
+        re.compile(r"^\s*{0}\s*$".format(word), re.I),
+    ]
 
     # 1. Native select/dropdown containing COE/BU options.
     selects = page.locator("select:visible")
@@ -2577,6 +2581,7 @@ def select_shipments_view(page, view_name):
                         page, before_signature, reason="view dropdown"
                     )
                     find_shipments_table(page).wait_for(state="visible", timeout=15000)
+                    VIEW_SELECTION[requested] = "selected"
                     write_log(f"{requested} Shipments View selected from dropdown.")
                     return
         except Exception:
@@ -2617,15 +2622,18 @@ def select_shipments_view(page, view_name):
             wait_for_table_change(page, before_signature, reason="view control")
 
         find_shipments_table(page).wait_for(state="visible", timeout=15000)
+        VIEW_SELECTION[requested] = "selected"
         write_log(f"{requested} Shipments View selected.")
         return
 
     # 3. DOM fallback for custom navigation components without standard roles.
-    expected_texts = (
-        ["coe - shipment", "coe shipment", "coe shipments view"]
-        if requested == COE_VIEW
-        else ["bu - shipment", "bu shipment", "bu shipments view"]
-    )
+    words = ["coe"] if requested == COE_VIEW else ["bu", "business unit"]
+    expected_texts = []
+    for stem in words:
+        for shape in ("{0} - shipment", "{0} shipment", "{0} shipments",
+                      "{0} shipment view", "{0} shipments view",
+                      "shipment - {0}", "shipments - {0}", "{0}"):
+            expected_texts.append(shape.format(stem))
     signature_before_click = table_signature(page)
     clicked = page.evaluate(
         """expectedTexts => {
@@ -2648,6 +2656,7 @@ def select_shipments_view(page, view_name):
     if clicked:
         wait_for_table_change(page, signature_before_click, reason="custom navigation")
         find_shipments_table(page).wait_for(state="visible", timeout=15000)
+        VIEW_SELECTION[requested] = "selected"
         write_log(f"{requested} Shipments View selected through custom navigation.")
         return
 
@@ -2669,6 +2678,7 @@ def select_shipments_view(page, view_name):
     try:
         table = find_shipments_table(page)
         if table.is_visible(timeout=1500):
+            VIEW_SELECTION[requested] = "fallback"
             write_log(
                 f"{requested} Shipments View option was not separately "
                 "displayed; using the visible default shipment table. The "
@@ -2676,6 +2686,20 @@ def select_shipments_view(page, view_name):
                 "matched by name on the Manage page, so a missing field will "
                 "fail cleanly rather than write to the wrong one."
             )
+            if requested != COE_VIEW:
+                # The COE fallback works: the default table's Manage page is
+                # the COE one and its ETA field is right there. The BU one
+                # cannot — that page has no ATA field at all — so this is not
+                # a harmless fallback, it is the reason every BU ATA write has
+                # failed. The list of what the Hub DOES offer used to be
+                # printed only on the path that raises, which this return
+                # skipped, so nobody ever saw it. It prints here now.
+                write_log(
+                    "That fallback cannot work for {0}: the default table's "
+                    "Manage page is the COE one, which carries ETA and no "
+                    "ATA. Listing what this page offers so the right control "
+                    "can be matched by name.".format(requested))
+                describe_view_options(page, requested)
             return
     except Exception as error:
         note_suppressed("falling back to the default shipments table", error)
@@ -2689,10 +2713,23 @@ def select_shipments_view(page, view_name):
     except Exception as error:
         note_suppressed("saving the view diagnostic text", error)
 
-    # Put the answer in the RUN LOG, not only in a file. When this fails we
-    # need to know what the page IS offering, so the label can be matched
-    # instead of guessed. Every dropdown option, tab, link and button that
-    # could plausibly be a shipments view is listed here.
+    describe_view_options(page, requested)
+
+    raise Exception(
+        f"{requested} Shipments View option was not found after opening "
+        "Centralized Shipments Tracking."
+    )
+
+
+def describe_view_options(page, requested):
+    """
+    Put the answer in the RUN LOG, not only in a file.
+
+    When a view cannot be selected we need to know what the page IS offering,
+    so the label can be matched instead of guessed. Every dropdown option,
+    tab, link and button that could plausibly be a shipments view is listed.
+    Read-only, and it never raises.
+    """
     try:
         write_log(
             f"--- {requested} view not found. Options actually on the page: ---"
@@ -2708,7 +2745,7 @@ def select_shipments_view(page, view_name):
                 seen.append(text)
                 write_log(f"    dropdown option : {text!r}")
 
-        for role in ("tab", "link", "button"):
+        for role in ("tab", "link", "button", "menuitem"):
             for control in page.get_by_role(role).all()[:60]:
                 try:
                     text = (control.inner_text(timeout=300) or "").strip()
@@ -2718,7 +2755,8 @@ def select_shipments_view(page, view_name):
                 if not text or len(text) > 60 or text in seen:
                     continue
                 # Only things that look like a view/shipment control.
-                if re.search(r"view|shipment|coe|bu\b|track|clearance", text, re.I):
+                if re.search(r"view|shipment|coe|bu\b|business|track|clearance",
+                             text, re.I):
                     seen.append(text)
                     write_log(f"    {role:<15}: {text!r}")
 
@@ -2728,10 +2766,20 @@ def select_shipments_view(page, view_name):
     except Exception as error:
         note_suppressed("listing available view options", error)
 
-    raise Exception(
-        f"{requested} Shipments View option was not found after opening "
-        "Centralized Shipments Tracking."
-    )
+
+# How the last selection of each view actually happened: "selected" when a
+# real view control was clicked, "fallback" when the Hub offered nothing this
+# automation recognised and the visible default table was used instead.
+#
+# The difference decides whether a missing field is worth investigating. The
+# default table's Manage page is the COE one — it carries ETA and no ATA — so
+# a fallback for BU means the ATA field cannot be there, however long anyone
+# waits for it or however many locators are tried.
+VIEW_SELECTION = {}
+
+
+def view_fell_back(view_name):
+    return VIEW_SELECTION.get((view_name or "").upper().strip()) == "fallback"
 
 
 def open_shipments_view(page, view_name):
@@ -7397,7 +7445,19 @@ def fill_date_field(page, field_name, date_value):
         else:
             ml_record(context, "ignore_visibility", False, None, "FIELD_NOT_FOUND")
 
-    if field is None:
+    if field is None and view_fell_back(context.get("view")):
+        # Recovery cannot select a view the Hub never offered, and every
+        # action in its ladder — reselect the tab, requery the locator, look
+        # in another frame — is a way of searching THIS page harder. This
+        # page is the COE Manage page; it has no ATA field to find. Three
+        # runs spent about ninety seconds each proving that. Skip it.
+        write_log(
+            "Not attempting recovery for the missing {0} field: the {1} view "
+            "was never selected, so this is the COE Manage page and it does "
+            "not carry that field. Recovery searches this page; it cannot "
+            "change which page this is.".format(field_name,
+                                                context.get("view")))
+    elif field is None:
         # BEFORE giving up. The deterministic ladder above has run and found
         # nothing, which is exactly the situation recovery exists for: the
         # field is missing for a reason that may be a slow panel, a stale
@@ -7433,6 +7493,17 @@ def fill_date_field(page, field_name, date_value):
             write_log("No safe recovery succeeded for the missing {0} field: "
                       "{1}".format(field_name, result["reason"]))
         describe_manage_fields(page, field_name)
+        if view_fell_back(context.get("view")):
+            # The same first sentence, so everything that reads these
+            # failures still recognises it — followed by the cause, which is
+            # what an operator can actually act on.
+            raise Exception(
+                "{0} field was not found on the Manage page. The {1} view was "
+                "never selected: the Hub did not offer it under any name this "
+                "automation recognises, so the default table was used and its "
+                "Manage page is the COE one, which has no {0} field. The view "
+                "option list is above — send it and the control can be "
+                "matched by name.".format(field_name, context.get("view")))
         raise Exception(f"{field_name} field was not found on the Manage page.")
 
     input_type = (field.get_attribute("type") or "text").lower()
