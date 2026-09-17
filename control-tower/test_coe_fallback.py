@@ -47,7 +47,9 @@ print()
 print("=" * 70)
 print("2. THE FIELD, NOT THE VIEW, DECIDES WHAT IS WRITTEN")
 print("=" * 70)
-fill = SRC[SRC.index("def fill_date_field"):SRC.index("def save_manage_page")]
+# The candidate list now lives in field_candidates(), so the read-back
+# uses exactly the same locators the write did. These checks follow it.
+fill = SRC[SRC.index("def field_candidates"):SRC.index("def save_manage_page")]
 
 check("ETA branch excludes ATA inputs by id",
       "[id*='ETA' i]:not([id*='ATA' i])" in fill)
@@ -207,7 +209,7 @@ print("=" * 70)
 print("6. MODIFY SHIPMENT TAB SELECTION")
 print("=" * 70)
 check("select_shipment_info_tab exists", hasattr(A, "select_shipment_info_tab"))
-tab_src = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def fill_date_field")]
+tab_src = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def field_candidates")]
 check("Matches 'COE Shipment Info' style labels",
       "Shipment\\s*Info" in tab_src)
 check("Skips the click when the tab is already active",
@@ -251,7 +253,7 @@ print()
 print("=" * 70)
 print("9. TAB REPORTING IS HONEST")
 print("=" * 70)
-tabsrc = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def fill_date_field")]
+tabsrc = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def field_candidates")]
 check("Accepts 'Shipment Information' as well as 'Shipment Info'",
       "Info(?:rmation)?" in tabsrc)
 check("Returns False when the panel never rendered",

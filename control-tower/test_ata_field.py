@@ -100,6 +100,9 @@ check("ETD is a separate label and is not caught",
       "ETD :" in COE_LABELS and not "ETD :".startswith("ETA"))
 
 fill = SRC[SRC.index("def fill_date_field"):SRC.index("def save_manage_page")]
+# The candidates moved into field_candidates() so the read-back could use
+# the same ones. These checks follow them.
+fill = SRC[SRC.index("def field_candidates"):SRC.index("def save_manage_page")]
 check("ETA css still excludes ATA ids",
       "[id*='ETA' i]:not([id*='ATA' i])" in fill)
 check("ETA css still excludes ATA names",
@@ -178,7 +181,7 @@ print()
 print("=" * 72)
 print("5. TAB SWITCH IS VERIFIED BY PANEL CONTENT")
 print("=" * 72)
-tab = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def fill_date_field")]
+tab = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def field_candidates")]
 # Superseded: readiness used to match panel heading TEXT, which survives in
 # the DOM during a postback. It now waits for the field itself (section 8).
 check("Readiness waits on the target field",
@@ -321,7 +324,7 @@ print()
 print("=" * 72)
 print("8. TAB POSTBACK  (from the 02:57 failure)")
 print("=" * 72)
-tabsrc = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def fill_date_field")]
+tabsrc = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def field_candidates")]
 
 check("Tab click goes through click_postback", "click_postback(tab" in tabsrc)
 # The words still appear in the comment explaining WHY; what matters is that
@@ -374,7 +377,7 @@ print()
 print("=" * 72)
 print("9. MID-POSTBACK PAGE  (the 26 Aug 12:07 failure)")
 print("=" * 72)
-tabsrc = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def fill_date_field")]
+tabsrc = SRC[SRC.index("def select_shipment_info_tab"):SRC.index("def field_candidates")]
 
 check("Waits for the tab postback to land before polling",
       "wait_for_load_state" in tabsrc and
@@ -484,6 +487,37 @@ check("...and answers True once it has",
 A.VIEW_SELECTION["BU"] = "selected"
 check("A real selection is not a fallback", not A.view_fell_back("BU"))
 A.VIEW_SELECTION.clear()
+
+# THE READ-BACK. On the run of the 13th every ATA wrote and saved, and
+# every one came back "saved but not read back — the ATA field could not be
+# found on reload". The writer had seven candidates led by the label ones;
+# the verifier had two of its own, matching on id and name. On a Hub that
+# labels the field "ATA Date :" the writer found it and the verifier could
+# not, so no ATA could ever become a verified outcome — or a training label.
+cands = SRC.split("def field_candidates")[1].split("\ndef ")[0]
+verify = SRC.split("def verify_saved_date")[1].split("\ndef ")[0]
+check("There is ONE candidate list, and it is a function",
+      "def field_candidates(page, field_name)" in SRC)
+check("The writer uses it",
+      "named = field_candidates(page, field_name)" in fill_src)
+check("...and so does the read-back",
+      "field_candidates(page, field_name)" in verify)
+check("The read-back no longer has locators of its own",
+      "input[id*='{0}' i]:not([id*='{1}' i]):visible" not in verify)
+check("Every ATA candidate still anchors on ATA, never ETA",
+      "starts-with(normalize-space(),'ATA')" in cands
+      and cands.count("'ATA'") >= 1)
+check("The ETA candidates still exclude ATA, so a date cannot cross over",
+      cands.count("input[id*='ETA' i]:not([id*='ATA' i])") >= 1
+      and cands.count("input[name*='ETA' i]:not([name*='ATA' i])") >= 1)
+check("The label candidate is still first, because it is what works here",
+      cands.index("label_exact") < cands.index("css_id_visible"))
+check("The read-back still falls back to the visibility-free lookup",
+      "find_field_ignoring_visibility(page, field_name)" in verify)
+check("A read that cannot be performed is still None, never False",
+      "return None, (\"the {0} field could not be found on reload" in verify)
+check("...and still writes no training arm",
+      "role=ML_ROLE_VERIFICATION" in verify)
 
 dump = SRC.split("def describe_manage_fields")[1].split("\ndef ")[0]
 check("The dump lists the panels behind the tabs, not just the tabs",

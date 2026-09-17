@@ -7305,10 +7305,21 @@ def select_shipment_info_tab(page, view_name, field_name=None):
     return True
 
 
-def fill_date_field(page, field_name, date_value):
-    # Each candidate is NAMED. The names are what telemetry records and what
-    # the model reorders; the selectors, their order and every ETA/ATA guard
-    # inside them are exactly as they were.
+def field_candidates(page, field_name):
+    """
+    The named locators for a date field, in the order they are tried.
+
+    ONE list, used by the writer and by the read-back alike. They used to
+    differ: the writer had seven candidates led by the label ones, the
+    verifier had two that matched on id and name only. So on a Hub whose ATA
+    input is found by its LABEL, the write landed and the read-back could not
+    find the field it had just written to — "saved but not read back" on every
+    single ATA, and not one of them could become a verified outcome.
+
+    Each candidate is NAMED. The names are what telemetry records and what the
+    model reorders; the selectors, their order and every ETA/ATA guard inside
+    them are exactly as they were.
+    """
     if field_name == "ETA":
         named = [
             ("label_exact",
@@ -7368,6 +7379,11 @@ def fill_date_field(page, field_name, date_value):
             ("label_ata_date", page.get_by_label("ATA Date", exact=False)),
             ("label_loose", page.get_by_label("ATA", exact=False)),
         ]
+    return named
+
+
+def fill_date_field(page, field_name, date_value):
+    named = field_candidates(page, field_name)
 
     context = ml_context(
         provider="HUB", page="manage", field=field_name,
@@ -7684,12 +7700,14 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
         click_manage_in_view(page, view_name, bol_awb, shipment["table_page"])
         select_shipment_info_tab(page, view_name, field_name)
 
+        # The SAME candidates the write used. Two locators of its own is how
+        # this ended up unable to read back a field the writer had just
+        # filled: every ATA on the run of the 13th was "saved but not read
+        # back", because the writer found the field by its label and this
+        # looked only at id and name.
         field = first_visible(
-            [page.locator("input[id*='{0}' i]:not([id*='{1}' i]):visible".format(
-                field_name, "ATA" if field_name == "ETA" else "ETA")),
-             page.locator("input[name*='{0}' i]:not([name*='{1}' i]):visible".format(
-                 field_name, "ATA" if field_name == "ETA" else "ETA"))],
-            2000)
+            [locator for _name, locator in field_candidates(page, field_name)],
+            1500)
         if field is None:
             field = find_field_ignoring_visibility(page, field_name)
         if field is None:
