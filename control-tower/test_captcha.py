@@ -326,8 +326,15 @@ print()
 print("=" * 72)
 print("11. NO FALSE SUCCESS: IDENTITY IS CHECKED ON BOTH AFKL PATHS")
 print("=" * 72)
+# The identity check moved into afkl_detail_verdict() when confirmation
+# started reporting WHICH half failed; page_is_afkl_detail is its wrapper.
+# The guarantee is the same one: the direct-URL path never reads a page
+# without first proving the page carries the requested air waybill.
 check("The direct-URL path verifies identity",
       "awb_on_page(page, tracking_number)" in
+      SRC.split("def afkl_detail_verdict")[1].split("\ndef ")[0])
+check("...and page_is_afkl_detail is exactly that verdict",
+      "return afkl_detail_verdict(page, tracking_number)[0]" in
       SRC.split("def page_is_afkl_detail")[1].split("\ndef ")[0])
 check("The search-form path verifies it too",
       "identity_required and not awb_on_page(page, tracking_number)" in SRC)

@@ -137,6 +137,81 @@ check("A loaded-but-unconfirmed page is reported as such, not as success",
 
 print()
 print("=" * 74)
+print("4b. WHY A PAGE WAS NOT CONFIRMED, AND WHAT IT ACTUALLY SHOWED")
+print("=" * 74)
+# Every 074 and 057 waybill failed on the run of the 17th with HTTP 200,
+# DOMContentLoaded, load — and "page loaded but ... could not be confirmed
+# on it". One message covered three different faults, and the second gate
+# was six phrases copied from one snapshot of the carrier's site, so a page
+# showing the right shipment under any other heading failed for two minutes
+# and was reported as unreachable.
+
+AWB = "074-47255574"
+
+
+class Page(object):
+    """Just enough page for the text-based checks."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def locator(self, selector):
+        return self
+
+    def inner_text(self, timeout=None):
+        return self.text
+
+    @property
+    def frames(self):
+        return []
+
+    @property
+    def main_frame(self):
+        return None
+
+
+def verdict(text):
+    return A.afkl_detail_verdict(Page(text), AWB)
+
+
+check("A page with the old headings is still confirmed",
+      verdict(AWB + " Progress details EN ROUTE " + "x" * 200)[0])
+check("A page whose headings were renamed, carrying a date, is confirmed too",
+      verdict(AWB + " Shipment status Arrival 15 SEP 2026 10:20 "
+              + "x" * 200)[0])
+check("The air waybill alone is not enough",
+      not verdict(AWB + " " + "x" * 300)[0])
+check("...and the reason says so",
+      "nothing else is" in verdict(AWB + " " + "x" * 300)[1])
+check("A DIFFERENT shipment is still refused",
+      not verdict("074-99999999 Progress details EN ROUTE " + "x" * 200)[0])
+check("...and the reason names the missing air waybill",
+      "is not anywhere on the page"
+      in verdict("074-99999999 Progress details " + "x" * 200)[1])
+check("A shell that has not rendered is refused as a shell",
+      "has not rendered" in verdict("myCargo")[1])
+check("page_is_afkl_detail still answers a plain True/False",
+      A.page_is_afkl_detail(Page(AWB + " Progress details EN ROUTE "
+                                 + "x" * 200), AWB) is True)
+
+check("The failing attempt records WHICH half failed, not one message for all",
+      "record[\"outcome\"] = \"page loaded but {0}\".format(why)" in SRC)
+check("...and dumps what the page actually showed",
+      "describe_afkl_page(page, label)" in SRC)
+describe = SRC.split("def describe_afkl_page")[1].split("\ndef ")[0]
+check("That dump names a sign-in wall when it sees one",
+      "a sign-in wall" in describe)
+check("...a not-found message", "a not-found message" in describe)
+check("...a consent panel", "a consent panel" in describe)
+check("...and human verification", "a human-verification page" in describe)
+check("It reads the page and changes nothing",
+      ".click(" not in describe and ".fill(" not in describe
+      and "goto(" not in describe)
+check("It can never break the run it is explaining",
+      "note_suppressed(\"describing the AFKL page\"" in describe)
+
+print()
+print("=" * 74)
 print("5. THE URL AND THE PARSER ARE UNTOUCHED")
 print("=" * 74)
 check("The direct detail URL is still the primary route",

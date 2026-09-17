@@ -5127,29 +5127,65 @@ def awb_on_page(page, tracking_number):
     return digits in re.sub(r"\D", "", text)
 
 
-def page_is_afkl_detail(page, tracking_number):
+# The furniture of a real shipment page. This used to be six phrases taken
+# from one snapshot of the site, and a page that rendered the right shipment
+# under any other heading failed confirmation for two minutes and was
+# reported as unreachable — which is what happened to every 074 and 057
+# waybill on the run of the 17th: HTTP 200, DOMContentLoaded, load, and
+# "could not be confirmed on it".
+AFKL_DETAIL_FURNITURE = re.compile(
+    r"Progress\s+details|Flight\s+schedule|Estimated\s+Pick\s*up\s+time|"
+    r"Checked-in|EN\s+ROUTE|DELIVERED|Shipment\s+details|Milestones?|"
+    r"Transport\s+status|Tracking\s+details|Pieces|Gross\s+weight|"
+    r"Chargeable\s+weight|Booked|Manifested|In\s+transit|Arrived|Departed|"
+    r"Received\s+from\s+shipper|\bRCS\b|\bRCF\b|\bDEP\b|\bARR\b",
+    re.I)
+
+
+def afkl_detail_verdict(page, tracking_number):
     """
-    Is this really the requested shipment's page?
+    Is this really the requested shipment's page? Returns (ok, why).
 
     Two things have to hold: the air waybill has to appear on the page, and
-    the page has to carry the furniture of a result rather than an error or a
+    the page has to look like a shipment rather than an error or a
     still-booting shell. Navigating successfully is not the same as arriving
     at the right shipment, and a wrong-shipment page must never reach the
     extraction step.
+
+    The second test accepts a DATE as well as a known heading. A page
+    carrying the requested air waybill and a date is a shipment page whatever
+    the carrier has renamed its sections to this quarter, and the reader
+    downstream still refuses anything it cannot read a real arrival from — so
+    a page that slips through here is reported honestly rather than wrongly.
+
+    `why` is what the run log prints. "Could not be confirmed" covered both
+    failures at once and told nobody which one had happened.
     """
     try:
         text = _page_text(page)
-    except Exception:
-        return False
-    if len(text.strip()) < 120:
-        return False
+    except Exception as error:
+        return False, "the page text could not be read ({0})".format(
+            str(error).split("\n")[0][:60])
+    stripped = text.strip()
+    if len(stripped) < 120:
+        return False, "the page carries only {0} characters of text — it has " \
+                      "not rendered".format(len(stripped))
 
     if not awb_on_page(page, tracking_number):
-        return False
+        return False, "the air waybill {0} is not anywhere on the page".format(
+            tracking_number)
 
-    return bool(re.search(
-        r"Progress\s+details|Flight\s+schedule|Estimated\s+Pick\s*up\s+time|"
-        r"Checked-in|EN\s+ROUTE|DELIVERED", text, re.I))
+    if AFKL_DETAIL_FURNITURE.search(text):
+        return True, "ok"
+    if extract_all_dates(text, allow_yearless=True):
+        return True, "ok"
+    return False, ("the air waybill is on the page but nothing else is — no "
+                   "shipment heading and no date, so this is not the "
+                   "shipment's page yet")
+
+
+def page_is_afkl_detail(page, tracking_number):
+    return afkl_detail_verdict(page, tracking_number)[0]
 
 
 # ── The navigation ladder ────────────────────────────────────────────
@@ -5285,13 +5321,54 @@ def _afkl_attempt(page, url, tracking_number, label, strategy, number,
         )
         record["awb_verified"] = bool(settled)
         record["final_url"] = page.url
-        record["outcome"] = "loaded and verified" if settled else (
-            "page loaded but {0} could not be confirmed on it".format(tracking_number))
+        if settled:
+            record["outcome"] = "loaded and verified"
+        else:
+            # SAY WHICH HALF FAILED, and what the page actually showed. Two
+            # minutes of "could not be confirmed on it" told nobody whether
+            # the air waybill was missing, the page was still booting, or the
+            # carrier had simply renamed its headings. The evidence is on the
+            # screen at this moment; it goes in the run log, not only into a
+            # file nobody has time to fetch.
+            _ok, why = afkl_detail_verdict(page, tracking_number)
+            record["outcome"] = "page loaded but {0}".format(why)
+            write_log("{0}: {1} — {2}".format(label, url, why))
+            describe_afkl_page(page, label)
     except Exception as error:
         record["error"] = str(error).split("\n")[0][:200]
         record["outcome"] = "navigation exception"
     record["elapsed_ms"] = int((time.time() - started) * 1000)
     return record
+
+
+def describe_afkl_page(page, label):
+    """
+    What the carrier's page is actually showing, in the run log.
+
+    Read-only, bounded, and it never raises: it runs on a path that has
+    already failed, and it exists so the next run answers "what was on the
+    page" without anybody having to send a file.
+    """
+    try:
+        text = " ".join((_page_text(page) or "").split())
+        if not text:
+            write_log("    (the page has no readable text at all)")
+            return
+        write_log("    the page reads: {0}".format(text[:400]))
+        dates = extract_all_dates(text, allow_yearless=True)
+        write_log("    dates on it: {0}".format(
+            ", ".join(parsed for _pos, parsed, _raw in dates[:6]) or "none"))
+        for pattern, meaning in (
+                (r"sign\s*in|log\s*in|username|password", "a sign-in wall"),
+                (r"not\s+found|no\s+result|no\s+shipment|could\s+not\s+be\s+"
+                 r"found", "a not-found message"),
+                (r"error|unavailable|maintenance|try\s+again", "an error page"),
+                (r"cookie|consent|accept\s+all", "a consent panel"),
+                (r"robot|captcha|verify\s+you", "a human-verification page")):
+            if re.search(pattern, text, re.I):
+                write_log("    it looks like {0}.".format(meaning))
+    except Exception as error:
+        note_suppressed("describing the AFKL page", error)
 
 
 def _log_afkl_attempt(record):
