@@ -567,6 +567,30 @@ check("The dashboard does not import the automation",
 
 print()
 print("=" * 72)
+print("A SHIPMENT IN FLIGHT SAYS WHAT IT IS DOING")
+print("=" * 72)
+# "Processing" on its own told an operator nothing: a row can sit there for
+# two minutes while a carrier page is opened, and there was no way to tell a
+# slow step from a stuck one without opening the run log.
+check("A processing row shows the step it is on, not an empty outcome",
+      "r.state === 'processing' ? dash(r.step) : dash(r.outcome)" in INDEX)
+check("...and counts up from when the shipment was picked up",
+      "r.started_epoch" in INDEX and "Date.now() / 1000" in INDEX)
+check("The elapsed time is readable past a minute",
+      "Math.floor(n / 60) + ' m '" in INDEX)
+check("A finished row still shows its outcome and its real duration",
+      "ms(r.duration_ms)" in INDEX)
+check("The table refreshes while the clock runs, instead of caching a stale key",
+      "r.state === 'processing'\n      ? '|' + (r.step || '') + '|' + live(r) : ''" in INDEX)
+check("The tick only runs while something is in flight",
+      "r.state === 'processing')" in INDEX and "clearInterval(shipTick)" in INDEX)
+check("...and there is never more than one of it",
+      "shipTick === null" in INDEX and INDEX.count("setInterval(() => { delete sig.ships") == 1)
+check("It repaints the shipments table and nothing else",
+      "setInterval(() => { delete sig.ships; paintShips(); }, 1000)" in INDEX)
+
+print()
+print("=" * 72)
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 print("=" * 72)
 sys.exit(1 if FAIL else 0)

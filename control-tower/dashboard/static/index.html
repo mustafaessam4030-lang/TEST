@@ -1629,15 +1629,46 @@ $('shipQ').addEventListener('input', (e) => {
   clearTimeout(shipT);
   shipT = setTimeout(() => { shipQ = e.target.value.toLowerCase(); delete sig.ships; paintShips(); }, 140);
 });
+/* The elapsed clock has to tick even when nothing else changes. A carrier
+   page can take forty-five seconds to answer, and during that the state
+   stream is silent — so without this the counter freezes at the number it
+   was born with and the row looks hung whether it is or not. One second,
+   only while something is actually in flight, and only this table. */
+let shipTick = null;
+function shipClock(){
+  const busy = S && S.shipments && S.shipments.some((r) => r.state === 'processing');
+  if (busy && shipTick === null) {
+    shipTick = setInterval(() => { delete sig.ships; paintShips(); }, 1000);
+  } else if (!busy && shipTick !== null) {
+    clearInterval(shipTick);
+    shipTick = null;
+  }
+}
+
 function paintShips(){
   if (!S) return;
+  shipClock();
   if (activePage !== 'shipments' && sig.shipInit) return;
   sig.shipInit = 1;
   let rows = S.shipments;
   if (shipF !== 'all') rows = rows.filter((r) => r.state === shipF);
   if (shipQ) rows = rows.filter((r) =>
     [r.reference, r.carrier, r.error, r.provider_status].join(' ').toLowerCase().includes(shipQ));
-  const key = shipF + '|' + shipQ + '|' + rows.map((r) => r.reference + r.state).join(',');
+  /* A shipment in flight is the one an operator is actually watching, and
+     "Processing" on its own says nothing: a row can sit there for two
+     minutes while the carrier's page is being opened and give no sign of
+     which step it is on or whether it is stuck. The record already carries
+     both — `step` is set at every stage and `started_epoch` at pick-up — so
+     the row shows the step and counts up, and the key includes them so the
+     table actually refreshes while it does. */
+  const elapsed = (r) => (r.started_epoch
+    ? Math.max(0, Math.round(Date.now() / 1000 - r.started_epoch)) : null);
+  const live = (r) => (r.state !== 'processing' ? null : elapsed(r));
+  const clock = (n) => (n == null ? '—'
+    : (n < 60 ? n + ' s' : Math.floor(n / 60) + ' m ' + (n % 60) + ' s'));
+  const key = shipF + '|' + shipQ + '|' + rows.map((r) =>
+    r.reference + r.state + (r.state === 'processing'
+      ? '|' + (r.step || '') + '|' + live(r) : '')).join(',');
   if (!changed('ships', key)) return;
   putHTML($('shipRows'), rows.map((r) =>
     '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
@@ -1647,8 +1678,10 @@ function paintShips(){
     /* Attribution sits with the result, where an operator already looks to
        find out what happened to a shipment — not in a column of its own. */
     '<td>' + tag(r.state) + (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
-    '<td style="font-size:11.5px">' + dash(r.outcome) + '</td>' +
-    '<td class="n">' + ms(r.duration_ms) + '</td>' +
+    '<td style="font-size:11.5px">' +
+      (r.state === 'processing' ? dash(r.step) : dash(r.outcome)) + '</td>' +
+    '<td class="n">' + (r.state === 'processing'
+      ? clock(live(r)) : ms(r.duration_ms)) + '</td>' +
     '<td><span class="err" title="' + esc(r.error || '') + '">' + dash(r.error) + '</span></td></tr>').join(''));
   putHTML($('shipEmpty'), rows.length ? '' : empty('No shipments match',
     S.shipments.length ? 'Clear the search or pick another filter.'
