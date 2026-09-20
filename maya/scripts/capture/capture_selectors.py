@@ -766,7 +766,10 @@ class CaptureSession:
         report.write_text(self.redact(json.dumps(payload, indent=2, ensure_ascii=False)))
 
         # Fixture and recon output must never be mistaken for a real SIS contract.
-        if self.mode not in ("live", "auto-login"):
+        captured_anything = any(r.status != "TODO_CAPTURE" and r.selector
+                                for r in self.records.values())
+        if self.mode not in ("live", "auto-login") or not captured_anything:
+            # A run that captured nothing has no business creating a contract file.
             target = self.outdir / f"sis_selectors.{self.mode}.json"
         else:
             target = ROOT / "config" / "sis_selectors.json"
