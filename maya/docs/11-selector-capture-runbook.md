@@ -8,6 +8,27 @@ and needs one person who can sign in to SIS.
 cannot run in CI, in a container, or in an agent sandbox, because a human has to
 complete sign-in (including MFA) and then point at the real elements.
 
+## Check first
+
+```bash
+python scripts/e2e/doctor.py        # or: make doctor
+```
+
+It verifies, on the machine you are about to use: Playwright and Chromium, a
+usable display, that the credential **reference** resolves (it reads no value and
+prints none), whether `config/sis_selectors.json` exists and is complete, and
+whether a browser can actually reach SIS through your network. It names every
+blocker with its remedy. Green here means the capture will work.
+
+## One command for the whole onboarding
+
+```bash
+make sis-onboard SERIAL=<a serial that exists in SIS>
+```
+
+doctor → capture (you sign in and click) → doctor again → start the stack. Then
+open the chat and ask Maya for that serial.
+
 ## Prerequisites
 
 ```bash

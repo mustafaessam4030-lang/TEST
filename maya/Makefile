@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maya capture capture-selftest package e2e smoke clean
+.PHONY: install test lint run agent build-maya capture capture-selftest package doctor sis-onboard e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -24,6 +24,14 @@ agent:
 # Rebuild Maia v9 from v8 + the equipment layer. Fails loudly if an anchor moved.
 build-maya:
 	cd frontend && python3 build_v9.py
+
+doctor:                     ## check every precondition for the real SIS run
+	python3 scripts/e2e/doctor.py
+
+sis-onboard: doctor        ## doctor → capture real selectors → verify → start the stack
+	python3 scripts/capture/capture_selectors.py --serial $(SERIAL) --missing-serial $(MISSING)
+	python3 scripts/e2e/doctor.py
+	$(MAKE) e2e
 
 capture:                    ## headed, human-in-the-loop SIS selector capture
 	python3 scripts/capture/capture_selectors.py --serial $(SERIAL) --missing-serial $(MISSING)

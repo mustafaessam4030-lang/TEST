@@ -87,6 +87,10 @@ TARGETS: list[Target] = [
     Target("ready.app_shell", "Application shell",
            "any element that exists only once you are signed in and the app is usable "
            "(header, nav bar, user menu)", "app_shell"),
+    Target("consent.accept", "Cookie banner — accept button",
+           "the button that dismisses the cookie/consent banner, if one is shown. "
+           "It overlays the page and swallows clicks, so the automation must be able "
+           "to dismiss it", "app_shell", required=False),
     Target("ready.authenticated", "Signed-in marker",
            "an element that appears ONLY once you are signed in (user menu, avatar, "
            "sign-out link) — this is how the automation proves it has a session",

@@ -14,6 +14,7 @@ guessed. A missing required selector is WEBSITE_CHANGED — never "not found".
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -169,6 +170,7 @@ class CatSisAdapter:
             raise self._classify_navigation_error(exc) from exc
 
         await self._detect_challenge(ctx)
+        await self._dismiss_consent(ctx)
 
         needs_login = force_relogin or self._is_login_page(ctx.page.url)
         if not needs_login:
@@ -177,6 +179,24 @@ class CatSisAdapter:
         if needs_login:
             await self._detect_challenge(ctx)     # MFA/CAPTCHA before we touch the form
             await self._login(ctx)
+
+    async def _dismiss_consent(self, ctx: RunContext) -> None:
+        """Click the cookie/consent accept control if one was captured.
+
+        The banner overlays the page and silently swallows clicks; without this a
+        capture-perfect selector still fails. Only ever a captured selector — if
+        none is configured, we do nothing rather than hunt for a likely button.
+        """
+        selector = (self.sel.get("consent") or {}).get("accept")
+        if not selector or selector == PLACEHOLDER:
+            return
+        try:
+            locator = ctx.page.locator(selector).first
+            if await locator.count() and await locator.is_visible():
+                await locator.click(timeout=5000)
+                log(logger, logging.INFO, "sis.consent_dismissed", run_id=ctx.run_id)
+        except Exception as exc:
+            log(logger, logging.WARNING, "sis.consent_dismiss_failed", error=str(exc)[:120])
 
     async def _looks_authenticated(self, ctx: RunContext) -> bool:
         """Positive evidence of a session — never "the page rendered, so we must be in".
@@ -245,7 +265,9 @@ class CatSisAdapter:
         log(logger, logging.INFO, "sis.login.ok", run_id=ctx.run_id)
 
     def _credentials(self) -> dict[str, str]:
-        ref = self.auth.get("secret_ref")
+        # MAYA_SIS_SECRET_REF points the worker at the real secret store without
+        # editing the source contract. It names a location, never a value.
+        ref = os.environ.get("MAYA_SIS_SECRET_REF") or self.auth.get("secret_ref")
         if not ref or self.secret_provider is None:
             raise AutomationError(ErrorCode.LOGIN_FAILED,
                                   "No credential source is configured for this adapter.")

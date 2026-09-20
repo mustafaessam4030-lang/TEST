@@ -13,7 +13,7 @@ selector_version: v1-unconfirmed
 
 auth:
   kind: oidc_redirect                  # CWS / Cat Login
-  secret_ref: env://MAYA_CAT_SIS       # prod: vault://kv/maya/cat_sis
+  secret_ref: env://MAYA_CAT_SIS       # override with MAYA_SIS_SECRET_REF=vault://kv/maya/cat_sis
   login_host_markers: ["signin.cat.com", "login.cat.com", "/cws", "authenticate"]
   session_slots: ["default"]
   session_max_age_s: 28800
@@ -34,6 +34,8 @@ challenge_markers:                     # presence ⇒ CAPTCHA_DETECTED, hard sto
   - "[data-testid='bot-challenge']"
 
 selectors:
+  consent:
+    accept: TODO_CAPTURE       # cookie banner button; it overlays and eats clicks
   login:
     username: TODO_CAPTURE
     password: TODO_CAPTURE
