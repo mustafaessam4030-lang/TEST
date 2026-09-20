@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maya capture capture-selftest smoke clean
+.PHONY: install test lint run agent build-maya capture capture-selftest package smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -30,6 +30,17 @@ capture:                    ## headed, human-in-the-loop SIS selector capture
 
 capture-selftest:           ## prove the capture engine against the local fixture
 	python3 scripts/capture/capture_selectors.py --self-test
+
+package:                    ## build the hand-off archive (chat + automation + latest self-test proof)
+	@rm -rf /tmp/maya-package && mkdir -p /tmp/maya-package
+	@find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
+	@rm -rf services/automation/.pytest_cache
+	@cp -r ../maya /tmp/maya-package/maya && rm -rf /tmp/maya-package/maya/artifacts
+	@mkdir -p /tmp/maya-package/maya/artifacts/capture
+	@latest=$$(ls -dt artifacts/capture/self-test-* 2>/dev/null | head -1); \
+	  [ -n "$$latest" ] && cp -r "$$latest" /tmp/maya-package/maya/artifacts/capture/ || true
+	@cd /tmp/maya-package && zip -qr "$(CURDIR)/../maya-platform.zip" maya -x '*.pyc'
+	@echo "wrote ../maya-platform.zip"
 
 smoke:
 	curl -s localhost:8080/readyz | python3 -m json.tool

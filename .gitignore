@@ -33,3 +33,6 @@ venv/
 coverage/
 htmlcov/
 .pytest_cache/
+
+# Release archives — build artifacts, regenerate with `make package` in maya/
+*.zip
