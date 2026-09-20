@@ -13,7 +13,8 @@ selector_version: v1-unconfirmed
 
 auth:
   kind: oidc_redirect                  # CWS / Cat Login
-  secret_ref: env://MAYA_CAT_SIS       # override with MAYA_SIS_SECRET_REF=vault://kv/maya/cat_sis
+  secret_ref: env://SIS                # SIS_USERNAME / SIS_PASSWORD;
+                                       # override: MAYA_SIS_SECRET_REF=vault://kv/maya/cat_sis
   login_host_markers: ["signin.cat.com", "login.cat.com", "/cws", "authenticate"]
   session_slots: ["default"]
   session_max_age_s: 28800

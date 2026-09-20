@@ -44,6 +44,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "services" / "automation"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.core.secrets import resolve_secret  # noqa: E402
 from app.core.errors import AutomationError  # noqa: E402
@@ -53,6 +54,7 @@ from app.adapters.selector_health import (  # noqa: E402
 )
 
 PICKER_JS = (Path(__file__).parent / "picker.js").read_text()
+DISCOVER_JS = (Path(__file__).parent / "discover.js").read_text()
 FIXTURE = Path(__file__).parent / "fixture.html"
 DEFAULT_BASE = "https://sis2.cat.com/#/"
 CHROMIUM_PATH = os.environ.get("MAYA_CHROMIUM_PATH") or None
@@ -187,6 +189,12 @@ class CaptureSession:
         self.browser: Any = None
         self.stopped_reason: str | None = None
         self.recon: dict[str, Any] = {}
+        # Header/nav wording on the sign-in page, so a post-login marker can be
+        # identified as "present now, absent before" rather than assumed.
+        self.login_page_signature: list[str] = []
+        # Where the search screen lives, so verification can get back to it after
+        # the run has walked into a detail page.
+        self.search_url: str | None = None
 
     # ── lifecycle ───────────────────────────────────────────────────────────
     @staticmethod
@@ -212,16 +220,18 @@ class CaptureSession:
         from playwright.async_api import async_playwright
 
         self._pw = await async_playwright().start()
-        headed = self.mode == "live"
+        headed = self.mode in ("live", "auto") and not self.args.headless
         launch: dict[str, Any] = {"headless": not headed,
                                   "args": ["--disable-dev-shm-usage", "--no-sandbox"]}
-        if CHROMIUM_PATH:
-            launch["executable_path"] = CHROMIUM_PATH
+        chromium = getattr(self.args, "chromium", None) or CHROMIUM_PATH
+        if chromium:
+            launch["executable_path"] = chromium
         self.browser = await self._pw.chromium.launch(**launch)
         self.context = await self.browser.new_context(viewport={"width": 1536, "height": 960})
         self.context.set_default_timeout(self.args.timeout_ms)
 
         await self.context.add_init_script(PICKER_JS)
+        await self.context.add_init_script(DISCOVER_JS)
         await self.context.expose_binding("__mayaPickBinding", self._on_pick)
         await self.context.expose_binding("__mayaSkipBinding", self._on_skip)
 
@@ -406,7 +416,7 @@ class CaptureSession:
     async def authenticate(self) -> bool:
         if self.mode == "self-test":
             return await self._fixture_login()
-        if self.mode == "auto-login":
+        if self.mode in ("auto", "auto-login"):
             return await self._auto_login()
         await self.prompt("Sign in to SIS in the browser window (complete MFA if asked).")
         await self.shot("01-after-auth")
@@ -443,6 +453,15 @@ class CaptureSession:
 
         await self.shot("00-entry")
         await self.snapshot("00-entry")
+        try:
+            self.login_page_signature = await self.page.evaluate(
+                """() => [...document.querySelectorAll(
+                     'header *, nav *, [role=banner] *, [role=navigation] *')]
+                     .filter(el => !el.children.length)
+                     .map(el => (el.innerText || '').trim())
+                     .filter(t => t && t.length <= 40).slice(0, 60)""")
+        except Exception:
+            self.login_page_signature = []
         self.log(f"landed on {self.page.url}")
 
         blocker = await self.detect_blockers("entry")
@@ -503,8 +522,24 @@ class CaptureSession:
 
         blocker = await self.detect_blockers("after sign-in")
         if blocker:
-            self.stopped_reason = blocker
-            return False
+            # Never bypassed. With a visible window a person can satisfy it and we
+            # carry on in the very same session.
+            if self.mode == "auto" and not self.args.headless:
+                print("\n" + "=" * 72)
+                print(f"  {blocker}")
+                print("  Complete it in the browser window that is open, then come back here.")
+                print("  Nothing about the verification is automated.")
+                print("=" * 72)
+                await asyncio.to_thread(input, "  Press Enter once you are signed in… ")
+                await self.page.wait_for_timeout(1500)
+                await self.shot("02b-after-human-verification")
+                still = await self.detect_blockers("after human verification")
+                if still:
+                    self.stopped_reason = still
+                    return False
+            else:
+                self.stopped_reason = blocker
+                return False
 
         still_on_login = any(m in self.page.url.lower() for m in LOGIN_HOST_MARKERS)
         if still_on_login:
@@ -675,20 +710,42 @@ class CaptureSession:
         return {"passed": passed, "checks": results}
 
     async def _goto_search(self) -> None:
-        link = self._selector("nav.search_link")
+        """Get back to the search screen: it is where every verification starts."""
         marker = self._selector("ready.search_page")
+        input_sel = self._selector("search.input")
         try:
-            if marker and await self.page.locator(marker).first.is_visible():
+            if input_sel and await self.page.locator(input_sel).first.is_visible():
+                return
+            if marker and await self.page.locator(marker).first.is_visible() and not input_sel:
                 return
         except Exception:
             pass
+
+        link = self._selector("nav.search_link")
         if link:
             try:
-                await self.page.click(link)
-                if marker:
-                    await self.page.wait_for_selector(marker, state="visible", timeout=10000)
+                await self.page.click(link, timeout=8000)
+                await self.page.wait_for_timeout(1500)
+                if input_sel and await self.page.locator(input_sel).first.is_visible():
+                    return
             except Exception as exc:
-                self.log(f"could not return to the search page: {exc}")
+                self.log(f"navigation link did not return us to search: {str(exc)[:80]}")
+
+        if self.search_url:
+            try:
+                await self.page.goto(self.search_url, wait_until="domcontentloaded")
+                await self.page.wait_for_timeout(1500)
+                if input_sel:
+                    await self.page.wait_for_selector(input_sel, state="visible", timeout=10000)
+                return
+            except Exception as exc:
+                self.log(f"could not reopen the search screen: {str(exc)[:80]}")
+
+        try:                                   # last resort: step back in history
+            await self.page.go_back(wait_until="domcontentloaded")
+            await self.page.wait_for_timeout(1200)
+        except Exception:
+            pass
 
     async def real_search(self) -> dict[str, Any]:
         """One real serial-number search, driven only by captured selectors."""
@@ -754,6 +811,7 @@ class CaptureSession:
             "source_id": "cat_sis",
             "base_url": self.base,
             "capture_profile": {"live": "LIVE_SIS", "auto-login": "LIVE_SIS_AUTOLOGIN",
+                                "auto": "LIVE_SIS_AUTO",
                                 "self-test": "SELF_TEST_FIXTURE",
                                 "recon": "UNAUTHENTICATED_RECON"}[self.mode],
             "selector_version": f"{self.mode}-{self.run_id}",
@@ -776,7 +834,17 @@ class CaptureSession:
         # Fixture and recon output must never be mistaken for a real SIS contract.
         captured_anything = any(r.status != "TODO_CAPTURE" and r.selector
                                 for r in self.records.values())
-        if self.mode not in ("live", "auto-login") or not captured_anything:
+        # The contract is the SIS contract. A run against any other origin — a
+        # fixture, a staging clone, a mirror — must never land there, whatever
+        # mode it ran in.
+        from urllib.parse import urlparse
+        host = (urlparse(self.base).hostname or "").lower()
+        is_real_sis = host.endswith("sis2.cat.com") or host.endswith("cat.com")
+        if not is_real_sis and self.mode in ("live", "auto", "auto-login"):
+            print(f"  ! base host is {host or 'not http'} — not Caterpillar SIS, so the "
+                  f"contract file is NOT written")
+        if (self.mode not in ("live", "auto", "auto-login") or not captured_anything
+                or not is_real_sis):
             # A run that captured nothing has no business creating a contract file.
             target = self.outdir / f"sis_selectors.{self.mode}.json"
         else:
@@ -829,6 +897,25 @@ async def run(args: argparse.Namespace) -> int:
             print(f"  artifacts: {report.parent.relative_to(ROOT)}")
             return 3
 
+        if session.mode == "auto":
+            from autodiscover import AutoDiscovery
+
+            ok = await AutoDiscovery(session).run()
+            if not ok:
+                print(f"\n✗ STOPPED: {session.stopped_reason}")
+                path, report = session.write(None, None)
+                print(f"  artifacts: {report.parent.relative_to(ROOT)}")
+                return 2
+            verification = await session.verify()
+            search = await session.real_search()
+            complete = bool(verification.get("passed") and search.get("ok"))
+            path, report = session.write(verification, search, complete=complete)
+            await session.close()
+            print(f"\n  selectors → {path.relative_to(ROOT)}")
+            print(f"  report    → {report.relative_to(ROOT)}")
+            print(f"\n{'✓ CAPTURE COMPLETE' if complete else '✗ CAPTURE INCOMPLETE'}")
+            return 0 if complete else 1
+
         if session.mode == "auto-login":
             # Authentication is automatable; deciding which element is the serial
             # box is not. We inventory the real DOM and hand it to a human rather
@@ -875,6 +962,9 @@ def main() -> int:
                         default="live")
     parser.add_argument("--self-test", action="store_true", help="shorthand for --mode self-test")
     parser.add_argument("--auto-login", action="store_true", help="shorthand for --mode auto-login")
+    parser.add_argument("--auto", action="store_true",
+                        help="sign in with the configured credentials, then discover and "
+                             "functionally prove the selectors with no clicking required")
     parser.add_argument("--recon-only", action="store_true",
                         help="open the base URL unauthenticated and inventory it; no credentials")
     parser.add_argument("--base", default=DEFAULT_BASE)
@@ -882,9 +972,12 @@ def main() -> int:
     parser.add_argument("--missing-serial", default="ZZZ00000",
                         help="a serial that does NOT exist, to capture the empty state")
     parser.add_argument("--secret-ref",
-                        default=os.environ.get("MAYA_SIS_SECRET_REF", "env://MAYA_CAT_SIS"),
+                        default=os.environ.get("MAYA_SIS_SECRET_REF", "env://SIS"),
                         help="where the credentials live: vault://kv/maya/cat_sis or "
                              "env://MAYA_CAT_SIS. A value is never accepted on the command line.")
+    parser.add_argument("--headless", action="store_true",
+                        help="hide the browser (MFA cannot then be completed by a human)")
+    parser.add_argument("--chromium", default=None, help="path to a Chromium binary")
     parser.add_argument("--timeout-ms", type=int, default=30000)
     parser.add_argument("--pick-timeout-s", type=int, default=300)
     args = parser.parse_args()
@@ -892,6 +985,8 @@ def main() -> int:
         args.mode = "self-test"
     if args.auto_login:
         args.mode = "auto-login"
+    if args.auto:
+        args.mode = "auto"
     if args.recon_only:
         args.mode = "recon"
     return asyncio.run(run(args))

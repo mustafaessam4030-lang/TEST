@@ -13,7 +13,7 @@
   // Attributes we must never build a selector from.
   //  - data-maya-fixture: only exists in our own offline test fixture
   //  - ng-*/cdk-*/_ngcontent-*: framework bookkeeping, changes per build
-  const BANNED_ATTRS = ['data-maya-fixture'];
+  const BANNED_ATTRS = ['data-maya-fixture', 'data-maya-probe'];
   const UNSTABLE_CLASS = /^(ng-|cdk-|mat-focus|mdc-|is-|has-|active$|open$|selected$|focus$|hover$|touched$|dirty$|valid$|invalid$|pristine$)/;
   const UNSTABLE_ID = /^(mat-|cdk-|ng-|radix-|react-|:r[0-9a-z]+:|ember)/i;
   const AUTO_ID_TAIL = /[-_]?\d{3,}$/;           // foo-1042 style generated ids

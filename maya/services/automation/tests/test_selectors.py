@@ -191,17 +191,19 @@ def test_capture_tool_ships_no_hardcoded_sis_selectors() -> None:
 
 def test_fixture_hooks_are_excluded_from_generated_selectors() -> None:
     picker = (ROOT / "scripts" / "capture" / "picker.js").read_text()
-    assert "BANNED_ATTRS = ['data-maya-fixture']" in picker
+    # Neither the fixture hook nor the discovery probe may become a selector.
+    assert "BANNED_ATTRS = ['data-maya-fixture', 'data-maya-probe']" in picker
 
 
 def test_only_live_modes_may_write_the_real_contract_path() -> None:
     source = (ROOT / "scripts" / "capture" / "capture_selectors.py").read_text()
     # Fixture and recon runs write into their own run folder; only a live capture
     # may touch config/sis_selectors.json, and only when it completed.
-    assert 'if self.mode not in ("live", "auto-login") or not captured_anything:' in source
     assert 'target = self.outdir / f"sis_selectors.{self.mode}.json"' in source
-    # ...and a run that captured nothing, or did not complete, never touches it.
+    # ...and a run that captured nothing, did not complete, or did not run against
+    # the real SIS origin, never touches it.
     assert "captured_anything = any(" in source
+    assert "or not is_real_sis" in source
     assert "if target.exists() and not complete:" in source
 
 
@@ -245,3 +247,11 @@ async def test_visible_empty_state_is_the_only_proof_of_not_found() -> None:
                                           "#results": _Loc(1, False)})})()
     assert await CatSisAdapter._is_visible(ctx, "#empty") is True
     assert await CatSisAdapter._is_visible(ctx, "#results") is False
+
+
+def test_contract_file_is_reserved_for_the_real_sis_origin() -> None:
+    """A capture against a fixture, mirror or staging clone must never be able to
+    write config/sis_selectors.json, whatever mode produced it."""
+    source = (ROOT / "scripts" / "capture" / "capture_selectors.py").read_text()
+    assert 'host.endswith("sis2.cat.com")' in source
+    assert "or not is_real_sis" in source

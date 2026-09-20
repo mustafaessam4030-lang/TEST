@@ -85,7 +85,9 @@ nightly verification job: `docs/08-anti-hallucination-and-extensibility.md`.
 | `08-anti-hallucination-and-extensibility.md` | the seven controls; adding sources |
 | `09-maya-integration.md` | exactly what was added to Maia and how to enable it |
 | `10-example-conversation.md` | real transcripts incl. stale, not-found, timeout, CAPTCHA |
-| `11-selector-capture-runbook.md` | **the remaining blocker**: how to capture the SIS2 selectors |
+| `11-selector-capture-runbook.md` | capturing the SIS2 selectors (manual picker) |
+| `12-end-to-end-runbook.md` | the full chain, live progress, MFA pause/resume |
+| `13-windows-deployment.md` | **start here to run it for real**: worker on your Windows PC |
 
 ## Status
 
