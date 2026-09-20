@@ -19,7 +19,7 @@ selector_version: fixture-captured-v1
 
 auth:
   kind: form
-  secret_ref: env://MAYA_FIXTURE
+  secret_ref: env://SIS
   login_host_markers: ["page-login"]
   session_slots: ["default"]
   session_max_age_s: 3600
@@ -27,34 +27,12 @@ auth:
 routes:
   search: "/search"
 
-ready_markers:
-  app_shell: '[data-testid="app-shell"]'
-  authenticated: "#user-menu"        # only rendered after sign-in
-  search_page: "#search-heading"
-  detail_page: "#detail-title"
+ready_markers: {}      # learned on first use, like the selectors
 
 challenge_markers: []
 
-selectors:
-  login:
-    username: "#mat-input-0"
-    password: "#mat-input-1"
-    submit: "#submit-9931"
-    error: "#login-error"
-  search:
-    input: 'input[name="serialNumber"]'
-    submit: '[data-testid="serial-search-submit"]'
-    results: "#results-wrap"
-    first_result: "#results-body > tr.result-row"
-    no_results_marker: "#no-results"
-  detail:
-    equipment_model: "#fld-model"
-    equipment_type: '[data-testid="equipment-type"]'
-    build_date: '[data-testid="equipment-detail-page"] > div.kv:nth-of-type(3) > span.detail-value'
-    engine_family: 'span[aria-label="Engine family"]'
-    parts_manual_url: "#parts-manual-link"
-    spec_rows: '[data-testid="equipment-detail-page"] > table.spec-table > tbody > tr.spec-row'
-    spec_cell: "td"
+selectors: {}          # intentionally empty: this source is LEARNED on first
+                       # use by the automatic capture, exactly like SIS would be
 
 extraction:
   strategy: dom_only

@@ -43,6 +43,23 @@ async def list_paused(request: Request) -> dict[str, Any]:
             "awaiting_human": request.app.state.equipment_service.paused_runs()}
 
 
+@router.post("/sources/{source_id}/capture")
+async def capture_source(source_id: str, request: Request,
+                         serial: str, missing_serial: str = "ZZZ00000") -> dict[str, Any]:
+    """Learn a source's page contract now. `serial` must be one that EXISTS there —
+    the capture proves each selector by searching it."""
+    from app.core.errors import AutomationError, http_status
+
+    service = request.app.state.capture_service
+    try:
+        return {"status": "success",
+                **await service.learn(source_id, good_serial=serial,
+                                      missing_serial=missing_serial)}
+    except AutomationError as err:
+        raise HTTPException(status_code=http_status(err.code),
+                            detail=err.to_payload()) from err
+
+
 @router.get("/sources")
 async def list_sources(registry: Any = Depends(get_registry)) -> dict[str, Any]:
     return {"status": "success", "sources": registry.snapshot()}

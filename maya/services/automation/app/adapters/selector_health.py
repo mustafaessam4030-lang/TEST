@@ -26,11 +26,14 @@ class CheckResult:
     detail: str = ""
     elapsed_ms: int = 0
     match_count: int | None = None
+    #: A non-fatal check records a fact without blocking the run.
+    fatal: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {"name": self.name, "ok": self.ok, "requirement": self.requirement,
                 "selector": self.selector, "detail": self.detail,
-                "elapsed_ms": self.elapsed_ms, "match_count": self.match_count}
+                "elapsed_ms": self.elapsed_ms, "match_count": self.match_count,
+                "fatal": self.fatal}
 
 
 @dataclass
@@ -40,13 +43,17 @@ class HealthReport:
 
     def add(self, result: CheckResult) -> CheckResult:
         self.checks.append(result)
-        if not result.ok:
+        if not result.ok and result.fatal:
             self.ok = False
         return result
 
     @property
     def failed(self) -> list[CheckResult]:
-        return [c for c in self.checks if not c.ok]
+        return [c for c in self.checks if not c.ok and c.fatal]
+
+    @property
+    def warnings(self) -> list[CheckResult]:
+        return [c for c in self.checks if not c.ok and not c.fatal]
 
     def as_dict(self) -> dict[str, Any]:
         return {"ok": self.ok, "checks": [c.as_dict() for c in self.checks],
@@ -163,8 +170,13 @@ async def preflight(page: Any, selectors: dict[str, str], *, base_url: str,
                             "visible", timeout_ms))
     report.add(await _check(page, "search_button_visible", selectors.get("search.submit"),
                             "visible", timeout_ms))
-    # The results container is typically absent until a search runs, so `attached`
-    # is the honest requirement here — `visible` would fail on a healthy page.
-    report.add(await _check(page, "result_container_available", selectors.get("search.results"),
-                            "attached", 2000))
+    # Most result containers are rendered only once a search has run, so their
+    # absence here proves nothing. Record it, never block on it — the real check
+    # is verify_result_container, immediately after the search.
+    container = await _check(page, "result_container_available",
+                             selectors.get("search.results"), "attached", 2000)
+    container.fatal = False
+    if not container.ok:
+        container.detail = f"{container.detail} (not rendered until a search runs)"
+    report.add(container)
     return report

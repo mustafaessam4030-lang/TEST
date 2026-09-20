@@ -29,6 +29,19 @@ Maya holds **no** Playwright code, **no** selectors, **no** credentials, and no 
 to issue a browser command. Her whole reach into the source is one string — the
 serial — which the gateway re-validates server-side.
 
+## Self-provisioning on first use
+
+A source with no verified contract is learned during the first search:
+`LEARN_LAYOUT` runs the automatic capture, which signs in and proves each
+selector by using it, loads the result into the live registry, and the run
+continues into the search. It is attempted once per source per process; a
+failure to learn is `WEBSITE_CHANGED` with the unresolved targets named, never
+a guess. Turn it off with `MAYA_AUTO_CAPTURE=false`, or trigger it explicitly:
+
+```
+POST /v1/sources/cat_sis/capture?serial=<a serial that exists>
+```
+
 ## The live panel
 
 Because the gateway is called with `wait:false`, it returns an `automation_run_id`

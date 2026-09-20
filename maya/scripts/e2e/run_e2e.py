@@ -108,6 +108,8 @@ def main() -> int:
         "MAYA_CORS_ORIGINS": f"http://127.0.0.1:{args.ui_port},http://localhost:{args.ui_port}",
         "MAYA_REPOSITORY": os.environ.get("MAYA_REPOSITORY", "memory"),
         "MAYA_ENABLE_FIXTURE_SOURCE": "true" if args.source == "local_fixture" else "false",
+        # The worker resolves credentials from a reference, never a literal.
+        "MAYA_SIS_SECRET_REF": os.environ.get("MAYA_SIS_SECRET_REF", "env://SIS"),
         # The fixture page accepts any non-empty credentials; this is a local test
         # page, not a real account, and these are not secrets.
         "MAYA_FIXTURE_USERNAME": "fixture-user",

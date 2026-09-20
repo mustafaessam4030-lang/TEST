@@ -81,7 +81,17 @@ python -m pip install -r services\automation\requirements-dev.txt
 python -m playwright install chromium
 ```
 
-## 5. Capture the SIS selectors — once
+## 5. Capture the SIS selectors — usually nothing to do
+
+**The first search provisions this by itself.** If no contract exists, the
+gateway runs the automatic capture as a step of that run — signing in, proving
+each selector by using it, then continuing into your search. Maya shows it as
+*"First run: learning the SIS page layout"*. You do not run a script.
+
+Capture it ahead of time only if you would rather not have the first question
+take a couple of minutes:
+
+## 5b. Capturing ahead of time (optional)
 
 ```powershell
 .\scripts\windows\doctor.ps1                                   # check readiness
@@ -131,6 +141,7 @@ What you will see, in the chat, live:
 ```
 • Checking internal data…
 • Not in internal data — querying Caterpillar SIS…
+✓ First run: learning the SIS page layout      (only the very first time)
 • SIS automation running… Run run_01J…
 ✓ Starting a browser session
 ✓ Signing in to Caterpillar SIS

@@ -174,11 +174,14 @@ async def test_changed_page_raises_website_changed_not_a_fallback() -> None:
     assert exc.value.details["failed_checks"][0]["name"] == "serial_input_visible"
 
 
-async def test_results_container_only_needs_to_be_attached_preflight() -> None:
+async def test_absent_results_container_is_a_warning_not_a_blocker() -> None:
+    """It is usually rendered only after a search, so its absence proves nothing
+    at pre-flight — but a missing search box still stops the run."""
     table = {v: FakeLocator(1) for v in SELECTORS.values()}
-    table["#results"] = FakeLocator(1, visible=False)   # hidden until a search runs
+    table["#results"] = FakeLocator(0)                 # not in the DOM yet at all
     report = await preflight(FakePage(table), SELECTORS, base_url="https://sis2.cat.com/#/")
     assert report.ok
+    assert [w.name for w in report.warnings] == ["result_container_available"]
 
 
 # ── capture-tool contract ───────────────────────────────────────────────────

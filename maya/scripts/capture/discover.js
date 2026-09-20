@@ -108,7 +108,10 @@
     }
     return out.map(el => {
       const row = el.closest('tr, li, [role=row], [class*=row i], [class*=result i]') || el;
-      const container = row.closest('table, tbody, ul, ol, [role=table], [role=grid], [role=list], [class*=result i], [class*=list i]') || row.parentElement;
+      // Start the container search ABOVE the row: a <tr class="result-row"> matches
+      // [class*=result] itself, and a row is not its own container.
+      const above = row.parentElement;
+      const container = (above && above.closest('table, tbody, ul, ol, [role=table], [role=grid], [role=list], [class*=result i], [class*=list i]')) || above;
       return { cell: describe(el), row: describe(row),
                container: container ? describe(container) : null };
     });
@@ -173,6 +176,29 @@
         break;
       }
     }
+    // Specification rows: a repeating two-column structure on the detail page.
+    // Identified by shape, not by a guessed class name.
+    const rowGroups = new Map();
+    for (const row of document.querySelectorAll('tr, [role=row], [class*=spec i], [class*=row i]')) {
+      if (!visible(row)) continue;
+      const cells = [...row.children].filter(visible);
+      if (cells.length < 2 || cells.length > 4) continue;
+      const label = text(cells[0]), value = text(cells[1]);
+      if (!label || !value || label.length > 40) continue;
+      const parent = row.parentElement;
+      if (!parent) continue;
+      if (!rowGroups.has(parent)) rowGroups.set(parent, []);
+      rowGroups.get(parent).push(row);
+    }
+    let best = null;
+    for (const [, rows] of rowGroups) if (!best || rows.length > best.length) best = rows;
+    if (best && best.length >= 2) {
+      const cells = [...best[0].children].filter(visible);
+      out.spec_rows = { label: 'specification rows', value: describe(best[0]),
+                        value_text: `${best.length} rows × ${cells.length} cells`,
+                        cell_tag: cells[0].tagName.toLowerCase() };
+    }
+
     const link = [...document.querySelectorAll('a[href]')].filter(visible)
       .find(a => /parts?\s*(manual|catalog|book)|media/i.test(text(a) + ' ' + a.href));
     if (link) out.parts_manual_url = { label: 'parts manual link', value: describe(link),

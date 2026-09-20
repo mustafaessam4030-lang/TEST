@@ -45,6 +45,10 @@ class SourceRegistry:
             raise AutomationError(ErrorCode.CIRCUIT_OPEN, f"Source '{source_id}' is disabled.")
         return entry.factory(entry.config)
 
+    def update_config(self, source_id: str, config: dict[str, Any]) -> None:
+        """Swap in a freshly learned contract without restarting the service."""
+        self.entry(source_id).config = config
+
     def breaker(self, source_id: str) -> CircuitBreaker:
         return self.entry(source_id).breaker
 

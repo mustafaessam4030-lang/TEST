@@ -234,10 +234,20 @@ class CatSisAdapter:
         user_sel = self._selector("login", "username")
         pass_sel = self._selector("login", "password")
         submit_sel = self._selector("login", "submit")
+        # Identity providers commonly split sign-in across two screens: username,
+        # then password. When the contract captured that step, walk it.
+        user_submit_sel = self._selector("login", "username_submit", required=False)
         try:
             await ctx.page.fill(user_sel, creds["username"])
+            if user_submit_sel:
+                await ctx.page.click(user_submit_sel)
+                await ctx.page.wait_for_selector(pass_sel, state="visible",
+                                                 timeout=ctx.step_timeout_ms)
+                await self._detect_challenge(ctx)   # MFA often lands between the steps
             await ctx.page.fill(pass_sel, creds["password"])
             await ctx.page.click(submit_sel)
+        except AutomationError:
+            raise
         except Exception as exc:
             await self._detect_challenge(ctx)
             raise SelectorContractError("login.form", str(exc)) from exc

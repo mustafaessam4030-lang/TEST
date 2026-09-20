@@ -39,6 +39,7 @@ selectors:
     accept: TODO_CAPTURE       # cookie banner button; it overlays and eats clicks
   login:
     username: TODO_CAPTURE
+    username_submit: TODO_CAPTURE   # two-step sign-in: advances to the password screen
     password: TODO_CAPTURE
     submit: TODO_CAPTURE
     error: TODO_CAPTURE

@@ -13,6 +13,7 @@ Whatever cannot be proven is written as TODO_CAPTURE, and the run stops.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -327,6 +328,22 @@ class AutoDiscovery:
         for field, found in (fields or {}).items():
             name = f"detail.{field}"
             if field == "serial_number":
+                continue
+            if field == "spec_rows":
+                # The row selector must match EVERY row, not just the first, so
+                # drop the positional tail a unique-selector would carry.
+                if await self.record_from_probe(found["value"]["key"], "detail.spec_rows",
+                                                f"repeating rows: {found['value_text']}"):
+                    rec = self.s.records["detail.spec_rows"]
+                    rec.selector = re.sub(r":nth-of-type\(\d+\)$", "", rec.selector)
+                    rec.notes.append("positional suffix removed so it matches every row")
+                    from capture_selectors import CaptureRecord, now_iso
+                    self.s.records["detail.spec_cell"] = CaptureRecord(
+                        name="detail.spec_cell", selector=found.get("cell_tag", "td"),
+                        strategy="derived-from-row", element_text="",
+                        url=self.page.url, captured_at=now_iso(), confidence="verified",
+                        notes=["child element of the discovered specification row"])
+                    print(f"    ✓ detail.spec_cell           {found.get('cell_tag', 'td')}")
                 continue
             await self.record_from_probe(
                 found["value"]["key"], name,

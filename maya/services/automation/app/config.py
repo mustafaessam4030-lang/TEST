@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # same browser session open while they complete it.
     allow_human_resume: bool = True
     human_wait_timeout_s: int = 600
+    # First search against a source with no contract: learn it automatically
+    # rather than making the operator run a capture script by hand.
+    auto_capture: bool = True
+    auto_capture_timeout_s: int = 600
     artifact_dir: str = "/var/maya/artifacts"
 
     # Policy files

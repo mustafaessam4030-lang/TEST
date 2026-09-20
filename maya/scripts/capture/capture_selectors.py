@@ -363,6 +363,35 @@ class CaptureSession:
             print(f"      alternates: {', '.join(c['strategy'] for c in verified[1:4])}")
         return record
 
+    async def record_locator(self, locator: Any, name: str, evidence: str) -> bool:
+        """Record a verified selector for an element we already hold a locator to."""
+        try:
+            handle = await locator.element_handle()
+            if handle is None:
+                return False
+            payload = await handle.evaluate("el => window.__mayaPicker.build(el)")
+        except Exception:
+            return False
+        info = payload.get("info") or {}
+        verified = [c for c in payload.get("candidates") or [] if c.get("verified")]
+        for cand in payload.get("candidates") or []:
+            if cand.get("verified") is None and not verified:
+                ok, _n = await self._verify_with_playwright(cand["selector"], handle)
+                if ok:
+                    verified.append(cand)
+        if not verified:
+            return False
+        best = verified[0]
+        self.records[name] = CaptureRecord(
+            name=name, selector=best["selector"], strategy=best["strategy"],
+            element_text=info.get("element_text", "")[:120], url=self.page.url,
+            captured_at=now_iso(), confidence="verified", match_count=best.get("count"),
+            alternates=[{"selector": c["selector"], "strategy": c["strategy"]}
+                        for c in verified[1:3]],
+            notes=[f"used during sign-in; {evidence}"])
+        print(f"    ✓ {name:<26} {best['strategy']}: {best['selector'][:70]}")
+        return True
+
     async def _verify_with_playwright(self, selector: str, handle: Any) -> tuple[bool, int]:
         try:
             locator = self.page.locator(selector)
@@ -493,8 +522,13 @@ class CaptureSession:
 
         if user_field is not None:
             await user_field.fill(username)
+            await self.record_locator(user_field, "login.username", "the username field")
             self.step("auth:username", "OK")
             if not has_pwd:                      # two-step identity flow: submit, then password
+                submit = await self._find_auth_submit()
+                if submit is not None:
+                    await self.record_locator(submit, "login.username_submit",
+                                              "advances from username to password")
                 await self._submit_auth_step()
                 await self.page.wait_for_timeout(2500)
                 blocker = await self.detect_blockers("after username")
@@ -513,6 +547,10 @@ class CaptureSession:
             return False
 
         await pwd_field.fill(password)           # value is never logged or screenshotted unmasked
+        await self.record_locator(pwd_field, "login.password", "the password field")
+        submit = await self._find_auth_submit()
+        if submit is not None:
+            await self.record_locator(submit, "login.submit", "submits the sign-in form")
         self.step("auth:password", "OK")
         await self._submit_auth_step()
         await self.page.wait_for_timeout(5000)
@@ -557,6 +595,17 @@ class CaptureSession:
 
         self.log(f"authenticated; now at {self.page.url}")
         return True
+
+    async def _find_auth_submit(self) -> Any:
+        for selector in ["button[type='submit']", "input[type='submit']",
+                         "role=button[name=/sign in|log in|next|continue/i]", "button"]:
+            try:
+                loc = self.page.locator(selector).first
+                if await loc.count() and await loc.is_visible():
+                    return loc
+            except Exception:
+                continue
+        return None
 
     async def _submit_auth_step(self) -> None:
         for selector in ["button[type='submit']", "input[type='submit']",
@@ -858,6 +907,8 @@ class CaptureSession:
                     print(f"  ! keeping the existing contract; partial run written to "
                           f"{target.relative_to(ROOT)}")
         target.write_text(self.redact(json.dumps(payload, indent=2, ensure_ascii=False)))
+        # Machine-readable so the gateway can pick the result up without guessing.
+        print(f"SELECTORS_WRITTEN={target}", flush=True)
         return target, report
 
 

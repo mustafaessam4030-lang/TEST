@@ -28,18 +28,19 @@ from app.services.run_recorder import RunRecorder
 
 logger = logging.getLogger(__name__)
 
-STEPS = ["ACQUIRE_CONTEXT", "ENSURE_SESSION", "HEALTH_CHECK", "SEARCH_SERIAL",
-         "EXTRACT_RAW", "NORMALIZE", "VALIDATE", "PERSIST"]
+STEPS = ["LEARN_LAYOUT", "ACQUIRE_CONTEXT", "ENSURE_SESSION", "HEALTH_CHECK",
+         "SEARCH_SERIAL", "EXTRACT_RAW", "NORMALIZE", "VALIDATE", "PERSIST"]
 
 
 class EquipmentService:
     def __init__(self, *, repo: Any, registry: SourceRegistry, pool: BrowserPool,
-                 freshness: FreshnessPolicy, settings: Any) -> None:
+                 freshness: FreshnessPolicy, settings: Any, capture: Any = None) -> None:
         self.repo = repo
         self.registry = registry
         self.pool = pool
         self.freshness = freshness
         self.settings = settings
+        self.capture = capture
         # Background runs (wait=false) and the runs paused for a human at MFA.
         self._tasks: set[asyncio.Task] = set()
         self._paused: dict[str, asyncio.Event] = {}
@@ -180,6 +181,19 @@ class EquipmentService:
     # ── automation ──────────────────────────────────────────────────────────
     async def _run_automation(self, recorder: RunRecorder, source: str, serial: str,
                               req: EquipmentSearchRequest) -> EquipmentRecord:
+        # Learn the page contract on first use, so nobody has to run a capture
+        # script by hand. It proves every selector by using it; if it cannot, the
+        # run fails with WEBSITE_CHANGED rather than proceeding on guesses.
+        if (self.capture and self.settings.auto_capture
+                and not self.capture.contract_is_usable(source)
+                and not self.capture.already_attempted(source)):
+            async with recorder.step("LEARN_LAYOUT"):
+                outcome = await self.capture.learn(
+                    source, good_serial=serial,
+                    timeout_s=self.settings.auto_capture_timeout_s)
+                log(logger, logging.INFO, "equipment.layout_learned",
+                    run_id=recorder.run_id, **outcome)
+
         adapter = self.registry.adapter(source)
         caps = adapter.capabilities()
         deadline_s = min(req.timeout_ms, self.settings.run_deadline_ms) / 1000.0

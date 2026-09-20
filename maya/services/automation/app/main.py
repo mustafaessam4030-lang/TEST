@@ -22,6 +22,7 @@ from app.core.errors import AutomationError, ErrorCode, USER_HINT, http_status
 from app.core.secrets import resolve_secret
 from app.adapters import selector_store
 from app.domain.freshness import FreshnessPolicy
+from app.services.capture_service import CaptureService
 from app.services.equipment_service import EquipmentService
 
 logger = logging.getLogger(__name__)
@@ -109,9 +110,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.repo = repo
     app.state.registry = registry
     app.state.pool = pool
+    capture = CaptureService(registry=registry, settings=settings)
+    app.state.capture_service = capture
     app.state.equipment_service = EquipmentService(
         repo=repo, registry=registry, pool=pool,
-        freshness=FreshnessPolicy(settings.freshness_policy()), settings=settings)
+        freshness=FreshnessPolicy(settings.freshness_policy()), settings=settings,
+        capture=capture)
     mlog.log(logger, logging.INFO, "service.started", environment=settings.environment,
              repository=settings.repository, live_automation=settings.allow_live_automation)
     try:
