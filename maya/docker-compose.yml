@@ -1,0 +1,24 @@
+services:
+  maya-api:
+    build: { context: ., dockerfile: services/automation/Dockerfile }
+    ports: ["8080:8080"]
+    environment:
+      MAYA_ENVIRONMENT: dev
+      MAYA_REPOSITORY: memory            # switch to snowflake with the vars below
+      MAYA_ALLOW_LIVE_AUTOMATION: "false"
+      MAYA_HEADLESS: "true"
+      MAYA_CORS_ORIGINS: "http://localhost:5173"
+    env_file: [config/.env]              # cp config/.env.example config/.env
+    shm_size: 1gb                        # Chromium needs it; otherwise tabs crash
+    volumes: ["artifacts:/var/maya/artifacts"]
+
+  maya-worker:                           # same image, browser-heavy path only
+    build: { context: ., dockerfile: services/automation/Dockerfile }
+    command: ["python", "-m", "app.worker"]
+    profiles: ["worker"]                 # enable once the queue is wired
+    env_file: [config/.env]
+    shm_size: 1gb
+    volumes: ["artifacts:/var/maya/artifacts"]
+
+volumes:
+  artifacts:

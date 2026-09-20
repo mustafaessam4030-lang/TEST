@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mantrac.example/schemas/equipment.normalized.schema.json",
+  "title": "Normalized Equipment Record",
+  "description": "Canonical contract for equipment data from any source. additionalProperties is false everywhere: an unexpected key from a changed page is a validation error, not silent data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "serial_number", "source_system", "retrieved_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.1.0" },
+    "serial_number": { "type": "string", "pattern": "^[A-Z0-9]{3,17}$" },
+    "serial_number_raw": { "type": ["string", "null"], "maxLength": 40 },
+    "equipment_model": { "type": ["string", "null"], "maxLength": 64 },
+    "equipment_type": {
+      "type": ["string", "null"],
+      "enum": ["HYDRAULIC_EXCAVATOR", "TRACK_TYPE_TRACTOR", "WHEEL_LOADER", "MOTOR_GRADER",
+               "BACKHOE_LOADER", "ARTICULATED_TRUCK", "GENERATOR_SET", "ENGINE", "UNKNOWN", null]
+    },
+    "manufacturer": { "type": ["string", "null"] },
+    "build_date": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+      "description": "ISO-8601 with the precision the source actually published. Never widened, never guessed."
+    },
+    "engine_family": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": ["string", "null"] },
+        "arrangement": { "type": ["string", "null"] },
+        "emissions": { "type": ["string", "null"] }
+      }
+    },
+    "specifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "group": { "type": ["string", "null"] },
+          "name": { "type": "string" },
+          "value": { "type": ["number", "string", "null"] },
+          "unit": { "type": ["string", "null"] },
+          "value_raw": { "type": ["string", "null"] },
+          "provenance_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "parts_data": { "type": ["object", "null"] },
+    "parts_manual_url": { "type": ["string", "null"], "format": "uri" },
+    "operation_manual_url": { "type": ["string", "null"], "format": "uri" },
+    "source_system": { "type": "string" },
+    "source_url": { "type": ["string", "null"], "format": "uri" },
+    "retrieved_at": { "type": "string", "format": "date-time" },
+    "automation_run_id": { "type": ["string", "null"] },
+    "data_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "status": { "enum": ["ACTIVE", "NOT_FOUND", "STALE", "QUARANTINED", "SUPERSEDED"] },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "required_present": { "type": "integer" },
+        "required_total": { "type": "integer" },
+        "violations": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "field_provenance": {
+      "type": "object",
+      "description": "Per-field origin. A field with no provenance entry must never be rendered as fact.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "selector_id": { "type": ["string", "null"] },
+          "value_source": { "enum": ["xhr", "dom", "derived", "manual"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "reason": { "enum": ["OK", "NOT_PUBLISHED", "UNREADABLE"] }
+        }
+      }
+    }
+  }
+}
