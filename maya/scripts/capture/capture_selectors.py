@@ -26,8 +26,8 @@ Outputs
 Usage
   python scripts/capture/capture_selectors.py --serial CAT0336LKBW00123
   python scripts/capture/capture_selectors.py --self-test
-  MAYA_CAT_SIS_USERNAME=… MAYA_CAT_SIS_PASSWORD=… \
-      python scripts/capture/capture_selectors.py --auto-login --serial SN123456
+  python scripts/capture/capture_selectors.py --auto-login \
+      --secret-ref vault://kv/maya/cat_sis --serial SN123456
 """
 from __future__ import annotations
 
@@ -45,6 +45,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "services" / "automation"))
 
+from app.core.secrets import resolve_secret  # noqa: E402
+from app.core.errors import AutomationError  # noqa: E402
 from app.adapters.selector_health import (  # noqa: E402
     run_post_capture_verification, verify_no_result_state, verify_result_container,
     verify_search_button, verify_serial_search_input,
@@ -67,6 +69,10 @@ LOGIN_HOST_MARKERS = ["signin.cat.com", "login.cat.com", "/cws", "authenticate",
 
 
 # ── what must be captured ───────────────────────────────────────────────────
+class NavigationFailed(RuntimeError):
+    """The browser could not load the base URL at all — nothing else can proceed."""
+
+
 @dataclass
 class Target:
     key: str
@@ -166,7 +172,7 @@ class CaptureSession:
         self.records: dict[str, CaptureRecord] = {}
         self.xhr: list[str] = []
         self.steps: list[dict[str, Any]] = []
-        self.redact = Redactor([os.environ.get("MAYA_CAT_SIS_PASSWORD", "")])
+        self.redact = Redactor([])   # re-armed with the real secret at resolve time
         self._pending: asyncio.Future | None = None
         self.page: Any = None
         self.context: Any = None
@@ -175,6 +181,25 @@ class CaptureSession:
         self.recon: dict[str, Any] = {}
 
     # ── lifecycle ───────────────────────────────────────────────────────────
+    @staticmethod
+    def explain_navigation_failure(error: str) -> str:
+        """Turn a browser-level failure into something a person can act on."""
+        if "ERR_CERT" in error or "SSL" in error.upper():
+            return ("the browser does not trust the certificate presented for this host. "
+                    "A TLS-inspecting proxy is almost certainly in the path: install its CA "
+                    "in the browser trust store (Chrome/Chromium: Settings → Privacy and "
+                    "security → Security → Manage certificates → Authorities), or run the "
+                    "capture from a network without interception. Do not disable "
+                    "certificate checks — you would be typing SIS credentials into a "
+                    "connection you cannot verify")
+        if "ERR_NAME_NOT_RESOLVED" in error:
+            return "the hostname did not resolve — check DNS or the corporate VPN"
+        if "ERR_CONNECTION" in error or "ERR_TIMED_OUT" in error:
+            return "the host could not be reached — check network access or the VPN"
+        if "ERR_BLOCKED" in error or "ERR_ACCESS_DENIED" in error:
+            return "the network blocked this request — a proxy or policy is in the way"
+        return error[:200]
+
     async def start(self) -> None:
         from playwright.async_api import async_playwright
 
@@ -194,7 +219,10 @@ class CaptureSession:
 
         self.page = await self.context.new_page()
         self.page.on("response", self._on_response)
-        await self.page.goto(self.base, wait_until="domcontentloaded")
+        try:
+            await self.page.goto(self.base, wait_until="domcontentloaded")
+        except Exception as exc:
+            raise NavigationFailed(self.explain_navigation_failure(str(exc))) from exc
         self.log(f"opened {self.base}")
 
     async def close(self) -> None:
@@ -393,11 +421,17 @@ class CaptureSession:
         still put through the same candidate + verification pipeline before it is
         written anywhere.
         """
-        username = os.environ.get("MAYA_CAT_SIS_USERNAME", "")
-        password = os.environ.get("MAYA_CAT_SIS_PASSWORD", "")
-        if not username or not password:
-            self.stopped_reason = "auto-login requested but credentials are not in the environment"
+        # Credentials come from the configured secret store (vault://…) or from the
+        # environment (env://PREFIX). Never from a CLI argument, a file in the repo,
+        # or anything a human typed into a chat window.
+        try:
+            creds = resolve_secret(self.args.secret_ref)
+        except AutomationError as exc:
+            self.stopped_reason = f"credentials unavailable: {exc.message}"
             return False
+        username, password = creds["username"], creds["password"]
+        # Anything the resolver returned is redacted out of every artifact from here.
+        self.redact = Redactor([password])
 
         await self.shot("00-entry")
         await self.snapshot("00-entry")
@@ -752,7 +786,17 @@ async def run(args: argparse.Namespace) -> int:
     session = CaptureSession(args)
     print(f"\n╔═ SELECTOR CAPTURE · mode={session.mode} · {session.base}")
     print(f"╚═ artifacts → {session.outdir.relative_to(ROOT)}\n")
-    await session.start()
+    try:
+        await session.start()
+    except NavigationFailed as exc:
+        # A clean, actionable stop — not a traceback and a broken pipe.
+        print(f"\n✗ CANNOT REACH {session.base}\n  {exc}")
+        session.stopped_reason = f"navigation failed: {exc}"
+        try:
+            session.write(None, None)
+        finally:
+            await session.close()
+        return 6
     verification = search = None
     try:
         if session.mode == "recon":
@@ -826,6 +870,10 @@ def main() -> int:
     parser.add_argument("--serial", default="SN123456", help="a serial that EXISTS in the source")
     parser.add_argument("--missing-serial", default="ZZZ00000",
                         help="a serial that does NOT exist, to capture the empty state")
+    parser.add_argument("--secret-ref",
+                        default=os.environ.get("MAYA_SIS_SECRET_REF", "env://MAYA_CAT_SIS"),
+                        help="where the credentials live: vault://kv/maya/cat_sis or "
+                             "env://MAYA_CAT_SIS. A value is never accepted on the command line.")
     parser.add_argument("--timeout-ms", type=int, default=30000)
     parser.add_argument("--pick-timeout-s", type=int, default=300)
     args = parser.parse_args()

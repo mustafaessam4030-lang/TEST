@@ -120,6 +120,38 @@ against the fixture. Output goes to the run folder as
 `sis_selectors.self-test.json` — never to `config/sis_selectors.json`, because
 fixture selectors are not SIS selectors.
 
+## If the browser cannot reach SIS
+
+The tool stops with an explanation instead of a traceback. The common one is a
+**TLS-inspecting proxy** (corporate network, zero-trust agent, cloud sandbox):
+Chromium reports `ERR_CERT_AUTHORITY_INVALID` because it does not trust the
+proxy's CA. Install that CA in the browser's own trust store — for Chromium,
+Settings → Privacy and security → Security → Manage certificates → Authorities.
+
+Do **not** run the capture with certificate checks disabled. You would be typing
+SIS credentials into a connection you cannot verify, and the captured contract
+would come from a page you cannot prove came from Caterpillar. Modern Chromium
+also ignores the system/NSS store for this, so a `certutil` import is not enough
+— it has to be the browser's own authorities list, or a network without
+interception.
+
+## Where credentials come from
+
+`--secret-ref` names a location, never a value:
+
+```bash
+python scripts/capture/capture_selectors.py --auto-login \
+    --secret-ref vault://kv/maya/cat_sis            # VAULT_ADDR + VAULT_TOKEN in the env
+python scripts/capture/capture_selectors.py --auto-login \
+    --secret-ref env://MAYA_CAT_SIS                 # MAYA_CAT_SIS_USERNAME / _PASSWORD
+```
+
+A password is never accepted as a command-line argument (it would land in your
+shell history and in `ps`), never written to the repo, and never printed. The
+resolved value is added to the redaction filter, so it cannot appear in a log
+line, a DOM snapshot, or `report.json`. In `live` mode the tool never reads
+credentials at all — you type them into the browser yourself.
+
 ## Other modes
 
 | Mode | What it does | When |

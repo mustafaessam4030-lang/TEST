@@ -19,34 +19,12 @@ from app.api import routes_equipment, routes_health, routes_runs
 from app.config import get_settings
 from app.core import logging as mlog
 from app.core.errors import AutomationError, ErrorCode, USER_HINT, http_status
+from app.core.secrets import resolve_secret
 from app.adapters import selector_store
 from app.domain.freshness import FreshnessPolicy
 from app.services.equipment_service import EquipmentService
 
 logger = logging.getLogger(__name__)
-
-
-def resolve_secret(ref: str) -> dict[str, str]:
-    """Resolve a credential reference. Never reads from a request and never logs.
-
-    Production binds this to Vault/Key Vault. The env fallback exists so a
-    developer can run locally without a vault; it is still never in a prompt.
-    """
-    if ref.startswith("env://"):
-        prefix = ref.removeprefix("env://")
-        return {"username": os.environ.get(f"{prefix}_USERNAME", ""),
-                "password": os.environ.get(f"{prefix}_PASSWORD", "")}
-    if ref.startswith("vault://"):
-        try:
-            import hvac  # optional dependency
-        except ImportError as exc:  # pragma: no cover
-            raise AutomationError(ErrorCode.LOGIN_FAILED,
-                                  "Vault client is not installed.") from exc
-        client = hvac.Client(url=os.environ["VAULT_ADDR"], token=os.environ["VAULT_TOKEN"])
-        path = ref.removeprefix("vault://kv/")
-        data = client.secrets.kv.v2.read_secret_version(path=path)["data"]["data"]
-        return {"username": data.get("username", ""), "password": data.get("password", "")}
-    raise AutomationError(ErrorCode.LOGIN_FAILED, f"Unsupported secret reference scheme: {ref[:12]}")
 
 
 def build_repository(settings: Any) -> Any:
