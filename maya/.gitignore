@@ -6,3 +6,5 @@ config/.env
 config/sources/*.captured.json
 /var/maya/
 node_modules/
+
+artifacts/

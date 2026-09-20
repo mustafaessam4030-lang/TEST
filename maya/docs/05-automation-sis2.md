@@ -22,8 +22,9 @@ design:
 
 **We do not fabricate selectors.** No DOM path in this repo is guessed from
 memory. `config/sources/cat_sis.yaml` ships with the *structure* of the selector
-contract and `TODO_CAPTURE` placeholders; `scripts/capture_selectors.py` opens an
-authenticated session, records candidates, and an engineer confirms them once.
+contract and `TODO_CAPTURE` placeholders; `scripts/capture/capture_selectors.py` (see `docs/11`) opens an authenticated
+session, lets an engineer click each element, verifies every candidate against
+the live DOM, and writes `config/sis_selectors.json`.
 `POST /v1/admin/selectors/validate` then re-asserts that contract on a schedule,
 so a SIS2 redesign is caught by a CI alarm rather than by a customer getting a
 wrong answer. This is also why the error taxonomy separates `WEBSITE_CHANGED`
@@ -57,9 +58,15 @@ A run is a fixed, declared sequence. The model cannot add, reorder, or skip a
 step; there is no "click whatever looks right" affordance anywhere in the code.
 
 ```python
-STEPS = ["ACQUIRE_CONTEXT", "ENSURE_SESSION", "NAVIGATE_SEARCH",
-         "SEARCH_SERIAL", "OPEN_RESULT", "EXTRACT_RAW", "RELEASE_CONTEXT"]
+STEPS = ["ACQUIRE_CONTEXT", "ENSURE_SESSION", "HEALTH_CHECK", "SEARCH_SERIAL",
+         "EXTRACT_RAW", "NORMALIZE", "VALIDATE", "PERSIST"]
 ```
+
+`HEALTH_CHECK` is the selector-contract gate (`app/adapters/selector_health.py`):
+five questions — app reachable, session authenticated, app shell present, serial
+input visible, search button visible, results container attached. Any failure is
+`WEBSITE_CHANGED` with a screenshot, and the run stops. There is no fallback
+clicking.
 
 Each step is wrapped by `run_step()`, which records start/end, duration, outcome,
 the current URL, and on failure an artifact bundle (screenshot + trimmed HTML +

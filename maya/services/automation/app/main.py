@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -18,6 +19,7 @@ from app.api import routes_equipment, routes_health, routes_runs
 from app.config import get_settings
 from app.core import logging as mlog
 from app.core.errors import AutomationError, ErrorCode, USER_HINT, http_status
+from app.adapters import selector_store
 from app.domain.freshness import FreshnessPolicy
 from app.services.equipment_service import EquipmentService
 
@@ -69,6 +71,26 @@ def build_repository(settings: Any) -> Any:
 def build_registry(settings: Any) -> SourceRegistry:
     registry = SourceRegistry()
     sis_cfg = settings.source_config("cat_sis")
+
+    # Selectors captured from a real authenticated session override the YAML
+    # placeholders. Only entries marked confidence=verified are taken; anything
+    # still TODO_CAPTURE stays missing so the adapter fails loudly.
+    captured_path = os.environ.get("MAYA_SIS_SELECTORS",
+                                   str(Path(settings.sources_dir).parent / "sis_selectors.json"))
+    try:
+        captured = selector_store.load(captured_path)
+    except selector_store.SelectorStoreError as exc:
+        mlog.log(logger, logging.ERROR, "selectors.invalid", path=captured_path, error=str(exc))
+        captured = {}
+    if captured:
+        problems = selector_store.validate(captured)
+        missing = selector_store.missing_required(captured)
+        sis_cfg = selector_store.merge_into_config(sis_cfg, captured)
+        mlog.log(logger, logging.INFO, "selectors.loaded", path=captured_path,
+                 profile=captured.get("capture_profile"),
+                 version=captured.get("selector_version"),
+                 verified=len(selector_store.verified_selectors(captured)),
+                 missing_required=missing, invalid=list(problems))
     registry.register(
         "cat_sis",
         sis_cfg.get("label", "Caterpillar SIS"),

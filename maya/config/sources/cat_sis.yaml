@@ -52,7 +52,7 @@ selectors:
     parts_manual_url: TODO_CAPTURE
     operation_manual_url: TODO_CAPTURE
     spec_rows: TODO_CAPTURE
-    spec_cell: "td"
+    spec_cell: TODO_CAPTURE   # derived from the captured row, never assumed
 
 extraction:
   strategy: dom_then_xhr               # the SPA's own JSON beats scraped text

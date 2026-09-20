@@ -27,8 +27,8 @@ from app.services.run_recorder import RunRecorder
 
 logger = logging.getLogger(__name__)
 
-STEPS = ["ACQUIRE_CONTEXT", "ENSURE_SESSION", "SEARCH_SERIAL", "EXTRACT_RAW",
-         "NORMALIZE", "VALIDATE", "PERSIST"]
+STEPS = ["ACQUIRE_CONTEXT", "ENSURE_SESSION", "HEALTH_CHECK", "SEARCH_SERIAL",
+         "EXTRACT_RAW", "NORMALIZE", "VALIDATE", "PERSIST"]
 
 
 class EquipmentService:
@@ -180,6 +180,18 @@ class EquipmentService:
                             await adapter.ensure_session(ctx, force_relogin=True)
                         else:
                             raise
+
+                # Selector contract gate: a changed page fails here, cleanly, before
+                # any interaction can misread it as "serial not found".
+                if hasattr(adapter, "preflight"):
+                    async with recorder.step("HEALTH_CHECK",
+                                             url_provider=lambda: ctx.page.url) as box:
+                        report = await adapter.preflight(ctx)
+                        if not report.ok:
+                            box["artifact_uri"] = (
+                                await self.pool.capture_artifacts(ctx, "HEALTH_CHECK")
+                            ).get("screenshot")
+                            report.raise_if_failed(source=source)
 
                 async with recorder.step("SEARCH_SERIAL", url_provider=lambda: ctx.page.url) as box:
                     try:

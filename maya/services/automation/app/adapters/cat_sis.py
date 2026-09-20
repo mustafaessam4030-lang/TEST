@@ -20,6 +20,8 @@ from typing import Any
 
 from app.adapters.base import RawPayload, SearchOutcome, SourceCapabilities
 from app.adapters.browser import RunContext
+from app.adapters.selector_health import HealthReport, preflight as run_preflight
+from app.adapters.selector_store import flatten_config
 from app.core.errors import AutomationError, ErrorCode
 from app.core.logging import log
 
@@ -116,6 +118,21 @@ class CatSisAdapter:
         return AutomationError(ErrorCode.INTERNAL_ERROR, f"Navigation failed: {str(exc)[:160]}")
 
     # ── steps ───────────────────────────────────────────────────────────────
+    async def preflight(self, ctx: RunContext) -> HealthReport:
+        """Answer the five health questions before any real work.
+
+        A failure here is WEBSITE_CHANGED and the run stops. We never fall back to
+        clicking around to find something that looks close enough.
+        """
+        report = await run_preflight(
+            ctx.page, flatten_config(self.cfg),
+            base_url=self.cfg.get("base_url", ""),
+            login_host_markers=self.auth.get("login_host_markers", []),
+            timeout_ms=min(ctx.step_timeout_ms, 8000))
+        log(logger, logging.INFO if report.ok else logging.ERROR, "sis.preflight",
+            run_id=ctx.run_id, ok=report.ok, failed=[c.name for c in report.failed])
+        return report
+
     async def ensure_session(self, ctx: RunContext, *, force_relogin: bool = False) -> None:
         base = self.cfg.get("base_url", "https://sis2.cat.com/#/")
         try:

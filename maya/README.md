@@ -85,6 +85,7 @@ nightly verification job: `docs/08-anti-hallucination-and-extensibility.md`.
 | `08-anti-hallucination-and-extensibility.md` | the seven controls; adding sources |
 | `09-maya-integration.md` | exactly what was added to Maia and how to enable it |
 | `10-example-conversation.md` | real transcripts incl. stale, not-found, timeout, CAPTCHA |
+| `11-selector-capture-runbook.md` | **the remaining blocker**: how to capture the SIS2 selectors |
 
 ## Status
 
@@ -92,11 +93,16 @@ Working: the API and its decision flow, freshness engine, normalizer, validator,
 repositories (memory + Snowflake), run/step audit, error taxonomy, retry and
 circuit breaker, the adapter framework, Maya's tool layer and UI, all tests.
 
-Needs a human before production: **SIS2 selectors are `TODO_CAPTURE`.** They must
-be captured from a real authenticated session (`scripts/capture_selectors.py`)
-and reviewed. The adapter refuses placeholders and raises `WEBSITE_CHANGED`
-rather than guessing — a guessed selector is how a scraper starts returning
-confident nonsense.
+Needs a human before production: **SIS2 selectors are `TODO_CAPTURE`.** Clearing
+that is a ~10 minute procedure on a laptop with SIS access —
+`docs/11-selector-capture-runbook.md`. The capture tool
+(`scripts/capture/capture_selectors.py`) drives a headed browser, you sign in
+yourself (MFA included) and click each element; it derives candidates from the
+live DOM, keeps only those that resolve uniquely back to what you clicked, then
+verifies them and runs one real serial search. Anything it cannot verify is
+written `TODO_CAPTURE` and the run stops. The adapter refuses placeholders and
+raises `WEBSITE_CHANGED` rather than guessing — a guessed selector is how a
+scraper starts returning confident nonsense.
 
 Also deliberately out of scope until the queue is wired: the async worker tier
 (`maya-worker`, stubbed in compose). The sync path with a 202 fallback works today.
