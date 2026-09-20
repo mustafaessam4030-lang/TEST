@@ -77,6 +77,20 @@ def build_registry(settings: Any) -> SourceRegistry:
         enabled=bool(sis_cfg),
         precedence=int(sis_cfg.get("precedence", 10)),
     )
+    # An offline source used to exercise the whole chain with a real browser when
+    # SIS itself is not reachable. Opt-in only, lowest precedence, and its label
+    # carries the warning into every answer and audit row.
+    if os.environ.get("MAYA_ENABLE_FIXTURE_SOURCE", "").lower() == "true":
+        fixture_cfg = settings.source_config("local_fixture")
+        if fixture_cfg:
+            registry.register(
+                "local_fixture", fixture_cfg.get("label", "Local test fixture"),
+                fixture_cfg,
+                lambda cfg: CatSisAdapter(cfg, secret_provider=resolve_secret),
+                enabled=True, precedence=int(fixture_cfg.get("precedence", 900)))
+            mlog.log(logger, logging.WARNING, "source.fixture_enabled",
+                     note="local_fixture is registered; it is NOT Caterpillar SIS")
+
     # Adding cat_pcc / dealer_erp / telematics is one register() call each — no
     # change to the service, the API, Maya's tools, or the warehouse schema.
     return registry

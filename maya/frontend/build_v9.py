@@ -82,6 +82,7 @@ CFG_BLOCK = """  showTrace: true,           // "show reasoning" panel — great 
   equipment: {
     enabled      : true,
     apiBase      : '',                 // e.g. 'https://maya-api.mantrac.internal'
+    source       : 'cat_sis',          // which registered source to query
     actor        : 'maia-web',
     authToken    : '',                 // short-lived token minted by your BFF
     timeoutMs    : 45000,              // SIS cold lookups run 15-40s

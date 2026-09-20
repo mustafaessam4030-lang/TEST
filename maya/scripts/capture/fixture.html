@@ -22,7 +22,9 @@
 </style></head>
 <body class="ng-scope">
 <div class="topbar ng-star-inserted" id="app-shell-root" data-testid="app-shell"
-     data-maya-fixture="ready.app_shell">SIS-shaped fixture</div>
+     data-maya-fixture="ready.app_shell">SIS-shaped fixture
+  <span id="user-menu" class="hide" data-maya-fixture="ready.authenticated"
+        style="float:right;font-size:12px;">fixture-user ▾</span></div>
 <div class="nav">
   <a href="#/search" id="nav-search-link" data-maya-fixture="nav.search_link">Equipment search</a>
   <a href="#/home" class="ng-tns-c14-2">Home</a>
@@ -81,6 +83,7 @@
  function signIn(){
    const u=document.getElementById('mat-input-0').value, p=document.getElementById('mat-input-1').value;
    if(!u||!p){document.getElementById('login-error').classList.remove('hide');return;}
+   document.getElementById('user-menu').classList.remove('hide');
    location.hash='#/search';
  }
  function runSearch(){

@@ -87,6 +87,10 @@ TARGETS: list[Target] = [
     Target("ready.app_shell", "Application shell",
            "any element that exists only once you are signed in and the app is usable "
            "(header, nav bar, user menu)", "app_shell"),
+    Target("ready.authenticated", "Signed-in marker",
+           "an element that appears ONLY once you are signed in (user menu, avatar, "
+           "sign-out link) — this is how the automation proves it has a session",
+           "app_shell"),
     Target("nav.search_link", "Navigation → equipment search",
            "the menu link that opens equipment search", "app_shell", required=False),
     Target("ready.search_page", "Search page ready marker",

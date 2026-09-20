@@ -81,7 +81,8 @@ const EQUIP=(()=>{
 
   // ── the five tools ───────────────────────────────────────────────────────
   async function getFromDatabase(serial){
-    const r=await call(`/v1/equipment/${encodeURIComponent(serial)}`,{timeoutMs:10000});
+    const src=C().source&&C().source!=='cat_sis'?`?source=${encodeURIComponent(C().source)}`:'';
+    const r=await call(`/v1/equipment/${encodeURIComponent(serial)}${src}`,{timeoutMs:10000});
     if(r.error_code)return r;
     if(r.httpStatus===200)return {ok:true,found:true,...r.payload};
     if((r.payload||{}).error_code==='SERIAL_NOT_FOUND')
@@ -95,7 +96,7 @@ const EQUIP=(()=>{
     // automation step by step, so the user sees it working instead of a spinner.
     const async_=(opts&&opts.async)!==false;
     const r=await call('/v1/equipment/search',{method:'POST',body:{
-      serial_number:serial,source:'cat_sis',mode:mode||'auto',
+      serial_number:serial,source:C().source||'cat_sis',mode:mode||'auto',
       reason:reason||'user_request',wait:!async_,
       timeout_ms:(C().timeoutMs||45000)-5000}});
     if(r.error_code)return r;

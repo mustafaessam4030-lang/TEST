@@ -203,3 +203,45 @@ def test_only_live_modes_may_write_the_real_contract_path() -> None:
     # ...and a run that captured nothing, or did not complete, never touches it.
     assert "captured_anything = any(" in source
     assert "if target.exists() and not complete:" in source
+
+
+# ── regression: presence is not visibility ───────────────────────────────────
+class _Loc:
+    def __init__(self, count: int, visible: bool) -> None:
+        self._count, self._visible = count, visible
+        self.first = self
+
+    async def count(self) -> int:
+        return self._count
+
+    async def is_visible(self) -> bool:
+        return self._visible
+
+
+class _Page:
+    def __init__(self, table):
+        self.table, self.url = table, "https://sis2.cat.com/#/search"
+
+    def locator(self, selector):
+        return self.table.get(selector, _Loc(0, False))
+
+
+async def test_hidden_empty_state_is_not_serial_not_found() -> None:
+    """A results container that is visible wins over an empty state that is merely
+    in the DOM. Reporting SERIAL_NOT_FOUND here would be a false negative served
+    to a customer as fact."""
+    from app.adapters.cat_sis import CatSisAdapter
+
+    ctx = type("Ctx", (), {"page": _Page({"#empty": _Loc(1, False),     # present, hidden
+                                          "#results": _Loc(1, True)})})()
+    assert await CatSisAdapter._is_visible(ctx, "#empty") is False
+    assert await CatSisAdapter._is_visible(ctx, "#results") is True
+
+
+async def test_visible_empty_state_is_the_only_proof_of_not_found() -> None:
+    from app.adapters.cat_sis import CatSisAdapter
+
+    ctx = type("Ctx", (), {"page": _Page({"#empty": _Loc(1, True),
+                                          "#results": _Loc(1, False)})})()
+    assert await CatSisAdapter._is_visible(ctx, "#empty") is True
+    assert await CatSisAdapter._is_visible(ctx, "#results") is False

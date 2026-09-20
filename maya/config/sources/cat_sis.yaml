@@ -24,6 +24,7 @@ routes:
 # Application-level "the app is usable" signals. Never networkidle, never sleep().
 ready_markers:
   app_shell: TODO_CAPTURE
+  authenticated: TODO_CAPTURE   # an element that exists ONLY when signed in
   search_page: TODO_CAPTURE
   detail_page: TODO_CAPTURE
 

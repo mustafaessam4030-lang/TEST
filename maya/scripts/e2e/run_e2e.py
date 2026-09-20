@@ -34,15 +34,22 @@ BUILD = ROOT / "build"
 SOURCE_HTML = ROOT / "frontend" / "mantrac-support-v9.html"
 
 
-def wire_ui(api_base: str) -> Path:
+def wire_ui(api_base: str, source: str) -> Path:
     """Publish the chat UI with the gateway address baked in. Source stays untouched."""
     BUILD.mkdir(exist_ok=True)
     html = SOURCE_HTML.read_text()
     html, n = re.subn(r"(apiBase\s*:\s*)'[^']*'", rf"\1'{api_base}'", html, count=1)
     if not n:
         sys.exit("could not find CFG.equipment.apiBase in the UI — was v9 rebuilt?")
+    html, m = re.subn(r"(source\s*:\s*)'[^']*'", rf"\1'{source}'", html, count=1)
+    if not m:
+        sys.exit("could not find CFG.equipment.source in the UI — was v9 rebuilt?")
     target = BUILD / "maya.html"
     target.write_text(html)
+    # The offline fixture page is served next to the chat so the worker can reach it.
+    fixture = ROOT / "scripts" / "capture" / "fixture.html"
+    if fixture.exists():
+        shutil.copy(fixture, BUILD / "fixture.html")
     return target
 
 
@@ -56,6 +63,12 @@ def wait_for(url: str, timeout_s: int = 60) -> bool:
         except (urllib.error.URLError, OSError):
             time.sleep(0.5)
     return False
+
+
+def port_in_use(port: int) -> bool:
+    import socket
+    with socket.socket() as sock:
+        return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
 def serve_ui(port: int) -> socketserver.TCPServer:
@@ -73,11 +86,20 @@ def main() -> int:
     ap.add_argument("--headless", action="store_true",
                     help="hide the worker browser (default: visible, so you can watch SIS)")
     ap.add_argument("--serial", default="SN123456", help="the serial to suggest in the banner")
+    ap.add_argument("--source", default="cat_sis", choices=["cat_sis", "local_fixture"],
+                    help="which registered source Maya queries. local_fixture drives a real "
+                         "browser against a local page — it is NOT Caterpillar SIS.")
     args = ap.parse_args()
+
+    # Fail early and legibly rather than half-starting on top of a live stack.
+    busy = [p for p in (args.api_port, args.ui_port) if port_in_use(p)]
+    if busy:
+        sys.exit(f"port(s) already in use: {', '.join(map(str, busy))} — "
+                 f"stop the running stack first, or pass --api-port/--ui-port")
 
     api_base = f"http://127.0.0.1:{args.api_port}"
     ui_url = f"http://127.0.0.1:{args.ui_port}/maya.html"
-    page = wire_ui(api_base)
+    page = wire_ui(api_base, args.source)
 
     env = {
         **os.environ,
@@ -85,6 +107,11 @@ def main() -> int:
         "MAYA_HEADLESS": "true" if args.headless else "false",
         "MAYA_CORS_ORIGINS": f"http://127.0.0.1:{args.ui_port},http://localhost:{args.ui_port}",
         "MAYA_REPOSITORY": os.environ.get("MAYA_REPOSITORY", "memory"),
+        "MAYA_ENABLE_FIXTURE_SOURCE": "true" if args.source == "local_fixture" else "false",
+        # The fixture page accepts any non-empty credentials; this is a local test
+        # page, not a real account, and these are not secrets.
+        "MAYA_FIXTURE_USERNAME": "fixture-user",
+        "MAYA_FIXTURE_PASSWORD": "fixture-pass",
         "PYTHONUNBUFFERED": "1",
     }
     if os.environ.get("MAYA_CHROMIUM_PATH"):
@@ -95,7 +122,11 @@ def main() -> int:
          "--host", "127.0.0.1", "--port", str(args.api_port), "--log-level", "info"],
         cwd=str(ROOT / "services" / "automation"), env=env)
 
-    httpd = serve_ui(args.ui_port)
+    try:
+        httpd = serve_ui(args.ui_port)
+    except OSError as exc:
+        api.terminate()                      # never leave a half-started stack behind
+        sys.exit(f"could not serve the UI on :{args.ui_port} — {exc}")
     ok = wait_for(f"{api_base}/healthz")
 
     print("\n" + "═" * 74)
@@ -105,6 +136,8 @@ def main() -> int:
     print(f"  maya chat    : {ui_url}")
     print(f"  worker browser: {'headless' if args.headless else 'VISIBLE — watch it drive SIS'}")
     print(f"  live automation: enabled     repository: {env['MAYA_REPOSITORY']}")
+    print(f"  source       : {args.source}"
+          + ("   ← LOCAL TEST FIXTURE, NOT Caterpillar SIS" if args.source == "local_fixture" else ""))
     print("─" * 74)
     print("  1. open the chat URL above")
     print("  2. click the chat bubble (bottom right)")

@@ -87,6 +87,36 @@ On any of them Maya states the failure and the run id and shows **no equipment
 values** — the error response carries no `data` object, so there is nothing to
 paraphrase.
 
+## Proving the chain without SIS credentials
+
+`make e2e E2E_ARGS="--source local_fixture"` points the same machinery at a local
+page (`scripts/capture/fixture.html`) instead of SIS. Everything else is real: a
+real Chromium, a real sign-in form, real DOM extraction, real normalization,
+validation, persistence and rendering. It exists to prove the plumbing when SIS
+itself is out of reach.
+
+It is **not** SIS and can never be mistaken for it: the source is registered as
+`local_fixture`, label *"Local test fixture (NOT Caterpillar SIS)"*, precedence
+900 so `auto` never picks it, disabled unless `MAYA_ENABLE_FIXTURE_SOURCE=true`,
+and the label is carried into the answer, the card and every audit row.
+
+Verified run, 2026-09-20:
+
+```
+✓ Starting a browser session       703 ms
+✓ Signing in                      8144 ms
+✓ Checking the page contract        52 ms
+✓ Searching the serial number      395 ms
+✓ Reading the equipment record      39 ms
+✓ Normalizing · Validating · Saving
+→ Model 336 · HYDRAULIC_EXCAVATOR · 2019-07 · C9.3B · 36200 kg · 225 kW
+  Operation manual: not published   Quality 100%
+  Source: Local test fixture (NOT Caterpillar SIS) · Run run_01M30H7KXRKTX9NA61ZEM4CQ58
+```
+
+Asking again answered in **2.38 s** from the store with a single
+`GET /v1/equipment/SN123456` and no browser at all — the cache-first rule holding.
+
 ## Verified run (2026-09-20, this container)
 
 Real, unmocked, with `MAYA_ALLOW_LIVE_AUTOMATION=true`:

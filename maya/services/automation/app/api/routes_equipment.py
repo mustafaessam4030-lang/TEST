@@ -18,6 +18,10 @@ router = APIRouter(prefix="/v1/equipment", tags=["equipment"])
 
 def _error_response(err: AutomationError) -> JSONResponse:
     payload = err.to_payload(run_id=err.details.pop("automation_run_id", None))
+    # Validation failures carry their reasons: "it failed" is not a diagnosis.
+    if err.details.get("violations"):
+        payload["message"] = (f"{err.message} Violations: "
+                              f"{', '.join(err.details['violations'][:5])}")
     fallback = err.details.pop("fallback", None)
     if fallback and fallback.get("available"):
         payload["fallback"] = fallback

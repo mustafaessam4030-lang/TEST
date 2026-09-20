@@ -172,18 +172,42 @@ class CatSisAdapter:
 
         needs_login = force_relogin or self._is_login_page(ctx.page.url)
         if not needs_login:
-            shell = self.ready.get("app_shell")
-            if shell and shell != PLACEHOLDER:
-                try:
-                    await ctx.page.wait_for_selector(shell, state="visible", timeout=8000)
-                except Exception:
-                    needs_login = True
-            else:
-                needs_login = True  # cannot prove we are signed in → prove it by signing in
+            needs_login = not await self._looks_authenticated(ctx)
 
         if needs_login:
             await self._detect_challenge(ctx)     # MFA/CAPTCHA before we touch the form
             await self._login(ctx)
+
+    async def _looks_authenticated(self, ctx: RunContext) -> bool:
+        """Positive evidence of a session — never "the page rendered, so we must be in".
+
+        An app shell usually renders before authentication resolves, so treating it
+        as proof silently skips sign-in and the failure surfaces much later as a
+        confusing WEBSITE_CHANGED. Prefer an explicit post-login marker; failing
+        that, require the shell AND the absence of a sign-in form.
+        """
+        marker = self.ready.get("authenticated")
+        if marker and marker != PLACEHOLDER:
+            try:
+                await ctx.page.wait_for_selector(marker, state="visible", timeout=8000)
+                return True
+            except Exception:
+                return False
+
+        shell = self.ready.get("app_shell")
+        if not shell or shell == PLACEHOLDER:
+            return False          # cannot prove it → prove it by signing in
+        try:
+            await ctx.page.wait_for_selector(shell, state="visible", timeout=8000)
+        except Exception:
+            return False
+        try:
+            pwd = ctx.page.locator("input[type='password']").first
+            if await pwd.count() and await pwd.is_visible():
+                return False      # a sign-in form is on screen: we are not in
+        except Exception:
+            pass
+        return True
 
     async def _login(self, ctx: RunContext) -> None:
         creds = self._credentials()
@@ -199,7 +223,9 @@ class CatSisAdapter:
             raise SelectorContractError("login.form", str(exc)) from exc
 
         try:
-            await self._wait_ready(ctx, "app_shell")
+            await self._wait_ready(ctx, "authenticated"
+                                   if self.ready.get("authenticated") not in (None, PLACEHOLDER)
+                                   else "app_shell")
         except AutomationError as exc:
             await self._detect_challenge(ctx)
             error_sel = self._selector("login", "error", required=False)
@@ -263,12 +289,17 @@ class CatSisAdapter:
                                       "Search results did not render in time.") from exc
             raise SelectorContractError("search.results", str(exc)) from exc
 
-        if await ctx.page.locator(empty_sel).count():
-            return SearchOutcome(found=False, evidence=f"empty_state:{empty_sel}")
+        # Visibility, not presence. SPAs keep both the results container and the
+        # empty state in the DOM and toggle them, so count() would report every
+        # search as "not found" — the exact false negative this design forbids.
+        if await self._is_visible(ctx, empty_sel):
+            return SearchOutcome(found=False, evidence=f"empty_state_visible:{empty_sel}")
 
-        if not await ctx.page.locator(results_sel).count():
+        if not await self._is_visible(ctx, results_sel):
             # Neither a result nor a recognised empty state: the page changed.
-            raise SelectorContractError("search.results", "results container absent")
+            raise SelectorContractError(
+                "search.results",
+                "neither the results container nor the empty state became visible")
 
         first = self._selector("search", "first_result", required=False)
         if first:
@@ -282,6 +313,15 @@ class CatSisAdapter:
 
         return SearchOutcome(found=True, detail_url=ctx.page.url,
                              evidence=f"results:{results_sel}")
+
+    @staticmethod
+    async def _is_visible(ctx: RunContext, selector: str) -> bool:
+        """True only when the element is actually on screen, not merely in the DOM."""
+        try:
+            locator = ctx.page.locator(selector).first
+            return bool(await locator.count()) and await locator.is_visible()
+        except Exception:
+            return False
 
     async def extract(self, ctx: RunContext) -> RawPayload:
         """Prefer the app's own XHR JSON; fall back to reading the DOM."""
@@ -334,14 +374,21 @@ class CatSisAdapter:
     async def _extract_dom(self, ctx: RunContext) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for field_name, selector in (self.sel.get("detail") or {}).items():
-            if not selector or selector == PLACEHOLDER or field_name == "spec_rows":
+            if not selector or selector == PLACEHOLDER or field_name in ("spec_rows", "spec_cell"):
                 continue
             try:
                 locator = ctx.page.locator(selector).first
-                if await locator.count():
-                    text = (await locator.inner_text()).strip()
-                    if text:
-                        out[field_name] = text
+                if not await locator.count():
+                    continue
+                # A URL field means the href, not the link text. Reading "Parts manual"
+                # into a *_url field is how a nonsense value reaches validation.
+                value = None
+                if field_name.endswith("_url"):
+                    value = await locator.get_attribute("href") or await locator.get_attribute("src")
+                if not value:
+                    value = (await locator.inner_text()).strip()
+                if value:
+                    out[field_name] = value.strip()
             except Exception:
                 continue  # a field we cannot read is absent, not invented
         return out
