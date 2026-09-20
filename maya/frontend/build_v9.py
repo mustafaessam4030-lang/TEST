@@ -52,6 +52,24 @@ CSS = """
 .eq-btn.ghost{background:none;border:1px solid var(--border);color:var(--mid);}
 .eq-btn.ghost:hover{background:#F5F5F5;color:var(--dark);}
 @media(max-width:520px){.eq-head{flex-direction:column;}.eq-badges{justify-content:flex-start;}}
+
+/* live automation panel */
+.eq-live{border:1px solid var(--border);background:#FAFAFA;margin-top:8px;font-size:12.5px;}
+.eq-live.done{border-color:#BFE3C0;}
+.eq-live.failed{border-color:#F3C6C6;}
+.eq-live-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--nav);color:var(--white);}
+.eq-live-h b{font-weight:700;font-size:12.5px;}
+.eq-live-run{margin-left:auto;font-size:10.5px;color:rgba(255,255,255,.6);font-family:ui-monospace,monospace;}
+.eq-live-dot{width:8px;height:8px;border-radius:50%;background:var(--y);animation:eqpulse 1.1s infinite;}
+.eq-live.done .eq-live-dot{background:var(--green-l);animation:none;}
+.eq-live.failed .eq-live-dot{background:var(--red-l);animation:none;}
+@keyframes eqpulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+.eq-live-body{padding:6px 12px 10px;}
+.eq-live-row{display:flex;align-items:center;gap:8px;padding:3px 0;color:var(--mid);}
+.eq-live-row.fail{color:var(--red);font-weight:600;}
+.eq-live-row.human{flex-wrap:wrap;color:#7A5B00;background:#FFF6E0;margin:6px -12px 0;padding:9px 12px;font-weight:600;}
+.eq-live-row.human .eq-btn{margin-left:auto;}
+.eq-live-ms{margin-left:auto;font-size:10.5px;color:var(--light);font-family:ui-monospace,monospace;}
 """
 
 CFG_BLOCK = """  showTrace: true,           // "show reasoning" panel — great for demos
@@ -92,16 +110,22 @@ ANCHORS: list[tuple[str, str, str]] = [
      """  serial : /\\b([A-Z]{3}\\d{5})\\b/i,
   // v9: Cat 17-char PIN, and an explicitly labelled serial in either language.
   catPin : /\\b([A-Z]{3}[A-Z0-9]{14})\\b/i,
-  catSn  : /(?:s\\/?n|serial|pin|سيريال|السيريال|رقم\\s*المعدة)\\s*[:#]?\\s*([A-Za-z0-9][A-Za-z0-9-]{2,16})/i,"""),
+  // "serial number SN123456" — the label words must be consumed, or the capture
+  // group swallows the word "number" instead of the serial.
+  catSn  : /(?:s\\/?n|serial|pin|سيريال|السيريال|رقم\\s*المعدة)(?:\\s*(?:number|no\\.?|num|#|رقم))?\\s*[:#]?\\s+([A-Za-z0-9][A-Za-z0-9-]{2,16})/i,
+  // A bare serial with no label at all: 2-4 letters then 4-10 digits (SN123456).
+  catBare: /\\b([A-Z]{2,4}\\d{4,10})\\b/i,"""),
 
     ("extract", """  const s=t.match(RE.serial); if(s&&!e.parts.length)e.serial=s[1].toUpperCase();""",
      """  const s=t.match(RE.serial); if(s&&!e.parts.length)e.serial=s[1].toUpperCase();
   // v9 — additive: a 17-char PIN, or a serial the user labelled explicitly.
   if(!e.serial){const pin=t.match(RE.catPin); if(pin)e.serial=pin[1].toUpperCase();}
+  if(!e.serial&&!e.parts.length){const bare=t.match(RE.catBare); if(bare)e.serial=bare[1].toUpperCase();}
   const tagged=t.match(RE.catSn);
   if(tagged){
     const c=tagged[1].toUpperCase().replace(/-/g,'');
-    if(/^[A-Z0-9]{3,17}$/.test(c)&&!/^\\d{7}$/.test(c))e.serial=c;   // not a bare part number
+    // A serial always carries a digit; a bare word after the label is a label.
+    if(/^[A-Z0-9]{3,17}$/.test(c)&&/\\d/.test(c)&&!/^\\d{7}$/.test(c))e.serial=c;
   }"""),
 
     # 4. intent
@@ -134,7 +158,13 @@ ANCHORS: list[tuple[str, str, str]] = [
 
   // ── v9: run the equipment tools BEFORE the model, so the model is grounded
   // in a real record instead of reasoning about a serial from memory.
-  const equip=photoB64?null:await EQUIP.maybeLookup(raw,ents,cls,L);
+  let livePanel=null;
+  const equip=photoB64?null:await EQUIP.maybeLookup(raw,ents,cls,L,{
+    onProgress:ev=>{
+      if(!livePanel)livePanel=EQUIP.openLivePanel(ents.serial||'',L);
+      livePanel.update(ev);
+    }});
+  if(livePanel)livePanel.close(!!(equip&&equip.ok));
   if(equip)EQUIP.injectDocs(equip,docs);
 """),
 
@@ -159,6 +189,16 @@ ANCHORS: list[tuple[str, str, str]] = [
   };"""),
 
     # 9. renderers
+    ("resume-handler", """    case 'ask':          ask(el.dataset.q);break;""",
+     """    case 'ask':          ask(el.dataset.q);break;
+    case 'eq-resume':    (async()=>{
+                           el.disabled=true;
+                           el.textContent=lang==='ar'?'بكمّل…':'Continuing…';
+                           const ok=await EQUIP.resumeRun(el.dataset.run);
+                           el.textContent=ok?(lang==='ar'?'اتكمّل':'Continuing')
+                                            :(lang==='ar'?'مفيش تشغيل متوقف':'No paused run');
+                         })();break;"""),
+
     ("execute", """      case 'add_to_quote':""",
      """      case 'equipment_card': html+=EQUIP.cardFor(a.token,L);break;
       case 'add_to_quote':"""),

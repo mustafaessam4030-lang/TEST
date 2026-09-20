@@ -67,8 +67,10 @@ class SessionVault:
 class BrowserPool:
     def __init__(self, *, headless: bool = True, max_contexts: int = 4,
                  artifact_dir: str = "/tmp/maya-artifacts",
-                 session_dir: str = "/tmp/maya-sessions") -> None:
+                 session_dir: str = "/tmp/maya-sessions",
+                 executable_path: str | None = None) -> None:
         self.headless = headless
+        self.executable_path = executable_path
         self.semaphore = asyncio.Semaphore(max_contexts)
         self.artifact_dir = Path(artifact_dir)
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -84,11 +86,16 @@ class BrowserPool:
             if self._browser is not None:
                 return
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(
-                headless=self.headless,
-                args=["--disable-dev-shm-usage", "--disable-gpu", "--no-first-run"],
-            )
-            log(logger, logging.INFO, "browser.launched", headless=self.headless)
+            launch: dict[str, Any] = {
+                "headless": self.headless,
+                "args": ["--disable-dev-shm-usage", "--disable-gpu", "--no-first-run",
+                         "--no-sandbox"],
+            }
+            if self.executable_path:
+                launch["executable_path"] = self.executable_path
+            self._browser = await self._playwright.chromium.launch(**launch)
+            log(logger, logging.INFO, "browser.launched", headless=self.headless,
+                executable=self.executable_path or "bundled")
 
     async def stop(self) -> None:
         async with self._lock:

@@ -5,6 +5,7 @@ Every branch ends with attribution attached or with a data-free error.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ from app.domain.normalize import normalize_equipment_data
 from app.domain.validate import validate_equipment_data, validate_serial
 from app.models.schemas import (
     Attribution, CacheInfo, EquipmentRecord, EquipmentSearchRequest, EquipmentSearchResponse,
-    FallbackData, Freshness, InProgressResponse, RecordStatus, SearchMode,
+    FallbackData, Freshness, InProgressResponse, RecordStatus, RunStatus, SearchMode,
 )
 from app.services.run_recorder import RunRecorder
 
@@ -39,6 +40,9 @@ class EquipmentService:
         self.pool = pool
         self.freshness = freshness
         self.settings = settings
+        # Background runs (wait=false) and the runs paused for a human at MFA.
+        self._tasks: set[asyncio.Task] = set()
+        self._paused: dict[str, asyncio.Event] = {}
 
     # ── public API ──────────────────────────────────────────────────────────
     async def lookup(self, req: EquipmentSearchRequest) -> Any:
@@ -98,6 +102,22 @@ class EquipmentService:
                                       automation_run_id=existing or recorder.run_id)
 
         await recorder.start()
+
+        if not req.wait:
+            # Fire and forget: the caller polls GET /v1/runs/{id} and watches each
+            # step land. This is what gives the chat UI live progress.
+            task = asyncio.create_task(
+                self._run_and_record(recorder, source, serial, req, cached, decision, breaker, key))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+            return InProgressResponse(serial_number=serial, automation_run_id=recorder.run_id)
+
+        return await self._run_and_record(recorder, source, serial, req, cached, decision,
+                                          breaker, key)
+
+    async def _run_and_record(self, recorder: RunRecorder, source: str, serial: str,
+                              req: EquipmentSearchRequest, cached: dict[str, Any] | None,
+                              decision: Any, breaker: Any, key: str) -> Any:
         started = time.monotonic()
         try:
             record = await self._run_automation(recorder, source, serial, req)
@@ -108,6 +128,10 @@ class EquipmentService:
                 await self._safe_mark_not_found(serial, source, recorder.run_id)
             err.details.setdefault("automation_run_id", recorder.run_id)
             err.details["fallback"] = self._fallback(cached, source, decision)
+            if not req.wait:
+                log(logger, logging.WARNING, "equipment.background_failed",
+                    run_id=recorder.run_id, error_code=err.code.value)
+                return None          # the failure is on the run record; nobody is waiting
             raise
         else:
             breaker.record_success()
@@ -178,6 +202,11 @@ class EquipmentService:
                         if err.code == ErrorCode.SESSION_EXPIRED:
                             self.pool.vault.invalidate(source, "default")
                             await adapter.ensure_session(ctx, force_relogin=True)
+                        elif err.code in (ErrorCode.MFA_REQUIRED, ErrorCode.CAPTCHA_DETECTED):
+                            # Never bypassed. Hold this exact session open for a person,
+                            # then carry on where we left off.
+                            await self._await_human(recorder, err)
+                            await adapter.ensure_session(ctx)
                         else:
                             raise
 
@@ -247,6 +276,45 @@ class EquipmentService:
                                     logger, logging.WARNING, "automation.attempt_failed",
                                     attempt=n, error_code=e.code.value,
                                     run_id=recorder.run_id))
+
+    # ── human-in-the-loop ───────────────────────────────────────────────────
+    async def _await_human(self, recorder: RunRecorder, err: AutomationError) -> None:
+        """Pause the run — keeping the browser session open — until a person is done.
+
+        Used when the source demands MFA or another human verification. We never
+        attempt to satisfy it ourselves; we hold the session and wait.
+        """
+        if self.settings.headless or not self.settings.allow_human_resume:
+            raise err            # nobody can act on a headless run: fail honestly
+        event = asyncio.Event()
+        self._paused[recorder.run_id] = event
+        await recorder.set_status(
+            RunStatus.AWAITING_HUMAN,
+            note="Waiting for a human to complete sign-in verification at the source.")
+        log(logger, logging.WARNING, "automation.awaiting_human", run_id=recorder.run_id,
+            error_code=err.code.value, timeout_s=self.settings.human_wait_timeout_s)
+        try:
+            await asyncio.wait_for(event.wait(), timeout=self.settings.human_wait_timeout_s)
+        except asyncio.TimeoutError:
+            raise AutomationError(
+                err.code, "Nobody completed the verification in time.",
+                details={"waited_s": self.settings.human_wait_timeout_s},
+                step="ENSURE_SESSION") from err
+        finally:
+            self._paused.pop(recorder.run_id, None)
+        await recorder.set_status(RunStatus.RUNNING)
+        log(logger, logging.INFO, "automation.resumed_by_human", run_id=recorder.run_id)
+
+    def resume_run(self, run_id: str) -> bool:
+        """Called by the operator once they have finished the verification."""
+        event = self._paused.get(run_id)
+        if event is None:
+            return False
+        event.set()
+        return True
+
+    def paused_runs(self) -> list[str]:
+        return sorted(self._paused)
 
     # ── helpers ─────────────────────────────────────────────────────────────
     def _from_cache(self, cached: dict[str, Any], source: str, decision: Any,

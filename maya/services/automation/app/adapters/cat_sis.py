@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 PLACEHOLDER = "TODO_CAPTURE"
 
+# Text that means a person has to act. We detect it and stop; we never satisfy it.
+MFA_PATTERNS = re.compile(
+    r"(one[- ]time (code|passcode)|verification code|authenticat(or|ion) app|security code|"
+    r"two[- ]factor|multi[- ]factor|\bmfa\b|\botp\b|send (a )?code|verify your identity|"
+    r"trust this (browser|device))", re.I)
+
 
 class SelectorContractError(AutomationError):
     def __init__(self, selector_id: str, detail: str = "") -> None:
@@ -79,7 +85,7 @@ class CatSisAdapter:
         return any(m.lower() in (url or "").lower() for m in markers)
 
     async def _detect_challenge(self, ctx: RunContext) -> None:
-        """Bot challenge is a hard stop: we never attempt to defeat it."""
+        """Human gates are hard stops: we detect them and stop, never satisfy them."""
         for marker in self.cfg.get("challenge_markers", []):
             try:
                 if await ctx.page.locator(marker).count():
@@ -90,6 +96,27 @@ class CatSisAdapter:
                 raise
             except Exception:
                 continue
+
+        # MFA: a one-time-code field, or the page saying so in words.
+        try:
+            if await ctx.page.locator("input[autocomplete='one-time-code']").count():
+                raise AutomationError(ErrorCode.MFA_REQUIRED,
+                                      "Sign-in is asking for a one-time code.",
+                                      details={"marker": "input[autocomplete=one-time-code]"})
+        except AutomationError:
+            raise
+        except Exception:
+            pass
+        try:
+            text = (await ctx.page.inner_text("body"))[:4000]
+        except Exception:
+            return
+        match = MFA_PATTERNS.search(text)
+        if match:
+            raise AutomationError(
+                ErrorCode.MFA_REQUIRED,
+                "Sign-in requires human verification at the source.",
+                details={"matched_text": match.group(0)[:60], "url": ctx.page.url[:160]})
 
     async def _wait_ready(self, ctx: RunContext, marker_key: str) -> None:
         marker = self.ready.get(marker_key)
@@ -155,6 +182,7 @@ class CatSisAdapter:
                 needs_login = True  # cannot prove we are signed in → prove it by signing in
 
         if needs_login:
+            await self._detect_challenge(ctx)     # MFA/CAPTCHA before we touch the form
             await self._login(ctx)
 
     async def _login(self, ctx: RunContext) -> None:

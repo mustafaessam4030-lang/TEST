@@ -32,10 +32,15 @@ class Settings(BaseSettings):
     # Automation
     headless: bool = True
     browser_channel: str = "chromium"
+    chromium_path: str | None = None        # explicit binary; blank = Playwright's own
     max_contexts: int = 4
     run_deadline_ms: int = 90_000
     step_timeout_ms: int = 25_000
     sync_timeout_ms: int = 30_000
+    # When sign-in needs a person (MFA), a headed run can pause and keep the very
+    # same browser session open while they complete it.
+    allow_human_resume: bool = True
+    human_wait_timeout_s: int = 600
     artifact_dir: str = "/var/maya/artifacts"
 
     # Policy files

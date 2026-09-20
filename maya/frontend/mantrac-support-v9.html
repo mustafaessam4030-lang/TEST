@@ -496,6 +496,24 @@ footer{background:var(--nav);color:var(--white);padding:52px 60px 24px;margin-to
 .eq-btn.ghost{background:none;border:1px solid var(--border);color:var(--mid);}
 .eq-btn.ghost:hover{background:#F5F5F5;color:var(--dark);}
 @media(max-width:520px){.eq-head{flex-direction:column;}.eq-badges{justify-content:flex-start;}}
+
+/* live automation panel */
+.eq-live{border:1px solid var(--border);background:#FAFAFA;margin-top:8px;font-size:12.5px;}
+.eq-live.done{border-color:#BFE3C0;}
+.eq-live.failed{border-color:#F3C6C6;}
+.eq-live-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--nav);color:var(--white);}
+.eq-live-h b{font-weight:700;font-size:12.5px;}
+.eq-live-run{margin-left:auto;font-size:10.5px;color:rgba(255,255,255,.6);font-family:ui-monospace,monospace;}
+.eq-live-dot{width:8px;height:8px;border-radius:50%;background:var(--y);animation:eqpulse 1.1s infinite;}
+.eq-live.done .eq-live-dot{background:var(--green-l);animation:none;}
+.eq-live.failed .eq-live-dot{background:var(--red-l);animation:none;}
+@keyframes eqpulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+.eq-live-body{padding:6px 12px 10px;}
+.eq-live-row{display:flex;align-items:center;gap:8px;padding:3px 0;color:var(--mid);}
+.eq-live-row.fail{color:var(--red);font-weight:600;}
+.eq-live-row.human{flex-wrap:wrap;color:#7A5B00;background:#FFF6E0;margin:6px -12px 0;padding:9px 12px;font-weight:600;}
+.eq-live-row.human .eq-btn{margin-left:auto;}
+.eq-live-ms{margin-left:auto;font-size:10.5px;color:var(--light);font-family:ui-monospace,monospace;}
 </style>
 </head>
 <body>
@@ -1074,7 +1092,11 @@ const RE={
   serial : /\b([A-Z]{3}\d{5})\b/i,
   // v9: Cat 17-char PIN, and an explicitly labelled serial in either language.
   catPin : /\b([A-Z]{3}[A-Z0-9]{14})\b/i,
-  catSn  : /(?:s\/?n|serial|pin|سيريال|السيريال|رقم\s*المعدة)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9-]{2,16})/i,
+  // "serial number SN123456" — the label words must be consumed, or the capture
+  // group swallows the word "number" instead of the serial.
+  catSn  : /(?:s\/?n|serial|pin|سيريال|السيريال|رقم\s*المعدة)(?:\s*(?:number|no\.?|num|#|رقم))?\s*[:#]?\s+([A-Za-z0-9][A-Za-z0-9-]{2,16})/i,
+  // A bare serial with no label at all: 2-4 letters then 4-10 digits (SN123456).
+  catBare: /\b([A-Z]{2,4}\d{4,10})\b/i,
   qty    : /\b(?:qty|quantity|x|عدد)\s*[:=]?\s*(\d{1,3})\b/i
 };
 const VALID_MODELS=/^(d\d{1,2}[a-z]?|de\d{2,3}|c\d{1,2}(\.\d)?|3\d{2}[a-z]?|9\d{2}[a-z]?|1[46]0[a-z]?|3306|3054|3056|3406|7[23]5)$/;
@@ -1107,10 +1129,12 @@ function extractEntities(raw){
   const s=t.match(RE.serial); if(s&&!e.parts.length)e.serial=s[1].toUpperCase();
   // v9 — additive: a 17-char PIN, or a serial the user labelled explicitly.
   if(!e.serial){const pin=t.match(RE.catPin); if(pin)e.serial=pin[1].toUpperCase();}
+  if(!e.serial&&!e.parts.length){const bare=t.match(RE.catBare); if(bare)e.serial=bare[1].toUpperCase();}
   const tagged=t.match(RE.catSn);
   if(tagged){
     const c=tagged[1].toUpperCase().replace(/-/g,'');
-    if(/^[A-Z0-9]{3,17}$/.test(c)&&!/^\d{7}$/.test(c))e.serial=c;   // not a bare part number
+    // A serial always carries a digit; a bare word after the label is a label.
+    if(/^[A-Z0-9]{3,17}$/.test(c)&&/\d/.test(c)&&!/^\d{7}$/.test(c))e.serial=c;
   }
   const q=t.match(RE.qty); if(q)e.qty=parseInt(q[1],10);
   ['parts','faults','models'].forEach(k=>e[k]=[...new Set(e[k])]);
@@ -2244,10 +2268,13 @@ const EQUIP=(()=>{
       user_message_hint:(r.payload||{}).user_message_hint||'Store lookup failed.'};
   }
 
-  async function searchInSis(serial,reason,mode){
+  async function searchInSis(serial,reason,mode,opts){
+    // wait:false → the gateway returns a run id immediately and we follow the
+    // automation step by step, so the user sees it working instead of a spinner.
+    const async_=(opts&&opts.async)!==false;
     const r=await call('/v1/equipment/search',{method:'POST',body:{
       serial_number:serial,source:'cat_sis',mode:mode||'auto',
-      reason:reason||'user_request',wait:true,
+      reason:reason||'user_request',wait:!async_,
       timeout_ms:(C().timeoutMs||45000)-5000}});
     if(r.error_code)return r;
     if(r.httpStatus===200)return {ok:true,found:true,...r.payload};
@@ -2273,23 +2300,58 @@ const EQUIP=(()=>{
     return {ok:true,...r.payload};
   }
 
-  // Poll an in-progress run until it finishes or the budget runs out.
-  async function awaitRun(runId,audit){
-    const every=C().pollMs||4000, budget=C().maxPollMs||60000;
+  // Human-readable names for the deterministic steps the worker executes.
+  const STEP_LABEL={
+    ACQUIRE_CONTEXT:{en:'Starting a browser session',ar:'بفتح جلسة متصفح'},
+    ENSURE_SESSION :{en:'Signing in to Caterpillar SIS',ar:'بسجّل دخول على Caterpillar SIS'},
+    HEALTH_CHECK   :{en:'Checking the SIS page contract',ar:'بتأكد إن صفحة SIS زي ما هي'},
+    SEARCH_SERIAL  :{en:'Searching the serial number in SIS',ar:'بدوّر على السيريال في SIS'},
+    EXTRACT_RAW    :{en:'Reading the equipment record',ar:'ببقرأ بيانات المعدة'},
+    NORMALIZE      :{en:'Normalizing the data',ar:'بظبط شكل البيانات'},
+    VALIDATE       :{en:'Validating the data',ar:'بتحقق من صحة البيانات'},
+    PERSIST        :{en:'Saving to the internal store',ar:'بحفظ في الداتا بيز'}
+  };
+  function stepLabel(step,L){
+    const e=STEP_LABEL[step];
+    return e?(L==='ar'?e.ar:e.en):step.replace(/_/g,' ').toLowerCase();
+  }
+
+  // Poll a run and report every step as it happens, via onProgress.
+  async function awaitRun(runId,audit,onProgress,L){
+    const every=C().pollMs||2500, budget=C().maxPollMs||180000;
     const until=Date.now()+budget;
+    let seen=0;
     while(Date.now()<until){
       await new Promise(r=>setTimeout(r,every));
       const st=await runStatus(runId);
-      audit.push({tool:'get_automation_run_status',run:runId,status:st.status});
-      if(st.ok&&st.status==='SUCCESS')return {done:true};
-      if(st.ok&&st.status==='FAILED')
+      if(!st.ok)continue;
+      const steps=st.steps_executed||[];
+      for(;seen<steps.length;seen++){
+        const s=steps[seen];
+        audit.push({tool:'step:'+s.step,ok:s.status==='OK',error_code:s.error_code});
+        onProgress&&onProgress({kind:'step',step:s.step,status:s.status,
+          label:stepLabel(s.step,L),ms:s.duration_ms,error_code:s.error_code});
+      }
+      if(st.status==='AWAITING_HUMAN'){
+        onProgress&&onProgress({kind:'awaiting_human',runId,
+          label:L==='ar'?'محتاج تأكيد بشري على SIS (MFA)':'Waiting for human verification at SIS (MFA)'});
+        continue;                       // the operator has to act; keep watching
+      }
+      if(st.status==='SUCCESS')return {done:true};
+      if(st.status==='FAILED')
         return {done:true,failed:true,error_code:st.error_code||'INTERNAL_ERROR'};
     }
     return {done:false};
   }
 
+  async function resumeRun(runId){
+    const r=await call(`/v1/runs/${encodeURIComponent(runId)}/resume`,{method:'POST',timeoutMs:10000});
+    return !r.error_code&&r.httpStatus===200;
+  }
+
   // ── the decision flow (deterministic, client side of the same policy) ────
   async function lookup(serialRaw,opts={}){
+    const progress=opts.onProgress||null, L=opts.lang||'en';
     const serial=norm(serialRaw);
     if(!SERIAL_RE.test(serial))
       return finish({ok:false,serial,error_code:'INVALID_SERIAL',
@@ -2299,6 +2361,7 @@ const EQUIP=(()=>{
 
     const promise=(async()=>{
       const audit=[];
+      progress&&progress({kind:'phase',label:L==='ar'?'بشوف الداتا بتاعتنا الأول':'Checking internal data…'});
       const ttl=(C().clientCacheMs||120000);
       const hit=cache.get(serial);
       if(hit&&!opts.force&&Date.now()-hit.at<ttl){
@@ -2327,6 +2390,9 @@ const EQUIP=(()=>{
       }
 
       // 2. source automation
+      progress&&progress({kind:'phase',label:L==='ar'
+        ?'مش موجودة عندنا — بسأل Caterpillar SIS…'
+        :'Not in internal data — querying Caterpillar SIS…'});
       const reason=(db&&db.found)?'stale_refresh':'user_request';
       let sis=await searchInSis(serial,reason,opts.force?'force_refresh':'auto');
       audit.push({tool:'search_equipment_in_sis',ok:!!sis.ok,reason,
@@ -2334,7 +2400,9 @@ const EQUIP=(()=>{
         error_code:sis.error_code,ms:sis.execution_time_ms});
 
       if(sis.ok&&sis.inProgress){
-        const polled=await awaitRun(sis.automation_run_id,audit);
+        progress&&progress({kind:'phase',runId:sis.automation_run_id,
+          label:(L==='ar'?'الأتمتة شغالة… Run ':'SIS automation running… Run ')+sis.automation_run_id});
+        const polled=await awaitRun(sis.automation_run_id,audit,progress,L);
         if(polled.done&&!polled.failed){
           sis=await getFromDatabase(serial);
           audit.push({tool:'get_equipment_from_database',ok:!!sis.ok,after:'run_complete'});
@@ -2343,7 +2411,7 @@ const EQUIP=(()=>{
             automation_run_id:sis.automation_run_id,
             user_message_hint:'The automation run failed.'};
         }else{
-          return finish({ok:false,serial,error_code:'TIMEOUT',
+          return finish({ok:false,serial,error_code:'TIMEOUT',runStillGoing:true,
             hint:'Still running. I can check again with the run id.',
             runId:sis.automation_run_id,audit});
         }
@@ -2377,13 +2445,14 @@ const EQUIP=(()=>{
   }
 
   // Runs before the model, so the model is grounded rather than guessing.
-  async function maybeLookup(raw,ents,cls,L){
+  async function maybeLookup(raw,ents,cls,L,opts){
     if(!C().enabled)return null;
     const serial=ents&&ents.serial?ents.serial:null;
     if(!serial)return null;
     const intentMatches=(cls&&cls.intent==='equipment_lookup')||wantsLookup(raw);
     if(!intentMatches)return null;
-    return lookup(serial,{refresh:wantsRefresh(raw),force:wantsRefresh(raw)});
+    return lookup(serial,{refresh:wantsRefresh(raw),force:wantsRefresh(raw),
+                          lang:L,onProgress:opts&&opts.onProgress});
   }
 
   // ── grounding for the LLM ────────────────────────────────────────────────
@@ -2510,6 +2579,55 @@ RULES FOR THIS FAILURE
     return out;
   }
 
+  // ── live run panel ───────────────────────────────────────────────────────
+  // Inserted into the chat as soon as a lookup starts, updated on every step, and
+  // left in place as the audit trail of what the automation actually did.
+  function openLivePanel(serial,L){
+    const id='eqlive-'+Math.random().toString(36).slice(2,8);
+    const host=document.getElementById('chatMessages');
+    if(!host)return {id,update(){},close(){}};
+    const wrap=document.createElement('div');
+    wrap.className='msg';
+    wrap.innerHTML=`<div class="msg-av ai">${typeof AI_SVG!=='undefined'?AI_SVG:''}</div>
+      <div style="flex:1;min-width:0;"><div class="eq-live" id="${id}">
+        <div class="eq-live-h"><span class="eq-live-dot"></span>
+          <b>${L==='ar'?'بشتغل على':'Working on'} ${esc(serial)}</b>
+          <span class="eq-live-run" id="${id}-run"></span></div>
+        <div class="eq-live-body" id="${id}-body"></div>
+      </div></div>`;
+    host.appendChild(wrap);
+    if(typeof scrollBottom==='function')scrollBottom();
+
+    const body=()=>document.getElementById(id+'-body');
+    return {
+      id,
+      update(ev){
+        const b=body(); if(!b)return;
+        if(ev.runId){
+          const r=document.getElementById(id+'-run');
+          if(r)r.textContent='Run '+ev.runId;
+        }
+        if(ev.kind==='awaiting_human'){
+          b.insertAdjacentHTML('beforeend',
+            `<div class="eq-live-row human"><span>⏸ ${esc(ev.label)}</span>
+               <button class="eq-btn" data-act="eq-resume" data-run="${esc(ev.runId||'')}">
+                 ${L==='ar'?'خلّصت — كمّل':'I have completed it — continue'}</button></div>`);
+        }else{
+          const icon=ev.kind==='step'?(ev.status==='OK'?'✓':'✗'):'•';
+          const cls=ev.kind==='step'&&ev.status!=='OK'?' fail':'';
+          const ms=ev.ms!=null?`<span class="eq-live-ms">${ev.ms} ms</span>`:'';
+          b.insertAdjacentHTML('beforeend',
+            `<div class="eq-live-row${cls}"><span>${icon} ${esc(ev.label)}</span>${ms}</div>`);
+        }
+        if(typeof scrollBottom==='function')scrollBottom();
+      },
+      close(ok){
+        const el=document.getElementById(id);
+        if(el)el.classList.add(ok?'done':'failed');
+      }
+    };
+  }
+
   // ── rendering ────────────────────────────────────────────────────────────
   function cardFor(tok,L){
     const r=results.get(tok);
@@ -2632,6 +2750,7 @@ RULES FOR THIS FAILURE
   }
 
   return {wantsLookup,wantsRefresh,norm,lookup,maybeLookup,injectDocs,promptBlock,
+          resumeRun,stepLabel,openLivePanel,
           composeReply,mergeAnswer,cardFor,renderCard,traceRows,traceOf,facts,
           getFromDatabase,searchInSis,runStatus,history,
           get current(){return current;}};
@@ -2658,7 +2777,13 @@ async function dispatch(raw,photoB64=null){
 
   // ── v9: run the equipment tools BEFORE the model, so the model is grounded
   // in a real record instead of reasoning about a serial from memory.
-  const equip=photoB64?null:await EQUIP.maybeLookup(raw,ents,cls,L);
+  let livePanel=null;
+  const equip=photoB64?null:await EQUIP.maybeLookup(raw,ents,cls,L,{
+    onProgress:ev=>{
+      if(!livePanel)livePanel=EQUIP.openLivePanel(ents.serial||'',L);
+      livePanel.update(ev);
+    }});
+  if(livePanel)livePanel.close(!!(equip&&equip.ok));
   if(equip)EQUIP.injectDocs(equip,docs);
 
   // The local engine always produces a grounded answer with real actions.
@@ -3349,6 +3474,13 @@ document.addEventListener('click',e=>{
   const act=el.dataset.act;
   switch(act){
     case 'ask':          ask(el.dataset.q);break;
+    case 'eq-resume':    (async()=>{
+                           el.disabled=true;
+                           el.textContent=lang==='ar'?'بكمّل…':'Continuing…';
+                           const ok=await EQUIP.resumeRun(el.dataset.run);
+                           el.textContent=ok?(lang==='ar'?'اتكمّل':'Continuing')
+                                            :(lang==='ar'?'مفيش تشغيل متوقف':'No paused run');
+                         })();break;
     case 'part':         if(!e.target.closest('[data-act="quote-add"]'))selectPart(el.dataset.num);break;
     case 'quote-add':    e.stopPropagation();addToQuote(el.dataset.num);break;
     case 'qty':          quoteQty(el.dataset.num,parseInt(el.dataset.d,10));break;

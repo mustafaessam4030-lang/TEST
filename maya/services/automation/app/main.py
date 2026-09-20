@@ -89,7 +89,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     repo = build_repository(settings)
     registry = build_registry(settings)
     pool = BrowserPool(headless=settings.headless, max_contexts=settings.max_contexts,
-                       artifact_dir=settings.artifact_dir)
+                       artifact_dir=settings.artifact_dir,
+                       executable_path=settings.chromium_path)
     app.state.settings = settings
     app.state.repo = repo
     app.state.registry = registry

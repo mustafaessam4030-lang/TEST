@@ -48,6 +48,7 @@ class RecordStatus(str, Enum):
 
 class RunStatus(str, Enum):
     RUNNING = "RUNNING"
+    AWAITING_HUMAN = "AWAITING_HUMAN"   # paused at MFA / verification, on purpose
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"

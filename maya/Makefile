@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maya capture capture-selftest package smoke clean
+.PHONY: install test lint run agent build-maya capture capture-selftest package e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -41,6 +41,9 @@ package:                    ## build the hand-off archive (chat + automation + l
 	  [ -n "$$latest" ] && cp -r "$$latest" /tmp/maya-package/maya/artifacts/capture/ || true
 	@cd /tmp/maya-package && zip -qr "$(CURDIR)/../maya-platform.zip" maya -x '*.pyc'
 	@echo "wrote ../maya-platform.zip"
+
+e2e:                        ## start the whole stack: gateway + Maya chat + live worker
+	python3 scripts/e2e/run_e2e.py $(E2E_ARGS)
 
 smoke:
 	curl -s localhost:8080/readyz | python3 -m json.tool

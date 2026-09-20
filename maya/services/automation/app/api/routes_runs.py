@@ -21,6 +21,28 @@ async def get_run(run_id: str, repo: Any = Depends(get_repo)) -> dict[str, Any]:
     return {"status": "success", "run": run}
 
 
+@router.post("/runs/{run_id}/resume")
+async def resume_run(run_id: str, request: Request) -> dict[str, Any]:
+    """An operator signals that they have completed the verification at the source.
+
+    The paused run continues in the same browser session; nothing about the
+    verification itself is automated here.
+    """
+    service = request.app.state.equipment_service
+    if not service.resume_run(run_id):
+        raise HTTPException(status_code=409, detail={
+            "status": "error", "error_code": "NOT_PAUSED", "retryable": False,
+            "message": f"Run {run_id} is not waiting for a human.",
+            "user_message_hint": "That run is not paused."})
+    return {"status": "success", "automation_run_id": run_id, "resumed": True}
+
+
+@router.get("/runs")
+async def list_paused(request: Request) -> dict[str, Any]:
+    return {"status": "success",
+            "awaiting_human": request.app.state.equipment_service.paused_runs()}
+
+
 @router.get("/sources")
 async def list_sources(registry: Any = Depends(get_registry)) -> dict[str, Any]:
     return {"status": "success", "sources": registry.snapshot()}

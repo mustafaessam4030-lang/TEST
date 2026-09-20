@@ -64,6 +64,8 @@ class RunRecorder:
             self._append(seq, name, "OK", started, box, url_provider=url_provider)
             log(logger, logging.INFO, "run.step.ok", step=name, run_id=self.run_id,
                 duration_ms=int((time.monotonic() - started) * 1000))
+            # Persist as we go: a client polling this run sees each step land live.
+            await self._persist()
 
     def _append(self, seq: int, name: str, status: str, started: float,
                 box: dict[str, Any], *, error_code: str | None = None,
@@ -82,6 +84,13 @@ class RunRecorder:
 
     def note_retry(self) -> None:
         self.record.retry_count += 1
+
+    async def set_status(self, status: RunStatus, *, note: str | None = None) -> None:
+        """Publish an intermediate state (e.g. AWAITING_HUMAN) to anyone polling."""
+        self.record.status = status
+        if note:
+            self.record.error_message = note
+        await self._persist()
 
     async def succeed(self, *, field_count: int, quality_score: float | None,
                       artifact_uri: str | None = None) -> RunRecord:

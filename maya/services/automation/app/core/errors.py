@@ -10,7 +10,9 @@ class ErrorCode(str, Enum):
     SERIAL_NOT_FOUND = "SERIAL_NOT_FOUND"
     LOGIN_FAILED = "LOGIN_FAILED"
     SESSION_EXPIRED = "SESSION_EXPIRED"
+    MFA_REQUIRED = "MFA_REQUIRED"
     CAPTCHA_DETECTED = "CAPTCHA_DETECTED"
+    SEARCH_FAILED = "SEARCH_FAILED"
     WEBSITE_CHANGED = "WEBSITE_CHANGED"
     TIMEOUT = "TIMEOUT"
     NETWORK_ERROR = "NETWORK_ERROR"
@@ -28,7 +30,9 @@ _POLICY: dict[ErrorCode, tuple[int, bool, int]] = {
     ErrorCode.SERIAL_NOT_FOUND: (404, False, 1),
     ErrorCode.LOGIN_FAILED: (502, False, 1),
     ErrorCode.SESSION_EXPIRED: (502, True, 2),
+    ErrorCode.MFA_REQUIRED: (423, False, 1),      # Locked: a human must act
     ErrorCode.CAPTCHA_DETECTED: (503, False, 1),
+    ErrorCode.SEARCH_FAILED: (502, True, 2),
     ErrorCode.WEBSITE_CHANGED: (502, False, 1),
     ErrorCode.TIMEOUT: (504, True, 3),
     ErrorCode.NETWORK_ERROR: (503, True, 3),
@@ -46,7 +50,9 @@ USER_HINT: dict[ErrorCode, str] = {
     ErrorCode.SERIAL_NOT_FOUND: "The source has no record for this serial number.",
     ErrorCode.LOGIN_FAILED: "Automation could not sign in to the source system.",
     ErrorCode.SESSION_EXPIRED: "The source session expired and could not be renewed.",
+    ErrorCode.MFA_REQUIRED: "Sign-in needs human verification (MFA) at the source.",
     ErrorCode.CAPTCHA_DETECTED: "The source presented a security challenge that needs a human.",
+    ErrorCode.SEARCH_FAILED: "The search could not be completed at the source.",
     ErrorCode.WEBSITE_CHANGED: "The source page structure changed; engineering has been alerted.",
     ErrorCode.TIMEOUT: "The source did not respond in time.",
     ErrorCode.NETWORK_ERROR: "The source could not be reached.",

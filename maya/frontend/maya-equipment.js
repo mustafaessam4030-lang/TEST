@@ -90,10 +90,13 @@ const EQUIP=(()=>{
       user_message_hint:(r.payload||{}).user_message_hint||'Store lookup failed.'};
   }
 
-  async function searchInSis(serial,reason,mode){
+  async function searchInSis(serial,reason,mode,opts){
+    // wait:false → the gateway returns a run id immediately and we follow the
+    // automation step by step, so the user sees it working instead of a spinner.
+    const async_=(opts&&opts.async)!==false;
     const r=await call('/v1/equipment/search',{method:'POST',body:{
       serial_number:serial,source:'cat_sis',mode:mode||'auto',
-      reason:reason||'user_request',wait:true,
+      reason:reason||'user_request',wait:!async_,
       timeout_ms:(C().timeoutMs||45000)-5000}});
     if(r.error_code)return r;
     if(r.httpStatus===200)return {ok:true,found:true,...r.payload};
@@ -119,23 +122,58 @@ const EQUIP=(()=>{
     return {ok:true,...r.payload};
   }
 
-  // Poll an in-progress run until it finishes or the budget runs out.
-  async function awaitRun(runId,audit){
-    const every=C().pollMs||4000, budget=C().maxPollMs||60000;
+  // Human-readable names for the deterministic steps the worker executes.
+  const STEP_LABEL={
+    ACQUIRE_CONTEXT:{en:'Starting a browser session',ar:'بفتح جلسة متصفح'},
+    ENSURE_SESSION :{en:'Signing in to Caterpillar SIS',ar:'بسجّل دخول على Caterpillar SIS'},
+    HEALTH_CHECK   :{en:'Checking the SIS page contract',ar:'بتأكد إن صفحة SIS زي ما هي'},
+    SEARCH_SERIAL  :{en:'Searching the serial number in SIS',ar:'بدوّر على السيريال في SIS'},
+    EXTRACT_RAW    :{en:'Reading the equipment record',ar:'ببقرأ بيانات المعدة'},
+    NORMALIZE      :{en:'Normalizing the data',ar:'بظبط شكل البيانات'},
+    VALIDATE       :{en:'Validating the data',ar:'بتحقق من صحة البيانات'},
+    PERSIST        :{en:'Saving to the internal store',ar:'بحفظ في الداتا بيز'}
+  };
+  function stepLabel(step,L){
+    const e=STEP_LABEL[step];
+    return e?(L==='ar'?e.ar:e.en):step.replace(/_/g,' ').toLowerCase();
+  }
+
+  // Poll a run and report every step as it happens, via onProgress.
+  async function awaitRun(runId,audit,onProgress,L){
+    const every=C().pollMs||2500, budget=C().maxPollMs||180000;
     const until=Date.now()+budget;
+    let seen=0;
     while(Date.now()<until){
       await new Promise(r=>setTimeout(r,every));
       const st=await runStatus(runId);
-      audit.push({tool:'get_automation_run_status',run:runId,status:st.status});
-      if(st.ok&&st.status==='SUCCESS')return {done:true};
-      if(st.ok&&st.status==='FAILED')
+      if(!st.ok)continue;
+      const steps=st.steps_executed||[];
+      for(;seen<steps.length;seen++){
+        const s=steps[seen];
+        audit.push({tool:'step:'+s.step,ok:s.status==='OK',error_code:s.error_code});
+        onProgress&&onProgress({kind:'step',step:s.step,status:s.status,
+          label:stepLabel(s.step,L),ms:s.duration_ms,error_code:s.error_code});
+      }
+      if(st.status==='AWAITING_HUMAN'){
+        onProgress&&onProgress({kind:'awaiting_human',runId,
+          label:L==='ar'?'محتاج تأكيد بشري على SIS (MFA)':'Waiting for human verification at SIS (MFA)'});
+        continue;                       // the operator has to act; keep watching
+      }
+      if(st.status==='SUCCESS')return {done:true};
+      if(st.status==='FAILED')
         return {done:true,failed:true,error_code:st.error_code||'INTERNAL_ERROR'};
     }
     return {done:false};
   }
 
+  async function resumeRun(runId){
+    const r=await call(`/v1/runs/${encodeURIComponent(runId)}/resume`,{method:'POST',timeoutMs:10000});
+    return !r.error_code&&r.httpStatus===200;
+  }
+
   // ── the decision flow (deterministic, client side of the same policy) ────
   async function lookup(serialRaw,opts={}){
+    const progress=opts.onProgress||null, L=opts.lang||'en';
     const serial=norm(serialRaw);
     if(!SERIAL_RE.test(serial))
       return finish({ok:false,serial,error_code:'INVALID_SERIAL',
@@ -145,6 +183,7 @@ const EQUIP=(()=>{
 
     const promise=(async()=>{
       const audit=[];
+      progress&&progress({kind:'phase',label:L==='ar'?'بشوف الداتا بتاعتنا الأول':'Checking internal data…'});
       const ttl=(C().clientCacheMs||120000);
       const hit=cache.get(serial);
       if(hit&&!opts.force&&Date.now()-hit.at<ttl){
@@ -173,6 +212,9 @@ const EQUIP=(()=>{
       }
 
       // 2. source automation
+      progress&&progress({kind:'phase',label:L==='ar'
+        ?'مش موجودة عندنا — بسأل Caterpillar SIS…'
+        :'Not in internal data — querying Caterpillar SIS…'});
       const reason=(db&&db.found)?'stale_refresh':'user_request';
       let sis=await searchInSis(serial,reason,opts.force?'force_refresh':'auto');
       audit.push({tool:'search_equipment_in_sis',ok:!!sis.ok,reason,
@@ -180,7 +222,9 @@ const EQUIP=(()=>{
         error_code:sis.error_code,ms:sis.execution_time_ms});
 
       if(sis.ok&&sis.inProgress){
-        const polled=await awaitRun(sis.automation_run_id,audit);
+        progress&&progress({kind:'phase',runId:sis.automation_run_id,
+          label:(L==='ar'?'الأتمتة شغالة… Run ':'SIS automation running… Run ')+sis.automation_run_id});
+        const polled=await awaitRun(sis.automation_run_id,audit,progress,L);
         if(polled.done&&!polled.failed){
           sis=await getFromDatabase(serial);
           audit.push({tool:'get_equipment_from_database',ok:!!sis.ok,after:'run_complete'});
@@ -189,7 +233,7 @@ const EQUIP=(()=>{
             automation_run_id:sis.automation_run_id,
             user_message_hint:'The automation run failed.'};
         }else{
-          return finish({ok:false,serial,error_code:'TIMEOUT',
+          return finish({ok:false,serial,error_code:'TIMEOUT',runStillGoing:true,
             hint:'Still running. I can check again with the run id.',
             runId:sis.automation_run_id,audit});
         }
@@ -223,13 +267,14 @@ const EQUIP=(()=>{
   }
 
   // Runs before the model, so the model is grounded rather than guessing.
-  async function maybeLookup(raw,ents,cls,L){
+  async function maybeLookup(raw,ents,cls,L,opts){
     if(!C().enabled)return null;
     const serial=ents&&ents.serial?ents.serial:null;
     if(!serial)return null;
     const intentMatches=(cls&&cls.intent==='equipment_lookup')||wantsLookup(raw);
     if(!intentMatches)return null;
-    return lookup(serial,{refresh:wantsRefresh(raw),force:wantsRefresh(raw)});
+    return lookup(serial,{refresh:wantsRefresh(raw),force:wantsRefresh(raw),
+                          lang:L,onProgress:opts&&opts.onProgress});
   }
 
   // ── grounding for the LLM ────────────────────────────────────────────────
@@ -356,6 +401,55 @@ RULES FOR THIS FAILURE
     return out;
   }
 
+  // ── live run panel ───────────────────────────────────────────────────────
+  // Inserted into the chat as soon as a lookup starts, updated on every step, and
+  // left in place as the audit trail of what the automation actually did.
+  function openLivePanel(serial,L){
+    const id='eqlive-'+Math.random().toString(36).slice(2,8);
+    const host=document.getElementById('chatMessages');
+    if(!host)return {id,update(){},close(){}};
+    const wrap=document.createElement('div');
+    wrap.className='msg';
+    wrap.innerHTML=`<div class="msg-av ai">${typeof AI_SVG!=='undefined'?AI_SVG:''}</div>
+      <div style="flex:1;min-width:0;"><div class="eq-live" id="${id}">
+        <div class="eq-live-h"><span class="eq-live-dot"></span>
+          <b>${L==='ar'?'بشتغل على':'Working on'} ${esc(serial)}</b>
+          <span class="eq-live-run" id="${id}-run"></span></div>
+        <div class="eq-live-body" id="${id}-body"></div>
+      </div></div>`;
+    host.appendChild(wrap);
+    if(typeof scrollBottom==='function')scrollBottom();
+
+    const body=()=>document.getElementById(id+'-body');
+    return {
+      id,
+      update(ev){
+        const b=body(); if(!b)return;
+        if(ev.runId){
+          const r=document.getElementById(id+'-run');
+          if(r)r.textContent='Run '+ev.runId;
+        }
+        if(ev.kind==='awaiting_human'){
+          b.insertAdjacentHTML('beforeend',
+            `<div class="eq-live-row human"><span>⏸ ${esc(ev.label)}</span>
+               <button class="eq-btn" data-act="eq-resume" data-run="${esc(ev.runId||'')}">
+                 ${L==='ar'?'خلّصت — كمّل':'I have completed it — continue'}</button></div>`);
+        }else{
+          const icon=ev.kind==='step'?(ev.status==='OK'?'✓':'✗'):'•';
+          const cls=ev.kind==='step'&&ev.status!=='OK'?' fail':'';
+          const ms=ev.ms!=null?`<span class="eq-live-ms">${ev.ms} ms</span>`:'';
+          b.insertAdjacentHTML('beforeend',
+            `<div class="eq-live-row${cls}"><span>${icon} ${esc(ev.label)}</span>${ms}</div>`);
+        }
+        if(typeof scrollBottom==='function')scrollBottom();
+      },
+      close(ok){
+        const el=document.getElementById(id);
+        if(el)el.classList.add(ok?'done':'failed');
+      }
+    };
+  }
+
   // ── rendering ────────────────────────────────────────────────────────────
   function cardFor(tok,L){
     const r=results.get(tok);
@@ -478,6 +572,7 @@ RULES FOR THIS FAILURE
   }
 
   return {wantsLookup,wantsRefresh,norm,lookup,maybeLookup,injectDocs,promptBlock,
+          resumeRun,stepLabel,openLivePanel,
           composeReply,mergeAnswer,cardFor,renderCard,traceRows,traceOf,facts,
           getFromDatabase,searchInSis,runStatus,history,
           get current(){return current;}};
