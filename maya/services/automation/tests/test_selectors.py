@@ -198,6 +198,8 @@ def test_only_live_modes_may_write_the_real_contract_path() -> None:
     source = (ROOT / "scripts" / "capture" / "capture_selectors.py").read_text()
     # Fixture and recon runs write into their own run folder; only a live capture
     # may touch config/sis_selectors.json, and only when it completed.
-    assert 'if self.mode not in ("live", "auto-login"):' in source
+    assert 'if self.mode not in ("live", "auto-login") or not captured_anything:' in source
     assert 'target = self.outdir / f"sis_selectors.{self.mode}.json"' in source
+    # ...and a run that captured nothing, or did not complete, never touches it.
+    assert "captured_anything = any(" in source
     assert "if target.exists() and not complete:" in source
