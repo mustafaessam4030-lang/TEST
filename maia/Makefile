@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup e2e smoke clean
+.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -38,6 +38,9 @@ capture:                    ## headed, human-in-the-loop SIS selector capture
 
 sis-lookup:                 ## one REAL SIS lookup, saved to logs/sis-results/
 	python3 scripts/e2e/sis_lookup.py --serial $(SERIAL)
+
+sis-result:                 ## what a saved lookup actually captured
+	python3 scripts/e2e/show_sis_result.py --serial $(SERIAL)
 
 capture-selftest:           ## prove the capture engine against the local fixture
 	python3 scripts/capture/capture_selectors.py --self-test

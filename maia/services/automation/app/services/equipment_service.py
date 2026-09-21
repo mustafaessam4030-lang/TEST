@@ -422,15 +422,23 @@ class EquipmentService:
         prev, cur = rows[idx + 1].get("snapshot") or {}, row.get("snapshot") or {}
         return sorted(k for k in set(prev) | set(cur) if prev.get(k) != cur.get(k))
 
+    # These two must never raise. A store that cannot be read or cannot record a
+    # negative is a degraded store, not a failed lookup — and the exception types
+    # differ by implementation (a warehouse raises AutomationError, a file-backed
+    # store raises OSError), so both are swallowed and logged. The one write that
+    # is allowed to fail the lookup is `upsert`, in `_persist`.
     async def _safe_get_current(self, serial: str, source: str) -> dict[str, Any] | None:
         try:
             return await self.repo.get_current(serial, source)
-        except AutomationError as err:
-            log(logger, logging.ERROR, "repo.read_failed", error=err.message)
-            return None  # a warehouse outage must not block a live lookup
+        except Exception as err:
+            log(logger, logging.ERROR, "repo.read_failed", error=str(err)[:200])
+            return None  # a store outage must not block a live lookup
 
     async def _safe_mark_not_found(self, serial: str, source: str, run_id: str) -> None:
         try:
             await self.repo.mark_not_found(serial, source, run_id)
-        except AutomationError:
-            pass
+        except Exception as err:
+            # Raising here would replace SERIAL_NOT_FOUND — the true answer —
+            # with whatever went wrong while caching it.
+            log(logger, logging.ERROR, "repo.mark_not_found_failed",
+                serial_number=serial, error=str(err)[:200])

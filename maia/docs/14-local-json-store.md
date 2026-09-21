@@ -134,3 +134,23 @@ exact TXT path, the extracted field count, and a YES/NO for each of Machine
 Build Date, Engine Serial Number, Engine Build Date, and the parts group and
 part numbers. It refuses to run against any base URL that is not Caterpillar
 SIS.
+
+## 14.8 Checking a lookup that went through Maia
+
+When the lookup came from the chat rather than the command line, the same
+report is available from the files:
+
+```bash
+make sis-result SERIAL=JAZ01865
+# or: python3 scripts/e2e/show_sis_result.py --serial JAZ01865 [--run-id run_01… | --full | --list]
+```
+
+It reads `logs/sis-results/` and never contacts SIS. `sis_lookup.py` and
+`show_sis_result.py` share one renderer (`scripts/e2e/store_report.py`), so the
+two can never describe the same lookup differently.
+
+`python3 scripts/e2e/doctor.py` now also checks the store before a run: which
+implementation is active, whether the folder is genuinely writable (existing is
+not the same as writable on Windows or a mounted share), how much disk is free,
+and how many lookups are already saved. Since a failed write now fails the
+lookup, that check is a precondition rather than a nicety.

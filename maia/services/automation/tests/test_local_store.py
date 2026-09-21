@@ -342,3 +342,48 @@ def test_the_readable_file_states_that_null_means_not_published() -> None:
     text = render_text({"serial_number": SERIAL, "source": "Caterpillar SIS"})
     assert "NOT published by the source" in text
     assert "null" in text
+
+
+# ── a degraded store must not lose a correct answer ─────────────────────────
+class _DiskFull:
+    """A file-backed store on a full disk: reads and writes raise OSError, not
+    AutomationError. The service must survive everything except the one write
+    that defines success."""
+
+    async def get_current(self, serial_number, source):
+        raise OSError("No space left on device")
+
+    async def mark_not_found(self, serial_number, source, run_id):
+        raise OSError("No space left on device")
+
+    async def save_run(self, run):
+        raise OSError("No space left on device")
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_store_falls_through_to_a_live_lookup() -> None:
+    from app.services.equipment_service import EquipmentService
+
+    service = EquipmentService.__new__(EquipmentService)
+    service.repo = _DiskFull()
+    assert await service._safe_get_current(SERIAL, "cat_sis") is None
+
+
+@pytest.mark.asyncio
+async def test_failing_to_cache_a_negative_does_not_replace_the_negative() -> None:
+    """SERIAL_NOT_FOUND is the true answer; an error while caching it must not
+    become the error the user sees."""
+    from app.services.equipment_service import EquipmentService
+
+    service = EquipmentService.__new__(EquipmentService)
+    service.repo = _DiskFull()
+    await service._safe_mark_not_found(SERIAL, "cat_sis", RUN_ID)   # must not raise
+
+
+@pytest.mark.asyncio
+async def test_losing_the_audit_row_does_not_lose_the_answer() -> None:
+    from app.services.run_recorder import RunRecorder
+
+    recorder = RunRecorder(_DiskFull(), serial_number=SERIAL, source="cat_sis",
+                           trigger="user_request", requested_by="test")
+    await recorder.start()          # must not raise

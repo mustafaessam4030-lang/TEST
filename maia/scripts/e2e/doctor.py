@@ -100,6 +100,46 @@ def check_switch() -> None:
         "" if on else "export MAIA_ALLOW_LIVE_AUTOMATION=true for a manual run")
 
 
+def check_local_store() -> None:
+    """A lookup now FAILS if its result cannot be saved, so the store is a
+    precondition, not an afterthought. Check the folder is really writable —
+    existing is not the same as writable on Windows or on a mounted share."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    store = Path(settings.local_store_dir)
+    if not store.is_absolute():
+        store = ROOT / store
+    add(OK, "store implementation",
+        f"{settings.repository} → {store}",
+        "" if settings.repository in ("local_json", "snowflake")
+        else "MAIA_REPOSITORY=local_json keeps results on disk")
+    if settings.repository != "local_json":
+        return
+    try:
+        store.mkdir(parents=True, exist_ok=True)
+        probe = store / ".doctor-probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        add(FAIL, "store is writable", str(exc)[:110],
+            f"create {store} and give this user write access, or set "
+            f"MAIA_LOCAL_STORE_DIR to a folder you can write to")
+        return
+
+    free_mb = shutil.disk_usage(store).free // (1024 * 1024)
+    # A lookup writes a JSON, a TXT and three screenshots — well under a
+    # megabyte. 50 MB is "something is wrong", not "we are nearly out".
+    add(OK if free_mb > 50 else FAIL, "store is writable",
+        f"writable, {free_mb} MB free",
+        "" if free_mb > 50 else "free disk space: a failed write now fails the lookup")
+
+    saved = sorted(store.glob("*_run_*.json"))
+    add(OK, "results already saved",
+        f"{len(saved)} lookup(s) in the store"
+        + (f", newest {saved[-1].name}" if saved else " (none yet — expected before the first run)"))
+
+
 async def check_browser_reach() -> None:
     try:
         from playwright.async_api import async_playwright
@@ -142,6 +182,7 @@ def main() -> int:
     check_credentials()
     check_selectors()
     check_switch()
+    check_local_store()
     asyncio.run(check_browser_reach())
 
     icon = {OK: "✓", WARN: "!", FAIL: "✗"}
@@ -157,7 +198,8 @@ def main() -> int:
               f"{', '.join(b[1] for b in blockers)}")
         print("  Fix those, re-run this doctor, then: make capture … && make e2e")
     else:
-        print("  READY — run:  make capture SERIAL=<real serial>   then   make e2e")
+        print("  READY — run:  make sis-lookup SERIAL=<real serial>")
+        print("             or:  make capture SERIAL=<real serial>   then   make e2e")
     print()
     return 1 if blockers else 0
 

@@ -118,7 +118,10 @@ class RunRecorder:
     async def _persist(self) -> None:
         try:
             await self.repo.save_run(self.record)
-        except AutomationError as exc:
-            # Losing the audit row must never lose the answer; it is alerted instead.
+        except Exception as exc:
+            # Losing the audit row must never lose the answer; it is alerted
+            # instead. A file-backed store raises OSError rather than
+            # AutomationError, and a full disk here would otherwise surface as
+            # an opaque crash at a step boundary.
             log(logger, logging.ERROR, "run.persist_failed", run_id=self.run_id,
-                error=exc.message)
+                error=str(exc)[:200])

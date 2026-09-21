@@ -23,8 +23,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "services" / "automation"))
 
-import yaml  # noqa: E402
-
 from app.adapters.browser import BrowserPool  # noqa: E402
 from app.adapters.cat_sis import CatSisAdapter  # noqa: E402
 from app.adapters.registry import SourceRegistry  # noqa: E402
@@ -37,6 +35,9 @@ from app.models.schemas import EquipmentSearchRequest  # noqa: E402
 from app.repositories.local_json_repo import LocalJsonRepository  # noqa: E402
 from app.services.capture_service import CaptureService  # noqa: E402
 from app.services.equipment_service import EquipmentService  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import store_report  # noqa: E402
 
 SIS_HOSTS = ("sis2.cat.com", "sis.cat.com")
 
@@ -69,44 +70,12 @@ def build(settings, store: LocalJsonRepository, pool: BrowserPool) -> EquipmentS
 
 
 def report(store: LocalJsonRepository, serial: str, run_id: str) -> int:
-    """Answer, from the files on disk, the questions a person actually asks."""
-    json_path = store.results / f"{serial}_{run_id}.json"
-    txt_path = store.results / f"{serial}_{run_id}.txt"
-    if not json_path.exists():
-        print(f"\n✗ nothing was written to {json_path}")
+    """Same report `show_sis_result.py` prints, so the two can never disagree."""
+    path = store_report.find(store.results, serial, run_id)
+    if path is None:
+        print(f"\n✗ nothing was written to {store.results / f'{serial}_{run_id}.json'}")
         return 1
-    doc = json.loads(json_path.read_text(encoding="utf-8"))
-    parts = doc.get("parts_summary") or {}
-    record = doc.get("record") or {}
-    raw = (doc.get("raw_data") or {}).get("extracted_fields") or {}
-    counted = {k: v for k, v in record.items() if v not in (None, "", [], {})}
-
-    def mark(value) -> str:
-        return f"YES  ({value})" if value not in (None, "", [], {}) else "NO   (null)"
-
-    print("\n" + "=" * 72)
-    print(f"  LOCAL STORE RESULT — {serial}")
-    print("=" * 72)
-    print(f"  source                   : {doc.get('source')}")
-    print(f"  run id                   : {doc.get('run_id')}")
-    print(f"  JSON                     : {json_path}")
-    print(f"  TXT                      : {txt_path}")
-    shots = doc.get("screenshots") or {}
-    print(f"  screenshots              : {store.results / (serial + '_' + run_id)}"
-          f"  [{', '.join(sorted(shots)) or 'none'}]")
-    print(f"  extracted field count    : {len(counted)} populated record fields, "
-          f"{len(raw)} raw page fields, {len(doc.get('specifications') or [])} specifications")
-    print(f"  Machine Serial Number    : {mark(doc.get('machine_serial_number'))}")
-    print(f"  Machine Build Date       : {mark(doc.get('machine_build_date'))}")
-    print(f"  Engine Serial Number     : {mark(doc.get('engine_serial_number'))}")
-    print(f"  Engine Build Date        : {mark(doc.get('engine_build_date'))}")
-    groups = parts.get("group_titles") or []
-    numbers = parts.get("part_numbers") or []
-    print(f"  Parts group(s)           : {mark(', '.join(groups)[:80] if groups else None)}")
-    print(f"  Part number(s)           : "
-          f"{f'YES  ({len(numbers)} parts, e.g. ' + ', '.join(numbers[:4]) + ')' if numbers else 'NO   (null)'}")
-    print(f"  quality score            : {(doc.get('quality') or {}).get('score')}")
-    print("=" * 72)
+    print("\n" + store_report.render(path))
     return 0
 
 
