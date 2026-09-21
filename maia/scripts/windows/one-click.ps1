@@ -228,6 +228,5 @@ Say @"
 
 "@ White
 
-Start-Sleep -Seconds 2
-Start-Process "http://127.0.0.1:5173/maia.html"
-& $venvPy scripts\e2e\run_e2e.py --source cat_sis
+# run_e2e opens the page itself, once the server is actually listening.
+& $venvPy scripts\e2e\run_e2e.py --source cat_sis --open-browser

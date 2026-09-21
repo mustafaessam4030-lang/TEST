@@ -46,6 +46,10 @@ def wire_ui(api_base: str, source: str) -> Path:
         sys.exit("could not find CFG.equipment.source in the UI — was v9 rebuilt?")
     target = BUILD / "maia.html"
     target.write_text(html)
+    # Serve it under every name a person might already have in a bookmark, and
+    # at the bare root, so a stale URL is never mistaken for a dead server.
+    for alias in ("index.html", "maya.html"):
+        (BUILD / alias).write_text(html)
     # The offline fixture page is served next to the chat so the worker can reach it.
     fixture = ROOT / "scripts" / "capture" / "fixture.html"
     if fixture.exists():
@@ -85,6 +89,10 @@ def main() -> int:
     ap.add_argument("--ui-port", type=int, default=5173)
     ap.add_argument("--headless", action="store_true",
                     help="hide the worker browser (default: visible, so you can watch SIS)")
+    ap.add_argument("--open-browser", action="store_true",
+                    help="open the chat once the server is up (never before)")
+    ap.add_argument("--no-automation", action="store_true",
+                    help="serve the chat and gateway only; do not touch any browser session")
     ap.add_argument("--serial", default="SN123456", help="the serial to suggest in the banner")
     ap.add_argument("--source", default="cat_sis", choices=["cat_sis", "local_fixture"],
                     help="which registered source Maia queries. local_fixture drives a real "
@@ -103,7 +111,7 @@ def main() -> int:
 
     env = {
         **os.environ,
-        "MAIA_ALLOW_LIVE_AUTOMATION": "true",       # the master switch, on for this run
+        "MAIA_ALLOW_LIVE_AUTOMATION": "false" if args.no_automation else "true",
         "MAIA_HEADLESS": "true" if args.headless else "false",
         "MAIA_CORS_ORIGINS": f"http://127.0.0.1:{args.ui_port},http://localhost:{args.ui_port}",
         "MAIA_REPOSITORY": os.environ.get("MAIA_REPOSITORY", "memory"),
@@ -137,7 +145,8 @@ def main() -> int:
     print(f"  tool gateway : {api_base}   {'ready' if ok else 'NOT READY — check the log above'}")
     print(f"  maia chat    : {ui_url}")
     print(f"  worker browser: {'headless' if args.headless else 'VISIBLE — watch it drive SIS'}")
-    print(f"  live automation: enabled     repository: {env['MAIA_REPOSITORY']}")
+    print(f"  live automation: {'DISABLED (--no-automation)' if args.no_automation else 'enabled'}"
+          f"     repository: {env['MAIA_REPOSITORY']}")
     print(f"  source       : {args.source}"
           + ("   ← LOCAL TEST FIXTURE, NOT Caterpillar SIS" if args.source == "local_fixture" else ""))
     print("─" * 74)
@@ -151,6 +160,12 @@ def main() -> int:
     print(f"  readiness   : {api_base}/readyz")
     print("  Ctrl-C to stop")
     print("═" * 74 + "\n")
+
+    # Only now, with the port bound, is it safe to open the page. Opening it
+    # first is what produces ERR_CONNECTION_REFUSED on a perfectly good start.
+    if args.open_browser:
+        import webbrowser
+        webbrowser.open(ui_url)
 
     def shutdown(*_a: object) -> None:
         httpd.shutdown()
