@@ -7,7 +7,10 @@ to disk, never returned in an API response, and never reaches a prompt.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 from app.core.errors import AutomationError, ErrorCode
 
@@ -30,6 +33,29 @@ def resolve_secret(ref: str) -> Credentials:
         prefix = ref.removeprefix("env://")
         creds = Credentials(username=os.environ.get(f"{prefix}_USERNAME", ""),
                             password=os.environ.get(f"{prefix}_PASSWORD", ""))
+    elif ref.startswith("file://"):
+        # A plain local file, e.g. login.txt next to the project:
+        #     username=YOUR.USER
+        #     password=your password
+        # It never leaves this machine, is excluded from git and from the
+        # release package, and is read only by the worker process.
+        path = Path(ref.removeprefix("file://"))
+        if not path.is_absolute():
+            path = REPO_ROOT / path
+        if not path.exists():
+            raise AutomationError(ErrorCode.LOGIN_FAILED,
+                                  f"Credential file not found: {path.name}",
+                                  details={"looked_in": str(path)})
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            values[key.strip().lower()] = value.strip().strip('"').strip("'")
+        creds = Credentials(
+            username=values.get("username") or values.get("user") or values.get("sis_username", ""),
+            password=values.get("password") or values.get("pass") or values.get("sis_password", ""))
     elif ref.startswith("vault://"):
         try:
             import hvac

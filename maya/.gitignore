@@ -8,3 +8,7 @@ config/sources/*.captured.json
 node_modules/
 
 artifacts/
+
+# Local SIS credentials — never committed, never packaged
+login.txt
+login

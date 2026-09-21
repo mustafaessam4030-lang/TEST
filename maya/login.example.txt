@@ -1,0 +1,7 @@
+# Rename this file to  login.txt  and put your SIS sign-in details below.
+#
+# It stays on this PC: it is excluded from git and from the release package,
+# and only the automation worker reads it. Delete it whenever you like.
+
+username=YOUR.SIS.USERNAME
+password=YOUR SIS PASSWORD

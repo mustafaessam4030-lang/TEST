@@ -47,7 +47,8 @@ package:                    ## build the hand-off archive (chat + automation + l
 	@mkdir -p /tmp/maya-package/maya/artifacts/capture
 	@latest=$$(ls -dt artifacts/capture/self-test-* 2>/dev/null | head -1); \
 	  [ -n "$$latest" ] && cp -r "$$latest" /tmp/maya-package/maya/artifacts/capture/ || true
-	@cd /tmp/maya-package && zip -qr "$(CURDIR)/../maya-platform.zip" maya -x '*.pyc'
+	@rm -f /tmp/maya-package/maya/login.txt /tmp/maya-package/maya/login
+	@cd /tmp/maya-package && zip -qr "$(CURDIR)/../maya-platform.zip" maya -x '*.pyc' 'maya/login.txt' 'maya/login'
 	@echo "wrote ../maya-platform.zip"
 
 e2e:                        ## start the whole stack: gateway + Maya chat + live worker

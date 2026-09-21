@@ -24,9 +24,14 @@ model, and never leave your PC.
 ## The short version
 
 1. Unzip the package.
-2. Double-click **START-MAYA.bat**.
-3. Type your SIS username and password when it asks.
+2. Copy **login.example.txt** to **login.txt** and put your SIS username and
+   password in it.
+3. Double-click **START-MAYA.bat**.
 4. The chat opens — ask Maya for a serial number.
+
+`login.txt` stays on your PC: it is excluded from git and from the release
+package, and only the automation worker reads it. Skip step 2 and the launcher
+will ask you to type them instead, for that window only.
 
 That is the whole thing. Everything below is detail for when you want it.
 
