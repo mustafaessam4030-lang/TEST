@@ -33,9 +33,9 @@ def test_json_schema_matches_pydantic_field_names() -> None:
 def test_tool_definitions_are_strict_and_closed() -> None:
     tools = json.loads((ROOT / "schemas" / "maia_tools.json").read_text())["tools"]
     names = {t["name"] for t in tools}
-    assert names == {"get_equipment_from_database", "search_equipment_in_sis",
-                     "get_equipment_history", "get_automation_run_status",
-                     "save_equipment_data"}
+    assert names == {"get_equipment_from_database", "get_equipment_from_local_store",
+                     "search_equipment_in_sis", "get_equipment_history",
+                     "get_automation_run_status", "save_equipment_data"}
     for tool in tools:
         assert tool["strict"] is True
         assert tool["input_schema"]["additionalProperties"] is False

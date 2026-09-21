@@ -57,6 +57,26 @@ async def get_equipment(serial_number: str, source: str | None = Query(default=N
     return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
 
 
+@router.get("/{serial_number}/local", response_model=None,
+            summary="get_equipment_from_local_store — store read, no browser")
+async def get_equipment_from_local_store(serial_number: str,
+                                         source: str | None = Query(default=None),
+                                         service: Any = Depends(get_service)) -> Any:
+    """The first step of every lookup: read what we already have.
+
+    Same store as GET /{serial_number}; this path is named for the tool Maia
+    calls. Both go through the repository interface, so replacing the local
+    JSON folder with Snowflake changes neither of them.
+    """
+    try:
+        result: EquipmentSearchResponse = await service.get_equipment_from_local_store(
+            serial_number, source)
+    except AutomationError as err:
+        err.details["serial_number"] = serial_number
+        return _error_response(err)
+    return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
+
+
 @router.get("/{serial_number}/history", response_model=None)
 async def get_history(serial_number: str, source: str | None = Query(default=None),
                       limit: int = Query(default=20, ge=1, le=100),

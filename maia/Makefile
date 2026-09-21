@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard e2e smoke clean
+.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -36,6 +36,9 @@ sis-onboard: doctor        ## doctor → capture real selectors → verify → s
 capture:                    ## headed, human-in-the-loop SIS selector capture
 	python3 scripts/capture/capture_selectors.py --serial $(SERIAL) --missing-serial $(MISSING)
 
+sis-lookup:                 ## one REAL SIS lookup, saved to logs/sis-results/
+	python3 scripts/e2e/sis_lookup.py --serial $(SERIAL)
+
 capture-selftest:           ## prove the capture engine against the local fixture
 	python3 scripts/capture/capture_selectors.py --self-test
 
@@ -44,6 +47,7 @@ package:                    ## build the hand-off archive (chat + automation + l
 	@find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
 	@rm -rf services/automation/.pytest_cache
 	@cp -r ../maia /tmp/maia-package/maia && rm -rf /tmp/maia-package/maia/artifacts
+	@rm -rf /tmp/maia-package/maia/logs   # real lookups stay on the machine that ran them
 	@mkdir -p /tmp/maia-package/maia/artifacts/capture
 	@latest=$$(ls -dt artifacts/capture/self-test-* 2>/dev/null | head -1); \
 	  [ -n "$$latest" ] && cp -r "$$latest" /tmp/maia-package/maia/artifacts/capture/ || true

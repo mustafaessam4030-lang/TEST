@@ -13,4 +13,11 @@ artifacts/
 login.txt
 login
 
-logs/
+# Real equipment data, screenshots and run records. Never committed,
+# never packaged — but the folder's README is, so the layout is documented.
+# (git cannot un-ignore a file inside an ignored DIRECTORY, so the
+#  directories are walked and only the README is allowed back in)
+logs/*
+!logs/sis-results/
+logs/sis-results/*
+!logs/sis-results/README.md

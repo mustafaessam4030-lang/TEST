@@ -17,7 +17,16 @@ desktop.ini
 
 # Logs
 *.log
-logs/
+# Real lookup output stays on the machine that produced it. The store's
+# README is the one exception, so the folder layout is documented in git.
+logs/*
+!logs/sis-results/
+logs/sis-results/*
+!logs/sis-results/README.md
+maia/logs/*
+!maia/logs/sis-results/
+maia/logs/sis-results/*
+!maia/logs/sis-results/README.md
 
 # Build and dependency output
 build/

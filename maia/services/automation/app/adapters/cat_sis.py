@@ -385,7 +385,11 @@ class CatSisAdapter:
         strategy = self.extraction.get("strategy", "dom_then_xhr")
 
         await self._install_reader(ctx)
+        # The detail page as it first rendered — before anything was scrolled.
+        await self._shot(ctx, payload, "page")
         reveal = await self._reveal_details(ctx)
+        # The equipment details, now that the pane has been scrolled to them.
+        await self._shot(ctx, payload, "details")
 
         if strategy != "dom_only":
             xhr = self._pick_xhr(ctx)
@@ -407,7 +411,10 @@ class CatSisAdapter:
 
         payload.specifications = await self._extract_specs(ctx)
         payload.parts_data = await self._extract_parts(ctx, serial_number)
+        await self._shot_parts(ctx, payload)
         payload.artifacts["scroll"] = str(reveal)[:500]
+        payload.page_title = await self._page_title(ctx)
+        payload.source_url = ctx.page.url
 
         required = self.extraction.get("required_fields", list(DETAIL_FIELD_ORDER))
         missing = [f for f in required if not payload.fields.get(f)]
@@ -423,6 +430,36 @@ class CatSisAdapter:
 
         self._cross_check_serial(payload, serial_number)
         return payload
+
+    # ── evidence for a person: three screenshots, named for what they show ──
+    async def _shot(self, ctx: RunContext, payload: RawPayload, name: str) -> None:
+        """Take one screenshot. A failed screenshot never fails a lookup."""
+        try:
+            path = ctx.artifact_dir / f"{name}.png"
+            await ctx.page.screenshot(path=str(path), full_page=False)
+            payload.artifacts[f"screenshot.{name}"] = str(path)
+        except Exception as exc:
+            log(logger, logging.WARNING, "sis.screenshot_failed", name=name,
+                error=str(exc)[:120])
+
+    async def _shot_parts(self, ctx: RunContext, payload: RawPayload) -> None:
+        """Scroll the first "Product - …" group into view, then photograph it."""
+        heading = (self.sel.get("detail") or {}).get("parts_group")
+        try:
+            handle = await self._handle(heading, page=ctx.page)
+            if handle is not None:
+                await handle.scroll_into_view_if_needed(timeout=5000)
+                await ctx.page.wait_for_timeout(400)
+        except Exception as exc:
+            log(logger, logging.WARNING, "sis.parts_scroll_failed", error=str(exc)[:120])
+        await self._shot(ctx, payload, "parts")
+
+    @staticmethod
+    async def _page_title(ctx: RunContext) -> str | None:
+        try:
+            return (await ctx.page.title() or "").strip() or None
+        except Exception:
+            return None
 
     # ── the detail page: scroll, settle, then read ──────────────────────────
     async def _install_reader(self, ctx: RunContext) -> None:

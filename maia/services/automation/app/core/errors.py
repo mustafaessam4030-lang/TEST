@@ -20,6 +20,7 @@ class ErrorCode(str, Enum):
     EXTRACTION_ERROR = "EXTRACTION_ERROR"
     INVALID_DATA = "INVALID_DATA"
     DATABASE_ERROR = "DATABASE_ERROR"
+    PERSISTENCE_FAILED = "PERSISTENCE_FAILED"
     CIRCUIT_OPEN = "CIRCUIT_OPEN"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -40,6 +41,10 @@ _POLICY: dict[ErrorCode, tuple[int, bool, int]] = {
     ErrorCode.EXTRACTION_ERROR: (502, True, 2),
     ErrorCode.INVALID_DATA: (422, False, 1),
     ErrorCode.DATABASE_ERROR: (503, True, 3),
+    # The data was read correctly and could not be stored. Not retryable in
+    # the browser — replaying the whole lookup will not fix a full disk — and
+    # never reported to Maia as a success.
+    ErrorCode.PERSISTENCE_FAILED: (500, False, 1),
     ErrorCode.CIRCUIT_OPEN: (503, False, 1),
     ErrorCode.INTERNAL_ERROR: (500, False, 1),
 }
@@ -60,6 +65,9 @@ USER_HINT: dict[ErrorCode, str] = {
     ErrorCode.EXTRACTION_ERROR: "The record was reached but could not be read completely.",
     ErrorCode.INVALID_DATA: "The retrieved data failed quality validation and was not stored.",
     ErrorCode.DATABASE_ERROR: "The data store is unavailable.",
+    ErrorCode.PERSISTENCE_FAILED: (
+        "The data was retrieved from the source but could not be saved, "
+        "so it is not being reported as a completed lookup."),
     ErrorCode.CIRCUIT_OPEN: "Lookups for this source are paused after repeated failures.",
     ErrorCode.INTERNAL_ERROR: "An internal error occurred.",
 }

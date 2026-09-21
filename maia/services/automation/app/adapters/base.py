@@ -26,6 +26,7 @@ class RawPayload:
     parts_data: dict[str, Any] | None = None
     payload_kind: str = "dom"      # dom | xhr | api
     source_url: str | None = None
+    page_title: str | None = None
     retrieved_at: datetime | None = None
     artifacts: dict[str, str] = field(default_factory=dict)
 

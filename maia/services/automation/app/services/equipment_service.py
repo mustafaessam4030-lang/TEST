@@ -20,6 +20,7 @@ from app.core.retry import with_retry
 from app.domain.freshness import FreshnessPolicy
 from app.domain.normalize import normalize_equipment_data
 from app.domain.validate import validate_equipment_data, validate_serial
+from app.repositories.base import ExtractionArtifact
 from app.models.schemas import (
     Attribution, CacheInfo, EquipmentRecord, EquipmentSearchRequest, EquipmentSearchResponse,
     FallbackData, Freshness, InProgressResponse, RecordStatus, RunStatus, SearchMode,
@@ -121,7 +122,13 @@ class EquipmentService:
                               decision: Any, breaker: Any, key: str) -> Any:
         started = time.monotonic()
         try:
-            record = await self._run_automation(recorder, source, serial, req)
+            record, extraction = await self._run_automation(recorder, source, serial, req)
+            # A lookup is not successful until it has been SAVED. Extraction and
+            # validation can both pass and still leave nothing anyone can read
+            # later, and reporting that as a success is how a result quietly
+            # disappears. So PERSIST is a step of the run, not a footnote on it.
+            async with recorder.step("PERSIST"):
+                await self._persist(record, extraction, serial=serial, source=source)
         except AutomationError as err:
             breaker.record_failure(err.code)
             await recorder.fail(err)
@@ -139,23 +146,43 @@ class EquipmentService:
             await recorder.succeed(
                 field_count=sum(1 for v in record.model_dump().values() if v not in (None, [], {})),
                 quality_score=record.quality.score)
-            persisted = True
-            try:
-                await self.repo.upsert(record)
-            except AutomationError as db_err:
-                persisted = False  # the answer survives a warehouse outage; it is flagged
-                log(logger, logging.ERROR, "equipment.persist_failed",
-                    serial_number=serial, error=db_err.message)
             return EquipmentSearchResponse(
                 serial_number=serial, source=source,
                 attribution=self._attribution(source, record, Freshness.FRESH, 0.0),
                 cache=CacheInfo(hit=False, freshness=Freshness.FRESH, age_days=0.0,
                                 policy_action=decision.action),
-                data=record, persisted=persisted,
+                data=record, persisted=True,
                 execution_time_ms=int((time.monotonic() - started) * 1000),
                 automation_run_id=recorder.run_id, retrieved_at=record.retrieved_at)
         finally:
             await self.repo.release_idempotency(key)
+
+    async def _persist(self, record: EquipmentRecord, extraction: ExtractionArtifact | None,
+                       *, serial: str, source: str) -> None:
+        """Store the record, or fail the whole lookup. There is no third outcome."""
+        try:
+            await self.repo.upsert(record, extraction=extraction)
+        except AutomationError:
+            raise
+        except Exception as exc:
+            log(logger, logging.ERROR, "equipment.persist_failed",
+                serial_number=serial, source=source, error=str(exc)[:200])
+            raise AutomationError(
+                ErrorCode.PERSISTENCE_FAILED,
+                "The data was retrieved from the source but could not be saved.",
+                details={"source": source, "store": type(self.repo).__name__,
+                         "error": str(exc)[:200]},
+                step="PERSIST") from exc
+
+    async def get_equipment_from_local_store(self, serial_raw: str,
+                                             source: str | None = None) -> Any:
+        """Read the store WITHOUT touching a browser — the first step of every lookup.
+
+        Named for what it is today (a local JSON folder). It goes through the
+        repository interface, so when Snowflake replaces the folder neither the
+        name nor any caller has to change.
+        """
+        return await self.get_from_store(serial_raw, source)
 
     async def get_from_store(self, serial_raw: str, source: str | None = None) -> Any:
         serial = validate_serial(serial_raw)
@@ -180,7 +207,8 @@ class EquipmentService:
 
     # ── automation ──────────────────────────────────────────────────────────
     async def _run_automation(self, recorder: RunRecorder, source: str, serial: str,
-                              req: EquipmentSearchRequest) -> EquipmentRecord:
+                              req: EquipmentSearchRequest
+                              ) -> tuple[EquipmentRecord, ExtractionArtifact]:
         # Learn the page contract on first use, so nobody has to run a capture
         # script by hand. It proves every selector by using it; if it cannot, the
         # run fails with WEBSITE_CHANGED rather than proceeding on guesses.
@@ -198,7 +226,7 @@ class EquipmentService:
         caps = adapter.capabilities()
         deadline_s = min(req.timeout_ms, self.settings.run_deadline_ms) / 1000.0
 
-        async def attempt(n: int) -> EquipmentRecord:
+        async def attempt(n: int) -> tuple[EquipmentRecord, ExtractionArtifact]:
             if n > 1:
                 recorder.note_retry()
             ctx: RunContext | None = None
@@ -284,7 +312,19 @@ class EquipmentService:
                 async with recorder.step("VALIDATE"):
                     record = validate_equipment_data(record)
                     record.data_hash = data_hash(record.model_dump(mode="json"))
-                return record
+                # Carried to the store so nothing the page published is lost,
+                # including fields the canonical schema has no column for.
+                artifact = ExtractionArtifact(
+                    fields=dict(raw.fields), specifications=list(raw.specifications),
+                    parts_data=raw.parts_data, payload_kind=raw.payload_kind,
+                    final_url=raw.source_url, page_title=raw.page_title,
+                    selector_version=caps.selector_version,
+                    extraction_status="SUCCESS",
+                    screenshots={k.split(".", 1)[1]: v for k, v in raw.artifacts.items()
+                                 if k.startswith("screenshot.")},
+                    evidence={k: v for k, v in raw.artifacts.items()
+                              if not k.startswith("screenshot.")})
+                return record, artifact
             finally:
                 if ctx is not None:
                     await self.pool.release(ctx, persist_session_slot="default")

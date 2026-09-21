@@ -16,6 +16,7 @@ from app.core.errors import AutomationError, ErrorCode
 from app.core.hashing import data_hash
 from app.core.logging import log
 from app.models.schemas import EquipmentRecord, RecordStatus, RunRecord
+from app.repositories.base import ExtractionArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -162,8 +163,22 @@ class SnowflakeEquipmentRepository:
                  "snapshot": json.loads(r[6]) if isinstance(r[6], str) else r[6]} for r in rows]
 
     # ── writes ──────────────────────────────────────────────────────────────
-    async def upsert(self, record: EquipmentRecord) -> bool:
+    async def upsert(self, record: EquipmentRecord, *,
+                     extraction: ExtractionArtifact | None = None) -> bool:
         payload = record.model_dump(mode="json")
+        # RAW_DATA is the VARIANT column that keeps what the page gave us
+        # beyond the typed fields — the same content the local JSON store
+        # writes under `raw_data`.
+        if extraction is not None:
+            payload["raw_data"] = {
+                "extracted_fields": extraction.fields,
+                "specifications": extraction.specifications,
+                "parts_data": extraction.parts_data,
+                "final_url": extraction.final_url,
+                "page_title": extraction.page_title,
+                "payload_kind": extraction.payload_kind,
+                "selector_version": extraction.selector_version,
+            }
         digest = record.data_hash or data_hash(payload)
         existing = await self.get_current(record.serial_number, record.source_system)
         changed = not existing or existing.get("data_hash") != digest

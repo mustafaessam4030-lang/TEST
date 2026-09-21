@@ -71,6 +71,9 @@ class MaiaToolDispatcher:
     async def dispatch(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         handler = {
             "get_equipment_from_database": self.get_equipment_from_database,
+            # Same store, named for where the records live today. Both names
+            # stay valid when the local JSON folder becomes Snowflake.
+            "get_equipment_from_local_store": self.get_equipment_from_database,
             "search_equipment_in_sis": self.search_equipment_in_sis,
             "get_equipment_history": self.get_equipment_history,
             "get_automation_run_status": self.get_automation_run_status,
@@ -107,6 +110,9 @@ class MaiaToolDispatcher:
                     "user_message_hint": "Not in the internal store; SIS lookup is needed."}
         return _envelope_error(body.get("error_code", "INTERNAL_ERROR"),
                                body.get("user_message_hint", "Store lookup failed."))
+
+    #: The flow is always store-first: this, then SIS only if it misses or is stale.
+    get_equipment_from_local_store = get_equipment_from_database
 
     async def search_equipment_in_sis(self, serial_number: str, reason: str = "user_request",
                                       mode: str = "auto") -> dict[str, Any]:

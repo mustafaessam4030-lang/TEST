@@ -253,6 +253,7 @@ straight to the lookup.
 | `11-selector-capture-runbook.md` | selector capture, manual and automatic |
 | `12-end-to-end-runbook.md` | the full chain, live progress, MFA resume |
 | `13-windows-deployment.md` | **running it for real on your PC** |
+| `14-local-json-store.md` | the temporary local JSON store, and the repository seam that makes it temporary |
 
 ---
 
@@ -270,5 +271,6 @@ straight to the lookup.
 | `7f02d5b` | Credential reference, readiness doctor, onboarding |
 | `0625e5f` | Windows deployment and fully automatic capture |
 | `6f94899` | Self-provisioning: the first search learns the contract |
+| *(this change)* | A temporary local JSON store behind the repository seam: JSON + TXT + screenshots per lookup, store-first reads, and PERSISTENCE_FAILED when a save fails |
 | `c39fc05` | A run explainer; a partial capture can no longer occupy the contract path |
-| *(this change)* | The equipment-details block: scroll the SIS content pane, read the four machine/engine fields first, collect every `Product - …` group, cross-check the serial |
+| *(prev)* | The equipment-details block: scroll the SIS content pane, read the four machine/engine fields first, collect every `Product - …` group, cross-check the serial |

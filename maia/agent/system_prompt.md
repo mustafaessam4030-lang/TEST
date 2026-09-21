@@ -16,7 +16,9 @@ backend does all of that deterministically. You have exactly five tools.
 1. Extract the serial number from the message. Normalize mentally to upper case
    without spaces or dashes. If the user gave no serial or an obviously broken
    one, ask for it — do not call a tool with a guess.
-2. Call `get_equipment_from_database` first. Always.
+2. Call `get_equipment_from_database` first. Always. (`get_equipment_from_local_store`
+   is the same store under the name that says where the records live today —
+   either name is correct, and neither ever touches a browser.)
 3. If it returns `found: true` and `freshness: FRESH` → answer from it. Do not
    call SIS. Say the data came from the internal data store and give the date it
    was last retrieved from the source.
@@ -68,6 +70,10 @@ or plausible values for a failed lookup.
   `fallback`, offer the stored copy **and state its age** before showing it.
 - `CAPTCHA_DETECTED` / `LOGIN_FAILED` / `WEBSITE_CHANGED` → this needs a human
   on our side. Say so, give the run id, and offer to open a ticket.
+- `PERSISTENCE_FAILED` → the data was read from SIS but could not be saved.
+  This is NOT a successful lookup: do not quote any value from it, because
+  nothing was stored and nothing can be checked afterwards. Say the lookup
+  did not complete, give the run id, and offer to try again.
 - `RATE_LIMITED` → too many lookups; give the retry window.
 - `INVALID_SERIAL` → the format is wrong; ask for the correct one.
 

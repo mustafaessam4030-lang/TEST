@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.hashing import data_hash
 from app.models.schemas import EquipmentRecord, RecordStatus, RunRecord
+from app.repositories.base import ExtractionArtifact
 
 
 class MemoryEquipmentRepository:
@@ -23,7 +24,10 @@ class MemoryEquipmentRepository:
     async def get_any_source(self, serial_number: str) -> list[dict[str, Any]]:
         return [v for (_s, sn), v in self._current.items() if sn == serial_number]
 
-    async def upsert(self, record: EquipmentRecord) -> bool:
+    async def upsert(self, record: EquipmentRecord, *,
+                     extraction: ExtractionArtifact | None = None) -> bool:
+        # `extraction` is the raw page read. This store keeps only the
+        # canonical record; the local JSON store is the one that keeps both.
         payload = record.model_dump(mode="json")
         payload["data_hash"] = record.data_hash or data_hash(payload)
         key = (record.source_system, record.serial_number)

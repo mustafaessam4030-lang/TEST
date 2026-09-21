@@ -19,8 +19,12 @@ class Settings(BaseSettings):
     environment: str = "dev"
     log_level: str = "INFO"
 
-    # Storage: "memory" for local/dev and tests, "snowflake" in production.
-    repository: str = "memory"
+    # Storage: "local_json" while the warehouse is being built, "snowflake" in
+    # production, "memory" for tests. All three are the same interface, so this
+    # is the only line that changes when Snowflake is ready.
+    repository: str = "local_json"
+    #: Where LocalJsonRepository writes. Relative paths resolve against the repo.
+    local_store_dir: str = "logs/sis-results"
     snowflake_account: str | None = None
     snowflake_user: str | None = None
     snowflake_role: str = "MAIA_APP"

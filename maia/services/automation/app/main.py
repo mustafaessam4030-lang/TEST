@@ -42,9 +42,24 @@ def build_repository(settings: Any) -> Any:
             "private_key_file": (settings.snowflake_private_key_ref or "").removeprefix("file://")
             or None,
         })
-    from app.repositories.memory_repo import MemoryEquipmentRepository
+    if settings.repository == "memory":
+        from app.repositories.memory_repo import MemoryEquipmentRepository
 
-    return MemoryEquipmentRepository()
+        return MemoryEquipmentRepository()
+
+    # Default: the temporary local JSON store. Every successful lookup lands in
+    # logs/sis-results/ as JSON + TXT + screenshots, and a failed write fails
+    # the lookup rather than being reported as a success.
+    from app.repositories.local_json_repo import LocalJsonRepository
+
+    store_dir = Path(settings.local_store_dir)
+    if not store_dir.is_absolute():
+        store_dir = Path(__file__).resolve().parents[3] / store_dir
+    # The live credential values, held only so they can be searched for and
+    # masked in anything written. They are never logged or returned.
+    secrets = tuple(v for v in (os.environ.get("SIS_USERNAME"),
+                                os.environ.get("SIS_PASSWORD")) if v)
+    return LocalJsonRepository(store_dir, secrets=secrets)
 
 
 def build_registry(settings: Any) -> SourceRegistry:
@@ -106,6 +121,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pool = BrowserPool(headless=settings.headless, max_contexts=settings.max_contexts,
                        artifact_dir=settings.artifact_dir,
                        executable_path=settings.chromium_path)
+    # The store labels each record with the name of the source that produced
+    # it, taken from the registry. Nothing else may supply that name.
+    if hasattr(repo, "source_labels"):
+        repo.source_labels.update({e["source_id"]: e["label"] for e in registry.snapshot()})
     app.state.settings = settings
     app.state.repo = repo
     app.state.registry = registry
