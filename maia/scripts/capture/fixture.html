@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<!-- Offline fixture: a SIS2-SHAPED app (hash routing, Angular-ish markup, generated
+     ids, an empty state). It exists only to prove the capture engine works before
+     it is pointed at the real site. Nothing here is a real SIS selector, and
+     data-maia-fixture is excluded from candidate generation by picker.js. -->
+<html lang="en"><head><meta charset="utf-8"><title>SIS-shaped fixture</title>
+<style>
+ body{font:14px system-ui,sans-serif;margin:0;color:#222}
+ .topbar{background:#111;color:#FFC500;padding:12px 20px;font-weight:700}
+ .nav{display:flex;gap:18px;background:#f3f3f3;padding:10px 20px;border-bottom:1px solid #ddd}
+ .nav a{color:#333;text-decoration:none;font-weight:600}
+ .page{padding:24px 20px;max-width:900px}
+ .hide{display:none}
+ input,button{font:inherit;padding:8px 10px}
+ button{background:#FFC500;border:1px solid #d9a800;cursor:pointer;font-weight:700}
+ table{border-collapse:collapse;width:100%;margin-top:10px}
+ td,th{border:1px solid #e2e2e2;padding:6px 9px;text-align:left}
+ .result-row{cursor:pointer}
+ .empty-state{background:#fff6e0;border-left:3px solid #FFC500;padding:12px}
+ .kv{display:flex;gap:10px;padding:4px 0;border-bottom:1px dashed #eee}
+ .kv span:first-child{width:180px;color:#666}
+</style></head>
+<body class="ng-scope">
+<div class="topbar ng-star-inserted" id="app-shell-root" data-testid="app-shell"
+     data-maia-fixture="ready.app_shell">SIS-shaped fixture
+  <span id="user-menu" class="hide" data-maia-fixture="ready.authenticated"
+        style="float:right;font-size:12px;">fixture-user ▾</span></div>
+<div class="nav">
+  <a href="#/search" id="nav-search-link" data-maia-fixture="nav.search_link">Equipment search</a>
+  <a href="#/home" class="ng-tns-c14-2">Home</a>
+</div>
+
+<div id="page-login" class="page">
+  <h2>Sign In</h2>
+  <label for="mat-input-0">Username</label>
+  <input id="mat-input-0" name="username" class="ng-untouched ng-pristine" data-maia-fixture="login.username">
+  <label for="mat-input-1">Password</label>
+  <input id="mat-input-1" name="password" type="password" class="ng-untouched" data-maia-fixture="login.password">
+  <button id="submit-9931" class="mdc-button ng-star-inserted" data-maia-fixture="login.submit"
+          onclick="signIn()">Sign In</button>
+  <div id="login-error" class="hide">Invalid credentials</div>
+</div>
+
+<div id="page-search" class="page hide" data-testid="equipment-search-page">
+  <h2 id="search-heading" data-maia-fixture="ready.search_page">Equipment search</h2>
+  <input aria-label="Serial number" placeholder="Enter serial number" name="serialNumber"
+         id="mat-input-42" class="ng-untouched search-field" data-maia-fixture="search.input">
+  <button data-testid="serial-search-submit" class="mdc-button" data-maia-fixture="search.submit"
+          onclick="runSearch()">Search</button>
+
+  <div id="results-wrap" class="hide" data-maia-fixture="search.results">
+    <table class="results-table ng-star-inserted"><thead><tr><th>Serial</th><th>Model</th></tr></thead>
+      <tbody id="results-body"></tbody></table>
+  </div>
+
+  <div id="no-results" class="empty-state hide" data-maia-fixture="search.no_results_marker">
+    No equipment found for that serial number.
+  </div>
+</div>
+
+<div id="page-detail" class="page hide" data-testid="equipment-detail-page">
+  <h2 id="detail-title" data-maia-fixture="ready.detail_page">Equipment detail</h2>
+  <div class="kv"><span>Model</span><span class="detail-value" id="fld-model"
+       data-maia-fixture="detail.equipment_model">336</span></div>
+  <div class="kv"><span>Type</span><span class="detail-value" data-testid="equipment-type"
+       data-maia-fixture="detail.equipment_type">Hydraulic Excavator</span></div>
+  <div class="kv"><span>Build date</span><span class="detail-value" id="fld-build-7781"
+       data-maia-fixture="detail.build_date">07/2019</span></div>
+  <div class="kv"><span>Engine</span><span class="detail-value" aria-label="Engine family"
+       data-maia-fixture="detail.engine_family">C9.3B</span></div>
+  <a href="https://example.invalid/media/SEBP7015" id="parts-manual-link"
+     data-maia-fixture="detail.parts_manual_url">Parts manual</a>
+  <table class="spec-table"><tbody data-maia-fixture="detail.spec_table">
+    <tr class="spec-row ng-star-inserted" data-maia-fixture="detail.spec_rows"><td>Operating weight</td><td>36200 kg</td></tr>
+    <tr class="spec-row ng-star-inserted"><td>Net power</td><td>225 kW</td></tr>
+  </tbody></table>
+</div>
+
+<script>
+ const KNOWN = {'SN123456':{model:'336'},'CAT0336LKBW00123':{model:'336'}};
+ function show(id){['page-login','page-search','page-detail'].forEach(p=>
+   document.getElementById(p).classList.toggle('hide', p!==id));}
+ function signIn(){
+   const u=document.getElementById('mat-input-0').value, p=document.getElementById('mat-input-1').value;
+   if(!u||!p){document.getElementById('login-error').classList.remove('hide');return;}
+   document.getElementById('user-menu').classList.remove('hide');
+   location.hash='#/search';
+ }
+ function runSearch(){
+   const q=(document.getElementById('mat-input-42').value||'').trim().toUpperCase();
+   const body=document.getElementById('results-body');
+   const hit=KNOWN[q];
+   // Simulate the SPA's XHR so the capture tool can record the JSON endpoint.
+   fetch('data:application/json,'+encodeURIComponent(JSON.stringify({serial:q,found:!!hit})))
+     .catch(()=>{});
+   setTimeout(()=>{
+     if(hit){
+       body.innerHTML=`<tr class="result-row ng-star-inserted" data-maia-fixture="search.first_result"
+         onclick="location.hash='#/detail/${q}'"><td>${q}</td><td>${hit.model}</td></tr>`;
+       document.getElementById('results-wrap').classList.remove('hide');
+       document.getElementById('no-results').classList.add('hide');
+     }else{
+       document.getElementById('results-wrap').classList.add('hide');
+       document.getElementById('no-results').classList.remove('hide');
+     }
+   }, 250);   // async like a real SPA: the capture tool must wait on the app, not a timer
+ }
+ function route(){
+   const h=location.hash||'#/login';
+   if(h.startsWith('#/search'))show('page-search');
+   else if(h.startsWith('#/detail'))show('page-detail');
+   else show('page-login');
+ }
+ window.addEventListener('hashchange',route); route();
+</script></body></html>

@@ -1,0 +1,233 @@
+<#
+    Maia — one-click start.
+
+    Installs only what is missing, reuses anything already on this PC, reads the
+    SIS sign-in details from login.txt if you made one, and starts everything.
+
+    Safe to run again; the slow parts happen once.
+#>
+$ErrorActionPreference = "Stop"
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+Set-Location $repo
+
+function Say([string]$t, [string]$c = "White") { Write-Host $t -ForegroundColor $c }
+function Step([int]$n, [string]$t) { Write-Host "`n[$n/5] $t" -ForegroundColor Cyan }
+function Fail([string]$t) { Say "`n$t" Red; Read-Host "`nPress Enter to close"; exit 1 }
+
+Say "`n===============================================================" Yellow
+Say "  MAIA - Equipment data from Caterpillar SIS" Yellow
+Say "===============================================================" Yellow
+
+# ── 1. Find a Python that has prebuilt packages ─────────────────────────────
+# Brand-new Python releases have no published wheels, so pip tries to COMPILE
+# pyyaml, pydantic-core and friends and fails on a PC without a C++ toolchain.
+# We need a settled version; if there is none, we fetch one.
+Step 1 "Finding a suitable Python"
+
+function Find-Python {
+    $tried = @()
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        foreach ($v in @("3.13", "3.12", "3.11", "3.10")) { $tried += ,@("py", @("-$v")) }
+    }
+    foreach ($exe in @("python", "python3")) {
+        if (Get-Command $exe -ErrorAction SilentlyContinue) { $tried += ,@($exe, @()) }
+    }
+    # A Python installed by this script in a previous run.
+    $local = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
+    if (Test-Path $local) { $tried = ,@($local, @()) + $tried }
+
+    foreach ($c in $tried) {
+        try { $v = & $c[0] @($c[1]) -c "import sys;print('.'.join(map(str,sys.version_info[:2])))" 2>$null }
+        catch { continue }
+        if (-not $v) { continue }
+        $ver = [version]$v
+        if ($ver -ge [version]"3.10" -and $ver -lt [version]"3.14") {
+            return @{ Exe = $c[0]; Args = $c[1]; Version = $v }
+        }
+    }
+    return $null
+}
+
+$found = Find-Python
+if (-not $found) {
+    Say "      No settled Python found (3.10-3.13)." Yellow
+    Say "      Installing Python 3.12 for your user account - no admin needed." Yellow
+    $installed = $false
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        try {
+            winget install -e --id Python.Python.3.12 --scope user --silent `
+                   --accept-package-agreements --accept-source-agreements
+            $installed = ($LASTEXITCODE -eq 0)
+        } catch { $installed = $false }
+    }
+    if (-not $installed) {
+        Say "      winget could not do it; downloading the installer instead..." Yellow
+        $url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+        $exe = Join-Path $env:TEMP "python-3.12.8-amd64.exe"
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+            Say "      Running the installer (user-level, adds itself to PATH)..." Yellow
+            Start-Process -FilePath $exe -Wait -ArgumentList @(
+                "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_launcher=1", "Include_pip=1")
+            $installed = $true
+        } catch {
+            Fail @"
+Could not install Python automatically: $($_.Exception.Message)
+
+Install Python 3.12 yourself from
+  https://www.python.org/downloads/release/python-3128/
+tick 'Add python.exe to PATH', then run this file again.
+"@
+        }
+    }
+    # Pick up the new PATH without needing a new terminal.
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                [Environment]::GetEnvironmentVariable("Path", "User")
+    $found = Find-Python
+    if (-not $found) {
+        Fail @"
+Python 3.12 was installed but this window cannot see it yet.
+
+Close this window and double-click START-MAIA.bat again - that is all it needs.
+"@
+    }
+    Say "      Installed Python $($found.Version)." Green
+}
+
+$py = $found.Exe; $pyArgs = $found.Args; $pyVer = $found.Version
+Say "      Using Python $pyVer" Green
+
+# ── 2. Environment ──────────────────────────────────────────────────────────
+Step 2 "Preparing the environment"
+$venvPy = Join-Path $repo ".venv\Scripts\python.exe"
+$marker = Join-Path $repo ".venv\.maia-ready"
+
+if (Test-Path $venvPy) {
+    # If an earlier run left a venv built on an unusable Python, start over.
+    $venvVer = & $venvPy -c "import sys;print('.'.join(map(str,sys.version_info[:2])))" 2>$null
+    if (-not $venvVer -or [version]$venvVer -ge [version]"3.14") {
+        Say "      Removing a workspace built on Python $venvVer (no packages exist for it)." Yellow
+        Remove-Item -Recurse -Force (Join-Path $repo ".venv")
+    }
+}
+if (-not (Test-Path $venvPy)) {
+    Say "      Creating a workspace that reuses what you already have installed..."
+    # --system-site-packages: your existing Playwright and its browsers are used
+    # instead of being downloaded again.
+    & $py @pyArgs -m venv --system-site-packages .venv
+    if (-not (Test-Path $venvPy)) { Fail "Could not create the .venv folder." }
+}
+
+$needed = & $venvPy -c @"
+import importlib.util as u
+mods = {'fastapi':'fastapi','uvicorn':'uvicorn[standard]','yaml':'pyyaml>=6.0.2',
+        'pydantic':'pydantic','pydantic_settings':'pydantic-settings','httpx':'httpx',
+        'playwright':'playwright'}
+print(' '.join(pkg for mod, pkg in mods.items() if u.find_spec(mod) is None))
+"@ 2>$null
+
+if ($needed) {
+    Say "      Installing: $needed" Yellow
+    & $venvPy -m pip install --upgrade pip --quiet
+    & $venvPy -m pip install --only-binary=:all: $needed.Split(" ")
+    if ($LASTEXITCODE -ne 0) {
+        Say "      Prebuilt packages were not available; trying a normal install..." Yellow
+        & $venvPy -m pip install $needed.Split(" ")
+    }
+    $still = & $venvPy -c @"
+import importlib.util as u
+print(' '.join(m for m in ['fastapi','uvicorn','yaml','pydantic','pydantic_settings','httpx','playwright']
+                if u.find_spec(m) is None))
+"@ 2>$null
+    if ($still) {
+        Fail @"
+These are still missing: $still
+
+That almost always means this Python version has no prebuilt packages yet.
+Install Python 3.12 from python.org, delete the .venv folder in this project,
+and run this file again.
+"@
+    }
+} else {
+    Say "      Everything needed is already installed." Green
+}
+
+# Chromium: a no-op if you already have it.
+$hasBrowser = & $venvPy -c @"
+try:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        import os
+        print('yes' if os.path.exists(p.chromium.executable_path) else 'no')
+except Exception:
+    print('no')
+"@ 2>$null
+if ($hasBrowser -ne "yes") {
+    Say "      Installing the browser Playwright drives (once)..." Yellow
+    & $venvPy -m playwright install chromium
+} else {
+    Say "      Chromium already present." Green
+}
+New-Item -ItemType File -Path $marker -Force | Out-Null
+
+# ── 3. Sign-in details ──────────────────────────────────────────────────────
+Step 3 "SIS sign-in details"
+$loginFile = if (Test-Path (Join-Path $repo "login.txt")) { "login.txt" }
+             elseif (Test-Path (Join-Path $repo "login")) { "login" } else { $null }
+
+if ($loginFile) {
+    $env:MAIA_SIS_SECRET_REF = "file://$loginFile"
+    Say "      Reading them from $loginFile - nothing to type." Green
+} elseif ($env:SIS_USERNAME -and $env:SIS_PASSWORD) {
+    $env:MAIA_SIS_SECRET_REF = "env://SIS"
+    Say "      Using the ones already set in this window." Green
+} else {
+    Say "      No login.txt found. Create one next to START-MAIA.bat with:" Yellow
+    Say "          username=YOUR.SIS.USERNAME" Yellow
+    Say "          password=YOUR SIS PASSWORD" Yellow
+    Say "      (copy login.example.txt and rename it to login.txt)" Yellow
+    Say "`n      Or type them now, for this window only:" Yellow
+    $env:SIS_USERNAME = Read-Host "`n      SIS username"
+    $secure = Read-Host "      SIS password (typing is hidden)" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $env:SIS_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    if (-not $env:SIS_USERNAME -or -not $env:SIS_PASSWORD) { Fail "Both a username and a password are needed." }
+    $env:MAIA_SIS_SECRET_REF = "env://SIS"
+}
+
+# ── 4. Readiness ────────────────────────────────────────────────────────────
+Step 4 "Checking everything is ready"
+& $venvPy scripts\e2e\doctor.py
+if ($LASTEXITCODE -ne 0) {
+    Say "`nNot everything is ready - see the lines marked x above." Yellow
+    Say "'SIS selector contract' missing is NORMAL on the first run: Maia learns" Yellow
+    Say "the SIS pages during your first search." Yellow
+    $go = Read-Host "`nStart anyway? (Y/n)"
+    if ($go -and $go.ToLower() -ne "y") { exit 1 }
+}
+
+# ── 5. Go ───────────────────────────────────────────────────────────────────
+Step 5 "Starting Maia"
+Say @"
+
+      Your browser will open with the Maia chat.
+      Click the yellow bubble at the bottom right and type:
+
+          Maia, find equipment data for serial number <your serial>
+
+      Use a serial you KNOW exists in SIS for the first search: Maia uses it
+      to learn the SIS pages, which takes a few minutes. Later searches are
+      seconds.
+
+      A second browser window opens on its own - that is the automation.
+      Leave it alone unless SIS asks for a verification code; type the code
+      in that window and Maia continues.
+
+      Close this black window to stop everything.
+
+"@ White
+
+Start-Sleep -Seconds 2
+Start-Process "http://127.0.0.1:5173/maia.html"
+& $venvPy scripts\e2e\run_e2e.py --source cat_sis

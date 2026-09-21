@@ -1,0 +1,80 @@
+# Caterpillar SIS2 source contract.
+#
+# TODO_CAPTURE values are intentional: DOM selectors must be captured from a real
+# authenticated SIS2 session by an engineer (scripts/capture_selectors.py) and
+# reviewed. The adapter refuses to run with placeholders and raises
+# WEBSITE_CHANGED rather than guessing — a guessed selector is how a scraper
+# starts returning confident nonsense.
+source_id: cat_sis
+label: Caterpillar SIS
+precedence: 10
+base_url: https://sis2.cat.com/#/
+selector_version: v1-unconfirmed
+
+auth:
+  kind: oidc_redirect                  # CWS / Cat Login
+  secret_ref: env://SIS                # SIS_USERNAME / SIS_PASSWORD;
+                                       # override: MAIA_SIS_SECRET_REF=vault://kv/maia/cat_sis
+  login_host_markers: ["signin.cat.com", "login.cat.com", "/cws", "authenticate"]
+  session_slots: ["default"]
+  session_max_age_s: 28800
+
+routes:
+  search: "/search"
+
+# Application-level "the app is usable" signals. Never networkidle, never sleep().
+ready_markers:
+  app_shell: TODO_CAPTURE
+  authenticated: TODO_CAPTURE   # an element that exists ONLY when signed in
+  search_page: TODO_CAPTURE
+  detail_page: TODO_CAPTURE
+
+challenge_markers:                     # presence ⇒ CAPTCHA_DETECTED, hard stop
+  - "iframe[src*='recaptcha']"
+  - "#challenge-form"
+  - "[data-testid='bot-challenge']"
+
+selectors:
+  consent:
+    accept: TODO_CAPTURE       # cookie banner button; it overlays and eats clicks
+  login:
+    username: TODO_CAPTURE
+    username_submit: TODO_CAPTURE   # two-step sign-in: advances to the password screen
+    password: TODO_CAPTURE
+    submit: TODO_CAPTURE
+    error: TODO_CAPTURE
+  search:
+    input: TODO_CAPTURE
+    submit: TODO_CAPTURE
+    results: TODO_CAPTURE
+    first_result: TODO_CAPTURE
+    no_results_marker: TODO_CAPTURE    # REQUIRED: the only proof of SERIAL_NOT_FOUND
+  detail:
+    equipment_model: TODO_CAPTURE
+    equipment_type: TODO_CAPTURE
+    build_date: TODO_CAPTURE
+    engine_family: TODO_CAPTURE
+    parts_manual_url: TODO_CAPTURE
+    operation_manual_url: TODO_CAPTURE
+    spec_rows: TODO_CAPTURE
+    spec_cell: TODO_CAPTURE   # derived from the captured row, never assumed
+
+extraction:
+  strategy: dom_then_xhr               # the SPA's own JSON beats scraped text
+  xhr_url_patterns:
+    - "/api/.*(equipment|serial|machine|asset).*"
+  required_fields: [equipment_model]
+
+# Source field name -> canonical schema field. This is the whole "mapping layer".
+field_map:
+  equipment_model: equipment_model
+  equipment_type: equipment_type
+  build_date: build_date
+  engine_family: engine_family
+  parts_manual_url: parts_manual_url
+  operation_manual_url: operation_manual_url
+
+politeness:
+  min_delay_ms: 1500
+  max_concurrent: 2
+  nightly_cap: 4000

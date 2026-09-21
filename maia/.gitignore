@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+config/.env
+config/sources/*.captured.json
+/var/maia/
+node_modules/
+
+artifacts/
+
+# Local SIS credentials — never committed, never packaged
+login.txt
+login

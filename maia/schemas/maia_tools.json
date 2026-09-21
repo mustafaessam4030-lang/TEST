@@ -1,0 +1,96 @@
+{
+  "note": "Claude tool definitions for Maia. strict:true + additionalProperties:false so tool inputs are schema-valid. Served unchanged on every turn to keep the prompt prefix cacheable. Maia's entire reach into the browser is a serial-number string, re-validated server-side.",
+  "tools": [
+    {
+      "name": "get_equipment_from_database",
+      "description": "Look up an equipment serial number in Mantrac's internal data store. ALWAYS call this before search_equipment_in_sis. Returns the stored record with its freshness label and age in days, or found=false. Never launches a browser and never contacts Caterpillar.",
+      "strict": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serial_number"],
+        "properties": {
+          "serial_number": {
+            "type": "string",
+            "description": "Equipment serial or PIN as given by the user, 3-17 alphanumeric characters after normalization.",
+            "minLength": 3,
+            "maxLength": 40
+          },
+          "source": {
+            "type": "string",
+            "enum": ["cat_sis", "auto"],
+            "description": "Which source's stored record to read. Default auto."
+          }
+        }
+      }
+    },
+    {
+      "name": "search_equipment_in_sis",
+      "description": "Retrieve equipment data from Caterpillar SIS (https://sis2.cat.com) by running the deterministic browser automation. Call ONLY when get_equipment_from_database returned found=false, or returned freshness STALE/HARD_STALE and the user wants current data. Slow (typically 15-40s). Returns the normalized record with attribution, or a typed error with an automation_run_id. It may return status in_progress with a run id to poll.",
+      "strict": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serial_number", "reason"],
+        "properties": {
+          "serial_number": { "type": "string", "minLength": 3, "maxLength": 40 },
+          "reason": {
+            "type": "string",
+            "enum": ["user_request", "stale_refresh", "backfill"],
+            "description": "Why the source is being contacted. Recorded on the run for audit."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["auto", "force_refresh"],
+            "description": "auto respects the freshness policy; force_refresh bypasses the cache. Use force_refresh only when the user explicitly asks for the latest."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_equipment_history",
+      "description": "Return the change history for a serial number: when each version was retrieved, which fields changed, the run that produced it. Use for 'did anything change' or 'when was this last updated' questions.",
+      "strict": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serial_number"],
+        "properties": {
+          "serial_number": { "type": "string", "minLength": 3, "maxLength": 40 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50 }
+        }
+      }
+    },
+    {
+      "name": "get_automation_run_status",
+      "description": "Check an automation run: status, steps executed, timings, error code. Use to poll an in_progress lookup, or to explain to the user exactly where a failed lookup stopped.",
+      "strict": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["automation_run_id"],
+        "properties": {
+          "automation_run_id": { "type": "string", "minLength": 4, "maxLength": 64 }
+        }
+      }
+    },
+    {
+      "name": "save_equipment_data",
+      "description": "Persist a corrected or externally supplied equipment record. Requires the equipment.write scope, which the chat agent does not normally hold; expect a permission error unless an authorized workflow is running. Every field must carry provenance.",
+      "strict": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serial_number", "source", "data"],
+        "properties": {
+          "serial_number": { "type": "string", "minLength": 3, "maxLength": 40 },
+          "source": { "type": "string", "enum": ["cat_sis", "manual_correction"] },
+          "data": {
+            "type": "object",
+            "description": "A record conforming to equipment.normalized.schema.json. Values must come from a tool result or from the user, never from the assistant's own knowledge."
+          }
+        }
+      }
+    }
+  ]
+}

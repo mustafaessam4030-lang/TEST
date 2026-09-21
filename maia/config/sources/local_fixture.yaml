@@ -1,0 +1,50 @@
+# LOCAL TEST FIXTURE — this is NOT Caterpillar SIS.
+#
+# A second registered source, pointed at scripts/capture/fixture.html served
+# locally. Its purpose is to exercise the entire chain end to end with a real
+# browser: Maia → gateway → Playwright worker → a real page → real extraction →
+# normalization → validation → persistence → Maia.
+#
+# Every selector below was CAPTURED and verified from that page by
+# scripts/capture/capture_selectors.py --self-test. None is guessed.
+#
+# It is disabled unless MAIA_ENABLE_FIXTURE_SOURCE=true, and its label carries
+# the warning into every answer, card and audit row, so fixture data can never
+# be mistaken for equipment data from Caterpillar.
+source_id: local_fixture
+label: "Local test fixture (NOT Caterpillar SIS)"
+precedence: 900                    # never chosen by `auto`; must be asked for
+base_url: http://127.0.0.1:5173/fixture.html
+selector_version: fixture-captured-v1
+
+auth:
+  kind: form
+  secret_ref: env://SIS
+  login_host_markers: ["page-login"]
+  session_slots: ["default"]
+  session_max_age_s: 3600
+
+routes:
+  search: "/search"
+
+ready_markers: {}      # learned on first use, like the selectors
+
+challenge_markers: []
+
+selectors: {}          # intentionally empty: this source is LEARNED on first
+                       # use by the automatic capture, exactly like SIS would be
+
+extraction:
+  strategy: dom_only
+  required_fields: [equipment_model]
+
+field_map:
+  equipment_model: equipment_model
+  equipment_type: equipment_type
+  build_date: build_date
+  engine_family: engine_family
+  parts_manual_url: parts_manual_url
+
+politeness:
+  min_delay_ms: 0
+  max_concurrent: 2
