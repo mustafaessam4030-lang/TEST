@@ -51,8 +51,14 @@ def split_value_unit(raw: str) -> tuple[float | str | None, str | None]:
     return number, (m.group(2).strip() if m.group(2) else None)
 
 
-def parse_build_date(raw: str | None) -> str | None:
-    """Return ISO-8601, keeping the precision the source actually gave."""
+def parse_build_date(raw: str | None, *, date_order: str = "day_first") -> str | None:
+    """Return ISO-8601, keeping the precision the source actually gave.
+
+    `date_order` settles only what the value itself cannot: a day past the 12th
+    fixes the order on its own, whatever the setting says. It is the source
+    contract that declares the order (SIS publishes MM/DD/YYYY), never a guess
+    made here, and an unparseable value stays null with a violation.
+    """
     if not raw:
         return None
     text = str(raw).strip()
@@ -69,8 +75,17 @@ def parse_build_date(raw: str | None) -> str | None:
         return f"{m.group(2)}-{_MONTHS[m.group(1).lower()]:02d}"
     m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", text)
     if m:
+        first, second, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if first > 12 and second <= 12:
+            day, month = first, second            # day-first, unambiguously
+        elif second > 12 and first <= 12:
+            month, day = first, second            # month-first, unambiguously
+        elif date_order == "month_first":
+            month, day = first, second
+        else:
+            day, month = first, second
         try:
-            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1))).date().isoformat()
+            return datetime(year, month, day).date().isoformat()
         except ValueError:
             return None
     return None  # unparseable: better null + violation than a fabricated date
@@ -96,6 +111,7 @@ def normalize_equipment_data(
     run_id: str | None,
     field_map: dict[str, str] | None = None,
     selector_version: str | None = None,
+    date_order: str = "day_first",
 ) -> EquipmentRecord:
     """Apply the source's declarative field mapping and build the canonical record."""
     field_map = field_map or {}
@@ -130,9 +146,32 @@ def normalize_equipment_data(
     parts_url_v, parts_url_sel = pick("parts_manual_url")
     op_url_v, op_url_sel = pick("operation_manual_url")
 
-    build_iso = parse_build_date(build_v) if build_v else None
+    build_iso = parse_build_date(build_v, date_order=date_order) if build_v else None
     if build_v and not build_iso:
         violations.append(f"build_date_unparseable:{str(build_v)[:32]}")
+
+    # ── the equipment-details block ─────────────────────────────────────────
+    machine_serial_v, machine_serial_sel = pick("machine_serial_number")
+    machine_build_v, machine_build_sel = pick("machine_build_date")
+    engine_serial_v, engine_serial_sel = pick("engine_serial_number")
+    engine_build_v, engine_build_sel = pick("engine_build_date")
+
+    def as_date(canonical: str, value: Any) -> str | None:
+        if not value:
+            return None
+        iso = parse_build_date(value, date_order=date_order)
+        if not iso:
+            violations.append(f"{canonical}_unparseable:{str(value)[:32]}")
+        return iso
+
+    machine_build_iso = as_date("machine_build_date", machine_build_v)
+    engine_build_iso = as_date("engine_build_date", engine_build_v)
+
+    # The machine serial is the page's own answer to "which machine is this?".
+    # Disagreeing with the serial that was searched means the wrong record was
+    # read — recorded here, and refused by the validator.
+    if machine_serial_v and normalize_serial(str(machine_serial_v)) != normalize_serial(serial_number):
+        violations.append("serial_mismatch:machine_serial_number")
 
     specs: list[Specification] = []
     for idx, row in enumerate(raw.get("specifications") or []):
@@ -159,6 +198,18 @@ def normalize_equipment_data(
         equipment_type=record("equipment_type", map_equipment_type(type_v), type_sel, value_source),
         manufacturer=record("manufacturer", raw.get("manufacturer") or "Caterpillar", "constant", "derived"),
         build_date=record("build_date", build_iso, build_sel, value_source),
+        machine_serial_number=record(
+            "machine_serial_number",
+            (str(machine_serial_v).strip() if machine_serial_v else None),
+            machine_serial_sel, value_source),
+        machine_build_date=record("machine_build_date", machine_build_iso,
+                                  machine_build_sel, value_source),
+        engine_serial_number=record(
+            "engine_serial_number",
+            (str(engine_serial_v).strip() if engine_serial_v else None),
+            engine_serial_sel, value_source),
+        engine_build_date=record("engine_build_date", engine_build_iso,
+                                 engine_build_sel, value_source),
         engine_family=record("engine_family", engine, engine_sel, value_source),
         specifications=specs,
         parts_data=raw.get("parts_data"),

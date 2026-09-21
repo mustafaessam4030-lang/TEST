@@ -50,19 +50,46 @@ Shape:
 
 ```jsonc
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "serial_number": "CAT0336LKBW00123",     // normalized: upper, no spaces/dashes
   "serial_number_raw": "cat0336-lkbw00123",// exactly what the user/source gave
   "equipment_model": "336",
   "equipment_type": "HYDRAULIC_EXCAVATOR", // controlled vocabulary
   "manufacturer": "Caterpillar",
   "build_date": "2019-07",                 // ISO-8601, partial dates allowed
+
+  // The equipment-details block, read FIRST from the source detail page, in
+  // this order. Dates arrive as the source publishes them (SIS: MM/DD/YYYY)
+  // and are stored as ISO-8601.
+  "machine_serial_number": "CAT0336LKBW00123",  // must equal serial_number
+  "machine_build_date": "2014-08-02",
+  "engine_serial_number": "FIX00588",
+  "engine_build_date": "2014-06-30",
+
   "engine_family": { "model": "C9.3B", "arrangement": "5170340", "emissions": "Tier 4 Final" },
   "specifications": [
     { "group": "Hydraulics", "name": "Pump flow", "value": 2, "unit": "L/min",
       "value_raw": "2 x 260 L/min", "provenance_id": "p_014" }
   ],
-  "parts_data": { "media_number": "SEBP7015", "groups": [ /* ... */ ] },
+  // Every "Product - …" group the detail page showed, in page order, entire
+  // group first. Rows are the table's own cells; `values` keys them by the
+  // table's own column headings when the page publishes them.
+  "parts_data": {
+    "group_titles": ["Product - Entire Group (CAT0336LKBW00123)", "Product - Attachments (…)"],
+    "group_count": 2,
+    "entire_group_title": "Product - Entire Group (CAT0336LKBW00123)",
+    "columns": ["Part Number", "Serial Number", "Part Name", "Install Ind.", "Install Date", "Description"],
+    "total_rows": 5,
+    "serial_mismatched_groups": [],
+    "selector_id": "detail.parts_group",
+    "groups": [
+      { "title": "Product - Entire Group (CAT0336LKBW00123)", "group_serial": "CAT0336LKBW00123",
+        "is_entire_group": true, "discovered_by": "selector:detail.parts_group",
+        "columns": [ /* … */ ], "row_count": 4, "column_count": 6,
+        "rows": [ { "cells": ["1000", "FIX00588", "Engine", "Factory", "", "ENGINE"],
+                    "values": { "Part Number": "1000", "Serial Number": "FIX00588" } } ] }
+    ]
+  },
   "parts_manual_url": "https://sis2.cat.com/#/...",
   "operation_manual_url": null,            // null = not published by source. NEVER a guess.
   "source_system": "cat_sis",
@@ -86,6 +113,22 @@ Rules that make the contract enforceable:
 3. Units are always split into `value` + `unit`, with `value_raw` kept verbatim
    so nothing is lost in normalization.
 4. `schema_version` is stored per row; readers must tolerate older versions.
+5. **`machine_serial_number` is the cross-check, not a duplicate.** It is what
+   the detail page itself claims the machine is. It must equal `serial_number`;
+   a mismatch means the wrong record was read, and the row is quarantined rather
+   than served. A row with no `machine_serial_number` cannot be served at all —
+   it is a required field.
+6. A parts row is only ever the cells the table showed. Nothing is totalled,
+   deduplicated or inferred, and a group whose table could not be read has
+   `rows: []` with its `row_count`, never a partial list presented as complete.
+
+### Migrating an existing warehouse (1.1.0 → 1.2.0)
+
+`sql/snowflake/003_equipment_details_columns.sql` and
+`sql/databricks/002_equipment_details_columns.sql` add the four columns. They
+are re-runnable. Rows written before the migration have `NULL` there: that means
+"not collected by that run", never "the source has none" — which is why the
+distinction in rule 2 is carried in `field_provenance`, not inferred from NULL.
 
 ## 3.4 Freshness metadata
 

@@ -39,13 +39,37 @@ class FakeAdapter:
             raise AutomationError(ErrorCode.TIMEOUT, "slow")
         return SearchOutcome(found=True, detail_url="https://sis2.cat.com/#/detail/1")
 
-    async def extract(self, ctx: Any) -> RawPayload:
+    async def extract(self, ctx: Any, serial_number: str | None = None) -> RawPayload:
+        # The machine serial follows the serial that was asked for, exactly as a
+        # real detail page does — the cross-check is part of the flow under test.
+        serial = serial_number or "CAT0336LKBW00123"
         return RawPayload(
             fields={"equipment_model": "336", "equipment_type": "Hydraulic Excavator",
                     "build_date": "07/2019", "engine_family": "C9.3B",
+                    "machine_serial_number": serial, "machine_build_date": "08/02/2014",
+                    "engine_serial_number": "FIX00588", "engine_build_date": "06/30/2014",
                     "parts_manual_url": "https://sis2.cat.com/#/media/SEBP7015"},
             specifications=[{"group": "Weights", "name": "Operating weight", "value": "36200 kg"},
                             {"group": "Engine", "name": "Net power", "value": "225 kW"}],
+            parts_data={
+                "group_titles": [f"Product - Entire Group ({serial})"],
+                "group_count": 1,
+                "entire_group_title": f"Product - Entire Group ({serial})",
+                "columns": ["Part Number", "Serial Number", "Part Name"],
+                "total_rows": 1,
+                "serial_mismatched_groups": [],
+                "selector_id": "detail.parts_group",
+                "groups": [{
+                    "title": f"Product - Entire Group ({serial})",
+                    "group_serial": serial, "is_entire_group": True,
+                    "discovered_by": "selector:detail.parts_group",
+                    "columns": ["Part Number", "Serial Number", "Part Name"],
+                    "row_count": 1, "column_count": 3,
+                    "rows": [{"cells": ["1000", "FIX00588", "Engine"],
+                              "values": {"Part Number": "1000", "Serial Number": "FIX00588",
+                                         "Part Name": "Engine"}}],
+                }],
+            },
             payload_kind="xhr", source_url="https://sis2.cat.com/#/detail/1",
             retrieved_at=datetime.now(timezone.utc))
 

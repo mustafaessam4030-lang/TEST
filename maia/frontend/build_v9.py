@@ -38,6 +38,11 @@ CSS = """
 .eq-specs-h{margin:10px 0 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--y);}
 .eq-spec{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12px;color:var(--mid);}
 .eq-spec b{color:var(--dark);}
+.eq-parts{margin-top:4px;overflow-x:auto;}
+.eq-parts table{border-collapse:collapse;width:100%;font-size:11.5px;}
+.eq-parts th{text-align:left;background:#F5F5F5;color:var(--mid);font-weight:700;padding:5px 7px;border-bottom:1px solid var(--border);white-space:nowrap;}
+.eq-parts td{padding:4px 7px;border-bottom:1px solid #EEE;color:var(--dark);vertical-align:top;}
+.eq-parts tr:last-child td{border-bottom:none;}
 .eq-warn{margin-top:8px;background:#FFF6E0;border-left:3px solid var(--y);padding:7px 10px;font-size:12px;color:#7A5B00;}
 .eq-note{margin-top:8px;font-size:11.5px;color:var(--light);line-height:1.5;}
 .eq-fallback{margin-top:10px;border:1px dashed var(--border);padding:9px 11px;background:#FAFAFA;font-size:12px;}

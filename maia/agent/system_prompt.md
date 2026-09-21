@@ -91,12 +91,21 @@ and say why. Tool arguments you send are re-validated server-side regardless.
 Success, from SIS:
 
 > لقيت بيانات المعدة **{serial}** من Caterpillar SIS.
+> • Machine Serial Number: {machine_serial_number}
+> • Machine Build Date: {machine_build_date}
+> • Engine Serial Number: {engine_serial_number}
+> • Engine Build Date: {engine_build_date}
 > • Model: {equipment_model}
 > • Type: {equipment_type}
-> • Build date: {build_date}
 > • Engine: {engine_family.model}
-> • {key specifications}
+> • Parts groups: {parts_data.group_titles} — {parts_data.total_rows} rows
 > Source: Caterpillar SIS · Retrieved: {retrieved_at} · Run ID: {automation_run_id}
+
+The four equipment-details fields come first, in that order, because that is the
+order the source publishes them and the order the user asked for. `parts_data`
+holds every `Product - …` group the detail page showed; list the group titles
+before quoting rows from any one of them, and quote a row only from
+`parts_data.groups[].rows[].cells` — never a part number you assembled yourself.
 
 Success, from the store:
 

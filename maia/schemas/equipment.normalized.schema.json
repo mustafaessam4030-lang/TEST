@@ -5,30 +5,124 @@
   "description": "Canonical contract for equipment data from any source. additionalProperties is false everywhere: an unexpected key from a changed page is a validation error, not silent data.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "serial_number", "source_system", "retrieved_at"],
+  "required": [
+    "schema_version",
+    "serial_number",
+    "source_system",
+    "retrieved_at",
+    "machine_serial_number"
+  ],
   "properties": {
-    "schema_version": { "type": "string", "const": "1.1.0" },
-    "serial_number": { "type": "string", "pattern": "^[A-Z0-9]{3,17}$" },
-    "serial_number_raw": { "type": ["string", "null"], "maxLength": 40 },
-    "equipment_model": { "type": ["string", "null"], "maxLength": 64 },
-    "equipment_type": {
-      "type": ["string", "null"],
-      "enum": ["HYDRAULIC_EXCAVATOR", "TRACK_TYPE_TRACTOR", "WHEEL_LOADER", "MOTOR_GRADER",
-               "BACKHOE_LOADER", "ARTICULATED_TRUCK", "GENERATOR_SET", "ENGINE", "UNKNOWN", null]
+    "schema_version": {
+      "type": "string",
+      "const": "1.2.0"
     },
-    "manufacturer": { "type": ["string", "null"] },
+    "serial_number": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{3,17}$"
+    },
+    "serial_number_raw": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 40
+    },
+    "equipment_model": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "equipment_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "HYDRAULIC_EXCAVATOR",
+        "TRACK_TYPE_TRACTOR",
+        "WHEEL_LOADER",
+        "MOTOR_GRADER",
+        "BACKHOE_LOADER",
+        "ARTICULATED_TRUCK",
+        "GENERATOR_SET",
+        "ENGINE",
+        "UNKNOWN",
+        null
+      ]
+    },
+    "manufacturer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "build_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
       "description": "ISO-8601 with the precision the source actually published. Never widened, never guessed."
     },
+    "machine_serial_number": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 40,
+      "description": "The serial the detail page itself shows. It must equal the serial that was searched; a mismatch quarantines the record."
+    },
+    "machine_build_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+      "description": "ISO-8601, converted from the order the source publishes (SIS: MM/DD/YYYY)."
+    },
+    "engine_serial_number": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 40
+    },
+    "engine_build_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+      "description": "ISO-8601, converted from the order the source publishes (SIS: MM/DD/YYYY)."
+    },
     "engine_family": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "properties": {
-        "model": { "type": ["string", "null"] },
-        "arrangement": { "type": ["string", "null"] },
-        "emissions": { "type": ["string", "null"] }
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "arrangement": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emissions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "specifications": {
@@ -36,34 +130,233 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "group": { "type": ["string", "null"] },
-          "name": { "type": "string" },
-          "value": { "type": ["number", "string", "null"] },
-          "unit": { "type": ["string", "null"] },
-          "value_raw": { "type": ["string", "null"] },
-          "provenance_id": { "type": ["string", "null"] }
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value_raw": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provenance_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     },
-    "parts_data": { "type": ["object", "null"] },
-    "parts_manual_url": { "type": ["string", "null"], "format": "uri" },
-    "operation_manual_url": { "type": ["string", "null"], "format": "uri" },
-    "source_system": { "type": "string" },
-    "source_url": { "type": ["string", "null"], "format": "uri" },
-    "retrieved_at": { "type": "string", "format": "date-time" },
-    "automation_run_id": { "type": ["string", "null"] },
-    "data_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
-    "status": { "enum": ["ACTIVE", "NOT_FOUND", "STALE", "QUARANTINED", "SUPERSEDED"] },
+    "parts_data": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "description": "Every 'Product - …' group found on the detail page, with its parts rows exactly as the table shows them.",
+      "properties": {
+        "group_titles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "group_count": {
+          "type": "integer"
+        },
+        "entire_group_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "total_rows": {
+          "type": "integer"
+        },
+        "serial_mismatched_groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selector_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "group_serial": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "is_entire_group": {
+                "type": "boolean"
+              },
+              "discovered_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "row_count": {
+                "type": "integer"
+              },
+              "column_count": {
+                "type": "integer"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "cells": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "values": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "links": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parts_manual_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "operation_manual_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "source_system": {
+      "type": "string"
+    },
+    "source_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "retrieved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "automation_run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "data_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "status": {
+      "enum": [
+        "ACTIVE",
+        "NOT_FOUND",
+        "STALE",
+        "QUARANTINED",
+        "SUPERSEDED"
+      ]
+    },
     "quality": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "score": { "type": "number", "minimum": 0, "maximum": 1 },
-        "required_present": { "type": "integer" },
-        "required_total": { "type": "integer" },
-        "violations": { "type": "array", "items": { "type": "string" } }
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "required_present": {
+          "type": "integer"
+        },
+        "required_total": {
+          "type": "integer"
+        },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "field_provenance": {
@@ -73,10 +366,32 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "selector_id": { "type": ["string", "null"] },
-          "value_source": { "enum": ["xhr", "dom", "derived", "manual"] },
-          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-          "reason": { "enum": ["OK", "NOT_PUBLISHED", "UNREADABLE"] }
+          "selector_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value_source": {
+            "enum": [
+              "xhr",
+              "dom",
+              "derived",
+              "manual"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reason": {
+            "enum": [
+              "OK",
+              "NOT_PUBLISHED",
+              "UNREADABLE"
+            ]
+          }
         }
       }
     }

@@ -19,6 +19,13 @@ REQUIRED_KEYS = ("name", "selector", "strategy", "element_text", "url",
 REQUIRED_SELECTORS = (
     "ready.app_shell", "ready.search_page",
     "search.input", "search.submit", "search.results", "search.no_results_marker",
+    # The equipment-details fields, read first on the detail page. Without them
+    # a run can reach a record and still answer nothing, which is worse than
+    # failing: the contract is not usable until they are proven.
+    "detail.machine_serial_number", "detail.machine_build_date",
+    "detail.engine_serial_number", "detail.engine_build_date",
+    # The parts group ("Product - …") and its rows.
+    "detail.parts_group", "detail.parts_rows",
 )
 
 
@@ -95,6 +102,13 @@ def merge_into_config(config: dict[str, Any], payload: dict[str, Any]) -> dict[s
         for pattern in payload["xhr_endpoints"]:
             if pattern not in patterns:
                 patterns.append(pattern)
+    # Labels the page itself used for the machine/engine fields, recorded during
+    # capture. The reader strips them from an inline "Label - Value" element.
+    if payload.get("detail_labels"):
+        labels = merged.setdefault("extraction", {}).setdefault("detail_labels_observed", {})
+        for field, info in payload["detail_labels"].items():
+            if isinstance(info, dict) and info.get("label"):
+                labels[field] = info["label"]
     if payload.get("selector_version"):
         merged["selector_version"] = payload["selector_version"]
     merged["_captured_from"] = payload.get("capture_profile", "unknown")

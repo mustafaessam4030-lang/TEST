@@ -36,7 +36,7 @@ SHOT_MEANING = {
     "02-after-submit": "the page immediately after the credentials were submitted",
     "02b-after-human-verification": "the page after a person completed verification",
     "auto-01-authenticated": "the first page AFTER a successful sign-in",
-    "auto-02-detail": "the equipment detail page during discovery",
+    "auto-02-detail": "the equipment detail page, AFTER its pane was scrolled\n                       to the equipment-details section",
     "recon-stopped": "the page where the run gave up",
 }
 
@@ -135,6 +135,29 @@ def main() -> int:
     answer("9. authentication succeeded", "YES" if authenticated else "NO",
            "auto-01-authenticated.png exists — discovery only runs after sign-in"
            if authenticated else "the run never got past sign-in")
+
+    # The detail page is read only after its own pane has been scrolled, so a
+    # run that failed there fails for one of two very different reasons: the
+    # scroll never revealed the section, or it did and the fields were not there.
+    reveal = report.get("detail_reveal") or {}
+    if reveal:
+        pane = reveal.get("pane") or "(the window)"
+        answer("9b. scrolled to the equipment details",
+               "YES" if reveal.get("found") else "NO",
+               f"pane {pane}, {reveal.get('steps')} step(s), "
+               f"render settled={(reveal.get('settle') or {}).get('settled')}"
+               if reveal.get("found") else
+               f"the section never appeared after {reveal.get('steps')} scroll step(s)"
+               f"{'; ' + mask(reveal['error']) if reveal.get('error') else ''}")
+    labels = report.get("detail_labels") or {}
+    if labels:
+        answer("9c. labels the page printed",
+               ", ".join(f"{k}={(v or {}).get('label')}" for k, v in labels.items()))
+    groups = report.get("product_groups") or []
+    if groups:
+        answer("9d. 'Product - …' groups seen",
+               f"{len(groups)}",
+               "; ".join(f"{g.get('title')} ({g.get('row_count')} rows)" for g in groups[:5]))
 
     unresolved = report.get("unresolved") or []
     missing = report.get("missing_required") or []

@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS EQUIPMENT_DATA (
     EQUIPMENT_TYPE       STRING,
     MANUFACTURER         STRING,
     BUILD_DATE           STRING,                        -- ISO-8601, partial precision allowed
+    -- The equipment-details block, read first from the SIS detail page.
+    MACHINE_SERIAL_NUMBER STRING,                       -- must equal SERIAL_NUMBER
+    MACHINE_BUILD_DATE   STRING,                        -- ISO-8601
+    ENGINE_SERIAL_NUMBER STRING,
+    ENGINE_BUILD_DATE    STRING,                        -- ISO-8601
     ENGINE_FAMILY        VARIANT,
     SPECIFICATIONS       VARIANT,
     PARTS_DATA           VARIANT,

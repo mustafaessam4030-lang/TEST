@@ -140,6 +140,19 @@
     serial_number  : /\b(serial|serial\s*number|s\/?n|pin)\b/i,
   };
 
+  // The four fields the detail page must yield, in the order they are read.
+  // Each entry is the page's OWN wording, as a pattern — not a selector, and
+  // not a value. The disambiguation is explicit: "Engine Serial Number" must
+  // never be harvested as the machine serial, nor as the engine family.
+  const LABELLED_FIELDS = [
+    { field: 'machine_serial_number', label: 'Machine\\s+Serial\\s+(?:Number|No\\.?)' },
+    { field: 'machine_build_date',    label: 'Machine\\s+Build\\s+Date' },
+    { field: 'engine_serial_number',  label: 'Engine\\s+Serial\\s+(?:Number|No\\.?)' },
+    { field: 'engine_build_date',     label: 'Engine\\s+Build\\s+Date' },
+  ];
+  // A generic label must not be claimed when it is really one of the four above.
+  const RESERVED_LABEL = /\b(machine|engine)\s+(serial\s+(number|no\.?)|build\s+date)\b/i;
+
   function valueNextTo(labelEl) {
     // the value is the next sibling with text, or the second cell of the row
     const row = labelEl.closest('tr, [role=row]');
@@ -164,12 +177,18 @@
     const out = {};
     const labels = [...document.querySelectorAll('body *')].filter(el => {
       if (!visible(el)) return false;
+      // A column header is a header, not a field label: "Serial Number" in a
+      // parts table heads a column, and its "value" is the next column's title.
+      if (el.tagName === 'TH' || el.getAttribute('role') === 'columnheader') return false;
+      if (el.closest('thead')) return false;
       const t = text(el);
       return t && t.length <= 40 && el.children.length === 0;
     });
     for (const [field, re] of Object.entries(FIELD_WORDS)) {
       for (const lab of labels) {
-        if (!re.test(text(lab))) continue;
+        const labelText = text(lab);
+        if (RESERVED_LABEL.test(labelText)) continue;   // belongs to LABELLED_FIELDS
+        if (!re.test(labelText)) continue;
         const val = valueNextTo(lab);
         if (!val || !text(val)) continue;
         out[field] = { label: text(lab), value: describe(val), value_text: text(val).slice(0, 80) };
@@ -248,10 +267,127 @@
     return null;
   }
 
+  // ── the equipment-details section, below the fold ─────────────────────────
+  // SIS renders these fields inside its own scrolling pane, off-screen. None of
+  // it can be discovered — let alone proven — until the pane has been scrolled
+  // and the SPA has finished rendering what the scroll revealed.
+  const D = () => window.__maiaSisDom;
+
+  async function revealDetailSection(reSrc, opts) {
+    const dom = D();
+    if (!dom) return { found: false, error: 'sis_dom.js was not injected' };
+    const revealed = await dom.revealSection(reSrc, opts);
+    const settled = await dom.settle({ limitMs: (opts && opts.settleMs) || 4000 });
+    return Object.assign({}, revealed, { settle: settled });
+  }
+
+  /** Probe the pane that actually scrolls, so it can be captured and re-used. */
+  function scrollPaneFor(reSrc) {
+    const dom = D();
+    if (!dom) return null;
+    const el = dom.findTextEl(reSrc, 400);
+    const pane = el ? dom.scrollParent(el) : (dom.scrollableContainers()[0] || null);
+    if (!pane || pane === document.documentElement || pane === document.body
+        || pane === document.scrollingElement) {
+      return null;              // the window scrolls; there is no pane to capture
+    }
+    return Object.assign(describe(pane), { path: dom.cssPath(pane) });
+  }
+
+  /**
+   * The four machine/engine fields, found by the page's own labels.
+   * Returns, per field, the element to capture, the shape the value comes in
+   * (inline "Label - Value", or a value beside a label) and what it reads
+   * right now — the value is evidence for the proof, never a stored default.
+   */
+  function labelledFields() {
+    const dom = D();
+    const out = {};
+    if (!dom) return out;
+    for (const spec of LABELLED_FIELDS) {
+      const hit = dom.findLabelled(spec.label);
+      if (!hit) continue;
+      out[spec.field] = {
+        label_pattern: spec.label,
+        label_text: hit.label_text || null,
+        shape: hit.shape,
+        value: describe(hit.element),
+        value_text: String(hit.value || '').slice(0, 80),
+      };
+    }
+    return out;
+  }
+
+  /** Which of the four are still missing — reported, never filled in. */
+  function labelledFieldsMissing(found) {
+    return LABELLED_FIELDS.map(s => s.field).filter(f => !(found || {})[f]);
+  }
+
+  /**
+   * Every "Product - …" section, with its parts table described by shape.
+   * The heading, the header-cell row and the first data row are all probed so
+   * the Python side can turn each into a verified selector.
+   */
+  function productGroups() {
+    const dom = D();
+    if (!dom) return [];
+    const heads = dom.productHeadings();
+    const out = [];
+    heads.forEach((head, i) => {
+      const title = dom.text(head);
+      const described = dom.tableAfter(head, heads[i + 1]);
+      const serialMatch = title.match(/\(([^)]{2,40})\)\s*$/);
+      const entry = {
+        title,
+        group_serial: serialMatch ? serialMatch[1].trim() : null,
+        is_entire_group: /entire\s+group/i.test(title),
+        heading: describe(head),
+        table: null,
+      };
+      if (described) {
+        entry.table = {
+          container: describe(described.table),
+          first_row: describe(described.rows[0]),
+          header_cell: described.header.length ? describe(described.header[0]) : null,
+          columns: described.columns,
+          row_count: described.row_count,
+          column_count: described.column_count,
+          cell_tag: described.cell_tag,
+        };
+        entry.sample_row = dom.rowsToObjects(
+          { columns: described.columns, rows: described.rows.slice(0, 1) }, 1)[0] || null;
+      }
+      out.push(entry);
+    });
+    return out;
+  }
+
+  /** How many elements a selector matches right now — used to prove row selectors. */
+  function countMatching(selector) {
+    try { return document.querySelectorAll(selector).length; }
+    catch (e) { return -1; }
+  }
+
+  /** Whether a selector's matches are exactly the rows of one described table. */
+  function selectorCoversRows(selector, containerKey) {
+    try {
+      const found = [...document.querySelectorAll(selector)];
+      const container = containerKey
+        ? document.querySelector(`[${PROBE}="${containerKey}"]`) : null;
+      const inside = container ? found.filter(el => container.contains(el)) : found;
+      return { total: found.length, inside: inside.length };
+    } catch (e) {
+      return { total: -1, inside: -1 };
+    }
+  }
+
   window.__maiaDiscover = {
     probeFirstVisible, visibleTexts, probeNewInLandmarks, LANDMARKS,
     inputCandidates, buttonCandidates, navCandidates, consentCandidates,
     findByText, findEmptyState, detailFields, clearProbes,
+    revealDetailSection, scrollPaneFor, labelledFields, labelledFieldsMissing,
+    productGroups, countMatching, selectorCoversRows,
+    LABELLED_FIELDS,
     pageSignature: () => ({ url: location.href, title: document.title,
                             visibleText: (document.body.innerText || '').slice(0, 4000) }),
   };

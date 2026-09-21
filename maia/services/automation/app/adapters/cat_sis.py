@@ -17,6 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from app.adapters.base import RawPayload, SearchOutcome, SourceCapabilities
@@ -29,6 +30,22 @@ from app.core.logging import log
 logger = logging.getLogger(__name__)
 
 PLACEHOLDER = "TODO_CAPTURE"
+
+# The same reader the capture tool proved the selectors with. Sharing one
+# implementation is what stops "captured" and "read at run time" from drifting.
+SIS_DOM_JS = (Path(__file__).parent / "sis_dom.js").read_text(encoding="utf-8")
+
+#: Read in this order, and first: the four fields the detail page must yield.
+DETAIL_FIELD_ORDER = ("machine_serial_number", "machine_build_date",
+                      "engine_serial_number", "engine_build_date")
+
+#: Detail selectors that point at STRUCTURE, not at a value. Sweeping their text
+#: into the record is how a table ends up stored as a field.
+STRUCTURAL_DETAIL_KEYS = frozenset({
+    "spec_rows", "spec_cell", "scroll_container", "details_anchor",
+    "parts_group", "parts_table", "parts_header_cells", "parts_rows", "parts_cell",
+    *DETAIL_FIELD_ORDER,          # read by _extract_labelled, which strips the label
+})
 
 # Text that means a person has to act. We detect it and stop; we never satisfy it.
 MFA_PATTERNS = re.compile(
@@ -355,10 +372,20 @@ class CatSisAdapter:
         except Exception:
             return False
 
-    async def extract(self, ctx: RunContext) -> RawPayload:
-        """Prefer the app's own XHR JSON; fall back to reading the DOM."""
+    async def extract(self, ctx: RunContext, serial_number: str | None = None) -> RawPayload:
+        """Read the record — details first, then every "Product - …" parts group.
+
+        Order matters and is not cosmetic. The detail page renders inside the
+        SIS content pane, and the equipment details sit below its fold: reading
+        before scrolling finds nothing and looks exactly like a changed website.
+        So: scroll the pane, wait for the SPA to settle, read the four
+        machine/engine fields, then collect the parts groups.
+        """
         payload = RawPayload(source_url=ctx.page.url, retrieved_at=datetime.now(timezone.utc))
         strategy = self.extraction.get("strategy", "dom_then_xhr")
+
+        await self._install_reader(ctx)
+        reveal = await self._reveal_details(ctx)
 
         if strategy != "dom_only":
             xhr = self._pick_xhr(ctx)
@@ -366,20 +393,216 @@ class CatSisAdapter:
                 payload.fields = self._flatten(xhr)
                 payload.payload_kind = "xhr"
 
+        dom_fields = await self._extract_dom(ctx)
+        labelled = await self._extract_labelled(ctx)
+        # The four labelled fields are read from the DOM even when the SPA's own
+        # JSON was available: the page is what the user is looking at.
         if not payload.fields:
-            payload.fields = await self._extract_dom(ctx)
+            payload.fields = dom_fields
             payload.payload_kind = "dom"
+        else:
+            for key, value in dom_fields.items():
+                payload.fields.setdefault(key, value)
+        payload.fields.update(labelled)
 
         payload.specifications = await self._extract_specs(ctx)
+        payload.parts_data = await self._extract_parts(ctx, serial_number)
+        payload.artifacts["scroll"] = str(reveal)[:500]
 
-        required = self.extraction.get("required_fields", ["equipment_model"])
+        required = self.extraction.get("required_fields", list(DETAIL_FIELD_ORDER))
         missing = [f for f in required if not payload.fields.get(f)]
         if missing:
+            # Unprovable is unprovable: the page changed, or we are not where we
+            # think we are. Never a partial answer dressed up as a complete one.
+            raise AutomationError(
+                ErrorCode.WEBSITE_CHANGED,
+                "The record was reached but required fields could not be read.",
+                details={"missing": missing, "payload_kind": payload.payload_kind,
+                         "scroll": reveal, "url": ctx.page.url[:200],
+                         "hint": "re-run the selector capture for this source"})
+
+        self._cross_check_serial(payload, serial_number)
+        return payload
+
+    # ── the detail page: scroll, settle, then read ──────────────────────────
+    async def _install_reader(self, ctx: RunContext) -> None:
+        """Inject the shared reader. Idempotent, and CSP-safe (no script tag)."""
+        try:
+            if await ctx.page.evaluate("() => !!window.__maiaSisDom"):
+                return
+        except Exception:
+            pass
+        await ctx.page.evaluate(SIS_DOM_JS)
+
+    async def _reveal_details(self, ctx: RunContext) -> dict[str, Any]:
+        """Scroll the SIS CONTENT PANE — not the window — to the details section."""
+        scroll = self.extraction.get("scroll") or {}
+        if scroll.get("enabled") is False:
+            return {"skipped": True}
+        pattern = scroll.get("anchor_pattern")
+        if not pattern:
+            raise AutomationError(
+                ErrorCode.WEBSITE_CHANGED,
+                "No anchor is configured for the equipment-details section.",
+                details={"hint": "extraction.scroll.anchor_pattern is missing from the contract"})
+
+        # A captured selector is not always CSS (role=, text=, xpath=), so the
+        # element is resolved by Playwright and handed to the reader directly.
+        container = await self._handle((self.sel.get("detail") or {}).get("scroll_container"),
+                                       page=ctx.page)
+        try:
+            result = await ctx.page.evaluate(
+                "(a) => window.__maiaSisDom.revealSection(a[0], "
+                "{maxSteps: a[1], pause: a[2], container: a[3]})",
+                [pattern, int(scroll.get("max_steps", 30)),
+                 int(scroll.get("step_pause_ms", 300)), container])
+            settled = await ctx.page.evaluate(
+                "(ms) => window.__maiaSisDom.settle({limitMs: ms})",
+                int(scroll.get("settle_ms", 4000)))
+        except Exception as exc:
             raise AutomationError(
                 ErrorCode.EXTRACTION_ERROR,
-                "The record was reached but required fields could not be read.",
-                details={"missing": missing, "payload_kind": payload.payload_kind})
-        return payload
+                "The detail page could not be scrolled to the equipment details.",
+                details={"error": str(exc)[:200]}) from exc
+
+        result = dict(result or {})
+        result["settle"] = settled
+        if not result.get("found"):
+            raise AutomationError(
+                ErrorCode.WEBSITE_CHANGED,
+                "The equipment-details section never appeared after scrolling the page.",
+                details={"anchor_pattern": pattern, "scroll": result,
+                         "url": ctx.page.url[:200],
+                         "hint": "the detail layout changed, or this record has no details"})
+        log(logger, logging.INFO, "sis.detail_revealed", run_id=ctx.run_id,
+            pane=result.get("pane"), steps=result.get("steps"),
+            settled=(settled or {}).get("settled"))
+        return result
+
+    async def _extract_labelled(self, ctx: RunContext) -> dict[str, Any]:
+        """The four machine/engine fields, read from their proven selectors.
+
+        SIS writes them as "<label> - <value>" inside a single element, so the
+        reader strips the label pattern the contract records. When the captured
+        element holds the value alone, nothing is stripped.
+        """
+        labels = self.extraction.get("detail_labels") or {}
+        detail = self.sel.get("detail") or {}
+        out: dict[str, Any] = {}
+        for field_name in DETAIL_FIELD_ORDER:
+            selector = detail.get(field_name)
+            if not selector or selector == PLACEHOLDER:
+                continue
+            handle = await self._handle(selector, page=ctx.page)
+            if handle is None:
+                continue
+            try:
+                read = await ctx.page.evaluate(
+                    "(a) => window.__maiaSisDom.readLabelledFrom(a[0], a[1])",
+                    [handle, labels.get(field_name)])
+            except Exception:
+                continue
+            value = (read or {}).get("value")
+            if value:
+                out[field_name] = str(value).strip()
+        return out
+
+    async def _extract_parts(self, ctx: RunContext,
+                             serial_number: str | None) -> dict[str, Any] | None:
+        """Every "Product - …" group on the page, each with its parts rows."""
+        cfg = self.extraction.get("parts") or {}
+        heading = (self.sel.get("detail") or {}).get("parts_group")
+        heading = heading if heading and heading != PLACEHOLDER else None
+        limit = int(cfg.get("max_rows_per_group", 500))
+
+        groups: list[dict[str, Any]] = []
+        try:
+            handles = await self._handles(heading, page=ctx.page) if heading else []
+            if handles:
+                for group in await ctx.page.evaluate(
+                        "(a) => window.__maiaSisDom.readProductGroupsFrom(a[0], a[1])",
+                        [handles, limit]):
+                    group["discovered_by"] = "selector:detail.parts_group"
+                    groups.append(group)
+            if cfg.get("all_groups", True):
+                # The user's requirement is "all Product - …", and that is a rule
+                # about the page's own wording, not a second guessed selector.
+                # Anything the proven selector already covered is not repeated.
+                seen = {g.get("title") for g in groups}
+                for group in await ctx.page.evaluate(
+                        "(a) => window.__maiaSisDom.readProductGroups(null, a)", limit):
+                    if group.get("title") in seen:
+                        continue
+                    group["discovered_by"] = "heading_text:Product -"
+                    groups.append(group)
+        except Exception as exc:
+            log(logger, logging.WARNING, "sis.parts_extract_partial", error=str(exc)[:200])
+
+        if not groups:
+            return None
+        groups.sort(key=lambda g: (not g.get("is_entire_group"), g.get("title") or ""))
+        entire = next((g for g in groups if g.get("is_entire_group")), None)
+        mismatched = [g["title"] for g in groups
+                      if serial_number and g.get("group_serial")
+                      and self._same_serial(g["group_serial"], serial_number) is False]
+        return {
+            "group_titles": [g.get("title") for g in groups],
+            "group_count": len(groups),
+            "entire_group_title": (entire or {}).get("title"),
+            "columns": (entire or groups[0]).get("columns") or [],
+            "total_rows": sum(int(g.get("row_count") or 0) for g in groups),
+            "groups": groups,
+            "serial_mismatched_groups": mismatched,
+            "selector_id": "detail.parts_group",
+        }
+
+    async def _handle(self, selector: str | None, *, page: Any = None) -> Any:
+        """Resolve one captured selector to a live element, or None."""
+        handles = await self._handles(selector, page=page)
+        return handles[0] if handles else None
+
+    async def _handles(self, selector: str | None, *, page: Any = None) -> list[Any]:
+        """Playwright resolves the selector; the reader only ever sees elements.
+
+        Captured selectors are whatever proved most stable — CSS, role=, xpath.
+        Handing those to document.querySelector would silently find nothing.
+        """
+        if not selector or selector == PLACEHOLDER or page is None:
+            return []
+        try:
+            return await page.locator(selector).element_handles()
+        except Exception:
+            return []
+
+    @staticmethod
+    def _same_serial(left: str | None, right: str | None) -> bool | None:
+        """None when either side is absent — unknown is not a mismatch."""
+        if not left or not right:
+            return None
+        clean = lambda v: re.sub(r"[^A-Z0-9]", "", str(v).upper())   # noqa: E731
+        return clean(left) == clean(right)
+
+    def _cross_check_serial(self, payload: RawPayload, serial_number: str | None) -> None:
+        """The record on screen must be the record that was asked for.
+
+        Without this, a stale render or a mis-clicked row answers confidently
+        about a different machine — the single worst failure this system can
+        have. A mismatch is an error, never a footnote on the data.
+        """
+        field_name = self.extraction.get("serial_cross_check")
+        if not field_name or not serial_number:
+            return
+        found = payload.fields.get(field_name)
+        same = self._same_serial(found, serial_number)
+        if same is None:
+            return
+        if not same:
+            raise AutomationError(
+                ErrorCode.EXTRACTION_ERROR,
+                "The page showed a different machine than the one requested.",
+                details={"requested": str(serial_number)[:40], "field": field_name,
+                         "page_value": str(found)[:40]})
+        payload.fields["serial_cross_check"] = field_name
 
     def _pick_xhr(self, ctx: RunContext) -> dict[str, Any] | None:
         patterns = [re.compile(p, re.I) for p in self.extraction.get("xhr_url_patterns", [])]
@@ -406,7 +629,9 @@ class CatSisAdapter:
     async def _extract_dom(self, ctx: RunContext) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for field_name, selector in (self.sel.get("detail") or {}).items():
-            if not selector or selector == PLACEHOLDER or field_name in ("spec_rows", "spec_cell"):
+            if not selector or selector == PLACEHOLDER:
+                continue
+            if field_name in STRUCTURAL_DETAIL_KEYS:
                 continue
             try:
                 locator = ctx.page.locator(selector).first

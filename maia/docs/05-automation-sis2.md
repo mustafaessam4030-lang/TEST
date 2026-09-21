@@ -40,7 +40,7 @@ SourceAdapter (Protocol)
   ├ capabilities()        → {supports_serial_search, needs_login, …}
   ├ ensure_session(ctx)   → step ENSURE_SESSION
   ├ search(ctx, serial)   → step SEARCH_SERIAL  → SearchOutcome(found|not_found)
-  └ extract(ctx)          → step EXTRACT_RAW    → RawPayload(dict + artifacts)
+  └ extract(ctx, serial)  → step EXTRACT_RAW    → RawPayload(dict + artifacts)
         ▼
 CatSisAdapter (Playwright)  — the ONLY place that knows about sis2.cat.com
         ▼
@@ -73,6 +73,49 @@ the current URL, and on failure an artifact bundle (screenshot + trimmed HTML +
 console log + HAR slice), then maps the exception to an `ErrorCode`. Artifacts go
 to object storage under `runs/{run_id}/{step}/…` with a 90-day lifecycle; the run
 row keeps only the pointer.
+
+## 5.3b EXTRACT_RAW on the detail page: scroll, settle, read, cross-check
+
+The SIS detail page renders inside **its own scrolling pane**. The equipment
+details sit below that pane's fold, and the parts groups below those. Scrolling
+`window` moves nothing; reading before scrolling finds nothing — and "nothing"
+is indistinguishable from a changed website unless the scroll is an explicit,
+reported step. So `extract()` runs in this fixed order:
+
+| # | What | Fails as |
+|---|---|---|
+| 1 | Inject the shared reader (`adapters/sis_dom.js`) | `EXTRACTION_ERROR` |
+| 2 | Scroll the **pane** (`detail.scroll_container`, else whatever actually scrolls) to `extraction.scroll.anchor_pattern` | `WEBSITE_CHANGED` |
+| 3 | Wait for the SPA to settle (two identical samples, `settle_ms` cap) | — |
+| 4 | Read, in this order: **Machine Serial Number, Machine Build Date, Engine Serial Number, Engine Build Date** | `WEBSITE_CHANGED` if any is missing |
+| 5 | Read **every** `Product - …` group with all its rows and columns | absent ⇒ `parts_data: null` |
+| 6 | Cross-check: the machine serial on the page must equal the serial searched | `EXTRACTION_ERROR` |
+
+Reaching the bottom of the pane is not the end of step 2: an SPA renders the
+section a moment *after* the scroll that asked for it, so the loop stops only
+once the pane has also stopped growing (`quietRounds`).
+
+**One reader, both sides.** `app/adapters/sis_dom.js` is loaded by the capture
+tool *and* by the adapter, so a selector is proven by exactly the code that will
+later read it. It contains no Caterpillar knowledge — no class names, no ids, no
+example values — only mechanical rules ("the table of a heading is the first
+table that follows it"), with the labels and selectors supplied by the contract.
+
+**Labels, not values.** SIS writes `<label> - <value>` inside one element. The
+contract records the label as a *pattern* (`extraction.detail_labels`), and the
+reader strips it. If a captured element holds the value alone, nothing is
+stripped. No example value appears anywhere in shipped code; a test asserts it.
+
+**Dates.** `extraction.date_order: month_first` declares that SIS publishes
+MM/DD/YYYY. A value that settles its own order — a day past the 12th — always
+wins over the setting. Unparseable stays `null` with a violation; it is never
+guessed into shape.
+
+**The cross-check is not optional.** A confident answer about the wrong machine
+is the worst failure this system can produce, so a mismatch between the page's
+machine serial and the serial that was searched stops the run twice over: in the
+adapter (`EXTRACTION_ERROR`) and again in the validator
+(`serial_mismatch` is a fatal violation, so the record is quarantined).
 
 ## 5.4 Browser and session management
 

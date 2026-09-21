@@ -58,12 +58,63 @@ selectors:
     operation_manual_url: TODO_CAPTURE
     spec_rows: TODO_CAPTURE
     spec_cell: TODO_CAPTURE   # derived from the captured row, never assumed
+    # ── the equipment-details section, below the fold of the SIS content pane ──
+    scroll_container: TODO_CAPTURE  # the pane that scrolls; NOT the browser window
+    details_anchor: TODO_CAPTURE    # informational: the heading of the section.
+                                    # The scroll itself targets
+                                    # extraction.scroll.anchor_pattern, which is text.
+    machine_serial_number: TODO_CAPTURE
+    machine_build_date: TODO_CAPTURE
+    engine_serial_number: TODO_CAPTURE
+    engine_build_date: TODO_CAPTURE
+    # ── the "Product - …" parts groups ──
+    parts_group: TODO_CAPTURE       # e.g. "Product - Entire Group (<serial>)"
+    parts_table: TODO_CAPTURE
+    parts_header_cells: TODO_CAPTURE
+    parts_rows: TODO_CAPTURE
+    parts_cell: TODO_CAPTURE  # derived from the captured row, never assumed
 
 extraction:
   strategy: dom_then_xhr               # the SPA's own JSON beats scraped text
   xhr_url_patterns:
     - "/api/.*(equipment|serial|machine|asset).*"
-  required_fields: [equipment_model]
+  required_fields: [machine_serial_number, machine_build_date,
+                    engine_serial_number, engine_build_date]
+
+  # The detail page renders inside its own scrolling pane. Nothing below its
+  # fold exists until it is scrolled, so extraction scrolls the PANE (not the
+  # window), waits for the SPA to settle, and only then reads.
+  scroll:
+    enabled: true
+    #: the section that must be on screen before any value is read
+    anchor_pattern: 'Machine\s+Serial\s+(?:Number|No\.?)'
+    max_steps: 30
+    step_pause_ms: 300
+    settle_ms: 4000
+
+  # The page's own wording for each field, as a pattern. These are labels, not
+  # selectors and not values: SIS writes "<label> - <value>" inside a single
+  # element, and the reader strips the label to get the value. When the captured
+  # element holds only the value, nothing is stripped.
+  detail_labels:
+    machine_serial_number: 'Machine\s+Serial\s+(?:Number|No\.?)'
+    machine_build_date: 'Machine\s+Build\s+Date'
+    engine_serial_number: 'Engine\s+Serial\s+(?:Number|No\.?)'
+    engine_build_date: 'Engine\s+Build\s+Date'
+
+  # US date order, as SIS publishes it (MM/DD/YYYY). A value that settles its
+  # own order — a day past the 12th — always wins over this setting.
+  date_order: month_first
+
+  # Which machine/engine values must equal the serial that was searched. A
+  # mismatch means the wrong record was read, and the run fails rather than
+  # answering about another machine.
+  serial_cross_check: machine_serial_number
+
+  parts:
+    #: collect every "Product - …" group on the page, in page order
+    all_groups: true
+    max_rows_per_group: 500
 
 # Source field name -> canonical schema field. This is the whole "mapping layer".
 field_map:
@@ -73,6 +124,10 @@ field_map:
   engine_family: engine_family
   parts_manual_url: parts_manual_url
   operation_manual_url: operation_manual_url
+  machine_serial_number: machine_serial_number
+  machine_build_date: machine_build_date
+  engine_serial_number: engine_serial_number
+  engine_build_date: engine_build_date
 
 politeness:
   min_delay_ms: 1500

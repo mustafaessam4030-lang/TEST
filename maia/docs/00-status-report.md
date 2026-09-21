@@ -2,8 +2,8 @@
 
 **Project:** Maia (Maia) equipment-data capability for the Mantrac Control Tower
 **Source system:** Caterpillar SIS — https://sis2.cat.com/#/
-**Branch:** `claude/maia-equipment-automation-yxs92l` · 12 commits · as of 2026-09-20
-**Tests:** 59 backend · 23 front-end · 1 capture self-test — all passing
+**Branch:** `claude/maia-equipment-automation-yxs92l` · as of 2026-09-21
+**Tests:** 128 backend · 39 front-end · 1 capture self-test — all passing
 
 ---
 
@@ -107,6 +107,30 @@ host. That is the correct stop, and the run record proves the worker got there.
 > exercises the machinery with a real browser; it is not SIS data and is never
 > presented as such. A guard prevents any non-Caterpillar origin from writing the
 > SIS contract file.
+
+**The equipment-details block, below the fold.** The SIS detail page renders
+inside its own scrolling pane, with the equipment details and the parts groups
+below its fold and rendered only once it is scrolled. Against a fixture shaped
+the same way — a scrolling pane, filler above the fold, and a section that does
+not exist until the pane is scrolled — the adapter scrolled the pane (not the
+window) in 2 steps, waited for the render to settle, and read:
+
+```
+machine_serial_number = SN123456      machine_build_date = 2014-08-02
+engine_serial_number  = FIX00588      engine_build_date  = 2014-06-30
+Product - … groups    = 2 (5 rows)    columns = Part Number, Serial Number,
+                                                Part Name, Install Ind.,
+                                                Install Date, Description
+quality score 0.909, no violations
+```
+
+Dates arrive as MM/DD/YYYY and are stored ISO-8601; the source contract declares
+the order, and a value that settles its own order wins over it.
+
+**The wrong-record guard.** Asked for one serial while the page showed another,
+extraction stopped with `EXTRACTION_ERROR` naming both values; a detail page
+with no details section stopped with `WEBSITE_CHANGED` rather than an empty
+answer. Both were run, not reasoned about.
 
 ---
 
@@ -246,3 +270,5 @@ straight to the lookup.
 | `7f02d5b` | Credential reference, readiness doctor, onboarding |
 | `0625e5f` | Windows deployment and fully automatic capture |
 | `6f94899` | Self-provisioning: the first search learns the contract |
+| `c39fc05` | A run explainer; a partial capture can no longer occupy the contract path |
+| *(this change)* | The equipment-details block: scroll the SIS content pane, read the four machine/engine fields first, collect every `Product - …` group, cross-check the serial |

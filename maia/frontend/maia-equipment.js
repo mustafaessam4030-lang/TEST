@@ -24,6 +24,11 @@ const EQUIP=(()=>{
   const ASK_RE=/\b(serial|s\/?n|pin|equipment data|machine data|look\s?up|data for|details for|specs? for|دوريلي|دور على|هات(?:لي)?|بيانات|الداتا|سيريال|المعدة|معدة)\b/i;
   const REFRESH_RE=/\b(refresh|latest|newest|re-?check|update it|حدّث|حدث|اخر|آخر|اجدد|أجدد)\b/i;
   const SERIAL_RE=/^[A-Z0-9]{3,17}$/;
+  // How many parts rows the card shows before it says how many there are.
+  // The rest are in the record, not hidden: the count is always stated.
+  const PARTS_ROW_LIMIT=25;
+  // How many rows per group are put in front of the model as facts.
+  const PARTS_FACT_LIMIT=40;
 
   // ── helpers ──────────────────────────────────────────────────────────────
   function norm(s){
@@ -288,8 +293,18 @@ const EQUIP=(()=>{
       `EQUIPMENT ${d.serial_number||r.serial} · model=${d.equipment_model??'null'}`,
       `type=${d.equipment_type??'null'} · build_date=${d.build_date??'null'} · manufacturer=${d.manufacturer??'null'}`,
       `engine=${(d.engine_family&&d.engine_family.model)??'null'} · emissions=${(d.engine_family&&d.engine_family.emissions)??'null'}`,
+      // The equipment-details block, in the order the source publishes it.
+      `machine_serial_number=${d.machine_serial_number??'null'} · machine_build_date=${d.machine_build_date??'null'}`,
+      `engine_serial_number=${d.engine_serial_number??'null'} · engine_build_date=${d.engine_build_date??'null'}`,
       `source=${a.source_label||a.source} · retrieved_at=${a.retrieved_at} · run_id=${a.automation_run_id} · freshness=${a.freshness} · age_days=${a.age_days??0}`
     ];
+    const pd=d.parts_data;
+    if(pd&&(pd.group_titles||[]).length){
+      out.push(`parts_groups(${pd.group_count})=${pd.group_titles.join(' | ')}`);
+      out.push(`parts_columns=${(pd.columns||[]).join(' | ')} · parts_rows_total=${pd.total_rows??0}`);
+      (pd.groups||[]).forEach(g=>(g.rows||[]).slice(0,PARTS_FACT_LIMIT).forEach(row=>
+        out.push(`part [${g.title}] ${(row.cells||[]).join(' | ')}`)));
+    }
     (d.specifications||[]).slice(0,10).forEach(s=>out.push(
       `spec ${s.group?s.group+' / ':''}${s.name} = ${s.value_raw||s.value||'null'}${s.unit&&!s.value_raw?' '+s.unit:''}`));
     if(d.parts_manual_url)out.push(`parts_manual_url=${d.parts_manual_url}`);
@@ -484,6 +499,29 @@ RULES FOR THIS FAILURE
       `<div class="eq-spec"><span>${esc((s.group?s.group+' · ':'')+s.name)}</span>
         <b>${esc(s.value_raw||((s.value??'')+(s.unit?' '+s.unit:'')))}</b></div>`).join('');
 
+    // The "Product - …" groups, exactly as the source published them: the group
+    // titles first, then the rows of the entire group. Nothing is summarised
+    // into a number I cannot point at a row for.
+    const pd=d.parts_data||null;
+    const partsGroups=(pd&&pd.group_titles&&pd.group_titles.length)
+      ?`<div class="eq-specs-h">${ar?'مجموعات القطع':'Parts groups'}</div>`
+        +pd.group_titles.map(t=>`<div class="eq-spec"><span>${esc(t)}</span>
+            <b>${esc(String((pd.groups||[]).find(g=>g.title===t)?.row_count ?? ''))}</b></div>`).join('')
+      :'';
+    const entire=(pd&&(pd.groups||[]).find(g=>g.is_entire_group))||null;
+    const cols=(entire&&entire.columns||pd&&pd.columns||[]);
+    const partsTable=(entire&&(entire.rows||[]).length)
+      ?`<div class="eq-specs-h">${esc(entire.title)}</div>
+        <div class="eq-parts"><table><thead><tr>${
+          cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${
+          entire.rows.slice(0,PARTS_ROW_LIMIT).map(r2=>`<tr>${
+            (r2.cells||[]).map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')
+        }</tbody></table></div>${
+          entire.rows.length>PARTS_ROW_LIMIT
+            ?`<div class="eq-note">${ar?'معروض':'Showing'} ${PARTS_ROW_LIMIT} ${ar?'من':'of'} ${entire.rows.length}</div>`
+            :''}`
+      :'';
+
     const viol=((d.quality||{}).violations||[]).filter(v=>!v.startsWith('empty_spec'));
     const unread=viol.length?`<div class="eq-warn">${ar?'حقول مقدرتش أقراها في السحبة دي':'Fields I could not read this run'}: ${esc(viol.join(', '))}</div>`:'';
 
@@ -502,10 +540,16 @@ RULES FOR THIS FAILURE
         ${row(ar?'الموديل':'Model',d.equipment_model??null)}
         ${row(ar?'النوع':'Type',d.equipment_type??null)}
         ${row(ar?'تاريخ التصنيع':'Build date',d.build_date??null)}
+        ${row(ar?'سيريال المعدة':'Machine serial number',d.machine_serial_number??null)}
+        ${row(ar?'تاريخ تصنيع المعدة':'Machine build date',d.machine_build_date??null)}
+        ${row(ar?'سيريال الموتور':'Engine serial number',d.engine_serial_number??null)}
+        ${row(ar?'تاريخ تصنيع الموتور':'Engine build date',d.engine_build_date??null)}
         ${row(ar?'المحرك':'Engine',(d.engine_family&&d.engine_family.model)??null)}
         ${d.engine_family&&d.engine_family.emissions?row(ar?'معيار الانبعاثات':'Emissions',d.engine_family.emissions):''}
         ${d.operation_manual_url===null?row(ar?'دليل التشغيل':'Operation manual',null):''}
         ${d.parts_manual_url===null?row(ar?'كتالوج القطع':'Parts manual',null):''}
+        ${partsGroups}
+        ${partsTable}
         ${specs?`<div class="eq-specs-h">${ar?'المواصفات':'Specifications'}</div>${specs}`:''}
         ${unread}
         ${links?`<div class="eq-links">${links}</div>`:''}

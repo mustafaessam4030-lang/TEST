@@ -16,9 +16,16 @@
  table{border-collapse:collapse;width:100%;margin-top:10px}
  td,th{border:1px solid #e2e2e2;padding:6px 9px;text-align:left}
  .result-row{cursor:pointer}
+ .content-pane{height:320px;overflow-y:auto;border:1px solid #ddd;padding:12px;}
+ .filler{height:220px;background:#fafafa;border-bottom:1px dashed #eee;padding:8px;color:#999}
+ .equip-details td,.parts-table td{border:1px solid #e2e2e2;padding:5px 8px}
+ .equip-details td:first-child,.parts-table td:first-child{color:#666;width:220px}
  .empty-state{background:#fff6e0;border-left:3px solid #FFC500;padding:12px}
  .kv{display:flex;gap:10px;padding:4px 0;border-bottom:1px dashed #eee}
  .kv span:first-child{width:180px;color:#666}
+ .crumb{padding:8px 20px;color:#666;font-size:12px;border-bottom:1px solid #eee}
+ .lv{padding:5px 0;border-bottom:1px dashed #eee}
+ .parts-table th{background:#f5f5f5;font-weight:600}
 </style></head>
 <body class="ng-scope">
 <div class="topbar ng-star-inserted" id="app-shell-root" data-testid="app-shell"
@@ -59,25 +66,57 @@
 </div>
 
 <div id="page-detail" class="page hide" data-testid="equipment-detail-page">
-  <h2 id="detail-title" data-maia-fixture="ready.detail_page">Equipment detail</h2>
-  <div class="kv"><span>Model</span><span class="detail-value" id="fld-model"
-       data-maia-fixture="detail.equipment_model">336</span></div>
-  <div class="kv"><span>Type</span><span class="detail-value" data-testid="equipment-type"
-       data-maia-fixture="detail.equipment_type">Hydraulic Excavator</span></div>
-  <div class="kv"><span>Build date</span><span class="detail-value" id="fld-build-7781"
-       data-maia-fixture="detail.build_date">07/2019</span></div>
-  <div class="kv"><span>Engine</span><span class="detail-value" aria-label="Engine family"
-       data-maia-fixture="detail.engine_family">C9.3B</span></div>
-  <a href="https://example.invalid/media/SEBP7015" id="parts-manual-link"
-     data-maia-fixture="detail.parts_manual_url">Parts manual</a>
-  <table class="spec-table"><tbody data-maia-fixture="detail.spec_table">
-    <tr class="spec-row ng-star-inserted" data-maia-fixture="detail.spec_rows"><td>Operating weight</td><td>36200 kg</td></tr>
-    <tr class="spec-row ng-star-inserted"><td>Net power</td><td>225 kW</td></tr>
-  </tbody></table>
+  <div class="crumb">Engine - Generator Set &gt; Generator Set &gt; C32 &gt;
+    <span id="crumb-serial">SN123456</span></div>
+  <h2 id="detail-title" data-maia-fixture="ready.detail_page">C32 Generator Set</h2>
+
+  <!-- The real SIS keeps the detail inside its OWN scrolling pane, with the
+       equipment details and the parts groups far below the fold, rendered only
+       once the pane is scrolled. The fixture behaves the same way so the scroll
+       and the render-wait are exercised before anything is pointed at SIS. -->
+  <div id="sis-content" class="content-pane" data-maia-fixture="detail.scroll_container">
+    <div class="filler">Overview</div>
+    <div class="filler">Media</div>
+    <div class="filler">Service letters</div>
+
+    <div class="kv"><span>Model</span><span class="detail-value" id="fld-model"
+         data-maia-fixture="detail.equipment_model">C32</span></div>
+    <div class="kv"><span>Type</span><span class="detail-value" data-testid="equipment-type"
+         data-maia-fixture="detail.equipment_type">Generator Set</span></div>
+
+    <div class="filler">Attachments</div>
+    <div class="filler">Configurations</div>
+
+    <!-- Below this point nothing exists until the pane has been scrolled. -->
+    <div id="lazy-detail"></div>
+  </div>
 </div>
 
 <script>
- const KNOWN = {'SN123456':{model:'336'},'CAT0336LKBW00123':{model:'336'}};
+ const KNOWN = {'SN123456':{model:'C32'},'CAT0336LKBW00123':{model:'C32'}};
+ // Per-serial fixture data: the page must follow the serial that was searched,
+ // never show one record for every query.
+ const ENGINE = {
+   '__default':        {machineBuild:'01/15/2016', engineSerial:'ZZZ00001',
+                        engineBuild:'12/01/2015', family:'C32'},
+   'SN123456':         {machineBuild:'08/02/2014', engineSerial:'FIX00588',
+                        engineBuild:'06/30/2014', family:'C32'},
+   'CAT0336LKBW00123': {machineBuild:'03/09/2018', engineSerial:'TTT77123',
+                        engineBuild:'02/28/2018', family:'C9.3B'},
+ };
+ const PARTS = {
+   '__default': [['000-0000','','Unclassified Part','','','']],
+   'SN123456': [
+     ['444-5867','','General AR','Factory','','—'],
+     ['256-3170','','Mounting GP-Vibration Isolator','Factory','','—'],
+     ['1000','FIX00588','Engine','Factory','','ENGINE'],
+     ['1404','G1B00974','Generator','Factory','','GENERATOR'],
+   ],
+   'CAT0336LKBW00123': [
+     ['111-2222','','Frame AR','Factory','','—'],
+     ['1000','TTT77123','Engine','Factory','','ENGINE'],
+   ],
+ };
  function show(id){['page-login','page-search','page-detail'].forEach(p=>
    document.getElementById(p).classList.toggle('hide', p!==id));}
  function signIn(){
@@ -96,7 +135,7 @@
    setTimeout(()=>{
      if(hit){
        body.innerHTML=`<tr class="result-row ng-star-inserted" data-maia-fixture="search.first_result"
-         onclick="location.hash='#/detail/${q}'"><td>${q}</td><td>${hit.model}</td></tr>`;
+         onclick="showDetail('${q}')"><td>${q}</td><td>${hit.model}</td></tr>`;
        document.getElementById('results-wrap').classList.remove('hide');
        document.getElementById('no-results').classList.add('hide');
      }else{
@@ -104,6 +143,73 @@
        document.getElementById('no-results').classList.remove('hide');
      }
    }, 250);   // async like a real SPA: the capture tool must wait on the app, not a timer
+ }
+ function partsRow(c){return `<tr class="part-row">${c.map(v=>`<td>${v}</td>`).join('')}</tr>`;}
+ function renderDetail(serial){
+   // Only the "above the fold" part is present at first; the details section and
+   // the Product groups are rendered lazily, after the pane is scrolled — the
+   // same order of events the real SPA produces.
+   document.getElementById('crumb-serial').textContent = serial;
+   const pane = document.getElementById('sis-content');
+   const lazy = document.getElementById('lazy-detail');
+   lazy.innerHTML = '';
+   pane.scrollTop = 0;
+   let rendered = false;
+   const onScroll = () => {
+     if (rendered) return;
+     if (pane.scrollTop < pane.clientHeight * 0.5) return;
+     rendered = true;
+     setTimeout(() => { lazy.innerHTML = detailHtml(serial); }, 350);
+   };
+   pane.removeEventListener('scroll', pane.__maiaOnScroll || (()=>{}));
+   pane.__maiaOnScroll = onScroll;
+   pane.addEventListener('scroll', onScroll);
+ }
+ function detailHtml(serial){
+   const eng = ENGINE[serial] || ENGINE.__default;
+   const parts = PARTS[serial] || PARTS.__default;
+   return `
+    <h3 id="equip-details-heading" data-maia-fixture="detail.details_anchor">Equipment Details</h3>
+    <div class="lv" data-maia-fixture="detail.machine_serial_number">Machine Serial Number - ${serial}</div>
+    <div class="lv" data-maia-fixture="detail.machine_build_date">Machine Build Date - ${eng.machineBuild}</div>
+    <div class="lv" data-maia-fixture="detail.engine_serial_number">Engine Serial Number - ${eng.engineSerial}</div>
+    <div class="lv" data-maia-fixture="detail.engine_build_date">Engine Build Date - ${eng.engineBuild}</div>
+    <div class="lv"><span>Engine</span> <span aria-label="Engine family"
+         data-maia-fixture="detail.engine_family">${eng.family}</span></div>
+
+    <div class="filler">Warranty</div>
+
+    <h3 data-maia-fixture="detail.parts_group">Product - Entire Group (${serial})</h3>
+    <table class="parts-table" data-maia-fixture="detail.parts_table"><thead><tr>
+        <th data-maia-fixture="detail.parts_header_cells">Part Number</th><th>Serial Number</th>
+        <th>Part Name</th><th>Install Ind.</th><th>Install Date</th><th>Description</th>
+      </tr></thead>
+      <tbody>
+        ${parts.map((c,i)=>i===0
+            ? `<tr class="part-row" data-maia-fixture="detail.parts_rows">${c.map(v=>`<td>${v}</td>`).join('')}</tr>`
+            : partsRow(c)).join('')}
+      </tbody></table>
+
+    <h3>Product - Attachments (${serial})</h3>
+    <table class="parts-table"><thead><tr>
+        <th>Part Number</th><th>Serial Number</th><th>Part Name</th>
+        <th>Install Ind.</th><th>Install Date</th><th>Description</th>
+      </tr></thead>
+      <tbody>${partsRow(['256-3170','','Mounting GP-Vibration Isolator','','',''])}</tbody></table>
+
+    <a href="https://example.invalid/media/SEBP7015" id="parts-manual-link"
+       data-maia-fixture="detail.parts_manual_url">Parts manual</a>
+
+    <table class="spec-table"><tbody>
+      <tr class="spec-row ng-star-inserted" data-maia-fixture="detail.spec_rows">
+        <td>Operating weight</td><td>36200 kg</td></tr>
+      <tr class="spec-row ng-star-inserted"><td>Net power</td><td>225 kW</td></tr>
+    </tbody></table>`;
+ }
+ function showDetail(serial){
+   // Mirror the real app: the record shown is the one that was searched.
+   renderDetail(serial);
+   location.hash = '#/detail/' + serial;
  }
  function route(){
    const h=location.hash||'#/login';

@@ -24,9 +24,30 @@ function makeCtx(routes) {
   return ctx;
 }
 
+const PARTS = {
+  group_titles: ['Product - Entire Group (SN123456)', 'Product - Attachments (SN123456)'],
+  group_count: 2, entire_group_title: 'Product - Entire Group (SN123456)',
+  columns: ['Part Number', 'Serial Number', 'Part Name', 'Install Ind.', 'Install Date', 'Description'],
+  total_rows: 2, serial_mismatched_groups: [], selector_id: 'detail.parts_group',
+  groups: [
+    { title: 'Product - Entire Group (SN123456)', group_serial: 'SN123456',
+      is_entire_group: true, discovered_by: 'selector:detail.parts_group',
+      columns: ['Part Number', 'Serial Number', 'Part Name', 'Install Ind.', 'Install Date', 'Description'],
+      row_count: 1, column_count: 6,
+      rows: [{ cells: ['1000', 'FIX00588', 'Engine', 'Factory', '', 'ENGINE'] }] },
+    { title: 'Product - Attachments (SN123456)', group_serial: 'SN123456',
+      is_entire_group: false, discovered_by: 'heading_text:Product -',
+      columns: ['Part Number', 'Serial Number', 'Part Name', 'Install Ind.', 'Install Date', 'Description'],
+      row_count: 1, column_count: 6,
+      rows: [{ cells: ['256-3170', '', 'Mounting GP', '', '', ''] }] },
+  ],
+};
 const RECORD = {
   serial_number: 'SN123456', equipment_model: '336', equipment_type: 'HYDRAULIC_EXCAVATOR',
   build_date: '2019-07', engine_family: { model: 'C9.3B' }, operation_manual_url: null,
+  machine_serial_number: 'SN123456', machine_build_date: '2014-08-02',
+  engine_serial_number: 'FIX00588', engine_build_date: '2014-06-30',
+  parts_data: PARTS,
   specifications: [{ name: 'Operating weight', value: 36200, unit: 'kg', value_raw: '36200 kg' }],
   quality: { score: 0.94, violations: [] },
 };
@@ -122,6 +143,41 @@ const check = (name, cond, detail = '') => {
   check('stale card is labelled with age', card.includes('Stale') && card.includes('210 days ago'));
   check('null field rendered as not published', card.includes('not published by SIS'));
   check('card shows source/retrieved/run id', card.includes('Caterpillar SIS') && card.includes('run_01JBTEST'));
+}
+
+// 9. the equipment-details block and the parts groups reach both the card and the model
+{
+  const ctx = makeCtx({ '/v1/equipment/SN123456': { status: 200,
+    body: { data: RECORD, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } } });
+  const r = await ctx.EQUIP.lookup('sn 123456');
+  const card = ctx.EQUIP.renderCard(r, 'en');
+  check('card shows the machine serial', card.includes('Machine serial number') && card.includes('SN123456'));
+  check('card shows both build dates', card.includes('2014-08-02') && card.includes('2014-06-30'));
+  check('card shows the engine serial', card.includes('FIX00588'));
+  check('card lists every Product - group', card.includes('Product - Entire Group (SN123456)')
+        && card.includes('Product - Attachments (SN123456)'));
+  check('card renders the parts columns', card.includes('Install Ind.') && card.includes('Description'));
+  check('card renders a parts row', card.includes('>1000<'));
+
+  const prompt = ctx.EQUIP.promptBlock();
+  check('model is given the machine serial', prompt.includes('machine_serial_number=SN123456'));
+  check('model is given both build dates', prompt.includes('machine_build_date=2014-08-02')
+        && prompt.includes('engine_build_date=2014-06-30'));
+  check('model is given every parts group', prompt.includes('parts_groups(2)'));
+  check('model is given the parts rows', prompt.includes('part [Product - Entire Group (SN123456)]'));
+}
+
+// 10. a record without the details block says so; it never fills the gap
+{
+  const thin = { ...RECORD, machine_serial_number: null, machine_build_date: null,
+                 engine_serial_number: null, engine_build_date: null, parts_data: null };
+  const ctx = makeCtx({ '/v1/equipment/SN123456': { status: 200,
+    body: { data: thin, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } } });
+  const r = await ctx.EQUIP.lookup('sn 123456');
+  const card = ctx.EQUIP.renderCard(r, 'en');
+  check('missing details read as not published', card.includes('not published by SIS'));
+  check('no parts section is invented', !card.includes('Parts groups'));
+  check('model is told the fields are null', ctx.EQUIP.promptBlock().includes('machine_serial_number=null'));
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');

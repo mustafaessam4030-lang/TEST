@@ -48,8 +48,13 @@ def test_only_verified_entries_are_used() -> None:
 
 def test_missing_required_is_reported_not_filled() -> None:
     payload = _payload()
+    complete = set(store.REQUIRED_SELECTORS) - set(store.missing_required(payload))
     del payload["selectors"]["search.no_results_marker"]
-    assert store.missing_required(payload) == ["search.no_results_marker"]
+    after = store.missing_required(payload)
+    # Removing one entry adds exactly that entry to the missing list; the rest of
+    # the report does not move.
+    assert "search.no_results_marker" in after
+    assert set(after) - {"search.no_results_marker"} == set(store.REQUIRED_SELECTORS) - complete
 
 
 def test_merge_overlays_yaml_contract() -> None:

@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS equipment_data (
     equipment_type       STRING,
     manufacturer         STRING,
     build_date           STRING,
+    machine_serial_number STRING,  -- the detail page's own serial; must match serial_number
+    machine_build_date   STRING,   -- ISO-8601
+    engine_serial_number STRING,
+    engine_build_date    STRING,   -- ISO-8601
     engine_family        STRING,   -- JSON
     specifications       STRING,   -- JSON
     parts_data           STRING,   -- JSON

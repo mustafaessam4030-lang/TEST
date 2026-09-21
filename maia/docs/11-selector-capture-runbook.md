@@ -61,8 +61,26 @@ A Chromium window opens on `https://sis2.cat.com/#/`.
    and click it. `Esc` skips a target.
 3. **Follow the prompts** through: search page → a no-result search → a real
    search → open the first result → the detail page.
-4. The tool then verifies everything it captured and runs **one real
-   serial-number search** using only the captured selectors.
+4. **On the detail page the tool scrolls for you.** Before it asks for a single
+   detail target it scrolls the SIS content pane — the pane, not the window —
+   down to the equipment-details section and waits for the SPA to finish
+   rendering what the scroll revealed. The terminal says which pane moved and
+   how many steps it took. If it reports that the section never appeared, stop:
+   picking anything after that would be picking from a page that is not the one
+   the automation will read.
+5. The detail targets are asked for in the order the automation reads them:
+   **Machine Serial Number → Machine Build Date → Engine Serial Number →
+   Engine Build Date**, then the `Product - …` group heading, its table, one
+   header cell and one data row. The row and header-cell picks are generalised
+   automatically (the positional `:nth-of-type(n)` tail is dropped) and the
+   result is only kept if it then matches every sibling — the terminal prints
+   the count it proved.
+6. The tool then verifies everything it captured and runs **one real
+   serial-number search** using only the captured selectors. That last step
+   prints the four fields it read, every `Product - …` group with its row
+   count, the parts columns, and whether the serial on the page matches the one
+   searched. A `WRONG_RECORD` outcome there means the contract reads a
+   different machine than the one asked for, and must not be shipped.
 
 ## What you get
 

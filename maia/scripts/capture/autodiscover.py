@@ -312,6 +312,10 @@ class AutoDiscovery:
                 await self.page.wait_for_timeout(2500)
             except Exception as exc:
                 self.log(f"could not open the result row: {str(exc)[:70]}")
+        # Everything the detail page must yield lives below the fold of the SIS
+        # content pane. Scroll it — and wait for what the scroll renders —
+        # before looking for anything, or the section simply is not there.
+        await self.s.reveal_detail_section()
         await self.s.shot("auto-02-detail")
         await self.s.snapshot("auto-02-detail")
 
@@ -352,3 +356,118 @@ class AutoDiscovery:
         for required in ("detail.equipment_model",):
             if required not in self.s.records:
                 self.todo(required, "no label on the detail page matched this field")
+
+        await self.equipment_details()
+        await self.parts_groups()
+
+    # ── the equipment-details section ───────────────────────────────────────
+    async def equipment_details(self) -> None:
+        """The four machine/engine fields, found by the page's own labels.
+
+        Nothing here is a guess: each one is located by the label SIS itself
+        prints, the element carrying the value is probed, and what it currently
+        reads is written into the report as the evidence for the selector. A
+        label that is not on the page produces TODO_CAPTURE and nothing else.
+        """
+        reveal = self.s.detail_reveal or {}
+        if not reveal.get("found"):
+            self.log("the equipment-details section was never revealed; "
+                     "the four machine/engine fields cannot be proven")
+
+        found = await self.js("() => window.__maiaDiscover.labelledFields()")
+        print(f"\n  equipment details found by label: {', '.join(found) or 'none'}")
+        for field, hit in (found or {}).items():
+            name = f"detail.{field}"
+            await self.record_from_probe(
+                hit["value"]["key"], name,
+                f"the page's own label {str(hit.get('label_text'))[:28]!r} "
+                f"({hit.get('shape')}), reading {str(hit.get('value_text'))[:24]!r}")
+
+        for field in ("machine_serial_number", "machine_build_date",
+                      "engine_serial_number", "engine_build_date"):
+            key = f"detail.{field}"
+            if key not in self.s.records:
+                self.todo(key, "the page shows no label for this field after scrolling "
+                               "to the equipment details")
+
+        # The pane that actually scrolls, so later runs move the right thing.
+        from capture_selectors import DETAIL_SECTION_PATTERN
+
+        pane = await self.js("(p) => window.__maiaDiscover.scrollPaneFor(p)",
+                             DETAIL_SECTION_PATTERN)
+        if pane and await self.record_from_probe(
+                pane["key"], "detail.scroll_container",
+                f"the pane holding the details section ({pane.get('path')})"):
+            pass
+        else:
+            self.todo("detail.scroll_container",
+                      "the window scrolls this page; there is no separate content pane")
+
+    # ── the "Product - …" parts groups ──────────────────────────────────────
+    async def parts_groups(self) -> None:
+        """Every "Product - …" group, and the table of the entire group."""
+        groups = await self.js("() => window.__maiaDiscover.productGroups()")
+        self.s.product_groups = [
+            {k: v for k, v in g.items() if k not in ("heading", "table")} | {
+                "columns": (g.get("table") or {}).get("columns"),
+                "row_count": (g.get("table") or {}).get("row_count"),
+            } for g in (groups or [])]
+        if not groups:
+            for key in ("detail.parts_group", "detail.parts_table",
+                        "detail.parts_header_cells", "detail.parts_rows"):
+                self.todo(key, "no 'Product - …' heading is present on the detail page")
+            return
+
+        titles = ", ".join(g["title"][:40] for g in groups[:6])
+        print(f"\n  parts groups on the page ({len(groups)}): {titles}")
+
+        primary = next((g for g in groups if g.get("is_entire_group")), groups[0])
+        await self.record_from_probe(
+            primary["heading"]["key"], "detail.parts_group",
+            f"parts group heading {primary['title'][:44]!r}")
+
+        table = primary.get("table")
+        if not table:
+            for key in ("detail.parts_table", "detail.parts_header_cells", "detail.parts_rows"):
+                self.todo(key, f"no table follows the heading {primary['title'][:40]!r}")
+            return
+
+        await self.record_from_probe(
+            table["container"]["key"], "detail.parts_table",
+            f"the table after that heading: {table['row_count']} rows × "
+            f"{table['column_count']} columns")
+        if table.get("header_cell"):
+            await self.record_from_probe(
+                table["header_cell"]["key"], "detail.parts_header_cells",
+                f"column headings: {', '.join(table.get('columns') or [])[:80]}")
+            await self.generalise(self.s.records.get("detail.parts_header_cells"),
+                                  expected=len(table.get("columns") or []))
+        else:
+            self.todo("detail.parts_header_cells",
+                      "the parts table publishes no column headings")
+
+        if await self.record_from_probe(
+                table["first_row"]["key"], "detail.parts_rows",
+                f"one data row of that table (of {table['row_count']})"):
+            await self.generalise(self.s.records["detail.parts_rows"],
+                                  expected=table["row_count"])
+            await self.s._derive_cell(self.s.records["detail.parts_rows"].selector,
+                                      "detail.parts_cell")
+
+    async def generalise(self, record: Any, *, expected: int) -> None:
+        """A row selector must match EVERY row, and is only kept if it proves it."""
+        if not record or not record.selector:
+            return
+        generalised = re.sub(r":nth-(?:of-type|child)\(\d+\)\s*$", "", record.selector)
+        if generalised == record.selector:
+            return
+        count = await self.js("(s) => window.__maiaDiscover.countMatching(s)", generalised)
+        if count and count >= max(expected, 1):
+            record.selector = generalised
+            record.match_count = count
+            record.notes.append(f"positional suffix removed; matches {count} siblings "
+                                f"(the table shows {expected})")
+            print(f"    · {record.name:<26} generalised to {count} matches")
+        else:
+            record.notes.append(f"positional suffix kept: generalising matched {count}, "
+                                f"the table shows {expected}")

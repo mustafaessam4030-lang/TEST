@@ -65,6 +65,9 @@ COUNT_VISIBLE_INPUTS_JS = """() => {
 
 PICKER_JS = (Path(__file__).parent / "picker.js").read_text(encoding="utf-8")
 DISCOVER_JS = (Path(__file__).parent / "discover.js").read_text(encoding="utf-8")
+# The reader the ADAPTER uses at run time. Capture proves selectors with the
+# very same code that will later read them, so the two can never disagree.
+SIS_DOM_JS = (ROOT / "services/automation/app/adapters/sis_dom.js").read_text(encoding="utf-8")
 FIXTURE = Path(__file__).parent / "fixture.html"
 DEFAULT_BASE = "https://sis2.cat.com/#/"
 CHROMIUM_PATH = os.environ.get("MAIA_CHROMIUM_PATH") or None
@@ -134,7 +137,44 @@ TARGETS: list[Target] = [
            "detail", required=False),
     Target("detail.spec_rows", "Detail → specification rows",
            "ONE row of the specifications table (the row, not a cell)", "detail", required=False),
+    # ── the equipment-details section, reached by scrolling the SIS content pane ──
+    Target("detail.scroll_container", "Detail → scrolling content pane",
+           "the pane that scrolls the detail page (NOT the browser window) — the "
+           "equipment details live below its fold", "detail", required=False),
+    Target("detail.details_anchor", "Detail → equipment details heading",
+           "the heading of the equipment-details section the automation scrolls to",
+           "detail", required=False),
+    Target("detail.machine_serial_number", "Detail → Machine Serial Number",
+           "the element showing the machine serial number (the whole "
+           "'Machine Serial Number - …' line, or just the value)", "detail"),
+    Target("detail.machine_build_date", "Detail → Machine Build Date",
+           "the element showing the machine build date", "detail"),
+    Target("detail.engine_serial_number", "Detail → Engine Serial Number",
+           "the element showing the engine serial number", "detail"),
+    Target("detail.engine_build_date", "Detail → Engine Build Date",
+           "the element showing the engine build date", "detail"),
+    Target("detail.parts_group", "Detail → 'Product - …' group heading",
+           "the heading of a parts group, e.g. 'Product - Entire Group (<serial>)'",
+           "detail"),
+    Target("detail.parts_table", "Detail → parts table",
+           "the table that holds the parts of that group", "detail", required=False),
+    Target("detail.parts_header_cells", "Detail → parts table header cell",
+           "ONE header cell of the parts table (Part Number, Serial Number, …)",
+           "detail", required=False),
+    Target("detail.parts_rows", "Detail → parts row",
+           "ONE data row of the parts table (the row, not a cell)", "detail"),
 ]
+
+#: The four fields the detail page must yield, and the page's own wording for
+#: each. These are label patterns, not selectors and not values.
+LABELLED_DETAIL_FIELDS: list[tuple[str, str]] = [
+    ("machine_serial_number", r"Machine\s+Serial\s+(?:Number|No\.?)"),
+    ("machine_build_date", r"Machine\s+Build\s+Date"),
+    ("engine_serial_number", r"Engine\s+Serial\s+(?:Number|No\.?)"),
+    ("engine_build_date", r"Engine\s+Build\s+Date"),
+]
+#: What the automation scrolls to before it reads anything on the detail page.
+DETAIL_SECTION_PATTERN = r"Machine\s+Serial\s+(?:Number|No\.?)"
 
 
 @dataclass
@@ -206,6 +246,11 @@ class CaptureSession:
         # Where the search screen lives, so verification can get back to it after
         # the run has walked into a detail page.
         self.search_url: str | None = None
+        # Evidence about the detail page: what scrolling the content pane did,
+        # and the labels the page itself used for the machine/engine fields.
+        self.detail_reveal: dict[str, Any] = {}
+        self.detail_labels: dict[str, Any] = {}
+        self.product_groups: list[dict[str, Any]] = []
 
     # ── lifecycle ───────────────────────────────────────────────────────────
     @staticmethod
@@ -241,6 +286,7 @@ class CaptureSession:
         self.context = await self.browser.new_context(viewport={"width": 1536, "height": 960})
         self.context.set_default_timeout(self.args.timeout_ms)
 
+        await self.context.add_init_script(SIS_DOM_JS)
         await self.context.add_init_script(PICKER_JS)
         await self.context.add_init_script(DISCOVER_JS)
         await self.context.expose_binding("__maiaPickBinding", self._on_pick)
@@ -722,15 +768,98 @@ class CaptureSession:
 
     async def _phase(self, phase: str, banner: str) -> None:
         print(f"\n─── {phase.upper()} ─── {banner}")
+        if phase == "detail":
+            # Nothing below the fold of the SIS content pane can be captured —
+            # or proven — until the pane has been scrolled and the SPA has
+            # finished rendering what the scroll revealed.
+            await self.reveal_detail_section()
         await self.shot(f"phase-{phase}")
         await self.snapshot(f"phase-{phase}")
         for target in [t for t in TARGETS if t.phase == phase]:
             record = await self.pick(target)
             if target.key == "detail.spec_rows" and record.selector:
                 await self._derive_spec_cell(record.selector)
+            elif target.key == "detail.parts_rows" and record.selector:
+                await self._generalise_repeating(record, cell_key="detail.parts_cell")
+            elif target.key == "detail.parts_header_cells" and record.selector:
+                await self._generalise_repeating(record)
+
+    async def reveal_detail_section(self) -> dict[str, Any]:
+        """Scroll the SIS content pane to the equipment details, then let it render.
+
+        Reported, not assumed: the result says which pane moved, how many steps
+        it took and whether rendering settled. A section that never appears is a
+        finding, never something to work around.
+        """
+        result: dict[str, Any] = {"found": False, "error": None}
+        try:
+            result = await self.page.evaluate(
+                "(a) => window.__maiaDiscover.revealDetailSection(a[0], "
+                "{maxSteps: a[1], settleMs: a[2]})",
+                [DETAIL_SECTION_PATTERN, 30, 4000])
+        except Exception as exc:
+            result = {"found": False, "error": str(exc)[:160]}
+        self.detail_reveal = result
+        if result.get("found"):
+            self.log(f"scrolled the content pane {result.get('pane') or '(window)'} in "
+                     f"{result.get('steps')} step(s); render settled="
+                     f"{(result.get('settle') or {}).get('settled')}")
+        else:
+            self.log("the equipment-details section never became visible after scrolling "
+                     f"({result.get('error') or 'no matching text on the page'})")
+        try:
+            self.detail_labels = await self.page.evaluate(
+                "() => { const f = window.__maiaDiscover.labelledFields(); "
+                "const out = {}; for (const k in f) out[k] = "
+                "{label: f[k].label_text, shape: f[k].shape}; return out; }")
+        except Exception:
+            self.detail_labels = {}
+        try:
+            self.product_groups = await self.page.evaluate(
+                "() => window.__maiaSisDom.readProductGroups(null, 0).map("
+                "g => ({title: g.title, group_serial: g.group_serial, "
+                "is_entire_group: g.is_entire_group, columns: g.columns, "
+                "row_count: g.row_count}))")
+            if self.product_groups:
+                self.log(f"'Product - …' groups on the page: "
+                         f"{', '.join(g['title'][:40] for g in self.product_groups[:4])}")
+        except Exception:
+            self.product_groups = []
+        return result
+
+    async def _generalise_repeating(self, record: CaptureRecord,
+                                    cell_key: str | None = None) -> None:
+        """Make a row/header selector match EVERY sibling, and prove that it does.
+
+        A picker returns a selector unique to the one element that was picked. A
+        repeating structure needs the opposite, so the positional tail is dropped
+        — and then verified by counting, because a selector that now matches the
+        whole page is worse than none.
+        """
+        generalised = re.sub(r":nth-(?:of-type|child)\(\d+\)\s*$", "", record.selector or "")
+        if not generalised or generalised == record.selector:
+            return
+        try:
+            count = await self.page.evaluate("(s) => window.__maiaDiscover.countMatching(s)",
+                                             generalised)
+        except Exception:
+            count = -1
+        if count is None or count < 1:
+            record.notes.append("positional suffix kept: the generalised selector matched nothing")
+        else:
+            record.selector = generalised
+            record.match_count = count
+            record.notes.append(f"positional suffix removed so it matches every sibling "
+                                f"({count} matches)")
+            print(f"    · {record.name:<26} generalised to {count} matches: {generalised[:60]}")
+        if cell_key:
+            await self._derive_cell(record.selector, cell_key)
 
     async def _derive_spec_cell(self, row_selector: str) -> None:
-        """Read the cell element out of the row the operator picked.
+        await self._derive_cell(row_selector, "detail.spec_cell")
+
+    async def _derive_cell(self, row_selector: str, cell_key: str) -> None:
+        """Read the cell element out of the row that was picked.
 
         This is derived from the live DOM, not assumed: if the table is built from
         <td>, we see <td>; if it is divs, we see divs. If the row has fewer than two
@@ -749,22 +878,22 @@ class CaptureSession:
                    }""", row_selector)
         except Exception as exc:
             info = None
-            self.log(f"could not derive the spec cell selector: {exc}")
+            self.log(f"could not derive the cell selector for {cell_key}: {exc}")
 
         if not info or not info.get("tag"):
-            self.records["detail.spec_cell"] = CaptureRecord(
-                name="detail.spec_cell", status="TODO_CAPTURE", confidence="unverified",
+            self.records[cell_key] = CaptureRecord(
+                name=cell_key, status="TODO_CAPTURE", confidence="unverified",
                 captured_at=now_iso(), url=self.page.url,
                 notes=["could not derive a single cell element from the captured row"])
-            print("    ✗ detail.spec_cell — TODO_CAPTURE (row children are not uniform)")
+            print(f"    ✗ {cell_key} — TODO_CAPTURE (row children are not uniform)")
             return
 
-        self.records["detail.spec_cell"] = CaptureRecord(
-            name="detail.spec_cell", selector=info["tag"], strategy="derived-from-row",
+        self.records[cell_key] = CaptureRecord(
+            name=cell_key, selector=info["tag"], strategy="derived-from-row",
             element_text=" | ".join(info.get("sample") or []), url=self.page.url,
             captured_at=now_iso(), confidence="verified", match_count=info["count"],
             notes=[f"child element of {row_selector}"])
-        print(f"    ✓ derived detail.spec_cell: {info['tag']} ({info['count']} per row)")
+        print(f"    ✓ derived {cell_key}: {info['tag']} ({info['count']} per row)")
 
     async def _run_search_in_page(self, serial: str) -> None:
         """Drive the search using only what has been captured so far."""
@@ -878,6 +1007,29 @@ class CaptureSession:
                 if detail_marker:
                     await self.page.wait_for_selector(detail_marker, state="visible", timeout=15000)
 
+            # The detail section is below the fold; read nothing before the pane
+            # has been scrolled and the SPA has settled.
+            out["scroll"] = await self.reveal_detail_section()
+
+            # First, and in this order: the four machine/engine fields, read
+            # through the SAME reader the adapter uses at run time.
+            for field, label in LABELLED_DETAIL_FIELDS:
+                key = f"detail.{field}"
+                sel = self._selector(key)
+                if not sel:
+                    out["fields"][key] = None
+                    continue
+                try:
+                    # Captured selectors are not always CSS, so Playwright
+                    # resolves the element and the reader is given the element.
+                    handle = await self.page.locator(sel).first.element_handle()
+                    read = await self.page.evaluate(
+                        "(a) => window.__maiaSisDom.readLabelledFrom(a[0], a[1])",
+                        [handle, label])
+                    out["fields"][key] = (read or {}).get("value")
+                except Exception as exc:
+                    out["fields"][key] = f"<unreadable: {str(exc)[:60]}>"
+
             for key in ("detail.equipment_model", "detail.equipment_type",
                         "detail.build_date", "detail.engine_family"):
                 sel = self._selector(key)
@@ -889,8 +1041,23 @@ class CaptureSession:
                 except Exception as exc:
                     out["fields"][key] = f"<unreadable: {str(exc)[:60]}>"
 
-            out["ok"] = bool(out["fields"].get("detail.equipment_model"))
-            out["outcome"] = "FOUND" if out["ok"] else "EXTRACTION_ERROR"
+            # Then every "Product - …" group, with its rows.
+            out["parts"] = await self.read_product_groups()
+
+            # The record on screen must be the record that was searched: a page
+            # that answers about another machine is a failure, not a result.
+            shown = out["fields"].get("detail.machine_serial_number")
+            clean = lambda v: re.sub(r"[^A-Z0-9]", "", str(v or "").upper())  # noqa: E731
+            out["serial_matches_query"] = (
+                None if not shown else clean(shown) == clean(self.args.serial))
+
+            required = [f"detail.{f}" for f, _ in LABELLED_DETAIL_FIELDS]
+            out["ok"] = (all(out["fields"].get(k) for k in required)
+                         and out.get("serial_matches_query") is not False)
+            if out.get("serial_matches_query") is False:
+                out["outcome"] = "WRONG_RECORD"
+            else:
+                out["outcome"] = "FOUND" if out["ok"] else "EXTRACTION_ERROR"
             out["url"] = self.page.url
             await self.shot("real-search-detail")
             await self.snapshot("real-search-detail")
@@ -900,7 +1067,39 @@ class CaptureSession:
             await self.shot("real-search-failure")
         for key, value in out["fields"].items():
             print(f"  {key:28s} = {value}")
+        parts = out.get("parts") or {}
+        if parts.get("groups"):
+            print(f"  {'Product - … groups':28s} = {parts['group_count']} "
+                  f"({parts['total_rows']} rows): "
+                  f"{'; '.join(parts['group_titles'][:4])[:90]}")
+            print(f"  {'parts columns':28s} = {', '.join(parts.get('columns') or [])[:90]}")
+        if out.get("serial_matches_query") is False:
+            print("  ✗ the page showed a DIFFERENT machine than the one searched")
         return out
+
+    async def read_product_groups(self) -> dict[str, Any]:
+        """Every "Product - …" group on the detail page, read in full."""
+        try:
+            heading = self._selector("detail.parts_group")
+            handles = (await self.page.locator(heading).element_handles()) if heading else []
+            groups = await self.page.evaluate(
+                "(a) => window.__maiaSisDom.readProductGroupsFrom(a[0], a[1])",
+                [handles, 500])
+            # Every "Product - …" group, not only the one that was captured.
+            titles = {g.get("title") for g in groups}
+            for extra in await self.page.evaluate(
+                    "() => window.__maiaSisDom.readProductGroups(null, 500)"):
+                if extra.get("title") not in titles:
+                    groups.append(extra)
+        except Exception as exc:
+            return {"error": str(exc)[:200], "groups": []}
+        return {
+            "group_count": len(groups),
+            "group_titles": [g.get("title") for g in groups],
+            "columns": (groups[0].get("columns") if groups else []),
+            "total_rows": sum(int(g.get("row_count") or 0) for g in groups),
+            "groups": groups,
+        }
 
     # ── output ──────────────────────────────────────────────────────────────
     def unresolved(self) -> list[str]:
@@ -940,6 +1139,11 @@ class CaptureSession:
             "final_url": (self.page.url if self.page else None),
             "final_title": self.final_title,
             "reconnaissance": self.recon,
+            # How the equipment-details section was reached, and what the page
+            # itself calls each field — evidence for every selector below.
+            "detail_reveal": self.detail_reveal,
+            "detail_labels": self.detail_labels,
+            "product_groups": self.product_groups,
             "verification": verification,
             "real_search": search,
             "stopped_reason": self.stopped_reason,

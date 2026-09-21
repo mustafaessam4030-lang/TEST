@@ -258,7 +258,9 @@ class EquipmentService:
 
                 async with recorder.step("EXTRACT_RAW", url_provider=lambda: ctx.page.url) as box:
                     try:
-                        raw = await adapter.extract(ctx)
+                        # The serial travels with the read so the adapter can
+                        # prove the record on screen is the one asked for.
+                        raw = await adapter.extract(ctx, serial_number=serial)
                     except AutomationError:
                         box["artifact_uri"] = (
                             await self.pool.capture_artifacts(ctx, "EXTRACT_RAW")
@@ -275,7 +277,9 @@ class EquipmentService:
                         retrieved_at=raw.retrieved_at or datetime.now(timezone.utc),
                         run_id=recorder.run_id,
                         field_map=self.registry.entry(source).config.get("field_map"),
-                        selector_version=caps.selector_version)
+                        selector_version=caps.selector_version,
+                        date_order=(self.registry.entry(source).config.get("extraction") or {})
+                        .get("date_order", "day_first"))
 
                 async with recorder.step("VALIDATE"):
                     record = validate_equipment_data(record)

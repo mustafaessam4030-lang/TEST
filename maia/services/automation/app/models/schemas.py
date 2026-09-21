@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 SERIAL_RE = re.compile(r"^[A-Z0-9]{3,17}$")
 
 
@@ -128,6 +128,12 @@ class EquipmentRecord(BaseModel):
     equipment_type: str | None = None
     manufacturer: str | None = None
     build_date: str | None = None          # ISO-8601, partial allowed: YYYY | YYYY-MM | YYYY-MM-DD
+    # The equipment-details block, read first from the detail page. The machine
+    # serial is also the cross-check: it must equal the serial that was searched.
+    machine_serial_number: str | None = None
+    machine_build_date: str | None = None  # ISO-8601, as published
+    engine_serial_number: str | None = None
+    engine_build_date: str | None = None   # ISO-8601, as published
     engine_family: EngineFamily | None = None
     specifications: list[Specification] = Field(default_factory=list)
     parts_data: dict[str, Any] | None = None
