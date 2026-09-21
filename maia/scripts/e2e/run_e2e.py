@@ -165,7 +165,26 @@ def main() -> int:
     # first is what produces ERR_CONNECTION_REFUSED on a perfectly good start.
     if args.open_browser:
         import webbrowser
-        webbrowser.open(ui_url)
+
+        opened = False
+        try:
+            opened = webbrowser.open(ui_url)
+        except Exception:
+            opened = False
+        if not opened and os.name == "nt":
+            try:                                   # Windows default handler
+                os.startfile(ui_url)               # type: ignore[attr-defined]
+                opened = True
+            except Exception:
+                opened = False
+        # Never leave the person guessing whether a window was supposed to appear.
+        if opened:
+            print(f"  Opened {ui_url} in your browser.\n")
+        else:
+            print("  " + "!" * 70)
+            print("  Could not open a browser automatically on this machine.")
+            print(f"  Open this address yourself:   {ui_url}")
+            print("  " + "!" * 70 + "\n")
 
     def shutdown(*_a: object) -> None:
         httpd.shutdown()
