@@ -1,0 +1,1031 @@
+<meta charset="utf-8">
+<title>Maia Equipment Automation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Open+Sans:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIA — equipment automation deck
+   Palette taken from Mantrac's own chat stylesheet (mantrac-support-v8):
+   CAT yellow #FFC500 on near-black, greys warmed very slightly toward the
+   accent so the neutrals read as chosen rather than inherited. Semantic
+   colours are held apart from the accent so "done / blocked / pending"
+   never competes with the brand yellow.
+   Single-theme by intent: this is a projected deck, not a document.
+   ═══════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+
+:root{
+  --ink:      #0A0A09;
+  --panel:    #141411;
+  --panel-2:  #1C1C18;
+  --panel-3:  #232320;
+  --line:     #33332D;
+  --line-2:   #46463E;
+
+  --y:        #FFC500;
+  --yd:       #E6B000;
+  --y-wash:   rgba(255,197,0,.12);
+  --y-edge:   rgba(255,197,0,.34);
+
+  --text:     #F4F2EC;
+  --muted:    #A7A49B;
+  --faint:    #6F6C64;
+
+  --ok:       #4FAE5B;
+  --blocked:  #E5544B;
+  --pending:  #5AA9E6;
+
+  --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --body:    'Open Sans', 'Segoe UI', system-ui, sans-serif;
+  --mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  color-scheme: dark;
+}
+
+html, body { margin:0; padding:0; }
+body{
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+
+/* ── the stage ───────────────────────────────────────────────────────── */
+.app{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+  min-width: 0;
+}
+
+.stage-wrap{
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding-block: 18px 8px;
+  min-height: 0;
+}
+
+.stage{
+  position: relative;
+  width: 100%;
+  max-width: min(100%, calc((100dvh - 132px) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  container-type: size;
+  container-name: slide;
+  box-shadow: 0 24px 70px rgba(0,0,0,.55);
+}
+
+/* Yellow hairline along the top edge of every slide — the one piece of
+   chrome the deck keeps from the Mantrac chat header. */
+.stage::before{
+  content:""; position:absolute; inset:0 0 auto 0; height:3px; z-index:6;
+  background: linear-gradient(90deg, var(--y) 0%, var(--yd) 46%, transparent 46%);
+}
+
+.slide{
+  position: absolute; inset: 0;
+  padding: 5.2cqw 6cqw 4.4cqw;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 2.2cqh;
+  opacity: 0; visibility: hidden;
+  transform: translateY(1.4cqh);
+  transition: opacity .42s ease, transform .42s cubic-bezier(.2,.7,.3,1), visibility .42s;
+  overflow: hidden;
+}
+.slide.is-active{ opacity:1; visibility:visible; transform:none; }
+.slide.is-prev{ transform: translateY(-1.4cqh); }
+
+/* ── type scale, tied to the slide box so it always fits ─────────────── */
+@container slide (min-width: 100px){
+  .kicker  { font-size: 1.25cqw; }
+  .t-xl    { font-size: 7.4cqw; }
+  .t-lg    { font-size: 4.6cqw; }
+  .t-md    { font-size: 3.1cqw; }
+  .t-sm    { font-size: 2.15cqw; }
+  .lead    { font-size: 1.86cqw; }
+  .body    { font-size: 1.52cqw; }
+  .small   { font-size: 1.28cqw; }
+  .mono    { font-size: 1.28cqw; }
+  .mono-sm { font-size: 1.06cqw; }
+}
+
+.kicker{
+  font-family: var(--display);
+  font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--y);
+}
+.kicker .n{ color: var(--faint); margin-right: .7em; }
+
+h1, h2, h3{ margin:0; font-family: var(--display); font-weight: 800;
+            line-height: 1.02; letter-spacing: -.018em; text-wrap: balance; }
+h3{ font-weight: 700; letter-spacing: -.008em; }
+p{ margin:0; }
+.lead{ color: var(--muted); line-height: 1.5; max-width: 62ch; }
+.body{ color: var(--muted); line-height: 1.6; }
+.small{ color: var(--faint); line-height: 1.55; }
+.mono, .mono-sm{ font-family: var(--mono); font-variant-ligatures: none; }
+.y{ color: var(--y); }
+.strong{ color: var(--text); font-weight: 600; }
+.tnum{ font-variant-numeric: tabular-nums; }
+
+/* ── reveal choreography ─────────────────────────────────────────────── */
+.slide.is-active .r{ animation: rise .5s cubic-bezier(.2,.75,.3,1) both;
+                     animation-delay: calc(var(--i, 0) * 65ms + 90ms); }
+@keyframes rise{ from{ opacity:0; transform: translateY(1.1cqh); } }
+
+.slide.is-active .sweep{ animation: sweep .62s cubic-bezier(.2,.8,.25,1) both;
+                         animation-delay: calc(var(--i, 0) * 65ms + 120ms); transform-origin: left; }
+@keyframes sweep{ from{ transform: scaleX(0); } }
+
+.slide.is-active .draw{ animation: draw 1s ease-out both;
+                        animation-delay: calc(var(--i, 0) * 65ms + 240ms); }
+@keyframes draw{ from{ stroke-dashoffset: var(--len, 300); } }
+
+/* ── shared blocks ───────────────────────────────────────────────────── */
+.rule{ height:2px; background: var(--y); width: 8cqw; border-radius: 2px; }
+
+.cols{ display:grid; gap: 2cqw; }
+.c2{ grid-template-columns: 1fr 1fr; }
+.c3{ grid-template-columns: repeat(3, 1fr); }
+.c4{ grid-template-columns: repeat(4, 1fr); }
+.c-5-7{ grid-template-columns: 5fr 7fr; }
+.c-7-5{ grid-template-columns: 7fr 5fr; }
+.align-start{ align-items: start; }
+
+.card{
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1.7cqw 1.8cqw;
+  display:flex; flex-direction:column; gap:.75cqh;
+  min-width: 0;
+}
+.card.lift{ border-color: var(--y-edge); background:
+   linear-gradient(180deg, var(--y-wash), transparent 62%), var(--panel-2); }
+.card h3{ font-size: 1.72cqw; }
+.card .small{ font-size: 1.16cqw; }
+
+.chip{
+  display:inline-flex; align-items:center; gap:.5em;
+  font-family: var(--display); font-weight:700; font-size: 1.04cqw;
+  letter-spacing:.09em; text-transform:uppercase;
+  padding:.36em .72em; border-radius:2px;
+  border:1px solid currentColor;
+}
+.chip.ok{ color: var(--ok); }
+.chip.blocked{ color: var(--blocked); }
+.chip.pending{ color: var(--pending); }
+.chip.acc{ color: var(--y); background: var(--y-wash); }
+.chip .dot{ width:.5em; height:.5em; border-radius:50%; background: currentColor; }
+
+.codeblock{
+  background: var(--ink); border:1px solid var(--line); border-radius:3px;
+  padding: 1.25cqw 1.4cqw; font-family: var(--mono); font-size: 1.06cqw;
+  line-height: 1.75; color: var(--muted); overflow: auto; min-width:0;
+}
+.codeblock .k{ color: var(--y); }
+.codeblock .c{ color: var(--faint); font-style: italic; }
+.codeblock .g{ color: var(--ok); }
+.codeblock .r2{ color: var(--blocked); }
+
+.kv{ display:grid; grid-template-columns: auto 1fr; gap:.5cqh 1.1cqw; align-items:baseline; }
+.kv dt{ font-family: var(--mono); font-size:1.1cqw; color: var(--faint); white-space:nowrap; }
+.kv dd{ margin:0; font-family: var(--mono); font-size:1.1cqw; color: var(--text); }
+
+ul.ticks{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:.85cqh; }
+ul.ticks li{ display:grid; grid-template-columns: 1.6cqw 1fr; gap:.7cqw;
+             font-size:1.44cqw; color: var(--muted); line-height:1.55; }
+ul.ticks li::before{ content:"▸"; color: var(--y); font-size:1.1cqw; line-height:1.9; }
+
+/* ── slide 1: the opener ─────────────────────────────────────────────── */
+.title-grid{ display:grid; grid-template-columns: 6fr 5fr; align-items:center; gap:4cqw; }
+.hero-card{
+  background: linear-gradient(180deg, var(--y-wash), transparent 55%), var(--panel-2);
+  border:1px solid var(--y-edge); border-radius:3px; padding:1.8cqw;
+}
+.wordmark{ font-family: var(--display); font-weight:900; letter-spacing:-.045em;
+           line-height:.86; color: var(--text); }
+.wordmark em{ font-style:normal; color: var(--y); }
+.serial-strip{
+  display:flex; align-items:center; gap:1.1cqw; padding:1.1cqw 1.4cqw;
+  border:1px solid var(--line); border-left:3px solid var(--y);
+  background: var(--panel-2); border-radius:2px; width:fit-content;
+}
+.serial-strip .mono{ font-size:1.6cqw; color: var(--text); letter-spacing:.06em; }
+.arrow{ color: var(--y); font-size:1.5cqw; }
+
+/* ── the pipeline rail ───────────────────────────────────────────────── */
+.rail{ display:flex; align-items:stretch; gap:.55cqw; }
+.step{
+  flex:1; min-width:0; background: var(--panel-2); border:1px solid var(--line);
+  border-top:2px solid var(--line-2); border-radius:2px;
+  padding:.95cqw .7cqw; display:flex; flex-direction:column; gap:.35cqh;
+}
+.step .n{ font-family:var(--mono); font-size:.92cqw; color: var(--faint); }
+.step .nm{ font-family:var(--display); font-weight:700; font-size:1.06cqw;
+           letter-spacing:.03em; color: var(--text); line-height:1.2; }
+.step.hot{ border-top-color: var(--y); background:
+   linear-gradient(180deg, var(--y-wash), transparent 70%), var(--panel-2); }
+.step.hot .nm{ color: var(--y); }
+
+/* ── the scrolling-pane demonstration (slide 5) ──────────────────────── */
+.browser{
+  border:1px solid var(--line); border-radius:3px; overflow:hidden;
+  background: var(--panel-2); display:flex; flex-direction:column;
+}
+.browser .bar{
+  display:flex; align-items:center; gap:.5cqw; padding:.62cqw .8cqw;
+  background: var(--panel-3); border-bottom:1px solid var(--line);
+  font-family:var(--mono); font-size:.92cqw; color: var(--faint);
+}
+.browser .bar .d{ width:.55cqw; height:.55cqw; border-radius:50%; background: var(--line-2); }
+.pane{ position:relative; height: 40cqh; overflow:hidden; }
+.pane .tape{ position:absolute; inset:0 0 auto 0; display:flex; flex-direction:column; }
+.slide.is-active .pane .tape{ animation: paneScroll 7.5s cubic-bezier(.65,0,.35,1) infinite; }
+@keyframes paneScroll{            /* 11 rows × 5.4cqh; stop with the four
+                                     labelled rows filling the pane */
+  0%,   12%  { transform: translateY(0); }
+  38%,  80%  { transform: translateY(-21.6cqh); }
+  96%, 100%  { transform: translateY(0); }
+}
+.pane .row{ height: 5.4cqh; line-height: 5.4cqh; padding:0 1cqw;
+            border-bottom:1px solid var(--line); white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+            font-size:1.1cqw; color: var(--faint); }
+.pane .row.fold{ color: var(--line-2); font-family:var(--mono); font-size:.92cqw;
+                 letter-spacing:.2em; text-transform:uppercase; }
+.pane .row.hit{ color: var(--text); font-family:var(--mono); font-size:1.12cqw;
+                background: var(--y-wash); border-left:2px solid var(--y); }
+.pane .row.hit b{ color: var(--y); font-weight:600; }
+.pane .fade{ position:absolute; inset:auto 0 0 0; height:3.4cqh; pointer-events:none;
+             background: linear-gradient(transparent, var(--panel-2)); }
+.scrollbar{ position:absolute; top:0; right:.3cqw; width:.34cqw; height:100%; }
+.scrollbar i{ position:absolute; left:0; width:100%; height:36%; border-radius:2px;
+              background: var(--line-2); }
+.slide.is-active .scrollbar i{ animation: thumb 7.5s cubic-bezier(.65,0,.35,1) infinite; }
+@keyframes thumb{ 0%,12%{ top:0 } 38%,80%{ top:64% } 96%,100%{ top:0 } }
+
+/* ── the repository seam (slide 9) ───────────────────────────────────── */
+.seam{ display:grid; grid-template-columns: auto 1fr; gap: 1.4cqw; align-items:center; }
+.seam-head{
+  background: var(--panel-3); border:1px solid var(--line-2); border-radius:3px;
+  padding:1.2cqw 1.4cqw; font-family:var(--display); font-weight:800;
+  font-size:1.7cqw; letter-spacing:-.01em; white-space:nowrap;
+}
+.branches{ display:flex; flex-direction:column; gap:.8cqh; }
+.branch{
+  display:flex; align-items:center; gap:1cqw;
+  border:1px solid var(--line); border-radius:3px; padding:1cqw 1.2cqw;
+  background: var(--panel-2); min-width:0;
+}
+.branch.active{ border-color: var(--y); background:
+   linear-gradient(90deg, var(--y-wash), transparent 70%), var(--panel-2); }
+.branch.later{ border-style: dashed; opacity:.62; }
+.branch .nm{ font-family:var(--mono); font-size:1.3cqw; color: var(--text); }
+.branch.active .nm{ color: var(--y); }
+.branch .note{ font-size:1.1cqw; color: var(--faint); margin-left:auto; text-align:right; }
+
+/* ── the file tree (slide 10) ────────────────────────────────────────── */
+.tree{ font-family: var(--mono); font-size:1.14cqw; line-height:1.95; color: var(--muted); }
+.tree .dir{ color: var(--y); }
+.tree .cmt{ color: var(--faint); }
+
+/* ── status board (slide 14) ─────────────────────────────────────────── */
+table.board{ width:100%; border-collapse: collapse; font-size:1.3cqw; }
+table.board th{
+  text-align:left; font-family:var(--display); font-weight:700; font-size:1.04cqw;
+  letter-spacing:.14em; text-transform:uppercase; color: var(--faint);
+  padding:0 0 .7cqh; border-bottom:1px solid var(--line);
+}
+table.board td{ padding:.75cqh 0; border-bottom:1px solid var(--line); color: var(--muted);
+                vertical-align: middle; }
+table.board td:last-child{ text-align:right; width:1%; white-space:nowrap; }
+table.board tr:last-child td{ border-bottom:none; }
+table.board tr.hot td{ color: var(--text); }
+
+/* ── chrome: rail, counter, controls ─────────────────────────────────── */
+.chrome{
+  display:flex; align-items:center; gap:14px;
+  padding: 6px 2px 14px;
+  max-width: min(100%, calc((100dvh - 132px) * 16 / 9));
+  margin: 0 auto; width: 100%;
+}
+.dots{ display:flex; gap:5px; flex:1; min-width:0; }
+.rail-dot{
+  flex:1; height:3px; border:0; padding:0; border-radius:2px;
+  background: var(--line); cursor:pointer; transition: background .25s ease;
+  min-width: 4px;
+}
+.rail-dot:hover{ background: var(--line-2); }
+.rail-dot[aria-current="true"]{ background: var(--y); }
+.rail-dot:focus-visible{ outline:2px solid var(--y); outline-offset:3px; }
+
+.nav{ display:flex; align-items:center; gap:8px; }
+.btn{
+  font-family: var(--display); font-weight:700; font-size:11px; letter-spacing:.1em;
+  text-transform:uppercase; color: var(--muted);
+  background: var(--panel-2); border:1px solid var(--line); border-radius:2px;
+  padding:7px 11px; cursor:pointer; transition: all .18s ease; white-space:nowrap;
+}
+.btn:hover{ color: var(--ink); background: var(--y); border-color: var(--y); }
+.btn:focus-visible{ outline:2px solid var(--y); outline-offset:2px; }
+.btn[disabled]{ opacity:.35; cursor:not-allowed; }
+.btn[disabled]:hover{ color: var(--muted); background: var(--panel-2); border-color: var(--line); }
+.count{ font-family: var(--mono); font-size:12px; color: var(--faint);
+        font-variant-numeric: tabular-nums; white-space:nowrap; }
+.count b{ color: var(--y); font-weight:500; }
+
+.hint{ text-align:center; font-size:11px; color: var(--faint); padding-bottom:12px;
+       letter-spacing:.04em; }
+.hint kbd{
+  font-family: var(--mono); font-size:10.5px; background: var(--panel-2);
+  border:1px solid var(--line); border-bottom-width:2px; border-radius:3px;
+  padding:1px 5px; color: var(--muted);
+}
+
+/* ── overview grid ───────────────────────────────────────────────────── */
+.overview{
+  position: fixed; inset: 0; z-index: 40; background: rgba(6,6,5,.96);
+  padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+}
+.overview h2{ font-size: 15px; letter-spacing:.18em; text-transform:uppercase;
+              color: var(--y); margin-bottom:16px; text-align:center; }
+.ov-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+          gap:12px; max-width:1180px; margin:0 auto; }
+.ov-item{
+  text-align:left; background: var(--panel-2); border:1px solid var(--line);
+  border-radius:3px; padding:13px 14px; cursor:pointer; color: var(--muted);
+  display:flex; flex-direction:column; gap:5px; transition: all .18s ease;
+}
+.ov-item:hover, .ov-item:focus-visible{ border-color: var(--y); color: var(--text);
+                                        outline:none; transform: translateY(-2px); }
+.ov-item .n{ font-family:var(--mono); font-size:11px; color: var(--y); }
+.ov-item .t{ font-family:var(--display); font-weight:700; font-size:13.5px;
+             color: var(--text); line-height:1.25; }
+
+/* ── phone: drop the fixed slide box, let the deck flow ──────────────── */
+@media (max-width: 720px){
+  .stage{
+    aspect-ratio: auto; max-width: 100%; container-type: normal;
+    min-height: 0; box-shadow:none;
+  }
+  .slide{
+    position: static; display: none; padding: 30px 18px 26px; gap: 16px;
+    opacity:1; visibility:visible; transform:none; overflow: visible;
+  }
+  .slide.is-active{ display:flex; }
+  .kicker{ font-size:10.5px; } .t-xl{ font-size:34px; } .t-lg{ font-size:26px; }
+  .t-md{ font-size:20px; } .t-sm{ font-size:17px; } .lead{ font-size:15px; }
+  .body{ font-size:14px; } .small{ font-size:12.5px; }
+  .mono{ font-size:12.5px; } .mono-sm{ font-size:11.5px; }
+  .cols{ grid-template-columns: 1fr !important; gap:14px; }
+  .rail{ flex-wrap: wrap; gap:6px; }
+  .step{ flex: 1 1 30%; padding:8px; }
+  .step .n{ font-size:10px; } .step .nm{ font-size:11px; }
+  .card{ padding:14px; gap:6px; }
+  .card h3{ font-size:16px; } .card .small{ font-size:12.5px; }
+  .chip{ font-size:10px; }
+  .codeblock{ font-size:11px; padding:12px; }
+  .kv dt, .kv dd{ font-size:12px; }
+  ul.ticks li{ font-size:14px; grid-template-columns: 14px 1fr; }
+  ul.ticks li::before{ font-size:11px; line-height:1.7; }
+  .rule{ width:64px; }
+  .title-grid{ grid-template-columns:1fr; gap:18px; }
+  .hero-card{ padding:14px; }
+  .serial-strip .mono{ font-size:14px; } .arrow{ font-size:14px; }
+  .pane{ height:224px; }
+  .pane .row{ height:34px; line-height:34px; font-size:12px; }
+  .pane .row.hit{ font-size:11.5px; }
+  @keyframes paneScroll{ 0%,12%{transform:translateY(0)} 38%,80%{transform:translateY(-136px)}
+                         96%,100%{transform:translateY(0)} }
+  .browser .bar{ font-size:10px; }
+  .seam{ grid-template-columns:1fr; gap:12px; }
+  .seam-head{ font-size:15px; white-space:normal; }
+  .branch{ flex-wrap:wrap; gap:8px; padding:11px; }
+  .branch .nm{ font-size:12.5px; } .branch .note{ font-size:11px; margin-left:0; text-align:left; }
+  .tree{ font-size:11.5px; line-height:1.8; }
+  .board-wrap{ overflow-x:auto; }
+  table.board{ font-size:12.5px; min-width: 460px; }
+  table.board th{ font-size:10px; }
+  .chrome{ gap:10px; }
+  .btn{ padding:6px 9px; font-size:10px; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .slide{ transform:none; }
+}
+</style>
+
+<div class="app">
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+
+      <!-- ── 1 ───────────────────────────────────────────────────────── -->
+      <section class="slide is-active" data-title="Maia">
+        <div class="title-grid">
+          <div>
+            <p class="kicker r" style="--i:0">Mantrac Control Tower · Caterpillar SIS</p>
+            <h1 class="wordmark t-xl r" style="--i:1; margin-top:.8cqh">M<em>ai</em>a</h1>
+            <div class="rule sweep" style="--i:2; margin-top:2.4cqh; width:22cqw"></div>
+            <p class="lead r" style="--i:3; margin-top:2.4cqh">
+              A serial number goes in. Equipment data comes back — read from
+              Caterpillar SIS by a deterministic worker, validated, saved, and
+              returned with its source, its timestamp and its run id attached.
+            </p>
+            <p class="small r" style="--i:6; margin-top:2.4cqh">
+              Equipment-detail extraction · the temporary local store · what is left to run
+            </p>
+          </div>
+          <div class="hero-card r" style="--i:4">
+            <div class="serial-strip" style="width:100%">
+              <span class="mono">JAZ01865</span>
+              <span class="arrow">→</span>
+              <span class="mono y">C32 Generator Set</span>
+            </div>
+            <dl class="kv" style="margin-top:1.4cqh">
+              <dt>machine_serial_number</dt><dd>JAZ01865</dd>
+              <dt>machine_build_date</dt><dd>2014-08-02</dd>
+              <dt>engine_serial_number</dt><dd>PRH04588</dd>
+              <dt>engine_build_date</dt><dd>2014-06-30</dd>
+              <dt>parts groups</dt><dd class="y">Product - Entire Group …</dd>
+            </dl>
+            <p class="small" style="margin-top:1.2cqh; border-top:1px solid var(--line);
+                                    padding-top:1cqh">
+              The shape of one answer. The values above are the ones visible on your SIS
+              screenshot — <span class="strong">not yet a run of ours</span>. Slide 14 says why.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 2 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="The one rule">
+        <p class="kicker r" style="--i:0"><span class="n">01</span>The one rule</p>
+        <h2 class="t-lg r" style="--i:1">Maia decides <span class="y">what</span> to ask for.<br>
+          She never decides <span class="y">how</span> it is fetched.</h2>
+        <div class="cols c3 r" style="--i:2; margin-top:1.4cqh">
+          <div class="card">
+            <h3>No browser</h3>
+            <p class="small">The model's entire reach into SIS is one string: a serial
+              number, re-validated server-side. It cannot click, navigate or read a page.</p>
+          </div>
+          <div class="card">
+            <h3>No credentials</h3>
+            <p class="small">The agent process holds no SIS secret and has no tool that
+              accepts one. Credentials are resolved at the moment of use, by the worker.</p>
+          </div>
+          <div class="card">
+            <h3>No SQL</h3>
+            <p class="small">Storage sits behind a repository interface. The model never
+              writes a query, and never sees the store it is reading from.</p>
+          </div>
+        </div>
+        <p class="body r" style="--i:3; margin-top:1.2cqh">
+          Everything downstream follows from this: a wrong answer has to be manufactured
+          somewhere, and there is nowhere left for it to be manufactured.
+        </p>
+      </section>
+
+      <!-- ── 3 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="The path">
+        <p class="kicker r" style="--i:0"><span class="n">02</span>The path a question takes</p>
+        <h2 class="t-md r" style="--i:1">Store first. SIS only when the store cannot answer.</h2>
+        <div class="codeblock r" style="--i:2; margin-top:1cqh">
+<pre style="margin:0">Maia
+  ↓  <span class="k">get_equipment_from_local_store(serial)</span>          <span class="c">← always first, no browser</span>
+Tool gateway
+  ↓  repo.get_current(serial, source)
+found + fresh ─────────────────────────────────────→ <span class="g">return it</span>   <span class="c">(cache hit, ~2s)</span>
+  ↓  missing / stale
+<span class="k">REAL Caterpillar SIS</span>        <span class="c">scroll the content pane, extract everything</span>
+  ↓  NORMALIZE → VALIDATE
+  ↓  <span class="k">PERSIST</span>   JSON + TXT + screenshots
+  ↓
+<span class="g">return to Maia</span>   <span class="c">with source, retrieved_at and automation_run_id</span></pre>
+        </div>
+        <p class="small r" style="--i:3">
+          A lookup that hits the store never launches a browser. That is not an
+          optimisation — it is how a partner site stays un-hammered.
+        </p>
+      </section>
+
+      <!-- ── 4 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Step machine">
+        <p class="kicker r" style="--i:0"><span class="n">03</span>A run is a fixed sequence</p>
+        <h2 class="t-md r" style="--i:1">Nine steps. The model cannot add, reorder or skip one.</h2>
+        <div class="rail r" style="--i:2; margin-top:1.6cqh">
+          <div class="step"><span class="n">1</span><span class="nm">LEARN<br>LAYOUT</span></div>
+          <div class="step"><span class="n">2</span><span class="nm">ACQUIRE<br>CONTEXT</span></div>
+          <div class="step"><span class="n">3</span><span class="nm">ENSURE<br>SESSION</span></div>
+          <div class="step"><span class="n">4</span><span class="nm">HEALTH<br>CHECK</span></div>
+          <div class="step"><span class="n">5</span><span class="nm">SEARCH<br>SERIAL</span></div>
+          <div class="step"><span class="n">6</span><span class="nm">EXTRACT<br>RAW</span></div>
+          <div class="step"><span class="n">7</span><span class="nm">NORMA-<br>LIZE</span></div>
+          <div class="step"><span class="n">8</span><span class="nm">VALI-<br>DATE</span></div>
+          <div class="step hot"><span class="n">9</span><span class="nm">PER-<br>SIST</span></div>
+        </div>
+        <div class="cols c2 r" style="--i:3; margin-top:1.8cqh">
+          <p class="body">Every step records its start, end, duration, URL and outcome. On
+            failure it also captures a screenshot and trimmed HTML, and maps the exception
+            to one of sixteen typed error codes.</p>
+          <p class="body"><span class="strong y">Step 9 is new.</span> PERSIST used to be a
+            footnote after the answer was returned. It is now part of the run — and it runs
+            <em>before</em> the run is marked successful.</p>
+        </div>
+      </section>
+
+      <!-- ── 5 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Below the fold">
+        <p class="kicker r" style="--i:0"><span class="n">04</span>The problem with the detail page</p>
+        <div class="cols c-5-7 align-start" style="gap:2.6cqw">
+          <div style="display:flex; flex-direction:column; gap:1.4cqh">
+            <h2 class="t-sm r" style="--i:1">SIS renders inside its own scrolling pane.</h2>
+            <p class="body r" style="--i:2">The equipment details sit below that pane's fold,
+              and the parts groups below those. Scrolling the <em>window</em> moves nothing.</p>
+            <p class="body r" style="--i:3">Read before scrolling and you find an empty page —
+              which is indistinguishable from a website that changed, unless the scroll is an
+              explicit, reported step.</p>
+            <div class="card lift r" style="--i:4">
+              <p class="small" style="color:var(--text)">So extraction scrolls <span class="y">the
+                pane, not the window</span>, waits for the SPA to settle, and only then reads.
+                Reaching the bottom is not the end: an SPA renders the section a moment
+                <em>after</em> the scroll that asked for it.</p>
+            </div>
+          </div>
+          <div class="browser r" style="--i:2">
+            <div class="bar"><i class="d"></i><i class="d"></i><i class="d"></i>
+              <span style="margin-left:.6cqw">sis2.cat.com/#/detail/JAZ01865</span></div>
+            <div class="pane">
+              <div class="tape">
+                <div class="row">Overview</div>
+                <div class="row">Media</div>
+                <div class="row">Service letters</div>
+                <div class="row fold">— fold —</div>
+                <div class="row">Attachments</div>
+                <div class="row">Configurations</div>
+                <div class="row hit"><b>Machine Serial Number</b> - JAZ01865</div>
+                <div class="row hit"><b>Machine Build Date</b> - 08/02/2014</div>
+                <div class="row hit"><b>Engine Serial Number</b> - PRH04588</div>
+                <div class="row hit"><b>Engine Build Date</b> - 06/30/2014</div>
+                <div class="row">Warranty</div>
+              </div>
+              <div class="scrollbar"><i></i></div>
+              <div class="fade"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 6 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Four fields, in order">
+        <p class="kicker r" style="--i:0"><span class="n">05</span>Read first, and in this order</p>
+        <h2 class="t-md r" style="--i:1">The page's own labels decide. Not a selector we guessed.</h2>
+        <div class="cols c4 r" style="--i:2; margin-top:1.2cqh">
+          <div class="card lift"><span class="chip acc">01</span>
+            <h3>Machine Serial Number</h3><p class="small">Also the cross-check.</p></div>
+          <div class="card lift"><span class="chip acc">02</span>
+            <h3>Machine Build Date</h3><p class="small">MM/DD/YYYY → ISO-8601.</p></div>
+          <div class="card lift"><span class="chip acc">03</span>
+            <h3>Engine Serial Number</h3><p class="small">Never confused with the machine's.</p></div>
+          <div class="card lift"><span class="chip acc">04</span>
+            <h3>Engine Build Date</h3><p class="small">MM/DD/YYYY → ISO-8601.</p></div>
+        </div>
+        <div class="cols c2 r" style="--i:3; margin-top:1.4cqh">
+          <div class="codeblock" style="font-size:1.08cqw">
+<pre style="margin:0"><span class="c">SIS writes one element:</span>
+"Machine Serial Number - JAZ01865"
+
+<span class="c">The contract stores the LABEL as a
+pattern; the reader strips it.</span>
+<span class="k">detail_labels:</span>
+  machine_build_date: 'Machine\s+Build\s+Date'</pre>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:.9cqh; justify-content:center">
+            <p class="body"><span class="strong">Dates.</span> The source contract declares
+              MM/DD/YYYY. A value that settles its own order — a day past the 12th — always
+              wins over the setting.</p>
+            <p class="body"><span class="strong">Unparseable stays null,</span> with a
+              violation recorded. It is never guessed into shape.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 7 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Every Product group">
+        <p class="kicker r" style="--i:0"><span class="n">06</span>Then the parts</p>
+        <h2 class="t-md r" style="--i:1">Every <span class="mono y" style="font-size:2.6cqw">Product - …</span>
+          group, with all its rows and columns.</h2>
+        <div class="codeblock r" style="--i:2; margin-top:1.2cqh; font-size:1.04cqw">
+<pre style="margin:0"><span class="k">Product - Entire Group (JAZ01865)</span>
+Part Number │ Serial Number │ Part Name                      │ Install Ind. │ Install Date │ Description
+444-5867    │               │ General AR                     │ Factory      │              │ —
+256-3170    │               │ Mounting GP-Vibration Isolator │ Factory      │              │ —
+1000        │ PRH04588      │ Engine                         │ Factory      │              │ ENGINE
+1404        │ G1B00974      │ Generator                      │ Factory      │              │ GENERATOR</pre>
+        </div>
+        <div class="cols c3 r" style="--i:3; margin-top:1.2cqh">
+          <p class="body">Group titles are listed <span class="strong">first</span>, then the
+            rows of each one — the order you asked for.</p>
+          <p class="body">Rows are the table's own cells, keyed by the table's own column
+            headings. Nothing is totalled or inferred.</p>
+          <p class="body">A group whose table could not be read reports
+            <span class="mono">rows: []</span> with its row count — never a partial list
+            presented as complete.</p>
+        </div>
+      </section>
+
+      <!-- ── 8 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="The guards">
+        <p class="kicker r" style="--i:0"><span class="n">07</span>What happens when it goes wrong</p>
+        <h2 class="t-md r" style="--i:1">Every failure is typed, and none of them is a partial answer.</h2>
+        <div class="cols c3 r" style="--i:2; margin-top:1.4cqh">
+          <div class="card">
+            <span class="chip blocked"><i class="dot"></i>EXTRACTION_ERROR</span>
+            <h3>The wrong machine</h3>
+            <p class="small">The machine serial on the page must equal the serial that was
+              searched. A mismatch stops the run twice — in the adapter, and again as a fatal
+              validation violation.</p>
+            <p class="small" style="color:var(--text)">A confident answer about the wrong
+              machine is the worst thing this system could produce.</p>
+          </div>
+          <div class="card">
+            <span class="chip blocked"><i class="dot"></i>WEBSITE_CHANGED</span>
+            <h3>The section never appeared</h3>
+            <p class="small">Scrolled the pane, waited for the render, and the equipment
+              details still were not there — or a required field could not be read.</p>
+            <p class="small" style="color:var(--text)">Engineering event, not an empty answer
+              handed to a customer.</p>
+          </div>
+          <div class="card">
+            <span class="chip blocked"><i class="dot"></i>PERSISTENCE_FAILED</span>
+            <h3>Read, but not saved</h3>
+            <p class="small">Extraction and validation both passed and the file could not be
+              written.</p>
+            <p class="small" style="color:var(--text)">Maia is told the lookup did not
+              complete. A result nobody can read later did not happen.</p>
+          </div>
+        </div>
+        <p class="small r" style="--i:3">
+          An error response carries <span class="mono">no data object at all</span> — so there
+          is nothing for the model to paraphrase into a plausible-sounding answer.
+        </p>
+      </section>
+
+      <!-- ── 9 ───────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="The repository seam">
+        <p class="kicker r" style="--i:0"><span class="n">08</span>The new persistence layer</p>
+        <h2 class="t-md r" style="--i:1">Snowflake is not ready. So results go to disk —
+          behind the interface Snowflake will use.</h2>
+        <div class="seam r" style="--i:2; margin-top:1.8cqh">
+          <div class="seam-head">EquipmentRepository</div>
+          <div class="branches">
+            <div class="branch active">
+              <span class="chip acc"><i class="dot"></i>Active now</span>
+              <span class="nm">LocalJsonRepository</span>
+              <span class="note">logs/sis-results/ — JSON + TXT + screenshots</span>
+            </div>
+            <div class="branch">
+              <span class="chip pending"><i class="dot"></i>Tests</span>
+              <span class="nm">MemoryEquipmentRepository</span>
+              <span class="note">in-process, same semantics</span>
+            </div>
+            <div class="branch later">
+              <span class="chip"><i class="dot"></i>Later</span>
+              <span class="nm">SnowflakeEquipmentRepository</span>
+              <span class="note">written, awaiting the warehouse</span>
+            </div>
+          </div>
+        </div>
+        <div class="cols c2 r" style="--i:3; margin-top:1.6cqh">
+          <div class="codeblock">
+<pre style="margin:0"><span class="c"># today</span>
+<span class="k">MAIA_REPOSITORY</span>=local_json
+<span class="k">MAIA_LOCAL_STORE_DIR</span>=logs/sis-results
+
+<span class="c"># when the warehouse lands</span>
+<span class="k">MAIA_REPOSITORY</span>=snowflake</pre>
+          </div>
+          <p class="body">That is the whole migration. Maia does not change, her tools do not
+            change, the gateway does not change, and the SIS automation does not change —
+            which is the entire reason the temporary store was put behind the permanent
+            store's interface rather than beside it.</p>
+        </div>
+      </section>
+
+      <!-- ── 10 ──────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="What lands on disk">
+        <p class="kicker r" style="--i:0"><span class="n">09</span>Per successful lookup</p>
+        <div class="cols c-5-7 align-start" style="gap:2.6cqw">
+          <div class="tree r" style="--i:1">
+<pre style="margin:0"><span class="dir">logs/sis-results/</span>
+  JAZ01865_run_01M32….json   <span class="cmt">record + raw</span>
+  JAZ01865_run_01M32….txt    <span class="cmt">for a person</span>
+  <span class="dir">JAZ01865_run_01M32…/</span>
+      page.png               <span class="cmt">as it loaded</span>
+      details.png            <span class="cmt">after the scroll</span>
+      parts.png              <span class="cmt">the parts group</span>
+  _index.json                <span class="cmt">newest per serial</span>
+  <span class="dir">_runs/</span>run_01M32….json      <span class="cmt">every step</span></pre>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:1.1cqh">
+            <h2 class="t-sm r" style="--i:2">37 top-level keys, and none of them invented.</h2>
+            <dl class="kv r" style="--i:3">
+              <dt>identity</dt><dd>serial_number · run_id · source · retrieved_at</dd>
+              <dt>page</dt><dd>final_url · page_title · selector_version</dd>
+              <dt>details</dt><dd>machine_serial_number · machine_build_date</dd>
+              <dt></dt><dd>engine_serial_number · engine_build_date</dd>
+              <dt>equipment</dt><dd>model · equipment_type · manufacturer · engine_family</dd>
+              <dt>parts</dt><dd>groups · columns · part_numbers · part_names</dd>
+              <dt>manuals</dt><dd>parts_manual_url · operation_manual_url</dd>
+              <dt>quality</dt><dd>field_provenance · quality · extraction_status</dd>
+              <dt class="y">raw_data</dt><dd class="y">the complete extraction, nothing dropped</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 11 ──────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Three rules">
+        <p class="kicker r" style="--i:0"><span class="n">10</span>Three rules the store enforces</p>
+        <div class="cols c3 r" style="--i:1; margin-top:.6cqh">
+          <div class="card lift">
+            <h3 class="y">Nothing is discarded</h3>
+            <p class="small"><span class="mono">raw_data.extracted_fields</span> keeps every
+              field the page gave, including keys the schema has no column for.</p>
+            <p class="small" style="color:var(--text)">A field with no column is still
+              evidence. Dropping it means driving a browser again to get it back.</p>
+          </div>
+          <div class="card lift">
+            <h3 class="y">A missing value is null</h3>
+            <p class="small">Never an empty string, never a default, never a guess — and
+              <span class="mono">field_provenance</span> records <em>why</em>.</p>
+            <p class="small" style="color:var(--text)">"The source does not publish this" and
+              "we failed to read it" are different facts, and the record keeps them apart.</p>
+          </div>
+          <div class="card lift">
+            <h3 class="y">A failed save fails the lookup</h3>
+            <p class="small">PERSIST runs before the run is marked successful. No file, no
+              success.</p>
+            <p class="small" style="color:var(--text)">A run recorded as SUCCESS whose data was
+              never written is a lie told to every later reader.</p>
+          </div>
+        </div>
+        <div class="card r" style="--i:2; margin-top:1.4cqh; border-color:var(--line-2)">
+          <p class="body" style="color:var(--text)">
+            <span class="strong y">Never written:</span> passwords, cookies, tokens,
+            authorization headers, session state, MFA codes. Every payload is scrubbed by key
+            <em>and</em> by exact value — so a credential cannot reach disk even under an
+            innocent-looking key.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── 12 ──────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Labelled honestly">
+        <p class="kicker r" style="--i:0"><span class="n">11</span>One guard worth its own slide</p>
+        <h2 class="t-md r" style="--i:1">A record is labelled by the source that
+          <span class="y">actually produced it</span>.</h2>
+        <div class="cols c2 r" style="--i:2; margin-top:1.4cqh">
+          <div class="card">
+            <span class="chip ok"><i class="dot"></i>Real run</span>
+            <div class="codeblock" style="margin-top:.6cqh; border:none; padding:.9cqw 0">
+<pre style="margin:0"><span class="k">"source"</span>: "Caterpillar SIS",
+<span class="k">"source_system"</span>: "cat_sis"</pre>
+            </div>
+          </div>
+          <div class="card">
+            <span class="chip blocked"><i class="dot"></i>Test fixture</span>
+            <div class="codeblock" style="margin-top:.6cqh; border:none; padding:.9cqw 0">
+<pre style="margin:0"><span class="k">"source"</span>: "Local test fixture
+           (NOT Caterpillar SIS)",
+<span class="k">"source_system"</span>: "local_fixture"</pre>
+            </div>
+          </div>
+        </div>
+        <p class="body r" style="--i:3; margin-top:1.2cqh">
+          The label comes from the source registry, never from a default. Writing
+          "Caterpillar SIS" onto a row that came from a test fixture is the one mislabelling
+          that would make every other guarantee in this platform worthless — so a test
+          asserts it cannot happen.
+        </p>
+      </section>
+
+      <!-- ── 13 ──────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="What proves it">
+        <p class="kicker r" style="--i:0"><span class="n">12</span>Proven by running it</p>
+        <h2 class="t-md r" style="--i:1">164 backend tests · 39 front-end checks · two live
+          browser runs</h2>
+        <div class="cols c2 align-start r" style="--i:2; margin-top:1.2cqh">
+          <div class="codeblock">
+<pre style="margin:0"><span class="c">a page shaped like SIS: scrolling pane,
+content below the fold, lazy render</span>
+
+pane scrolled in <span class="g">2 steps</span>, render settled
+machine_serial_number = <span class="g">SN123456</span>
+machine_build_date    = <span class="g">2014-08-02</span>
+engine_serial_number  = <span class="g">FIX00588</span>
+engine_build_date     = <span class="g">2014-06-30</span>
+Product - … groups    = <span class="g">2 (5 rows, 6 cols)</span>
+quality score <span class="g">0.909</span>, no violations
+JSON <span class="g">28 KB</span> · TXT · <span class="g">3 screenshots</span>
+second lookup: <span class="g">cache hit, no browser</span></pre>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:1.1cqh">
+            <p class="body"><span class="strong">Two defects found this way</span>, neither by
+              reading code:</p>
+            <ul class="ticks">
+              <li>An SPA renders the target section <em>after</em> the scroll that asks for it —
+                so stopping at "reached the bottom" found an empty page and called it a
+                changed website.</li>
+              <li>Making persistence file-backed changed the exception from
+                <span class="mono">DATABASE_ERROR</span> to <span class="mono">OSError</span>.
+                A full disk while caching a <span class="mono">SERIAL_NOT_FOUND</span> would
+                have replaced the correct answer with an opaque crash.</li>
+            </ul>
+            <p class="small">Both are now covered by tests that fail if the behaviour returns.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 14 ──────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Status">
+        <p class="kicker r" style="--i:0"><span class="n">13</span>Where it stands</p>
+        <div class="board-wrap r" style="--i:1">
+          <table class="board">
+            <thead><tr><th>Capability</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Maia chat → gateway → Playwright worker → back to Maia</td>
+                  <td><span class="chip ok"><i class="dot"></i>Proven</span></td></tr>
+              <tr><td>Cache-first flow, freshness policy, audit trail</td>
+                  <td><span class="chip ok"><i class="dot"></i>Proven</span></td></tr>
+              <tr><td>Scroll the SIS content pane, read the four detail fields</td>
+                  <td><span class="chip ok"><i class="dot"></i>Proven</span></td></tr>
+              <tr><td>Every <span class="mono">Product - …</span> group, all rows and columns</td>
+                  <td><span class="chip ok"><i class="dot"></i>Proven</span></td></tr>
+              <tr><td>Local JSON store — JSON, TXT, screenshots, store-first reads</td>
+                  <td><span class="chip ok"><i class="dot"></i>Proven</span></td></tr>
+              <tr><td>Automatic selector capture, MFA pause/resume</td>
+                  <td><span class="chip pending"><i class="dot"></i>Built</span></td></tr>
+              <tr><td>Snowflake warehouse</td>
+                  <td><span class="chip pending"><i class="dot"></i>Waiting</span></td></tr>
+              <tr class="hot"><td><span class="strong">A real SIS lookup — serial JAZ01865</span></td>
+                  <td><span class="chip blocked"><i class="dot"></i>Needs your PC</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="body r" style="--i:2">
+          The last row is not a coding task. It needs SIS credentials on the machine running
+          the worker — which is exactly where they belong, and never in the chat, the model or
+          this repository.
+        </p>
+      </section>
+
+      <!-- ── 15 ──────────────────────────────────────────────────────── -->
+      <section class="slide" data-title="Next step">
+        <p class="kicker r" style="--i:0"><span class="n">14</span>The next step is yours</p>
+        <h2 class="t-lg r" style="--i:1">One double-click.</h2>
+        <div class="serial-strip r" style="--i:2; margin-top:1cqh">
+          <span class="mono">SIS-LOOKUP.bat</span>
+          <span class="arrow">→</span>
+          <span class="mono y">JAZ01865</span>
+        </div>
+        <div class="codeblock r" style="--i:3; margin-top:1.4cqh">
+<pre style="margin:0"><span class="c">it prints, from the files it just wrote:</span>
+  JSON                     : logs\sis-results\JAZ01865_run_….json
+  TXT                      : logs\sis-results\JAZ01865_run_….txt
+  extracted field count    : <span class="k">nn</span> populated · <span class="k">nn</span> raw · <span class="k">nn</span> specifications
+  Machine Build Date       : <span class="k">YES / NO</span>
+  Engine Serial Number     : <span class="k">YES / NO</span>
+  Engine Build Date        : <span class="k">YES / NO</span>
+  Parts group(s)           : <span class="k">YES / NO</span>
+  Part number(s)           : <span class="k">YES / NO</span></pre>
+        </div>
+        <p class="body r" style="--i:4">
+          Add <span class="mono">-Headed</span> if sign-in asks for MFA — the browser stays
+          visible so you can complete it. Send that output back and the last row of the status
+          board closes.
+        </p>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="chrome">
+    <div class="nav">
+      <button class="btn" id="prev" type="button" aria-label="Previous slide">← Prev</button>
+      <button class="btn" id="next" type="button" aria-label="Next slide">Next →</button>
+    </div>
+    <div class="dots" id="dots" role="tablist" aria-label="Slides"></div>
+    <span class="count" id="count"><b>1</b> / 15</span>
+    <button class="btn" id="grid" type="button">All slides</button>
+  </div>
+  <p class="hint">
+    <kbd>←</kbd> <kbd>→</kbd> move · <kbd>O</kbd> overview · <kbd>Home</kbd> / <kbd>End</kbd> jump
+  </p>
+</div>
+
+<div class="overview" id="overview" hidden>
+  <h2>All slides</h2>
+  <div class="ov-grid" id="ovGrid"></div>
+</div>
+
+<script>
+(function () {
+  var slides  = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var dots    = document.getElementById('dots');
+  var count   = document.getElementById('count');
+  var prevBtn = document.getElementById('prev');
+  var nextBtn = document.getElementById('next');
+  var gridBtn = document.getElementById('grid');
+  var overlay = document.getElementById('overview');
+  var ovGrid  = document.getElementById('ovGrid');
+  var i = 0;
+
+  slides.forEach(function (s, n) {
+    var d = document.createElement('button');
+    d.className = 'rail-dot';
+    d.type = 'button';
+    d.setAttribute('role', 'tab');
+    d.setAttribute('aria-label', 'Slide ' + (n + 1) + ': ' + s.dataset.title);
+    d.addEventListener('click', function () { go(n); });
+    dots.appendChild(d);
+
+    var o = document.createElement('button');
+    o.className = 'ov-item';
+    o.type = 'button';
+    o.innerHTML = '<span class="n">' + String(n + 1).padStart(2, '0') + '</span>' +
+                  '<span class="t"></span>';
+    o.querySelector('.t').textContent = s.dataset.title;
+    o.addEventListener('click', function () { closeOverview(); go(n); });
+    ovGrid.appendChild(o);
+  });
+
+  var dotEls = Array.prototype.slice.call(dots.children);
+
+  function go(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) {
+      s.classList.toggle('is-active', k === n);
+      s.classList.toggle('is-prev', k < n);
+      s.setAttribute('aria-hidden', k === n ? 'false' : 'true');
+    });
+    dotEls.forEach(function (d, k) { d.setAttribute('aria-current', k === n ? 'true' : 'false'); });
+    count.innerHTML = '<b>' + (n + 1) + '</b> / ' + slides.length;
+    prevBtn.disabled = n === 0;
+    nextBtn.disabled = n === slides.length - 1;
+    i = n;
+  }
+
+  function openOverview()  { overlay.hidden = false; }
+  function closeOverview() { overlay.hidden = true;  }
+
+  prevBtn.addEventListener('click', function () { go(i - 1); });
+  nextBtn.addEventListener('click', function () { go(i + 1); });
+  gridBtn.addEventListener('click', function () {
+    overlay.hidden ? openOverview() : closeOverview();
+  });
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeOverview(); });
+
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'Escape' && !overlay.hidden) { closeOverview(); return; }
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(i - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); go(0); }
+    else if (e.key === 'End')  { e.preventDefault(); go(slides.length - 1); }
+    else if (e.key === 'o' || e.key === 'O') { overlay.hidden ? openOverview() : closeOverview(); }
+  });
+
+  // Swipe, for reading it on a phone.
+  var x0 = null;
+  document.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (x0 === null) return;
+    var dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 55) { go(dx < 0 ? i + 1 : i - 1); }
+    x0 = null;
+  }, { passive: true });
+
+  go(0);
+})();
+</script>
