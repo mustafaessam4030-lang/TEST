@@ -15,6 +15,24 @@ Set-Location $repo
 # Arabic in the chat page.
 $env:PYTHONUTF8 = "1"
 
+# Record everything to a file. If this window ever disappears, the reason is
+# in logs\maia-start.log rather than lost with the window.
+$logDir = Join-Path $repo "logs"
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+$logFile = Join-Path $logDir "maia-start.log"
+try { Start-Transcript -Path $logFile -Force | Out-Null } catch { }
+
+# Any unhandled PowerShell error must be shown, not swallowed by a closing window.
+trap {
+    Write-Host "`nUNEXPECTED ERROR" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
+    Write-Host "`nFull log: $logFile" -ForegroundColor Yellow
+    try { Stop-Transcript | Out-Null } catch { }
+    Read-Host "`nPress Enter to close"
+    exit 1
+}
+
 function Say([string]$t, [string]$c = "White") { Write-Host $t -ForegroundColor $c }
 function Step([int]$n, [string]$t) { Write-Host "`n[$n/5] $t" -ForegroundColor Cyan }
 function Fail([string]$t) { Say "`n$t" Red; Read-Host "`nPress Enter to close"; exit 1 }
@@ -262,4 +280,25 @@ Say @"
 "@ White
 
 # run_e2e opens the page itself, once the server is actually listening.
+# It runs in the foreground: while it is alive, the UI is on 5173 and the tool
+# gateway on 8080. Closing this window stops both, so we hold it open even when
+# the process dies, and say exactly why.
 & $venvPy scripts\e2e\run_e2e.py --source cat_sis --open-browser
+$code = $LASTEXITCODE
+
+Write-Host ""
+if ($code -eq 0) {
+    Say "Maia stopped normally (exit code 0)." Yellow
+} else {
+    Say "Maia exited with code $code - it did NOT stay running." Red
+    Say "The error is immediately above, and in:" Yellow
+    Say "  $logFile" Yellow
+    Say ""
+    Say "To see it again without this window closing, run:" Yellow
+    Say "  cd `"$repo`"" White
+    Say "  `$env:PYTHONUTF8 = `"1`"" White
+    Say "  .\.venv\Scripts\python.exe scripts\e2e\run_e2e.py --source cat_sis" White
+}
+try { Stop-Transcript | Out-Null } catch { }
+Read-Host "`nPress Enter to close"
+exit $code

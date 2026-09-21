@@ -12,3 +12,5 @@ artifacts/
 # Local SIS credentials — never committed, never packaged
 login.txt
 login
+
+logs/
