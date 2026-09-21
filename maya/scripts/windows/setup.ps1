@@ -35,7 +35,9 @@ Next, set your SIS credentials for THIS PowerShell session only
 (they never touch the repo, the gateway log, or the model):
 
     `$env:SIS_USERNAME = "your.sis.username"
-    `$env:SIS_PASSWORD = Read-Host "SIS password" -AsSecureString | ConvertFrom-SecureString -AsPlainText
+    `$secure = Read-Host "SIS password" -AsSecureString
+$env:SIS_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
 
 To persist them for your Windows user instead (stored by Windows, not by us):
 

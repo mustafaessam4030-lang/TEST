@@ -198,7 +198,9 @@ SIS access:
 ```powershell
 .\scripts\windows\setup.ps1
 $env:SIS_USERNAME = "your.sis.username"
-$env:SIS_PASSWORD = Read-Host "SIS password" -AsSecureString | ConvertFrom-SecureString -AsPlainText
+$secure = Read-Host "SIS password" -AsSecureString
+$env:SIS_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
 .\scripts\windows\start-maya.ps1
 ```
 

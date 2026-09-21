@@ -21,6 +21,15 @@ Credentials are read by the **worker process only**, from this machine's
 environment. They are never written to the repo, never logged, never sent to the
 model, and never leave your PC.
 
+## The short version
+
+1. Unzip the package.
+2. Double-click **START-MAYA.bat**.
+3. Type your SIS username and password when it asks.
+4. The chat opens — ask Maya for a serial number.
+
+That is the whole thing. Everything below is detail for when you want it.
+
 ## 1. Required software
 
 | What | Version | Why |
@@ -47,7 +56,9 @@ Session-only (safest — gone when you close the window):
 
 ```powershell
 $env:SIS_USERNAME = "your.sis.username"
-$env:SIS_PASSWORD = Read-Host "SIS password" -AsSecureString | ConvertFrom-SecureString -AsPlainText
+$secure = Read-Host "SIS password" -AsSecureString
+$env:SIS_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
 ```
 
 Persisted for your Windows user (stored by Windows, not by this project):
