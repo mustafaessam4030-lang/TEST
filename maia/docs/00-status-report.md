@@ -1,9 +1,9 @@
 # Maia Equipment Automation — Status Report
 
-**Project:** Maia (Maia) equipment-data capability for the Mantrac Control Tower
+**Project:** Maia — equipment-data capability for the Mantrac Control Tower
 **Source system:** Caterpillar SIS — https://sis2.cat.com/#/
-**Branch:** `claude/maia-equipment-automation-yxs92l` · as of 2026-09-21
-**Tests:** 128 backend · 39 front-end · 1 capture self-test — all passing
+**Branch:** `claude/maia-equipment-automation-yxs92l` · 26 commits · as of 2026-09-21
+**Tests:** 164 backend · 39 front-end · capture self-test · automatic discovery — all passing
 
 ---
 
@@ -22,6 +22,9 @@ drives a browser, holds a credential, or writes SQL.
 | Live progress in the chat while the automation runs | **Working** |
 | MFA / CAPTCHA detected, paused for a human, resumed in the same session | **Built; unexercised against SIS** |
 | Automatic selector capture (no script, no clicking) | **Built and proven; unexercised against SIS** |
+| Reading the equipment details below the fold (scroll the SIS content pane) | **Working, proven on a page shaped like SIS** |
+| Collecting every `Product - …` parts group, with all rows and columns | **Working, proven** |
+| Saving every successful lookup locally — JSON, TXT, screenshots | **Working, proven** |
 | Windows-local worker deployment | **Built; awaiting your run** |
 | A real SIS search returning real Caterpillar data | **Not done — needs your credentials on your PC** |
 
@@ -67,9 +70,34 @@ refuses to run if any anchor has moved.
 * Manual mode: a click-to-pick overlay, for anything automation cannot prove
 * Either way, unprovable targets are written `TODO_CAPTURE` and the run stops
 
+**Reading the detail page** — `app/adapters/sis_dom.js` + `cat_sis.py`
+
+* SIS renders the detail inside its own scrolling pane, with the equipment
+  details below its fold. Extraction scrolls **the pane, not the window**, waits
+  for the SPA to settle, then reads Machine Serial Number, Machine Build Date,
+  Engine Serial Number and Engine Build Date — in that order, first — and then
+  every `Product - …` group with all its rows and columns
+* One reader, shared by the capture tool and the adapter, so a selector is
+  proven by exactly the code that later reads it
+* The machine serial on the page must equal the serial that was searched, or
+  the run fails rather than answering about a different machine
+
 **Data layer** — Snowflake DDL, views and governance; a Databricks Delta variant;
 an in-memory store for development. Current state plus append-only history keyed
 on a content hash, so history records changes rather than polls.
+
+**Temporary local store** — `app/repositories/local_json_repo.py`
+
+* Snowflake is not ready, so every successful lookup is saved to
+  `logs/sis-results/` as `<SERIAL>_<RUN_ID>.json`, a readable `.txt`, and three
+  screenshots (`page`, `details`, `parts`)
+* It sits behind the same `EquipmentRepository` interface as Snowflake, so
+  swapping them is one setting and changes nothing in Maia or the automation
+* `raw_data` keeps every field the page published, including ones the schema has
+  no column for — dropping one means driving a browser again to get it back
+* **A save that fails fails the lookup**: `PERSIST` runs before the run is
+  marked successful, and a failed write returns `PERSISTENCE_FAILED` rather than
+  telling Maia the lookup worked
 
 **Operations** — `make doctor` (readiness), `make e2e` (whole stack),
 `make capture`, `make package`; PowerShell equivalents under `scripts/windows/`.
@@ -132,6 +160,15 @@ extraction stopped with `EXTRACTION_ERROR` naming both values; a detail page
 with no details section stopped with `WEBSITE_CHANGED` rather than an empty
 answer. Both were run, not reasoned about.
 
+**The local store, through the real service.** A lookup driven through
+`EquipmentService` with a real browser wrote a 28 KB JSON (37 top-level keys), a
+3.4 KB readable `.txt` and all three screenshots; the record carried both parts
+groups, six columns and five part numbers; `raw_data` carried fields with no
+schema column; and the second lookup for the same serial was served from the
+store with **no browser** (`cache hit: true`). The saved record was labelled with
+the source that produced it — a fixture run saves as *"Local test fixture (NOT
+Caterpillar SIS)"*, never as SIS.
+
 ---
 
 ## 4. Defects found by running it, not by testing parts
@@ -155,7 +192,12 @@ production; two would have failed silently.
    after learning.
 6. **Fixture output was written to the real SIS contract file** — the exact
    contamination that must never happen. Now blocked by origin, with a test.
-7. Discovery treated a `<tr class="result-row">` as its own container; pre-flight
+7. **A file-backed store throws different exceptions.** Making persistence real
+   changed `DATABASE_ERROR` into `OSError`, and the three "must never lose the
+   answer" guards caught only the former. A full disk while caching a
+   `SERIAL_NOT_FOUND` would have replaced the true answer with an opaque crash.
+   Found by asking what a full disk actually raises, not by a failing test.
+8. Discovery treated a `<tr class="result-row">` as its own container; pre-flight
    failed on a results container that only exists after a search; a partial
    capture could overwrite a working contract; a busy port left a half-started
    stack.
@@ -179,9 +221,13 @@ Claude's container additionally has no display and no route for you to complete
 MFA, which is why the worker belongs on your Windows PC. `make doctor` reports
 this precisely on any machine.
 
+The specific run waiting on you is **JAZ01865**, and §7 is the one command for
+it.
+
 **Also outstanding**
 
-* Snowflake is implemented but has only been run against the in-memory store
+* Snowflake is implemented but has only been run against the in-memory store;
+  the local JSON store is what runs today
 * The async worker tier (queue + separate worker pods) is stubbed; the
   synchronous path with a 202 fallback is what runs today
 * MFA pause/resume and the circuit breaker are built and unit-tested but have
@@ -234,6 +280,34 @@ Open http://127.0.0.1:5173/maia.html and ask:
 The first search learns the page layout automatically; later searches skip
 straight to the lookup.
 
+### One real lookup, without the chat
+
+To run a single lookup and see exactly what it captured:
+
+```
+Double-click SIS-LOOKUP.bat   →   type JAZ01865
+```
+
+or, equivalently:
+
+```powershell
+.\scripts\windows\sis-lookup.ps1 -Serial JAZ01865      # add -Headed if MFA is asked for
+```
+
+It prints the JSON path, the TXT path, the extracted field count, and a YES/NO
+for each of Machine Serial Number, Machine Build Date, Engine Serial Number,
+Engine Build Date, the parts groups and the part numbers. For a lookup that went
+through the chat instead, the same report comes from:
+
+```powershell
+python scripts\e2e\show_sis_result.py --serial JAZ01865
+```
+
+`python scripts\e2e\doctor.py` checks the store before any of this — which
+implementation is active, whether the folder is genuinely writable, and how much
+disk is free. Since a failed write now fails the lookup, that is a precondition
+rather than a nicety.
+
 ---
 
 ## 8. Document map
@@ -259,6 +333,8 @@ straight to the lookup.
 
 ## 9. Change log
 
+Newest last. Every row is a commit on this branch.
+
 | Commit | What it delivered |
 |---|---|
 | `22056a0` | The platform: gateway, decision flow, adapters, data layer, Maia's tool layer |
@@ -271,6 +347,11 @@ straight to the lookup.
 | `7f02d5b` | Credential reference, readiness doctor, onboarding |
 | `0625e5f` | Windows deployment and fully automatic capture |
 | `6f94899` | Self-provisioning: the first search learns the contract |
-| *(this change)* | A temporary local JSON store behind the repository seam: JSON + TXT + screenshots per lookup, store-first reads, and PERSISTENCE_FAILED when a save fails |
+| `e62b218` | This status report |
+| `8d62ef2` `42d0525` `22d72c4` | One-click Windows launcher; credentials from `login.txt`; Maya → **Maia** |
+| `4b9445f` `fd35c61` `5df3bc5` `a35f9a0` `381f38a` | Five Windows runtime failures, each diagnosed from your logs: the chat opened before the server was listening, the credentials file was named something else, a browser that could not open said nothing, text I/O used the Windows code page instead of UTF-8, and the launcher window closed on an error |
+| `a490d70` | Wait for the B2C sign-in form to render; strip the CR from the captured path |
 | `c39fc05` | A run explainer; a partial capture can no longer occupy the contract path |
-| *(prev)* | The equipment-details block: scroll the SIS content pane, read the four machine/engine fields first, collect every `Product - …` group, cross-check the serial |
+| `dba04e8` | **The equipment details:** scroll the SIS content pane, read the four machine/engine fields first, collect every `Product - …` group, cross-check the serial |
+| `b45077f` | **The temporary local store:** JSON + TXT + screenshots per lookup, store-first reads, and `PERSISTENCE_FAILED` when a save fails |
+| `60f6dd6` | Store hardening (a full disk no longer replaces a correct answer), a doctor check, and a viewer for a saved lookup |
