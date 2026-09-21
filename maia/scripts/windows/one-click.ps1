@@ -172,20 +172,48 @@ New-Item -ItemType File -Path $marker -Force | Out-Null
 
 # ── 3. Sign-in details ──────────────────────────────────────────────────────
 Step 3 "SIS sign-in details"
-$loginFile = if (Test-Path (Join-Path $repo "login.txt")) { "login.txt" }
-             elseif (Test-Path (Join-Path $repo "login")) { "login" } else { $null }
+
+# Windows hides known extensions, so a file the user renamed to "login.txt" is
+# very often really "login.txt.txt". Accept any login* file rather than making
+# them fight Explorer.
+$loginFile = Get-ChildItem -Path $repo -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^login(\.|$)' -and $_.Name -notlike 'login.example*' } |
+    Select-Object -First 1
+
+# They may also have filled in the example file without renaming it.
+if (-not $loginFile) {
+    $example = Join-Path $repo "login.example.txt"
+    if (Test-Path $example) {
+        $body = Get-Content $example -Raw
+        if ($body -notmatch 'YOUR\.SIS\.USERNAME') {
+            $loginFile = Get-Item $example
+            Say "      Using login.example.txt - it has been filled in." Yellow
+        }
+    }
+}
 
 if ($loginFile) {
-    $env:MAIA_SIS_SECRET_REF = "file://$loginFile"
-    Say "      Reading them from $loginFile - nothing to type." Green
+    $content = Get-Content $loginFile.FullName -Raw
+    if ($content -match 'YOUR\.SIS\.USERNAME' -or $content -match 'YOUR SIS PASSWORD') {
+        Say "      $($loginFile.Name) still has the example text in it." Red
+        Say "      Open it and replace both lines with your real details." Red
+        Fail "Edit $($loginFile.FullName) and run this again."
+    }
+    $env:MAIA_SIS_SECRET_REF = "file://$($loginFile.Name)"
+    Say "      Reading them from $($loginFile.Name) - nothing to type." Green
 } elseif ($env:SIS_USERNAME -and $env:SIS_PASSWORD) {
     $env:MAIA_SIS_SECRET_REF = "env://SIS"
     Say "      Using the ones already set in this window." Green
 } else {
-    Say "      No login.txt found. Create one next to START-MAIA.bat with:" Yellow
-    Say "          username=YOUR.SIS.USERNAME" Yellow
-    Say "          password=YOUR SIS PASSWORD" Yellow
-    Say "      (copy login.example.txt and rename it to login.txt)" Yellow
+    Say "      No login file found in:" Yellow
+    Say "        $repo" Yellow
+    $present = (Get-ChildItem -Path $repo -File -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty Name) -join ", "
+    Say "      That folder contains: $present" Yellow
+    Say ""
+    Say "      Tip: Windows hides file extensions, so a file you renamed to" Yellow
+    Say "      'login.txt' may really be 'login.txt.txt'. Any name starting" Yellow
+    Say "      with 'login' works - the list above shows the real names." Yellow
     Say "`n      Or type them now, for this window only:" Yellow
     $env:SIS_USERNAME = Read-Host "`n      SIS username"
     $secure = Read-Host "      SIS password (typing is hidden)" -AsSecureString

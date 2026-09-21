@@ -58,6 +58,10 @@ def check_credentials() -> None:
         creds = resolve_secret(ref)          # the value is never printed or returned upward
         add(OK, "SIS credentials", f"reference {ref} resolves "
                                    f"(username {len(creds['username'])} chars, password hidden)")
+    except FileNotFoundError as exc:
+        add(FAIL, "SIS credentials", str(exc)[:120],
+            "create login.txt next to START-MAIA.bat (Windows may have named it login.txt.txt "
+            "— any name starting with 'login' is accepted by the launcher)")
     except AutomationError as exc:
         add(FAIL, "SIS credentials", f"{ref}: {exc.message}",
             "export MAIA_SIS_SECRET_REF=vault://kv/maia/cat_sis (with VAULT_ADDR/VAULT_TOKEN), "
