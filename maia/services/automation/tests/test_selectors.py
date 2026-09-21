@@ -258,3 +258,12 @@ def test_contract_file_is_reserved_for_the_real_sis_origin() -> None:
     source = (ROOT / "scripts" / "capture" / "capture_selectors.py").read_text()
     assert 'host.endswith("sis2.cat.com")' in source
     assert "or not is_real_sis" in source
+
+
+def test_an_incomplete_capture_never_becomes_the_contract() -> None:
+    """A file of TODO_CAPTURE entries at config/sis_selectors.json reads as
+    "we have a contract" to every later check, while proving nothing. Only a
+    complete capture may occupy that path — existing file or not."""
+    source = (ROOT / "scripts" / "capture" / "capture_selectors.py").read_text(encoding="utf-8")
+    assert "usable = complete and not self.missing_required()" in source
+    assert "or not usable):" in source

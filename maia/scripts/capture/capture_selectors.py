@@ -202,6 +202,7 @@ class CaptureSession:
         # Header/nav wording on the sign-in page, so a post-login marker can be
         # identified as "present now, absent before" rather than assumed.
         self.login_page_signature: list[str] = []
+        self.final_title: str | None = None
         # Where the search screen lives, so verification can get back to it after
         # the run has walked into a detail page.
         self.search_url: str | None = None
@@ -910,6 +911,13 @@ class CaptureSession:
         return sorted(k for k in required
                       if k not in self.records or self.records[k].status == "TODO_CAPTURE")
 
+    async def note_final_state(self) -> None:
+        """Record where the browser ended up, for the post-mortem."""
+        try:
+            self.final_title = await self.page.title()
+        except Exception:
+            self.final_title = None
+
     def write(self, verification: dict[str, Any] | None,
               search: dict[str, Any] | None, *, complete: bool = False) -> tuple[Path, Path]:
         payload = {
@@ -929,6 +937,8 @@ class CaptureSession:
             "steps": self.steps,
             "unresolved": self.unresolved(),
             "missing_required": self.missing_required(),
+            "final_url": (self.page.url if self.page else None),
+            "final_title": self.final_title,
             "reconnaissance": self.recon,
             "verification": verification,
             "real_search": search,
@@ -949,15 +959,18 @@ class CaptureSession:
         if not is_real_sis and self.mode in ("live", "auto", "auto-login"):
             print(f"  ! base host is {host or 'not http'} — not Caterpillar SIS, so the "
                   f"contract file is NOT written")
+        # An incomplete capture must never become the contract, even when no
+        # contract exists yet: a file full of TODO_CAPTURE at the live path reads
+        # as "we have a contract" to every later check, when in fact we do not.
+        usable = complete and not self.missing_required()
         if (self.mode not in ("live", "auto", "auto-login") or not captured_anything
-                or not is_real_sis):
-            # A run that captured nothing has no business creating a contract file.
+                or not is_real_sis or not usable):
             target = self.outdir / f"sis_selectors.{self.mode}.json"
         else:
             target = ROOT / "config" / "sis_selectors.json"
             # A stopped or partial run must not overwrite a contract that already
             # works. The partial result goes to the run folder instead.
-            if target.exists() and not complete:
+            if target.exists() and not complete:   # kept: never clobber a good one
                 existing_ok = not json.loads(target.read_text(encoding="utf-8")).get("missing_required", ["?"])
                 if existing_ok:
                     target = self.outdir / "sis_selectors.partial.json"
@@ -1016,6 +1029,7 @@ async def run(args: argparse.Namespace) -> int:
                 return 2
             verification = await session.verify()
             search = await session.real_search()
+            await session.note_final_state()
             complete = bool(verification.get("passed") and search.get("ok"))
             path, report = session.write(verification, search, complete=complete)
             await session.close()
