@@ -53,6 +53,16 @@ from app.adapters.selector_health import (  # noqa: E402
     verify_search_button, verify_serial_search_input,
 )
 
+COUNT_VISIBLE_INPUTS_JS = """() => {
+  const vis = el => { const r = el.getBoundingClientRect(); return !!(r.width || r.height); };
+  const all = [...document.querySelectorAll('input')].filter(vis);
+  const t = i => (i.getAttribute('type') || '').toLowerCase();
+  return {
+    text_inputs: all.filter(i => ['text', 'email', 'tel', ''].includes(t(i))).length,
+    password_inputs: all.filter(i => t(i) === 'password').length,
+  };
+}"""
+
 PICKER_JS = (Path(__file__).parent / "picker.js").read_text(encoding="utf-8")
 DISCOVER_JS = (Path(__file__).parent / "discover.js").read_text(encoding="utf-8")
 FIXTURE = Path(__file__).parent / "fixture.html"
@@ -480,6 +490,11 @@ class CaptureSession:
         # Anything the resolver returned is redacted out of every artifact from here.
         self.redact = Redactor([password])
 
+        # The sign-in page is a single-page app: at DOMContentLoaded its title is
+        # still "Loading..." and it has no fields at all. Looking for a username
+        # box at that moment finds nothing and then reports "no sign-in form",
+        # which says something false about the page rather than something true.
+        form_state = await self._wait_for_signin_form()
         await self.shot("00-entry")
         await self.snapshot("00-entry")
         try:
@@ -492,6 +507,10 @@ class CaptureSession:
         except Exception:
             self.login_page_signature = []
         self.log(f"landed on {self.page.url}")
+        self.log(f"sign-in page: title={form_state['title']!r} "
+                 f"text_inputs={form_state['text_inputs']} "
+                 f"password_inputs={form_state['password_inputs']} "
+                 f"after {form_state['waited_ms']} ms")
 
         blocker = await self.detect_blockers("entry")
         if blocker:
@@ -516,8 +535,14 @@ class CaptureSession:
         has_pwd = bool(await pwd_field.count()) and await pwd_field.is_visible()
 
         if user_field is None and not has_pwd:
-            self.stopped_reason = ("no sign-in form found on the landing page "
-                                   f"(url={self.page.url[:120]})")
+            self.stopped_reason = (
+                "no sign-in form appeared on the landing page after "
+                f"{form_state['waited_ms']} ms "
+                f"(url={self.page.url[:120]}, title={form_state['title']!r}, "
+                f"text_inputs={form_state['text_inputs']}, "
+                f"password_inputs={form_state['password_inputs']})")
+            await self.shot("01-no-signin-form")
+            await self.snapshot("01-no-signin-form")
             return False
 
         if user_field is not None:
@@ -606,6 +631,38 @@ class CaptureSession:
             except Exception:
                 continue
         return None
+
+    async def _wait_for_signin_form(self, timeout_ms: int = 30000) -> dict[str, Any]:
+        """Wait until the sign-in page has actually rendered a field.
+
+        Reports what it saw either way, so a failure can describe the screen
+        instead of only saying that nothing matched.
+        """
+        import time as _time
+
+        started = _time.monotonic()
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=min(timeout_ms, 20000))
+        except Exception:
+            pass                                    # a chatty page never idles; keep going
+        deadline = _time.monotonic() + timeout_ms / 1000.0
+        counts = {"text_inputs": 0, "password_inputs": 0}
+        while _time.monotonic() < deadline:
+            try:
+                counts = await self.page.evaluate(COUNT_VISIBLE_INPUTS_JS)
+            except Exception:
+                counts = {"text_inputs": 0, "password_inputs": 0}
+            if counts["text_inputs"] or counts["password_inputs"]:
+                break
+            await self.page.wait_for_timeout(500)
+
+        title = ""
+        try:
+            title = await self.page.title()
+        except Exception:
+            pass
+        return {**counts, "title": title,
+                "waited_ms": int((_time.monotonic() - started) * 1000)}
 
     async def _submit_auth_step(self) -> None:
         for selector in ["button[type='submit']", "input[type='submit']",

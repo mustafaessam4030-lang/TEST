@@ -109,14 +109,17 @@ class CaptureService:
                     "The source's layout could not be learned.",
                     details={"source": source_id, "capture_output": tail})
 
-            payload = selector_store.load(Path(written.group(1)))
+            # Windows line endings put a CR inside the captured group; a path
+            # ending in \r exists nowhere.
+            written_path = Path(written.group(1).strip())
+            payload = selector_store.load(written_path)
             missing = selector_store.missing_required(payload)
             if missing:
                 raise AutomationError(
                     ErrorCode.WEBSITE_CHANGED,
                     "The source's layout was only partly learned; nothing was guessed.",
                     details={"source": source_id, "unresolved": missing,
-                             "report": str(Path(written.group(1)).parent),
+                             "report": str(written_path.parent),
                              "capture_output": tail})
 
             merged = selector_store.merge_into_config(entry.config, payload)
@@ -127,4 +130,4 @@ class CaptureService:
             return {"status": "learned", "source": source_id,
                     "verified_selectors": len(verified),
                     "selector_version": payload.get("selector_version"),
-                    "written_to": written.group(1)}
+                    "written_to": str(written_path)}
