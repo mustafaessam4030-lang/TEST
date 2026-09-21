@@ -51,13 +51,13 @@ class SessionVault:
         if time.time() - path.stat().st_mtime > max_age_s:
             return None
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
 
     def save(self, source_id: str, slot: str, state: dict[str, Any]) -> None:
         path = self._path(source_id, slot)
-        path.write_text(json.dumps(state))
+        path.write_text(json.dumps(state), encoding="utf-8")
         os.chmod(path, 0o600)
 
     def invalidate(self, source_id: str, slot: str) -> None:
@@ -168,7 +168,7 @@ class BrowserPool:
             await ctx.page.screenshot(path=str(shot), full_page=False)
             out["screenshot"] = str(shot)
             html = ctx.artifact_dir / f"{step}.html"
-            html.write_text((await ctx.page.content())[:500_000])
+            html.write_text((await ctx.page.content())[:500_000], encoding="utf-8")
             out["html"] = str(html)
             out["url"] = ctx.page.url
         except Exception as exc:  # pragma: no cover

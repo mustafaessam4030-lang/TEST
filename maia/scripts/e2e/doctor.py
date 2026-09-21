@@ -52,7 +52,7 @@ def check_credentials() -> None:
     from app.core.secrets import resolve_secret
     import yaml
 
-    cfg = yaml.safe_load((ROOT / "config" / "sources" / "cat_sis.yaml").read_text())
+    cfg = yaml.safe_load((ROOT / "config" / "sources" / "cat_sis.yaml").read_text(encoding="utf-8"))
     ref = os.environ.get("MAIA_SIS_SECRET_REF") or (cfg.get("auth") or {}).get("secret_ref", "")
     try:
         creds = resolve_secret(ref)          # the value is never printed or returned upward

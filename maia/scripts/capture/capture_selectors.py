@@ -53,8 +53,8 @@ from app.adapters.selector_health import (  # noqa: E402
     verify_search_button, verify_serial_search_input,
 )
 
-PICKER_JS = (Path(__file__).parent / "picker.js").read_text()
-DISCOVER_JS = (Path(__file__).parent / "discover.js").read_text()
+PICKER_JS = (Path(__file__).parent / "picker.js").read_text(encoding="utf-8")
+DISCOVER_JS = (Path(__file__).parent / "discover.js").read_text(encoding="utf-8")
 FIXTURE = Path(__file__).parent / "fixture.html"
 DEFAULT_BASE = "https://sis2.cat.com/#/"
 CHROMIUM_PATH = os.environ.get("MAIA_CHROMIUM_PATH") or None
@@ -290,7 +290,7 @@ class CaptureSession:
     async def snapshot(self, name: str) -> None:
         try:
             html = self.redact(await self.page.content())
-            (self.outdir / f"{name}.html").write_text(html[:2_000_000])
+            (self.outdir / f"{name}.html").write_text(html[:2_000_000], encoding="utf-8")
         except Exception as exc:
             self.log(f"DOM snapshot failed for {name}: {exc}")
 
@@ -878,7 +878,7 @@ class CaptureSession:
             "stopped_reason": self.stopped_reason,
         }
         report = self.outdir / "report.json"
-        report.write_text(self.redact(json.dumps(payload, indent=2, ensure_ascii=False)))
+        report.write_text(self.redact(json.dumps(payload, indent=2, ensure_ascii=False)), encoding="utf-8")
 
         # Fixture and recon output must never be mistaken for a real SIS contract.
         captured_anything = any(r.status != "TODO_CAPTURE" and r.selector
@@ -901,12 +901,12 @@ class CaptureSession:
             # A stopped or partial run must not overwrite a contract that already
             # works. The partial result goes to the run folder instead.
             if target.exists() and not complete:
-                existing_ok = not json.loads(target.read_text()).get("missing_required", ["?"])
+                existing_ok = not json.loads(target.read_text(encoding="utf-8")).get("missing_required", ["?"])
                 if existing_ok:
                     target = self.outdir / "sis_selectors.partial.json"
                     print(f"  ! keeping the existing contract; partial run written to "
                           f"{target.relative_to(ROOT)}")
-        target.write_text(self.redact(json.dumps(payload, indent=2, ensure_ascii=False)))
+        target.write_text(self.redact(json.dumps(payload, indent=2, ensure_ascii=False)), encoding="utf-8")
         # Machine-readable so the gateway can pick the result up without guessing.
         print(f"SELECTORS_WRITTEN={target}", flush=True)
         return target, report

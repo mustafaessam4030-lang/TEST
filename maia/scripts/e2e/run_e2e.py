@@ -37,7 +37,7 @@ SOURCE_HTML = ROOT / "frontend" / "mantrac-support-v9.html"
 def wire_ui(api_base: str, source: str) -> Path:
     """Publish the chat UI with the gateway address baked in. Source stays untouched."""
     BUILD.mkdir(exist_ok=True)
-    html = SOURCE_HTML.read_text()
+    html = SOURCE_HTML.read_text(encoding="utf-8")
     html, n = re.subn(r"(apiBase\s*:\s*)'[^']*'", rf"\1'{api_base}'", html, count=1)
     if not n:
         sys.exit("could not find CFG.equipment.apiBase in the UI — was v9 rebuilt?")
@@ -45,11 +45,11 @@ def wire_ui(api_base: str, source: str) -> Path:
     if not m:
         sys.exit("could not find CFG.equipment.source in the UI — was v9 rebuilt?")
     target = BUILD / "maia.html"
-    target.write_text(html)
+    target.write_text(html, encoding="utf-8")
     # Serve it under every name a person might already have in a bookmark, and
     # at the bare root, so a stale URL is never mistaken for a dead server.
     for alias in ("index.html", "maya.html"):
-        (BUILD / alias).write_text(html)
+        (BUILD / alias).write_text(html, encoding="utf-8")
     # The offline fixture page is served next to the chat so the worker can reach it.
     fixture = ROOT / "scripts" / "capture" / "fixture.html"
     if fixture.exists():
@@ -123,6 +123,7 @@ def main() -> int:
         "MAIA_FIXTURE_USERNAME": "fixture-user",
         "MAIA_FIXTURE_PASSWORD": "fixture-pass",
         "PYTHONUNBUFFERED": "1",
+        "PYTHONUTF8": "1",          # never let a Windows code page decide encoding
     }
     if os.environ.get("MAIA_CHROMIUM_PATH"):
         env["MAIA_CHROMIUM_PATH"] = os.environ["MAIA_CHROMIUM_PATH"]

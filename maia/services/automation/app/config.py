@@ -62,7 +62,7 @@ class Settings(BaseSettings):
         p = Path(path)
         if not p.exists():
             return {}
-        return yaml.safe_load(p.read_text()) or {}
+        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
     def source_config(self, source_id: str) -> dict[str, Any]:
         return self.load_yaml(os.path.join(self.sources_dir, f"{source_id}.yaml"))

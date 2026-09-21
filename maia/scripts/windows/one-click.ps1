@@ -10,6 +10,11 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repo
 
+# The project's files are UTF-8. Without this, Python on Windows reads them in
+# the locale code page (cp1252 on an English install), which cannot decode the
+# Arabic in the chat page.
+$env:PYTHONUTF8 = "1"
+
 function Say([string]$t, [string]$c = "White") { Write-Host $t -ForegroundColor $c }
 function Step([int]$n, [string]$t) { Write-Host "`n[$n/5] $t" -ForegroundColor Cyan }
 function Fail([string]$t) { Say "`n$t" Red; Read-Host "`nPress Enter to close"; exit 1 }

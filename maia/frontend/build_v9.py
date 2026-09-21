@@ -13,7 +13,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "mantrac-support-v8.html"
 OUT = HERE / "mantrac-support-v9.html"
-MODULE = (HERE / "maia-equipment.js").read_text()
+MODULE = (HERE / "maia-equipment.js").read_text(encoding="utf-8")
 
 CSS = """
 /* ── EQUIPMENT CARD (v9) ── */
@@ -218,7 +218,7 @@ ${docs.length?"""),
 
 
 def main() -> int:
-    html = SRC.read_text()
+    html = SRC.read_text(encoding="utf-8")
     for name, anchor, replacement in ANCHORS:
         count = html.count(anchor)
         if count != 1:
@@ -227,8 +227,9 @@ def main() -> int:
         html = html.replace(anchor, replacement, 1)
     html = html.replace("<title>Mantrac — Customer Support · Maia AI</title>",
                         "<title>Mantrac — Customer Support · Maia AI (v9)</title>", 1)
-    OUT.write_text(html)
-    print(f"OK  wrote {OUT.name}  ({len(html):,} bytes, +{len(html) - len(SRC.read_text()):,})")
+    OUT.write_text(html, encoding="utf-8")
+    added = len(html) - len(SRC.read_text(encoding="utf-8"))
+    print(f"OK  wrote {OUT.name}  ({len(html):,} bytes, +{added:,})")
     return 0
 
 

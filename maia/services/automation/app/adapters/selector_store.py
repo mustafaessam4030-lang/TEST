@@ -31,7 +31,7 @@ def load(path: str | Path) -> dict[str, Any]:
     if not p.exists():
         return {}
     try:
-        payload = json.loads(p.read_text())
+        payload = json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise SelectorStoreError(f"{p} is not valid JSON: {exc}") from exc
     if not isinstance(payload.get("selectors"), dict):

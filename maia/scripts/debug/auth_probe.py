@@ -222,7 +222,7 @@ async def main() -> int:
             "root_cause": root_cause, "next_action": next_action,
             "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-        (out / "auth-probe-report.json").write_text(json.dumps(report, indent=2))
+        (out / "auth-probe-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         await browser.close()
 
     print("\n" + "═" * 72)
