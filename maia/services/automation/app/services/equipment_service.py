@@ -167,15 +167,31 @@ class EquipmentService:
                 execution_time_ms=int((time.monotonic() - started) * 1000),
                 automation_run_id=recorder.run_id, retrieved_at=record.retrieved_at)
         finally:
-            await self.repo.release_idempotency(key)
+            try:
+                await self.repo.release_idempotency(key)
+            except Exception as exc:  # the claim expires on its own; the answer must not
+                log(logger, logging.WARNING, "repo.release_failed", error=str(exc)[:160])
 
     async def _persist(self, record: EquipmentRecord, extraction: ExtractionArtifact | None,
                        *, serial: str, source: str) -> None:
         """Store the record, or fail the whole lookup. There is no third outcome."""
         try:
             await self.repo.upsert(record, extraction=extraction)
-        except AutomationError:
-            raise
+        except AutomationError as err:
+            if err.code == ErrorCode.PERSISTENCE_FAILED:
+                raise
+            # A warehouse raises DATABASE_ERROR, which on its own reads as
+            # "retry later". At this step it means something sharper — the data
+            # was retrieved and then lost — so it is reported as exactly that.
+            log(logger, logging.ERROR, "equipment.persist_failed",
+                serial_number=serial, source=source, error_code=err.code.value)
+            raise AutomationError(
+                ErrorCode.PERSISTENCE_FAILED,
+                "The data was retrieved from the source but could not be saved.",
+                details={"source": source, "store": type(self.repo).__name__,
+                         "error_code": err.code.value,
+                         "error": str(err.details.get("driver_error") or err.message)[:200]},
+                step="PERSIST") from err
         except Exception as exc:
             log(logger, logging.ERROR, "equipment.persist_failed",
                 serial_number=serial, source=source, error=str(exc)[:200])

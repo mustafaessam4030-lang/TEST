@@ -13,6 +13,12 @@ artifacts/
 login.txt
 login
 
+# Local Snowflake connection and keys — never committed, never packaged
+snowflake.txt
+snowflake.txt.txt
+*.p8
+keys/
+
 # Real equipment data, screenshots and run records. Never committed,
 # never packaged — but the folder's README is, so the layout is documented.
 # (git cannot un-ignore a file inside an ignored DIRECTORY, so the

@@ -22,44 +22,11 @@ from app.core.errors import AutomationError, ErrorCode, USER_HINT, http_status
 from app.core.secrets import resolve_secret
 from app.adapters import selector_store
 from app.domain.freshness import FreshnessPolicy
+from app.repositories.factory import build_repository  # noqa: F401 - re-exported
 from app.services.capture_service import CaptureService
 from app.services.equipment_service import EquipmentService
 
 logger = logging.getLogger(__name__)
-
-
-def build_repository(settings: Any) -> Any:
-    if settings.repository == "snowflake":
-        from app.repositories.snowflake_repo import SnowflakeEquipmentRepository
-
-        return SnowflakeEquipmentRepository({
-            "account": settings.snowflake_account,
-            "user": settings.snowflake_user,
-            "role": settings.snowflake_role,
-            "warehouse": settings.snowflake_warehouse,
-            "database": settings.snowflake_database,
-            "schema": settings.snowflake_schema,
-            "private_key_file": (settings.snowflake_private_key_ref or "").removeprefix("file://")
-            or None,
-        })
-    if settings.repository == "memory":
-        from app.repositories.memory_repo import MemoryEquipmentRepository
-
-        return MemoryEquipmentRepository()
-
-    # Default: the temporary local JSON store. Every successful lookup lands in
-    # logs/sis-results/ as JSON + TXT + screenshots, and a failed write fails
-    # the lookup rather than being reported as a success.
-    from app.repositories.local_json_repo import LocalJsonRepository
-
-    store_dir = Path(settings.local_store_dir)
-    if not store_dir.is_absolute():
-        store_dir = Path(__file__).resolve().parents[3] / store_dir
-    # The live credential values, held only so they can be searched for and
-    # masked in anything written. They are never logged or returned.
-    secrets = tuple(v for v in (os.environ.get("SIS_USERNAME"),
-                                os.environ.get("SIS_PASSWORD")) if v)
-    return LocalJsonRepository(store_dir, secrets=secrets)
 
 
 def build_registry(settings: Any) -> SourceRegistry:
@@ -141,6 +108,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await pool.stop()
+        if hasattr(repo, "close"):
+            repo.close()
 
 
 app = FastAPI(

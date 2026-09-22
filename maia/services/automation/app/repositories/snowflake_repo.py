@@ -1,14 +1,20 @@
 """Snowflake repository. MERGE for current state, append-only history, run audit.
 
 Runs blocking driver calls in a thread so the async API stays responsive.
-Credentials come from a key reference resolved at startup, never from the prompt
-and never from a request.
+Credentials come from `snowflake_config` (environment or a local snowflake.txt),
+never from the prompt and never from a request, and are masked out of every
+error message this module writes.
+
+The driver's connection is not thread-safe, so every statement holds one lock.
+A session that expired while the service sat idle is re-opened once and the
+statement retried; anything else is a DATABASE_ERROR.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -78,10 +84,37 @@ SELECT UUID_STRING(), %(serial_number)s, %(source_system)s, PARSE_JSON(%(snapsho
        CURRENT_TIMESTAMP()
 """
 
-SELECT_CURRENT = """
-SELECT OBJECT_CONSTRUCT(*) AS ROW_JSON
+# Explicit columns, not OBJECT_CONSTRUCT(*): the driver then hands back real
+# datetimes for the TIMESTAMP_TZ columns instead of a display string the
+# freshness policy would have to guess the format of.
+CURRENT_COLUMNS = """
+SERIAL_NUMBER, SOURCE_SYSTEM, EQUIPMENT_MODEL, EQUIPMENT_TYPE, MANUFACTURER, BUILD_DATE,
+MACHINE_SERIAL_NUMBER, MACHINE_BUILD_DATE, ENGINE_SERIAL_NUMBER, ENGINE_BUILD_DATE,
+ENGINE_FAMILY, SPECIFICATIONS, PARTS_DATA, PARTS_MANUAL_URL, OPERATION_MANUAL_URL,
+SOURCE_URL, RAW_DATA, FIELD_PROVENANCE, QUALITY_SCORE, DATA_HASH, SCHEMA_VERSION, STATUS,
+RETRIEVED_AT, LAST_VERIFIED_AT, UPDATED_AT, AUTOMATION_RUN_ID
+"""
+
+SELECT_CURRENT = f"""
+SELECT {CURRENT_COLUMNS}
   FROM EQUIPMENT_DATA
  WHERE SERIAL_NUMBER = %(serial_number)s AND SOURCE_SYSTEM = %(source_system)s
+"""
+
+SELECT_ANY_SOURCE = f"""
+SELECT {CURRENT_COLUMNS}
+  FROM EQUIPMENT_DATA
+ WHERE SERIAL_NUMBER = %(serial_number)s
+"""
+
+VARIANT_COLUMNS = ("engine_family", "specifications", "parts_data", "raw_data",
+                   "field_provenance", "steps_executed", "snapshot")
+
+# Primary keys are not enforced in Snowflake, so an expired claim left behind
+# by a crashed run is removed first rather than letting a second row appear.
+DELETE_EXPIRED_CLAIM = """
+DELETE FROM AUTOMATION_RUN_CLAIMS
+ WHERE CLAIM_KEY = %(key)s AND EXPIRES_AT <= CURRENT_TIMESTAMP()
 """
 
 CLAIM_IDEMPOTENCY = """
@@ -94,12 +127,41 @@ WHEN NOT MATCHED THEN INSERT (CLAIM_KEY, RUN_ID, CLAIMED_AT, EXPIRES_AT)
 """
 
 
+# Driver error numbers that mean "the session is gone", not "the SQL is wrong".
+# 390114 auth token expired · 390112/390111 session gone · 250001/250002
+# connection failed/closed · 08001 SQLSTATE connection failure.
+RECONNECT_ERRNOS = {390114, 390112, 390111, 250001, 250002}
+RECONNECT_TEXT = ("authentication token has expired", "connection is closed",
+                  "session no longer exists", "session does not exist")
+
+
+def _needs_reconnect(exc: Exception) -> bool:
+    if getattr(exc, "errno", None) in RECONNECT_ERRNOS:
+        return True
+    if getattr(exc, "sqlstate", None) == "08001":
+        return True
+    text = str(exc).lower()
+    return any(t in text for t in RECONNECT_TEXT)
+
+
 class SnowflakeEquipmentRepository:
-    def __init__(self, connect_kwargs: dict[str, Any]) -> None:
+    def __init__(self, connect_kwargs: dict[str, Any], *,
+                 secrets: tuple[str, ...] = ()) -> None:
         self._connect_kwargs = connect_kwargs
         self._conn: Any = None
+        self._lock = threading.Lock()
+        # Values that must never appear in a log line, even inside a driver
+        # error. The driver does not echo passwords, but this does not rely on it.
+        self._secrets = tuple(s for s in secrets if s)
+        # Same attribute the local store has, so wiring code needs no branch.
+        self.source_labels: dict[str, str] = {}
 
     # ── plumbing ────────────────────────────────────────────────────────────
+    def _scrub(self, text: str) -> str:
+        for secret in self._secrets:
+            text = text.replace(secret, "***")
+        return text
+
     def _connect(self) -> Any:
         import snowflake.connector  # imported lazily so dev/test need no driver
 
@@ -107,47 +169,109 @@ class SnowflakeEquipmentRepository:
             self._conn = snowflake.connector.connect(**self._connect_kwargs)
         return self._conn
 
+    def _drop_connection(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 - it is already broken; that is the point
+                pass
+
+    def _run_sync(self, sql: str, params: dict[str, Any] | None, fetch: str | None) -> Any:
+        """One statement, on the calling thread, holding the connection lock."""
+        with self._lock:
+            for attempt in (1, 2):
+                try:
+                    with self._connect().cursor() as cur:
+                        cur.execute(sql, params or {})
+                        if fetch == "one":
+                            return cur.fetchone()
+                        if fetch == "all":
+                            return cur.fetchall()
+                        if fetch == "dicts":
+                            names = [d[0].lower() for d in (cur.description or [])]
+                            return [dict(zip(names, row)) for row in cur.fetchall()]
+                        return cur.rowcount
+                except Exception as exc:  # driver-specific errors are all one thing to us
+                    if attempt == 1 and _needs_reconnect(exc):
+                        log(logger, logging.WARNING, "snowflake.reconnect",
+                            reason=self._scrub(str(exc))[:160])
+                        self._drop_connection()
+                        continue
+                    message = self._scrub(str(exc))
+                    log(logger, logging.ERROR, "snowflake.error", error=message[:500],
+                        errno=getattr(exc, "errno", None))
+                    raise AutomationError(ErrorCode.DATABASE_ERROR,
+                                          "Data store operation failed.",
+                                          details={"store": "snowflake",
+                                                   "driver_error": message[:200]}) from exc
+        return None  # pragma: no cover - the loop always returns or raises
+
     async def _execute(self, sql: str, params: dict[str, Any] | None = None,
                        fetch: str | None = None) -> Any:
-        def _run() -> Any:
-            try:
-                with self._connect().cursor() as cur:
-                    cur.execute(sql, params or {})
-                    if fetch == "one":
-                        return cur.fetchone()
-                    if fetch == "all":
-                        return cur.fetchall()
-                    return cur.rowcount
-            except Exception as exc:  # driver-specific errors are all one thing to us
-                log(logger, logging.ERROR, "snowflake.error", error=str(exc)[:500])
-                raise AutomationError(ErrorCode.DATABASE_ERROR, "Data store operation failed.",
-                                      details={"driver_error": str(exc)[:200]}) from exc
+        return await asyncio.to_thread(self._run_sync, sql, params, fetch)
 
-        return await asyncio.to_thread(_run)
+    def close(self) -> None:
+        with self._lock:
+            self._drop_connection()
 
     @staticmethod
     def _j(value: Any) -> str:
         return json.dumps(value if value is not None else None, default=str, ensure_ascii=False)
 
+    @staticmethod
+    def _variant(value: Any) -> Any:
+        """VARIANT columns arrive as JSON text; hand back the value."""
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return value
+        return value
+
+    @classmethod
+    def _row_to_record(cls, row: dict[str, Any]) -> dict[str, Any]:
+        """A row → the record shape every store hands back.
+
+        Successful writes keep the full canonical record in
+        RAW_DATA:normalized_record, so a read returns exactly what was
+        validated — quality, provenance, specifications and all — instead of a
+        lossy rebuild from columns. The columns still win for what the table
+        itself owns: status, hash and timestamps (a later NOT_FOUND or a
+        re-verification changes those without rewriting the record).
+        """
+        row = {k: (cls._variant(v) if k in VARIANT_COLUMNS else v) for k, v in row.items()}
+        raw = row.get("raw_data") if isinstance(row.get("raw_data"), dict) else {}
+        normalized = raw.get("normalized_record") if isinstance(raw, dict) else None
+        if isinstance(normalized, dict) and normalized.get("serial_number"):
+            record = dict(normalized)
+        else:
+            # Rows written before normalized_record existed, or NOT_FOUND
+            # markers: rebuild from the columns, and say what the score was.
+            record = {k: v for k, v in row.items()
+                      if k not in ("raw_data", "quality_score", "last_verified_at",
+                                   "updated_at") and v is not None}
+            if row.get("quality_score") is not None:
+                record["quality"] = {"score": float(row["quality_score"])}
+        for key in ("status", "data_hash", "retrieved_at", "automation_run_id"):
+            if row.get(key) is not None:
+                record[key] = row[key]
+        for key in ("updated_at", "last_verified_at"):
+            if row.get(key) is not None:
+                record[key] = row[key]
+        return record
+
     # ── reads ───────────────────────────────────────────────────────────────
     async def get_current(self, serial_number: str, source: str) -> dict[str, Any] | None:
-        row = await self._execute(SELECT_CURRENT,
-                                  {"serial_number": serial_number, "source_system": source},
-                                  fetch="one")
-        if not row:
-            return None
-        payload = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-        return {k.lower(): v for k, v in payload.items()}
+        rows = await self._execute(SELECT_CURRENT,
+                                   {"serial_number": serial_number, "source_system": source},
+                                   fetch="dicts")
+        return self._row_to_record(rows[0]) if rows else None
 
     async def get_any_source(self, serial_number: str) -> list[dict[str, Any]]:
-        rows = await self._execute(
-            "SELECT OBJECT_CONSTRUCT(*) FROM EQUIPMENT_DATA WHERE SERIAL_NUMBER = %(sn)s",
-            {"sn": serial_number}, fetch="all") or []
-        out = []
-        for row in rows:
-            payload = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            out.append({k.lower(): v for k, v in payload.items()})
-        return out
+        rows = await self._execute(SELECT_ANY_SOURCE, {"serial_number": serial_number},
+                                   fetch="dicts") or []
+        return [self._row_to_record(r) for r in rows]
 
     async def history(self, serial_number: str, source: str | None = None,
                       limit: int = 20) -> list[dict[str, Any]]:
@@ -156,11 +280,9 @@ class SnowflakeEquipmentRepository:
                "WHERE SERIAL_NUMBER = %(sn)s "
                + ("AND SOURCE_SYSTEM = %(src)s " if source else "")
                + "ORDER BY VERSION_AT DESC LIMIT %(lim)s")
-        rows = await self._execute(sql, {"sn": serial_number, "src": source, "lim": limit},
-                                   fetch="all") or []
-        return [{"version_at": r[0], "data_hash": r[1], "quality_score": r[2],
-                 "retrieved_at": r[3], "automation_run_id": r[4], "source_system": r[5],
-                 "snapshot": json.loads(r[6]) if isinstance(r[6], str) else r[6]} for r in rows]
+        rows = await self._execute(sql, {"sn": serial_number, "src": source, "lim": int(limit)},
+                                   fetch="dicts") or []
+        return [{**r, "snapshot": self._variant(r.get("snapshot"))} for r in rows]
 
     async def known_serials(self, limit: int = 500) -> list[str]:
         rows = await self._execute(
@@ -173,11 +295,14 @@ class SnowflakeEquipmentRepository:
     async def upsert(self, record: EquipmentRecord, *,
                      extraction: ExtractionArtifact | None = None) -> bool:
         payload = record.model_dump(mode="json")
+        digest = record.data_hash or data_hash(payload)
         # RAW_DATA is the VARIANT column that keeps what the page gave us
         # beyond the typed fields — the same content the local JSON store
-        # writes under `raw_data`.
+        # writes under `raw_data` — plus the validated record itself, which is
+        # what a read hands back.
+        raw: dict[str, Any] = {"normalized_record": {**payload, "data_hash": digest}}
         if extraction is not None:
-            payload["raw_data"] = {
+            raw.update({
                 "extracted_fields": extraction.fields,
                 "specifications": extraction.specifications,
                 "parts_data": extraction.parts_data,
@@ -185,8 +310,7 @@ class SnowflakeEquipmentRepository:
                 "page_title": extraction.page_title,
                 "payload_kind": extraction.payload_kind,
                 "selector_version": extraction.selector_version,
-            }
-        digest = record.data_hash or data_hash(payload)
+            })
         existing = await self.get_current(record.serial_number, record.source_system)
         changed = not existing or existing.get("data_hash") != digest
 
@@ -207,7 +331,7 @@ class SnowflakeEquipmentRepository:
             "parts_manual_url": record.parts_manual_url,
             "operation_manual_url": record.operation_manual_url,
             "source_url": record.source_url,
-            "raw_data": self._j(payload.get("raw_data")),
+            "raw_data": self._j(raw),
             "field_provenance": self._j(payload.get("field_provenance")),
             "quality_score": record.quality.score,
             "data_hash": digest,
@@ -279,13 +403,13 @@ class SnowflakeEquipmentRepository:
              "trace_id": run.trace_id})
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
-        row = await self._execute(
-            "SELECT OBJECT_CONSTRUCT(*) FROM AUTOMATION_RUNS WHERE AUTOMATION_RUN_ID = %(id)s",
-            {"id": run_id}, fetch="one")
-        if not row:
+        rows = await self._execute(
+            "SELECT * FROM AUTOMATION_RUNS WHERE AUTOMATION_RUN_ID = %(id)s",
+            {"id": run_id}, fetch="dicts")
+        if not rows:
             return None
-        payload = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-        return {k.lower(): v for k, v in payload.items()}
+        return {k: (self._variant(v) if k in VARIANT_COLUMNS else v)
+                for k, v in rows[0].items()}
 
     async def find_active_run(self, idempotency_key: str) -> str | None:
         row = await self._execute(
@@ -296,6 +420,7 @@ class SnowflakeEquipmentRepository:
 
     async def claim_idempotency(self, idempotency_key: str, run_id: str,
                                 ttl_s: int = 120) -> bool:
+        await self._execute(DELETE_EXPIRED_CLAIM, {"key": idempotency_key})
         rowcount = await self._execute(CLAIM_IDEMPOTENCY,
                                        {"key": idempotency_key, "run_id": run_id, "ttl_s": ttl_s})
         return bool(rowcount)

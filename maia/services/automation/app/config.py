@@ -31,7 +31,16 @@ class Settings(BaseSettings):
     snowflake_warehouse: str = "MAIA_WH"
     snowflake_database: str = "MAIA_PROD"
     snowflake_schema: str = "CORE"
-    snowflake_private_key_ref: str | None = None  # vault:// or file:// reference
+    snowflake_private_key_ref: str | None = None  # file:// reference to a .p8 key
+    snowflake_authenticator: str | None = None    # externalbrowser | keypair | password
+    snowflake_password_ref: str | None = None     # env://VAR or file://path — never a literal
+    snowflake_private_key_passphrase_ref: str | None = None
+    #: A local file (like login.txt) that describes the connection. Excluded
+    #: from git and from the package. Environment variables override it.
+    snowflake_config_file: str = "snowflake.txt"
+    #: With Snowflake as the store, also keep the local JSON/TXT/screenshots.
+    #: Snowflake is the record; the folder is evidence a person can open.
+    local_artifacts: bool = True
 
     # Automation
     headless: bool = True

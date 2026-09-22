@@ -92,7 +92,7 @@ nightly verification job: `docs/08-anti-hallucination-and-extensibility.md`.
 ## Status
 
 Working: the API and its decision flow, freshness engine, normalizer, validator,
-repositories (memory + Snowflake), run/step audit, error taxonomy, retry and
+repositories (memory, local JSON, Snowflake — see docs/16-snowflake.md), run/step audit, error taxonomy, retry and
 circuit breaker, the adapter framework, Maia's tool layer and UI, all tests.
 
 Needs a human before production: **SIS2 selectors are `TODO_CAPTURE`.** Clearing

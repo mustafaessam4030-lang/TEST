@@ -40,6 +40,19 @@ if (-not $env:MAIA_SIS_SECRET_REF) {
     }
 }
 
+# Snowflake: if snowflake.txt is here, the lookup is saved there too (and read
+# back to prove it). Without it, the local folder only, as before.
+if (-not $env:MAIA_REPOSITORY) {
+    $sfFile = Get-ChildItem -Path $repo -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^snowflake\.' -and $_.Name -notlike 'snowflake.example*' } |
+        Select-Object -First 1
+    if ($sfFile) {
+        $env:MAIA_REPOSITORY = "snowflake"
+        $env:MAIA_SNOWFLAKE_CONFIG_FILE = $sfFile.Name
+        Write-Host "Saving to Snowflake as described in $($sfFile.Name) (contents not shown)." -ForegroundColor Cyan
+    }
+}
+
 $env:PYTHONUTF8 = "1"
 $args = @("scripts\e2e\sis_lookup.py", "--serial", $Serial)
 if ($Headed) { $args += "--headed" }

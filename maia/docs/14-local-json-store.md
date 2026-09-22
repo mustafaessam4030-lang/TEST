@@ -1,5 +1,7 @@
 # 14 — The temporary local JSON store
 
+> **Update:** Snowflake is now wired in. With a `snowflake.txt` present, lookups are saved to Snowflake and this folder is kept alongside as evidence. See [16-snowflake.md](16-snowflake.md).
+
 Snowflake is not ready. Until it is, every successful Caterpillar SIS lookup is
 saved to disk, in full, in a form a person can read and a machine can re-load.
 
@@ -13,7 +15,7 @@ record is the source that actually produced it.
 EquipmentRepository                    (app/repositories/base.py — a Protocol)
    ├── LocalJsonRepository   ← active now      (local_json_repo.py)
    ├── MemoryEquipmentRepository  dev + tests  (memory_repo.py)
-   └── SnowflakeEquipmentRepository  later     (snowflake_repo.py)
+   └── SnowflakeEquipmentRepository  ready     (snowflake_repo.py) — see 16-snowflake.md
 ```
 
 Switching is one setting:

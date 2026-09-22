@@ -247,6 +247,36 @@ if ($loginFile) {
     $env:MAIA_SIS_SECRET_REF = "env://SIS"
 }
 
+# ── 3b. Snowflake (only if snowflake.txt exists) ────────────────────────────
+# No snowflake.txt: results stay in logs\sis-results\ exactly as before.
+# With one: every lookup is saved to Snowflake, and the local folder is kept
+# alongside as evidence (JSON, TXT, screenshots).
+$sfFile = Get-ChildItem -Path $repo -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^snowflake\.' -and $_.Name -notlike 'snowflake.example*' } |
+    Select-Object -First 1
+if ($sfFile -and -not $env:MAIA_REPOSITORY) {
+    Say "      Snowflake: using $($sfFile.Name) (contents not shown)." Cyan
+    $hasDriver = & $venvPy -c "import importlib.util as u;print('yes' if u.find_spec('snowflake.connector') else 'no')" 2>$null
+    if ($hasDriver -ne "yes") {
+        Say "      Installing the Snowflake driver (once)..." Yellow
+        & $venvPy -m pip install --only-binary=:all: "snowflake-connector-python[secure-local-storage]" --quiet
+        if ($LASTEXITCODE -ne 0) { & $venvPy -m pip install "snowflake-connector-python[secure-local-storage]" --quiet }
+    }
+    $env:MAIA_SNOWFLAKE_CONFIG_FILE = $sfFile.Name
+    & $venvPy scripts\snowflake\snowflake_setup.py check
+    if ($LASTEXITCODE -eq 0) {
+        $env:MAIA_REPOSITORY = "snowflake"
+        Say "      Snowflake is ready - every lookup will be saved there." Green
+    } else {
+        Say "      Snowflake is NOT ready (reason above)." Red
+        Say "      Double-click SNOWFLAKE-SETUP.bat to create the tables," Yellow
+        Say "      or fix snowflake.txt." Yellow
+        $go = Read-Host "`n      Continue with the local folder only for now? (Y/n)"
+        if ($go -and $go.ToLower() -ne "y") { exit 1 }
+        $env:MAIA_REPOSITORY = "local_json"
+    }
+}
+
 # ── 4. Readiness ────────────────────────────────────────────────────────────
 Step 4 "Checking everything is ready"
 & $venvPy scripts\e2e\doctor.py

@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result eval e2e smoke clean
+.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result snowflake snowflake-check eval e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -43,6 +43,12 @@ sis-lookup:                 ## one REAL SIS lookup, saved to logs/sis-results/
 sis-result:                 ## what a saved lookup actually captured
 	python3 scripts/e2e/show_sis_result.py --serial $(SERIAL)
 
+snowflake:                  ## check Snowflake, create tables if missing, copy local results in
+	python3 scripts/snowflake/snowflake_setup.py
+
+snowflake-check:            ## connection + tables + write probe only
+	python3 scripts/snowflake/snowflake_setup.py check
+
 eval:                       ## Maia's agent evaluation report
 	python3 scripts/eval/run_agent_eval.py
 
@@ -59,7 +65,9 @@ package:                    ## build the hand-off archive (chat + automation + l
 	@latest=$$(ls -dt artifacts/capture/self-test-* 2>/dev/null | head -1); \
 	  [ -n "$$latest" ] && cp -r "$$latest" /tmp/maia-package/maia/artifacts/capture/ || true
 	@rm -f /tmp/maia-package/maia/login.txt /tmp/maia-package/maia/login
-	@cd /tmp/maia-package && zip -qr "$(CURDIR)/../maia-platform.zip" maia -x '*.pyc' 'maia/login.txt' 'maia/login'
+	@rm -rf /tmp/maia-package/maia/snowflake.txt* /tmp/maia-package/maia/keys
+	@find /tmp/maia-package/maia -name '*.p8' -delete
+	@cd /tmp/maia-package && zip -qr "$(CURDIR)/../maia-platform.zip" maia -x '*.pyc' 'maia/login.txt' 'maia/login' 'maia/snowflake.txt*' '*.p8'
 	@echo "wrote ../maia-platform.zip"
 
 e2e:                        ## start the whole stack: gateway + Maia chat + live worker

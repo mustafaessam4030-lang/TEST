@@ -1,0 +1,28 @@
+# Copy this file to  snowflake.txt  and fill it in. That is all Maia needs.
+#
+# snowflake.txt stays on this PC: it is excluded from git and from the release
+# package, and only the automation worker reads it. Nothing Maia prints or logs
+# contains a password, passphrase or token.
+
+# Your account identifier: the part before .snowflakecomputing.com in your
+# Snowflake URL, e.g.  xy12345.west-europe.azure   or   myorg-myaccount
+account=YOUR_ACCOUNT_IDENTIFIER
+user=YOUR_SNOWFLAKE_USER
+
+# How to sign in — keep exactly ONE of these three:
+#
+#   1. Company SSO in a browser window (nothing secret stored here):
+authenticator=externalbrowser
+#
+#   2. Key pair, for a service account:
+# private_key_file=C:\SIS\maia\keys\maia_rsa_key.p8
+# private_key_passphrase=only if the key is encrypted
+#
+#   3. Password, or a Snowflake programmatic access token (PAT):
+# password=YOUR_PASSWORD_OR_PAT
+
+# Where Maia's tables live. SNOWFLAKE-SETUP.bat creates them if they are missing.
+role=MAIA_APP
+warehouse=MAIA_WH
+database=MAIA_PROD
+schema=CORE

@@ -114,7 +114,7 @@ def check_local_store() -> None:
         f"{settings.repository} → {store}",
         "" if settings.repository in ("local_json", "snowflake")
         else "MAIA_REPOSITORY=local_json keeps results on disk")
-    if settings.repository != "local_json":
+    if settings.repository == "snowflake" and not settings.local_artifacts:
         return
     try:
         store.mkdir(parents=True, exist_ok=True)
@@ -138,6 +138,47 @@ def check_local_store() -> None:
     add(OK, "results already saved",
         f"{len(saved)} lookup(s) in the store"
         + (f", newest {saved[-1].name}" if saved else " (none yet — expected before the first run)"))
+
+
+def check_snowflake() -> None:
+    """With Snowflake as the store, a lookup fails at PERSIST if it cannot write
+    there — so the connection is checked here, before anyone searches."""
+    from app.config import get_settings
+    from app.repositories import snowflake_config
+
+    settings = get_settings()
+    cfg = snowflake_config.load(settings)
+    if settings.repository != "snowflake":
+        if cfg.config_file:
+            add(WARN, "snowflake", f"{cfg.config_file} found but MAIA_REPOSITORY="
+                f"{settings.repository}", "START-MAIA.bat switches to Snowflake by itself")
+        return
+    try:
+        import snowflake.connector  # noqa: F401
+    except ImportError:
+        add(FAIL, "snowflake driver", "not installed",
+            ".venv\\Scripts\\python.exe -m pip install snowflake-connector-python")
+        return
+    s = cfg.summary()
+    problems = cfg.problems()
+    add(OK if not problems else FAIL, "snowflake config",
+        f"{s['account']} as {s['user']} ({s['auth']}) → {s['database']}.{s['schema']}",
+        "; ".join(problems) + " — edit snowflake.txt" if problems else "")
+    if problems:
+        return
+    from app.repositories.snowflake_repo import SnowflakeEquipmentRepository
+
+    repo = SnowflakeEquipmentRepository(cfg.connect_kwargs(), secrets=cfg.secrets())
+    try:
+        row = repo._run_sync("SELECT COUNT(*) FROM EQUIPMENT_DATA", None, "one")
+        add(OK, "snowflake reachable", f"EQUIPMENT_DATA has {row[0] if row else 0} row(s)")
+    except Exception as exc:  # noqa: BLE001 - reported, never raised
+        detail = getattr(exc, "details", {}).get("driver_error") or str(exc)
+        add(FAIL, "snowflake reachable", str(detail).splitlines()[0][:110],
+            "python scripts/snowflake/snowflake_setup.py   (creates the tables, "
+            "or says exactly what is missing)")
+    finally:
+        repo.close()
 
 
 async def check_browser_reach() -> None:
@@ -183,6 +224,7 @@ def main() -> int:
     check_selectors()
     check_switch()
     check_local_store()
+    check_snowflake()
     asyncio.run(check_browser_reach())
 
     icon = {OK: "✓", WARN: "!", FAIL: "✗"}

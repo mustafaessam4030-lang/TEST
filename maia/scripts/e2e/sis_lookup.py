@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""One real Caterpillar SIS lookup, saved to the local store, then reported.
+"""One real Caterpillar SIS lookup, saved to the store, then reported.
+
+The store is whatever the service uses (`MAIA_REPOSITORY`): the local JSON
+folder, or Snowflake with the folder kept alongside as evidence.
 
     python scripts/e2e/sis_lookup.py --serial JAZ01865
 
@@ -32,7 +35,7 @@ from app.core.errors import AutomationError  # noqa: E402
 from app.core.secrets import resolve_secret  # noqa: E402
 from app.domain.freshness import FreshnessPolicy  # noqa: E402
 from app.models.schemas import EquipmentSearchRequest  # noqa: E402
-from app.repositories.local_json_repo import LocalJsonRepository  # noqa: E402
+from app.repositories.factory import build_repository  # noqa: E402
 from app.services.capture_service import CaptureService  # noqa: E402
 from app.services.equipment_service import EquipmentService  # noqa: E402
 
@@ -42,12 +45,7 @@ import store_report  # noqa: E402
 SIS_HOSTS = ("sis2.cat.com", "sis.cat.com")
 
 
-def store_dir(settings) -> Path:
-    path = Path(settings.local_store_dir)
-    return path if path.is_absolute() else ROOT / path
-
-
-def build(settings, store: LocalJsonRepository, pool: BrowserPool) -> EquipmentService:
+def build(settings, store, pool: BrowserPool) -> EquipmentService:
     registry = SourceRegistry()
     cfg = settings.source_config("cat_sis")
     captured_path = os.environ.get(
@@ -69,8 +67,10 @@ def build(settings, store: LocalJsonRepository, pool: BrowserPool) -> EquipmentS
                             capture=CaptureService(registry=registry, settings=settings))
 
 
-def report(store: LocalJsonRepository, serial: str, run_id: str) -> int:
+def report(store, serial: str, run_id: str) -> int:
     """Same report `show_sis_result.py` prints, so the two can never disagree."""
+    if getattr(store, "results", None) is None:
+        return 0                     # Snowflake only, no local folder: nothing to render
     path = store_report.find(store.results, serial, run_id)
     if path is None:
         print(f"\n✗ nothing was written to {store.results / f'{serial}_{run_id}.json'}")
@@ -91,10 +91,14 @@ async def main() -> int:
     settings.allow_live_automation = True
     if args.headed:
         settings.headless = False
-    store = LocalJsonRepository(store_dir(settings),
-                                secrets=tuple(v for v in (os.environ.get("SIS_USERNAME"),
-                                                          os.environ.get("SIS_PASSWORD")) if v))
-    print(f"  store   : {store.results}")
+    try:
+        store = build_repository(settings)
+    except RuntimeError as exc:           # Snowflake selected but not configured
+        print(f"\n✗ {exc}")
+        return 2
+    warehouse = getattr(store, "primary", store) if settings.repository == "snowflake" else None
+    print(f"  store   : {settings.repository}"
+          + (f" + {store.results}" if getattr(store, "results", None) else ""))
     print(f"  headless: {settings.headless}")
 
     pool = BrowserPool(headless=settings.headless, max_contexts=1,
@@ -117,6 +121,18 @@ async def main() -> int:
 
     print(f"\n✓ {result.status} in {result.execution_time_ms} ms "
           f"(persisted={result.persisted})")
+    if warehouse is not None:
+        # Read it back from the warehouse: "saved" is a claim until the row is there.
+        try:
+            row = await warehouse.get_current(result.data.serial_number, "cat_sis")
+        finally:
+            if hasattr(store, "close"):
+                store.close()
+        if not row or row.get("automation_run_id") != result.automation_run_id:
+            print("✗ Snowflake: the row for this run is NOT in EQUIPMENT_DATA")
+            return 3
+        print(f"✓ Snowflake: EQUIPMENT_DATA has {row['serial_number']} from run "
+              f"{row['automation_run_id']} (machine serial {row.get('machine_serial_number')})")
     return report(store, result.data.serial_number, result.automation_run_id)
 
 
