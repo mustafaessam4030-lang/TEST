@@ -291,6 +291,34 @@ const EQUIP=(()=>{
 
   function resetContext(){convo=null;}
 
+  // One equipment turn answered by Snowflake Cortex on the gateway: tools →
+  // Cortex → verification. Returns the structured answer, or null when the
+  // gateway is unreachable (the record card still shows the verified values).
+  async function analyze(text){
+    const r=await call('/v1/maia/answer',{method:'POST',timeoutMs:150000,
+      body:{utterance:String(text||''),context:convo}});
+    if(r.error_code||r.httpStatus!==200||!r.payload)return null;
+    if(r.payload.context)convo=r.payload.context;
+    return r.payload;
+  }
+
+  const EVIDENCE_LABEL={DIRECT:'SIS/Snowflake',DERIVED:'derived',INFERRED:'inferred'};
+
+  // What the page's dispatch uses in place of a second model call.
+  function cortexLLM(r,L){
+    const cx=r.cortex||{};
+    if(cx.status!=='SUCCESS'){
+      const why=(cx.cortex&&cx.cortex.reason)||cx.status||'unavailable';
+      return {ok:false,error:'Snowflake Cortex: '+why};
+    }
+    const conf={high:0.95,medium:0.8,low:0.55}[cx.confidence]||0.8;
+    return {ok:true,usage:null,parsed:{
+      reply:cx.answer||'',intent:'equipment_lookup',confidence:conf,slots:{},actions:[],
+      sources:[(cx.source||'Caterpillar SIS')+' · '+(cx.serial_number||r.serial)],
+      quick_replies:(L==='ar'?['بيانات المحرك','القطع','إيه اللي اتغير؟']
+                            :['Engine details','Show the parts','What changed?'])}};
+  }
+
   // Is the chat model connected through the gateway? Asked once per page.
   let llmReadyP=null;
   function llmReady(){
@@ -331,11 +359,15 @@ const EQUIP=(()=>{
       }
       if(mode!=='RUN_LOOKUP'||!state.serial_number)return null;
       const plan=(state.tool_plan||[]).map(t=>t.tool);
-      return lookup(state.serial_number,{
+      const r=await lookup(state.serial_number,{
         // The plan decides whether the source is worth the trip, not a keyword.
         refresh:plan.includes('search_equipment_in_sis'),
         force:wantsRefresh(raw),
         lang:L,onProgress:opts&&opts.onProgress,state:state});
+      // The record is now in the store (fetched from SIS if it had to be).
+      // Snowflake Cortex answers the actual question from it, on the gateway.
+      if(r&&r.ok)r.cortex=await analyze(raw);
+      return r;
     }
 
     // The gateway is unreachable: fall back to what this file always did, so a
@@ -482,6 +514,22 @@ RULES FOR THIS FAILURE
       out.confidence=0.4;
       return out;
     }
+    if(r.ok&&r.cortex){
+      const cx=r.cortex;
+      if(cx.status==='SUCCESS'){
+        out.reply=cx.answer||out.reply;
+        const inf=(cx.inferred||[]).map(i=>`• (${ar?'استنتاج':'inferred'}) ${i.statement}`);
+        if(inf.length)out.reply+='\n\n'+inf.join('\n');
+        if(cx.verification&&!cx.verification.passed)
+          out.reply+=ar?'\n\n⚠️ إجابة Cortex احتوت قيم مش موجودة في البيانات، فبعرض البيانات الموثقة بس.'
+                      :'\n\n⚠️ Cortex\'s answer contained values not in the verified data, so only the verified data is shown.';
+      }else{
+        const c=cx.cortex||{};
+        out.reply=composeReply(r,L)+`\n\n⚠️ ${ar?'Snowflake Cortex غير متاح':'Snowflake Cortex is unavailable'}`
+          +(c.reason?` (${c.reason})`:'')+(c.fix?` — ${c.fix}`:'');
+        out.confidence=0.6;
+      }
+    }
     if(r.ok){
       const a=r.attribution||{};
       const stamp=`${ar?'المصدر':'Source'}: ${a.source_label||'—'} · ${ar?'وقت السحب':'Retrieved'}: ${fmtDate(a.retrieved_at,L)} · Run ID: ${a.automation_run_id||'—'}`;
@@ -559,6 +607,21 @@ RULES FOR THIS FAILURE
   }
 
   // ── rendering ────────────────────────────────────────────────────────────
+  // What Cortex's answer rests on: each item tagged DIRECT / DERIVED / INFERRED.
+  function evidenceBlock(r,L){
+    const cx=r&&r.cortex;
+    if(!cx||cx.status!=='SUCCESS')return '';
+    const ar=L==='ar';
+    const items=[
+      ...(cx.facts||[]).slice(0,12).map(f=>['DIRECT',f.statement]),
+      ...(cx.derived_findings||[]).slice(0,8).map(f=>['DERIVED',f.statement]),
+      ...(cx.inferred||[]).slice(0,5).map(f=>['INFERRED',f.statement])];
+    if(!items.length)return '';
+    return `<div class="eq-specs-h">${ar?'الأدلة (Snowflake Cortex)':'Evidence (Snowflake Cortex)'}</div>`
+      +items.map(([t,s])=>`<div class="eq-row"><span class="eq-k">${esc(EVIDENCE_LABEL[t]||t)}</span>`
+        +`<span class="eq-v">${esc(s)}</span></div>`).join('');
+  }
+
   function cardFor(tok,L){
     const r=results.get(tok);
     return r?renderCard(r,L):'';
@@ -644,6 +707,7 @@ RULES FOR THIS FAILURE
         ${specs?`<div class="eq-specs-h">${ar?'المواصفات':'Specifications'}</div>${specs}`:''}
         ${unread}
         ${links?`<div class="eq-links">${links}</div>`:''}
+        ${evidenceBlock(r,L)}
       </div>
       <div class="eq-foot">
         <span>${ar?'المصدر':'Source'}: <b>${esc(a.source_label||'—')}</b></span>
@@ -733,7 +797,7 @@ RULES FOR THIS FAILURE
       origin:r.origin,error_code:r.error_code};
   }
 
-  return {wantsLookup,wantsRefresh,norm,lookup,maybeLookup,injectDocs,promptBlock,
+  return {wantsLookup,wantsRefresh,norm,lookup,maybeLookup,analyze,cortexLLM,injectDocs,promptBlock,
           resumeRun,stepLabel,openLivePanel,
           composeReply,mergeAnswer,cardFor,renderCard,traceRows,traceOf,facts,
           understand,resetContext,

@@ -6,6 +6,7 @@
     python scripts/snowflake/snowflake_setup.py apply      # create/upgrade the tables (idempotent)
     python scripts/snowflake/snowflake_setup.py backfill   # copy logs/sis-results/*.json in
     python scripts/snowflake/snowflake_setup.py show --serial JAZ01865
+    python scripts/snowflake/snowflake_setup.py cortex     # one tiny live Cortex call
 
 The connection comes from snowflake.txt (or MAIA_SNOWFLAKE_* variables) — see
 snowflake.example.txt. Only the account, user, auth METHOD, role, warehouse,
@@ -35,14 +36,16 @@ from app.repositories import snowflake_config  # noqa: E402
 
 SQL_DIR = ROOT / "sql" / "snowflake"
 # Order matters: 003 adds columns to a table 001 creates.
-CORE_FILES = ("001_core_schema.sql", "003_equipment_details_columns.sql")
+CORE_FILES = ("001_core_schema.sql", "003_equipment_details_columns.sql",
+              "004_parts_and_cortex.sql")
 VIEWS_FILE = "002_views_and_governance.sql"
 
-REQUIRED_TABLES = ("EQUIPMENT_DATA", "EQUIPMENT_DATA_HISTORY", "AUTOMATION_RUNS",
-                   "AUTOMATION_RUN_CLAIMS")
+REQUIRED_TABLES = ("EQUIPMENT_DATA", "EQUIPMENT_DATA_HISTORY", "EQUIPMENT_PARTS",
+                   "AUTOMATION_RUNS", "AUTOMATION_RUN_CLAIMS")
 REQUIRED_COLUMNS = ("SERIAL_NUMBER", "SOURCE_SYSTEM", "RAW_DATA", "DATA_HASH", "STATUS",
                     "RETRIEVED_AT", "MACHINE_SERIAL_NUMBER", "MACHINE_BUILD_DATE",
-                    "ENGINE_SERIAL_NUMBER", "ENGINE_BUILD_DATE", "PARTS_DATA")
+                    "ENGINE_SERIAL_NUMBER", "ENGINE_BUILD_DATE", "PARTS_DATA", "PRODUCT",
+                    "NORMALIZED_DATA")
 # Only real SIS results go to the warehouse. `local_fixture` is a test page.
 WAREHOUSE_SOURCES = ("cat_sis",)
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
@@ -251,6 +254,41 @@ def check(repo: Any, cfg: Any) -> bool:
     return True
 
 
+# ── cortex ──────────────────────────────────────────────────────────────────
+def cortex(repo: Any) -> bool:
+    """One minimal live Cortex call (a few tokens), through the same code path
+    Maia uses. Proves the account, role, region and model actually work."""
+    from app.cortex.client import CortexRuntime
+
+    settings = get_settings()
+    print("\n  Snowflake Cortex (Maia's runtime intelligence)")
+    runtime = CortexRuntime(settings, repo)
+    status = runtime.status()
+    if not status["configured"]:
+        say(FAIL, f"not usable: {status['reason']}")
+        print(f"      → {status['fix']}")
+        return False
+    mode = status["mode"]
+    say("·", f"mode {mode} · model "
+             f"{status['model'] if mode == 'complete' else status['agent_model']}")
+    try:
+        if mode == "agent":
+            msg = asyncio.run(runtime.agent_run(
+                [{"role": "user", "content": [{"type": "text", "text": "Reply with: OK"}]}],
+                tools=[], instructions={"response": "Reply with exactly: OK"}))
+            reply = " ".join(i.get("text", "") for i in msg.get("content") or []
+                             if i.get("type") == "text")
+        else:
+            reply = asyncio.run(runtime.complete("Reply with exactly: OK", max_tokens=5))
+    except AutomationError as err:
+        say(FAIL, f"Cortex call failed: {err.details.get('reason')} — "
+                  f"{str(err.details.get('detail') or '')[:120]}")
+        print(f"      → {err.details.get('fix')}")
+        return False
+    say(OK, f"Cortex answered ({str(reply).strip()[:20]!r})")
+    return True
+
+
 # ── backfill ────────────────────────────────────────────────────────────────
 def local_documents(store: Path) -> list[dict[str, Any]]:
     docs = []
@@ -347,7 +385,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", nargs="?", default="setup",
-                    choices=("setup", "check", "apply", "backfill", "show"))
+                    choices=("setup", "check", "apply", "backfill", "show", "cortex"))
     ap.add_argument("--serial")
     ap.add_argument("--no-views", action="store_true",
                     help="skip the reporting views and grants (002)")
@@ -375,6 +413,8 @@ def main() -> int:
             ok = check(repo, cfg)
         elif args.command == "apply":
             ok = apply(repo, cfg, with_views=not args.no_views, with_grants=args.with_grants) and check(repo, cfg)
+        elif args.command == "cortex":
+            ok = cortex(repo)
         elif args.command == "backfill":
             ok = backfill(repo, dry_run=args.dry_run)
         elif args.command == "show":
@@ -384,6 +424,8 @@ def main() -> int:
         else:
             ok = (apply(repo, cfg, with_views=not args.no_views, with_grants=args.with_grants)
                   and check(repo, cfg) and backfill(repo))
+            # Cortex is reported, not required for the tables to be ready.
+            cortex(repo)
     finally:
         repo.close()
     print("  " + "─" * 66)

@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result snowflake snowflake-check eval e2e smoke clean
+.PHONY: install test lint run build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result snowflake snowflake-check eval e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -18,9 +18,6 @@ lint:
 
 run:
 	cd services/automation && uvicorn app.main:app --reload --port 8080
-
-agent:
-	python -m agent.maia_agent
 
 # Rebuild Maia v9 from v8 + the equipment layer. Fails loudly if an anchor moved.
 build-maia:

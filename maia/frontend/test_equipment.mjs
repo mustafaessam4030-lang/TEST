@@ -309,5 +309,55 @@ const check = (name, cond, detail = '') => {
   check('a credential request is refused', refOut.reply.startsWith("I can't share"));
 }
 
+// 14. Snowflake Cortex answers the equipment turn on the gateway
+{
+  const CX = { status: 'SUCCESS', serial_number: 'SN123456', confidence: 'high',
+    answer: 'SN123456 has engine FIX00588, built 2014-06-30.',
+    facts: [{ id: 'F1', evidence: 'DIRECT', statement: 'SN123456 engine_serial_number = FIX00588' }],
+    derived_findings: [{ statement: 'engine built 33 days before the machine', evidence: 'DERIVED', fact_ids: ['F2'] }],
+    inferred: [{ statement: 'likely a generator application', evidence: 'INFERRED', basis_fact_ids: ['F1'] }],
+    verification: { passed: true, blocked_tokens: [] }, source: 'Caterpillar SIS',
+    context: { active_serial: 'SN123456', confirmed: true, recent_serials: ['SN123456'],
+               awaiting: null, pending_candidates: [], last_intent: 'ENGINE_DETAILS' } };
+  const STATE = { utterance: 'engine of SN123456', language: 'en', intent: 'ENGINE_DETAILS',
+    intent_confidence: 0.9, serial_number: 'SN123456', serial_source: 'utterance', extracted: [],
+    serial_candidates: [], requested_fields: [], context: CX.context,
+    tool_plan: [{ tool: 'get_equipment_from_local_store', arguments: {}, because: '' }],
+    tool_results: [], validation: {}, response_mode: 'RUN_LOOKUP', message: '', notes: [] };
+  calls.length = 0;
+  const ctx = makeCtx({
+    '/v1/agent/understand': { status: 200, body: STATE },
+    '/v1/equipment/SN123456': { status: 200, body: {
+      data: RECORD, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } },
+    '/v1/maia/answer': { status: 200, body: CX },
+  });
+  const r = await ctx.EQUIP.maybeLookup('engine of SN123456', {}, {}, 'en', {});
+  check('the equipment turn is sent to Cortex on the gateway', calls.some(c => c.includes('/v1/maia/answer')));
+  check('the Cortex answer is attached to the record', r && r.cortex && r.cortex.status === 'SUCCESS');
+  const llm = ctx.EQUIP.cortexLLM(r, 'en');
+  check('no second model call is needed', llm.ok === true && llm.parsed.reply.includes('FIX00588'));
+  const out = ctx.EQUIP.mergeAnswer({ reply: llm.parsed.reply, confidence: 0.95 }, r, 'en');
+  check('inferred statements are labelled inferred', out.reply.includes('(inferred) likely a generator'));
+  check('the source stamp is still added', out.reply.includes('Run ID'));
+  const card = ctx.EQUIP.renderCard(r, 'en');
+  check('the card lists the evidence by type', card.includes('Evidence (Snowflake Cortex)')
+        && card.includes('SIS/Snowflake') && card.includes('derived') && card.includes('inferred'));
+
+  // Cortex unavailable: the verified values are shown, and the reason is given.
+  const ctx2 = makeCtx({
+    '/v1/agent/understand': { status: 200, body: STATE },
+    '/v1/equipment/SN123456': { status: 200, body: {
+      data: RECORD, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } },
+    '/v1/maia/answer': { status: 200, body: { status: 'CORTEX_UNAVAILABLE',
+      cortex: { used: false, reason: 'privilege', fix: 'GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE MAIA_APP;' } } },
+  });
+  const r2 = await ctx2.EQUIP.maybeLookup('engine of SN123456', {}, {}, 'en', {});
+  check('no other model is asked when Cortex is down', ctx2.EQUIP.cortexLLM(r2, 'en').ok === false);
+  const out2 = ctx2.EQUIP.mergeAnswer({ reply: 'rules engine text' }, r2, 'en');
+  check('the reply says Cortex is unavailable and why',
+        out2.reply.includes('Snowflake Cortex is unavailable (privilege)') && out2.reply.includes('CORTEX_USER'));
+  check('and still shows the verified record', out2.reply.includes('SN123456'));
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');
 process.exit(failures ? 1 : 0);

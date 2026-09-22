@@ -21,6 +21,7 @@ from typing import Any
 from app.core.errors import AutomationError, ErrorCode
 from app.core.hashing import data_hash
 from app.core.logging import log
+from app.domain.parts import flatten_parts, product_of
 from app.models.schemas import EquipmentRecord, RecordStatus, RunRecord
 from app.repositories.base import ExtractionArtifact
 
@@ -36,6 +37,8 @@ WHEN MATCHED THEN UPDATE SET
     MANUFACTURER         = %(manufacturer)s,
     BUILD_DATE           = %(build_date)s,
     MACHINE_SERIAL_NUMBER = %(machine_serial_number)s,
+    PRODUCT              = %(product)s,
+    NORMALIZED_DATA      = PARSE_JSON(%(normalized_data)s),
     MACHINE_BUILD_DATE   = %(machine_build_date)s,
     ENGINE_SERIAL_NUMBER = %(engine_serial_number)s,
     ENGINE_BUILD_DATE    = %(engine_build_date)s,
@@ -57,7 +60,7 @@ WHEN MATCHED THEN UPDATE SET
     AUTOMATION_RUN_ID    = %(automation_run_id)s
 WHEN NOT MATCHED THEN INSERT (
     ID, SERIAL_NUMBER, SOURCE_SYSTEM, EQUIPMENT_MODEL, EQUIPMENT_TYPE, MANUFACTURER,
-    BUILD_DATE, MACHINE_SERIAL_NUMBER, MACHINE_BUILD_DATE, ENGINE_SERIAL_NUMBER,
+    BUILD_DATE, MACHINE_SERIAL_NUMBER, PRODUCT, NORMALIZED_DATA, MACHINE_BUILD_DATE, ENGINE_SERIAL_NUMBER,
     ENGINE_BUILD_DATE, ENGINE_FAMILY, SPECIFICATIONS, PARTS_DATA, PARTS_MANUAL_URL,
     OPERATION_MANUAL_URL, SOURCE_URL, RAW_DATA, FIELD_PROVENANCE, QUALITY_SCORE,
     DATA_HASH, SCHEMA_VERSION, STATUS, RETRIEVED_AT, LAST_VERIFIED_AT, UPDATED_AT,
@@ -65,7 +68,7 @@ WHEN NOT MATCHED THEN INSERT (
 ) VALUES (
     UUID_STRING(), %(serial_number)s, %(source_system)s, %(equipment_model)s,
     %(equipment_type)s, %(manufacturer)s, %(build_date)s,
-    %(machine_serial_number)s, %(machine_build_date)s, %(engine_serial_number)s,
+    %(machine_serial_number)s, %(product)s, PARSE_JSON(%(normalized_data)s), %(machine_build_date)s, %(engine_serial_number)s,
     %(engine_build_date)s, PARSE_JSON(%(engine_family)s),
     PARSE_JSON(%(specifications)s), PARSE_JSON(%(parts_data)s), %(parts_manual_url)s,
     %(operation_manual_url)s, %(source_url)s, PARSE_JSON(%(raw_data)s),
@@ -87,12 +90,34 @@ SELECT UUID_STRING(), %(serial_number)s, %(source_system)s, PARSE_JSON(%(snapsho
 # Explicit columns, not OBJECT_CONSTRUCT(*): the driver then hands back real
 # datetimes for the TIMESTAMP_TZ columns instead of a display string the
 # freshness policy would have to guess the format of.
+# The parts of the current version replace the previous set in one pass.
+DELETE_PARTS = """
+DELETE FROM EQUIPMENT_PARTS
+ WHERE SERIAL_NUMBER = %(serial_number)s AND SOURCE_SYSTEM = %(source_system)s
+"""
+INSERT_PARTS = """
+INSERT INTO EQUIPMENT_PARTS
+  (SERIAL_NUMBER, SOURCE_SYSTEM, GROUP_NAME, GROUP_TITLE, GROUP_SERIAL, GROUP_PART,
+   PART_NUMBER, PART_NAME, QUANTITY_REQUIRED, QUANTITY_TEXT, WHERE_USED, SERVICE_ARTICLE,
+   SN_APPLICABILITY, COMPONENT_SERIAL, PART_OF, DESCRIPTION, ROW_LOCATOR, SOURCE,
+   RETRIEVED_AT, AUTOMATION_RUN_ID, RAW_DATA)
+SELECT %(serial_number)s, %(source_system)s,
+       f.value:group_name::STRING, f.value:group_title::STRING, f.value:group_serial::STRING,
+       f.value:group_part::STRING, f.value:part_number::STRING, f.value:part_name::STRING,
+       f.value:quantity_required::FLOAT, f.value:quantity_text::STRING,
+       f.value:where_used::STRING, f.value:service_article::STRING,
+       f.value:sn_applicability::STRING, f.value:component_serial::STRING,
+       f.value:part_of::STRING, f.value:description::STRING, f.value:locator::STRING,
+       %(source)s, %(retrieved_at)s, %(automation_run_id)s, f.value:raw
+  FROM TABLE(FLATTEN(input => PARSE_JSON(%(rows)s))) f
+"""
+
 CURRENT_COLUMNS = """
 SERIAL_NUMBER, SOURCE_SYSTEM, EQUIPMENT_MODEL, EQUIPMENT_TYPE, MANUFACTURER, BUILD_DATE,
 MACHINE_SERIAL_NUMBER, MACHINE_BUILD_DATE, ENGINE_SERIAL_NUMBER, ENGINE_BUILD_DATE,
 ENGINE_FAMILY, SPECIFICATIONS, PARTS_DATA, PARTS_MANUAL_URL, OPERATION_MANUAL_URL,
 SOURCE_URL, RAW_DATA, FIELD_PROVENANCE, QUALITY_SCORE, DATA_HASH, SCHEMA_VERSION, STATUS,
-RETRIEVED_AT, LAST_VERIFIED_AT, UPDATED_AT, AUTOMATION_RUN_ID
+RETRIEVED_AT, LAST_VERIFIED_AT, UPDATED_AT, AUTOMATION_RUN_ID, PRODUCT
 """
 
 SELECT_CURRENT = f"""
@@ -322,6 +347,8 @@ class SnowflakeEquipmentRepository:
             "manufacturer": record.manufacturer,
             "build_date": record.build_date,
             "machine_serial_number": record.machine_serial_number,
+            "product": product_of(payload.get("parts_data")),
+            "normalized_data": self._j({**payload, "data_hash": digest}),
             "machine_build_date": record.machine_build_date,
             "engine_serial_number": record.engine_serial_number,
             "engine_build_date": record.engine_build_date,
@@ -341,6 +368,17 @@ class SnowflakeEquipmentRepository:
             "automation_run_id": record.automation_run_id,
         }
         await self._execute(MERGE_EQUIPMENT, params)
+        # One row per part for the current version. A failure here fails the
+        # write, and so the lookup: a record without its parts is incomplete.
+        rows = flatten_parts(payload.get("parts_data"))
+        await self._execute(DELETE_PARTS, {"serial_number": record.serial_number,
+                                           "source_system": record.source_system})
+        if rows:
+            await self._execute(INSERT_PARTS, {
+                "serial_number": record.serial_number, "source_system": record.source_system,
+                "source": self.source_labels.get(record.source_system, record.source_system),
+                "retrieved_at": record.retrieved_at,
+                "automation_run_id": record.automation_run_id, "rows": self._j(rows)})
         if changed:
             await self._execute(INSERT_HISTORY, {
                 "serial_number": record.serial_number,

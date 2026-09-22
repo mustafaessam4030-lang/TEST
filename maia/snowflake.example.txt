@@ -18,8 +18,15 @@ authenticator=externalbrowser
 # private_key_file=C:\SIS\maia\keys\maia_rsa_key.p8
 # private_key_passphrase=only if the key is encrypted
 #
-#   3. Password, or a Snowflake programmatic access token (PAT):
-# password=YOUR_PASSWORD_OR_PAT
+#   3. Password:
+# password=YOUR_PASSWORD
+#
+#   4. Programmatic access token (PAT) — also unlocks Cortex AGENTS (REST):
+# pat=YOUR_PROGRAMMATIC_ACCESS_TOKEN
+#
+# Snowflake Cortex (Maia's runtime AI) uses this same connection. With SSO or a
+# password Maia uses AI_COMPLETE; with a PAT or key pair she uses Cortex Agents.
+# Maia's role needs:  GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE <role>;
 
 # Where Maia's tables live. SNOWFLAKE-SETUP.bat creates them if they are missing.
 role=MAIA_APP

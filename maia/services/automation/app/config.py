@@ -7,14 +7,15 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]  # repo-level `maia/`
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="MAIA_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="MAIA_", env_file=".env", extra="ignore",
+                                      populate_by_name=True)
 
     environment: str = "dev"
     log_level: str = "INFO"
@@ -42,12 +43,23 @@ class Settings(BaseSettings):
     #: Snowflake is the record; the folder is evidence a person can open.
     local_artifacts: bool = True
 
-    # The chat model. The key lives with this gateway — env ANTHROPIC_API_KEY or
-    # a local claude.txt — and never reaches the browser, a log or a response.
-    llm_model: str = "claude-opus-5"
-    llm_key_file: str = "claude.txt"
-    llm_effort: str = "low"          # chat is latency-sensitive; low keeps it quick
-    llm_max_tokens: int = 2000
+    snowflake_pat_ref: str | None = None          # env://VAR or file://path
+
+    # Runtime intelligence: Snowflake Cortex. There is no other LLM at runtime.
+    # MAIA_CORTEX_ENABLED (or SNOWFLAKE_CORTEX_ENABLED) must be true.
+    cortex_enabled: bool = Field(default=False, validation_alias=AliasChoices(
+        "MAIA_CORTEX_ENABLED", "SNOWFLAKE_CORTEX_ENABLED"))
+    #: auto → Cortex Agents REST when a PAT or key pair is configured, else
+    #: AI_COMPLETE over the SQL connection. `agent` / `complete` force one.
+    cortex_mode: str = "auto"
+    #: AI_COMPLETE model (must be available to the account/region)
+    cortex_model: str = "mistral-large2"
+    #: Cortex Agents orchestration model; blank = Snowflake's "auto" selection
+    cortex_agent_model: str = ""
+    cortex_max_tokens: int = 2048
+    cortex_timeout_s: int = 120
+    #: at most this many agent ↔ tool round trips per turn
+    cortex_max_tool_rounds: int = 6
 
     # Automation
     headless: bool = True

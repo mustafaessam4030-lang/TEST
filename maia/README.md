@@ -112,3 +112,7 @@ Also deliberately out of scope until the queue is wired: the async worker tier
 Access to SIS must stay within the dealer's licensed entitlement. The platform
 honours rate limits, reuses sessions, and stops cleanly on any bot challenge
 rather than attempting to defeat it.
+
+## Runtime intelligence
+
+Maia's runtime LLM is **Snowflake Cortex** (Cortex Agents REST with gateway-executed tools, or `AI_COMPLETE`). No other model provider is called at runtime. See [docs/18-snowflake-cortex.md](docs/18-snowflake-cortex.md).

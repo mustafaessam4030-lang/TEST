@@ -22,6 +22,9 @@ class ErrorCode(str, Enum):
     DATABASE_ERROR = "DATABASE_ERROR"
     PERSISTENCE_FAILED = "PERSISTENCE_FAILED"
     CIRCUIT_OPEN = "CIRCUIT_OPEN"
+    #: Snowflake Cortex (the runtime LLM) cannot be used — configuration,
+    #: privilege, region or model. Never answered by another LLM instead.
+    CORTEX_UNAVAILABLE = "CORTEX_UNAVAILABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -46,6 +49,7 @@ _POLICY: dict[ErrorCode, tuple[int, bool, int]] = {
     # never reported to Maia as a success.
     ErrorCode.PERSISTENCE_FAILED: (500, False, 1),
     ErrorCode.CIRCUIT_OPEN: (503, False, 1),
+    ErrorCode.CORTEX_UNAVAILABLE: (503, False, 1),
     ErrorCode.INTERNAL_ERROR: (500, False, 1),
 }
 
@@ -69,6 +73,8 @@ USER_HINT: dict[ErrorCode, str] = {
         "The data was retrieved from the source but could not be saved, "
         "so it is not being reported as a completed lookup."),
     ErrorCode.CIRCUIT_OPEN: "Lookups for this source are paused after repeated failures.",
+    ErrorCode.CORTEX_UNAVAILABLE: ("Snowflake Cortex is not available to this deployment; "
+                                   "the reason says exactly what is missing."),
     ErrorCode.INTERNAL_ERROR: "An internal error occurred.",
 }
 

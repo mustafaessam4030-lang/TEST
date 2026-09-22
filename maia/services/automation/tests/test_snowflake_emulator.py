@@ -27,7 +27,8 @@ def warehouse():
 
     with fakesnow.patch():
         conn = snowflake.connector.connect(database="MAIA_PROD", schema="CORE")
-        for name in ("001_core_schema.sql", "003_equipment_details_columns.sql"):
+        for name in ("001_core_schema.sql", "003_equipment_details_columns.sql",
+                     "004_parts_and_cortex.sql"):
             text = (SQL_DIR / name).read_text(encoding="utf-8")
             for stmt, _ in split_statements(io.StringIO(text), remove_comments=True):
                 stmt = stmt.strip()
@@ -35,7 +36,7 @@ def warehouse():
                 # The emulator does not model clustering, retention or comments;
                 # the setup script treats those as optional on a real account too.
                 if not stmt or up.startswith(("CREATE DATABASE", "CREATE SCHEMA", "USE ",
-                                              "COMMENT ON")) \
+                                              "COMMENT ON", "GRANT ")) \
                         or "CLUSTER BY" in up or "DATA_RETENTION" in up:
                     continue
                 conn.cursor().execute(stmt)
@@ -221,3 +222,65 @@ async def test_a_lookup_lands_in_snowflake_and_the_next_one_is_answered_from_it(
     assert second.attribution.source_label == "Caterpillar SIS"
     assert second.data.engine_serial_number == first.data.engine_serial_number
     assert second.data.quality.score == pytest.approx(first.data.quality.score)
+
+
+# ── Cortex on top of Snowflake: SIS once, then Snowflake, parts in their table ─
+@pytest.mark.asyncio
+async def test_cortex_turn_persists_to_snowflake_then_reads_it_back_without_sis(
+        warehouse, tmp_path, caplog) -> None:
+    import logging
+
+    from app.adapters.registry import SourceRegistry
+    from app.agent.state import ConversationContext
+    from app.config import Settings
+    from app.cortex.client import CortexRuntime
+    from app.cortex.service import MaiaCortexService
+    from app.domain.freshness import FreshnessPolicy
+    from app.repositories.local_json_repo import LocalJsonRepository
+    from app.repositories.mirrored_repo import MirroredRepository
+    from app.services.equipment_service import EquipmentService
+    from tests.conftest import SIS_SEARCHES, FakeAdapter, FakePool
+    from tests.test_cortex import FakeExecutor, _cfg, grounded_reply
+
+    SIS_SEARCHES.clear()
+    warehouse.source_labels["cat_sis"] = "Caterpillar SIS"
+    repo = MirroredRepository(primary=warehouse, mirror=LocalJsonRepository(tmp_path / "s"))
+    registry = SourceRegistry()
+    registry.register("cat_sis", "Caterpillar SIS",
+                      {"_behaviour": "ok", "selector_version": "test-v1"}, FakeAdapter,
+                      precedence=10)
+    settings = Settings(allow_live_automation=True, repository="snowflake",
+                        run_deadline_ms=5000, step_timeout_ms=2000, cortex_enabled=True,
+                        cortex_mode="complete")
+    service = EquipmentService(repo=repo, registry=registry, pool=FakePool(),
+                               freshness=FreshnessPolicy({"sources": {"cat_sis":
+                                                          {"ttl_days": 90}}}),
+                               settings=settings)
+    cortex = FakeExecutor(reply=grounded_reply)          # stands in for AI_COMPLETE
+    runtime = CortexRuntime(settings, repo, sql_executor=cortex)
+    runtime._cfg = _cfg()
+    maia = MaiaCortexService(runtime=runtime, equipment_service=service, repo=repo)
+
+    caplog.set_level(logging.INFO, logger="app")
+    first = await maia.answer(f"Get equipment {SERIAL}")
+    assert first["status"] == "SUCCESS" and first["origin"] == "sis"
+    assert SIS_SEARCHES == [SERIAL]
+    parts = await warehouse._execute(
+        "SELECT PART_NUMBER, PART_NAME, GROUP_NAME, SOURCE, AUTOMATION_RUN_ID "
+        "FROM EQUIPMENT_PARTS WHERE SERIAL_NUMBER = %(sn)s", {"sn": SERIAL}, fetch="all")
+    assert parts == [("1000", "Engine", "Entire Group", "Caterpillar SIS",
+                      first["automation_run_id"])]
+    product = await warehouse._execute(
+        "SELECT PRODUCT, NORMALIZED_DATA:serial_number::STRING FROM EQUIPMENT_DATA "
+        "WHERE SERIAL_NUMBER = %(sn)s", {"sn": SERIAL}, fetch="one")
+    assert product == ("Entire Group (JAZ01865)", SERIAL)
+
+    second = await maia.answer(f"Get equipment {SERIAL}",
+                               ConversationContext.model_validate(first["context"]))
+    assert second["status"] == "SUCCESS" and second["origin"] == "store"
+    assert SIS_SEARCHES == [SERIAL]                       # no second browser run
+    assert len(cortex.calls) == 2                         # Cortex analysed both turns
+    # The proof, as the service logs it:
+    decisions = [getattr(r, "extra_fields", {}).get("action") for r in caplog.records
+                 if r.getMessage() == "equipment.decision"]
+    assert decisions[:2] == ["no_cache", "use_cache"]

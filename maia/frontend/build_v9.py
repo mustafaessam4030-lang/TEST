@@ -222,6 +222,33 @@ ${docs.length?"""),
 ]
 
 
+# v9.1 — the runtime model is Snowflake Cortex, behind the Maia gateway. The
+# page never calls a model provider and never holds a credential.
+ANCHORS += [
+    ("cortex-endpoint", "  endpoint : 'https://api.anthropic.com/v1/messages',",
+     "  endpoint : 'http://127.0.0.1:8080/v1/llm/messages',   // Snowflake Cortex via the Maia gateway"),
+    ("cortex-model", "  model    : 'claude-sonnet-4-6',", "  model    : 'Snowflake Cortex',"),
+    # The page sends no credential of any kind; the gateway authenticates to Snowflake.
+    ("cortex-nokey",
+     "CFG.apiKey?{'x-api-key':CFG.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}:{}",
+     "{}"),
+    ("cortex-503",
+     "      if(res.status===401||res.status===403){MODEL_STATE='unauthorised';return{ok:false,error:'no API key - local engine'};}",
+     "      if(res.status===401||res.status===403||res.status===503){MODEL_STATE='unauthorised';"
+     "let why='';try{why=(await res.json()).reason||'';}catch(e){}"
+     "return{ok:false,error:'Snowflake Cortex unavailable'+(why?' ('+why+')':'')};}"),
+    ("cortex-dispatch", "  const llm=await callClaude(raw,photoB64,docs,L,local);",
+     "  // v9.1: an equipment turn was already answered by Cortex on the gateway,\n"
+     "  // grounded in the tools and verified — do not ask a second time.\n"
+     "  const llm=(equip&&equip.cortex)?EQUIP.cortexLLM(equip,L)"
+     ":await callClaude(raw,photoB64,docs,L,local);"),
+    ("cortex-label", "` <span class=\"maia-mode local\">· local engine</span>`",
+     "` <span class=\"maia-mode local\">· rules engine — Snowflake Cortex unavailable</span>`"),
+    ("cortex-trace", "${t.mode==='llm'?CFG.model:'local engine'}",
+     "${t.mode==='llm'?CFG.model:'rules engine (Cortex unavailable)'}"),
+]
+
+
 def main() -> int:
     html = SRC.read_text(encoding="utf-8")
     for name, anchor, replacement in ANCHORS:

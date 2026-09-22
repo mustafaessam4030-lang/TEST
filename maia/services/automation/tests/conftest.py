@@ -13,6 +13,10 @@ from app.repositories.memory_repo import MemoryEquipmentRepository
 from app.services.equipment_service import EquipmentService
 
 
+#: every serial FakeAdapter.search was asked for — the stand-in for "Playwright ran"
+SIS_SEARCHES: list[str] = []
+
+
 class FakeAdapter:
     """Stands in for CatSisAdapter: same four methods, no browser."""
 
@@ -33,8 +37,11 @@ class FakeAdapter:
     async def search(self, ctx: Any, serial_number: str) -> SearchOutcome:
         from app.core.errors import AutomationError, ErrorCode
 
+        SIS_SEARCHES.append(serial_number)
         if self.behaviour == "not_found":
             return SearchOutcome(found=False, evidence="empty_state:.no-results")
+        if self.behaviour == "website_changed":
+            raise AutomationError(ErrorCode.WEBSITE_CHANGED, "search box not found")
         if self.behaviour == "timeout":
             raise AutomationError(ErrorCode.TIMEOUT, "slow")
         return SearchOutcome(found=True, detail_url="https://sis2.cat.com/#/detail/1")

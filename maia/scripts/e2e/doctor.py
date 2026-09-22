@@ -181,23 +181,19 @@ def check_snowflake() -> None:
         repo.close()
 
 
-def check_llm() -> None:
-    """The chat model. Optional: without a key Maia answers on her local engine."""
-    from app.api.routes_llm import resolve_key
+def check_cortex() -> None:
+    """Snowflake Cortex — Maia's only runtime LLM. Configuration only here;
+    `snowflake_setup.py check` makes the live call."""
     from app.config import get_settings
+    from app.cortex.client import CortexRuntime
 
-    settings = get_settings()
-    try:
-        import anthropic  # noqa: F401
-    except ImportError:
-        add(WARN, "claude (chat model)", "anthropic package not installed",
-            ".venv\\Scripts\\python.exe -m pip install anthropic")
-        return
-    if resolve_key(settings):
-        add(OK, "claude (chat model)", f"key found (not shown) · model {settings.llm_model}")
+    status = CortexRuntime(get_settings()).status()
+    if status["configured"]:
+        add(OK, "snowflake cortex", f"mode {status['mode']} · model "
+            f"{status['model'] if status['mode'] == 'complete' else status['agent_model']}")
     else:
-        add(WARN, "claude (chat model)", "no key — Maia uses her local engine",
-            "copy claude.example.txt to claude.txt and put your key in it")
+        add(WARN, "snowflake cortex", f"not usable: {status['reason']}",
+            status["fix"] or "")
 
 
 async def check_browser_reach() -> None:
@@ -244,7 +240,7 @@ def main() -> int:
     check_switch()
     check_local_store()
     check_snowflake()
-    check_llm()
+    check_cortex()
     asyncio.run(check_browser_reach())
 
     icon = {OK: "✓", WARN: "!", FAIL: "✗"}

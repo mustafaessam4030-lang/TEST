@@ -145,7 +145,7 @@ $needed = & $venvPy -c @"
 import importlib.util as u
 mods = {'fastapi':'fastapi','uvicorn':'uvicorn[standard]','yaml':'pyyaml>=6.0.2',
         'pydantic':'pydantic','pydantic_settings':'pydantic-settings','httpx':'httpx',
-        'playwright':'playwright','anthropic':'anthropic'}
+        'playwright':'playwright'}
 print(' '.join(pkg for mod, pkg in mods.items() if u.find_spec(mod) is None))
 "@ 2>$null
 
@@ -159,7 +159,7 @@ if ($needed) {
     }
     $still = & $venvPy -c @"
 import importlib.util as u
-print(' '.join(m for m in ['fastapi','uvicorn','yaml','pydantic','pydantic_settings','httpx','playwright','anthropic']
+print(' '.join(m for m in ['fastapi','uvicorn','yaml','pydantic','pydantic_settings','httpx','playwright']
                 if u.find_spec(m) is None))
 "@ 2>$null
     if ($still) {
@@ -277,19 +277,18 @@ if ($sfFile -and -not $env:MAIA_REPOSITORY) {
     }
 }
 
-# ── 3c. Claude (the chat model) ─────────────────────────────────────────────
-# The key stays with the gateway on this PC; the chat page never sees it.
-# Without one, Maia still works, on her built-in local engine.
-$claudeFile = Get-ChildItem -Path $repo -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^claude\.' -and $_.Name -notlike 'claude.example*' } |
-    Select-Object -First 1
-if ($env:ANTHROPIC_API_KEY) {
-    Say "      Claude: using ANTHROPIC_API_KEY from this window (not shown)." Green
-} elseif ($claudeFile) {
-    Say "      Claude: using $($claudeFile.Name) (contents not shown)." Green
+# ── 3c. Snowflake Cortex (Maia's runtime intelligence) ──────────────────────
+# Cortex runs inside Snowflake and uses the same snowflake.txt. There is no
+# other AI provider: without Cortex, Maia answers with her rules engine and
+# says so on every reply.
+if ($sfFile -and -not $env:MAIA_CORTEX_ENABLED -and -not $env:SNOWFLAKE_CORTEX_ENABLED) {
+    $env:MAIA_CORTEX_ENABLED = "true"
+}
+if ($env:MAIA_CORTEX_ENABLED -eq "true" -or $env:SNOWFLAKE_CORTEX_ENABLED -eq "true") {
+    Say "      Snowflake Cortex: enabled (checked above with the Snowflake connection)." Green
 } else {
-    Say "      Claude: no key found - Maia will answer with her local engine." Yellow
-    Say "      For full conversation, copy claude.example.txt to claude.txt and add your key." Yellow
+    Say "      Snowflake Cortex: not configured - Maia uses her rules engine." Yellow
+    Say "      Create snowflake.txt (see snowflake.example.txt) to turn Cortex on." Yellow
 }
 
 # ── 4. Readiness ────────────────────────────────────────────────────────────

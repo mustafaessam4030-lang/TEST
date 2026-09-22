@@ -44,15 +44,14 @@ def wire_ui(api_base: str, source: str) -> Path:
     html, m = re.subn(r"(source\s*:\s*)'[^']*'", rf"\1'{source}'", html, count=1)
     if not m:
         sys.exit("could not find CFG.equipment.source in the UI — was v9 rebuilt?")
-    # The chat model goes through the gateway, which holds the key. The page
-    # never sees one. If the gateway has no key it answers 401 and the page
-    # falls back to its local engine, exactly as before.
-    html, k = re.subn(r"(endpoint\s*:\s*)'https://api\.anthropic\.com/v1/messages'",
+    # The chat model is Snowflake Cortex, behind the gateway. The page never
+    # holds a credential and never calls a model provider itself. If Cortex is
+    # unavailable the gateway answers 503 and the page uses its rules engine,
+    # labelled as such.
+    html, k = re.subn(r"(endpoint\s*:\s*)'http://127\.0\.0\.1:8080/v1/llm/messages'",
                       rf"\1'{api_base}/v1/llm/messages'", html, count=1)
     if not k:
         sys.exit("could not find CFG.endpoint in the UI")
-    model = os.environ.get("MAIA_LLM_MODEL", "claude-opus-5")
-    html = re.sub(r"(model\s*:\s*)'claude-[^']*'", rf"\1'{model}'", html, count=1)
     html = re.sub(r"(timeoutMs\s*:\s*)18000", r"\g<1>45000", html, count=1)
     target = BUILD / "maia.html"
     target.write_text(html, encoding="utf-8")

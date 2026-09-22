@@ -15,7 +15,8 @@ from fastapi.responses import JSONResponse
 from app.adapters.browser import BrowserPool
 from app.adapters.cat_sis import CatSisAdapter
 from app.adapters.registry import SourceRegistry
-from app.api import routes_agent, routes_equipment, routes_health, routes_llm, routes_runs
+from app.api import (routes_agent, routes_equipment, routes_health, routes_llm, routes_maia,
+                     routes_runs)
 from app.config import get_settings
 from app.core import logging as mlog
 from app.core.errors import AutomationError, ErrorCode, USER_HINT, http_status
@@ -102,8 +103,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         repo=repo, registry=registry, pool=pool,
         freshness=FreshnessPolicy(settings.freshness_policy()), settings=settings,
         capture=capture)
+    # Runtime intelligence: Snowflake Cortex. Built lazily — nothing connects
+    # until the first question, and a missing configuration is reported per
+    # request as CORTEX_UNAVAILABLE, never answered by another model.
+    from app.cortex.client import CortexRuntime
+    from app.cortex.service import MaiaCortexService
+
+    app.state.cortex_runtime = CortexRuntime(settings, repo)
+    app.state.maia = MaiaCortexService(runtime=app.state.cortex_runtime,
+                                       equipment_service=app.state.equipment_service,
+                                       repo=repo)
     mlog.log(logger, logging.INFO, "service.started", environment=settings.environment,
-             repository=settings.repository, live_automation=settings.allow_live_automation)
+             repository=settings.repository, live_automation=settings.allow_live_automation,
+             cortex=app.state.cortex_runtime.status()["mode"] or "unavailable")
     try:
         yield
     finally:
@@ -155,6 +167,7 @@ async def unhandled_handler(_: Request, exc: Exception) -> JSONResponse:
 
 app.include_router(routes_agent.router)
 app.include_router(routes_llm.router)
+app.include_router(routes_maia.router)
 app.include_router(routes_equipment.router)
 app.include_router(routes_runs.router)
 app.include_router(routes_health.router)

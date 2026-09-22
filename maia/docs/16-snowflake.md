@@ -53,6 +53,7 @@ secrets before it is logged.
 | `EQUIPMENT_DATA` | serial × source | MERGE on every successful lookup (and `NOT_FOUND` markers) |
 | `EQUIPMENT_DATA_HISTORY` | change | only when `DATA_HASH` changes, so it records changes, not repeat lookups |
 | `AUTOMATION_RUNS` | lookup run | at start and at the outcome (the per-second progress stays local) |
+| `EQUIPMENT_PARTS` | published part row (current version) | replaced on every successful write (migration 004) |
 | `AUTOMATION_RUN_CLAIMS` | in-flight lookup | while a lookup runs, so two users share one browser run |
 
 `RAW_DATA` holds everything the page gave (`extracted_fields`, `parts_data`,

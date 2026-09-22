@@ -13,7 +13,11 @@ Three places can describe the connection, in this order of precedence:
         database=MAIA_PROD
         schema=CORE
 
-  3. the defaults in `app.config.Settings`
+  3. the standard `SNOWFLAKE_*` variables (SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER,
+     SNOWFLAKE_PASSWORD, SNOWFLAKE_PAT, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE,
+     SNOWFLAKE_SCHEMA, SNOWFLAKE_ROLE, SNOWFLAKE_AUTHENTICATOR,
+     SNOWFLAKE_PRIVATE_KEY_FILE, SNOWFLAKE_PRIVATE_KEY_PASSPHRASE)
+  4. the defaults in `app.config.Settings`
 
 Three ways to sign in, chosen by what is present:
 
@@ -41,7 +45,8 @@ _ALIASES = {
     "account": "account", "account_identifier": "account", "accountname": "account",
     "user": "user", "username": "user", "login": "user",
     "authenticator": "authenticator", "auth": "authenticator",
-    "password": "password", "pat": "password", "token": "password",
+    "password": "password",
+    "pat": "pat", "token": "pat", "programmatic_access_token": "pat",
     "private_key_file": "private_key_file", "private_key": "private_key_file",
     "key_file": "private_key_file",
     "private_key_passphrase": "private_key_passphrase", "passphrase": "private_key_passphrase",
@@ -49,7 +54,7 @@ _ALIASES = {
     "role": "role", "warehouse": "warehouse", "database": "database", "schema": "schema",
     "host": "host",
 }
-SECRET_KEYS = ("password", "private_key_passphrase")
+SECRET_KEYS = ("password", "private_key_passphrase", "pat")
 
 
 class ConnectKwargs(dict):
@@ -71,6 +76,9 @@ class SnowflakeSettings:
     password: str | None = field(default=None, repr=False)
     private_key_file: str | None = None
     private_key_passphrase: str | None = field(default=None, repr=False)
+    #: programmatic access token: works as a password for the driver, and is
+    #: the simplest bearer token for the Cortex Agents REST API
+    pat: str | None = field(default=None, repr=False)
     role: str | None = None
     warehouse: str | None = None
     database: str | None = None
@@ -89,14 +97,40 @@ class SnowflakeSettings:
             return "okta"
         if self.private_key_file or auth in ("keypair", "snowflake_jwt"):
             return "keypair"
-        if self.password:
+        if self.password or self.pat:
             return "password"
         return "none"
+
+    # ── REST (Cortex Agents) ────────────────────────────────────────────────
+    @property
+    def rest_auth_method(self) -> str | None:
+        """The REST API takes a bearer token: a PAT or a key-pair JWT. A
+        browser SSO or a plain password gives the driver a session, not a
+        bearer token, so those accounts use AI_COMPLETE over SQL instead."""
+        if self.pat:
+            return "pat"
+        if self.private_key_file and self._key_path().exists():
+            return "keypair"
+        return None
+
+    @property
+    def rest_host(self) -> str | None:
+        if self.host:
+            return self.host
+        if not self.account:
+            return None
+        # URLs use hyphens where account names use underscores.
+        return f"{self.account.replace('_', '-').lower()}.snowflakecomputing.com"
+
+    @property
+    def jwt_account(self) -> str:
+        """ACCOUNT for a key-pair JWT: the locator without region/cloud, upper case."""
+        return str(self.account or "").split(".")[0].upper()
 
     def problems(self) -> list[str]:
         """What stops a connection attempt, in words an operator can act on."""
         out = []
-        example = [k for k in ("account", "user", "password")
+        example = [k for k in ("account", "user", "password", "pat")
                    if "YOUR_" in str(getattr(self, k) or "").upper()]
         if example:
             out.append(f"{', '.join(example)} still has the example text — "
@@ -151,16 +185,18 @@ class SnowflakeSettings:
             if self.private_key_passphrase:
                 kw["private_key_file_pwd"] = self.private_key_passphrase
         elif method == "password":
-            kw["password"] = self.password
+            # A PAT is accepted wherever a password is.
+            kw["password"] = self.password or self.pat
         return ConnectKwargs({k: v for k, v in kw.items() if v not in (None, "")})
 
     def secrets(self) -> tuple[str, ...]:
         """Values to mask in anything written — error text included."""
-        return tuple(v for v in (self.password, self.private_key_passphrase) if v)
+        return tuple(v for v in (self.password, self.private_key_passphrase, self.pat) if v)
 
     def summary(self) -> dict[str, Any]:
         """Everything safe to show about this connection. No secret, ever."""
         return {"account": self.account, "user": self.user, "auth": self.auth_method,
+                "rest_auth": self.rest_auth_method,
                 "role": self.role, "warehouse": self.warehouse,
                 "database": self.database, "schema": self.schema,
                 "config_file": self.config_file}
@@ -216,33 +252,40 @@ def load(settings: Any) -> SnowflakeSettings:
     path = find_config_file(getattr(settings, "snowflake_config_file", None))
     file_values = read_config_file(path) if path else {}
 
+    def std(key: str) -> str | None:
+        return os.environ.get(f"SNOWFLAKE_{key.upper()}") or None
+
     def pick(key: str) -> str | None:
         attr = f"snowflake_{key}"
         if attr in explicit and getattr(settings, attr, None):
             return getattr(settings, attr)
+        if std(key):
+            return std(key)
         if file_values.get(key):
             return file_values[key]
         return getattr(settings, attr, None)
 
     # MAIA_SNOWFLAKE_PRIVATE_KEY_REF=file://… when set explicitly, else the file.
     key_ref = getattr(settings, "snowflake_private_key_ref", None) or ""
-    private_key_file = file_values.get("private_key_file")
+    private_key_file = std("private_key_file") or file_values.get("private_key_file")
     if key_ref.startswith("file://") and ("snowflake_private_key_ref" in explicit
                                           or not private_key_file):
         private_key_file = key_ref.removeprefix("file://")
 
     password = (_resolve_ref(getattr(settings, "snowflake_password_ref", None))
-                or file_values.get("password"))
+                or std("password") or file_values.get("password"))
     passphrase = (_resolve_ref(getattr(settings, "snowflake_private_key_passphrase_ref", None))
-                  or file_values.get("private_key_passphrase"))
+                  or std("private_key_passphrase") or file_values.get("private_key_passphrase"))
+    pat = (_resolve_ref(getattr(settings, "snowflake_pat_ref", None))
+           or std("pat") or file_values.get("pat"))
 
     return SnowflakeSettings(
         account=pick("account"), user=pick("user"),
         authenticator=pick("authenticator"),
         password=password, private_key_file=private_key_file,
-        private_key_passphrase=passphrase,
+        private_key_passphrase=passphrase, pat=pat,
         role=pick("role"), warehouse=pick("warehouse"),
         database=pick("database"), schema=pick("schema"),
-        host=file_values.get("host"),
+        host=std("host") or file_values.get("host"),
         config_file=path.name if path else None,
     )
