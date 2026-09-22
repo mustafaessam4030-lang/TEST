@@ -2,6 +2,32 @@
   "note": "Claude tool definitions for Maia. strict:true + additionalProperties:false so tool inputs are schema-valid. Served unchanged on every turn to keep the prompt prefix cacheable. Maia's entire reach into the browser is a serial-number string, re-validated server-side.",
   "tools": [
     {
+      "name": "understand_request",
+      "description": "Read the user's message and return what it means: intent, the equipment serial (normalized), near-matches when the serial does not resolve, which fields were asked for, the conversation's active machine, and the plan of tools to run. CALL THIS FIRST on every turn, before any other tool. It never contacts Caterpillar and never launches a browser. Its response_mode tells you what to do: RUN_LOOKUP (follow the tool_plan), CONFIRM_CANDIDATE or CHOOSE_CANDIDATE or ASK_SERIAL or ASK_WHICH_EQUIPMENT (ask the user the message it gives you and call no other tool), HELP, ERROR. Never override its serial_number with one of your own reading, and never 'correct' a serial it did not resolve.",
+      "strict": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "utterance"
+        ],
+        "properties": {
+          "utterance": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "The user's message, verbatim."
+          },
+          "context": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The `context` object returned by the previous understand_request call in this conversation. Pass it back so follow-ups like 'what about the engine?' resolve to the right machine."
+          }
+        }
+      }
+    },
+    {
       "name": "get_equipment_from_database",
       "description": "Look up an equipment serial number in Mantrac's internal data store. ALWAYS call this before search_equipment_in_sis. Returns the stored record with its freshness label and age in days, or found=false. Never launches a browser and never contacts Caterpillar.",
       "strict": true,

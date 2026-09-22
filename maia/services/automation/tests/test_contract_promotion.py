@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest
 
 from app.adapters import selector_store
 from app.services.capture_service import CaptureService

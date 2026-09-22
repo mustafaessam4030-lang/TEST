@@ -180,5 +180,73 @@ const check = (name, cond, detail = '') => {
   check('model is told the fields are null', ctx.EQUIP.promptBlock().includes('machine_serial_number=null'));
 }
 
+// 11. the gateway brain drives the lookup, not a regex in this file
+{
+  const STATE = (over = {}) => ({
+    utterance: 'x', language: 'en', intent: 'EQUIPMENT_LOOKUP', intent_confidence: 0.9,
+    serial_number: 'SN123456', serial_source: 'utterance', extracted: [],
+    serial_candidates: [], requested_fields: [],
+    context: { active_serial: 'SN123456', confirmed: true, recent_serials: ['SN123456'],
+               awaiting: null, pending_candidates: [], last_intent: 'EQUIPMENT_LOOKUP' },
+    tool_plan: [{ tool: 'get_equipment_from_local_store', arguments: {}, because: '' }],
+    tool_results: [], validation: {}, response_mode: 'RUN_LOOKUP', message: '', notes: [],
+    ...over });
+
+  calls.length = 0;
+  const ctx = makeCtx({
+    '/v1/agent/understand': { status: 200, body: STATE() },
+    '/v1/equipment/SN123456': { status: 200, body: {
+      data: RECORD, attribution: ATTR('FRESH', 2), cache: { hit: true, freshness: 'FRESH', age_days: 2 } } },
+  });
+  const r = await ctx.EQUIP.lookup('sn 123456');
+  check('brain-driven lookup still returns the record', r.ok && r.data.serial_number === 'SN123456');
+
+  // A sentence with no serial anywhere must not reach a tool at all.
+  calls.length = 0;
+  const ctx2 = makeCtx({
+    '/v1/agent/understand': { status: 200, body: STATE({
+      response_mode: 'ASK_SERIAL', serial_number: null, intent: 'UNKNOWN',
+      message: 'Which machine? Send me the serial number.', tool_plan: [] }) },
+  });
+  const out = await ctx2.EQUIP.maybeLookup('what is the weather', {}, {}, 'en', {});
+  check('no serial means no lookup', !!out && out.clarify === true);
+  check('nothing but the understand call was made',
+        calls.filter(c => !c.includes('/v1/agent/understand')).length === 0, calls.join(', '));
+}
+
+// 12. a near-match is a question, never a substitution
+{
+  calls.length = 0;
+  const ctx = makeCtx({
+    '/v1/agent/understand': { status: 200, body: {
+      utterance: 'get JAZ01856', language: 'en', intent: 'EQUIPMENT_LOOKUP',
+      intent_confidence: 0.9, serial_number: 'JAZ01856', serial_source: 'utterance',
+      extracted: [], requested_fields: [], tool_plan: [], tool_results: [], notes: [],
+      serial_candidates: [{ serial_number: 'JAZ01865', similarity: 0.99,
+                            evidence: 'internal_store', edit_distance: 1,
+                            explanation: '5 and 6 are the other way round' }],
+      context: { active_serial: 'JAZ01856', confirmed: false, recent_serials: [],
+                 awaiting: 'confirmation', pending_candidates: [], last_intent: null },
+      validation: {}, response_mode: 'CONFIRM_CANDIDATE',
+      message: "I couldn't find JAZ01856. I do have JAZ01865 — 5 and 6 are the other way round. Did you mean that one?" } },
+  });
+  const r = await ctx.EQUIP.maybeLookup('get JAZ01856', {}, {}, 'en', {});
+  check('a near-match asks instead of looking up', !!r && r.clarify === true);
+  check('the offered candidate is carried', (r.candidates || [])[0] === 'JAZ01865');
+  check('SIS was never contacted for a typo',
+        !calls.some(c => c.includes('/v1/equipment/search')), calls.join(', '));
+
+  const card = ctx.EQUIP.renderCard(r, 'en');
+  check('the card asks the question', card.includes('Did you mean that one?'));
+  check('the card states no equipment values',
+        !card.includes('2014-08-02') && !card.includes('FIX00588'));
+  check('the card says it will not substitute', card.includes('will not substitute'));
+
+  const prompt = ctx.EQUIP.promptBlock();
+  check('the model is told no lookup happened', prompt.includes('CLARIFICATION NEEDED'));
+  check('the model is forbidden from stating values', prompt.includes('State NO equipment values'));
+  check('the model is forbidden from correcting the serial', prompt.includes('Do NOT substitute'));
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');
 process.exit(failures ? 1 : 0);

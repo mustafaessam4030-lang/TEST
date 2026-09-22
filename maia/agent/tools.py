@@ -70,6 +70,7 @@ class MaiaToolDispatcher:
 
     async def dispatch(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         handler = {
+            "understand_request": self.understand_request,
             "get_equipment_from_database": self.get_equipment_from_database,
             # Same store, named for where the records live today. Both names
             # stay valid when the local JSON folder becomes Snowflake.
@@ -91,6 +92,25 @@ class MaiaToolDispatcher:
             return _envelope_error("NETWORK_ERROR", f"Automation API unreachable: {exc}")
 
     # ── tools ───────────────────────────────────────────────────────────────
+    async def understand_request(self, utterance: str,
+                                 context: dict[str, Any] | None = None) -> dict[str, Any]:
+        """The reasoning layer, which lives server-side and is shared with the UI.
+
+        The model reads a sentence far better than a rule ever will; it is not
+        allowed to be the thing that decides which machine a serial refers to.
+        So it asks here, and works from the answer.
+        """
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(f"{self.api_base}/v1/agent/understand",
+                                     json={"utterance": utterance, "context": context},
+                                     headers=self.headers)
+        if resp.status_code != 200:
+            return _envelope_error("INTERNAL_ERROR",
+                                   "The understanding service did not answer.")
+        state = resp.json()
+        return {"ok": True, **state}
+
+
     async def get_equipment_from_database(self, serial_number: str,
                                           source: str | None = None) -> dict[str, Any]:
         serial = normalize_serial(serial_number)

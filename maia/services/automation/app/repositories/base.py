@@ -51,6 +51,15 @@ class EquipmentRepository(Protocol):
 
     async def get_any_source(self, serial_number: str) -> list[dict[str, Any]]: ...
 
+    async def known_serials(self, limit: int = 500) -> list[str]:
+        """Serials this store can name, for near-match suggestions.
+
+        A store that cannot list is allowed to return nothing: then a mistyped
+        serial simply gets "I couldn't find it" instead of "did you mean…",
+        which is a worse answer but never a wrong one.
+        """
+        ...
+
     async def upsert(self, record: EquipmentRecord, *,
                      extraction: ExtractionArtifact | None = None) -> bool:
         """Return True when a new history version was written (data actually changed).

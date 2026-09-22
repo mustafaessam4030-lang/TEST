@@ -1,4 +1,4 @@
-.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result e2e smoke clean
+.PHONY: install test lint run agent build-maia capture capture-selftest package doctor sis-onboard sis-lookup sis-result eval e2e smoke clean
 SERIAL ?= CAT0336LKBW00123
 MISSING ?= ZZZ00000
 
@@ -9,6 +9,7 @@ install:
 test:
 	cd services/automation && python -m pytest -q
 	cd frontend && node test_equipment.mjs
+	python3 scripts/eval/run_agent_eval.py
 	python3 scripts/capture/capture_selectors.py --self-test
 
 lint:
@@ -41,6 +42,9 @@ sis-lookup:                 ## one REAL SIS lookup, saved to logs/sis-results/
 
 sis-result:                 ## what a saved lookup actually captured
 	python3 scripts/e2e/show_sis_result.py --serial $(SERIAL)
+
+eval:                       ## Maia's agent evaluation report
+	python3 scripts/eval/run_agent_eval.py
 
 capture-selftest:           ## prove the capture engine against the local fixture
 	python3 scripts/capture/capture_selectors.py --self-test

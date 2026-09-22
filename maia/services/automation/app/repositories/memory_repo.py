@@ -24,6 +24,9 @@ class MemoryEquipmentRepository:
     async def get_any_source(self, serial_number: str) -> list[dict[str, Any]]:
         return [v for (_s, sn), v in self._current.items() if sn == serial_number]
 
+    async def known_serials(self, limit: int = 500) -> list[str]:
+        return sorted({sn for (_s, sn) in self._current})[:limit]
+
     async def upsert(self, record: EquipmentRecord, *,
                      extraction: ExtractionArtifact | None = None) -> bool:
         # `extraction` is the raw page read. This store keeps only the

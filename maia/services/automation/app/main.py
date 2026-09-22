@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from app.adapters.browser import BrowserPool
 from app.adapters.cat_sis import CatSisAdapter
 from app.adapters.registry import SourceRegistry
-from app.api import routes_equipment, routes_health, routes_runs
+from app.api import routes_agent, routes_equipment, routes_health, routes_runs
 from app.config import get_settings
 from app.core import logging as mlog
 from app.core.errors import AutomationError, ErrorCode, USER_HINT, http_status
@@ -184,6 +184,7 @@ async def unhandled_handler(_: Request, exc: Exception) -> JSONResponse:
         "user_message_hint": USER_HINT[ErrorCode.INTERNAL_ERROR]})
 
 
+app.include_router(routes_agent.router)
 app.include_router(routes_equipment.router)
 app.include_router(routes_runs.router)
 app.include_router(routes_health.router)

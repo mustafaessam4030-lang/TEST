@@ -190,6 +190,14 @@ class LocalJsonRepository:
                 out.append(payload["record"])
         return out
 
+    async def known_serials(self, limit: int = 500) -> list[str]:
+        """Read from the index, so this stays one small file read however many
+        lookups the folder has accumulated."""
+        serials = {key.split("::", 1)[1]
+                   for key in self._index().get("current", {})
+                   if "::" in key}
+        return sorted(serials)[:limit]
+
     async def history(self, serial_number: str, source: str | None = None,
                       limit: int = 20) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []

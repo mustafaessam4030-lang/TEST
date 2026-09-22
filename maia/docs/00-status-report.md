@@ -3,7 +3,7 @@
 **Project:** Maia — equipment-data capability for the Mantrac Control Tower
 **Source system:** Caterpillar SIS — https://sis2.cat.com/#/
 **Branch:** `claude/maia-equipment-automation-yxs92l` · 26 commits · as of 2026-09-21
-**Tests:** 164 backend · 39 front-end · capture self-test · automatic discovery — all passing
+**Tests:** 184 backend · 53 front-end · 44 agent-evaluation cases · capture self-test — all passing
 
 ---
 
@@ -328,6 +328,7 @@ rather than a nicety.
 | `12-end-to-end-runbook.md` | the full chain, live progress, MFA resume |
 | `13-windows-deployment.md` | **running it for real on your PC** |
 | `14-local-json-store.md` | the temporary local JSON store, and the repository seam that makes it temporary |
+| `15-intelligence-layer.md` | intent, serial handling, context and the evaluation suite |
 
 ---
 

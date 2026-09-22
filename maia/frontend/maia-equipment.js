@@ -275,12 +275,55 @@ const EQUIP=(()=>{
   }
 
   // Runs before the model, so the model is grounded rather than guessing.
+  // ── the intelligence layer ───────────────────────────────────────────────
+  // One brain, on the gateway, shared with the Python agent and the evaluation
+  // suite. The browser asks it what the sentence means rather than deciding
+  // with a regex of its own — so what the tests measure is what ships here.
+  let convo=null;                 // ConversationContext, handed back each turn
+
+  async function understand(text){
+    const r=await call('/v1/agent/understand',{method:'POST',timeoutMs:8000,
+      body:{utterance:String(text||''),context:convo}});
+    if(r.error_code||r.httpStatus!==200)return null;
+    convo=r.payload.context||convo;
+    return r.payload;
+  }
+
+  function resetContext(){convo=null;}
+
+  // What the brain decided, turned into the one thing this layer can do.
   async function maybeLookup(raw,ents,cls,L,opts){
     if(!C().enabled)return null;
+
+    const state=await understand(raw);
+    if(state){
+      const mode=state.response_mode;
+      // A question for the user is an answer in itself — and never a lookup.
+      if(mode==='CONFIRM_CANDIDATE'||mode==='CHOOSE_CANDIDATE'||
+         mode==='ASK_WHICH_EQUIPMENT'||mode==='ASK_SERIAL'||mode==='HELP'){
+        const ask={ok:false,clarify:true,mode:mode,message:state.message,
+                   candidates:(state.serial_candidates||[]).map(c=>c.serial_number),
+                   serial:state.serial_number||null,state:state};
+        // promptBlock() reads `current`. Without this the model would be handed
+        // the PREVIOUS machine's record while the user is being asked which
+        // machine they mean — the exact confusion this layer exists to prevent.
+        current=ask;
+        return ask;
+      }
+      if(mode!=='RUN_LOOKUP'||!state.serial_number)return null;
+      const plan=(state.tool_plan||[]).map(t=>t.tool);
+      return lookup(state.serial_number,{
+        // The plan decides whether the source is worth the trip, not a keyword.
+        refresh:plan.includes('search_equipment_in_sis'),
+        force:wantsRefresh(raw),
+        lang:L,onProgress:opts&&opts.onProgress,state:state});
+    }
+
+    // The gateway is unreachable: fall back to what this file always did, so a
+    // degraded brain never means a dead chat.
     const serial=ents&&ents.serial?ents.serial:null;
     if(!serial)return null;
-    const intentMatches=(cls&&cls.intent==='equipment_lookup')||wantsLookup(raw);
-    if(!intentMatches)return null;
+    if(!((cls&&cls.intent==='equipment_lookup')||wantsLookup(raw)))return null;
     return lookup(serial,{refresh:wantsRefresh(raw),force:wantsRefresh(raw),
                           lang:L,onProgress:opts&&opts.onProgress});
   }
@@ -323,6 +366,18 @@ const EQUIP=(()=>{
   function promptBlock(){
     const r=current;
     if(!r)return '';
+    if(r.clarify){
+      return `EQUIPMENT LOOKUP NOT PERFORMED — CLARIFICATION NEEDED
+The user's request could not be tied to one confirmed machine.
+Ask exactly this, in the user's language, and nothing more:
+${r.message}
+${(r.candidates||[]).length?'Candidates that exist in our store: '+r.candidates.join(', '):''}
+
+RULES
+- State NO equipment values. None were retrieved.
+- Do NOT substitute or "correct" the serial the user typed.
+- Do not speculate about what the machine might be.`;
+    }
     if(r.ok){
       return `EQUIPMENT RECORD (authoritative — retrieved by tool this turn)
 ${facts(r).map(f=>'• '+f).join('\n')}
@@ -347,6 +402,7 @@ RULES FOR THIS FAILURE
   function composeReply(r,L){
     const ar=L==='ar';
     if(!r)return '';
+    if(r.clarify)return r.message||'';
     if(r.ok){
       const d=r.data||{}, a=r.attribution||{};
       const fromStore=r.origin==='store';
@@ -392,6 +448,13 @@ RULES FOR THIS FAILURE
   function mergeAnswer(out,r,L){
     if(!out||!r)return out;
     const ar=L==='ar';
+    if(r.clarify){
+      // Replace whatever the model produced: it has no data, so anything it
+      // wrote about this machine is invention.
+      out.reply=r.message||out.reply;
+      out.confidence=0.4;
+      return out;
+    }
     if(r.ok){
       const a=r.attribution||{};
       const stamp=`${ar?'المصدر':'Source'}: ${a.source_label||'—'} · ${ar?'وقت السحب':'Retrieved'}: ${fmtDate(a.retrieved_at,L)} · Run ID: ${a.automation_run_id||'—'}`;
@@ -476,6 +539,7 @@ RULES FOR THIS FAILURE
 
   function renderCard(r,L){
     const ar=L==='ar';
+    if(r.clarify)return renderClarification(r,L);
     if(!r.ok)return renderFailure(r,L);
     const d=r.data||{}, a=r.attribution||{};
     const fresh=(a.freshness||'FRESH');
@@ -567,6 +631,30 @@ RULES FOR THIS FAILURE
     </div>`;
   }
 
+  // A question back to the user. It carries no equipment values on purpose:
+  // there is nothing verified to show yet, and showing a candidate's data
+  // beside the question is how a suggestion becomes a silent substitution.
+  function renderClarification(r,L){
+    const ar=L==='ar';
+    const choices=(r.candidates||[]).map(sn=>
+      `<button class="eq-btn ghost" data-act="ask" data-q="${esc(sn)}">${esc(sn)}</button>`
+    ).join('');
+    return `<div class="eq-card">
+      <div class="eq-head">
+        <div><div class="eq-serial">${esc(r.serial||(ar?'أي معدة؟':'Which machine?'))}</div>
+          <div class="eq-sub">${ar?'محتاجة أتأكد':'Needs confirmation'}</div></div>
+        <div class="eq-badges"><span class="eq-badge warn">${ar?'سؤال':'Question'}</span></div>
+      </div>
+      <div class="eq-body">
+        <div class="eq-warn">${esc(r.message||'')}</div>
+        ${choices?`<div class="eq-actions">${choices}</div>`:''}
+        <div class="eq-note">${ar
+          ?'مش هبدّل السيريال من نفسي — اختار أو ابعت الرقم الصح.'
+          :'I will not substitute a serial on your behalf — pick one, or send the correct number.'}</div>
+      </div>
+    </div>`;
+  }
+
   function renderFailure(r,L){
     const ar=L==='ar';
     const stale=r.stale?`<div class="eq-fallback">
@@ -621,6 +709,7 @@ RULES FOR THIS FAILURE
   return {wantsLookup,wantsRefresh,norm,lookup,maybeLookup,injectDocs,promptBlock,
           resumeRun,stepLabel,openLivePanel,
           composeReply,mergeAnswer,cardFor,renderCard,traceRows,traceOf,facts,
+          understand,resetContext,
           getFromDatabase,searchInSis,runStatus,history,
           get current(){return current;}};
 })();

@@ -162,6 +162,13 @@ class SnowflakeEquipmentRepository:
                  "retrieved_at": r[3], "automation_run_id": r[4], "source_system": r[5],
                  "snapshot": json.loads(r[6]) if isinstance(r[6], str) else r[6]} for r in rows]
 
+    async def known_serials(self, limit: int = 500) -> list[str]:
+        rows = await self._execute(
+            "SELECT DISTINCT SERIAL_NUMBER FROM EQUIPMENT_DATA "
+            "WHERE STATUS <> 'NOT_FOUND' ORDER BY SERIAL_NUMBER LIMIT %(row_limit)s",
+            {"row_limit": int(limit)}, fetch="all")
+        return [row[0] for row in (rows or []) if row and row[0]]
+
     # ── writes ──────────────────────────────────────────────────────────────
     async def upsert(self, record: EquipmentRecord, *,
                      extraction: ExtractionArtifact | None = None) -> bool:
