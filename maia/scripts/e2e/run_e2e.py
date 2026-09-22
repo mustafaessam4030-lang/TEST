@@ -114,7 +114,9 @@ def main() -> int:
         "MAIA_ALLOW_LIVE_AUTOMATION": "false" if args.no_automation else "true",
         "MAIA_HEADLESS": "true" if args.headless else "false",
         "MAIA_CORS_ORIGINS": f"http://127.0.0.1:{args.ui_port},http://localhost:{args.ui_port}",
-        "MAIA_REPOSITORY": os.environ.get("MAIA_REPOSITORY", "memory"),
+        # The local JSON store, so a successful lookup actually lands in
+        # logs/sis-results/ instead of vanishing with the process.
+        "MAIA_REPOSITORY": os.environ.get("MAIA_REPOSITORY", "local_json"),
         "MAIA_ENABLE_FIXTURE_SOURCE": "true" if args.source == "local_fixture" else "false",
         # The worker resolves credentials from a reference, never a literal.
         "MAIA_SIS_SECRET_REF": os.environ.get("MAIA_SIS_SECRET_REF", "env://SIS"),

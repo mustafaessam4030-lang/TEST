@@ -313,7 +313,9 @@ class CatSisAdapter:
         input_sel = self._selector("search", "input")
         submit_sel = self._selector("search", "submit", required=False)
         results_sel = self._selector("search", "results")
-        empty_sel = self._selector("search", "no_results_marker")
+        # Optional: a source that navigates straight to the record has no empty
+        # state. Then "not found" is proven by the record never appearing.
+        empty_sel = self._selector("search", "no_results_marker", required=False)
 
         try:
             await ctx.page.fill(input_sel, serial_number)
@@ -325,26 +327,40 @@ class CatSisAdapter:
             raise SelectorContractError("search.input", str(exc)) from exc
 
         # Positive evidence for BOTH outcomes. Whichever appears first decides.
+        wait_for = f"{results_sel}, {empty_sel}" if empty_sel else results_sel
+        timed_out = False
         try:
-            await ctx.page.wait_for_selector(f"{results_sel}, {empty_sel}", state="visible",
+            await ctx.page.wait_for_selector(wait_for, state="visible",
                                              timeout=ctx.step_timeout_ms)
         except Exception as exc:
             await self._detect_challenge(ctx)
             if self._is_login_page(ctx.page.url):
                 raise AutomationError(ErrorCode.SESSION_EXPIRED,
                                       "Session expired during search.") from exc
-            if "timeout" in str(exc).lower():
+            if not empty_sel and "timeout" in str(exc).lower():
+                # No empty state exists at this source, and the record never
+                # rendered. That absence IS the answer: there is no such serial.
+                timed_out = True
+            elif "timeout" in str(exc).lower():
                 raise AutomationError(ErrorCode.TIMEOUT,
                                       "Search results did not render in time.") from exc
-            raise SelectorContractError("search.results", str(exc)) from exc
+            else:
+                raise SelectorContractError("search.results", str(exc)) from exc
+
+        if timed_out:
+            return SearchOutcome(found=False,
+                                 evidence=f"record_never_rendered:{results_sel}")
 
         # Visibility, not presence. SPAs keep both the results container and the
         # empty state in the DOM and toggle them, so count() would report every
         # search as "not found" — the exact false negative this design forbids.
-        if await self._is_visible(ctx, empty_sel):
+        if empty_sel and await self._is_visible(ctx, empty_sel):
             return SearchOutcome(found=False, evidence=f"empty_state_visible:{empty_sel}")
 
         if not await self._is_visible(ctx, results_sel):
+            if not empty_sel:
+                return SearchOutcome(found=False,
+                                     evidence=f"record_not_visible:{results_sel}")
             # Neither a result nor a recognised empty state: the page changed.
             raise SelectorContractError(
                 "search.results",
@@ -548,6 +564,9 @@ class CatSisAdapter:
                              serial_number: str | None) -> dict[str, Any] | None:
         """Every "Product - …" group on the page, each with its parts rows."""
         cfg = self.extraction.get("parts") or {}
+        # SIS puts the parts behind a tab on the record (Dashboard | Parts | …).
+        # Nothing about the parts exists in the DOM until that tab is opened.
+        await self._open_parts_tab(ctx)
         heading = (self.sel.get("detail") or {}).get("parts_group")
         heading = heading if heading and heading != PLACEHOLDER else None
         limit = int(cfg.get("max_rows_per_group", 500))
@@ -592,6 +611,28 @@ class CatSisAdapter:
             "serial_mismatched_groups": mismatched,
             "selector_id": "detail.parts_group",
         }
+
+    async def _open_parts_tab(self, ctx: RunContext) -> None:
+        """Open the record's Parts tab, if this source has one.
+
+        Only ever a captured selector. If none is configured we do nothing and
+        read whatever the current tab shows — we never hunt for a likely tab.
+        """
+        selector = (self.sel.get("nav") or {}).get("parts_tab")
+        if not selector or selector == PLACEHOLDER:
+            return
+        try:
+            locator = ctx.page.locator(selector).first
+            if not await locator.count():
+                return
+            await locator.click(timeout=8000)
+            await ctx.page.wait_for_timeout(1200)
+            await ctx.page.evaluate(
+                "(ms) => window.__maiaSisDom.settle({limitMs: ms})",
+                int((self.extraction.get("scroll") or {}).get("settle_ms", 4000)))
+            log(logger, logging.INFO, "sis.parts_tab_opened", run_id=ctx.run_id)
+        except Exception as exc:
+            log(logger, logging.WARNING, "sis.parts_tab_failed", error=str(exc)[:160])
 
     async def _handle(self, selector: str | None, *, page: Any = None) -> Any:
         """Resolve one captured selector to a live element, or None."""

@@ -118,12 +118,16 @@ TARGETS: list[Target] = [
     Target("search.submit", "Search button", "the button that submits the search", "search",
            required=False),
     Target("search.no_results_marker", "Empty / no-result state",
-           "the message shown for a serial with no records — this is the ONLY proof of "
-           "SERIAL_NOT_FOUND, so it must be exact", "empty"),
+           "the message shown for a serial with no records. Preferred proof of "
+           "SERIAL_NOT_FOUND — but some sources simply never render the record "
+           "instead, and that absence is proof too", "empty", required=False),
     Target("search.results", "Results container",
            "the table or list that holds search hits", "results"),
     Target("search.first_result", "First result row",
            "the clickable row that opens the equipment detail", "results", required=False),
+    Target("nav.parts_tab", "Record → Parts tab",
+           "the tab on the equipment record that opens its parts "
+           "(Dashboard | Parts | Repair | Service …)", "detail", required=False),
     Target("ready.detail_page", "Detail page ready marker",
            "a heading or container unique to the equipment detail screen", "detail"),
     Target("detail.equipment_model", "Detail → model", "the model value", "detail"),

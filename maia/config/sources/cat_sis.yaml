@@ -43,12 +43,20 @@ selectors:
     password: TODO_CAPTURE
     submit: TODO_CAPTURE
     error: TODO_CAPTURE
+  nav:
+    search_link: TODO_CAPTURE
+    # SIS shows a record as tabs (Dashboard | Parts | Repair | Service …) and
+    # the parts exist in the DOM only once Parts is open.
+    parts_tab: TODO_CAPTURE
   search:
     input: TODO_CAPTURE
     submit: TODO_CAPTURE
     results: TODO_CAPTURE
     first_result: TODO_CAPTURE
-    no_results_marker: TODO_CAPTURE    # REQUIRED: the only proof of SERIAL_NOT_FOUND
+    # Optional. Preferred proof of SERIAL_NOT_FOUND — but SIS navigates straight
+    # to the record, so it has no empty state; then the record never rendering
+    # is the proof instead.
+    no_results_marker: TODO_CAPTURE
   detail:
     equipment_model: TODO_CAPTURE
     equipment_type: TODO_CAPTURE

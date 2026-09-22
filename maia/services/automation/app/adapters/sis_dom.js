@@ -372,7 +372,10 @@
 
   // ── "Product - …" groups ────────────────────────────────────────────────
   // The page's own wording decides what a group is; we never hard-code one.
-  const PRODUCT_SRC = '^\\s*Product\\s*[-–—]\\s*\\S';
+  // SIS names a group after its component, not the word "Product":
+  //   "<component> - Entire Group (<serial>)"   "Product - Entire Group (…)"
+  // so match the shape, not one vocabulary.
+  const PRODUCT_SRC = '(\\bEntire\\s+Group\\b)|(^\\s*Product\\s*[-–—]\\s*\\S)';
 
   function productHeadings() {
     const re = new RegExp(PRODUCT_SRC, 'i');

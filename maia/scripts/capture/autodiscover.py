@@ -404,8 +404,52 @@ class AutoDiscovery:
                       "the window scrolls this page; there is no separate content pane")
 
     # ── the "Product - …" parts groups ──────────────────────────────────────
+    async def parts_tab(self) -> None:
+        """Open the record's Parts tab if there is one, and record how.
+
+        SIS shows the record as tabs — Dashboard, Parts, Repair, Service. The
+        parts exist in the DOM only once Parts is open, so the tab has to be
+        found, proven by what appears after clicking it, and captured.
+        """
+        before = await self.js("() => window.__maiaSisDom.productHeadings().length")
+        if before:
+            self.log("parts are already on screen; no tab to open")
+            return
+
+        tabs = await self.js("""() => {
+            const want = /^\s*parts\s*$/i;
+            const out = [];
+            for (const el of document.querySelectorAll(
+                    'a, button, [role=tab], [role=link], li')) {
+              if (!window.__maiaSisDom.visible(el)) continue;
+              if (!want.test(window.__maiaSisDom.text(el))) continue;
+              if ([...el.children].some(c => want.test(window.__maiaSisDom.text(c)))) continue;
+              out.push(window.__maiaDiscover.describeEl(el));
+              if (out.length >= 4) break;
+            }
+            return out;
+        }""")
+        for tab in tabs or []:
+            try:
+                await self.page.click(f'[data-maia-probe="{tab["key"]}"]', timeout=5000)
+            except Exception:
+                continue
+            await self.page.wait_for_timeout(2200)
+            await self.s.reveal_detail_section()
+            after = await self.js("() => window.__maiaSisDom.productHeadings().length")
+            if after > before:
+                self.log(f"opening the Parts tab revealed {after} parts group(s)")
+                await self.record_from_probe(
+                    tab["key"], "nav.parts_tab",
+                    f"clicking it revealed {after} parts group heading(s)")
+                return
+        self.todo("nav.parts_tab",
+                  "no tab could be shown to reveal a parts group; if the parts are "
+                  "already on the record this is expected")
+
     async def parts_groups(self) -> None:
-        """Every "Product - …" group, and the table of the entire group."""
+        """Every "… Entire Group (…)" group, and the table of the entire group."""
+        await self.parts_tab()
         groups = await self.js("() => window.__maiaDiscover.productGroups()")
         self.s.product_groups = [
             {k: v for k, v in g.items() if k not in ("heading", "table")} | {

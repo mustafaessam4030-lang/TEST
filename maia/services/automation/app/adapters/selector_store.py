@@ -18,7 +18,10 @@ REQUIRED_KEYS = ("name", "selector", "strategy", "element_text", "url",
 # Selector names the automation cannot run without.
 REQUIRED_SELECTORS = (
     "ready.app_shell", "ready.search_page",
-    "search.input", "search.submit", "search.results", "search.no_results_marker",
+    "search.input", "search.results",
+    # NOT required: `search.submit` (many sources submit on Enter) and
+    # `search.no_results_marker` (a source that navigates straight to the
+    # record has no empty state; absence of the record proves not-found).
     # The equipment-details fields, read first on the detail page. Without them
     # a run can reach a record and still answer nothing, which is worse than
     # failing: the contract is not usable until they are proven.

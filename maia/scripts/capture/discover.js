@@ -385,6 +385,7 @@
     probeFirstVisible, visibleTexts, probeNewInLandmarks, LANDMARKS,
     inputCandidates, buttonCandidates, navCandidates, consentCandidates,
     findByText, findEmptyState, detailFields, clearProbes,
+    describeEl: describe,
     revealDetailSection, scrollPaneFor, labelledFields, labelledFieldsMissing,
     productGroups, countMatching, selectorCoversRows,
     LABELLED_FIELDS,
