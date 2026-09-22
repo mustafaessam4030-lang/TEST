@@ -19,8 +19,10 @@ auth:
   session_slots: ["default"]
   session_max_age_s: 28800
 
-routes:
-  search: "/search"
+# SIS keeps its serial box in the top navigation, on every page: there is no
+# separate search screen to travel to. Left empty on purpose — a route that the
+# source does not have costs a step timeout and looks like a changed website.
+routes: {}
 
 # Application-level "the app is usable" signals. Never networkidle, never sleep().
 ready_markers:
@@ -86,8 +88,11 @@ extraction:
   strategy: dom_then_xhr               # the SPA's own JSON beats scraped text
   xhr_url_patterns:
     - "/api/.*(equipment|serial|machine|asset).*"
-  required_fields: [machine_serial_number, machine_build_date,
-                    engine_serial_number, engine_build_date]
+  # The one field that must be read: it is the proof we are on the right
+  # record. The other three are collected when the page publishes them and
+  # stay null (with a NOT_PUBLISHED reason) when it does not — a thin answer
+  # is still a true answer, and is marked PARTIAL rather than failed.
+  required_fields: [machine_serial_number]
 
   # The detail page renders inside its own scrolling pane. Nothing below its
   # fold exists until it is scrolled, so extraction scrolls the PANE (not the
@@ -136,6 +141,13 @@ field_map:
   machine_build_date: machine_build_date
   engine_serial_number: engine_serial_number
   engine_build_date: engine_build_date
+
+validation:
+  # Provisional, until we have seen a real SIS record end to end. A record that
+  # carries its serial and little else is thin, not wrong; quarantining it would
+  # hide the one thing we need to see. Raise this once the page's real yield is
+  # known.
+  min_quality_score: 0.2
 
 politeness:
   min_delay_ms: 1500

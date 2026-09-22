@@ -310,7 +310,9 @@ class EquipmentService:
                         .get("date_order", "day_first"))
 
                 async with recorder.step("VALIDATE"):
-                    record = validate_equipment_data(record)
+                    validation = (self.registry.entry(source).config.get("validation") or {})
+                    record = validate_equipment_data(
+                        record, min_score=float(validation.get("min_quality_score", 0.5)))
                     record.data_hash = data_hash(record.model_dump(mode="json"))
                 # Carried to the store so nothing the page published is lost,
                 # including fields the canonical schema has no column for.
@@ -319,7 +321,7 @@ class EquipmentService:
                     parts_data=raw.parts_data, payload_kind=raw.payload_kind,
                     final_url=raw.source_url, page_title=raw.page_title,
                     selector_version=caps.selector_version,
-                    extraction_status="SUCCESS",
+                    extraction_status=raw.artifacts.get("extraction_status", "SUCCESS"),
                     screenshots={k.split(".", 1)[1]: v for k, v in raw.artifacts.items()
                                  if k.startswith("screenshot.")},
                     evidence={k: v for k, v in raw.artifacts.items()

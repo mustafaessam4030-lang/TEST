@@ -304,13 +304,26 @@ class CatSisAdapter:
         return creds
 
     async def search(self, ctx: RunContext, serial_number: str) -> SearchOutcome:
-        route = self.routes.get("search")
-        if route:
-            # Hash navigation fires no document load: change the hash, then wait on the app.
-            await ctx.page.evaluate("(h) => { window.location.hash = h; }", route.lstrip("#"))
-        await self._wait_ready(ctx, "search_page")
-
         input_sel = self._selector("search", "input")
+
+        # SIS keeps its serial box in the top navigation, on every page — there
+        # is no separate search screen to travel to. So: use the box where it
+        # already is, and only navigate when it genuinely is not on this page.
+        # Routing to a URL the source does not have costs a 25s timeout and
+        # reports a changed website, which is what it did.
+        if not await self._is_visible(ctx, input_sel):
+            route = self.routes.get("search")
+            if route:
+                # Hash navigation fires no document load: change the hash, then
+                # wait on the app.
+                await ctx.page.evaluate("(h) => { window.location.hash = h; }",
+                                        route.lstrip("#"))
+            await self._wait_ready(ctx, "search_page")
+            if not await self._is_visible(ctx, input_sel):
+                raise SelectorContractError(
+                    "search.input", "the serial box is not on the page and could not "
+                                    "be reached")
+
         submit_sel = self._selector("search", "submit", required=False)
         results_sel = self._selector("search", "results")
         # Optional: a source that navigates straight to the record has no empty
@@ -366,8 +379,16 @@ class CatSisAdapter:
                 "search.results",
                 "neither the results container nor the empty state became visible")
 
+        # A source that lists results needs the first row clicked. SIS goes
+        # straight to the record, so clicking anything here would navigate AWAY
+        # from the record we just landed on.
         first = self._selector("search", "first_result", required=False)
-        if first:
+        detail_marker = self.ready.get("detail_page")
+        already_there = bool(detail_marker and detail_marker != PLACEHOLDER
+                             and await self._is_visible(ctx, detail_marker))
+        if already_there:
+            log(logger, logging.INFO, "sis.record_reached_directly", run_id=ctx.run_id)
+        elif first:
             try:
                 await ctx.page.click(first)
                 await self._wait_ready(ctx, "detail_page")
@@ -443,6 +464,16 @@ class CatSisAdapter:
                 details={"missing": missing, "payload_kind": payload.payload_kind,
                          "scroll": reveal, "url": ctx.page.url[:200],
                          "hint": "re-run the selector capture for this source"})
+
+        # A field outside `required_fields` that the page did not yield is NOT a
+        # failed lookup. It is recorded as absent, the answer is marked PARTIAL,
+        # and the value stays null — never filled in, never approximated.
+        absent = [f for f in DETAIL_FIELD_ORDER if not payload.fields.get(f)]
+        payload.artifacts["extraction_status"] = "PARTIAL" if absent else "SUCCESS"
+        if absent:
+            payload.artifacts["fields_not_read"] = ",".join(absent)
+            log(logger, logging.WARNING, "sis.partial_extraction",
+                run_id=ctx.run_id, missing=absent, url=ctx.page.url[:160])
 
         self._cross_check_serial(payload, serial_number)
         return payload

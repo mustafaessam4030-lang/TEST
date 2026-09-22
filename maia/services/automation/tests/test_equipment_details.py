@@ -140,10 +140,19 @@ def test_every_new_target_is_declared_and_unproven_until_captured() -> None:
         assert detail[key] == "TODO_CAPTURE", f"{key} must start unproven"
 
 
-def test_the_four_fields_are_required_for_extraction_to_succeed() -> None:
-    assert set(CONTRACT["extraction"]["required_fields"]) == {
-        "machine_serial_number", "machine_build_date",
-        "engine_serial_number", "engine_build_date"}
+def test_the_serial_is_the_one_field_extraction_cannot_do_without() -> None:
+    """It is the proof we are on the right record. The other three are collected
+    when the page publishes them and stay null when it does not — a thin answer
+    is still a true answer."""
+    assert CONTRACT["extraction"]["required_fields"] == ["machine_serial_number"]
+
+
+def test_a_field_the_page_did_not_yield_marks_the_answer_partial() -> None:
+    adapter_src = ADAPTER
+    assert 'payload.artifacts["extraction_status"] = "PARTIAL" if absent else "SUCCESS"' \
+        in adapter_src
+    # …and it is still never filled in.
+    assert "fields_not_read" in adapter_src
 
 
 def test_the_contract_cannot_be_called_usable_without_them() -> None:
