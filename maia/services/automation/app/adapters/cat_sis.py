@@ -335,10 +335,7 @@ class CatSisAdapter:
         try:
             box = ctx.page.locator(input_sel).first
             await box.fill(serial_number)
-            if submit_sel:
-                await ctx.page.locator(submit_sel).first.click()
-            else:
-                await box.press("Enter")
+            await self._submit_search(ctx, box, submit_sel, serial_number)
         except Exception as exc:
             # The reason matters more than the code: a selector that matched
             # nothing reads very differently from one that matched three things.
@@ -348,6 +345,13 @@ class CatSisAdapter:
             raise SelectorContractError(
                 "search.input",
                 f"could not drive the search box: {str(exc)[:220]}") from exc
+
+        # The plainest evidence the source can give: the page is now showing the
+        # serial we asked for. SIS puts it in the breadcrumb of the record, so
+        # this is true before any container we captured has settled.
+        if await self._serial_on_page(ctx, serial_number):
+            return SearchOutcome(found=True, detail_url=ctx.page.url,
+                                 evidence=f"serial_on_page:{serial_number}")
 
         # Positive evidence for BOTH outcomes. Whichever appears first decides.
         wait_for = f"{results_sel}, {empty_sel}" if empty_sel else results_sel
@@ -410,6 +414,81 @@ class CatSisAdapter:
         return SearchOutcome(found=True, detail_url=ctx.page.url,
                              evidence=f"results:{results_sel}")
 
+    async def _submit_search(self, ctx: RunContext, box: Any, submit_sel: str | None,
+                             serial: str) -> None:
+        """Submit the serial, and confirm the page actually moved.
+
+        SIS puts a button right beside the serial box and a second, unrelated
+        one beside the keyword box. Rather than trust one captured guess, try
+        what the contract proved, then the keyboard, then the control that sits
+        next to the box we just typed into — checking after each whether the
+        record appeared. The first that works wins; nothing is clicked blindly.
+        """
+        attempts: list[tuple[str, Any]] = []
+        if submit_sel:
+            attempts.append(("captured submit", lambda: ctx.page.locator(submit_sel)
+                             .first.click(timeout=6000)))
+        attempts.append(("Enter", lambda: box.press("Enter")))
+        attempts.append(("the control beside the box", lambda: self._click_adjacent(ctx, box)))
+
+        last_error = ""
+        for label, action in attempts:
+            try:
+                await action()
+            except Exception as exc:
+                last_error = f"{label}: {str(exc)[:120]}"
+                continue
+            if await self._serial_on_page(ctx, serial, timeout_ms=9000):
+                log(logger, logging.INFO, "sis.search_submitted",
+                    run_id=ctx.run_id, how=label)
+                return
+            last_error = f"{label}: the record did not appear"
+        log(logger, logging.WARNING, "sis.search_submit_uncertain",
+            run_id=ctx.run_id, detail=last_error[:200])
+
+    @staticmethod
+    async def _click_adjacent(ctx: RunContext, box: Any) -> None:
+        """Click the button that sits beside the input — the page's own pairing."""
+        handle = await box.element_handle()
+        if handle is None:
+            raise RuntimeError("the search box vanished")
+        clicked = await ctx.page.evaluate(
+            """(el) => {
+                 const scope = el.closest('form, div, section') || el.parentElement;
+                 if (!scope) return false;
+                 const btn = scope.querySelector(
+                   'button, [role=button], input[type=submit], a[href]');
+                 if (!btn) return false;
+                 btn.click();
+                 return true;
+               }""", handle)
+        if not clicked:
+            raise RuntimeError("no control sits beside the search box")
+
+    async def _serial_on_page(self, ctx: RunContext, serial: str, *,
+                              timeout_ms: int = 1500) -> bool:
+        """Is the record we asked for now on screen? Punctuation-insensitive."""
+        wanted = re.sub(r"[^A-Z0-9]", "", (serial or "").upper())
+        if not wanted:
+            return False
+        deadline = timeout_ms
+        while deadline > 0:
+            try:
+                found = await ctx.page.evaluate(
+                    """(want) => {
+                         const flat = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                         if (flat(location.href).includes(want)) return true;
+                         const body = document.body;
+                         return !!body && flat(body.innerText).includes(want);
+                       }""", wanted)
+            except Exception:
+                found = False
+            if found:
+                return True
+            await ctx.page.wait_for_timeout(500)
+            deadline -= 500
+        return False
+
     @staticmethod
     async def _is_visible(ctx: RunContext, selector: str) -> bool:
         """True only when the element is actually on screen, not merely in the DOM."""
@@ -455,6 +534,19 @@ class CatSisAdapter:
             for key, value in dom_fields.items():
                 payload.fields.setdefault(key, value)
         payload.fields.update(labelled)
+
+        # This record's Dashboard may publish no labelled serial at all ("No
+        # Asset Information Available"). The page still states which record it
+        # is — in its breadcrumb — and that is evidence, not an assumption. It
+        # is recorded with its own provenance so nobody mistakes it for a
+        # labelled field, and it is deliberately NOT used as the cross-check.
+        if not payload.fields.get("machine_serial_number") and serial_number:
+            crumb = await self._serial_from_breadcrumb(ctx, serial_number)
+            if crumb:
+                payload.fields["machine_serial_number"] = crumb
+                payload.artifacts["machine_serial_source"] = "breadcrumb"
+                log(logger, logging.INFO, "sis.serial_from_breadcrumb",
+                    run_id=ctx.run_id, value=crumb)
 
         payload.specifications = await self._extract_specs(ctx)
         payload.parts_data = await self._extract_parts(ctx, serial_number)
@@ -601,6 +693,35 @@ class CatSisAdapter:
                 out[field_name] = str(value).strip()
         return out
 
+    async def _serial_from_breadcrumb(self, ctx: RunContext, serial: str) -> str | None:
+        """The serial as the record's own breadcrumb prints it, or None.
+
+        Only ever returns a value that matches the serial we asked for. If the
+        page names a different record, this returns nothing and the caller
+        fails — the wrong-record guard stays intact.
+        """
+        try:
+            return await ctx.page.evaluate(
+                """(want) => {
+                     const flat = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                     const target = flat(want);
+                     const vis = (el) => {
+                       const r = el.getBoundingClientRect();
+                       if (!(r.width || r.height)) return false;
+                       const st = getComputedStyle(el);
+                       return st.visibility !== 'hidden' && st.display !== 'none';
+                     };
+                     for (const el of document.querySelectorAll(
+                            'nav *, [class*=breadcrumb i] *, h1, h2, [class*=crumb i] *')) {
+                       if (el.children.length || !vis(el)) continue;
+                       const t = (el.innerText || '').trim();
+                       if (t && flat(t) === target) return t;
+                     }
+                     return null;
+                   }""", serial)
+        except Exception:
+            return None
+
     async def _extract_parts(self, ctx: RunContext,
                              serial_number: str | None) -> dict[str, Any] | None:
         """Every "Product - …" group on the page, each with its parts rows."""
@@ -710,6 +831,12 @@ class CatSisAdapter:
         """
         field_name = self.extraction.get("serial_cross_check")
         if not field_name or not serial_number:
+            return
+        if payload.artifacts.get("machine_serial_source") == "breadcrumb":
+            # The value came from the record's breadcrumb, which we only accept
+            # when it already matches. Comparing it to the query would prove
+            # nothing, so the check is recorded as not performed.
+            payload.fields["serial_cross_check"] = "breadcrumb_match"
             return
         found = payload.fields.get(field_name)
         same = self._same_serial(found, serial_number)
