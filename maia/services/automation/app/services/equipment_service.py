@@ -143,6 +143,18 @@ class EquipmentService:
             raise
         else:
             breaker.record_success()
+            # The contract just drove a real search and returned a real record.
+            # That is the moment it has earned a place on disk: every later
+            # start reads it and skips the learning step.
+            if self.capture is not None:
+                try:
+                    promoted = self.capture.promote(source)
+                    if promoted:
+                        log(logger, logging.INFO, "equipment.contract_promoted",
+                            source=source, contract=promoted, run_id=recorder.run_id)
+                except Exception as exc:          # never fail a good lookup for this
+                    log(logger, logging.WARNING, "equipment.promote_failed",
+                        source=source, error=str(exc)[:160])
             await recorder.succeed(
                 field_count=sum(1 for v in record.model_dump().values() if v not in (None, [], {})),
                 quality_score=record.quality.score)

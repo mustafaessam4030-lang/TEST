@@ -15,8 +15,10 @@ import logging
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from app.adapters import selector_store
 from app.core.errors import AutomationError, ErrorCode
@@ -41,12 +43,63 @@ class CaptureService:
         self.settings = settings
         self._locks: dict[str, asyncio.Lock] = {}
         self._attempted: set[str] = set()
+        #: what a capture proved, held until a real lookup vindicates it
+        self._learned: dict[str, dict[str, Any]] = {}
 
     def contract_is_usable(self, source_id: str) -> bool:
         config = self.registry.entry(source_id).config
         flat = selector_store.flatten_config(config)
         return all(flat.get(name) and flat[name] != selector_store.TODO
                    for name in selector_store.REQUIRED_SELECTORS)
+
+    def contract_path(self) -> Path:
+        return Path(os.environ.get(
+            "MAIA_SIS_SELECTORS",
+            str(Path(self.settings.sources_dir).parent / "sis_selectors.json")))
+
+    def promote(self, source_id: str) -> str | None:
+        """Write the learned contract to disk, now that a run has used it.
+
+        Called only after a lookup came back with a record, so what lands in
+        `config/sis_selectors.json` is not "the capture believed this" — it is
+        "this drove a real search and returned a real record". Every later start
+        reads it and skips the learning step entirely.
+
+        Nothing is written for a source whose base URL is not the real site, and
+        nothing is written unless every required selector is present.
+        """
+        payload = self._learned.get(source_id)
+        if not payload:
+            return None
+        config = self.registry.entry(source_id).config
+        host = urlparse(str(config.get("base_url", ""))).hostname or ""
+        if not host.endswith("cat.com"):
+            log(logger, logging.WARNING, "capture.promote_refused",
+                source=source_id, reason="base url is not Caterpillar SIS", host=host)
+            self._learned.pop(source_id, None)
+            return None
+        missing = selector_store.missing_required(payload)
+        if missing:
+            return None
+
+        target = self.contract_path()
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            body = dict(payload)
+            body["promoted_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            body["promoted_because"] = (
+                "a live lookup using these selectors returned a record")
+            target.write_text(json.dumps(body, indent=2, ensure_ascii=False),
+                              encoding="utf-8")
+        except OSError as exc:
+            # The contract is a convenience; the run already succeeded without it.
+            log(logger, logging.WARNING, "capture.promote_failed",
+                source=source_id, error=str(exc)[:160])
+            return None
+        self._learned.pop(source_id, None)
+        log(logger, logging.INFO, "capture.promoted", source=source_id,
+            contract=str(target), version=payload.get("selector_version"))
+        return str(target)
 
     def already_attempted(self, source_id: str) -> bool:
         return source_id in self._attempted
@@ -124,6 +177,10 @@ class CaptureService:
 
             merged = selector_store.merge_into_config(entry.config, payload)
             self.registry.update_config(source_id, merged)
+            # Held, not yet written to the contract file: a capture that proves
+            # its own selectors is good evidence, a lookup that comes back with
+            # a record is better. `promote` writes it once that happens.
+            self._learned[source_id] = payload
             verified = selector_store.verified_selectors(payload)
             log(logger, logging.INFO, "capture.applied", source=source_id,
                 verified=len(verified), version=payload.get("selector_version"))
