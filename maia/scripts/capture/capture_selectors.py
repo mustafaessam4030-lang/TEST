@@ -37,6 +37,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -252,6 +253,7 @@ class CaptureSession:
         self.search_url: str | None = None
         # Evidence about the detail page: what scrolling the content pane did,
         # and the labels the page itself used for the machine/engine fields.
+        self.app_boot: dict[str, Any] = {}
         self.detail_reveal: dict[str, Any] = {}
         self.detail_labels: dict[str, Any] = {}
         self.product_groups: list[dict[str, Any]] = []
@@ -788,6 +790,80 @@ class CaptureSession:
             elif target.key == "detail.parts_header_cells" and record.selector:
                 await self._generalise_repeating(record)
 
+    async def wait_for_app(self, *, timeout_s: int = 75) -> dict[str, Any]:
+        """Wait for the single-page app to actually boot after sign-in.
+
+        The OIDC redirect lands on the app's URL long before the app exists.
+        Angular then has to fetch its config, hydrate and render the shell —
+        several seconds on a good day. Reading the DOM in that window finds a
+        blank document: no header, no nav, no search box, no title. Which looks
+        exactly like "the website changed", and is not.
+
+        Ready means the page has real content AND has stopped growing: a title
+        or visible body text, plus either a landmark or a usable input.
+        """
+        started = time.monotonic()
+        probe = """() => {
+            const vis = (el) => {
+              const r = el.getBoundingClientRect();
+              if (!(r.width || r.height)) return false;
+              const st = getComputedStyle(el);
+              return st.visibility !== 'hidden' && st.display !== 'none';
+            };
+            const inputs = [...document.querySelectorAll(
+              'input:not([type=hidden]):not([type=checkbox]):not([type=radio]),'
+              + 'textarea,[role=searchbox],[role=textbox]')].filter(vis).length;
+            const landmarks = [...document.querySelectorAll(
+              'header,[role=banner],nav,[role=navigation],main,[role=main]')]
+              .filter(vis).length;
+            const buttons = [...document.querySelectorAll(
+              'button,[role=button],a[href]')].filter(vis).length;
+            return {
+              title: document.title || '',
+              text: ((document.body && document.body.innerText) || '').trim().length,
+              inputs: inputs, landmarks: landmarks, links: buttons,
+              ready: document.readyState,
+            };
+        }"""
+        last: dict[str, Any] = {}
+        stable = 0
+        while time.monotonic() - started < timeout_s:
+            try:
+                state = await self.page.evaluate(probe)
+            except Exception:
+                await self.page.wait_for_timeout(700)
+                continue
+            substantial = (state.get("text", 0) > 150 or state.get("title"))
+            usable = state.get("landmarks", 0) or state.get("inputs", 0) \
+                or state.get("links", 0) > 3
+            if substantial and usable:
+                # Two identical samples: the shell is up and has stopped moving.
+                if last and state.get("text") == last.get("text") \
+                        and state.get("inputs") == last.get("inputs"):
+                    stable += 1
+                    if stable >= 2:
+                        state["waited_ms"] = int((time.monotonic() - started) * 1000)
+                        state["booted"] = True
+                        self.log(f"app ready after {state['waited_ms']} ms "
+                                 f"(title={state.get('title','')[:40]!r}, "
+                                 f"{state.get('inputs')} input(s), "
+                                 f"{state.get('landmarks')} landmark(s))")
+                        self.app_boot = state
+                        return state
+                else:
+                    stable = 0
+            last = state
+            await self.page.wait_for_timeout(900)
+
+        last["waited_ms"] = int((time.monotonic() - started) * 1000)
+        last["booted"] = False
+        self.app_boot = last
+        self.log(f"the application never finished rendering in {timeout_s}s "
+                 f"(title={str(last.get('title', ''))[:40]!r}, "
+                 f"text={last.get('text')} chars, {last.get('inputs')} input(s), "
+                 f"{last.get('landmarks')} landmark(s))")
+        return last
+
     async def reveal_detail_section(self) -> dict[str, Any]:
         """Scroll the SIS content pane to the equipment details, then let it render.
 
@@ -1145,6 +1221,7 @@ class CaptureSession:
             "reconnaissance": self.recon,
             # How the equipment-details section was reached, and what the page
             # itself calls each field — evidence for every selector below.
+            "app_boot": self.app_boot,
             "detail_reveal": self.detail_reveal,
             "detail_labels": self.detail_labels,
             "product_groups": self.product_groups,

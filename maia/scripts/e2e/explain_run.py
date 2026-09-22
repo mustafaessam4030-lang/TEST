@@ -139,6 +139,14 @@ def main() -> int:
     # The detail page is read only after its own pane has been scrolled, so a
     # run that failed there fails for one of two very different reasons: the
     # scroll never revealed the section, or it did and the fields were not there.
+    boot = report.get("app_boot") or {}
+    if boot:
+        answer("9a. the app finished rendering",
+               "YES" if boot.get("booted") else "NO",
+               f"{boot.get('waited_ms')} ms · title={str(boot.get('title') or '')[:40]!r} · "
+               f"{boot.get('text')} chars · {boot.get('inputs')} input(s) · "
+               f"{boot.get('landmarks')} landmark(s)")
+
     reveal = report.get("detail_reveal") or {}
     if reveal:
         pane = reveal.get("pane") or "(the window)"

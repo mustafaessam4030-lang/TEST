@@ -85,8 +85,21 @@ class AutoDiscovery:
     # ── phases ──────────────────────────────────────────────────────────────
     async def run(self) -> bool:
         print("\n─── AUTOMATIC DISCOVERY ───")
+        # The redirect back from sign-in lands on the app's URL long before the
+        # app exists. Everything below reads the DOM, so nothing may run until
+        # the shell has actually rendered.
+        boot = await self.s.wait_for_app()
         await self.s.shot("auto-01-authenticated")
         await self.s.snapshot("auto-01-authenticated")
+        if not boot.get("booted"):
+            self.s.stopped_reason = (
+                f"the application never finished rendering after sign-in "
+                f"({boot.get('waited_ms')} ms; title="
+                f"{str(boot.get('title') or '')[:40]!r}, "
+                f"{boot.get('text')} chars of text, {boot.get('inputs')} visible "
+                f"input(s), {boot.get('landmarks')} landmark(s)). Nothing could be "
+                f"discovered on a page that had not drawn yet.")
+            return False
 
         await self.consent()
         await self.landing_markers()
