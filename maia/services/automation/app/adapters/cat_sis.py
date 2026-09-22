@@ -89,6 +89,8 @@ class CatSisAdapter:
         value = (self.sel.get(group) or {}).get(name)
         if not value or value == PLACEHOLDER:
             if required:
+                log(logger, logging.ERROR, "sis.selector_missing",
+                    selector_id=f"{group}.{name}", value=str(value)[:60])
                 raise AutomationError(
                     ErrorCode.WEBSITE_CHANGED,
                     f"Selector '{group}.{name}' is not configured for this source.",
@@ -255,14 +257,14 @@ class CatSisAdapter:
         # then password. When the contract captured that step, walk it.
         user_submit_sel = self._selector("login", "username_submit", required=False)
         try:
-            await ctx.page.fill(user_sel, creds["username"])
+            await ctx.page.locator(user_sel).first.fill(creds["username"])
             if user_submit_sel:
-                await ctx.page.click(user_submit_sel)
+                await ctx.page.locator(user_submit_sel).first.click()
                 await ctx.page.wait_for_selector(pass_sel, state="visible",
                                                  timeout=ctx.step_timeout_ms)
                 await self._detect_challenge(ctx)   # MFA often lands between the steps
-            await ctx.page.fill(pass_sel, creds["password"])
-            await ctx.page.click(submit_sel)
+            await ctx.page.locator(pass_sel).first.fill(creds["password"])
+            await ctx.page.locator(submit_sel).first.click()
         except AutomationError:
             raise
         except Exception as exc:
@@ -331,13 +333,21 @@ class CatSisAdapter:
         empty_sel = self._selector("search", "no_results_marker", required=False)
 
         try:
-            await ctx.page.fill(input_sel, serial_number)
+            box = ctx.page.locator(input_sel).first
+            await box.fill(serial_number)
             if submit_sel:
-                await ctx.page.click(submit_sel)
+                await ctx.page.locator(submit_sel).first.click()
             else:
-                await ctx.page.press(input_sel, "Enter")
+                await box.press("Enter")
         except Exception as exc:
-            raise SelectorContractError("search.input", str(exc)) from exc
+            # The reason matters more than the code: a selector that matched
+            # nothing reads very differently from one that matched three things.
+            log(logger, logging.ERROR, "sis.search_interaction_failed",
+                run_id=ctx.run_id, selector=input_sel[:120],
+                submit=(submit_sel or "(Enter)")[:120], error=str(exc)[:300])
+            raise SelectorContractError(
+                "search.input",
+                f"could not drive the search box: {str(exc)[:220]}") from exc
 
         # Positive evidence for BOTH outcomes. Whichever appears first decides.
         wait_for = f"{results_sel}, {empty_sel}" if empty_sel else results_sel
@@ -390,7 +400,7 @@ class CatSisAdapter:
             log(logger, logging.INFO, "sis.record_reached_directly", run_id=ctx.run_id)
         elif first:
             try:
-                await ctx.page.click(first)
+                await ctx.page.locator(first).first.click()
                 await self._wait_ready(ctx, "detail_page")
             except AutomationError:
                 raise
