@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     #: Snowflake is the record; the folder is evidence a person can open.
     local_artifacts: bool = True
 
+    # The chat model. The key lives with this gateway — env ANTHROPIC_API_KEY or
+    # a local claude.txt — and never reaches the browser, a log or a response.
+    llm_model: str = "claude-opus-5"
+    llm_key_file: str = "claude.txt"
+    llm_effort: str = "low"          # chat is latency-sensitive; low keeps it quick
+    llm_max_tokens: int = 2000
+
     # Automation
     headless: bool = True
     browser_channel: str = "chromium"

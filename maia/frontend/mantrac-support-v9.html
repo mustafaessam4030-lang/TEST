@@ -2475,6 +2475,15 @@ const EQUIP=(()=>{
 
   function resetContext(){convo=null;}
 
+  // Is the chat model connected through the gateway? Asked once per page.
+  let llmReadyP=null;
+  function llmReady(){
+    if(!llmReadyP)llmReadyP=call('/v1/llm/status',{timeoutMs:4000})
+      .then(r=>!!(r&&r.httpStatus===200&&r.payload&&r.payload.configured))
+      .catch(()=>false);
+    return llmReadyP;
+  }
+
   // What the brain decided, turned into the one thing this layer can do.
   async function maybeLookup(raw,ents,cls,L,opts){
     if(!C().enabled)return null;
@@ -2482,6 +2491,16 @@ const EQUIP=(()=>{
     const state=await understand(raw);
     if(state){
       const mode=state.response_mode;
+      // Not an equipment turn: the general assistant answers, and the machine
+      // we were discussing stays in its context (`current` is left alone).
+      if(mode==='PASS')return null;
+      // Small talk: with the model connected, let it answer naturally — it
+      // still sees the current record. Without it, the brain's own reply.
+      if(mode==='CHAT'&&await llmReady())return null;
+      if(mode==='CHAT'||mode==='REFUSE'){
+        return {ok:false,clarify:true,conversational:true,mode:mode,
+                message:state.message,suggestions:state.suggestions||[],state:state};
+      }
       // A question for the user is an answer in itself — and never a lookup.
       if(mode==='CONFIRM_CANDIDATE'||mode==='CHOOSE_CANDIDATE'||
          mode==='ASK_WHICH_EQUIPMENT'||mode==='ASK_SERIAL'||mode==='HELP'){
@@ -2563,7 +2582,7 @@ RULES
 - Do not speculate about what the machine might be.`;
     }
     if(r.ok){
-      return `EQUIPMENT RECORD (authoritative — retrieved by tool this turn)
+      return `EQUIPMENT RECORD (authoritative — retrieved by tool in this conversation; the machine being discussed)
 ${facts(r).map(f=>'• '+f).join('\n')}
 
 RULES FOR THIS RECORD
@@ -2632,6 +2651,14 @@ RULES FOR THIS FAILURE
   function mergeAnswer(out,r,L){
     if(!out||!r)return out;
     const ar=L==='ar';
+    if(r.conversational){
+      // A reply the brain decided on (thanks, hello, a refusal). Certain, and
+      // it claims nothing about any machine.
+      out.reply=r.message||out.reply;
+      out.confidence=0.9;
+      if((r.suggestions||[]).length)out.quick_replies=r.suggestions.slice(0,4);
+      return out;
+    }
     if(r.clarify){
       // Replace whatever the model produced: it has no data, so anything it
       // wrote about this machine is invention.

@@ -55,9 +55,58 @@ _INTENT_RULES: list[tuple[Intent, re.Pattern[str]]] = [
         r"\b(exists?|available|do (we|you) have|is there|valid|known)\b|موجود", re.I)),
     (Intent.EQUIPMENT_LOOKUP, re.compile(
         r"\b(everything|all (the )?(data|info\w*)|full|complete|lookup|look\s?up|find|get|fetch"
-        r"|retrieve|search|show|pull|data|info\w*|details?)\b"
+        r"|retrieve|search|show|pull|data|info\w*|details?|check|machine|equipment|serial)\b"
         r"|دوريلي|دور على|هات|بيانات|الداتا|معلومات", re.I)),
 ]
+
+
+# ── turns that are not equipment requests ───────────────────────────────────
+# Asking for a secret is refused before anything else looks at the sentence.
+_CREDENTIALS = re.compile(
+    r"\b(password|passcode|credentials?|api[\s_-]*key|secret|cookies?|session\s+token"
+    r"|access\s+token|auth\w*\s+header|mfa\s+code|login\s+details|username)\b"
+    r"|كلمة\s*(السر|المرور)|الباسورد|باسورد", re.I)
+
+# Whole-message small talk: praise, thanks, greetings, acknowledgements, goodbyes.
+# Anchored to the full message so "thanks, now get JAZ01865" is still a lookup.
+_SMALL_TALK = re.compile(
+    r"^\s*(?:(?:very\s+|really\s+|so\s+)?(?:good|great|nice|perfect|excellent|awesome|amazing"
+    r"|brilliant|cool|super|wonderful|impressive|fantastic|well\s+done|good\s+job|nice\s+work"
+    r"|great\s+work|love\s+it|that'?s?\s+(?:great|good|perfect|it)|exactly|correct|right)"
+    r"(?:\s+(?:analy\w*|answer|work|job|result|one|stuff|maia|bro|man))?(?:\s+(?:this|that|there))?"
+    r"|thanks?(?:\s+(?:you|a\s+lot|so\s+much|maia|bro))*|thank\s+you(?:\s+(?:so\s+much|very\s+much|maia))?"
+    r"|thx|ty|cheers|appreciated?"
+    r"|hi|hello|hey|hiya|yo|good\s+(?:morning|afternoon|evening)|salam|hi\s+maia|hello\s+maia|hey\s+maia"
+    r"|ok(?:ay)?|k|got\s+it|sure|alright|fine|understood|noted|cool\s+thanks"
+    r"|bye|goodbye|see\s+you|later|good\s+night"
+    r"|شكرا|شكراً|متشكر|تسلم|تمام|ممتاز|حلو|جميل|برافو|عاش|الله\s+ينور|تحفة"
+    r"|السلام\s+عليكم|اهلا|أهلا|مرحبا|صباح\s+الخير|مساء\s+الخير|مع\s+السلامة|باي)"
+    r"(?:\s+(?:يا\s+)?(?:maia|مايا))?\s*[.!?؟😀-🙏👍❤️]*\s*$", re.I)
+
+# Requests the general assistant owns: the parts catalog, service bookings,
+# branches, warranty, generators, prices, people. With no serial in the
+# sentence these are not a machine-record lookup, whatever verb they use.
+_GENERAL = re.compile(
+    r"\b(book|booking|appointment|service\s+visit|branch(es)?|nearest|location|address|hours"
+    r"|warranty|generators?|gensets?|kva|quote|price|prices|cost|stock|in\s+stock|order"
+    r"|human|agent|technician|call\s+me|contact|complaint|ticket|fault\s+code|error\s+code"
+    r"|find\s+a\s+part|part\s+number\s+\d|filter|oil|weather|news|who\s+are\s+you)\b"
+    r"|صيانة|فرع|أقرب|اقرب|ضمان|مولد|سعر|أسعار|عرض\s+سعر|مخزون|موظف|مهندس|شكوى", re.I)
+
+
+def is_small_talk(utterance: str) -> bool:
+    return bool(_SMALL_TALK.match(utterance or ""))
+
+
+def small_talk_kind(utterance: str) -> str:
+    text = (utterance or "").strip().lower()
+    if re.match(r"^(hi|hello|hey|hiya|yo|good\s+(morning|afternoon|evening)|salam|السلام|اهلا|أهلا|مرحبا|صباح|مساء)", text):
+        return "greeting"
+    if re.match(r"^(bye|goodbye|see\s+you|later|good\s+night|مع\s+السلامة|باي)", text):
+        return "goodbye"
+    if re.match(r"^(ok(ay)?|k|got\s+it|sure|alright|fine|understood|noted)\b", text):
+        return "ack"
+    return "thanks"
 
 
 def classify(utterance: str, *, has_serial: bool, has_context: bool,
@@ -71,9 +120,18 @@ def classify(utterance: str, *, has_serial: bool, has_context: bool,
     if not text:
         return Intent.INVALID_REQUEST, 1.0
 
+    if _CREDENTIALS.search(text):
+        return Intent.CREDENTIALS, 0.95
+
     # A reply to a question we asked is a reply, whatever it looks like.
     if awaiting:
         return Intent.CLARIFICATION, 0.9
+
+    if not has_serial and is_small_talk(text):
+        return Intent.SMALL_TALK, 0.95
+
+    if not has_serial and _GENERAL.search(text):
+        return Intent.GENERAL, 0.8
 
     for intent, pattern in _INTENT_RULES:
         if pattern.search(text):
@@ -90,7 +148,9 @@ def classify(utterance: str, *, has_serial: bool, has_context: bool,
     if has_context and requested_fields(text):
         return Intent.EQUIPMENT_DETAILS, 0.7
 
-    return Intent.UNKNOWN, 0.3
+    # Anything else is still a question — for the general assistant, not a
+    # reason to demand a serial number.
+    return Intent.GENERAL if len(text.split()) > 1 else Intent.UNKNOWN, 0.4
 
 
 def requested_fields(utterance: str) -> list[str]:

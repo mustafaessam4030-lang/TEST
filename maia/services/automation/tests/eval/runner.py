@@ -29,6 +29,7 @@ METRIC_NAMES: dict[str, str] = {
     "grounding": "Tool Result Grounding",
     "mismatch": "Serial Mismatch Protection",
     "errors": "Error Explanation Quality",
+    "conversation": "Conversational Handling",
 }
 
 

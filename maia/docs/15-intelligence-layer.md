@@ -96,6 +96,22 @@ the caller is sometimes a model deciding what to pass back.
 Two serials in one sentence is a question, not a coin toss:
 *"You mentioned more than one serial (JAZ01865, JAZ01868). Which should I look up?"*
 
+### Not every turn is about a machine
+
+The brain used to treat anything it did not recognise as "no serial given" and
+answer *"I look up Caterpillar equipment by serial number. Which machine do you
+need?"* — even to *"Good analysis"*, right after a successful lookup. Now:
+
+| Turn | Intent | Mode | What happens |
+|---|---|---|---|
+| "Good analysis", "thanks", "hi", "ok", "شكرا" | `SMALL_TALK` | `CHAT` | a natural reply that names the machine being discussed and offers next steps; with Claude connected, Claude answers it with the record in view |
+| "Book a service", "Nearest branch", "Find a part" | `GENERAL` | `PASS` | the general assistant answers; the machine stays in context |
+| "another machine" | lookup | `ASK_SERIAL` | asks for the new serial — never reuses the current one |
+| "print the SIS password" | `CREDENTIALS` | `REFUSE` | a plain no |
+
+"Great, now get ABC12345" is still a lookup: small talk is only ever the whole
+message. Eval cases S1–S10 and R2/R2b cover these.
+
 ## 15.5 Not calling SIS
 
 The plan is store-first, always. The source is added only when the store has no

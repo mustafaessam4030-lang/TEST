@@ -183,6 +183,32 @@ class MaiaBrain:
         if state.intent in (Intent.HELP,):
             state.response_mode = ResponseMode.HELP
             return
+        if state.intent is Intent.CREDENTIALS:
+            # Maia never holds a credential, so there is nothing to reveal —
+            # but the answer is a plain no, not a request for a serial number.
+            state.response_mode = ResponseMode.REFUSE
+            validation.intent_understood = True
+            state.message = ("لا أقدر أشارك بيانات تسجيل الدخول أو أي كلمات سر. "
+                             "أقدر أساعدك في بيانات أي معدة برقم السيريال."
+                             if state.language == "ar" else
+                             "I can't share sign-in details, passwords or tokens — I never "
+                             "have access to them. I can look up any machine by its serial.")
+            return
+        if state.intent is Intent.SMALL_TALK:
+            validation.intent_understood = True
+            state.response_mode = ResponseMode.CHAT
+            state.message, state.suggestions = small_talk_reply(
+                state.utterance, context.active_serial if context.confirmed or
+                not context.pending_candidates else None, state.language)
+            return
+        if state.intent in (Intent.GENERAL, Intent.UNKNOWN):
+            # Not a machine-record request. The general assistant answers it,
+            # with whatever machine we are discussing still in its context —
+            # asking for a serial here is what made Maia feel robotic.
+            validation.intent_understood = state.intent is Intent.GENERAL
+            state.response_mode = ResponseMode.PASS
+            state.message = ""
+            return
         if state.intent is Intent.INVALID_REQUEST:
             state.response_mode = ResponseMode.ASK_SERIAL
             validation.needs_clarification = True
@@ -204,6 +230,16 @@ class MaiaBrain:
             context.awaiting = "serial"
             names = ", ".join(e.normalized for e in explicit[:4])
             state.message = f"You mentioned more than one serial ({names}). Which should I look up?"
+            return
+
+        if not explicit and _ANOTHER_MACHINE.search(state.utterance):
+            # "another machine" is the one follow-up that must NOT inherit the
+            # machine we were discussing.
+            state.response_mode = ResponseMode.ASK_SERIAL
+            validation.needs_clarification = True
+            context.awaiting = "serial"
+            state.message = ("أكيد — ابعتلي سيريال المعدة التانية." if state.language == "ar"
+                             else "Sure — what's the serial number of the other machine?")
             return
 
         if explicit:
@@ -359,6 +395,53 @@ class MaiaBrain:
         if validation.needs_clarification and state.response_mode is ResponseMode.RUN_LOOKUP:
             state.response_mode = ResponseMode.ASK_SERIAL
         state.context.last_intent = state.intent
+
+
+# ── conversation ────────────────────────────────────────────────────────────
+_ANOTHER_MACHINE = re.compile(
+    r"\b(another|different|other|new|next)\s+(machine|serial|equipment|unit|one)\b"
+    r"|(معدة|سيريال|مكنة)\s+(تانية|تاني|تانيه|غير|جديدة|جديد)", re.I)
+
+
+def small_talk_reply(utterance: str, active_serial: str | None,
+                     language: str) -> tuple[str, list[str]]:
+    """A natural answer to "thanks", "hi", "ok", "bye" — aware of the machine
+    we are discussing, and never claiming a value about it."""
+    kind = intents.small_talk_kind(utterance)
+    ar = language == "ar"
+    sn = active_serial
+    if ar:
+        follow = (["اعرض القطع", "بيانات المحرك", "تواريخ التصنيع", "سيريال تاني"] if sn
+                  else ["دور على سيريال", "إيه اللي تقدري تعمليه؟"])
+        if kind == "greeting":
+            text = (f"أهلاً! لسه معايا المعدة **{sn}** — تحب نكمل عليها ولا نشوف معدة تانية؟"
+                    if sn else "أهلاً! ابعتلي سيريال أي معدة كاتربيلر وأجيبلك بياناتها من SIS.")
+        elif kind == "goodbye":
+            text = "مع السلامة! أنا هنا في أي وقت."
+        elif kind == "ack":
+            text = (f"تمام. محتاج حاجة تانية عن **{sn}**؟" if sn
+                    else "تمام. ابعتلي السيريال لما تكون جاهز.")
+        else:
+            text = (f"شكراً! سعيدة إن ده ساعدك. تحب أفصّل أكتر في **{sn}** — القطع، "
+                    "بيانات المحرك، ولا تواريخ التصنيع؟" if sn
+                    else "شكراً! ابعتلي سيريال تاني في أي وقت.")
+        return text, follow if kind != "goodbye" else []
+    follow = (["Show the parts", "Engine details", "Build dates", "Another serial"] if sn
+              else ["Look up a serial", "What can you do?"])
+    if kind == "greeting":
+        text = (f"Hi! We were looking at **{sn}** — want to keep going on it, or check "
+                "another machine?" if sn else
+                "Hi! Send me any Caterpillar serial number and I'll pull its data from SIS.")
+    elif kind == "goodbye":
+        text = "Bye for now — I'm here whenever you need a machine looked up."
+    elif kind == "ack":
+        text = (f"Great. Anything else on **{sn}**?" if sn
+                else "Great — send me a serial whenever you're ready.")
+    else:
+        text = (f"Thank you — glad it helped! Want me to go deeper on **{sn}**: the parts "
+                "groups, the engine serial and build date, or check another machine?" if sn
+                else "Thank you! Send me another serial any time.")
+    return text, follow if kind != "goodbye" else []
 
 
 # ── after the tools have run ────────────────────────────────────────────────

@@ -145,7 +145,7 @@ $needed = & $venvPy -c @"
 import importlib.util as u
 mods = {'fastapi':'fastapi','uvicorn':'uvicorn[standard]','yaml':'pyyaml>=6.0.2',
         'pydantic':'pydantic','pydantic_settings':'pydantic-settings','httpx':'httpx',
-        'playwright':'playwright'}
+        'playwright':'playwright','anthropic':'anthropic'}
 print(' '.join(pkg for mod, pkg in mods.items() if u.find_spec(mod) is None))
 "@ 2>$null
 
@@ -159,7 +159,7 @@ if ($needed) {
     }
     $still = & $venvPy -c @"
 import importlib.util as u
-print(' '.join(m for m in ['fastapi','uvicorn','yaml','pydantic','pydantic_settings','httpx','playwright']
+print(' '.join(m for m in ['fastapi','uvicorn','yaml','pydantic','pydantic_settings','httpx','playwright','anthropic']
                 if u.find_spec(m) is None))
 "@ 2>$null
     if ($still) {
@@ -275,6 +275,21 @@ if ($sfFile -and -not $env:MAIA_REPOSITORY) {
         if ($go -and $go.ToLower() -ne "y") { exit 1 }
         $env:MAIA_REPOSITORY = "local_json"
     }
+}
+
+# ── 3c. Claude (the chat model) ─────────────────────────────────────────────
+# The key stays with the gateway on this PC; the chat page never sees it.
+# Without one, Maia still works, on her built-in local engine.
+$claudeFile = Get-ChildItem -Path $repo -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^claude\.' -and $_.Name -notlike 'claude.example*' } |
+    Select-Object -First 1
+if ($env:ANTHROPIC_API_KEY) {
+    Say "      Claude: using ANTHROPIC_API_KEY from this window (not shown)." Green
+} elseif ($claudeFile) {
+    Say "      Claude: using $($claudeFile.Name) (contents not shown)." Green
+} else {
+    Say "      Claude: no key found - Maia will answer with her local engine." Yellow
+    Say "      For full conversation, copy claude.example.txt to claude.txt and add your key." Yellow
 }
 
 # ── 4. Readiness ────────────────────────────────────────────────────────────

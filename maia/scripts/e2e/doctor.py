@@ -181,6 +181,25 @@ def check_snowflake() -> None:
         repo.close()
 
 
+def check_llm() -> None:
+    """The chat model. Optional: without a key Maia answers on her local engine."""
+    from app.api.routes_llm import resolve_key
+    from app.config import get_settings
+
+    settings = get_settings()
+    try:
+        import anthropic  # noqa: F401
+    except ImportError:
+        add(WARN, "claude (chat model)", "anthropic package not installed",
+            ".venv\\Scripts\\python.exe -m pip install anthropic")
+        return
+    if resolve_key(settings):
+        add(OK, "claude (chat model)", f"key found (not shown) · model {settings.llm_model}")
+    else:
+        add(WARN, "claude (chat model)", "no key — Maia uses her local engine",
+            "copy claude.example.txt to claude.txt and put your key in it")
+
+
 async def check_browser_reach() -> None:
     try:
         from playwright.async_api import async_playwright
@@ -225,6 +244,7 @@ def main() -> int:
     check_switch()
     check_local_store()
     check_snowflake()
+    check_llm()
     asyncio.run(check_browser_reach())
 
     icon = {OK: "✓", WARN: "!", FAIL: "✗"}

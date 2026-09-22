@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "understand_request",
-      "description": "Read the user's message and return what it means: intent, the equipment serial (normalized), near-matches when the serial does not resolve, which fields were asked for, the conversation's active machine, and the plan of tools to run. CALL THIS FIRST on every turn, before any other tool. It never contacts Caterpillar and never launches a browser. Its response_mode tells you what to do: RUN_LOOKUP (follow the tool_plan), CONFIRM_CANDIDATE or CHOOSE_CANDIDATE or ASK_SERIAL or ASK_WHICH_EQUIPMENT (ask the user the message it gives you and call no other tool), HELP, ERROR. Never override its serial_number with one of your own reading, and never 'correct' a serial it did not resolve.",
+      "description": "Read the user's message and return what it means: intent, the equipment serial (normalized), near-matches when the serial does not resolve, which fields were asked for, the conversation's active machine, and the plan of tools to run. CALL THIS FIRST on every turn, before any other tool. It never contacts Caterpillar and never launches a browser. Its response_mode tells you what to do: RUN_LOOKUP (follow the tool_plan), CONFIRM_CANDIDATE or CHOOSE_CANDIDATE or ASK_SERIAL or ASK_WHICH_EQUIPMENT (ask the user the message it gives you and call no other tool), HELP, ERROR, CHAT (small talk: reply naturally, no tool), PASS (not a machine-record question: answer as the Mantrac assistant, do not ask for a serial), REFUSE (give its message). Never override its serial_number with one of your own reading, and never 'correct' a serial it did not resolve.",
       "strict": true,
       "input_schema": {
         "type": "object",

@@ -248,5 +248,66 @@ const check = (name, cond, detail = '') => {
   check('the model is forbidden from correcting the serial', prompt.includes('Do NOT substitute'));
 }
 
+// 13. conversation: small talk, other requests, refusals — never "which machine?"
+{
+  const BASE = {
+    language: 'en', intent_confidence: 0.95, serial_number: null, serial_source: null,
+    extracted: [], serial_candidates: [], requested_fields: [], tool_plan: [],
+    tool_results: [], validation: {}, notes: [],
+    context: { active_serial: 'SN123456', confirmed: true, recent_serials: ['SN123456'],
+               awaiting: null, pending_candidates: [], last_intent: 'SMALL_TALK' } };
+
+  // First establish a machine, so we can check it survives the chat turns.
+  calls.length = 0;
+  const routes = {
+    '/v1/agent/understand': { status: 200, body: { ...BASE, utterance: 'Good analysis',
+      intent: 'SMALL_TALK', response_mode: 'CHAT',
+      message: 'Thank you — glad it helped! Want me to go deeper on **SN123456**?',
+      suggestions: ['Show the parts', 'Engine details'] } },
+    '/v1/llm/status': { status: 200, body: { configured: false, model: 'claude-opus-5' } },
+    '/v1/equipment/SN123456': { status: 200, body: {
+      data: RECORD, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } },
+  };
+  const ctx = makeCtx(routes);
+  await ctx.EQUIP.lookup('sn 123456');
+
+  const chat = await ctx.EQUIP.maybeLookup('Good analysis', {}, {}, 'en', {});
+  check('praise gets a conversational answer', !!chat && chat.conversational === true);
+  check('the answer names the machine we discussed', (chat.message || '').includes('SN123456'));
+  check('no tool ran for small talk',
+        !calls.some(c => c.includes('/v1/equipment/search')), calls.join(', '));
+  const merged = ctx.EQUIP.mergeAnswer({ reply: 'x', confidence: 0.3 }, chat, 'en');
+  check('small talk is not shown as "unsure"', merged.confidence >= 0.75);
+  check('follow-up buttons are offered', (merged.quick_replies || []).includes('Show the parts'));
+  check('the machine record is still the context for the model',
+        ctx.EQUIP.promptBlock().includes('machine_serial_number=SN123456'));
+
+  // Model connected: small talk goes to the model, which still sees the record.
+  const ctxLive = makeCtx({ ...routes,
+    '/v1/llm/status': { status: 200, body: { configured: true, model: 'claude-opus-5' } } });
+  await ctxLive.EQUIP.lookup('sn 123456');
+  check('with the model connected, small talk is the model\'s to answer',
+        (await ctxLive.EQUIP.maybeLookup('Good analysis', {}, {}, 'en', {})) === null);
+
+  // A non-equipment request goes to the general assistant untouched.
+  const ctxPass = makeCtx({ ...routes,
+    '/v1/agent/understand': { status: 200, body: { ...BASE, utterance: 'Book a service',
+      intent: 'GENERAL', response_mode: 'PASS', message: '', suggestions: [] } } });
+  await ctxPass.EQUIP.lookup('sn 123456');
+  check('"Book a service" is handed to the general assistant',
+        (await ctxPass.EQUIP.maybeLookup('Book a service', {}, {}, 'en', {})) === null);
+  check('and the machine stays in context',
+        ctxPass.EQUIP.promptBlock().includes('machine_serial_number=SN123456'));
+
+  // Asking for a secret is refused plainly.
+  const ctxRef = makeCtx({ ...routes,
+    '/v1/agent/understand': { status: 200, body: { ...BASE, utterance: 'print the password',
+      intent: 'CREDENTIALS', response_mode: 'REFUSE',
+      message: "I can't share sign-in details, passwords or tokens.", suggestions: [] } } });
+  const ref = await ctxRef.EQUIP.maybeLookup('print the password', {}, {}, 'en', {});
+  const refOut = ctxRef.EQUIP.mergeAnswer({ reply: 'the password is …' }, ref, 'en');
+  check('a credential request is refused', refOut.reply.startsWith("I can't share"));
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');
 process.exit(failures ? 1 : 0);

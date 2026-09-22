@@ -1,0 +1,9 @@
+# Copy this file to  claude.txt  and paste your Anthropic API key below.
+# That is what turns on Maia's full conversation (the "local engine" label
+# disappears from her answers).
+#
+# claude.txt stays on this PC: it is excluded from git and from the release
+# package, only the gateway reads it, and the chat page never sees the key.
+# Get a key at https://console.anthropic.com  (Settings → API keys).
+
+key=sk-ant-PASTE-YOUR-KEY-HERE

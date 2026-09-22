@@ -36,6 +36,9 @@ class Intent(str, Enum):
     EQUIPMENT_HISTORY = "EQUIPMENT_HISTORY"
     STATUS_CHECK = "STATUS_CHECK"              # does this exist / is it current
     HELP = "HELP"
+    SMALL_TALK = "SMALL_TALK"                  # thanks, praise, hello, ok, bye
+    GENERAL = "GENERAL"                        # a real request, but not about a machine record
+    CREDENTIALS = "CREDENTIALS"                # asks for a password/token — always refused
     CLARIFICATION = "CLARIFICATION"            # the user is answering our question
     INVALID_REQUEST = "INVALID_REQUEST"
     UNKNOWN = "UNKNOWN"
@@ -62,6 +65,8 @@ class ResponseMode(str, Enum):
     ERROR = "ERROR"
     HELP = "HELP"
     REFUSE = "REFUSE"
+    CHAT = "CHAT"                        # conversational reply; no tool, no data claimed
+    PASS = "PASS"                        # not an equipment turn — the general assistant answers
 
 
 class SerialCandidate(BaseModel):
@@ -173,5 +178,7 @@ class AgentState(BaseModel):
     response_mode: ResponseMode = ResponseMode.ASK_SERIAL
     #: a plain-language line the UI can show verbatim when no model is in the loop
     message: str = ""
+    #: short follow-ups the UI may offer as buttons
+    suggestions: list[str] = Field(default_factory=list)
     #: for the audit trail, never shown to the user
     notes: list[str] = Field(default_factory=list)

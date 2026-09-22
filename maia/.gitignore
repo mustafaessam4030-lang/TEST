@@ -13,6 +13,10 @@ artifacts/
 login.txt
 login
 
+# Local Claude API key — never committed, never packaged
+claude.txt
+claude.txt.txt
+
 # Local Snowflake connection and keys — never committed, never packaged
 snowflake.txt
 snowflake.txt.txt

@@ -65,9 +65,9 @@ package:                    ## build the hand-off archive (chat + automation + l
 	@latest=$$(ls -dt artifacts/capture/self-test-* 2>/dev/null | head -1); \
 	  [ -n "$$latest" ] && cp -r "$$latest" /tmp/maia-package/maia/artifacts/capture/ || true
 	@rm -f /tmp/maia-package/maia/login.txt /tmp/maia-package/maia/login
-	@rm -rf /tmp/maia-package/maia/snowflake.txt* /tmp/maia-package/maia/keys
+	@rm -rf /tmp/maia-package/maia/snowflake.txt* /tmp/maia-package/maia/keys /tmp/maia-package/maia/claude.txt*
 	@find /tmp/maia-package/maia -name '*.p8' -delete
-	@cd /tmp/maia-package && zip -qr "$(CURDIR)/../maia-platform.zip" maia -x '*.pyc' 'maia/login.txt' 'maia/login' 'maia/snowflake.txt*' '*.p8'
+	@cd /tmp/maia-package && zip -qr "$(CURDIR)/../maia-platform.zip" maia -x '*.pyc' 'maia/login.txt' 'maia/login' 'maia/snowflake.txt*' 'maia/claude.txt*' '*.p8'
 	@echo "wrote ../maia-platform.zip"
 
 e2e:                        ## start the whole stack: gateway + Maia chat + live worker

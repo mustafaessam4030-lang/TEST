@@ -44,6 +44,16 @@ def wire_ui(api_base: str, source: str) -> Path:
     html, m = re.subn(r"(source\s*:\s*)'[^']*'", rf"\1'{source}'", html, count=1)
     if not m:
         sys.exit("could not find CFG.equipment.source in the UI — was v9 rebuilt?")
+    # The chat model goes through the gateway, which holds the key. The page
+    # never sees one. If the gateway has no key it answers 401 and the page
+    # falls back to its local engine, exactly as before.
+    html, k = re.subn(r"(endpoint\s*:\s*)'https://api\.anthropic\.com/v1/messages'",
+                      rf"\1'{api_base}/v1/llm/messages'", html, count=1)
+    if not k:
+        sys.exit("could not find CFG.endpoint in the UI")
+    model = os.environ.get("MAIA_LLM_MODEL", "claude-opus-5")
+    html = re.sub(r"(model\s*:\s*)'claude-[^']*'", rf"\1'{model}'", html, count=1)
+    html = re.sub(r"(timeoutMs\s*:\s*)18000", r"\g<1>45000", html, count=1)
     target = BUILD / "maia.html"
     target.write_text(html, encoding="utf-8")
     # Serve it under every name a person might already have in a bookmark, and
