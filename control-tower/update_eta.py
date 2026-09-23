@@ -5492,30 +5492,82 @@ def find_afkl_header_search(page):
     return None
 
 
+def describe_search_box(box):
+    """Which box the search went into, in words an operator can check."""
+    parts = []
+    for attribute in ("placeholder", "aria-label", "name", "id", "type"):
+        try:
+            value = box.get_attribute(attribute, timeout=PROBE_TIMEOUT_MS)
+        except Exception:
+            value = None
+        if value:
+            parts.append("{0}={1!r}".format(attribute, value[:40]))
+    return ", ".join(parts) or "an unlabelled input"
+
+
+def _afkl_result_anywhere(page, tracking_number):
+    """
+    The tab that is showing this shipment, or None.
+
+    Every tab in the context is checked, not only the one the search was
+    typed into. On the run of the 23rd the operator could see the shipment
+    on screen while the run read the home page it had searched from: the
+    result had come up in a tab of its own.
+    """
+    try:
+        tabs = list(page.context.pages)
+    except Exception:
+        tabs = [page]
+    ordered = [page] + [tab for tab in tabs if tab is not page]
+    for tab in ordered:
+        try:
+            if tab.is_closed():
+                continue
+        except Exception:
+            continue
+        if page_is_afkl_detail(tab, tracking_number):
+            return tab
+    return None
+
+
 def open_afkl_by_search(page, config, tracking_number):
     """
     Look the air waybill up through the site's own header search.
 
-    Returns the page once a search has been submitted, confirmed or not —
-    from there the normal read, with its identity check, decides what the
-    page says. Returns None only when no search box could be found, which is
+    Returns the tab showing the result once a search has been submitted —
+    confirmed or not, the normal read and its identity check then decide what
+    it says. Returns None only when the site opened but offered no search box,
     the one case where the older direct address is still worth trying.
 
-    The direct shipment address now lands on the carrier's "this page has
-    moved" page with HTTP 200. That is what every AFKL shipment hit on the
-    runs of the 13th, 17th and 23rd: loaded, and never confirmed.
+    Raises AfklNavigationError when the site does not open at all. On the
+    23rd the home page timed out and the run went on to spend another two and
+    a half minutes pushing the dead direct address at a site that was not
+    answering. A carrier that is not responding is not made to respond by
+    being asked more often.
     """
     label = config["label"]
     url = config.get("search_url") or AFKL_SEARCH_URL
     awb = portal_awb(tracking_number, dashed=True)
+    # Whatever an earlier lookup left open — a result tab, a side browser —
+    # is released before this one opens more.
+    release_afkl_helpers(keep_page=page)
     write_log("{0}: searching for {1} from the site header — {2}".format(
         label, awb, url))
+    started = time.time()
     try:
         page.goto(url, wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
     except Exception as error:
-        write_log("{0}: could not open {1} — {2}".format(
-            label, url, str(error).split("\n")[0][:120]))
-        return None
+        message = str(error).split("\n")[0][:160]
+        write_log("{0}: could not open {1} — {2}".format(label, url, message))
+        log_reachability(url, label)
+        raise AfklNavigationError(tracking_number, [{
+            "attempt": 1, "strategy": "header search", "channel": "msedge",
+            "http2_disabled": DISABLE_HTTP2, "url": url, "error": message,
+            "status": None, "final_url": None, "dom_content_loaded": False,
+            "loaded": False, "awb_verified": False,
+            "elapsed_ms": int((time.time() - started) * 1000),
+            "outcome": "the carrier's home page did not answer"}])
+
     wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
     if captcha_on_page(page):
         if not await_human_verification(page, tracking_number, label):
@@ -5531,48 +5583,88 @@ def open_afkl_by_search(page, config, tracking_number):
         write_log("{0}: no search box in the site header; falling back to "
                   "the direct shipment address.".format(label))
         return None
+    write_log("{0}: typing {1} into {2}.".format(
+        label, awb, describe_search_box(box)))
 
     landed = type_into(box, awb, "the {0} header search".format(label))
     if re.sub(r"\D", "", landed) != re.sub(r"\D", "", awb):
-        write_log("{0}: the header search would not take {1} (it holds "
+        write_log("{0}: the search box would not take {1} (it holds "
                   "'{2}').".format(label, awb, landed))
         return None
 
+    try:
+        tabs_before = set(id(tab) for tab in page.context.pages)
+    except Exception:
+        tabs_before = {id(page)}
     before = page.url
+
+    def something_happened():
+        try:
+            if page.url != before:
+                return True
+            if any(id(tab) not in tabs_before for tab in page.context.pages):
+                return True
+        except Exception:
+            pass
+        return _afkl_result_anywhere(page, tracking_number) is not None
+
     try:
         box.press("Enter")
     except Exception as error:
         note_suppressed("submitting the header search", error)
-    # Enter is how the box is meant to be used. If the page has not moved
-    # after a few seconds, the magnifier beside the box is clicked instead.
-    moved = wait_for_any(
-        page, [("the search left the page", lambda: page.url != before),
-               ("the shipment rendered",
-                lambda: page_is_afkl_detail(page, tracking_number))],
-        4000)
-    if not moved:
+    # Enter is how the box is meant to be used. Only if nothing at all has
+    # happened — no navigation, no new tab, no result — is the button beside
+    # it clicked, so one search cannot open two tabs.
+    if not wait_for_any(page, [("the search answered", something_happened)],
+                        4000):
         own = box.locator("xpath=ancestor::form[1]")
         button = first_visible([
-            own.locator("button, input[type='submit']"),
+            own.get_by_role("button", name=re.compile(
+                r"search|check\s+status|track", re.I)),
+            own.locator("button[type='submit'], input[type='submit']"),
             page.locator("header button[aria-label*='search' i], "
                          "nav button[aria-label*='search' i]"),
-            page.get_by_role("button", name=re.compile(r"search", re.I)),
         ], PROBE_TIMEOUT_MS * 2)
         if button is not None:
             click_postback(button, "{0} header search".format(label))
 
+    found = {}
+
+    def result_shown():
+        tab = _afkl_result_anywhere(page, tracking_number)
+        if tab is not None:
+            found["tab"] = tab
+        return tab is not None
+
     settled = wait_for_any(
-        page, [("the shipment page",
-                lambda: page_is_afkl_detail(page, tracking_number))],
+        page, [("the shipment page", result_shown)],
         AFKL_DETAIL_READY_MS, poll_ms=500,
         reason="the {0} result for {1}".format(label, awb))
+
+    # Any tab the search opened is held and closed at the next lookup — the
+    # context leak was the same mistake, and it cost the whole server.
+    try:
+        opened = [tab for tab in page.context.pages
+                  if id(tab) not in tabs_before]
+    except Exception:
+        opened = []
+    for tab in opened:
+        AFKL_HELD_PAGES.append(tab)
+
     if settled:
-        write_log("{0}: {1} found through the header search.".format(label, awb))
-    else:
-        _ok, why = afkl_detail_verdict(page, tracking_number)
-        write_log("{0}: searched for {1}, but {2}".format(label, awb, why))
-        describe_afkl_page(page, label)
-    return page
+        result = found.get("tab") or page
+        write_log("{0}: {1} found through the header search{2}.".format(
+            label, awb, " — in a new tab" if result is not page else ""))
+        return result
+
+    _ok, why = afkl_detail_verdict(page, tracking_number)
+    write_log("{0}: searched for {1}, but {2}".format(label, awb, why))
+    describe_afkl_page(page, label)
+    if opened:
+        write_log("{0}: the search opened {1} new tab(s): {2}".format(
+            label, len(opened), ", ".join(
+                (tab.url or "?")[:100] for tab in opened)))
+    return opened[-1] if opened else page
 
 
 def open_afkl_detail(page, config, tracking_number):
@@ -5815,6 +5907,7 @@ def _afkl_side_browser(page, url, tracking_number, label, number, strategy,
 # and each one here holds an open page on the carrier, so an unclosed context
 # is a set of live sockets against the same host for the rest of the run.
 AFKL_HELD_CONTEXTS = []
+AFKL_HELD_PAGES = []
 AFKL_SIDE_BROWSERS = []
 
 
@@ -5851,6 +5944,17 @@ def release_afkl_helpers(keep_page=None):
             continue
         AFKL_HELD_CONTEXTS.remove(context)
         _close_afkl_context(context)
+
+    # Result tabs the header search opened. The tab the caller is reading
+    # stays; every other one goes.
+    for tab in list(AFKL_HELD_PAGES):
+        if tab is keep_page:
+            continue
+        AFKL_HELD_PAGES.remove(tab)
+        try:
+            tab.close()
+        except Exception as error:
+            note_suppressed("closing an AFKL result tab", error)
 
     for browser in list(AFKL_SIDE_BROWSERS):
         if browser is keep_browser:

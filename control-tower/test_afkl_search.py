@@ -158,6 +158,15 @@ check("The search never touches the flight status card",
       .split("\ndef ")[0])
 check("Human verification is waited for, never solved",
       "await_human_verification(page, tracking_number, label)" in search)
+check("Every tab is checked for the result, not only the one searched from",
+      "_afkl_result_anywhere(page, tracking_number)" in search)
+check("The log names the box the air waybill was typed into",
+      "describe_search_box(box)" in search)
+check("A home page that does not answer raises, instead of falling back",
+      "raise AfklNavigationError(tracking_number, [{" in search)
+check("One search cannot open two tabs: the button only follows a silent Enter",
+      "if not wait_for_any(page, [(\"the search answered\", something_happened)]"
+      in search)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -174,7 +183,10 @@ HEADER = """<header><nav>
 <script>
 function go(e){ e.preventDefault();
   var v = document.getElementById('q').value;
-  setTimeout(function(){ location.href = '/search?q=' + encodeURIComponent(v); }, 300); }
+  var target = '/search?q=' + encodeURIComponent(v);
+  // The live site opened the result in a tab of its own on the 23rd.
+  if (location.pathname.indexOf('/newtab') === 0) { window.open(target, '_blank'); return; }
+  setTimeout(function(){ location.href = target; }, 300); }
 </script>"""
 MOVED_HTML = ("<!doctype html><html><body>" + HEADER +
               "<div>Operational disruptions may affect our services.</div>"
@@ -205,6 +217,10 @@ class Site(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/dead"):
+            # A carrier that accepts the connection and never answers.
+            time.sleep(8)
+            return
         if parsed.path.startswith("/search"):
             awb = parse_qs(parsed.query).get("q", [""])[0]
             body = result_html(awb) if awb == AWB else (
@@ -320,6 +336,55 @@ else:
             check("A shipment the carrier does not have is reported as such, "
                   "not read off the wrong page",
                   isinstance(other, A.SkipShipment), repr(other)[:140])
+            # ── the result opens in a tab of its own ─────────────────────
+            print()
+            print("=" * 74)
+            print("4. THE RESULT IN A NEW TAB, AND A SITE THAT DOES NOT ANSWER")
+            print("=" * 74)
+            ladder.clear()
+            A.PORTALS["AFKL"] = dict(A.PORTALS["AFKL"],
+                                     search_url=BASE + "/newtab")
+            tabs_before = len(page.context.pages)
+            popup_result, popup_error = None, None
+            try:
+                popup_result = A.get_portal_result(page, "AFKL", AWB)
+            except Exception as problem:
+                popup_error = problem
+            check("A result that opens in a new tab is found there",
+                  (popup_result or {}).get("ata") == "20/09/2026",
+                  repr(popup_error)[:140] if popup_error else str(popup_result))
+            check("...still without touching the dead direct address",
+                  not ladder)
+            check("The tab it opened is held, not forgotten",
+                  len(A.AFKL_HELD_PAGES) >= 1, str(len(A.AFKL_HELD_PAGES)))
+            A.release_afkl_helpers(keep_page=page)
+            check("...and closed at the next lookup, so tabs cannot pile up",
+                  len(page.context.pages) == tabs_before
+                  and not A.AFKL_HELD_PAGES,
+                  "{0} -> {1} tabs".format(tabs_before,
+                                           len(page.context.pages)))
+
+            # ── the carrier does not answer at all ───────────────────────
+            ladder.clear()
+            A.NAVIGATION_TIMEOUT_MS = 3000
+            A.log_reachability = lambda *args, **kwargs: None
+            A.PORTALS["AFKL"] = dict(A.PORTALS["AFKL"],
+                                     search_url=BASE + "/dead")
+            dead_error = None
+            started = time.time()
+            try:
+                A.get_portal_result(page, "AFKL", AWB)
+            except Exception as problem:
+                dead_error = problem
+            took = time.time() - started
+            check("A carrier whose home page does not answer is a navigation "
+                  "error", isinstance(dead_error, A.AfklNavigationError),
+                  repr(dead_error)[:140])
+            check("...and the dead direct address is NOT then hammered too",
+                  not ladder, "{0} ladder call(s)".format(len(ladder)))
+            check("...so it gives up in seconds, not minutes",
+                  took < 15, "{0:.1f}s".format(took))
+
             A.open_afkl_detail = real_open_detail
             browser.close()
 
