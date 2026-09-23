@@ -124,6 +124,37 @@ check("...while an arrival expected at the destination is an ETA",
 check("The flight on the milestones is kept for the flight status card",
       (transit.get("flight_leg") or {}).get("flight") == "KL0589")
 
+# THE RUN OF THE 23rd AT 16:12. The same shipment, found this time — and
+# reported as ETA 26/09/2026, ATA None, for a shipment that had arrived on
+# 20/09. The current result page carries a Flight schedule section below the
+# milestones, the reader skipped itself whenever it saw those words, and the
+# generic label reader took the nearest date to "ETA".
+WITH_SCHEDULE = ("MUC \u2708 ACC\n" + RESULT_TAIL +
+                 "Flight schedule\nMUC - AMS  KL1234  19 SEP\n"
+                 "AMS - ACC  KL0589  20 SEP\n"
+                 "Delivery ETA subject to local handling 26 SEP\n")
+scheduled = A._read_afkl_page(Page(WITH_SCHEDULE), "AFKL") or {}
+check("A result page with a Flight schedule section is still read by its "
+      "milestones: ATA 20/09/2026", scheduled.get("ata") == "20/09/2026",
+      str(scheduled))
+check("...and the stray 26 SEP near 'ETA' is NOT reported as an ETA",
+      scheduled.get("eta") != "26/09/2026", str(scheduled))
+
+SPLIT = ("MUC \u2708 ACC\nDELIVERY\n074-46285514\nChecked-in\nMUC\nAMS\nACC\n"
+         "20 SEP 23:00\n1 piece ready to be picked up at ACC\n"
+         "20 SEP 22:58 -\n1 piece received at ACC from KL0589\n")
+split = A._read_afkl_page(Page(SPLIT), "AFKL") or {}
+check("Milestones whose date and event render on separate lines are read too",
+      split.get("ata") == "20/09/2026", str(split))
+
+NOTHING = ("MUC \u2708 ACC\nBOOKED\n074-46285514\nChecked-in\nMUC\nAMS\nACC\n"
+           "18 SEP 10:00 - 1 piece booked on KL1234\n"
+           "Some other ETA text 26 SEP " + "x" * 200 + "\n")
+nothing = A._read_afkl_page(Page(NOTHING), "AFKL")
+check("The current layout with no arrival and no expected arrival reads "
+      "NOTHING, rather than guessing a date from the page",
+      nothing is None, str(nothing))
+
 OLD = ("EN ROUTE 074-05978372\nFlight schedule\n"
        "AMS - CAI   KL0553   06 SEP 09:40 - 06 SEP 14:25\n"
        "Progress details\nCAI\nARRIVAL 4 pcs Estimated: 07 SEP 14:25\n" + "x" * 200)

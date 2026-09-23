@@ -79,6 +79,34 @@ check("...and only one: a second failure is still allowed to stop the run",
       loop.count("ensure_filtered_page(internal_page, SOURCE_VIEW") == 2)
 check("...while a genuine end of pages is still a clean stop, not an error",
       loop.count("except SkipShipment as") == 2)
+# THE ROW IN THE OTHER VIEW. On the 23rd the shipment was found on BU page 1
+# and then never found in the COE view: the matcher was an exact substring,
+# so the same air waybill written another way in another table was a
+# different shipment, and the run re-opened the Hub for every page up to
+# ten looking for it.
+ROW = "074-46285514\tKLM Royal Dutch Airlines\t20/09/2026\tUnder Clearance"
+for written in ("074-46285514", "07446285514", "074 4628 5514",
+                "074 - 46285514"):
+    check("The row is found when the other view writes it {0!r}".format(written),
+          A.reference_in_row("074-46285514",
+                             written + "\tKLM\t20/09/2026\tUnder Clearance"))
+check("Qatar's '157 - 50601530' still matches as it always did",
+      A.reference_in_row("157 - 50601530", "157 - 50601530\tQatar"))
+check("A different air waybill is never matched",
+      not A.reference_in_row("074-46285514", "074-46285515\tKLM"))
+check("...nor one that merely contains these digits",
+      not A.reference_in_row("074-46285514", "5074462855149\tKLM"))
+check("...nor the air waybill glued to the date in the next cell",
+      not A.reference_in_row("074-46285514", "074-4628551\t420/09/2026"))
+check("A short reference must stand alone — K179801 is not K1798010",
+      not A.reference_in_row("K179801", "K1798010\tKLM")
+      and A.reference_in_row("K179801", "K179801\tKLM"))
+check("find_row_by_bol uses the tolerant matcher",
+      "reference_in_row(bol_awb, row.inner_text())" in SRC)
+check("A row not on its expected page says what that page DOES carry",
+      "that \"\n                          \"page carries" in SRC
+      or "page carries: {3}" in SRC)
+
 ready = SRC.split("def _shipments_table_ready")[1].split("\ndef ")[0]
 check("The table wait never raises", "return False" in ready
       and "except Exception" in ready)

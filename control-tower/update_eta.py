@@ -3395,13 +3395,61 @@ def collect_supported_shipments(page, table_page):
     return shipments
 
 
+def reference_in_row(reference, row_text):
+    """
+    Does this table row carry this reference?
+
+    Exactly as written first. Then, for a reference that is a number — an air
+    waybill, a DHL waybill — on its DIGITS, because two views of the same Hub
+    need not print it the same way: 074-46285514 in one table, 07446285514 or
+    074 4628 5514 in another. Both tests require the reference to stand
+    alone: 07446285514 does not match inside 5074462855149. Separators are only closed up INSIDE a
+    number — a space, a dash, or " - " — never across the tab between two
+    cells, so the air waybill can never be glued to the date beside it.
+    """
+    reference = str(reference or "").strip()
+    text = row_text or ""
+    if not reference:
+        return False
+    # Exactly as written — but standing alone. A bare substring test, which
+    # is what this used to be, lets K179801 match inside K1798010 and would
+    # open the Manage page of a different shipment.
+    if re.search(r"(?<![A-Za-z0-9]){0}(?![A-Za-z0-9])".format(
+            re.escape(reference)), text):
+        return True
+    digits = re.sub(r"\D", "", reference)
+    if len(digits) < 8:
+        return False
+    closed = re.sub(r"(?<=\d)(?: ?- ?| )(?=\d)", "", text)
+    return re.search(r"(?<!\d){0}(?!\d)".format(digits), closed) is not None
+
+
 def find_row_by_bol(page, bol_awb):
     rows = find_shipments_table(page).locator("tbody tr")
     for index in range(rows.count()):
         row = rows.nth(index)
-        if bol_awb in row.inner_text():
+        if reference_in_row(bol_awb, row.inner_text()):
             return row
     return None
+
+
+def table_references(page, limit=6):
+    """The first few references a results page carries, for the run log."""
+    try:
+        rows = find_shipments_table(page).locator("tbody tr")
+        seen = []
+        for index in range(min(rows.count(), 40)):
+            cells = rows.nth(index).locator("td")
+            if cells.count() == 0:
+                continue
+            first = " ".join((cells.nth(0).inner_text(timeout=800) or "").split())
+            if first:
+                seen.append(first[:30])
+            if len(seen) >= limit:
+                break
+        return seen
+    except Exception:
+        return []
 
 
 def click_manage_in_view(page, view_name, bol_awb, preferred_page):
@@ -3420,6 +3468,14 @@ def click_manage_in_view(page, view_name, bol_awb, preferred_page):
 
         row = find_row_by_bol(page, bol_awb)
         if row is None:
+            if page_number == page_order[0]:
+                # The page it was expected on. What it carries instead is the
+                # quickest way to tell "not in this view" from "written
+                # differently in this view".
+                write_log("{0} is not on {1} Shipments View page {2}; that "
+                          "page carries: {3}".format(
+                              bol_awb, view_name, page_number,
+                              ", ".join(table_references(page)) or "no rows"))
             continue
 
         manage_button = first_visible(
@@ -6415,11 +6471,43 @@ def afkl_route_destination(text):
     return None
 
 
+AFKL_MILESTONE_STAMP = re.compile(
+    r"^\d{1,2}\s+[A-Za-z]{3}(?:\s+\d{2,4})?\s+\d{1,2}:\d{2}\s*[-–—]?\s*$")
+AFKL_EVENT_WORDS = re.compile(
+    r"\b(?:pieces?|received|departed|booked|ready\s+to\s+be|arrived|"
+    r"delivered\s+(?:at|to|in)|manifested|expected|notified)\b", re.I)
+
+
+def afkl_is_current_layout(text):
+    """True when the page carries the current layout's dated milestones."""
+    return any(AFKL_EVENT_WORDS.search(event)
+               for _when, _clock, event in afkl_milestones(text))
+
+
 def afkl_milestones(text):
-    """Every dated milestone line: [(date, time, event), ...] in page order."""
+    """
+    Every dated milestone: [(date, time, event), ...] in page order.
+
+    The date and the event are one line on screen, but the page may render
+    them as separate elements, which reach the text as separate lines. A line
+    that is only a timestamp is joined to the line after it.
+    """
+    raw = [" ".join(line.split()) for line in (text or "").splitlines()]
+    raw = [line for line in raw if line]
+    lines = []
+    index = 0
+    while index < len(raw):
+        line = raw[index]
+        if AFKL_MILESTONE_STAMP.match(line) and index + 1 < len(raw):
+            joined = re.sub(r"\s*[-–—]?\s*$", "", line)
+            lines.append("{0} - {1}".format(
+                joined, re.sub(r"^[-–—]\s*", "", raw[index + 1])))
+            index += 2
+            continue
+        lines.append(line)
+        index += 1
     found = []
-    for line in (text or "").splitlines():
-        line = " ".join(line.split())
+    for line in lines:
         match = AFKL_MILESTONE.search(line)
         if not match:
             continue
@@ -6525,13 +6613,26 @@ def _read_afkl_page(page, provider):
         return {"provider": provider, "tracking_status": "No result",
                 "eta": None, "ata": None, "no_result": True}
 
-    # The layout the header search lands on. Tried first because it is the
-    # one the site serves now; a page in the older layout has no milestone
-    # lines of this shape and falls straight through.
-    if not re.search(r"Progress\s+details|Flight\s+schedule", text, re.I):
-        current = _read_afkl_milestones(text, provider)
-        if current is not None:
-            return current
+    # The layout the header search lands on, tried first and ALWAYS. It used
+    # to be skipped whenever the page mentioned "Flight schedule" — and the
+    # current result page does, further down — so on the 23rd a shipment that
+    # had arrived on 20/09 went to the generic label reader instead, which
+    # took the nearest date to the letters "ETA" and reported ETA 26/09. A
+    # page in the older layout carries no arrival or expected-arrival
+    # milestones, so it falls straight through to the reader below.
+    current = _read_afkl_milestones(text, provider)
+    if current is not None:
+        return current
+    if afkl_is_current_layout(text) and not re.search(
+            r"Progress\s+details", text, re.I):
+        # The current layout, and nothing on it puts the shipment at its
+        # destination or says when it is expected there. That is an honest
+        # "no date", not an invitation to guess one from the page chrome.
+        write_log("AFKL myCargo: the shipment page shows no arrival at its "
+                  "destination and no expected arrival there; nothing is "
+                  "read from it rather than guessing from other dates on the "
+                  "page.")
+        return None
 
     # Only read this page structurally when it IS the myCargo layout. Without
     # the gate the row scan treats the sentence "Estimated Time of Arrival" as
