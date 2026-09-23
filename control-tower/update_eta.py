@@ -5197,7 +5197,17 @@ def awb_on_page(page, tracking_number):
 # reported as unreachable — which is what happened to every 074 and 057
 # waybill on the run of the 17th: HTTP 200, DOMContentLoaded, load, and
 # "could not be confirmed on it".
+# The page the old shipment addresses now land on. It carries the site's full
+# header and returns HTTP 200, which is why it looked like a page that had
+# loaded and then "could not be confirmed".
+AFKL_PAGE_MOVED = re.compile(
+    r"this\s+page\s+has\s+(?:moved|been\s+(?:re)?moved|expired)|"
+    r"page\s+(?:not\s+found|no\s+longer\s+exists)|page\s+you\s+are\s+looking\s+for",
+    re.I)
+
 AFKL_DETAIL_FURNITURE = re.compile(
+    r"received\s+at\s+[A-Z]{3}|ready\s+to\s+be\s+picked\s*up|departed\s+from|"
+    r"File\s+a\s+claim|Set\s+notifications|"
     r"Progress\s+details|Flight\s+schedule|Estimated\s+Pick\s*up\s+time|"
     r"Checked-in|EN\s+ROUTE|DELIVERED|Shipment\s+details|Milestones?|"
     r"Transport\s+status|Tracking\s+details|Pieces|Gross\s+weight|"
@@ -5234,6 +5244,10 @@ def afkl_detail_verdict(page, tracking_number):
     if len(stripped) < 120:
         return False, "the page carries only {0} characters of text — it has " \
                       "not rendered".format(len(stripped))
+
+    if AFKL_PAGE_MOVED.search(text) and not awb_on_page(page, tracking_number):
+        return False, ("the carrier says this page has moved — this address no "
+                       "longer shows shipments")
 
     if not awb_on_page(page, tracking_number):
         return False, "the air waybill {0} is not anywhere on the page".format(
@@ -5443,6 +5457,122 @@ def _log_afkl_attempt(record):
         "final_url={final_url} | outcome={outcome}{err}".format(
             err=(" | error=" + record["error"]) if record["error"] else "",
             **record))
+
+
+AFKL_SEARCH_URL = "https://www.afklcargo.com/"
+AFKL_SEARCH_READY_MS = 20000
+
+
+def find_afkl_header_search(page):
+    """
+    The search box in the site header, or None.
+
+    Every afklcargo.com page carries it — the moved-page included — and it is
+    the route a person uses: type the air waybill, press Enter, and the
+    shipment comes up. Nothing from the flight status card can match here.
+    """
+    candidates = [
+        page.get_by_role("searchbox"),
+        page.locator("header input[type='search'], nav input[type='search']"),
+        page.locator("input[type='search']"),
+        page.get_by_placeholder(re.compile(
+            r"search|track|awb|air\s*waybill|shipment", re.I)),
+        page.locator("input[aria-label*='search' i], input[name*='search' i], "
+                     "input[id*='search' i]"),
+        page.locator("header input[type='text'], nav input[type='text']"),
+    ]
+    for candidate in candidates:
+        try:
+            found = candidate.first
+            found.wait_for(state="visible", timeout=PROBE_TIMEOUT_MS)
+        except Exception:
+            continue
+        if not is_flight_status_field(found):
+            return found
+    return None
+
+
+def open_afkl_by_search(page, config, tracking_number):
+    """
+    Look the air waybill up through the site's own header search.
+
+    Returns the page once a search has been submitted, confirmed or not —
+    from there the normal read, with its identity check, decides what the
+    page says. Returns None only when no search box could be found, which is
+    the one case where the older direct address is still worth trying.
+
+    The direct shipment address now lands on the carrier's "this page has
+    moved" page with HTTP 200. That is what every AFKL shipment hit on the
+    runs of the 13th, 17th and 23rd: loaded, and never confirmed.
+    """
+    label = config["label"]
+    url = config.get("search_url") or AFKL_SEARCH_URL
+    awb = portal_awb(tracking_number, dashed=True)
+    write_log("{0}: searching for {1} from the site header — {2}".format(
+        label, awb, url))
+    try:
+        page.goto(url, wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
+    except Exception as error:
+        write_log("{0}: could not open {1} — {2}".format(
+            label, url, str(error).split("\n")[0][:120]))
+        return None
+    wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+    if captcha_on_page(page):
+        if not await_human_verification(page, tracking_number, label):
+            raise CaptchaRequired(tracking_number, label)
+    accept_cookie_banner(page, label)
+
+    wait_for_any(
+        page, [("the header search box",
+                lambda: find_afkl_header_search(page) is not None)],
+        AFKL_SEARCH_READY_MS, reason="the {0} header search box".format(label))
+    box = find_afkl_header_search(page)
+    if box is None:
+        write_log("{0}: no search box in the site header; falling back to "
+                  "the direct shipment address.".format(label))
+        return None
+
+    landed = type_into(box, awb, "the {0} header search".format(label))
+    if re.sub(r"\D", "", landed) != re.sub(r"\D", "", awb):
+        write_log("{0}: the header search would not take {1} (it holds "
+                  "'{2}').".format(label, awb, landed))
+        return None
+
+    before = page.url
+    try:
+        box.press("Enter")
+    except Exception as error:
+        note_suppressed("submitting the header search", error)
+    # Enter is how the box is meant to be used. If the page has not moved
+    # after a few seconds, the magnifier beside the box is clicked instead.
+    moved = wait_for_any(
+        page, [("the search left the page", lambda: page.url != before),
+               ("the shipment rendered",
+                lambda: page_is_afkl_detail(page, tracking_number))],
+        4000)
+    if not moved:
+        own = box.locator("xpath=ancestor::form[1]")
+        button = first_visible([
+            own.locator("button, input[type='submit']"),
+            page.locator("header button[aria-label*='search' i], "
+                         "nav button[aria-label*='search' i]"),
+            page.get_by_role("button", name=re.compile(r"search", re.I)),
+        ], PROBE_TIMEOUT_MS * 2)
+        if button is not None:
+            click_postback(button, "{0} header search".format(label))
+
+    settled = wait_for_any(
+        page, [("the shipment page",
+                lambda: page_is_afkl_detail(page, tracking_number))],
+        AFKL_DETAIL_READY_MS, poll_ms=500,
+        reason="the {0} result for {1}".format(label, awb))
+    if settled:
+        write_log("{0}: {1} found through the header search.".format(label, awb))
+    else:
+        _ok, why = afkl_detail_verdict(page, tracking_number)
+        write_log("{0}: searched for {1}, but {2}".format(label, awb, why))
+        describe_afkl_page(page, label)
+    return page
 
 
 def open_afkl_detail(page, config, tracking_number):
@@ -6124,6 +6254,154 @@ def afkl_destination(text):
     return header.group(2).upper() if header else None
 
 
+# ── The current AFKL result layout ────────────────────────────────────
+#
+# Reached through the search box in the site header. No "Progress details",
+# no "Flight schedule", no "Estimated:" prefix. Instead a route header and a
+# list of dated milestones:
+#
+#     MUC ✈ ACC
+#     DELIVERY  OK NOTIFIED  074-46285514
+#     20 SEP 23:00 - 1 piece ready to be picked up at ACC
+#     20 SEP 22:58 - 1 piece received at ACC from KL0589
+#     On Time: Your shipment has been delivered before LAT
+#
+# The route header names the destination; a milestone that puts the cargo AT
+# that station is an actual arrival. Only the destination counts — a piece
+# received at AMS in transit is not the shipment arriving.
+AFKL_MILESTONE = re.compile(
+    r"(\d{1,2}\s+[A-Za-z]{3}(?:\s+\d{2,4})?)\s+(\d{1,2}:\d{2})\s*[-–—]\s*(.+)")
+AFKL_ROUTE = re.compile(
+    r"^\s*([A-Z]{3})\s*[^A-Za-z0-9\s]{0,3}\s*([A-Z]{3})\s*$")
+# Events that put the cargo at a station, strongest evidence first. RCF —
+# received from the flight — is the arrival itself; ready-for-pick-up and
+# delivery can only happen after it.
+AFKL_ARRIVED_AT = (
+    re.compile(r"\breceived\s+at\s+([A-Z]{3})\s+from\b", re.I),
+    re.compile(r"\barrived\s+(?:at|in)\s+([A-Z]{3})\b", re.I),
+    re.compile(r"\bready\s+to\s+be\s+picked\s*up\s+at\s+([A-Z]{3})\b", re.I),
+    re.compile(r"\bdelivered\s+(?:at|in|to\s+\w+\s+at)\s+([A-Z]{3})\b", re.I),
+)
+AFKL_EXPECTED_AT = re.compile(
+    r"\b(?:expected|estimated|scheduled)\b.*?\b(?:at|in|to)\s+([A-Z]{3})\b", re.I)
+
+
+def afkl_route_destination(text):
+    """
+    The destination from the route header, e.g. "MUC ✈ ACC" -> "ACC".
+
+    The plane is an icon, so it reaches the text as a glyph, as nothing, or
+    as a line break. Only the part of the page ABOVE the air waybill is
+    searched: the progress bar further down lists every station on the route
+    one per line, and "MUC" followed by "AMS" there is not an origin and a
+    destination.
+    """
+    head = text or ""
+    awb = re.search(r"\b\d{3}[-\s]?\d{8}\b", head)
+    if awb:
+        head = head[:awb.start()]
+    lines = [line.strip() for line in head.splitlines() if line.strip()]
+    for line in lines:
+        found = AFKL_ROUTE.match(line)
+        if found and found.group(1) != found.group(2):
+            return found.group(2)
+    codes = [line for line in lines if re.fullmatch(r"[A-Z]{3}", line)]
+    if len(codes) >= 2 and codes[0] != codes[1]:
+        return codes[1]
+    return None
+
+
+def afkl_milestones(text):
+    """Every dated milestone line: [(date, time, event), ...] in page order."""
+    found = []
+    for line in (text or "").splitlines():
+        line = " ".join(line.split())
+        match = AFKL_MILESTONE.search(line)
+        if not match:
+            continue
+        dates = extract_all_dates(match.group(1), allow_yearless=True)
+        if dates:
+            found.append((dates[0][1], match.group(2), match.group(3).strip()))
+    return found
+
+
+def _read_afkl_milestones(text, provider):
+    """
+    Read the current AFKL layout, or None if this is not that layout.
+
+    An ATA comes only from a milestone that puts the cargo at the
+    DESTINATION. An ETA comes only from a line that says it is expected,
+    estimated or scheduled there. Nothing else on the page is read as either,
+    and "delivered before LAT" — the shipper meeting its latest acceptance
+    time — is never mistaken for a delivery.
+    """
+    events = afkl_milestones(text)
+    if not events:
+        return None
+
+    destination = afkl_route_destination(text) or afkl_destination(text)
+
+    ata = None
+    ata_strength = None
+    for strength, pattern in enumerate(AFKL_ARRIVED_AT):
+        at_destination = []
+        for when, _clock, event in events:
+            hit = pattern.search(event)
+            if not hit:
+                continue
+            station = hit.group(1).upper()
+            if destination and station != destination:
+                continue
+            at_destination.append((datetime.strptime(when, "%d/%m/%Y"), when,
+                                   station))
+        if at_destination:
+            # The earliest such event is when it got there.
+            _parsed, ata, station = min(at_destination)
+            destination = destination or station
+            ata_strength = strength
+            break
+
+    eta = None
+    for when, _clock, event in events:
+        hit = AFKL_EXPECTED_AT.search(event)
+        if hit and (destination is None or hit.group(1).upper() == destination):
+            eta = when
+            break
+
+    if eta is None and ata is None:
+        return None
+
+    cleaned = re.sub(r"delivered\s+before\s+LAT", " ", text, flags=re.I)
+    if re.search(r"\bdelivered\s+to\b", cleaned, re.I) or any(
+            AFKL_ARRIVED_AT[3].search(event) for _w, _c, event in events):
+        status = "Delivered"
+    elif ata_strength == 2:
+        status = "Ready for pick-up"
+    elif ata is not None:
+        status = "Arrived"
+    else:
+        status = "Estimated arrival"
+
+    # A flight named on a milestone is what the flight status card needs if
+    # the shipment page ever stops giving a date.
+    leg = None
+    for when, _clock, event in reversed(events):
+        flight = AFKL_FLIGHT_NUMBER.search(event)
+        if flight:
+            leg = {"flight": "{0}{1}".format(flight.group(1).upper(),
+                                             flight.group(2)),
+                   "origin": None, "destination": destination,
+                   "date": when, "line": event[:160]}
+            break
+
+    write_log(
+        "AFKL myCargo (current layout): destination={0} ETA={1} ATA={2} "
+        "status={3} from {4} milestone(s)".format(
+            destination or "unknown", eta, ata, status, len(events)))
+    return {"provider": provider, "tracking_status": status, "eta": eta,
+            "ata": ata, "flight_leg": leg}
+
+
 def _read_afkl_page(page, provider):
     """
     Read an AFKL myCargo result.
@@ -6142,6 +6420,14 @@ def _read_afkl_page(page, provider):
     if _matches(text, GENERIC_NO_RESULT):
         return {"provider": provider, "tracking_status": "No result",
                 "eta": None, "ata": None, "no_result": True}
+
+    # The layout the header search lands on. Tried first because it is the
+    # one the site serves now; a page in the older layout has no milestone
+    # lines of this shape and falls straight through.
+    if not re.search(r"Progress\s+details|Flight\s+schedule", text, re.I):
+        current = _read_afkl_milestones(text, provider)
+        if current is not None:
+            return current
 
     # Only read this page structurally when it IS the myCargo layout. Without
     # the gate the row scan treats the sentence "Estimated Time of Arrival" as
@@ -6894,7 +7180,15 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             # A navigation failure is raised, not swallowed. The search form is
             # only reached when the AWB could not produce a detail URL at all —
             # never as a way of papering over a transport error.
-            landed = open_afkl_detail(page, config, tracking_number)
+            # The header search first: it is the route the site serves now.
+            # The direct address is kept only for when no search box can be
+            # found at all, because it lands on "this page has moved".
+            landed = None
+            if config.get("search_url") and \
+                    build_afkl_detail_url(tracking_number) is not None:
+                landed = open_afkl_by_search(page, config, tracking_number)
+            if landed is None:
+                landed = open_afkl_detail(page, config, tracking_number)
             if landed is not None:
                 page = landed          # a later strategy may hand back its own page
                 direct = True
@@ -7006,6 +7300,7 @@ def afkl_flight_status_rescue(page, tracking_number, shipment=None):
 
 
 PORTALS["AFKL"]["last_chance"] = afkl_flight_status_rescue
+PORTALS["AFKL"]["search_url"] = AFKL_SEARCH_URL
 PORTALS["AFKL"]["awb_only"] = True
 
 

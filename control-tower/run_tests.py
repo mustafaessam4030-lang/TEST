@@ -19,6 +19,7 @@ SUITES = [
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),
     ("test_afkl_resources.py", "AFKL ladder's footprint on the server"),
+    ("test_afkl_search.py",    "AFKL through the header search, current layout"),
     ("test_flight_status.py",  "AFKL flight status card, and the two forms"),
     ("test_ata_field.py",       "ATA field lookup and guards"),
     ("test_coe_fallback.py",    "COE view fallback"),
