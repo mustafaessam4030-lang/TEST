@@ -23,6 +23,7 @@ SUITES = [
     ("test_ata_field.py",       "ATA field lookup and guards"),
     ("test_coe_fallback.py",    "COE view fallback"),
     ("test_hub_nav.py",         "hub navigation"),
+    ("test_view_select.py",     "Hub view selection cannot end the run"),
     ("test_hub_waits.py",       "wait and readiness logic"),
     ("test_logging.py",         "logging and redaction"),
     ("test_assistant.py",       "dashboard assistant"),

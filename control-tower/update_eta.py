@@ -2580,10 +2580,10 @@ def select_shipments_view(page, view_name):
                     wait_for_table_change(
                         page, before_signature, reason="view dropdown"
                     )
-                    find_shipments_table(page).wait_for(state="visible", timeout=15000)
-                    VIEW_SELECTION[requested] = "selected"
-                    write_log(f"{requested} Shipments View selected from dropdown.")
-                    return
+                    if _shipments_table_ready(page):
+                        VIEW_SELECTION[requested] = "selected"
+                        write_log(f"{requested} Shipments View selected from dropdown.")
+                        return
         except Exception:
             continue
 
@@ -2613,18 +2613,23 @@ def select_shipments_view(page, view_name):
         except Exception:
             selected = False
 
-        if not selected:
-            before_signature = table_signature(page)
-            try:
-                control.click(timeout=5000)
-            except Exception:
-                control.click(timeout=5000, force=True)
-            wait_for_table_change(page, before_signature, reason="view control")
-
-        find_shipments_table(page).wait_for(state="visible", timeout=15000)
-        VIEW_SELECTION[requested] = "selected"
-        write_log(f"{requested} Shipments View selected.")
-        return
+        # NOTHING HERE MAY END THE RUN. On the 23rd the second of these
+        # clicks sat unguarded inside the first one's except, the Hub re-
+        # rendered its menu between finding the control and clicking it, and
+        # the timeout went straight to main() as a FATAL error before a single
+        # shipment was looked at. A view that cannot be clicked is a reason to
+        # try the next way of selecting it — every strategy below is safe to
+        # fall through to, and the last of them is the default table.
+        clicked = selected or _click_view_control(
+            page, control, candidates, requested)
+        if clicked and _shipments_table_ready(page):
+            VIEW_SELECTION[requested] = "selected"
+            write_log(f"{requested} Shipments View selected.")
+            return
+        write_log(
+            "{0} Shipments View control was found but the view could not be "
+            "confirmed after clicking it; trying the next way of selecting "
+            "it.".format(requested))
 
     # 3. DOM fallback for custom navigation components without standard roles.
     words = ["coe"] if requested == COE_VIEW else ["bu", "business unit"]
@@ -2655,10 +2660,13 @@ def select_shipments_view(page, view_name):
     )
     if clicked:
         wait_for_table_change(page, signature_before_click, reason="custom navigation")
-        find_shipments_table(page).wait_for(state="visible", timeout=15000)
-        VIEW_SELECTION[requested] = "selected"
-        write_log(f"{requested} Shipments View selected through custom navigation.")
-        return
+        if _shipments_table_ready(page):
+            VIEW_SELECTION[requested] = "selected"
+            write_log(f"{requested} Shipments View selected through custom navigation.")
+            return
+        write_log(
+            "{0} Shipments View was clicked through custom navigation but the "
+            "table did not come back; falling back.".format(requested))
 
     # 4. After opening Centralized Shipments Tracking, the hub may present a
     # single shipments table with no separate view selector at all.
@@ -2719,6 +2727,62 @@ def select_shipments_view(page, view_name):
         f"{requested} Shipments View option was not found after opening "
         "Centralized Shipments Tracking."
     )
+
+
+# A view control is an ASP.NET postback. Playwright's click otherwise waits
+# for the navigation the click starts, and on a slow Hub that wait alone
+# outlasts the timeout; the table changing is the real readiness signal and
+# wait_for_table_change already watches for it.
+VIEW_CLICK_TIMEOUT_MS = 5000
+
+
+def _shipments_table_ready(page, timeout_ms=15000):
+    """True once the results table is on screen. Never raises."""
+    try:
+        find_shipments_table(page).wait_for(state="visible", timeout=timeout_ms)
+        return True
+    except Exception as error:
+        note_suppressed("waiting for the shipments table after a view change",
+                        error)
+        return False
+
+
+def _click_view_control(page, control, candidates, requested):
+    """
+    Click a view control and report whether the click landed. Never raises.
+
+    Two tries at most. If the first does not land — the control found, then
+    re-rendered before the click arrived, which is what the run of the 23rd
+    hit — the page is given a moment, the control is looked for again, and
+    the fresh one is clicked with force in case something is lying over it.
+    """
+    for attempt in (1, 2):
+        if attempt == 2:
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=10000)
+            except Exception:
+                pass
+            control = first_visible(candidates, 1800)
+            if control is None:
+                write_log(
+                    "{0} Shipments View control disappeared after the first "
+                    "click and did not come back.".format(requested))
+                return False
+        try:
+            before_signature = table_signature(page)
+        except Exception:
+            before_signature = None
+        try:
+            control.click(timeout=VIEW_CLICK_TIMEOUT_MS, no_wait_after=True,
+                          force=(attempt == 2))
+        except Exception as error:
+            write_log(
+                "{0} Shipments View click {1} of 2 did not land: {2}".format(
+                    requested, attempt, str(error).split("\n")[0][:120]))
+            continue
+        wait_for_table_change(page, before_signature, reason="view control")
+        return True
+    return False
 
 
 def describe_view_options(page, requested):
@@ -8172,6 +8236,27 @@ def main():
                     write_log(f"Pagination ended at page {table_page}: {error}")
                     tower.pagination_ended(table_page, str(error))
                     break
+                except Exception as error:
+                    # ONE more try before this ends the run. Every other call
+                    # to ensure_filtered_page is guarded; this one caught only
+                    # SkipShipment, so on the 23rd a single slow moment on the
+                    # Hub — seventeen seconds just to open Centralized
+                    # Shipments Tracking — stopped the whole run before a
+                    # shipment was looked at. A second failure is still fatal:
+                    # without the results table there is nothing to process,
+                    # and retrying forever would hide a real outage.
+                    write_log(
+                        "Could not open results page {0} ({1}). Reloading the "
+                        "Hub and trying once more.".format(
+                            table_page, str(error).split("\n")[0][:160]))
+                    try:
+                        internal_page.wait_for_timeout(5000)
+                        ensure_filtered_page(internal_page, SOURCE_VIEW,
+                                             table_page)
+                    except SkipShipment as again:
+                        write_log(f"Pagination ended at page {table_page}: {again}")
+                        tower.pagination_ended(table_page, str(again))
+                        break
 
                 if stop_requested:
                     break
