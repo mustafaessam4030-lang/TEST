@@ -1,0 +1,5 @@
+playwright>=1.45
+requests>=2.31
+snowflake-connector-python[pandas]>=3.12
+python-dotenv>=1.0
+pytest>=8

@@ -33,3 +33,7 @@ venv/
 coverage/
 htmlcov/
 .pytest_cache/
+
+# DSP sync: saved Cat.com sign-in and downloaded exports
+dsp_sync/browser-profile/
+dsp_sync/downloads/
