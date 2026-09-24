@@ -1,0 +1,8 @@
+.env
+.env.*
+diagnostics/
+discovery/
+out/
+tests/
+**/__pycache__/
+.pytest_cache/

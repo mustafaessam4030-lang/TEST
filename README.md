@@ -94,3 +94,10 @@ Figures in the film are labelled as pilot targets, not measured results:
 the 94% faster first response and the 700 ms latency budget are both marked
 on screen as targets to be validated in pilot. Keep that framing if you edit
 the copy.
+
+## Inspection pipeline
+
+[`inspection-pipeline/`](inspection-pipeline/) is a separate, self-contained
+Python project: a daily job that collects inspection records from the
+authorised inspection web application and loads them into Snowflake. See its
+[README](inspection-pipeline/README.md).

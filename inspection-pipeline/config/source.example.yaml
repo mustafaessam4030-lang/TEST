@@ -1,0 +1,70 @@
+# Source definition for the inspection website.
+#
+# Copy to config/source.yaml and replace every <FILL_ME> with values taken
+# from the discovery report (python -m app.discovery --probe <S/N you can see>).
+# Do NOT guess: the pipeline refuses to run while any required <FILL_ME> remains.
+# This file holds no secrets; credentials come from environment variables.
+
+# Normal login form (AUTH_MODE=browser_session). Located by accessible labels.
+auth:
+  login_path: "<FILL_ME>"            # e.g. the path of the login page
+  username_label: "<FILL_ME>"        # visible label of the username field
+  password_label: "<FILL_ME>"        # visible label of the password field
+  submit_button_name: "<FILL_ME>"    # accessible name of the sign-in button
+  success_url_pattern: "<FILL_ME>"   # regex matching the URL after login (or use success_text)
+  # success_text: "<FILL_ME>"
+
+# Preferred: the backend request the web application itself makes (COLLECTOR_TYPE=api).
+api:
+  request:
+    method: GET                      # as observed
+    path: "<FILL_ME>"                # observed endpoint path, relative to WEBSITE_BASE_URL
+    params: {}                       # static query parameters observed on every call
+    json_body: null                  # static JSON body for POST endpoints
+    headers: {}                      # static NON-secret headers the app sends (e.g. Accept)
+    filter_location: query           # where the app puts search filters: query | body
+    filter_params:
+      serial_number: null            # parameter name the app uses for S/N search, if any
+      inspection_number: null        # parameter name for inspection-number search, if any
+  records_path: "<FILL_ME>"          # dotted path to the list of records ("" if the body is a list)
+  pagination:
+    type: none                       # none | page | offset | cursor  (as observed while paging)
+    location: query                  # query | body
+    # page_param: <name>   start_page: 1   size_param: <name>   page_size: 100
+    # offset_param: <name> limit_param: <name>
+    # cursor_param: <name> next_cursor_path: <dotted path>
+    # total_path: <dotted path to total count>
+    max_pages: 1000
+  fields:                            # canonical field -> dotted path inside ONE record
+    inspection_number: "<FILL_ME>"
+    serial_number: "<FILL_ME>"
+    status: "<FILL_ME>"
+    inspection_date: null            # path, if the record has an inspection date
+    summary: {}                      # e.g. {critical: <path>, warning: <path>, passed: <path>}
+    attachments: null                # path to the list of attachments, if present
+    attachment_fields: {}            # e.g. {name: <path in element>, url: <path in element>}
+
+# Fallback: browser automation of the UI (COLLECTOR_TYPE=playwright).
+browser:
+  inspections_path: "<FILL_ME>"      # path of the page listing inspections
+  search:
+    serial_number_label: null        # visible label of the S/N search box
+    inspection_number_label: null    # visible label of the inspection-number search box
+    submit_button_name: null         # accessible name of the search button (null = press Enter)
+  table:
+    role: table                      # table | grid (see aria_snapshot.yaml)
+    name: null                       # accessible name, if the page has several tables
+  next_page: null                    # e.g. {role: button, name: "<FILL_ME>"}
+  max_pages: 500
+  fields:                            # canonical field -> exact column header text
+    inspection_number: "<FILL_ME>"
+    serial_number: "<FILL_ME>"
+    status: "<FILL_ME>"
+    inspection_date: null
+    summary: {}
+    attachments: null                # header of the column whose links are attachments
+
+# strptime formats for dates that are not ISO-8601 (e.g. "%d/%m/%Y %H:%M").
+date_formats: []
+# Optional allow-list of status values once the real ones are known.
+allowed_statuses: []

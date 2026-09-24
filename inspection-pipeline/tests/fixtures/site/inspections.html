@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Inspections - Fixture</title></head>
+<body>
+  <main>
+    <h1>Inspections</h1>
+    <form id="search">
+      <label for="sn">Serial number</label> <input id="sn">
+      <button type="submit">Search</button>
+    </form>
+    <table aria-label="Inspections">
+      <thead><tr>
+        <th>Inspection No.</th><th>S/N</th><th>Status</th><th>Date</th>
+        <th>Critical</th><th>Warning</th><th>Passed</th><th>Attachments</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <nav aria-label="pagination"><button id="next" type="button">Next page</button></nav>
+  </main>
+  <script>
+    let page = 1, sn = '';
+    const fmt = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0');
+      return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
+    async function load() {
+      const res = await fetch(`/api/inspections?page=${page}&size=2${sn ? '&sn=' + encodeURIComponent(sn) : ''}`);
+      const body = await res.json();
+      // simulate network latency so the collector must wait for re-render
+      await new Promise(r => setTimeout(r, 150));
+      const tbody = document.querySelector('tbody');
+      tbody.innerHTML = body.data.items.map(r => `<tr>
+        <td>${r.inspectionNo}</td><td>${r.serialNo}</td><td>${r.status}</td><td>${fmt(r.completedAt)}</td>
+        <td>${r.results.critical}</td><td>${r.results.warning}</td><td>${r.results.passed}</td>
+        <td>${r.attachments.map(a => `<a href="${a.downloadUrl}">${a.fileName}</a>`).join(' ')}</td></tr>`).join('');
+      document.getElementById('next').disabled = page * 2 >= body.data.total;
+    }
+    document.getElementById('next').addEventListener('click', () => { page += 1; load(); });
+    document.getElementById('search').addEventListener('submit', e => {
+      e.preventDefault(); sn = document.getElementById('sn').value; page = 1; load(); });
+    load();
+  </script>
+</body></html>
