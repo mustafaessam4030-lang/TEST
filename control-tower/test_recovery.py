@@ -791,6 +791,65 @@ check("The budget caps total recovery wall-clock",
 
 print()
 print("=" * 74)
+print("WRONG PAGE IS NOT WRONG TAB — LEARNED FROM THREE REAL FAILURES")
+print("=" * 74)
+# 157-50601456, 157-50601423 and 9280901092 all failed with the same
+# evidence: nothing matching the ATA field anywhere in the DOM, and the page
+# not carrying the shipment. reselect_tab ran first on every one — the
+# cheapest safe action — and "had no effect" every time. reopen_view, the
+# only action that changes which page this is, sat seventh and was never
+# reached inside the three-attempt budget.
+
+
+def _plan(**observed):
+    ev = recovery.evidence(**observed)
+    hypos = recovery.hypotheses(recovery.ELEMENT_NOT_FOUND, ev)
+    acts = recovery.candidates(recovery.ELEMENT_NOT_FOUND, in_write=True)
+    return [a.name for a in recovery.rank(acts, hypos=hypos)], hypos
+
+
+wrong_page, page_hypos = _plan(
+    view_matches=False, active_view=None, field_visible_count=0,
+    field_any_count=0, frames=1, shipment_marker_present=False,
+    page_ready=True)
+check("The evidence of those three failures yields a wrong-PAGE hypothesis",
+      any(h.name == "wrong_page" for h in page_hypos),
+      str([h.name for h in page_hypos]))
+check("...and reopen_view is tried FIRST, inside the budget",
+      wrong_page[0] == "reopen_view", str(wrong_page[:4]))
+check("...with reselect_tab still available after it",
+      "reselect_tab" in wrong_page[:3], str(wrong_page[:3]))
+
+wrong_tab, _ = _plan(
+    view_matches=False, active_view="COE", field_visible_count=0,
+    field_any_count=0, frames=1, shipment_marker_present=True,
+    page_ready=True)
+check("When the shipment IS on the page, a wrong tab still gets the cheap "
+      "tab click first", wrong_tab[0] == "reselect_tab", str(wrong_tab[:3]))
+
+hidden, _ = _plan(
+    view_matches=True, field_visible_count=0, field_any_count=1, frames=1,
+    shipment_marker_present=True, page_ready=True)
+check("A field that is present but hidden is still looked for without the "
+      "visibility gate first", hidden[0] == "find_ignoring_visibility",
+      str(hidden[:3]))
+
+unknown, _ = _plan(view_matches=False, field_visible_count=0,
+                   field_any_count=0, frames=1, page_ready=True)
+check("With no marker evidence at all, nothing is assumed: the old order "
+      "stands", unknown[0] == "reselect_tab", str(unknown[:3]))
+
+src = (HERE / "ml" / "recovery.py").read_text(encoding="utf-8")
+check("reopen_view is an action that was already allowed — nothing new is "
+      "permitted, only the order changed",
+      "reopen_view" in recovery.ACTION_NAMES)
+check("The change is a rule on evidence, not invented history",
+      "No verified recovery history" in (HERE / "ml" / "memory.py")
+      .read_text(encoding="utf-8")
+      and "shipment_marker_present\") is False" in src)
+
+print()
+print("=" * 74)
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 print("=" * 74)
 sys.exit(1 if FAIL else 0)

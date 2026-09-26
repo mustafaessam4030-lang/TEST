@@ -308,6 +308,22 @@ def hypotheses(error_class, ev=None):
     other_visible = ev.get("other_field_visible_count")
 
     if error_class in (ELEMENT_NOT_FOUND, ELEMENT_NOT_VISIBLE, LOCATOR_CHANGED):
+        # H0 — the wrong PAGE, not the wrong tab. Nothing matching the field
+        # is in the DOM at all AND the page does not carry the shipment. Three
+        # production failures looked exactly like this — 157-50601456,
+        # 157-50601423 and 9280901092 — and reselect_tab, ranked first because
+        # it is the cheapest safe action, "had no effect" every time: a tab
+        # click cannot bring back markup the page was never sent. Only
+        # reopening the view changes which page this is, and it sat seventh,
+        # past the three-attempt budget. The lower risk of a tab click buys
+        # nothing when the evidence says it cannot work.
+        if in_dom == 0 and ev.get("shipment_marker_present") is False:
+            add("wrong_page", "the wrong page is loaded — this shipment is not "
+                "on it", HIGH,
+                "nothing matching this field is in the DOM and the page does "
+                "not carry the shipment",
+                ["reopen_view"])
+
         # H1 — the wrong panel is showing. The strongest single signal in this
         # application: the other field's inputs are on screen and ours are not.
         confidence = (HIGH if view_wrong
