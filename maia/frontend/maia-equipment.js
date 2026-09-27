@@ -100,10 +100,14 @@ const EQUIP=(()=>{
     // wait:false → the gateway returns a run id immediately and we follow the
     // automation step by step, so the user sees it working instead of a spinner.
     const async_=(opts&&opts.async)!==false;
-    const r=await call('/v1/equipment/search',{method:'POST',body:{
-      serial_number:serial,source:C().source||'cat_sis',mode:mode||'auto',
+    const body={serial_number:serial,source:C().source||'cat_sis',mode:mode||'auto',
       reason:reason||'user_request',wait:!async_,
-      timeout_ms:(C().timeoutMs||45000)-5000}});
+      timeout_ms:(C().timeoutMs||45000)-5000};
+    // Extra SIS sections read in the SAME run (Troubleshooting, 3D Model).
+    if(opts&&opts.investigate&&opts.investigate.length){
+      body.investigate=opts.investigate;body.locate=(opts.locate||[]).slice(0,30);
+    }
+    const r=await call('/v1/equipment/search',{method:'POST',body});
     if(r.error_code)return r;
     if(r.httpStatus===200)return {ok:true,found:true,...r.payload};
     if(r.httpStatus===202)return {ok:true,inProgress:true,...r.payload};
@@ -148,7 +152,7 @@ const EQUIP=(()=>{
 
   // Poll a run and report every step as it happens, via onProgress.
   async function awaitRun(runId,audit,onProgress,L){
-    const every=C().pollMs||2500, budget=C().maxPollMs||180000;
+    const every=C().pollMs||2500, budget=C().maxPollMs||360000;
     const until=Date.now()+budget;
     let seen=0;
     while(Date.now()<until){
@@ -224,7 +228,8 @@ const EQUIP=(()=>{
         ?'مش موجودة عندنا — بسأل Caterpillar SIS…'
         :'Not in internal data — querying Caterpillar SIS…'});
       const reason=(db&&db.found)?'stale_refresh':'user_request';
-      let sis=await searchInSis(serial,reason,opts.force?'force_refresh':'auto');
+      let sis=await searchInSis(serial,reason,opts.force?'force_refresh':'auto',
+                                {investigate:opts.investigate,locate:opts.locate});
       audit.push({tool:'search_equipment_in_sis',ok:!!sis.ok,reason,
         run:sis.automation_run_id||(sis.attribution||{}).automation_run_id,
         error_code:sis.error_code,ms:sis.execution_time_ms});
@@ -299,15 +304,17 @@ const EQUIP=(()=>{
   }
 
   function analysisResult(an){
-    if(an.status==='OK'&&an.serial){
+    if((an.status==='OK'||an.status==='ASK_MODE')&&an.serial){
       convo=Object.assign({recent_serials:[],awaiting:null,pending_candidates:[],
                            last_intent:null},convo||{},{active_serial:an.serial,confirmed:true});
     }
     const res={ok:false,conversational:true,analysis:true,status:an.status,
                serial:an.serial||null,message:an.text||an.message||'',
-               suggestions:an.suggestions||[],result:an.result||null,
-               comparison:an.comparison||null};
-    if(an.status==='OK'&&(an.result||an.comparison)){
+               suggestions:an.status==='ASK_MODE'?[]:(an.suggestions||[]),
+               result:an.result||null,comparison:an.comparison||null,
+               choices:an.choices||null,mode:an.mode||null,
+               troubleshooting:an.troubleshooting||null,model_3d:an.model_3d||null};
+    if((an.status==='OK'&&(an.result||an.comparison||an.troubleshooting))||an.status==='ASK_MODE'){
       res.token=token();results.set(res.token,res);
     }
     return res;
@@ -373,14 +380,17 @@ const EQUIP=(()=>{
     // results — no browser, no model. Anything else continues as before.
     const an=await analysisAsk(raw);
     if(an&&an.handled){
-      if(an.status==='NO_DATA'&&an.serial&&!(an.candidates||[]).length){
-        // Nothing stored yet: retrieve it from SIS first (the existing flow,
-        // with its live panel), then analyse what was saved.
-        const r=await lookup(an.serial,{lang:L,onProgress:opts&&opts.onProgress});
+      if(an.status==='NEEDS_RETRIEVAL'&&an.retrieve){
+        // The data this investigation needs has not been read from SIS yet.
+        // Run the existing lookup — same session, live panel — with the extra
+        // sections (Troubleshooting / 3D Model), then answer from what was saved.
+        const rq=an.retrieve, extra=(rq.investigate||[]).length>0;
+        const r=await lookup(rq.serial,{lang:L,onProgress:opts&&opts.onProgress,
+          force:extra,investigate:rq.investigate,locate:rq.locate});
         if(!r||!r.ok)return r;
         const again=await analysisAsk(raw);
         if(again&&again.status==='OK')return analysisResult(again);
-        return r;
+        return again?analysisResult(again):r;
       }
       return analysisResult(an);
     }
@@ -678,6 +688,28 @@ RULES FOR THIS FAILURE
   // Analysis at a glance: KPI tiles and the group distribution, from the
   // engine's DERIVED values. The full report is in the chat text.
   function renderAnalysisCard(r,L){
+    // "What would you like me to investigate?" — three clear choices.
+    if(r.status==='ASK_MODE'&&r.choices){
+      return `<div class="eq-card"><div class="eq-head"><div><div class="eq-serial">${esc(r.serial||'')}</div>
+        <div class="eq-sub">${L==='ar'?'تحب أفحص إيه؟':'What would you like me to investigate?'}</div></div></div>
+        <div class="eq-actions" style="display:flex;flex-wrap:wrap;gap:8px;padding:12px">
+        ${r.choices.map(c=>`<button class="eq-btn" style="flex:1 1 30%;font-size:14px;padding:10px"
+          data-act="ask" data-q="${esc(c.ask)}">${esc(c.label)}</button>`).join('')}</div></div>`;
+    }
+    if(r.troubleshooting&&!r.result){
+      const t=r.troubleshooting, m=r.model_3d||{};
+      const rows=(t.entries||[]).filter(e=>e.kind==='code').slice(0,12).map(e=>
+        `<div class="eq-row"><span class="eq-k">${esc(e.code||'')}</span><span class="eq-v">${esc(e.component||e.description||'')}${e.condition?' — '+esc(e.condition):''}</span></div>`).join('');
+      const mapped=(m.mapping||[]).filter(x=>x.status==='VERIFIED').length;
+      return `<div class="eq-card"><div class="eq-head"><div><div class="eq-serial">${esc(r.serial||'')}</div>
+        <div class="eq-sub">Troubleshooting · verified SIS data · deterministic</div></div>
+        <div class="eq-badges"><span class="eq-badge ${m.available?'ok':'warn'}">3D ${m.available?'available':'n/a'}</span></div></div>
+        <div class="eq-body"><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          ${tile('Codes',(t.codes||[]).length)}${tile('Components',(t.components||[]).length)}
+          ${tile('Symptoms',(t.symptoms||[]).length)}${tile('3D mapped',m.names?mapped:'n/a')}</div>
+          <div class="eq-specs-h">Codes → component — condition</div>${rows||'<div class="eq-row">No code rows read.</div>'}
+        </div></div>`;
+    }
     const a=r.result;
     if(!a){
       const c=r.comparison;

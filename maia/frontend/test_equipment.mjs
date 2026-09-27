@@ -14,7 +14,8 @@ function makeCtx(routes) {
     fetch: async (url, opts) => {
       calls.push((opts?.method || 'GET') + ' ' + url.replace('http://stub', ''));
       const key = Object.keys(routes).find(k => url.includes(k));
-      const r = key ? routes[key] : { status: 404, body: { error_code: 'SERIAL_NOT_FOUND' } };
+      let r = key ? routes[key] : { status: 404, body: { error_code: 'SERIAL_NOT_FOUND' } };
+      if (typeof r === 'function') r = r({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
       return { status: r.status, json: async () => r.body };
     },
   };
@@ -389,6 +390,44 @@ const check = (name, cond, detail = '') => {
   const ctx2 = makeCtx({ '/v1/analysis/ask': { status: 200, body: { handled: false, intent: 'NONE' } } });
   await ctx2.EQUIP.maybeLookup('get equipment SN123456', {}, {}, 'en', {});
   check('other requests continue to the brain', calls.some(c => c.includes('/v1/agent/understand')));
+}
+
+// 16. investigation modes: ask which one, then retrieve with the extra SIS sections
+{
+  calls.length = 0;
+  const ctx = makeCtx({ '/v1/analysis/ask': { status: 200, body: { handled: true, intent: 'ASK_MODE',
+      status: 'ASK_MODE', serial: 'SN123456', text: '**SN123456**\n\nWhat would you like me to investigate?',
+      choices: [{ label: '🔧 Parts', ask: 'Show me parts for SN123456' },
+                { label: '⚠️ Troubleshooting', ask: 'Check troubleshooting for SN123456' },
+                { label: '📊 Full Analysis', ask: 'Full analysis of SN123456' }] } } });
+  const r = await ctx.EQUIP.maybeLookup('Analyze SN123456', {}, {}, 'en', {});
+  const card = ctx.EQUIP.renderCard(r, 'en');
+  check('"Analyze" shows the three investigation choices', card.includes('🔧 Parts')
+        && card.includes('⚠️ Troubleshooting') && card.includes('📊 Full Analysis'));
+  check('each choice asks Maia in words', card.includes('data-q="Check troubleshooting for SN123456"'));
+
+  // Troubleshooting not read yet → the existing lookup runs with investigate=[…]
+  let asked = 0;
+  const bodies = [];
+  const ctx2 = makeCtx({
+    '/v1/analysis/ask': () => (++asked === 1
+      ? { status: 200, body: { handled: true, intent: 'TROUBLESHOOTING', status: 'NEEDS_RETRIEVAL',
+          serial: 'SN123456', retrieve: { serial: 'SN123456', investigate: ['model_3d', 'troubleshooting'], locate: [] } } }
+      : { status: 200, body: { handled: true, intent: 'TROUBLESHOOTING', status: 'OK', serial: 'SN123456',
+          text: 'Troubleshooting code 36-1-5 identifies Cylinder #1 Injector with Current Below Normal.',
+          troubleshooting: { codes: ['36-1-5'], components: ['Cylinder #1 Injector'], symptoms: [],
+            entries: [{ kind: 'code', code: '36-1-5', component: 'Cylinder #1 Injector', condition: 'Current Below Normal' }] },
+          model_3d: { available: true, names: 0, mapping: [] } } }),
+    '/v1/equipment/SN123456': { status: 404, body: { error_code: 'SERIAL_NOT_FOUND' } },
+    '/v1/equipment/search': (req) => { bodies.push(req.body); return { status: 200, body: {
+      data: RECORD, attribution: ATTR('FRESH', 0), cache: { hit: false, freshness: 'FRESH', age_days: 0 } } }; },
+  });
+  const t = await ctx2.EQUIP.maybeLookup('Check troubleshooting for SN123456', {}, {}, 'en', {});
+  check('the lookup carries the extra SIS sections', bodies.length === 1
+        && JSON.stringify(bodies[0].investigate) === '["model_3d","troubleshooting"]'
+        && bodies[0].mode === 'force_refresh');
+  check('then Maia answers from what was saved', t && t.analysis && t.message.includes('36-1-5'));
+  check('the troubleshooting card lists code → component', ctx2.EQUIP.renderCard(t, 'en').includes('Cylinder #1 Injector'));
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');

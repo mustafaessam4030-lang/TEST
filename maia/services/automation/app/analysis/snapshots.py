@@ -48,6 +48,12 @@ class Snapshot:
         return pd if isinstance(pd, dict) else None
 
     @property
+    def investigation(self) -> dict[str, Any] | None:
+        """Troubleshooting / 3D results read in the same run, if any."""
+        inv = (self.document.get("evidence") or {}).get("investigation")
+        return inv if isinstance(inv, dict) else None
+
+    @property
     def metadata(self) -> dict[str, Any]:
         d = self.document
         return {"selector_version": d.get("selector_version"),

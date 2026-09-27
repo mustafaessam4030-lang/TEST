@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     chromium_path: str | None = None        # explicit binary; blank = Playwright's own
     max_contexts: int = 4
     run_deadline_ms: int = 90_000
+    #: extra time a run gets when it also reads Troubleshooting / the 3D model
+    investigation_budget_ms: int = 120_000
     step_timeout_ms: int = 25_000
     sync_timeout_ms: int = 30_000
     # When sign-in needs a person (MFA), a headed run can pause and keep the very

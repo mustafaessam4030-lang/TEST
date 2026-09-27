@@ -253,6 +253,10 @@ class EquipmentService:
         adapter = self.registry.adapter(source)
         caps = adapter.capabilities()
         deadline_s = min(req.timeout_ms, self.settings.run_deadline_ms) / 1000.0
+        if req.investigate:
+            # Troubleshooting and the 3D viewer are read in the same run; they
+            # get their own time on top of the lookup's, never out of it.
+            deadline_s += self.settings.investigation_budget_ms / 1000.0
 
         async def attempt(n: int) -> tuple[EquipmentRecord, ExtractionArtifact]:
             if n > 1:
@@ -323,6 +327,18 @@ class EquipmentService:
                         ).get("screenshot")
                         raise
 
+                investigation: dict[str, Any] | None = None
+                if req.investigate:
+                    # Same page, same signed-in session: the record is open.
+                    async with recorder.step("INVESTIGATE", url_provider=lambda: ctx.page.url):
+                        from app.adapters.sis_investigation import SisInvestigator
+
+                        investigation, shots = await SisInvestigator(
+                            self.registry.entry(source).config).run(
+                                ctx, serial, list(req.investigate), list(req.locate))
+                        for name, path in shots.items():
+                            raw.artifacts[f"screenshot.{name}"] = path
+
                 async with recorder.step("NORMALIZE"):
                     record = normalize_equipment_data(
                         {"fields": raw.fields, "specifications": raw.specifications,
@@ -352,8 +368,9 @@ class EquipmentService:
                     extraction_status=raw.artifacts.get("extraction_status", "SUCCESS"),
                     screenshots={k.split(".", 1)[1]: v for k, v in raw.artifacts.items()
                                  if k.startswith("screenshot.")},
-                    evidence={k: v for k, v in raw.artifacts.items()
-                              if not k.startswith("screenshot.")})
+                    evidence={**{k: v for k, v in raw.artifacts.items()
+                                 if not k.startswith("screenshot.")},
+                              **({"investigation": investigation} if investigation else {})})
                 return record, artifact
             finally:
                 if ctx is not None:

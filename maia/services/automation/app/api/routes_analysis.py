@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.analysis.investigation import InvestigationService
 from app.analysis.service import AnalysisService
 from app.analysis.snapshots import LocalStoreSnapshots
 from app.config import ROOT
@@ -40,7 +41,8 @@ def _json(value: Any) -> JSONResponse:
 
 @router.post("/ask")
 async def ask(req: AskRequest, request: Request) -> JSONResponse:
-    return _json(_service(request).handle(req.utterance, active_serial=req.active_serial))
+    svc = InvestigationService(_service(request).source)
+    return _json(svc.handle(req.utterance, active_serial=req.active_serial))
 
 
 @router.get("/compare/{a}/{b}")

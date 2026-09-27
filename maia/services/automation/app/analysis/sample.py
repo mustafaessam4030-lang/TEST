@@ -51,6 +51,26 @@ def _groups(serial: str, engine: str, extra: bool) -> list[dict]:
     return groups
 
 
+#: ILLUSTRATIVE troubleshooting rows and a VISUAL_ONLY viewer result — the shape
+#: the investigator stores, not data read from SIS.
+SAMPLE_INVESTIGATION = {
+    "serial": "JAZ01865", "requested": ["model_3d", "troubleshooting"],
+    "troubleshooting": {
+        "status": "CAPTURED", "source": "SIS", "panel_title": "Codes, Events, & Symptoms",
+        "sections": [
+            {"section": "Troubleshooting", "count_displayed": 3, "items_read": 3,
+             "rows": ["36-1-5 Cylinder #1 Injector Current Below Normal",
+                      "36-2-6 Cylinder #2 Injector Current Above Normal",
+                      "36-1-2 Cylinder #1 Injector Erratic, Intermittent, or Incorrect"]},
+            {"section": "Symptoms", "count_displayed": 2, "items_read": 2,
+             "rows": ["Engine Misfires, Runs Rough or Is Unstable", "Low Power"]}]},
+    "model_3d": {"status": "VISUAL_ONLY", "source": "SIS 3D Model",
+                 "tab": {"opened": True}, "viewer": {"canvases": [{"width": 900, "height": 520}],
+                                                     "libs": {}, "model_resources": []},
+                 "component_names": [], "component_names_source": None},
+}
+
+
 async def _write(root: Path, now: datetime) -> list[Path]:
     from app.models.schemas import EquipmentRecord
     from app.repositories.base import ExtractionArtifact
@@ -76,9 +96,11 @@ async def _write(root: Path, now: datetime) -> list[Path]:
             fields={"machine_serial_number": serial}, parts_data=record.parts_data,
             selector_version="sample"))
     files = sorted(root.glob(f"{serial}_run_SAMPLE*.json"))
-    for f in files:                       # mark every file as a sample
+    for n, f in enumerate(files):         # mark every file as a sample
         doc = json.loads(f.read_text(encoding="utf-8"))
         doc["sample"] = True
+        if n == len(files) - 1:
+            doc.setdefault("evidence", {})["investigation"] = SAMPLE_INVESTIGATION
         doc["note"] = "SAMPLE for demos/tests — NOT a real SIS retrieval."
         f.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8")
     return files

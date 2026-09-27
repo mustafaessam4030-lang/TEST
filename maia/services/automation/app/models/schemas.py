@@ -66,6 +66,12 @@ class EquipmentSearchRequest(BaseModel):
     reason: Literal["user_request", "stale_refresh", "backfill"] = "user_request"
     requested_by: str = "unknown"
     idempotency_key: str | None = None
+    #: optional extra SIS sections to read in the SAME run, on the same page and
+    #: session, after the record: "troubleshooting", "model_3d". Empty = the
+    #: lookup behaves exactly as before.
+    investigate: list[Literal["troubleshooting", "model_3d"]] = Field(default_factory=list)
+    #: components / part numbers to look for in the 3D model (deterministic match)
+    locate: list[str] = Field(default_factory=list, max_length=30)
 
     @field_validator("serial_number")
     @classmethod

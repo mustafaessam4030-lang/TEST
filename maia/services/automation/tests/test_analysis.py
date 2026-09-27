@@ -207,7 +207,10 @@ def test_every_insight_has_evidence_and_derived_values_are_never_direct() -> Non
 def test_no_mechanical_conclusions_in_any_wording(tmp_path: Path) -> None:
     write_sample_store(tmp_path, NOW)
     svc = AnalysisService(LocalStoreSnapshots(tmp_path, include_samples=True))
-    text = svc.handle("Analyze JAZ01865", as_of=NOW)["text"].lower()
+    text = (svc.handle("Full analysis of JAZ01865", as_of=NOW)["text"]
+            + svc.handle("Check troubleshooting for JAZ01865", as_of=NOW)["text"]).lower()
+    from app.analysis.investigation import NOTE
+    text = text.replace(NOTE.lower(), "")              # the disclaimer itself says "no failure"
     for banned in ("failing", "failure", "broken", "unsafe", "maintenance required",
                    "worn", "defect", "malfunction"):
         assert banned not in text
@@ -215,17 +218,21 @@ def test_no_mechanical_conclusions_in_any_wording(tmp_path: Path) -> None:
 
 # ── routing, English and Arabic ─────────────────────────────────────────────
 @pytest.mark.parametrize("text,intent", [
-    ("Analyze JAZ01865", "ANALYZE_EQUIPMENT"), ("show parts", "SHOW_PARTS"),
+    ("Analyze JAZ01865", "ASK_MODE"), ("show parts", "PARTS"),
     ("show missing data", "MISSING_DATA"), ("what changed", "WHAT_CHANGED"),
     ("compare JAZ01865 and JAZ01866", "COMPARE_EQUIPMENT"), ("data quality", "DATA_QUALITY"),
     ("show anomalies", "SHOW_ANOMALIES"), ("give me summary", "SUMMARY"),
     ("show duplicate parts", "DUPLICATE_PARTS"),
-    ("حلل المعدة JAZ01865", "ANALYZE_EQUIPMENT"), ("ايه القطع الناقصة؟", "MISSING_DATA"),
+    ("حلل المعدة JAZ01865", "ASK_MODE"), ("ايه القطع الناقصة؟", "MISSING_DATA"),
     ("قارن JAZ01865 و JAZ01866", "COMPARE_EQUIPMENT"),
-    ("get equipment JAZ01865", "NONE"), ("Find a part", "NONE"), ("thanks", "NONE"),
+    ("get equipment JAZ01865", "NONE"), ("Find a part", "PARTS"), ("thanks", "NONE"),
 ])
 def test_intent_routing(text: str, intent: str) -> None:
     assert route(text, "JAZ01865").intent == intent
+
+
+def test_a_mode_word_without_any_machine_is_left_to_the_rest_of_maia() -> None:
+    assert route("Find a part", None).intent == "NONE"         # the parts catalog chip
 
 
 def test_follow_up_uses_the_machine_in_context() -> None:
@@ -236,8 +243,9 @@ def test_follow_up_uses_the_machine_in_context() -> None:
 def test_sample_demo_report_reads_like_a_report(tmp_path: Path) -> None:
     write_sample_store(tmp_path, NOW)
     out = AnalysisService(LocalStoreSnapshots(tmp_path, include_samples=True)).handle(
-        "Analyze JAZ01865", as_of=NOW)
+        "Full analysis of JAZ01865", as_of=NOW)
     for section in ("MAIA ANALYSIS", "Data freshness", "Data completeness", "Key findings",
-                    "Anomalies", "Historical changes", "Evidence", "SIS coverage"):
+                    "Anomalies", "Historical changes", "Evidence", "SIS coverage",
+                    "TROUBLESHOOTING", "3D MODEL"):
         assert section in out["text"]
     assert "{" not in out["text"]                                  # no raw JSON

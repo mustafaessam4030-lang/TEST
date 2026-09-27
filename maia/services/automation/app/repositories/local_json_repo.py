@@ -55,7 +55,8 @@ SECRET_TEXT = re.compile(
     r"((?:password|passwd|pwd|secret|token|bearer|cookie|authorization)\s*[=:]\s*)(\S+)", re.I)
 
 REDACTED = "[REDACTED]"
-SCREENSHOT_NAMES = ("page", "details", "parts")
+SCREENSHOT_NAMES = ("page", "details", "parts", "troubleshooting", "model3d",
+                    "model3d_component")
 
 
 def scrub(value: Any, *, extra: tuple[str, ...] = ()) -> Any:

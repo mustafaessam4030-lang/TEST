@@ -1,0 +1,9 @@
+# Deterministic aliases for matching a troubleshooting component (or a part) to a
+# 3D-model component name. Canonical name → spellings that mean exactly the same
+# component. Never put two different components under one entry.
+aliases:
+  cylinder 1 injector: ["cyl 1 injector", "cylinder #1 injector", "injector cylinder 1", "cyl #1 injector"]
+  cylinder 2 injector: ["cyl 2 injector", "cylinder #2 injector", "injector cylinder 2", "cyl #2 injector"]
+  engine speed timing sensor: ["engine speed/timing sensor", "speed timing sensor"]
+  coolant temperature sensor: ["engine coolant temperature sensor", "coolant temp sensor"]
+  oil pressure sensor: ["engine oil pressure sensor"]

@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "services" / "automation"))
 
-from app.analysis.service import AnalysisService  # noqa: E402
+from app.analysis.investigation import InvestigationService  # noqa: E402
 from app.analysis.snapshots import LocalStoreSnapshots  # noqa: E402
 from app.config import get_settings  # noqa: E402
 
@@ -42,12 +42,19 @@ def main() -> int:
         root = root if root.is_absolute() else ROOT / root
         source = LocalStoreSnapshots(root)
         print(f"  store: {root}\n")
-    out = AnalysisService(source).handle(" ".join(args.utterance), active_serial=args.serial)
+    out = InvestigationService(source).handle(" ".join(args.utterance), active_serial=args.serial)
     if not out.get("handled"):
         print("  Not an analysis request. Try: Analyze JAZ01865 · show parts · what changed ·"
               " data quality · show anomalies · compare JAZ01865 and JAZ01866")
         return 1
     print(out.get("text") or out.get("message"))
+    if out.get("status") == "ASK_MODE":
+        for c in out.get("choices") or []:
+            print(f"   {c['label']:<20} → {c['ask']}")
+    if out.get("status") == "NEEDS_RETRIEVAL":
+        print("\n  This needs a live SIS read first. Run INVESTIGATE.bat "
+              f"(or: python scripts/e2e/investigate_real.py --serial {out['serial']}).")
+        return 3
     return 0 if out.get("status") == "OK" else 2
 
 

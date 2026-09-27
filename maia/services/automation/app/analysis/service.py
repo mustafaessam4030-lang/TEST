@@ -25,9 +25,8 @@ from app.analysis.equipment_analyzer import SERIAL_RE, analyze_equipment
 from app.analysis.evidence import snapshot_ref
 from app.analysis.history_analyzer import analyze_history
 from app.analysis.insight_engine import run_rules
-from app.analysis.intent import route
 from app.analysis.parts_analyzer import analyze_parts
-from app.analysis.report import render_analysis, render_comparison
+from app.analysis.report import render_comparison
 from app.analysis.snapshots import SnapshotSource
 
 FOCUS_SUGGESTIONS = ["Show parts", "Show missing data", "Show duplicate parts", "What changed",
@@ -169,32 +168,8 @@ class AnalysisService:
     # ── natural language, deterministically ─────────────────────────────────
     def handle(self, utterance: str, *, active_serial: str | None = None,
                as_of: datetime | None = None) -> dict[str, Any]:
-        routed = route(utterance, active_serial)
-        base = {"handled": routed.intent != "NONE", "intent": routed.intent,
-                "serials": routed.serials, "serial_source": routed.serial_source,
-                "matched": routed.matched, "engine": "deterministic"}
-        if routed.intent == "NONE":
-            return base
-        if routed.intent == "COMPARE_EQUIPMENT":
-            if len(routed.serials) < 2:
-                return {**base, "status": "NEED_SERIAL",
-                        "text": "Which two machines should I compare? For example: "
-                                "compare JAZ01865 and JAZ01866."}
-            out = self.compare(routed.serials[0], routed.serials[1], as_of=as_of)
-            if out["status"] != "OK":
-                return {**base, **out, "text": out.get("message")}
-            return {**base, **out, "suggestions": [f"Analyze {routed.serials[0]}",
-                                                   f"Analyze {routed.serials[1]}"]}
-        if not routed.serials:
-            return {**base, "status": "NEED_SERIAL",
-                    "text": "Which machine? Tell me the serial number, e.g. "
-                            "\"Analyze JAZ01865\"."}
-        serial = routed.serials[0]
-        result = self.analyze(serial, as_of=as_of)
-        if result["status"] != "OK":
-            return {**base, "status": result["status"], "serial": serial,
-                    "text": result["message"], "candidates": result.get("candidates", []),
-                    "result": result}
-        return {**base, "status": "OK", "serial": serial,
-                "text": render_analysis(result, focus=routed.intent), "result": result,
-                "suggestions": [x for x in FOCUS_SUGGESTIONS][:4]}
+        """Routed through the investigation modes (PARTS / TROUBLESHOOTING / FULL)."""
+        from app.analysis.investigation import InvestigationService
+
+        return InvestigationService(self.source, self.cfg).handle(
+            utterance, active_serial=active_serial, as_of=as_of)
