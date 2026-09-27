@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from app.adapters.browser import BrowserPool
 from app.adapters.cat_sis import CatSisAdapter
 from app.adapters.registry import SourceRegistry
-from app.api import (routes_agent, routes_equipment, routes_health, routes_llm, routes_maia,
+from app.api import (routes_agent, routes_analysis, routes_equipment, routes_health, routes_llm, routes_maia,
                      routes_runs)
 from app.config import get_settings
 from app.core import logging as mlog
@@ -168,6 +168,7 @@ async def unhandled_handler(_: Request, exc: Exception) -> JSONResponse:
 app.include_router(routes_agent.router)
 app.include_router(routes_llm.router)
 app.include_router(routes_maia.router)
+app.include_router(routes_analysis.router)
 app.include_router(routes_equipment.router)
 app.include_router(routes_runs.router)
 app.include_router(routes_health.router)

@@ -211,7 +211,7 @@ const check = (name, cond, detail = '') => {
   const out = await ctx2.EQUIP.maybeLookup('what is the weather', {}, {}, 'en', {});
   check('no serial means no lookup', !!out && out.clarify === true);
   check('nothing but the understand call was made',
-        calls.filter(c => !c.includes('/v1/agent/understand')).length === 0, calls.join(', '));
+        calls.filter(c => !c.includes('/v1/agent/understand') && !c.includes('/v1/analysis/ask')).length === 0, calls.join(', '));
 }
 
 // 12. a near-match is a question, never a substitution
@@ -330,6 +330,7 @@ const check = (name, cond, detail = '') => {
     '/v1/equipment/SN123456': { status: 200, body: {
       data: RECORD, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } },
     '/v1/maia/answer': { status: 200, body: CX },
+    '/v1/cortex/status': { status: 200, body: { configured: true } },
   });
   const r = await ctx.EQUIP.maybeLookup('engine of SN123456', {}, {}, 'en', {});
   check('the equipment turn is sent to Cortex on the gateway', calls.some(c => c.includes('/v1/maia/answer')));
@@ -350,6 +351,7 @@ const check = (name, cond, detail = '') => {
       data: RECORD, attribution: ATTR('FRESH', 1), cache: { hit: true, freshness: 'FRESH', age_days: 1 } } },
     '/v1/maia/answer': { status: 200, body: { status: 'CORTEX_UNAVAILABLE',
       cortex: { used: false, reason: 'privilege', fix: 'GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE MAIA_APP;' } } },
+    '/v1/cortex/status': { status: 200, body: { configured: true } },
   });
   const r2 = await ctx2.EQUIP.maybeLookup('engine of SN123456', {}, {}, 'en', {});
   check('no other model is asked when Cortex is down', ctx2.EQUIP.cortexLLM(r2, 'en').ok === false);
@@ -357,6 +359,36 @@ const check = (name, cond, detail = '') => {
   check('the reply says Cortex is unavailable and why',
         out2.reply.includes('Snowflake Cortex is unavailable (privilege)') && out2.reply.includes('CORTEX_USER'));
   check('and still shows the verified record', out2.reply.includes('SN123456'));
+}
+
+// 15. deterministic analysis: answered from stored SIS data, no model
+{
+  const RESULT = { serial: 'SN123456', snapshot: { source_label: 'Caterpillar SIS', run_id: 'run_X' },
+    summary: { part_records: 11, unique_part_numbers: 8, part_groups: 4, duplicate_part_numbers: 2,
+               completeness_pct: 75, freshness_status: 'FRESH', snapshots: 2 },
+    data_quality: { score_pct: 90.7 },
+    statistics: { records_per_group: { value: { 'Engine - Entire Group': 7, 'Entire Group': 3 } } } };
+  calls.length = 0;
+  const ctx = makeCtx({
+    '/v1/analysis/ask': { status: 200, body: { handled: true, intent: 'ANALYZE_EQUIPMENT',
+      status: 'OK', serial: 'SN123456', text: '**MAIA ANALYSIS · SN123456**\n• 2 part number(s) appear more than once',
+      result: RESULT, suggestions: ['Show parts', 'What changed'] } },
+  });
+  const r = await ctx.EQUIP.maybeLookup('Analyze SN123456', {}, {}, 'en', {});
+  check('analysis requests go to the analysis engine', r && r.analysis === true && r.status === 'OK');
+  check('no brain, lookup or model call is made', !calls.some(c => c.includes('/v1/agent/understand')
+        || c.includes('/v1/equipment') || c.includes('/v1/llm') || c.includes('/v1/maia')), calls.join(', '));
+  const llm = ctx.EQUIP.cortexLLM(r, 'en');
+  check('the report is the reply', llm.ok && llm.parsed.reply.includes('MAIA ANALYSIS'));
+  const card = ctx.EQUIP.renderCard(r, 'en');
+  check('the card shows KPI tiles', card.includes('Data quality') && card.includes('90.7%') && card.includes('Unique parts'));
+  check('the card labels the engine as deterministic', card.includes('deterministic'));
+
+  // Not an analysis request: the old flow is untouched.
+  calls.length = 0;
+  const ctx2 = makeCtx({ '/v1/analysis/ask': { status: 200, body: { handled: false, intent: 'NONE' } } });
+  await ctx2.EQUIP.maybeLookup('get equipment SN123456', {}, {}, 'en', {});
+  check('other requests continue to the brain', calls.some(c => c.includes('/v1/agent/understand')));
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');

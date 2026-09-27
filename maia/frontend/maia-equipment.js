@@ -291,6 +291,36 @@ const EQUIP=(()=>{
 
   function resetContext(){convo=null;}
 
+  async function analysisAsk(text){
+    const r=await call('/v1/analysis/ask',{method:'POST',timeoutMs:20000,
+      body:{utterance:String(text||''),active_serial:(convo&&convo.active_serial)||null}});
+    if(r.error_code||r.httpStatus!==200||!r.payload)return null;
+    return r.payload;
+  }
+
+  function analysisResult(an){
+    if(an.status==='OK'&&an.serial){
+      convo=Object.assign({recent_serials:[],awaiting:null,pending_candidates:[],
+                           last_intent:null},convo||{},{active_serial:an.serial,confirmed:true});
+    }
+    const res={ok:false,conversational:true,analysis:true,status:an.status,
+               serial:an.serial||null,message:an.text||an.message||'',
+               suggestions:an.suggestions||[],result:an.result||null,
+               comparison:an.comparison||null};
+    if(an.status==='OK'&&(an.result||an.comparison)){
+      res.token=token();results.set(res.token,res);
+    }
+    return res;
+  }
+
+  // Cortex is optional and off unless configured; never call it otherwise.
+  let cortexReadyP=null;
+  function cortexReady(){
+    if(!cortexReadyP)cortexReadyP=call('/v1/cortex/status',{timeoutMs:4000})
+      .then(r=>!!(r&&r.httpStatus===200&&r.payload&&r.payload.configured)).catch(()=>false);
+    return cortexReadyP;
+  }
+
   // One equipment turn answered by Snowflake Cortex on the gateway: tools →
   // Cortex → verification. Returns the structured answer, or null when the
   // gateway is unreachable (the record card still shows the verified values).
@@ -306,6 +336,12 @@ const EQUIP=(()=>{
 
   // What the page's dispatch uses in place of a second model call.
   function cortexLLM(r,L){
+    if(r.analysis){
+      return {ok:true,usage:null,parsed:{reply:r.message,intent:'equipment_analysis',
+        confidence:r.status==='OK'?0.97:0.8,slots:{},actions:[],
+        sources:r.status==='OK'?['Verified SIS data · Maia analysis engine']:[],
+        quick_replies:r.suggestions||[]}};
+    }
     const cx=r.cortex||{};
     if(cx.status!=='SUCCESS'){
       const why=(cx.cortex&&cx.cortex.reason)||cx.status||'unavailable';
@@ -331,6 +367,23 @@ const EQUIP=(()=>{
   // What the brain decided, turned into the one thing this layer can do.
   async function maybeLookup(raw,ents,cls,L,opts){
     if(!C().enabled)return null;
+
+    // Analysis requests ("Analyze JAZ01865", "show parts", "what changed", "قارن …")
+    // are answered by Maia's deterministic analysis engine from the stored SIS
+    // results — no browser, no model. Anything else continues as before.
+    const an=await analysisAsk(raw);
+    if(an&&an.handled){
+      if(an.status==='NO_DATA'&&an.serial&&!(an.candidates||[]).length){
+        // Nothing stored yet: retrieve it from SIS first (the existing flow,
+        // with its live panel), then analyse what was saved.
+        const r=await lookup(an.serial,{lang:L,onProgress:opts&&opts.onProgress});
+        if(!r||!r.ok)return r;
+        const again=await analysisAsk(raw);
+        if(again&&again.status==='OK')return analysisResult(again);
+        return r;
+      }
+      return analysisResult(an);
+    }
 
     const state=await understand(raw);
     if(state){
@@ -366,7 +419,7 @@ const EQUIP=(()=>{
         lang:L,onProgress:opts&&opts.onProgress,state:state});
       // The record is now in the store (fetched from SIS if it had to be).
       // Snowflake Cortex answers the actual question from it, on the gateway.
-      if(r&&r.ok)r.cortex=await analyze(raw);
+      if(r&&r.ok&&await cortexReady())r.cortex=await analyze(raw);
       return r;
     }
 
@@ -622,6 +675,47 @@ RULES FOR THIS FAILURE
         +`<span class="eq-v">${esc(s)}</span></div>`).join('');
   }
 
+  // Analysis at a glance: KPI tiles and the group distribution, from the
+  // engine's DERIVED values. The full report is in the chat text.
+  function renderAnalysisCard(r,L){
+    const a=r.result;
+    if(!a){
+      const c=r.comparison;
+      if(!c)return '';
+      const p=c.parts;
+      return `<div class="eq-card"><div class="eq-head"><div><div class="eq-serial">${esc(c.a.serial)} vs ${esc(c.b.serial)}</div>
+        <div class="eq-sub">Comparison · verified SIS data</div></div></div><div class="eq-body">
+        ${tile('Shared parts',p.common.length)}${tile('Only '+c.a.serial,p.only_a.length)}${tile('Only '+c.b.serial,p.only_b.length)}
+        ${tile('Overlap',p.similarity_pct==null?'—':p.similarity_pct+'%')}</div></div>`;
+    }
+    const s=a.summary, q=a.data_quality;
+    const per=(a.statistics.records_per_group||{}).value||{};
+    const total=s.part_records||1;
+    const bars=Object.entries(per).sort((x,y)=>y[1]-x[1]).slice(0,6).map(([g,n])=>
+      `<div class="eq-row"><span class="eq-k">${esc(g)}</span><span class="eq-v">
+        <span style="display:inline-block;height:8px;background:var(--y);width:${Math.max(2,Math.round(100*n/total))}%;vertical-align:middle"></span> ${n}</span></div>`).join('');
+    return `<div class="eq-card"><div class="eq-head"><div><div class="eq-serial">${esc(a.serial)}</div>
+      <div class="eq-sub">Maia analysis · deterministic · verified SIS data</div></div>
+      <div class="eq-badges"><span class="eq-badge ${s.freshness_status==='STALE'?'warn':'ok'}">${esc(s.freshness_status||'')}</span></div></div>
+      <div class="eq-body">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          ${tile('Data quality',q.score_pct==null?'n/a':q.score_pct+'%')}
+          ${tile('Completeness',s.completeness_pct+'%')}
+          ${tile('Part records',s.part_records)}${tile('Unique parts',s.unique_part_numbers)}
+          ${tile('Groups',s.part_groups)}${tile('Duplicates',s.duplicate_part_numbers)}
+        </div>
+        <div class="eq-specs-h">${L==='ar'?'توزيع القطع على المجموعات':'Records per group'}</div>${bars}
+      </div>
+      <div class="eq-foot"><span>Source: <b>${esc(a.snapshot.source_label||'SIS')}</b></span>
+        <span>Run ID: <b>${esc(a.snapshot.run_id||'—')}</b></span>
+        <span>${a.summary.snapshots} snapshot(s)</span></div></div>`;
+  }
+  function tile(label,value){
+    return `<div style="flex:1 1 30%;min-width:88px;border:1px solid var(--border);padding:6px 8px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;opacity:.7">${esc(label)}</div>
+      <div style="font-size:18px;font-weight:800">${esc(String(value))}</div></div>`;
+  }
+
   function cardFor(tok,L){
     const r=results.get(tok);
     return r?renderCard(r,L):'';
@@ -629,6 +723,7 @@ RULES FOR THIS FAILURE
 
   function renderCard(r,L){
     const ar=L==='ar';
+    if(r.analysis)return renderAnalysisCard(r,L);
     if(r.clarify)return renderClarification(r,L);
     if(!r.ok)return renderFailure(r,L);
     const d=r.data||{}, a=r.attribution||{};

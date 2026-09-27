@@ -104,3 +104,8 @@ def flatten_parts(parts_data: dict[str, Any] | None) -> list[dict[str, Any]]:
                         "links": row.get("links") or {}},
             })
     return out
+
+
+def canonical_column(header: str) -> str | None:
+    """Public name for the header → canonical-column mapping."""
+    return _canon(header)

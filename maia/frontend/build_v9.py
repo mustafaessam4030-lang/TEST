@@ -177,6 +177,7 @@ ANCHORS: list[tuple[str, str, str]] = [
     # 8. attribution + card + trace
     ("dispatch-merge", """  // Planner actions run first (deterministic), model actions layer on top""",
      """  // v9: bind the answer to the record (or to the failure) before rendering.
+  if(equip&&equip.analysis)mode='analysis';
   if(equip)out=EQUIP.mergeAnswer(out,equip,L);
 
   // Planner actions run first (deterministic), model actions layer on top"""),
@@ -238,14 +239,17 @@ ANCHORS += [
      "let why='';try{why=(await res.json()).reason||'';}catch(e){}"
      "return{ok:false,error:'Snowflake Cortex unavailable'+(why?' ('+why+')':'')};}"),
     ("cortex-dispatch", "  const llm=await callClaude(raw,photoB64,docs,L,local);",
-     "  // v9.1: an equipment turn was already answered by Cortex on the gateway,\n"
-     "  // grounded in the tools and verified — do not ask a second time.\n"
-     "  const llm=(equip&&equip.cortex)?EQUIP.cortexLLM(equip,L)"
+     "  // v9.1: an equipment turn already answered on the gateway (the analysis\n"
+     "  // engine, or Cortex when configured) is not sent to a model again.\n"
+     "  const llm=(equip&&(equip.cortex||equip.analysis))?EQUIP.cortexLLM(equip,L)"
      ":await callClaude(raw,photoB64,docs,L,local);"),
-    ("cortex-label", "` <span class=\"maia-mode local\">· local engine</span>`",
-     "` <span class=\"maia-mode local\">· rules engine — Snowflake Cortex unavailable</span>`"),
+    ("cortex-label",
+     "+(mode==='local'?` <span class=\"maia-mode local\">· local engine</span>`:` <span class=\"maia-mode\">· ${CFG.model}</span>`);",
+     "+(mode==='analysis'?` <span class=\"maia-mode\">· Maia analysis engine · deterministic</span>`"
+     ":mode==='local'?` <span class=\"maia-mode local\">· rules engine</span>`"
+     ":` <span class=\"maia-mode\">· ${CFG.model}</span>`);"),
     ("cortex-trace", "${t.mode==='llm'?CFG.model:'local engine'}",
-     "${t.mode==='llm'?CFG.model:'rules engine (Cortex unavailable)'}"),
+     "${t.mode==='analysis'?'Maia analysis engine':t.mode==='llm'?CFG.model:'rules engine'}"),
 ]
 
 

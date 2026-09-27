@@ -1,0 +1,83 @@
+# Maia's deterministic analysis engine — every threshold and weight in one place.
+# Changing this file changes the analysis; nothing here is decided by a model.
+
+# ── which fields a complete SIS result should carry ─────────────────────────
+fields:
+  critical:            # absence is reported as a finding
+    - machine_serial_number
+    - machine_build_date
+    - engine_serial_number
+    - engine_build_date
+  expected:            # counted for completeness (critical ones included)
+    - machine_serial_number
+    - machine_build_date
+    - engine_serial_number
+    - engine_build_date
+    - equipment_model
+    - equipment_type
+    - manufacturer
+    - build_date
+
+# ── freshness of a stored SIS result ────────────────────────────────────────
+freshness:
+  fresh_days: 30       # up to this age: fully fresh
+  stale_after_days: 90 # beyond this: STALE (matches the store's TTL for cat_sis)
+  expired_days: 365    # freshness score reaches 0 here
+
+# ── the data quality score ──────────────────────────────────────────────────
+# score = Σ(weight × component) / Σ(weight of the components that could be computed)
+quality:
+  weights:
+    completeness: 0.30        # expected fields populated
+    parts_completeness: 0.20  # part rows with a part number and a name/description
+    validity: 0.20            # formats: serials, dates, part numbers
+    consistency: 0.20         # machine serial = searched serial, group serials, duplicate rows
+    freshness: 0.10
+  min_components: 3           # fewer computable components → "insufficient data"
+
+# ── parts ───────────────────────────────────────────────────────────────────
+parts:
+  # the first of these columns the page published is used as the part "category"
+  category_columns: ["Category", "Group Part", "Install Ind.", "Install Ind"]
+  part_number_pattern: '^(\d{1,4}[A-Z]?-\d{3,5}|\d[A-Z]-\d{4}|\d{3,9})$'
+
+# ── anomaly detection on part-group sizes (explainable statistics only) ─────
+anomalies:
+  min_groups_for_statistics: 4   # below this, group sizes are not compared statistically
+  iqr_multiplier: 1.5            # outlier if size > Q3 + k·IQR (or < Q1 − k·IQR)
+  z_score: 2.0                   # or more than z standard deviations from the mean
+  dominant_share: 0.40           # a group holding ≥ 40% of all records is reported
+  missing_concentration_share: 0.60   # ≥ 60% of a column's gaps in one group
+  missing_concentration_min: 3        # …and at least this many gaps
+
+# ── rules: switch on/off, tune, reword — without touching code ──────────────
+rules:
+  missing_critical_field:   {enabled: true, type: DATA_QUALITY, severity: warning}
+  duplicate_part:           {enabled: true, type: DUPLICATE,    severity: notice, max_listed: 10}
+  repeated_across_groups:   {enabled: true, type: STRUCTURAL,   severity: info,   max_listed: 10}
+  missing_description:      {enabled: true, type: DATA_QUALITY, severity: notice, max_listed: 5}
+  missing_quantity:         {enabled: true, type: DATA_QUALITY, severity: notice, max_listed: 5}
+  quantity_column_absent:   {enabled: true, type: STRUCTURAL,   severity: info}
+  missing_part_number:      {enabled: true, type: DATA_QUALITY, severity: notice}
+  exact_duplicate_rows:     {enabled: true, type: DATA_QUALITY, severity: notice}
+  stale_data:               {enabled: true, type: FRESHNESS,    severity: warning}
+  serial_mismatch:          {enabled: true, type: CONSISTENCY,  severity: warning}
+  engine_group_match:       {enabled: true, type: CONSISTENCY,  severity: info}
+  large_group:              {enabled: true, type: ANOMALY,      severity: notice}
+  small_group:              {enabled: true, type: ANOMALY,      severity: info}
+  dominant_group:           {enabled: true, type: DISTRIBUTION, severity: info}
+  empty_group:              {enabled: true, type: STRUCTURAL,   severity: notice}
+  missing_concentration:    {enabled: true, type: ANOMALY,      severity: notice}
+  history_changes:          {enabled: true, type: CHANGE,       severity: info}
+
+# ── SIS coverage: which areas of the SIS record the stored result contains ──
+# An area is CAPTURED when any listed record field holds data. Add an area
+# here when the retrieval starts storing it; the analysis picks it up.
+coverage:
+  - {area: "Equipment details",                       fields: [machine_serial_number, machine_build_date, engine_serial_number, engine_build_date]}
+  - {area: "Parts (Entire Group tables)",             fields: [parts_data]}
+  - {area: "Specifications",                          fields: [specifications]}
+  - {area: "Troubleshooting (codes, events, symptoms)", fields: [troubleshooting]}
+  - {area: "Service / Repair documents",              fields: [service_documents]}
+  - {area: "Product status reports / fault events",   fields: [product_status_reports, fault_code_events]}
+  - {area: "3D model",                                visual_only: true}
