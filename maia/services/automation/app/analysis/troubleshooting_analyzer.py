@@ -45,16 +45,53 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
-def parse_row(text: str, section: str) -> dict[str, Any]:
+def _split(desc: str) -> tuple[str | None, str | None, str | None]:
+    """description → (component, condition, method)."""
+    if " : " in desc or ": " in desc:
+        comp, cond = [x.strip() for x in re.split(r"\s*:\s*", desc, maxsplit=1)]
+        return comp or None, cond or None, "split at ':'"
+    low = desc.lower()
+    for phrase in CONDITIONS:
+        if low.endswith(phrase) and len(low) > len(phrase) + 2:
+            cut = len(desc) - len(phrase)
+            return (desc[:cut].strip(" -–—,") or None, desc[cut:].strip(),
+                    f"trailing condition phrase '{phrase}'")
+    return None, None, None
+
+
+def _is_condition(line: str) -> bool:
+    return line.lower() in CONDITIONS
+
+
+def parse_row(text: str, section: str, lines: list[str] | None = None,
+              group: str | None = None) -> dict[str, Any]:
+    """One SIS row → entry. `lines` are the row's visible lines (when the page
+    shows the code, description and module on separate lines); `group` is a
+    label SIS shows above a run of codes. Both are SIS text, used verbatim."""
     text = _norm(text)
-    entry: dict[str, Any] = {"raw": text, "section": section, "code": None, "description": text,
-                             "system": None, "subsystem": None, "component": None,
-                             "condition": None, "fmi": None, "split_method": None,
+    lines = [_norm(x) for x in (lines or []) if _norm(x)] or [text]
+    entry: dict[str, Any] = {"raw": text, "lines": lines, "section": section, "code": None,
+                             "description": text, "system": None, "system_method": None,
+                             "subsystem": None, "component": None, "condition": None,
+                             "context_lines": [], "fmi": None, "split_method": None,
                              "kind": "symptom" if section == "Symptoms" else "code"}
-    m = CODE_RE.match(text)
-    if m and m.group("rest"):
+    # the line that starts with a code, and the description that goes with it
+    k = next((n for n, ln in enumerate(lines) if CODE_RE.match(ln)), None)
+    rest_lines: list[str] = []
+    if k is not None:
+        m = CODE_RE.match(lines[k])
         entry["code"] = m.group("code").replace(" ", "")
-        entry["description"] = _norm(m.group("rest"))
+        others = lines[:k] + lines[k + 1:]
+        if m.group("rest"):
+            entry["description"] = _norm(m.group("rest"))
+            rest_lines = others
+        elif others:
+            after = lines[k + 1:]
+            first = after[0] if after else others[0]
+            entry["description"] = first
+            rest_lines = [x for x in others if x is not first]
+        else:
+            entry["description"] = ""
         parts = entry["code"].split("-")
         if len(parts) >= 2 and parts[-1].isdigit():
             entry["fmi"] = int(parts[-1])
@@ -63,22 +100,24 @@ def parse_row(text: str, section: str) -> dict[str, Any]:
         entry["condition"] = desc
         entry["split_method"] = "symptom row: the whole text is the symptom"
         return entry
-    if " : " in desc or ": " in desc:
-        comp, cond = [x.strip() for x in re.split(r"\s*:\s*", desc, maxsplit=1)]
-        entry.update(component=comp or None, condition=cond or None,
-                     split_method="split at ':'")
-        return entry
-    low = desc.lower()
-    for phrase in CONDITIONS:
-        if low.endswith(phrase) and len(low) > len(phrase) + 2:
-            cut = len(desc) - len(phrase)
-            entry.update(component=desc[:cut].strip(" -–—,") or None,
-                         condition=desc[cut:].strip(),
-                         split_method=f"trailing condition phrase '{phrase}'")
-            return entry
-    if entry["code"]:
-        entry["component"] = desc
-        entry["split_method"] = "no condition phrase found: whole description kept as component"
+    comp, cond, method = _split(desc) if desc else (None, None, None)
+    if comp is None and cond is None:
+        cond_line = next((x for x in rest_lines if _is_condition(x)), None)
+        if cond_line and desc:
+            comp, cond, method = desc, cond_line, "condition shown on its own line"
+            rest_lines = [x for x in rest_lines if x is not cond_line]
+        elif entry["code"] and desc:
+            comp, method = desc, "no condition phrase found: whole description kept as component"
+    entry.update(component=comp, condition=cond, split_method=method)
+    entry["context_lines"] = [x for x in rest_lines if x != desc]
+    # System: only text SIS shows with the code — a group label above it, or
+    # the single remaining line of its row. Never inferred from the code number.
+    if entry["kind"] == "code" and entry["code"]:
+        if group:
+            entry.update(system=group, system_method="label shown above the code in SIS")
+        elif len(entry["context_lines"]) == 1:
+            entry.update(system=entry["context_lines"][0],
+                         system_method="line shown with the code in SIS")
     return entry
 
 
@@ -86,8 +125,17 @@ def parse_troubleshooting(tr: dict[str, Any] | None) -> dict[str, Any]:
     tr = tr or {}
     entries = []
     for sec in tr.get("sections") or []:
-        for row in sec.get("rows") or []:
-            entries.append(parse_row(row, sec.get("section") or ""))
+        name = sec.get("section") or ""
+        items = sec.get("items") or [{"text": r, "lines": [r]} for r in sec.get("rows") or []]
+        group = None
+        for it in items:
+            lines = it.get("lines") or [it.get("text") or ""]
+            has_code = any(CODE_RE.match(_norm(x)) for x in lines)
+            if name != "Symptoms" and not has_code and len(lines) == 1 \
+                    and len(lines[0]) <= 80:
+                group = _norm(lines[0])              # a label over the codes below it
+                continue
+            entries.append(parse_row(it.get("text") or " ".join(lines), name, lines, group))
     return {"status": tr.get("status") or "NOT_CAPTURED", "entries": entries,
             "sections": [{k: s.get(k) for k in ("section", "count_displayed", "items_read")}
                          for s in tr.get("sections") or []],

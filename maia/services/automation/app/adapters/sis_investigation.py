@@ -84,11 +84,16 @@ PROBE_JS = r"""
       if (!head) return {error: 'section heading not found'};
       const heads = [...document.querySelectorAll('[data-maia-tr-section]')];
       const next = heads.find(h => Number(h.getAttribute('data-maia-tr-section')) > i);
+      const codeSection = !/^Symptoms/i.test(norm(head.innerText));
       let panel = head.parentElement;
       while (panel && !(heads.every(h => panel.contains(h)))) panel = panel.parentElement;
       panel = panel || document.body;
       const skip = /^(Keyword Filter|Select up to \d+ codes and symptoms)$/i;
-      const rows = []; const seen = new Set();
+      // a troubleshooting code at the start of a line: 36-1-5, 1-2, E360(2), …
+      const CODE = /(^|\n)\s*((\d{1,4}-){1,2}\d{1,4}|E\d{2,5})(?=[\s:–—-]|$)/g;
+      const codes = el => ((el.innerText || '').match(CODE) || []).length;
+      const hasHead = el => heads.some(h => el.contains(h));
+      const picked = [];
       for (const el of panel.querySelectorAll('*')) {
         if (!vis(el) || el === head || head.contains(el) || el.contains(head)) continue;
         if (!(head.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
@@ -97,19 +102,64 @@ PROBE_JS = r"""
         if (hasTextChild) continue;                         // leaf elements only
         const t = norm(el.innerText);
         if (!t || t.length > 400 || skip.test(t)) continue;
-        const row = el.closest('li,[role=option],[role=treeitem],[role=row],[role=listitem],label,tr') || el.parentElement || el;
-        if (seen.has(row)) continue;
-        seen.add(row);
+        if (picked.some(r => r.contains(el))) continue;
+        let row = el.closest('li,[role=option],[role=treeitem],[role=row],[role=listitem],label,tr');
+        if (!row || !panel.contains(row) || hasHead(row)) {
+          // no list/row element: the parent is the row, unless it holds several codes
+          // (then it is the list itself, and this leaf is a row of its own — e.g. a label)
+          const par = el.parentElement;
+          row = par && !hasHead(par) && codes(par) <= 1 ? par : el;
+        }
+        // One entry per code: widen a row holding exactly one code to the
+        // largest ancestor that still holds only that code (so the lines SIS
+        // shows with it — e.g. the control module — stay with it).
+        if (codeSection && codes(row) === 1) {
+          let p = row.parentElement;
+          while (p && p !== panel && !hasHead(p) && codes(p) === 1) { row = p; p = p.parentElement; }
+        }
+        if (hasHead(row) || picked.includes(row)) continue;
+        picked.push(row);
+        if (picked.length >= limit * 2) break;
+      }
+      const kept = picked.filter(r => !picked.some(o => o !== r && o.contains(r)));
+      const items = [];
+      for (const row of kept) {
         const rt = norm(row.innerText);
         if (!rt || heads.some(h => norm(h.innerText) === rt)) continue;
-        rows.push(rt);
-        if (rows.length >= limit) break;
+        const lines = (row.innerText || '').split('\n').map(norm).filter(Boolean)
+          .filter((l, k, a) => k === 0 || l !== a[k - 1]);
+        items.push({text: rt, lines});
+        if (items.length >= limit) break;
       }
       // the scrollable element holding the rows, for virtualised lists
       let scroller = head.parentElement;
       while (scroller && scroller !== document.body && !(scroller.scrollHeight > scroller.clientHeight + 20)) scroller = scroller.parentElement;
       if (scroller && scroller !== document.body) scroller.setAttribute('data-maia-tr-scroll', String(i));
-      return {rows, scrollable: !!(scroller && scroller !== document.body)};
+      const exp = head.closest('[aria-expanded]');
+      return {rows: items.map(x => x.text), items, scrollable: !!(scroller && scroller !== document.body),
+              expanded: exp ? exp.getAttribute('aria-expanded') : null};
+    },
+    // A structural sketch of the panel (tags, roles, classes, short text) — no
+    // attribute values beyond those, no URLs, no inputs. For diagnosing layouts.
+    panelSketch(maxChars) {
+      const head = document.querySelector('[data-maia-tr-section]');
+      if (!head) return null;
+      const heads = [...document.querySelectorAll('[data-maia-tr-section]')];
+      let panel = head.parentElement;
+      while (panel && !(heads.every(h => panel.contains(h)))) panel = panel.parentElement;
+      if (!panel) return null;
+      let out = '';
+      const walk = (el, depth) => {
+        if (out.length > maxChars || !vis(el)) return;
+        const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => norm(n.textContent)).join(' ').trim();
+        const cls = (el.getAttribute('class') || '').split(/\s+/).slice(0, 3).join('.');
+        const role = el.getAttribute('role');
+        out += '  '.repeat(Math.min(depth, 20)) + '<' + el.tagName.toLowerCase() + (cls ? '.' + cls : '')
+             + (role ? ' role=' + role : '') + '>' + (own ? ' ' + own.slice(0, 120) : '') + '\n';
+        for (const c of el.children) walk(c, depth + 1);
+      };
+      walk(panel, 0);
+      return out.slice(0, maxChars);
     },
     scrollSection(i) {
       const s = document.querySelector(`[data-maia-tr-scroll="${i}"]`);
@@ -237,6 +287,27 @@ class SisInvestigator:
         return {"opened": True, "url": ctx.page.url}
 
     # ── troubleshooting ─────────────────────────────────────────────────────
+    async def _read_section(self, ctx: Any, i: int, count: int) -> list[dict[str, Any]]:
+        """Rows of section `i`, scrolling a virtualised list until nothing new appears."""
+        items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for _ in range(self.scroll_rounds):
+            got = await self._js(ctx, "(a) => window.__maiaInv.readSection(a[0], a[1])",
+                                 [i, self.row_limit])
+            before = len(items)
+            for x in got.get("items") or [{"text": r, "lines": [r]} for r in got.get("rows") or []]:
+                if x["text"] not in seen:
+                    seen.add(x["text"])
+                    items.append(x)
+            if len(items) >= min(count, self.row_limit) or not items or \
+                    (len(items) == before and not got.get("scrollable")):
+                break
+            moved = await self._js(ctx, "(i) => window.__maiaInv.scrollSection(i)", i)
+            if not moved and len(items) == before:
+                break
+            await ctx.page.wait_for_timeout(350)
+        return items
+
     async def troubleshooting(self, ctx: Any, shots: dict[str, str]) -> dict[str, Any]:
         started = time.monotonic()
         tab = await self.open_tab(ctx, "Troubleshooting")
@@ -251,28 +322,28 @@ class SisInvestigator:
         for sec in marked.get("sections") or []:
             i = sec["index"]
             try:
-                await ctx.page.locator(f'[data-maia-tr-section="{i}"]').first.click(timeout=6000)
-                await ctx.page.wait_for_timeout(900)
-                await self._settle(ctx, 2500)
-                await self._js(ctx, PROBE_JS)
-                rows: list[str] = []
-                for _ in range(self.scroll_rounds):
-                    got = await self._js(ctx, "(a) => window.__maiaInv.readSection(a[0], a[1])",
-                                         [i, self.row_limit])
-                    before = len(rows)
-                    rows += [r for r in got.get("rows") or [] if r not in rows]
-                    if len(rows) >= min(sec["count"], self.row_limit) or len(rows) == before \
-                            and not got.get("scrollable"):
-                        break
-                    moved = await self._js(ctx, "(i) => window.__maiaInv.scrollSection(i)", i)
-                    if not moved and len(rows) == before:
-                        break
-                    await ctx.page.wait_for_timeout(350)
+                # A section may already be open: read first, and click the
+                # heading only when nothing shows (a click on an open section
+                # would collapse it). Two clicks at most — open, or re-open.
+                items, clicks = await self._read_section(ctx, i, sec["count"]), 0
+                while not items and clicks < 2:
+                    await ctx.page.locator(f'[data-maia-tr-section="{i}"]').first.click(timeout=6000)
+                    clicks += 1
+                    await ctx.page.wait_for_timeout(900)
+                    await self._settle(ctx, 2500)
+                    await self._js(ctx, PROBE_JS)
+                    items = await self._read_section(ctx, i, sec["count"])
                 sections.append({"section": sec["section"], "count_displayed": sec["count"],
-                                 "items_read": len(rows), "rows": rows})
+                                 "items_read": len(items), "rows": [x["text"] for x in items],
+                                 "items": items, "clicks": clicks})
             except Exception as exc:
                 sections.append({"section": sec["section"], "count_displayed": sec["count"],
                                  "items_read": 0, "rows": [], "error": str(exc)[:160]})
+        try:
+            out["panel_sketch"] = await self._js(ctx, "(n) => window.__maiaInv.panelSketch(n)",
+                                                 12000)
+        except Exception:
+            out["panel_sketch"] = None
         await self._shot(ctx, "troubleshooting", shots)
         out["sections"] = sections
         out["status"] = ("CAPTURED" if any(s["items_read"] for s in sections)

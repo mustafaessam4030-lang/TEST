@@ -48,3 +48,39 @@ async def test_investigator_reads_troubleshooting_and_inspects_the_viewer(tmp_pa
     assert m["status"] == "VISUAL_ONLY" and m["component_names"] == []
     assert "mapping" not in inv                         # nothing to map against: no guess
     assert {"troubleshooting", "model3d"} <= set(shots)
+
+
+@pytest.mark.asyncio
+async def test_replica_multiline_layout_open_section_and_module_lines(tmp_path) -> None:
+    """Replica test (layout variant, NOT SIS): an already-open section is read without
+    being collapsed; per-code cards keep their lines; a label above codes is kept."""
+    playwright = pytest.importorskip("playwright.async_api")
+    if not Path(CHROME).exists():
+        pytest.skip("no Chromium available")
+    from app.adapters.browser import RunContext
+    from app.adapters.sis_investigation import SisInvestigator
+    from app.analysis.troubleshooting_analyzer import analyze_troubleshooting
+
+    async with playwright.async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=CHROME, headless=True)
+        page = await browser.new_page()
+        await page.goto((Path(__file__).parent / "fixtures" / "sis_tabs_replica_multiline.html").as_uri())
+        ctx = RunContext(run_id="t", page=page, context=None, source_id="cat_sis",
+                         artifact_dir=tmp_path, step_timeout_ms=5000, captured_xhr=[])
+        inv, _ = await SisInvestigator({"investigation": {"canvas_wait_ms": 1500}}).run(
+            ctx, "JAZ01865", ["troubleshooting"])
+        await browser.close()
+
+    tr = inv["troubleshooting"]
+    by = {s["section"]: s for s in tr["sections"]}
+    assert by["Troubleshooting"]["clicks"] == 0          # open already: never clicked shut
+    assert by["Troubleshooting"]["items"][0]["lines"] == [
+        "36-1-5", "Cylinder #1 Injector", "Current Below Normal", "Engine Control #1"]
+    assert by["Advanced Troubleshooting"]["clicks"] == 1
+    assert "Troubleshooting (2)" in (tr.get("panel_sketch") or "")
+    entries = {e["code"]: e for e in analyze_troubleshooting(tr)["entries"] if e["code"]}
+    e = entries["36-1-5"]
+    assert (e["system"], e["component"], e["condition"]) == (
+        "Engine Control #1", "Cylinder #1 Injector", "Current Below Normal")
+    assert entries["E0360(3)"]["system"] == "Engine Control #1"
+    assert entries["E0360(3)"]["system_method"] == "label shown above the code in SIS"

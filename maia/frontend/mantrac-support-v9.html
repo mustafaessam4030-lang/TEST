@@ -2562,19 +2562,20 @@ const EQUIP=(()=>{
     // Analysis requests ("Analyze JAZ01865", "show parts", "what changed", "قارن …")
     // are answered by Maia's deterministic analysis engine from the stored SIS
     // results — no browser, no model. Anything else continues as before.
-    const an=await analysisAsk(raw);
+    let an=await analysisAsk(raw);
     if(an&&an.handled){
-      if(an.status==='NEEDS_RETRIEVAL'&&an.retrieve){
-        // The data this investigation needs has not been read from SIS yet.
-        // Run the existing lookup — same session, live panel — with the extra
-        // sections (Troubleshooting / 3D Model), then answer from what was saved.
+      // The data this investigation needs has not been read from SIS yet: run
+      // the existing lookup — same session, live panel — with the sections the
+      // answer needs (Troubleshooting / 3D Model), then answer from what was
+      // saved. Two rounds at most; a failed lookup is shown with its reason.
+      for(let round=0;round<2&&an&&an.status==='NEEDS_RETRIEVAL'&&an.retrieve;round++){
         const rq=an.retrieve, extra=(rq.investigate||[]).length>0;
         const r=await lookup(rq.serial,{lang:L,onProgress:opts&&opts.onProgress,
           force:extra,investigate:rq.investigate,locate:rq.locate});
         if(!r||!r.ok)return r;
         const again=await analysisAsk(raw);
-        if(again&&again.status==='OK')return analysisResult(again);
-        return again?analysisResult(again):r;
+        if(!again)return r;
+        an=again;
       }
       return analysisResult(an);
     }

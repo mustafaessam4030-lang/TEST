@@ -46,3 +46,45 @@ Maia → Investigation router (EN/AR keywords + serial) → state {serial, mode,
 PASS/FAIL table for REAL SIS, PARTS, TROUBLESHOOTING, 3D MODEL and 3D
 COMPONENT MAPPING, and saves the 3D viewer discovery report to
 `logs/sis-results/<SERIAL>_<RUN>/investigation.json`.
+
+## Executing a turn against real SIS
+
+`app/services/troubleshooting_service.py` — `InvestigationRunner`:
+
+    get_troubleshooting("JAZ01865")                 # the troubleshooting answer
+    ask("Check the troubleshooting for JAZ01865")   # whatever the router decides
+
+1. validates the serial; routes the sentence (intent + serial)
+2. answers from the stored, verified SIS result when it already holds the section
+3. otherwise calls the existing `EquipmentService.lookup` (FORCE_REFRESH,
+   `investigate=[troubleshooting, model_3d]`) — same adapter, browser pool and saved
+   session; the existing store saves it
+4. answers from that saved run, with a `trace` (intent, serial, tool, SIS page, sections)
+
+Failures come back with the real reason (`SIS session unavailable…`, `Equipment not
+found in SIS`, `Extraction failed…`, `the SIS Troubleshooting page could not be read — …`,
+`no troubleshooting codes found…`), never a clarification. A result that is not from
+Caterpillar SIS is refused.
+
+HTTP: `POST /v1/investigation/ask`, `GET /v1/troubleshooting/{serial}`. The chat keeps
+its live progress panel: it asks `/v1/analysis/ask`, runs the lookup with the sections
+it names (up to two rounds), then asks again.
+
+## Row reading on the live page
+
+* a section that is already open is read first — its heading is clicked only when no
+  rows show (a click would collapse an open section)
+* one entry per code: a row is widened to the largest element still holding only that
+  code, so lines SIS shows with it stay with it; each row keeps its visible `lines`
+* **System** is filled only from SIS text: a label shown above a run of codes, or the one
+  remaining line of the code's row — the method is recorded (`system_method`); otherwise
+  "not shown by SIS"
+* a structural `panel_sketch` (tags, roles, classes, short text — no URLs, no inputs) is
+  saved with the run for diagnosing an unexpected layout
+
+## Two kinds of test — never confused
+
+| | What it proves |
+|---|---|
+| **Replica tests** (`tests/test_investigation_browser.py`, fixtures `sis_tabs_replica*.html`) | Maia's own browser code works in real Chromium on a layout built from screenshots. Says nothing about SIS. |
+| **Real SIS integration** (`INVESTIGATE.bat` / `scripts/e2e/investigate_real.py`) | The live Caterpillar SIS run: page reached, rows extracted, 3D viewer inspected. Only this may be called "real SIS integration passed". |

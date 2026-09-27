@@ -31,6 +31,16 @@ NOTE = ("The troubleshooting data identifies the component associated with the r
         "physical failure is claimed unless SIS states it.")
 
 
+NOT_EXPOSED = "3D model available, but component-level mapping is not exposed by the viewer."
+# What each mode needs read from SIS, when nothing is stored for the serial yet —
+# one lookup reads the record, the parts and these sections together.
+SECTIONS = {"TROUBLESHOOTING": ["troubleshooting", "model_3d"],
+            "FULL_ANALYSIS": ["troubleshooting", "model_3d"], "MODEL_3D": ["model_3d"]}
+WHAT = {"PARTS": "the parts list", "TROUBLESHOOTING": "the Troubleshooting section and the 3D model",
+        "FULL_ANALYSIS": "the record, parts, Troubleshooting and the 3D model",
+        "MODEL_3D": "the 3D model"}
+
+
 def _latest_with(snaps: list[Any], kind: str) -> tuple[Any | None, dict[str, Any] | None]:
     for snap in reversed(snaps):
         inv = snap.investigation
@@ -89,7 +99,8 @@ class InvestigationService:
             if check.get("candidates"):
                 return {**base, "status": "NO_DATA", "serial": serial,
                         "candidates": check["candidates"], "text": check["message"]}
-            return self._retrieve(base, serial, r.mode, r.filters, "the equipment record")
+            return self._retrieve(base, serial, r.mode, r.filters, WHAT.get(r.intent, "the equipment record"),
+                                  SECTIONS.get(r.intent, []))
 
         snaps = self.source.snapshots(serial)
         if r.intent in FOCUSES:
@@ -184,10 +195,19 @@ class InvestigationService:
                                   ["troubleshooting", "model_3d"])
         ref = snapshot_ref(snap)
         tr = analyze_troubleshooting(inv["troubleshooting"], code=filters.get("code"), ref=ref)
+        when = (inv["troubleshooting"].get("retrieved_at") or ref["retrieved_at"] or "")[:19]
+        stamp = (f"Source: {ref['source_label']} · Run ID: {ref['run_id']} · "
+                 f"Retrieved: {when.replace('T', ' ')} UTC")
         lines = [RULE, f"**MAIA EQUIPMENT ANALYSIS · {serial}**", RULE] if header else []
-        lines.append("**TROUBLESHOOTING**")
-        if tr["status"] in ("NOT_AVAILABLE", "NOT_CAPTURED"):
-            lines.append(f"• Troubleshooting could not be read: {tr.get('reason') or tr['status']}")
+        lead = self._lead(serial, tr, filters)
+        if lead is None:                      # nothing usable came back: say exactly why
+            why = self._why_empty(inv["troubleshooting"], tr, filters)
+            return {**base, "status": "NO_TROUBLESHOOTING", "serial": serial, "troubleshooting": tr,
+                    "model_3d": self._model_summary(inv, [], snap), "reason": why,
+                    "text": "\n".join([*lines, f"**Troubleshooting for {serial}:** {why}", "",
+                                       stamp]),
+                    "suggestions": [f"Open 3D Model for {serial}", f"Show me parts for {serial}"]}
+        lines += [*lead, "", stamp, "", "**TROUBLESHOOTING**"]
         for s in tr["sections"]:
             lines.append(f"• {s['section']}: {s['count_displayed']} listed by SIS · "
                          f"{s['items_read']} read")
@@ -233,7 +253,37 @@ class InvestigationService:
                   f"_{NOTE}_", RULE]
         return {**base, "status": "OK", "serial": serial, "troubleshooting": tr,
                 "model_3d": self._model_summary(inv, targets, snap), "text": "\n".join(lines),
-                "suggestions": [f"Show {serial} in 3D", f"Show me parts for {serial}"]}
+                "suggestions": [f"Open 3D Model for {serial}", f"Show me parts for {serial}"]}
+
+    @staticmethod
+    def _lead(serial: str, tr: dict[str, Any], filters: dict[str, Any]) -> list[str] | None:
+        """The first code SIS lists (the searched one, if a code was asked for),
+        field by field — every value is the live page's text."""
+        codes = [e for e in tr["entries"] if e["kind"] == "code" and e.get("code")]
+        if not codes:
+            return None
+        order = {"Troubleshooting": 0, "Advanced Troubleshooting": 1}
+        e = sorted(codes, key=lambda x: order.get(x["section"], 2))[0]
+        more = len(codes) - 1
+        return [f"**Troubleshooting found for {serial}:**", "",
+                f"Code: {e['code']}",
+                f"System: {e['system'] or 'not shown by SIS for this code'}",
+                f"Component: {e['component'] or e['description'] or 'not shown'}",
+                f"Condition: {e['condition'] or 'not shown as a separate condition'}",
+                *([f"_(+{more} more code{'s' if more != 1 else ''} below · listed under "
+                   f"{e['section']})_"] if more else [])]
+
+    @staticmethod
+    def _why_empty(raw: dict[str, Any], tr: dict[str, Any], filters: dict[str, Any]) -> str:
+        if raw.get("status") == "NOT_AVAILABLE":
+            return f"the SIS Troubleshooting page could not be read — {raw.get('reason') or 'no reason given'}."
+        if raw.get("status") == "COUNTS_ONLY":
+            listed = ", ".join(f"{s['section']} ({s['count_displayed']})" for s in tr["sections"])
+            return (f"the Troubleshooting tab opened and SIS lists {listed}, but no rows could be "
+                    "read (extraction failed). The screenshot and panel sketch are saved with the run.")
+        if filters.get("code"):
+            return f"SIS does not list code {filters['code']} for this machine."
+        return "no troubleshooting codes found on the SIS Troubleshooting tab."
 
     # ── 3D (shared step) ────────────────────────────────────────────────────
     def _model_3d(self, base: dict[str, Any], serial: str, snaps: list[Any],
@@ -276,6 +326,8 @@ class InvestigationService:
                 "libs": sorted(((m.get("viewer") or {}).get("libs") or {}).keys()),
                 "model_resources": len((m.get("viewer") or {}).get("model_resources") or []),
                 "mapping": mapping, "highlight": inv.get("highlight"),
+                "component_mapping": "VERIFIED" if any(x.get("status") == "VERIFIED" for x in mapping)
+                                     and (inv.get("highlight") or {}).get("ok") else "NOT AVAILABLE",
                 "source": "SIS 3D Model", "classification": "DIRECT",
                 "evidence": snapshot_ref(snap)}
 
@@ -303,9 +355,8 @@ class InvestigationService:
         if not targets:
             lines.append("• Component mapping: no component to locate")
         elif not s["names"]:
-            lines.append("• Component mapping: not currently available (the viewer exposes no "
-                         "component metadata); the troubleshooting component remains the "
-                         "verified source")
+            lines.append(f"• {NOT_EXPOSED if s['available'] else 'Component mapping: not available (the 3D model could not be inspected).'}"
+                         " The SIS troubleshooting component remains the verified source.")
         else:
             for m in s["mapping"][:8]:
                 if m["status"] == "VERIFIED":

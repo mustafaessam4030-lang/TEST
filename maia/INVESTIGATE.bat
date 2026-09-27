@@ -1,5 +1,6 @@
 @echo off
-REM REAL SIS check: Parts + Troubleshooting + 3D Model, then a PASS/FAIL table.
+REM REAL SIS integration test (live Caterpillar SIS, not the replica):
+REM "Check the troubleshooting for <serial>" through Maia, then Parts + 3D Model, then PASS/FAIL.
 REM Double-click, press Enter for JAZ01865 or type another serial.
 setlocal
 set "SERIAL=%~1"

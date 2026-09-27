@@ -215,3 +215,144 @@ async def test_a_failed_investigation_never_fails_the_lookup(make_service, repo)
     assert res.persisted is True
     run = await repo.get_run(res.automation_run_id)
     assert "INVESTIGATE" in [s["step"] for s in run["steps_executed"]]
+
+
+# ── the real-SIS service path (the SIS side is a stand-in here; the live check
+#    is scripts/e2e/investigate_real.py) ────────────────────────────────────
+class _Store:
+    """A SnapshotSource the stand-in lookup writes into, like the real store."""
+
+    def __init__(self, *docs):
+        self.docs = list(docs)
+
+    def _mem(self):
+        return InMemorySnapshots([(f"JAZ01865_{d['run_id']}.json", d) for d in self.docs])
+
+    def serials(self):
+        return self._mem().serials()
+
+    def snapshots(self, serial):
+        return self._mem().snapshots(serial)
+
+    def issues_for(self, serial):
+        return {}
+
+
+class _Equipment:
+    def __init__(self, store, doc=None, error=None):
+        self.store, self.doc, self.error, self.requests = store, doc, error, []
+
+    async def lookup(self, req):
+        self.requests.append(req)
+        if self.error:
+            raise self.error
+        self.store.docs.append(self.doc)
+
+        class R:
+            automation_run_id = self.doc["run_id"]
+        return R()
+
+
+def _live_doc(inv, run="run_LIVE"):
+    d = _doc(investigation=inv, run=run)
+    d["record"]["retrieved_at"] = NOW.isoformat()
+    d["record"]["metadata"] = {"final_url": "https://sis2.cat.com/#/detail"}
+    return d
+
+
+def test_no_data_retrieval_asks_for_the_sections_the_mode_needs() -> None:
+    svc = InvestigationService(InMemorySnapshots([]))
+    assert svc.handle("Check the troubleshooting for JAZ01865")["retrieve"]["investigate"] == [
+        "model_3d", "troubleshooting"]
+    assert svc.handle("Show me parts for JAZ01865")["retrieve"]["investigate"] == []
+    assert svc.handle("Open 3D Model for JAZ01865")["retrieve"]["investigate"] == ["model_3d"]
+
+
+def test_either_or_asks_and_troubleshooting_without_a_machine_asks_which() -> None:
+    assert route("parts or troubleshooting for JAZ01865").intent == "ASK_MODE"
+    assert route("قطع الغيار ولا الأعطال JAZ01865").intent == "ASK_MODE"
+    out = InvestigationService(InMemorySnapshots([])).handle("I want troubleshooting")
+    assert out["status"] == "NEED_SERIAL"
+
+
+@pytest.mark.asyncio
+async def test_runner_reads_sis_when_troubleshooting_is_missing() -> None:
+    from app.services.troubleshooting_service import InvestigationRunner
+
+    store = _Store()
+    eq = _Equipment(store, _live_doc(_inv()))
+    out = await InvestigationRunner(eq, store).get_troubleshooting("jaz01865")
+    req = eq.requests[0]
+    assert req.serial_number == "JAZ01865" and req.source == "cat_sis"
+    assert req.mode.value == "force_refresh" and sorted(req.investigate) == ["model_3d", "troubleshooting"]
+    assert out["status"] == "OK" and out["retrieved"]["run_id"] == "run_LIVE"
+    assert [t["step"] for t in out["trace"]] == ["route", "sis_lookup", "answer"]
+    assert out["trace"][1]["sections"]["troubleshooting"]["tab_opened"] is False  # stand-in has no tab
+    text = out["text"]
+    assert "Troubleshooting found for JAZ01865:" in text and "Code: 36-1-5" in text
+    assert "Component: Cylinder #1 Injector" in text and "Condition: Current Below Normal" in text
+    assert "System: not shown by SIS for this code" in text           # never invented
+    assert "Run ID: run_LIVE" in text and "Open 3D Model for JAZ01865" in out["suggestions"]
+
+
+@pytest.mark.asyncio
+async def test_runner_live_rereads_even_when_stored() -> None:
+    from app.services.troubleshooting_service import InvestigationRunner
+
+    store = _Store(_doc(investigation=_inv(), run="run_OLD"))
+    eq = _Equipment(store, _live_doc(_inv()))
+    out = await InvestigationRunner(eq, store).ask("Check the troubleshooting for JAZ01865", live=True)
+    assert len(eq.requests) == 1 and out["retrieved"]["run_id"] == "run_LIVE"
+
+
+@pytest.mark.asyncio
+async def test_runner_reports_the_real_sis_failure_reason() -> None:
+    from app.core.errors import AutomationError, ErrorCode
+    from app.services.troubleshooting_service import InvestigationRunner
+
+    store = _Store()
+    eq = _Equipment(store, error=AutomationError(ErrorCode.MFA_REQUIRED, "mfa"))
+    out = await InvestigationRunner(eq, store).ask("Check the troubleshooting for JAZ01865")
+    assert out["status"] == "SIS_FAILED" and out["error_code"] == "MFA_REQUIRED"
+    assert "SIS session unavailable" in out["text"] and "MFA" in out["text"]
+
+
+@pytest.mark.asyncio
+async def test_runner_refuses_a_non_sis_result() -> None:
+    from app.services.troubleshooting_service import InvestigationRunner
+
+    doc = _live_doc(_inv())
+    doc["record"]["source_system"] = "local_fixture"
+    store = _Store()
+    out = await InvestigationRunner(_Equipment(store, doc), store).ask(
+        "Check the troubleshooting for JAZ01865")
+    assert out["status"] == "SIS_FAILED"
+
+
+def test_empty_troubleshooting_says_exactly_why() -> None:
+    inv = _inv()
+    inv["troubleshooting"] = {"status": "NOT_AVAILABLE",
+                              "reason": "tab 'Troubleshooting' not found in the record's tab bar"}
+    out = _svc(_doc(investigation=inv)).handle("Check troubleshooting for JAZ01865")
+    assert out["status"] == "NO_TROUBLESHOOTING" and "tab 'Troubleshooting' not found" in out["text"]
+    inv["troubleshooting"] = {"status": "COUNTS_ONLY", "sections": [
+        {"section": "Troubleshooting", "count_displayed": 30, "items_read": 0, "rows": []}]}
+    out = _svc(_doc(investigation=inv)).handle("Check troubleshooting for JAZ01865")
+    assert "Troubleshooting (30)" in out["text"] and "extraction failed" in out["text"]
+
+
+def test_system_comes_only_from_sis_text() -> None:
+    e = parse_row("x", "Troubleshooting", ["36-1-5", "Cylinder #1 Injector", "Current Below Normal",
+                                            "Engine Control #1"])
+    assert (e["system"], e["component"], e["condition"]) == (
+        "Engine Control #1", "Cylinder #1 Injector", "Current Below Normal")
+    assert parse_row("36-1-5 Cylinder #1 Injector Current Below Normal", "Troubleshooting")[
+        "system"] is None
+    ambiguous = parse_row("x", "Troubleshooting", ["36-1-5 Cylinder #1 Injector", "A", "B"])
+    assert ambiguous["system"] is None and ambiguous["context_lines"] == ["A", "B"]
+
+
+def test_not_exposed_wording_for_a_visual_only_viewer() -> None:
+    out = _svc(_doc(investigation=_inv())).handle("Check troubleshooting for JAZ01865")
+    assert "3D model available, but component-level mapping is not exposed by the viewer." in out["text"]
+    assert out["model_3d"]["component_mapping"] == "NOT AVAILABLE"

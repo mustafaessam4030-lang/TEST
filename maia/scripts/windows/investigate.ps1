@@ -1,7 +1,10 @@
 <#
-    REAL end-to-end check on Caterpillar SIS: Parts + Troubleshooting + 3D Model.
+    REAL SIS integration test on Caterpillar SIS (not the replica): Maia's own
+    chat path - intent router, troubleshooting service, the existing SIS session -
+    then Parts, Troubleshooting and the 3D Model viewer.
 
         .\scripts\windows\investigate.ps1 -Serial JAZ01865
+        .\scripts\windows\investigate.ps1 -Serial JAZ01865 -Ask "Check the troubleshooting for JAZ01865"
 
     Uses the existing automation, session and store. Signs in with login.txt
     (or SIS_USERNAME / SIS_PASSWORD). Prints a PASS/FAIL table at the end.
@@ -9,6 +12,7 @@
 #>
 param(
     [string]$Serial = "JAZ01865",
+    [string]$Ask = "",
     [switch]$Headless
 )
 $ErrorActionPreference = "Stop"
@@ -48,10 +52,11 @@ if (-not $env:MAIA_REPOSITORY) {
 }
 
 $env:PYTHONUTF8 = "1"
-$args = @("scripts\e2e\investigate_real.py", "--serial", $Serial)
-if ($Headless) { $args += "--headless" }
+$pyArgs = @("scripts\e2e\investigate_real.py", "--serial", $Serial)
+if ($Ask) { $pyArgs += @("--ask", $Ask) }
+if ($Headless) { $pyArgs += "--headless" }
 
-python @args
+python @pyArgs
 $code = $LASTEXITCODE
 Write-Host ""
 if ($code -eq 0) {

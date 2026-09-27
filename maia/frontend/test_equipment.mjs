@@ -430,5 +430,40 @@ const check = (name, cond, detail = '') => {
   check('the troubleshooting card lists code → component', ctx2.EQUIP.renderCard(t, 'en').includes('Cylinder #1 Injector'));
 }
 
+// 17. first time for a serial: "Check the troubleshooting for …" must reach the
+//     SIS Troubleshooting tab — never stop at "Reading … from SIS" or a clarification
+{
+  let asked = 0;
+  const bodies = [];
+  const need = (inv) => ({ status: 200, body: { handled: true, intent: 'TROUBLESHOOTING',
+      status: 'NEEDS_RETRIEVAL', serial: 'SN123456', text: 'Reading … from Caterpillar SIS…',
+      retrieve: { serial: 'SN123456', investigate: inv, locate: [] } } });
+  const ctx = makeCtx({
+    '/v1/analysis/ask': () => (++asked === 1 ? need([]) : asked === 2 ? need(['model_3d', 'troubleshooting'])
+      : { status: 200, body: { handled: true, intent: 'TROUBLESHOOTING', status: 'OK', serial: 'SN123456',
+          text: '**Troubleshooting found for SN123456:**\n\nCode: 36-1-5' } }),
+    '/v1/equipment/SN123456': { status: 404, body: { error_code: 'SERIAL_NOT_FOUND' } },
+    '/v1/equipment/search': (req) => { bodies.push(req.body); return { status: 200, body: {
+      data: RECORD, attribution: ATTR('FRESH', 0), cache: { hit: false, freshness: 'FRESH', age_days: 0 } } }; },
+  });
+  const t = await ctx.EQUIP.maybeLookup('Check the troubleshooting for SN123456', {}, {}, 'en', {});
+  check('a second round reads the Troubleshooting tab when the first did not',
+        bodies.length === 2 && JSON.stringify(bodies[1].investigate) === '["model_3d","troubleshooting"]'
+        && bodies[1].mode === 'force_refresh', JSON.stringify(bodies));
+  check('the answer is the troubleshooting result, not a "Reading…" line',
+        t && t.analysis && t.message.includes('Troubleshooting found for SN123456'));
+
+  // SIS fails → the actual reason comes back, not a clarification
+  const ctxF = makeCtx({
+    '/v1/analysis/ask': need(['model_3d', 'troubleshooting']),
+    '/v1/equipment/SN123456': { status: 404, body: { error_code: 'SERIAL_NOT_FOUND' } },
+    '/v1/equipment/search': { status: 423, body: { error_code: 'MFA_REQUIRED',
+      user_message_hint: 'SIS is asking for an MFA code.' } },
+  });
+  const f = await ctxF.EQUIP.maybeLookup('Check the troubleshooting for SN123456', {}, {}, 'en', {});
+  check('a failed SIS run reports its reason', f && f.ok === false && f.error_code === 'MFA_REQUIRED'
+        && !f.clarify, JSON.stringify(f && {ok: f.ok, code: f.error_code, clarify: f.clarify}));
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall equipment-layer checks passed');
 process.exit(failures ? 1 : 0);

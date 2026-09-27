@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- A LOCAL REPLICA (layout variant) — NOT SIS and NOT SIS data. Tests Maia's row
+     reader on a multi-line layout: an open section, per-code cards, a group label. -->
+<html><head><meta charset="utf-8"><title>replica</title>
+<style>body{font-family:sans-serif} .tabs a{margin:6px;cursor:pointer} .hidden{display:none}
+.sec h4{cursor:pointer;margin:4px 0} ul{margin:0} canvas{border:1px solid #ccc}</style></head>
+<body>
+<div class="crumb">Engine - Generator Set &gt; Generator Set &gt; C32 &gt; JAZ01865</div>
+<div class="tabs" role="tablist">
+  <a role="tab" data-t="dash">Dashboard</a><a role="tab" data-t="parts">Parts</a>
+  <a role="tab" data-t="repair">Repair</a><a role="tab" data-t="service">Service</a>
+  <a role="tab" data-t="tr">Troubleshooting</a><a role="tab" data-t="m3d">3D Model</a>
+</div>
+<div id="dash">No Asset Information Available</div>
+<div id="tr" class="hidden">
+  <div class="left">
+    <div>Codes, Events, &amp; Symptoms</div><input placeholder="Keyword Filter">
+    <div><i>Select up to 5 codes and symptoms</i></div>
+    <div class="sec"><h4 aria-expanded="false">Advanced Troubleshooting (2)</h4><div class="hidden">
+      <div class="grp">Engine Control #1</div>
+      <div class="row"><input type="checkbox"><span>E0360 (3) Low Engine Oil Pressure</span></div>
+      <div class="row"><input type="checkbox"><span>E0361 (3) High Engine Coolant Temperature</span></div></div></div>
+    <!-- already open, one card per code, code / description / module on separate lines -->
+    <div class="sec"><h4 aria-expanded="true">Troubleshooting (2)</h4><div>
+      <div class="card"><div class="l1"><input type="checkbox"><b>36-1-5</b></div>
+        <div class="l2">Cylinder #1 Injector</div><div class="l3">Current Below Normal</div>
+        <div class="l4">Engine Control #1</div></div>
+      <div class="card"><div class="l1"><input type="checkbox"><b>36-2-6</b></div>
+        <div class="l2">Cylinder #2 Injector</div><div class="l3">Current Above Normal</div>
+        <div class="l4">Engine Control #1</div></div></div></div>
+    <div class="sec"><h4>Symptoms (1)</h4><ul class="hidden">
+      <li><label><input type="checkbox"> Low Power</label></li></ul></div>
+  </div>
+  <div class="right"><h3>Product Status Report</h3><p>Start troubleshooting codes</p></div>
+</div>
+<div id="m3d" class="hidden"><div class="toolbar"><button title="Fit">⤢</button><button title="Reset">⟲</button></div>
+  <canvas width="600" height="300"></canvas></div>
+<script>
+document.querySelectorAll('[role=tab]').forEach(a=>a.addEventListener('click',()=>{
+  ['dash','tr','m3d'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+  const el=document.getElementById(a.dataset.t); if(el) el.classList.remove('hidden');
+  if(a.dataset.t==='m3d'){const c=document.querySelector('canvas');const g=c.getContext('webgl');}
+}));
+document.querySelectorAll('.sec h4').forEach(h=>h.addEventListener('click',()=>{const b=h.nextElementSibling;b.classList.toggle('hidden');h.setAttribute('aria-expanded',String(!b.classList.contains('hidden')));}));
+</script></body></html>

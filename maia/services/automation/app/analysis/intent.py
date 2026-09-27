@@ -69,6 +69,10 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"\banaly[sz](?:e|is|ing|es)\b|\binvestigat\w*|\binsights?\b|\breport\b|\bdeep dive\b"
         r"|\bcheck\b.*\b[A-Z]{3}\d{5}\b|حلل|حلّل|تحليل|تقرير|افحص", re.I)),
 ]
+_EITHER = re.compile(r"\bparts?\s+(?:or|/)\s+(?:the\s+)?troubleshoot\w*"
+                     r"|\btroubleshoot\w*\s+(?:or|/)\s+(?:the\s+)?parts?\b"
+                     r"|قطع\S*(?:\s+\S+)?\s+(?:ولا|أو|او)\s+(?:\S+\s+)?(?:أعطال|اعطال|الأعطال|الاعطال|عطل)"
+                     r"|(?:أعطال|اعطال|الأعطال|الاعطال)\s+(?:ولا|أو|او)\s+(?:ال)?قطع", re.I)
 _GROUP = re.compile(r"\b(?:in|from|of)\s+the\s+([a-z][a-z /&-]{1,30}?)\s+group\b"
                     r"|\b([a-z]{3,20})\s+group\b", re.I)
 _QTY = re.compile(r"\b(?:quantity|qty)\s*(?:of|=|:|is)?\s*(\d+(?:\.\d+)?)\b", re.I)
@@ -126,6 +130,10 @@ def route(utterance: str, active_serial: str | None = None) -> Routed:
     for e in extract_serials(text):
         if e.confidence >= 0.5 and e.normalized not in serials:
             serials.append(e.normalized)
+    # "parts or troubleshooting?" — the user is choosing: ask, don't pick one.
+    if _EITHER.search(text) and (serials or active_serial):
+        return Routed("ASK_MODE", serials or [active_serial],
+                      "utterance" if serials else "context", _EITHER.search(text).group(0))
     for intent, pattern in _PATTERNS:
         m = pattern.search(text)
         if not m:
@@ -134,7 +142,10 @@ def route(utterance: str, active_serial: str | None = None) -> Routed:
         if not serials and active_serial:
             serials, source = [active_serial], "context"
         if intent in MODES and intent != "ASK_MODE" and not serials:
-            # No machine at all: not an investigation — leave it to the rest of Maia.
+            # "troubleshooting" is unambiguous — ask which machine. Anything else
+            # without a machine is not an investigation: leave it to the rest of Maia.
+            if intent == "TROUBLESHOOTING" and m.group(0).lower().startswith("troubleshoot"):
+                return Routed(intent, [], None, m.group(0))
             return Routed("NONE")
         if intent == "COMPARE_EQUIPMENT" and len(serials) == 1 and active_serial \
                 and active_serial != serials[0]:
