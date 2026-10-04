@@ -6,6 +6,16 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · Top navigation, Tracking map, On the way.**
+- **Navigation:** pages are a pill bar in the header (the sidebar is now only
+  the phone and tablet menu). Settings is the gear on the right; Export CSV
+  sits beside the run status.
+- **Tracking:** the selected shipment drawn as a journey on a map (Hub → Carrier →
+  Data → Hub write → Verified). It is not GPS; the vehicle is the real mode:
+  plane, ship or van.
+- **On the way:** shipments with an ETA and no ATA yet. The van drives only
+  while there is at least one.
+
 **New · ATLAS has a face.** A small companion character for the intelligence
 layer, in six states that follow the run state: Ready, Monitoring,
 Analyzing, Recovering, Verified and Human action required. It appears on the

@@ -271,8 +271,8 @@ check("No stray closing brace at the top level", _first_negative is None,
 for _sel in ("#app{", ".nav{", ".main{", ".card{"):
     check("{0!r} is present after the intro block".format(_sel.rstrip("{")),
           _sel in _css and _css.index(_sel) > _css.index("#gate{"))
-check("The desktop grid is defined: brand bar across, sidebar and work below",
-      "grid-template-areas:\"bar bar\" \"nav main\"" in _css)
+check("The desktop grid is defined: brand bar with the page navigation, work below",
+      "grid-template-areas:\"bar\" \"main\"" in _css)
 check("...and the brand bar is a rule of its own after the intro block",
       ".appbar{" in _css and _css.index(".appbar{") > _css.index("#gate{"))
 
@@ -741,6 +741,34 @@ check("Its motion is transforms and a dash offset only — no canvas, no video",
       and "@keyframes axFloat{0%,100%{transform:translateY(0)}" in INDEX)
 check("Human action is calm amber, not alarm red",
       ".is-human_required{--axc:var(--y)}" in INDEX)
+
+print()
+print("=" * 72)
+print("TOP NAVIGATION, TRACKING MAP, ON THE WAY")
+print("=" * 72)
+check("The pages are a pill navigation in the brand bar",
+      'id="tnav"' in INDEX and "b.className = 'tnav-i'" in INDEX)
+check("...built from the same PAGES list as the phone menu, not a second copy",
+      INDEX.count("PAGES.forEach((p) => {") == 2)
+check("...whose dark capsule slides by transform to the active page",
+      "ind.style.transform = 'translateX(' + on.offsetLeft + 'px)'" in INDEX
+      and "transition:transform .42s var(--e),width .42s var(--e)" in INDEX)
+check("...with its own fill and foreground tokens",
+      "--nav-on:#1D1D1F; --on-nav:#FFFFFF;" in INDEX)
+check("The sidebar remains the menu on phones and tablets",
+      "  .tnav{display:none}" in INDEX and "  .nav{display:flex;position:fixed;" in INDEX)
+check("The tracking map is labelled as a route through ATA, not a GPS map",
+      "not a GPS map" in INDEX and "The selected shipment on its way through ATA" in INDEX)
+check("...the vehicle's place comes from the shipment's own pipeline",
+      "const list = r ? pipeline(r) : [];" in INDEX.split("function paintRoute(){")[1])
+check("...and its icon is the shipment's real mode: air, sea or road",
+      "const modeOf = (p) => (AIR[p] ? 'air' : OCEAN[p] ? 'sea' : 'road');" in INDEX)
+check("...and it glides by transform only, built once",
+      ".rt-car{transition:transform 1.1s var(--e)}" in INDEX and "if (!routeBuilt){" in INDEX)
+check("On the way counts shipments with an ETA and no ATA yet",
+      "has(r.provider_eta) && !has(r.provider_ata)" in INDEX)
+check("...and the van only drives while one is on the way",
+      ".fleet.on .tk-wheel{animation" in INDEX and "$('fleet').classList.toggle('on', onWay > 0)" in INDEX)
 
 _vb = _bridge_module.ControlTowerState()
 _vb.shipment_started({"bol_awb": "V1", "carrier": "C", "provider": "DHL"})
