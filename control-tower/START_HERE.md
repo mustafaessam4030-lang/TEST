@@ -6,13 +6,26 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · Dashboard redesign (UI only).** The Control Tower now looks like a
+Mantrac product: a MANTRAC · ATA Control Tower brand bar, a compact sidebar
+(Overview, Live Runs, Shipments, Carriers, ATLAS, Human Action, History,
+Settings), five overview metrics, and a Live Operations table.
+
+- **Pipeline bar:** each table row shows how far the shipment has got.
+  Select a row to open its details on the right: status, step, ATA and where
+  it was read, read-back result, run ID, and the full timeline.
+- **Human verification:** shown as a notification card with **Open Session**
+  and **Resume** (same behaviour as before).
+- **Logo:** put the official file at `dashboard/static/brand/mantrac-logo.svg`
+  (or `.png`). Until then the top-left slot shows a dashed "Logo" placeholder.
+
 **New · Human in the loop (Grimaldi first).** When a carrier page needs a
 person, the run no longer skips the shipment. It pauses that shipment in the
 same run and keeps the browser tab open where it stopped:
 
 1. The dashboard shows **HUMAN ACTION REQUIRED**: carrier, shipment, run ID,
    reason and how long it has been waiting.
-2. **Open Browser Session** brings that exact tab to the front of the
+2. **Open Session** brings that exact tab to the front of the
    automation's Edge window on the automation server. Work in it there, or
    over Remote Desktop to that machine.
 3. Do the step (for GNET: type the security code and press Search), then

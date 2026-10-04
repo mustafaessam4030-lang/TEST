@@ -9302,7 +9302,8 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
             episode_outcome = ML_EPISODE_UNVERIFIED
             episode_verified = None
 
-        tower.view_updated(view_name, field_name, date_value)
+        tower.view_updated(view_name, field_name, date_value,
+                           verified=episode_verified)
         action = f"{view_name} {field_name} updated with {date_value} and saved"
         write_log(f"{action} for {bol_awb}.")
         if return_to_table:

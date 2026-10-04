@@ -95,6 +95,10 @@ class ControlTowerState:
         # wholesale per error rather than accumulated: this is a live status
         # panel, not a history, and the history is the activity feed.
         self.recovery = None
+        # Run-level tally of ATLAS recoveries, for the success rate on the
+        # ATLAS page. Counted from the same three calls that drive the panel.
+        self.recovery_stats = {"diagnosed": 0, "attempts": 0,
+                               "recovered": 0, "exhausted": 0}
 
         self.run_status = "idle"          # idle | running | finished | fatal
         self.run_id = None
@@ -241,6 +245,7 @@ class ControlTowerState:
                 "reason": None,
                 "started": _stamp(),
             }
+            self.recovery_stats["diagnosed"] += 1
             self._mark("warn", "ATLAS diagnosed {0}".format(error_class))
             self._touch()
 
@@ -256,6 +261,7 @@ class ControlTowerState:
                     existing.update(result=result, verified=verified)
                     break
             else:
+                self.recovery_stats["attempts"] += 1
                 attempts.append({"index": index, "total": total,
                                  "action": action, "confidence": confidence,
                                  "result": result, "verified": verified,
@@ -271,6 +277,8 @@ class ControlTowerState:
             # The verification belongs to the attempt that ended it, and it is
             # three-valued like every other verification here: True confirmed,
             # False contradicted, None never checked.
+            if self.recovery.get("status") not in ("RECOVERED", "EXHAUSTED"):
+                self.recovery_stats["recovered" if recovered else "exhausted"] += 1
             self.recovery.update(
                 status="RECOVERED" if recovered else "EXHAUSTED",
                 recovered=bool(recovered), reason=reason, verified=verified)
@@ -513,8 +521,8 @@ class ControlTowerState:
             record = self._index.get(published.get("reference"))
             if record is not None:
                 record["state"] = "waiting_for_human"
-                record["step"] = "Waiting for a person — {0}".format(
-                    published.get("reason") or "human action")
+                record["step"] = "Waiting for a person on {0}".format(
+                    published.get("carrier") or "the carrier page")
                 record["updated"] = _stamp()
             self.systems["browser"]["state"] = "waiting"
             self.systems["browser"]["activity"] = "Waiting for a person on {0}{1}".format(
@@ -697,6 +705,10 @@ class ControlTowerState:
             record["provider_status"] = result.get("tracking_status")
             record["provider_eta"] = result.get("eta")
             record["provider_ata"] = result.get("ata")
+            # The label each date was read from, when the reader kept one —
+            # "Actual Arrival", "ETA" — shown as the source event.
+            record["provider_eta_source"] = result.get("eta_source")
+            record["provider_ata_source"] = result.get("ata_source")
             record["updated"] = _stamp()
             self._mark(
                 "ok",
@@ -711,10 +723,18 @@ class ControlTowerState:
         self._touch_cold()
 
     @_guard
-    def view_updated(self, view_name, field_name, value):
+    def view_updated(self, view_name, field_name, value, verified=None):
+        """
+        A date was saved to a Hub view. `verified` is the read-back verdict
+        as update_one_view recorded it — True read back and matched, None not
+        read back — kept on the record so the dashboard can say which, and
+        never upgraded to a verification nobody performed.
+        """
         with self._lock:
             record = self._current_record()
             if record is not None:
+                record.setdefault("verification", {})[
+                    "{0} {1}".format(view_name, field_name)] = verified
                 if field_name.upper() == "ETA":
                     record["coe_action"] = "{0} {1} → {2}".format(view_name, field_name, value)
                 else:
@@ -979,6 +999,7 @@ class ControlTowerState:
                     "full_name": ATLAS_FULL_NAME,
                     "influenced_actions": self.atlas_influenced_actions,
                     "fallbacks": self.atlas_fallbacks,
+                    "recovery": dict(self.recovery_stats),
                     "events": list(self.atlas_events)[:40],
                 },
                 "progress": {

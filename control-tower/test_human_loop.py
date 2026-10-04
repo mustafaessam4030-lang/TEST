@@ -709,7 +709,7 @@ else:
             ui.wait_for_selector("#hbox:not([hidden])", timeout=15000)
             text = ui.inner_text("#hbox")
             check("HUMAN ACTION REQUIRED is on screen with carrier, shipment, "
-                  "run and reason", "HUMAN ACTION REQUIRED" in text
+                  "run and reason", "HUMAN ACTION REQUIRED" in text.upper()
                   and "Grimaldi Lines" in text and "S330999999" in text
                   and A.RUN_ID in text and "Human verification required" in text,
                   text[:200])
@@ -724,6 +724,21 @@ else:
                   len(queued) == 1 and queued[0]["run_id"] == A.RUN_ID
                   and queued[0]["action_id"] == "uiaction01"
                   and queued[0]["op"] == "resume", str(queued))
+            ui.click("#opsRows tr[data-ref='S330999999']")
+            ui.wait_for_selector("#drawer.on", timeout=5000)
+            ui.wait_for_function(
+                "document.getElementById('dwBody').textContent.indexOf('Human verification') >= 0",
+                timeout=5000)
+            drawer = ui.inner_text("#drawer")
+            check("A live row opens the detail drawer with the shipment's "
+                  "timeline, including its human step",
+                  "S330999999" in drawer and "Human verification" in drawer
+                  and "Read-back verification" in drawer and A.RUN_ID in drawer,
+                  drawer[:200])
+            ui.keyboard.press("Escape")
+            ui.wait_for_function(
+                "!document.getElementById('drawer').classList.contains('on')", timeout=5000)
+            check("...and Escape closes it", True)
             ui.goto("http://127.0.0.1:{0}/".format(DASH_PORT))
             ui.wait_for_selector("#shipRows tr, #hbox", timeout=10000)
             check("The page runs without script errors", not errors, str(errors))

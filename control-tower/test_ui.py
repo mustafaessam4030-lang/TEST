@@ -149,8 +149,10 @@ check("Hairlines are an alpha over whatever is behind them, so one token "
       "works on every surface", "--line:rgba(0,0,0,.09)" in INDEX)
 check("A filled control is the accent on its own foreground token, so no "
       "control fills with the text colour and becomes a white pill",
-      "--solid:var(--vio)" in INDEX and "--on-solid:#FFFFFF" in INDEX
+      "--solid:var(--brand)" in INDEX and "--on-solid:#FFFFFF" in INDEX
       and "background:var(--solid)" in INDEX)
+check("The Mantrac brand colour clears AA on white for its own label",
+      "--brand:#BF3B0E" in INDEX)
 check("The green that failed AA over the page ground was corrected",
       "--grn:#197746" in INDEX and "--grn:#1B7F4B" not in INDEX)
 check("The legacy semantic names still resolve, so nothing that referred to "
@@ -269,8 +271,10 @@ check("No stray closing brace at the top level", _first_negative is None,
 for _sel in ("#app{", ".nav{", ".main{", ".card{"):
     check("{0!r} is present after the intro block".format(_sel.rstrip("{")),
           _sel in _css and _css.index(_sel) > _css.index("#gate{"))
-check("The desktop grid is defined",
-      "grid-template-areas:\"nav main\"" in _css)
+check("The desktop grid is defined: brand bar across, sidebar and work below",
+      "grid-template-areas:\"bar bar\" \"nav main\"" in _css)
+check("...and the brand bar is a rule of its own after the intro block",
+      ".appbar{" in _css and _css.index(".appbar{") > _css.index("#gate{"))
 
 print()
 print("=" * 72)
@@ -646,6 +650,79 @@ check("...and there is never more than one of it",
       "shipTick === null" in INDEX and INDEX.count("setInterval(() => { delete sig.ships") == 1)
 check("It repaints the shipments table and nothing else",
       "setInterval(() => { delete sig.ships; paintShips(); }, 1000)" in INDEX)
+
+print()
+print("=" * 72)
+print("THE MANTRAC REDESIGN")
+print("=" * 72)
+check("The brand bar names the product: MANTRAC, ATA Control Tower",
+      ">MANTRAC<" in INDEX and "ATA Control Tower" in INDEX)
+check("The logo is the official file from /static/brand/, never drawn here",
+      "/static/brand/mantrac-logo.svg" in INDEX
+      and "/static/brand/mantrac-logo.png" in INDEX
+      and ".logo.missing::after{content:\"Logo\"}" in INDEX)
+check("The brand folder says where the official logo goes",
+      (HERE / "dashboard" / "static" / "brand" / "README.txt").exists())
+check("The sidebar has the eight destinations",
+      all("t:'{0}'".format(t) in INDEX for t in (
+          "Overview", "Live Runs", "Shipments", "Carriers", "ATLAS",
+          "Human Action", "History", "Settings")))
+check("History keeps Analysis, Exceptions and the Activity log behind one "
+      "segmented control", "group:['analysis','exceptions','logs']" in INDEX
+      and INDEX.count('class="seg"') == 3)
+check("The five overview metrics are the ones asked for",
+      all("k:'{0}'".format(t) in INDEX for t in (
+          "Total shipments", "Processing", "Completed", "Waiting for human",
+          "Failed")))
+check("Live operations has the requested columns",
+      all("<th>{0}</th>".format(t) in INDEX for t in (
+          "Shipment", "Carrier", "Status", "Current step", "ATA", "Duration",
+          "Last update", "Run ID")))
+check("Live operations updates only the rows that changed",
+      "const opsCache = new Map()" in INDEX
+      and "if (ent.html !== html){ ent.tr.innerHTML = html;" in INDEX)
+check("...and its clocks tick as text, without re-rendering a row",
+      "function tickClocks(root)" in INDEX and "data-t0" in INDEX)
+check("A row opens the detail drawer instead of a new page",
+      "function openDrawer(ref)" in INDEX and "id=\"drawer\"" in INDEX
+      and "['opsRows', 'shipRows', 'anRows', 'humRows']" in INDEX)
+check("...which closes on Escape and returns focus",
+      "e.key === 'Escape' && dwRef" in INDEX and "dwFrom.focus()" in INDEX)
+check("...and re-renders only when that shipment changed",
+      "if (key === dwSig) return;" in INDEX)
+check("The pipeline is worked out from recorded fields only",
+      "r.verification" in INDEX and "r.provider_ata_source" in INDEX
+      and "humanFor(r.reference)" in INDEX)
+check("A write that was not read back is never shown as verified",
+      "'saved, not read back'" in INDEX and "v.every((x) => x === true)" in INDEX)
+check("The ATLAS page reads its recovery figures from the run state",
+      "stats = a.recovery" in INDEX and "Recovery success rate" in INDEX)
+check("No ambient animation runs for the life of the page: the film grain "
+      "and the Ask button's pulse are gone",
+      "class=\"grain\"" not in INDEX and "@keyframes ping" not in INDEX)
+check("The human action card offers Open Session and Resume",
+      ">Open Session</button>" in INDEX and 'id="hResume">Resume</button>' in INDEX)
+
+_vb = _bridge_module.ControlTowerState()
+_vb.shipment_started({"bol_awb": "V1", "carrier": "C", "provider": "DHL"})
+_vb.provider_result({"provider": "DHL", "tracking_status": "Arrived",
+                     "eta": "01/10/2026", "ata": "02/10/2026",
+                     "ata_source": "Actual Arrival"})
+_vb.view_updated("BU", "ATA", "02/10/2026", verified=True)
+_vb.view_updated("COE", "ETA", "01/10/2026")
+_vr = [r for r in _vb.snapshot()["shipments"] if r["reference"] == "V1"][0]
+check("The read-back verdict reaches the record, unverified kept as unverified",
+      _vr["verification"] == {"BU ATA": True, "COE ETA": None}, str(_vr.get("verification")))
+check("The label the ATA was read from reaches the record",
+      _vr["provider_ata_source"] == "Actual Arrival")
+_vb.recovery_plan("TIMEOUT", "m", ["a"], {}, False)
+_vb.recovery_attempt(1, 1, "a", None, "SUCCESS", True)
+_vb.recovery_done(True, "ok")
+_vb.recovery_done(True, "ok")
+check("Recoveries are tallied for the run, once each",
+      _vb.snapshot()["atlas"]["recovery"] == {"diagnosed": 1, "attempts": 1,
+                                             "recovered": 1, "exhausted": 0},
+      str(_vb.snapshot()["atlas"]["recovery"]))
 
 print()
 print("=" * 72)

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#F5F1E8" />
-<title>Control Tower — Mantrac Logistics</title>
+<meta name="theme-color" content="#F5F5F7" />
+<title>ATA Control Tower — Mantrac</title>
 <!-- No webfont. The interface uses the face the operating system already
      has: Segoe UI Variable on Windows, SF on macOS, Roboto on Android. That
      removes the last third-party request from the page, and with it the
@@ -16,12 +16,14 @@
      cannot fail that way because there is nothing to fetch. -->
 <style>
 /* ══════════════════════════════════════════════════════════════
-   CONTROL TOWER — MAIA design language
+   MANTRAC · ATA CONTROL TOWER
 
-   Paper and ink, not chrome. The type does the work: huge tight
-   numerals (-.05em, 700/800) against tiny wide-tracked kickers
-   (.22em, 10.5px). Violet is the system, amber is the value that
-   matters, green/red are outcomes. 14px cards, 100px pills.
+   Calm, spacious, precise. White cards on a soft grey page, one soft
+   shadow, system type. Colour is spent on meaning only: the Mantrac
+   ember for the product and a view's one primary action, interaction
+   blue for selection and focus, and four quiet semantic tones for
+   outcomes. The signature is the ATA pipeline — nine short segments per
+   shipment, the same stages as its timeline in the detail drawer.
 
    PERFORMANCE: render is rAF-batched and rate-limited; each
    section repaints only when its own slice of state changed;
@@ -68,18 +70,26 @@
 
   /* One accent. It marks ATLAS, the active nav item, and a primary action —
      nothing else. */
+  /* Mantrac. The brand colour marks the product, the active page and the
+     one primary action of a view — and nothing else. 5.5:1 on white. */
+  --brand:#BF3B0E; --brand-hi:#A8330B; --brand-wash:rgba(191,59,14,.07);
+  --solid:var(--brand); --on-solid:#FFFFFF;
+  /* Interaction blue, for selection and focus only: a selected filter, a
+     focused field, a link, ATLAS's own mark. */
   --vio:#0B5FD9; --vio-wash:rgba(11,95,217,.07); --vio-line:rgba(11,95,217,.22);
-  --solid:var(--vio); --on-solid:#FFFFFF;
 
   /* Semantics, and only semantics. */
   /* Measured on real pixels: #1B7F4B cleared AA on its wash over a card
      (4.52:1) but not over the page ground (4.18:1), and the run-state pill
      sits on the page ground in the header. Two steps darker clears both. */
   --grn:#197746; --grn-wash:rgba(27,127,75,.08);     /* verified, healthy */
+  --grn-line:rgba(25,119,70,.24);
   --y:#8A5300;   --y-wash:rgba(138,83,0,.08);        /* needs a person */
   --y-line:rgba(138,83,0,.22);
   --red:#C0261C; --red-wash:rgba(192,38,28,.07);     /* failed */
+  --red-line:rgba(192,38,28,.24);
   --blu:#0A6E9E; --blu-wash:rgba(10,110,158,.07);    /* an ATA: it arrived */
+  --blu-line:rgba(10,110,158,.24);
   --signal:var(--grn); --alarm:var(--red);
   --amber:var(--y); --amber-wash:var(--y-wash); --amber-line:var(--y-line);
   --ice:var(--blu);
@@ -112,7 +122,8 @@
   /* One shadow, one elevation. Anything that needs more than this is
      asking to be a separate surface instead. */
   --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04);
-  --sidebar:246px;
+  --sidebar:224px;
+  --barh:56px;
   --player:0px;
 
   color-scheme:light;
@@ -133,11 +144,6 @@ input,textarea,select{font-family:inherit}
 ::-webkit-scrollbar-thumb{background:var(--line-hi);border-radius:10px;border:3px solid var(--paper)}
 ::-webkit-scrollbar-thumb:hover{background:var(--faint)}
 
-/* Film grain, as in the reference. Cheap: one tiled SVG, transform-only. */
-.grain{position:fixed;inset:0;z-index:95;pointer-events:none;opacity:.025;
-  mix-blend-mode:overlay;background-size:170px;animation:grain .5s steps(4) infinite;
-  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
-@keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-2px,1px)}100%{transform:translate(0,0)}}
 
 /* The one eyebrow in the interface. Uppercase is reserved for structure —
    this, a table column head, and the nav's section label — so it still
@@ -160,7 +166,7 @@ input,textarea,select{font-family:inherit}
   border-top:1px solid var(--line)}
 .ml-k{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
 .ml-k:last-child{border-right:none}
-.ml-k b{display:block;font-size:20px;font-weight:750;letter-spacing:-.02em;color:var(--ink);
+.ml-k b{display:block;font-size:19px;font-weight:600;letter-spacing:-.02em;color:var(--ink);
   font-variant-numeric:tabular-nums;line-height:1.1}
 .ml-k span{display:block;font-size:12px;font-weight:400;color:var(--faint);margin-top:5px}
 .ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
@@ -348,351 +354,488 @@ input,textarea,select{font-family:inherit}
   #gate .g-last{opacity:1;pointer-events:auto}
 }
 
-/* ═══════════ SHELL ═══════════ */
+/* ═══════════ SHELL ═══════════
+   A brand bar across the top, a compact sidebar, the work on the right.
+   Everything is one of three neutrals; colour is spent on state, on the
+   one primary action of a view, and on the Mantrac mark. */
 #app{height:100%;display:grid;grid-template-columns:var(--sidebar) 1fr;
-  grid-template-rows:1fr;
-  grid-template-areas:"nav main";opacity:0}
+  grid-template-rows:var(--barh) 1fr;
+  grid-template-areas:"bar bar" "nav main";opacity:0}
 #app.on{animation:rise .5s var(--e) both}
 /* Once the entrance has played the animation is removed in JS; a filling
    transform animation keeps #app as a containing block for fixed children,
    which broke the mobile drawer. */
 #app.settled{animation:none;opacity:1}
 
-/* The sidebar sits ON the page rather than on its own panel. It is
-   navigation: it should be findable and then forgotten, which means it does
-   not get a surface, a shadow or a colour of its own. */
+/* ── BRAND BAR ── */
+.appbar{grid-area:bar;display:flex;align-items:center;gap:12px;padding:0 20px 0 18px;
+  background:var(--surface);border-bottom:1px solid var(--line-2);position:relative;z-index:30}
+.brand{display:flex;align-items:center;gap:12px;min-width:0;text-decoration:none;color:inherit}
+/* The official Mantrac logo is loaded from /static/brand/. Nothing here
+   draws a logo: when the file is absent the slot says so, plainly. */
+.logo{height:26px;display:flex;align-items:center;flex:none}
+.logo img{height:26px;width:auto;display:block}
+.logo.missing{width:74px;border:1px dashed var(--line-hi);border-radius:6px;
+  justify-content:center;font:500 10px/1 var(--s);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.logo.missing::after{content:"Logo"}
+.brand-t{display:flex;flex-direction:column;gap:3px;line-height:1;
+  padding-left:12px;border-left:1px solid var(--line)}
+.brand-n{font-size:12px;font-weight:700;letter-spacing:.2em;color:var(--ink)}
+.brand-p{font-size:10.5px;font-weight:500;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--faint)}
+
+/* ── SIDEBAR ──
+   Navigation: findable, then forgotten. No surface of its own on a desktop;
+   the active item is the darkest one, with a short Mantrac marker. */
 .nav{grid-area:nav;background:transparent;border-right:1px solid var(--line-2);
   display:flex;flex-direction:column;overflow:hidden}
-.nav-b{padding:24px 20px 20px;border-bottom:1px solid var(--line-2)}
-.nav-n{font-size:15px;font-weight:650;letter-spacing:-.02em;line-height:1}
-.nav-n i{color:var(--vio);font-style:normal}
-.nav-o{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
-  color:var(--faint);margin-top:7px}
-.nav-l{padding:14px 12px;overflow-y:auto;flex:1}
-.nav-i{display:flex;align-items:center;gap:12px;width:100%;padding:9px 12px;
-  border-radius:var(--r-sm);margin-bottom:2px;font-size:14px;font-weight:450;
-  color:var(--mid);text-align:left;
+.nav-l{padding:14px 10px;overflow-y:auto;flex:1;display:flex;flex-direction:column}
+.nav-g{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);padding:14px 12px 6px}
+.nav-g:first-child{padding-top:2px}
+.nav-x{flex:1}
+.nav-i{position:relative;display:flex;align-items:center;gap:11px;width:100%;
+  padding:7px 11px;border-radius:var(--r-sm);margin-bottom:1px;font-size:13.5px;
+  font-weight:450;color:var(--mid);text-align:left;
   transition:background .18s var(--e),color .18s var(--e)}
-.nav-i:hover{background:rgba(0,0,0,.035);color:var(--ink)}
-/* The active item is the one that is DARKEST and heaviest, with a filled
-   surface behind it. It was accent-coloured text on an accent wash, which
-   made the current page the least legible item in the list. */
+.nav-i:hover{background:rgba(0,0,0,.04);color:var(--ink)}
 .nav-i.on{background:var(--surface);color:var(--ink);font-weight:590;
-  box-shadow:0 1px 2px rgba(0,0,0,.05)}
-.nav-i.on svg{color:var(--vio)}
-.nav-i svg{width:17px;height:17px;flex:none;opacity:.75;
-  transition:opacity .18s var(--e)}
+  box-shadow:0 1px 2px rgba(0,0,0,.05),0 0 0 1px var(--line-2)}
+.nav-i.on::before{content:"";position:absolute;left:-10px;top:9px;bottom:9px;width:3px;
+  border-radius:0 3px 3px 0;background:var(--brand)}
+.nav-i svg{width:16px;height:16px;flex:none;opacity:.7;transition:opacity .18s var(--e)}
 .nav-i:hover svg,.nav-i.on svg{opacity:1}
-.nav-c{margin-left:auto;font-family:var(--mono);font-size:11px;padding:1px 7px;
-  border-radius:100px;background:var(--bone);color:var(--mid)}
+.nav-c{margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:1px 7px;
+  border-radius:100px;background:var(--surface-3);color:var(--mid)}
 .nav-c.bad{background:var(--red-wash);color:var(--red)}
-.nav-f{padding:13px 20px;border-top:1px solid var(--line-2);font-size:12px;color:var(--faint)}
+.nav-c.wait{background:var(--y-wash);color:var(--y)}
+.nav-f{padding:12px 20px;border-top:1px solid var(--line-2);font-size:11.5px;color:var(--faint)}
 
-.main{grid-area:main;overflow-y:auto}
-.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;
+.main{grid-area:main;overflow-y:auto;position:relative}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
   /* Solid, not blurred. A backdrop-filter forces a compositing layer and
      repaints it on every scroll frame; a hairline over an opaque surface
      costs nothing and reads more precisely. */
-  flex-wrap:wrap;padding:18px 32px;background:var(--bg);
+  flex-wrap:wrap;padding:14px 32px;background:var(--bg);
   border-bottom:1px solid var(--line-2)}
-.top-t{font-size:20px;font-weight:700;letter-spacing:-.04em}
+.top-t{font-size:15px;font-weight:600;letter-spacing:-.01em}
 .sp{flex:1}
-.pill{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
-  border:1px solid var(--line);background:var(--card);font-size:12px;font-weight:600;color:var(--mid)}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);font-size:12px;font-weight:500;color:var(--mid)}
 .pill .d{width:6px;height:6px;border-radius:50%;background:var(--faint)}
-.pill.run{border-color:var(--grn);color:var(--grn);background:var(--grn-wash)}
-.pill.run .d{background:var(--grn);animation:blip 2s infinite}
-.pill.bad{border-color:var(--red);color:var(--red);background:var(--red-wash)}
+.pill.run{border-color:var(--grn-line);color:var(--grn);background:var(--grn-wash)}
+.pill.run .d{background:var(--grn)}
+.pill.bad{border-color:var(--red-line);color:var(--red);background:var(--red-wash)}
 .pill.bad .d{background:var(--red)}
-.pill.fin{border-color:var(--blu);color:var(--blu);background:var(--blu-wash)}
+.pill.fin{border-color:var(--blu-line);color:var(--blu);background:var(--blu-wash)}
 .pill.fin .d{background:var(--blu)}
 @keyframes blip{0%,100%{opacity:1}50%{opacity:.3}}
 .burger{display:none}
 .ctlbar{display:none;align-items:center;gap:7px}
 .ctlbar.on{display:inline-flex}
-.cbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:100px;
-  border:1px solid var(--line);background:var(--card);color:var(--mid);
-  font-size:12px;font-weight:700;transition:all .16s}
-.cbtn:hover{color:var(--ink);border-color:var(--faint)}
-.cbtn.warn{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
-.cbtn.warn:hover{background:var(--amber-line)}
-.cbtn.go{border-color:rgba(110,231,168,.5);color:var(--grn);background:var(--grn-wash)}
-.cbtn.go:hover{background:rgba(110,231,168,.22)}
+/* Secondary controls are quiet, tonal and the same shape; only what the
+   view is FOR is filled. */
+.cbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink);
+  font-size:12.5px;font-weight:500;transition:background .16s,border-color .16s,color .16s}
+.cbtn:hover{background:var(--surface-2);border-color:var(--line-hi)}
+.cbtn.warn{color:var(--y)}
+.cbtn.go{color:var(--grn)}
+.cbtn.stop{color:var(--red)}
 .cbtn:disabled{opacity:.4;cursor:default}
-.cbtn.stop{border-color:rgba(255,107,107,.45);color:var(--red);background:var(--red-wash)}
-.cbtn.stop:hover{background:rgba(255,107,107,.22)}
+.cbtn.solid{background:var(--solid);border-color:var(--solid);color:var(--on-solid)}
+.cbtn.solid:hover{background:var(--brand-hi);border-color:var(--brand-hi)}
 .cbtn svg{width:12px;height:12px}
-.share{display:none;align-items:center;gap:7px;padding:6px 13px;border-radius:100px;
-  border:1px solid var(--vio-line);background:var(--vio-wash);color:var(--vio);
-  font-size:12px;font-weight:700;transition:background .16s}
+.share{display:none;align-items:center;gap:7px;padding:5px 11px;border-radius:100px;
+  border:1px solid var(--line);background:var(--card);color:var(--mid);
+  font-size:12px;font-weight:500;transition:background .16s,color .16s}
 .share.on{display:inline-flex}
-.share:hover{background:var(--vio-line)}
+.share:hover{background:var(--surface-2);color:var(--ink)}
 .share svg{width:13px;height:13px}
 
-.page{padding:24px 28px 40px;display:none}
-.page.on{display:block;animation:rise .35s var(--e)}
+.page{padding:26px 32px 48px;display:none;max-width:1480px}
+.page.on{display:block;animation:rise .3s var(--e)}
 
 /* A card is a hairline, a radius and room to breathe. One shadow at low
    opacity so it sits a millimetre above the page — not a stack, not a glow,
    and never a second border to do the same job twice. */
 .card{background:var(--surface);border:1px solid var(--line-2);
-  border-radius:var(--r);box-shadow:var(--shadow);position:relative}
-.card-h{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
-.card-t{font-size:13px;font-weight:700;letter-spacing:-.02em}
-.card-b{padding:18px}
+  border-radius:var(--r-lg);box-shadow:var(--shadow);position:relative}
+.card-h{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line-2)}
+.card-t{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.card-s{font-size:12px;color:var(--faint);margin-top:2px}
+.card-b{padding:18px 20px}
+.link{font-size:12.5px;font-weight:500;color:var(--vio)}
+.link:hover{text-decoration:underline}
 
-/* hero */
-.ctl{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
-.ctl .card{display:flex;flex-direction:column}
-.ctl .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
-/* No gradient. The run status is the most important thing on the page and
-   it earns that with size and space, which is cheaper to render and
-   survives being looked at for eight hours. */
-.hero{background:var(--surface);border:1px solid var(--line-2);
-  border-radius:var(--r);box-shadow:var(--shadow);
-  padding:28px 30px;position:relative;overflow:hidden}
-/* The hero's animated linework was removed.
-   It ran two dashed rails, two travelling pods and a nine-second sweep,
-   permanently, behind the one number an operator is trying to read. Ambient
-   motion in a monitoring interface competes with the motion that means
-   something — a status changing — and it costs a compositing layer and a
-   repaint for the whole life of the page. The status light on the headline
-   is the only thing that moves now, and it moves because the run is live. */
+/* ── GREETING ── */
+.hello{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.hello-k{font-size:13px;color:var(--faint);margin-bottom:4px}
+.hello-t{font:var(--t-display);letter-spacing:-.025em}
+.hello-s{font-size:13px;color:var(--mid);margin-top:4px}
 
-.hero-v{font-size:clamp(34px,4.4vw,54px);font-weight:800;letter-spacing:-.055em;
-  line-height:1;margin:12px 0 6px;position:relative;z-index:1;color:var(--ink);
-  display:flex;align-items:center;gap:16px}
-/* The status light. Sized off the type so it scales with the headline, and
-   it is the only place the run's state is expressed as colour. */
-.hero-v::before{content:'';flex:none;width:.28em;height:.28em;border-radius:50%;
-  background:var(--faint);box-shadow:0 0 0 .12em rgba(0,0,0,.05)}
+/* ── METRICS ──
+   Five compact numbers in one strip. Each cell casts its own hairline, so
+   the strip wraps at any width without a border landing on an edge. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:0;background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;
+  margin-bottom:18px}
+.kpi{background:var(--surface);padding:16px 20px 18px;
+  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
+.kpi-k{font-size:12px;font-weight:500;color:var(--faint);text-wrap:balance;
+  display:flex;align-items:center;gap:7px}
+.kpi-k i{width:6px;height:6px;border-radius:50%;background:var(--c,var(--faint));flex:none}
+.kpi-v{font-size:30px;font-weight:600;letter-spacing:-.035em;line-height:1.05;margin-top:9px;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.kpi-n{font-size:11.5px;color:var(--faint);margin-top:5px}
+/* A zero is not an alarm. "Failed 0" is the best news on the page and must
+   not glow; it recedes to the tertiary colour. */
+.kpi-v.nil{color:var(--faint);font-weight:400}
+/* An em-dash set large looks like a rule, not an absence. */
+.kpi-v.none{color:var(--faint);font-size:22px;font-weight:400}
+
+/* ── LAYOUT GRIDS ── */
+.ov{display:grid;gap:18px}
+.ov-side{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:18px;align-items:start}
+.g2{display:grid;grid-template-columns:1.45fr 1fr;gap:18px;align-items:start}
+.g2>*{min-width:0}
+.stack{display:grid;gap:18px}
+
+/* ── CURRENT RUN ──
+   The run's state is a status light beside a calm headline. */
+.hero{padding:20px 20px 18px}
+.hero-v{font-size:22px;font-weight:600;letter-spacing:-.02em;
+  line-height:1.1;margin:8px 0 4px;color:var(--ink);
+  display:flex;align-items:center;gap:10px}
+.hero-v::before{content:'';flex:none;width:9px;height:9px;border-radius:50%;
+  background:var(--faint);box-shadow:0 0 0 4px rgba(0,0,0,.05)}
 .hero-v.s-running::before{background:var(--signal);
-  box-shadow:0 0 0 .12em var(--grn-wash);
+  box-shadow:0 0 0 4px var(--grn-wash);
   animation:beat 2.4s var(--e) infinite}
 .hero-v.s-finished::before{background:var(--ice);
-  box-shadow:0 0 0 .12em var(--blu-wash)}
+  box-shadow:0 0 0 4px var(--blu-wash)}
 .hero-v.s-fatal::before{background:var(--alarm);
-  box-shadow:0 0 0 .12em var(--red-wash)}
+  box-shadow:0 0 0 4px var(--red-wash)}
 @keyframes beat{0%,100%{opacity:1}50%{opacity:.45}}
 @media(prefers-reduced-motion:reduce){.hero-v.s-running::before{animation:none}}
-.hero-s{font-size:13px;color:var(--mid);margin-bottom:24px;position:relative;z-index:1}
-.hero-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:20px 18px;position:relative;z-index:1}
-.fk{font-size:12px;font-weight:450;letter-spacing:0;
-  color:var(--faint);margin-bottom:5px}
-.fv{font-size:15px;font-weight:500;word-break:break-word}
-.fv.hi{color:var(--vio);font-weight:600}
+.hero-s{font-size:12px;color:var(--mid);margin-bottom:16px}
+.hero-g{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+.fk{font-size:11.5px;font-weight:450;color:var(--faint);margin-bottom:3px}
+.fv{font-size:13.5px;font-weight:500;word-break:break-word}
+.fv.hi{color:var(--ink);font-weight:600}
+.kick{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint)}
 
-/* kpis */
-/* ONE card, divided — not seven cards in a row.
-   Seven bordered boxes made the run's numbers look like seven unrelated
-   facts, and it is the clearest case of the interface being a collection of
-   containers rather than a surface. The dividers are the 1px grid gaps
-   showing the container's own colour through, so they stay hairlines and
-   wrap correctly at any column count without a border landing on an edge. */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(164px,1fr));
-  gap:1px;background:var(--surface);border:1px solid var(--line-2);
-  border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;
-  margin-bottom:20px}
-.kpi{background:var(--surface);padding:18px 20px 20px;
-  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
-.kpi-k{font-size:12px;font-weight:450;color:var(--faint);text-wrap:balance}
-.kpi-v{font-size:34px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin-top:10px;
-  font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
-.kpi-n{font-size:12px;color:var(--mid);margin-top:4px}
-/* A zero is not an alarm. "Failed 0" is the best news on the page and must
-   not glow; it recedes to the tertiary colour whatever --c says. */
-.kpi-v.nil{color:var(--faint);font-weight:400}
-/* An em-dash set at 34px/600 looks like a rule, not an absence. */
-.kpi-v.none{color:var(--faint);font-size:24px;font-weight:400}
-
-.bar{height:6px;border-radius:100px;background:var(--bone);overflow:hidden}
-.bar-f{height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
+.bar{height:5px;border-radius:100px;background:var(--surface-3);overflow:hidden}
+.bar-f{height:100%;border-radius:100px;background:var(--ink);transition:width .5s var(--e)}
 .bar.ind .bar-f{width:30%;animation:slide 1.6s linear infinite}
 @keyframes slide{from{transform:translateX(-110%)}to{transform:translateX(350%)}}
 .leg{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
-  font-size:12px;color:var(--mid);margin-top:12px}
-.leg b{font-weight:700}
+  font-size:12px;color:var(--mid);margin-top:10px}
+.leg b{font-weight:600}
 
-.g2{display:grid;grid-template-columns:1.45fr 1fr;gap:14px;align-items:start}
-.g2>*{min-width:0}
-
-.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;
-  font-size:11px;font-weight:700;white-space:nowrap}
-.tag::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+/* ── STATUS PILLS ── soft, small, never neon. */
+.tag{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:100px;
+  font-size:11.5px;font-weight:500;white-space:nowrap}
+.tag::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .tag.updated{color:var(--grn);background:var(--grn-wash)}
 .tag.processing{color:var(--blu);background:var(--blu-wash)}
-.tag.skipped{color:var(--y);background:var(--y-wash)}
+.tag.skipped{color:var(--mid);background:var(--surface-3)}
 .tag.partial{color:var(--y);background:var(--y-wash)}
 .tag.failed{color:var(--red);background:var(--red-wash)}
-.tag.unknown{color:var(--mid);background:var(--bone)}
-.tag.waiting_for_human{color:var(--y);background:var(--y-wash);font-weight:700}
+.tag.unknown{color:var(--mid);background:var(--surface-3)}
+.tag.waiting_for_human{color:var(--y);background:var(--y-wash)}
 .tag.human_timeout{color:var(--y);background:var(--y-wash)}
-/* HUMAN ACTION REQUIRED. Shown on every page while a run is holding a
-   carrier tab for a person; nothing else on the console is this loud. */
-.hbox{margin:14px 22px 0;padding:14px 16px;border:1px solid var(--y);border-radius:12px;
-  background:var(--y-wash);display:grid;gap:8px}
+.tag.processing::before,.tag.waiting_for_human::before{animation:blip 1.8s infinite}
+
+/* ── HUMAN ACTION ──
+   A system notification, not an error box: a white card with an app glyph,
+   a plain title, the facts, and the two things a person can do. */
+.hbox{margin:18px 32px 0;max-width:820px;display:grid;grid-template-columns:40px 1fr;
+  gap:4px 14px;padding:16px 18px;background:var(--surface);border:1px solid var(--line-2);
+  border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 32px rgba(0,0,0,.08);
+  animation:note .42s var(--e) both}
 .hbox[hidden]{display:none}
-.hbox-t{font-weight:800;letter-spacing:.04em;color:var(--y)}
-.hbox-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font-size:13px}
-.hbox-g b{display:block;font-size:11px;font-weight:600;color:var(--mid);text-transform:uppercase;letter-spacing:.05em}
-.hbox-a{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.hbox-m{font-size:12.5px;color:var(--mid)}
-.hbox.done{border-color:var(--line)}
+@keyframes note{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:none}}
+.hbox-i{grid-row:1 / span 4;width:40px;height:40px;border-radius:11px;display:grid;
+  place-items:center;background:var(--y-wash);color:var(--y)}
+.hbox-i svg{width:20px;height:20px}
+.hbox-e{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.hbox-e span:last-child{margin-left:auto;font-family:var(--mono);letter-spacing:0;
+  text-transform:none;font-weight:500}
+.hbox-t{font-size:15px;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.hbox-g{display:grid;grid-template-columns:auto auto minmax(150px,auto) auto auto;justify-content:start;gap:8px 28px;
+  font-size:13px;margin-top:8px}
+.hbox-g b{display:block;font-size:11px;font-weight:450;color:var(--faint);margin-bottom:1px}
+.hbox-g span{color:var(--ink);white-space:nowrap}
+.hbox-m{font-size:12px;color:var(--mid);line-height:1.5}
+#hHow{margin-top:6px}
+.hbox-a{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.hbox-a .cbtn{padding:7px 16px;font-size:13px}
+.hbox.done{box-shadow:var(--shadow)}
+.hbox.done .hbox-i{background:var(--surface-3);color:var(--mid)}
 .hbox.done .hbox-t{color:var(--mid)}
 
+/* ── TABLES ── */
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 /* Readability comes from row height and alignment. The header keeps a
-   single rule under it; the rows have none at all, because forty hairlines
-   down a table is a grid, and a grid is harder to scan than white space. */
-th{font:var(--t-label);letter-spacing:.055em;text-transform:uppercase;
-  color:var(--faint);text-align:left;padding:0 16px 10px;
-  border-bottom:1px solid var(--line);white-space:nowrap;background:transparent}
-td{padding:14px 16px;color:var(--mid);border:none}
+   single rule under it; the rows have none, because forty hairlines down a
+   table is a grid, and a grid is harder to scan than white space. */
+th{font:var(--t-label);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);text-align:left;padding:12px 16px 10px;
+  border-bottom:1px solid var(--line-2);white-space:nowrap;background:transparent}
+td{padding:13px 16px;color:var(--mid);border:none}
 tbody tr{transition:background .14s var(--e)}
 tbody tr:hover{background:var(--surface-2)}
+tbody tr[data-ref]{cursor:pointer}
+tbody tr.sel{background:var(--surface-3)}
 thead th:first-child,tbody td:first-child{padding-left:22px}
 thead th:last-child,tbody td:last-child{padding-right:22px}
-td.ref{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap}
+td.ref{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:500;white-space:nowrap}
 /* Dates align down the column and stay in the text colour. Only an ACTUAL
    arrival is coloured, because that is the exception an operator scans for;
    an empty cell is not a date and must not look like one. */
-td.dt{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;
+td.dt{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;
   color:var(--ink)}
 td.dt.actual{color:var(--ice)}
 td.dt.none{color:var(--faint)}
-td.dt{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:nowrap}
-td.n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+td.dt{white-space:nowrap}
+td.n{font-family:var(--mono);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+td.nw{white-space:nowrap}
+td.rid{font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap}
 .err{font-size:12px;max-width:240px;display:block;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;color:var(--faint)}
 tr.r-failed .err{color:var(--red)}
-tr.r-skipped .err{color:var(--y)}
+tr.r-skipped .err{color:var(--mid)}
 tr.r-partial .err{color:var(--y)}
 
-.tl{max-height:390px;overflow-y:auto;padding:6px 0;contain:content}
-.tlr{display:grid;grid-template-columns:58px 16px 1fr;gap:11px;padding:7px 18px;font-size:13px}
+/* ── THE ATA PIPELINE ──
+   Nine short segments, one per stage a shipment actually passes through.
+   The same stages, the same order, everywhere: a row's rail is the drawer's
+   timeline folded flat. */
+.rail{display:flex;gap:3px;width:118px;flex:none}
+.rail i{flex:1;height:4px;border-radius:2px;background:var(--surface-3);
+  transition:background .35s var(--e)}
+.rail i.done{background:var(--ink)}
+.rail i.now{background:var(--blu);animation:blip 1.8s infinite}
+.rail i.wait{background:var(--y);animation:blip 1.8s infinite}
+.rail i.fail{background:var(--red)}
+.rail i.soft{background:var(--line-hi)}
+.stepc{display:flex;flex-direction:column;gap:6px;min-width:150px}
+.stepc span{font-size:12px;color:var(--mid);max-width:260px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.ops-f{display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--line-2);
+  font-size:12px;color:var(--faint)}
+
+.tl{max-height:420px;overflow-y:auto;padding:6px 0;contain:content}
+.tlr{display:grid;grid-template-columns:58px 16px 1fr;gap:11px;padding:7px 20px;font-size:13px}
 .tlr time{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:2px}
 .tlr i{font-style:normal;text-align:center;font-size:11px;line-height:1.5}
 .tlr.ok i{color:var(--grn)} .tlr.warn i{color:var(--amber)} .tlr.error i{color:var(--red)}
-.tlr.shipment i,.tlr.scan i{color:var(--vio)} .tlr.start i,.tlr.stop i{color:var(--blu)}
+.tlr.shipment i,.tlr.scan i{color:var(--ink)} .tlr.start i,.tlr.stop i{color:var(--blu)}
 .tlr span{color:var(--mid)}
 
 .sys{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:center;
-  padding:14px 18px;border-bottom:1px solid var(--line-2)}
+  padding:14px 20px;border-bottom:1px solid var(--line-2)}
 .sys:last-child{border-bottom:none}
 .led{width:8px;height:8px;border-radius:50%;background:var(--faint)}
 .sys.st-connected .led{background:var(--grn)}
-.sys.st-processing .led{background:var(--vio);animation:blip 1.6s infinite}
+.sys.st-processing .led{background:var(--blu);animation:blip 1.6s infinite}
 .sys.st-error .led{background:var(--red)}
-.sys.st-warning .led{background:var(--y)}
-.sys-n{font-size:14px;font-weight:600}
+.sys.st-warning .led,.sys.st-waiting .led{background:var(--y)}
+.sys-n{font-size:13.5px;font-weight:550}
 .sys-m{font-size:12px;color:var(--faint);margin-top:2px;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .sys-m.bad{color:var(--red)}
-.sys-r{text-align:right;font-size:11px;font-weight:700;letter-spacing:.1em;
+.sys-r{text-align:right;font-size:11px;font-weight:500;letter-spacing:.04em;
   text-transform:uppercase;color:var(--faint);line-height:1.7}
 
 .exc{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;
-  padding:14px 18px;border-left:3px solid var(--red);border-bottom:1px solid var(--line-2)}
-.exc.warning{border-left-color:var(--y)}
-.exc-i{color:var(--red);font-size:12px}
-.exc.warning .exc-i{color:var(--amber)}
+  padding:14px 20px;border-bottom:1px solid var(--line-2)}
+.exc:last-child{border-bottom:none}
+.exc-i{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;font-weight:700;color:var(--red);background:var(--red-wash)}
+.exc.warning .exc-i{color:var(--y);background:var(--y-wash)}
 .exc-m{font-size:13px;color:var(--ink);font-weight:500}
 .exc-d{font-size:12px;color:var(--faint);margin-top:4px}
 .exc-t{font-family:var(--mono);font-size:11px;color:var(--faint)}
 
-.tools{display:flex;gap:8px;flex-wrap:wrap;padding:13px 18px;border-bottom:1px solid var(--line-2);
+.tools{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--line-2);
   align-items:center}
-.in{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
-  padding:8px 12px;color:var(--ink);font-size:13px;min-width:170px;flex:1}
+.in{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:7px 12px;color:var(--ink);font-size:13px;min-width:170px;flex:1;
+  transition:border-color .16s,box-shadow .16s,background .16s}
 .in::placeholder{color:var(--faint)}
-.in:focus{border-color:var(--vio);outline:none}
-.chip{padding:6px 13px;border-radius:100px;border:1px solid var(--line);font-size:12px;
-  font-weight:600;color:var(--mid);background:var(--card);transition:all .16s;white-space:nowrap}
-.chip:hover{background:var(--y-wash);border-color:var(--y-line);color:var(--ink)}
+.in:focus{border-color:var(--vio);outline:none;background:var(--surface);
+  box-shadow:0 0 0 3px var(--vio-wash)}
+.chip{padding:5px 12px;border-radius:100px;border:1px solid var(--line);font-size:12px;
+  font-weight:500;color:var(--mid);background:var(--card);
+  transition:background .16s,border-color .16s,color .16s;white-space:nowrap}
+.chip:hover{background:var(--surface-2);color:var(--ink)}
 .chip.on{background:var(--vio-wash);border-color:var(--vio-line);color:var(--vio)}
-.btn{padding:8px 15px;border-radius:100px;font-size:12px;font-weight:700;
-  background:var(--solid);color:var(--on-solid);transition:transform .2s var(--e),background .2s;
+.btn{padding:7px 15px;border-radius:100px;font-size:12.5px;font-weight:500;
+  background:var(--solid);color:var(--on-solid);transition:background .2s;
   display:inline-flex;align-items:center;gap:7px}
-.btn:hover{transform:translateY(-1px);background:var(--vio)}
+.btn:hover{background:var(--brand-hi)}
 .btn svg{width:13px;height:13px}
 .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
-.btn.ghost:hover{background:var(--bone)}
+.btn.ghost:hover{background:var(--surface-2)}
 
-.logs{max-height:540px;overflow-y:auto;font-family:var(--mono);font-size:12px;contain:content}
-.log{display:grid;grid-template-columns:58px 62px 1fr;gap:10px;padding:6px 18px;
+/* ── SEGMENTED CONTROL ── History's three views. */
+.seg{display:inline-flex;padding:3px;border-radius:10px;background:var(--surface-3);
+  margin-bottom:18px;gap:2px}
+.seg button{padding:6px 16px;border-radius:8px;font-size:12.5px;font-weight:500;color:var(--mid);
+  transition:background .2s var(--e),color .2s var(--e),box-shadow .2s var(--e)}
+.seg button:hover{color:var(--ink)}
+.seg button.on{background:var(--surface);color:var(--ink);
+  box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 .5px rgba(0,0,0,.04)}
+
+.logs{max-height:560px;overflow-y:auto;font-family:var(--mono);font-size:12px;contain:content}
+.log{display:grid;grid-template-columns:58px 62px 1fr;gap:10px;padding:6px 20px;
   border-bottom:1px solid var(--line-2)}
 .log time{color:var(--faint)}
-.log b{font-size:11px;font-weight:800;letter-spacing:.06em}
+.log b{font-size:10.5px;font-weight:700;letter-spacing:.06em}
 .log.info b{color:var(--blu)} .log.success b{color:var(--grn)}
 .log.warning b{color:var(--amber)} .log.error b{color:var(--red)}
 .log p{color:var(--mid);word-break:break-word}
 .log.error p{color:var(--red)}
 
-.live{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}
-.live-r{font-family:var(--mono);font-size:clamp(22px,3vw,32px);font-weight:700;
-  letter-spacing:-.04em;color:var(--vio);margin-bottom:20px}
-.steps div{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:8px 0 8px 14px;
-  font-size:13px;color:var(--faint);border-left:2px solid var(--line);margin-left:3px}
-.steps div:last-child{color:var(--ink);border-left-color:var(--vio)}
+.live{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
+.live-r{font-family:var(--mono);font-size:clamp(20px,2.4vw,26px);font-weight:600;
+  letter-spacing:-.02em;color:var(--ink);margin-bottom:18px}
+.steps div{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:7px 0 7px 14px;
+  font-size:12.5px;color:var(--faint);border-left:2px solid var(--line);margin-left:3px}
+.steps div:last-child{color:var(--ink);border-left-color:var(--blu)}
 .steps .step-none{display:block;border-left:none;margin-left:0;padding:6px 0;
   font-size:13px;color:var(--faint)}
 .steps time{font-family:var(--mono);font-size:11px}
 
-.empty{padding:44px 20px;text-align:center;color:var(--faint)}
-.empty h3{font-size:14px;font-weight:700;color:var(--mid);margin-bottom:6px}
+.empty{padding:40px 20px;text-align:center;color:var(--faint)}
+.empty h3{font-size:14px;font-weight:600;color:var(--mid);margin-bottom:6px}
 .empty p{font-size:13px;max-width:400px;margin:0 auto}
-.empty code{font-family:var(--mono);font-size:12px;color:var(--vio);
-  background:var(--vio-wash);padding:1px 6px;border-radius:5px}
+.empty code{font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:var(--surface-3);padding:1px 6px;border-radius:5px}
 
 .row{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--line-2)}
 .row:last-child{border-bottom:none}
 .row .a{width:160px;font-size:13px;color:var(--mid);flex:none;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.row .t{flex:1;height:8px;border-radius:100px;background:var(--bone);overflow:hidden}
-.row .t i{display:block;height:100%;border-radius:100px;background:var(--vio);transition:width .5s var(--e)}
+.row .t{flex:1;height:6px;border-radius:100px;background:var(--surface-3);overflow:hidden}
+.row .t i{display:block;height:100%;border-radius:100px;background:var(--ink);transition:width .5s var(--e)}
 .row .t i.ok{background:var(--signal)}
 .row .t i.part{background:var(--faint)}
 .row .t i.none{background:var(--alarm)}
 .row .v{width:66px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink)}
-.health{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;padding:18px}
-.health div{background:var(--bone);border-radius:var(--r-sm);padding:13px 15px}
-.health b{display:block;font-size:24px;font-weight:800;letter-spacing:-.045em;margin-top:6px;
+.health{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;padding:18px 20px}
+.health div{background:var(--surface-2);border-radius:var(--r);padding:13px 15px}
+.health b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em;margin-top:6px;
   font-variant-numeric:tabular-nums}
 
 /* ═══════════ ANALYSIS ═══════════ */
 .an-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
-  padding:16px 18px;border-bottom:1px solid var(--line-2)}
+  padding:16px 20px;border-bottom:1px solid var(--line-2)}
 .fld{display:flex;flex-direction:column;gap:5px}
 .fld label{font-size:12px;font-weight:450;color:var(--faint)}
-.sel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
-  padding:8px 11px;font-size:13px;color:var(--ink);min-width:140px}
+.sel{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:7px 11px;font-size:13px;color:var(--ink);min-width:140px}
 .sel:focus{border-color:var(--vio);outline:none}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));
-  gap:1px;background:var(--surface);border-bottom:1px solid var(--line-2);
+  gap:0;background:var(--surface);border-bottom:1px solid var(--line-2);
   overflow:hidden}
-.stat{background:var(--surface);padding:16px 18px 18px;
+.stat{background:var(--surface);padding:16px 20px 18px;
   box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
-.stat b{display:block;font-size:24px;font-weight:800;letter-spacing:-.05em;margin-top:6px;
+.stat b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em;margin-top:6px;
   font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
 .dl-note{font-size:12px;color:var(--faint);margin-top:10px}
 .hint{font-size:12px;color:var(--mid);line-height:1.5}
 
+/* ═══════════ ATLAS ═══════════ */
+.ax{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0;
+  background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-lg);
+  box-shadow:var(--shadow);overflow:hidden;margin-bottom:18px}
+.ax > div{padding:16px 20px 18px;box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2);min-width:0}
+.ax b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em;margin-top:8px;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.ax b.txt{font-size:14px;font-weight:550;letter-spacing:-.005em;line-height:1.35;
+  overflow-wrap:anywhere}
+.ax b.nil{color:var(--faint);font-weight:400}
+.ax small{display:block;font-size:11.5px;color:var(--faint);margin-top:4px;line-height:1.4;
+  overflow-wrap:anywhere}
+.rec{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start}
+.rec-i{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
+  background:var(--surface-3);color:var(--ink)}
+.rec-i svg{width:15px;height:15px}
+.rec.act .rec-i{background:var(--y-wash);color:var(--y)}
+.rec-t{font-size:14px;font-weight:550;line-height:1.4}
+.rec-n{font-size:12px;color:var(--faint);margin-top:4px}
+
+/* ═══════════ DETAIL DRAWER ═══════════
+   Slides in over the page from the right. Transform-only, so opening it
+   never re-lays-out the table underneath. */
+.dw-scrim{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.12);opacity:0;
+  pointer-events:none;transition:opacity .3s var(--e)}
+.dw-scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;z-index:81;height:100vh;height:100dvh;
+  width:min(460px,100vw);background:var(--surface);border-left:1px solid var(--line-2);
+  box-shadow:-24px 0 60px rgba(0,0,0,.10);transform:translateX(104%);
+  transition:transform .42s var(--e);display:flex;flex-direction:column;visibility:hidden}
+.drawer.on{transform:none;visibility:visible}
+.dw-h{padding:20px 22px 16px;border-bottom:1px solid var(--line-2)}
+.dw-top{display:flex;align-items:center;gap:10px}
+.dw-ref{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.02em;
+  margin-top:6px;overflow-wrap:anywhere}
+.dw-x{margin-left:auto;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;
+  color:var(--mid);background:var(--surface-3);transition:background .16s}
+.dw-x:hover{background:var(--line);color:var(--ink)}
+.dw-x svg{width:13px;height:13px}
+.dw-b{flex:1;overflow-y:auto;padding:6px 22px 28px}
+.dw-sec{padding:18px 0 4px}
+.dw-sec + .dw-sec{border-top:1px solid var(--line-2)}
+.dw-st{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:12px}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+.facts .w{grid-column:1 / -1}
+.facts .mono{font-size:12.5px}
+.tline{position:relative;margin-left:5px}
+.tli{position:relative;display:grid;grid-template-columns:22px 1fr auto;gap:4px 10px;
+  padding:0 0 16px}
+.dw-b.fresh .tli{animation:rise .35s var(--e) both}
+.tli::before{content:"";position:absolute;left:5px;top:14px;bottom:0;width:1.5px;
+  background:var(--line)}
+.tli:last-child::before{display:none}
+.tli.done::before{background:var(--ink)}
+.tli b{width:12px;height:12px;border-radius:50%;margin-top:3px;background:var(--surface);
+  border:1.5px solid var(--line-hi);position:relative;z-index:1}
+.tli.done b{background:var(--ink);border-color:var(--ink)}
+.tli.now b{border-color:var(--blu);box-shadow:0 0 0 4px var(--blu-wash)}
+.tli.wait b{border-color:var(--y);background:var(--y);box-shadow:0 0 0 4px var(--y-wash)}
+.tli.fail b{border-color:var(--red);background:var(--red)}
+.tli.soft b{border-style:dashed}
+.tli span{font-size:13px;color:var(--ink);font-weight:500}
+.tli.todo span,.tli.soft span{color:var(--faint);font-weight:450}
+.tli em{grid-column:2 / -1;font-style:normal;font-size:12px;color:var(--faint);
+  line-height:1.45;margin-top:-2px;overflow-wrap:anywhere}
+.tli time{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.how .tli::before{background:var(--line)}
+.how .tli b{background:var(--surface);border-color:var(--ink)}
+.trace{font-size:12px;color:var(--mid)}
+.trace div{display:grid;grid-template-columns:56px 1fr;gap:8px;padding:4px 0}
+.trace time{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
 /* ═══════════ CHAT ═══════════ */
 .fab{position:fixed;right:22px;bottom:calc(var(--player) + 18px);z-index:70;
-  height:38px;padding:0 14px;border-radius:100px;background:var(--solid);color:var(--on-solid);
-  display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
-  box-shadow:0 6px 18px rgba(10,10,11,.2);transition:transform .24s var(--e)}
+  height:38px;padding:0 15px;border-radius:100px;background:var(--surface);color:var(--ink);
+  border:1px solid var(--line-2);display:flex;align-items:center;gap:7px;font-size:12.5px;
+  font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,.10);transition:transform .24s var(--e)}
 .fab:hover{transform:translateY(-2px)}
 /* No position:relative here — it would override the fixed positioning above
    and drop the launcher into normal flow, stretching it across the window.
    position:fixed already establishes the containing block the pulse needs. */
 .fab svg{width:15px;height:15px}
-.fab::after{content:"";position:absolute;inset:-4px;border-radius:100px;
-  border:1px solid var(--ink);opacity:.22;animation:ping 2.8s var(--e) infinite;
-  pointer-events:none}
-@keyframes ping{0%{transform:scale(.95);opacity:.5}70%{transform:scale(1.12);opacity:0}
-  100%{opacity:0}}
 .fab.hide{display:none}
 .chat{position:fixed;right:24px;bottom:calc(var(--player) + 22px);z-index:71;
   width:396px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 150px);
@@ -765,10 +908,14 @@ tr.r-partial .err{color:var(--y)}
 .send:hover{transform:scale(1.06)}
 .send svg{width:15px;height:15px}
 
-/* ═══════════ RESPONSIVE ═══════════ */
-@media(max-width:1180px){.g2,.live,.ctl{grid-template-columns:1fr}}
+/* ═══════════ RESPONSIVE ═══════════
+   Desktop first: this is an operations console. A laptop narrows the side
+   column under the table; a tablet folds the sidebar into a drawer. */
+@media(max-width:1180px){.ov-side{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.ov-side{grid-template-columns:1fr}}
+@media(max-width:1180px){.g2,.live{grid-template-columns:1fr}}
 @media(max-width:880px){
-  #app{grid-template-columns:1fr;grid-template-areas:"main"}
+  #app{grid-template-columns:1fr;grid-template-areas:"bar" "main"}
   /* height, not top+bottom: #app keeps a filling entrance animation on
      transform, which makes it a containing block for fixed children, so
      bottom:0 stopped resolving against the viewport and the drawer
@@ -779,10 +926,14 @@ tr.r-partial .err{color:var(--y)}
     transform:translateX(-100%);transition:transform .32s var(--e);
     box-shadow:16px 0 40px rgba(0,0,0,.10)}
   .nav.open{transform:none}
-  .burger{display:flex;align-items:center;padding:5px;color:var(--mid)}
+  .burger{display:flex;align-items:center;padding:5px;color:var(--mid);margin-left:-6px}
   .burger svg{width:20px;height:20px}
-  .page{padding:18px 15px 28px}
-  .top{padding:12px 15px}.top-t{font-size:20px}
+  .page{padding:20px 16px 30px}
+  .top{padding:12px 16px}
+  .hbox{margin:14px 16px 0}
+  .hbox-g{grid-template-columns:1fr 1fr}
+  .appbar{padding:0 14px}
+  .brand-p{display:none}
   .chat{right:10px;left:10px;width:auto;height:min(72vh,520px)}
   .fab{right:16px}
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:50;opacity:0;
@@ -790,29 +941,20 @@ tr.r-partial .err{color:var(--y)}
   .scrim.on{opacity:1;pointer-events:auto}
 }
 @media(max-width:600px){
-  /* Ten columns cannot be read on a phone. Horizontal scrolling "worked" —
-     the scroller was measured and does scroll — but it pushed the
-     ATLAS / DETERMINISTIC attribution and the result pill completely
-     off-screen, which is the one thing an operator opens this page for.
-     Each row becomes a labelled record instead: the same fields, in the same
-     order, with nothing hidden and nothing to scroll sideways for. */
+  /* Ten columns cannot be read on a phone. Each row becomes a labelled
+     record instead: the same fields, in the same order, with nothing hidden
+     and nothing to scroll sideways for. */
   .tw{overflow-x:visible}
   .tw table,.tw tbody,.tw tr,.tw td{display:block;width:auto}
   .tw thead{display:none}
-  /* The card insets its own header by 18px; the stacked rows have to sit on
-     that same edge or the record headings hang outside the card's text. */
-  .tw tbody tr{padding:12px 18px;border-bottom:1px solid var(--line-2)}
+  .tw tbody tr{padding:12px 20px;border-bottom:1px solid var(--line-2)}
   .tw tbody tr:last-child{border-bottom:none}
   .tw td,.tw thead th:first-child,.tw tbody td:first-child,
   .tw thead th:last-child,.tw tbody td:last-child{padding:4px 0 4px 118px}
   .tw td{position:relative;min-height:20px}
   /* The column name comes from the table's own <thead> at render time, so a
-     label can never drift from the header it belongs to. It sits in a gutter
-     rather than in the flow, so a value that needs two lines — a result pill
-     next to its attribution pill — wraps without pushing anything sideways. */
-  /* Cells that carry figures set their value in the mono face, and the label
-     inherited it — so half the labels in a record were typeset differently
-     from the other half. The gutter always uses the text face. */
+     label can never drift from the header it belongs to. The gutter always
+     uses the text face. */
   .tw td::before{content:attr(data-k);position:absolute;left:0;top:4px;
     width:104px;font:400 12px/1.4 var(--s);color:var(--faint)}
   /* `.tw tbody td:first-child` above matches the reference cell too and is
@@ -820,10 +962,12 @@ tr.r-partial .err{color:var(--y)}
      back and let the AWB sit flush as the record's heading. */
   .tw tbody td.ref{font-size:15px;padding:0 0 8px;min-height:0}
   .tw tbody td.ref::before{display:none}
+  .hero-g,.facts{grid-template-columns:1fr}
+  .hello-t{font-size:28px}
 }
 @media(max-width:430px){
-  /* One header row. #beatPill is an echo of the hero's "Last heartbeat"
-     field, which stays visible, so nothing is lost by folding it away. */
+  /* One header row. #beatPill is an echo of the Current run card's "Last
+     heartbeat" field, which stays visible, so nothing is lost by folding it. */
   #beatPill{display:none}
 }
 @media(prefers-reduced-motion:reduce){
@@ -833,7 +977,6 @@ tr.r-partial .err{color:var(--y)}
 </style>
 </head>
 <body>
-<div class="grain" aria-hidden="true"></div>
 
 <!-- ═══ INTRO ═══════════════════════════════════════════════════════
      Five scenes over ~6.6s, cut rather than dissolved, tied together by a
@@ -906,25 +1049,45 @@ tr.r-partial .err{color:var(--y)}
     <path d="M16 15.1V28.8" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/>
     <circle cx="16" cy="15.1" r="2.6" fill="currentColor"/>
   </symbol>
+  <symbol id="ct-hand" viewBox="0 0 24 24">
+    <path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM4.5 21a7.5 7.5 0 0 1 15 0"
+      fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </symbol>
 </defs></svg>
 
 <div id="app">
   <div class="scrim" id="scrim"></div>
 
-  <nav class="nav" id="nav">
-    <div class="nav-b">
-      <div class="nav-n">Control Tower<i>.</i></div>
-      <div class="nav-o">Mantrac Logistics</div>
+  <!-- Brand bar. The official Mantrac logo file belongs at
+       dashboard/static/brand/mantrac-logo.svg (a .png of the same name is
+       tried second). Nothing here draws a logo: until the file is present the
+       slot shows a dashed "Logo" placeholder. -->
+  <header class="appbar">
+    <button class="burger" id="burger" aria-label="Menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="brand">
+      <span class="logo" id="brandLogo"><img src="/static/brand/mantrac-logo.svg" alt="Mantrac"
+        onerror="if(!this.dataset.png){this.dataset.png=1;this.src='/static/brand/mantrac-logo.png';}else{this.parentNode.classList.add('missing');this.remove();}"></span>
+      <span class="brand-t"><span class="brand-n">MANTRAC</span>
+        <span class="brand-p">ATA Control Tower</span></span>
     </div>
+    <div class="sp"></div>
+    <button class="share" id="shareBtn" title="Copy the link colleagues should use">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg>
+      <span id="shareTxt">Copy share link</span></button>
+    <div class="pill" id="runPill"><span class="d"></span><span id="runTxt">Connecting</span></div>
+    <div class="pill" id="beatPill"><span class="d"></span><span id="beatTxt">No heartbeat</span></div>
+  </header>
+
+  <nav class="nav" id="nav">
     <div class="nav-l" id="navList"></div>
     <div class="nav-f" id="navFoot">Standing by</div>
   </nav>
 
   <main class="main" id="main">
-    <header class="top">
-      <button class="burger" id="burger" aria-label="Menu">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-      </button>
+    <div class="top">
       <div class="top-t" id="pageTitle">Overview</div>
       <div class="sp"></div>
       <span class="ctlbar" id="ctlbar">
@@ -932,71 +1095,155 @@ tr.r-partial .err{color:var(--y)}
         <button class="cbtn warn" id="btnPause">Pause</button>
         <button class="cbtn stop" id="btnStop">Stop after this shipment</button>
       </span>
-      <button class="share" id="shareBtn" title="Copy the link colleagues should use">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg>
-        <span id="shareTxt">Copy share link</span></button>
-      <div class="pill" id="runPill"><span class="d"></span><span id="runTxt">Connecting</span></div>
-      <div class="pill" id="beatPill"><span class="d"></span><span id="beatTxt">No heartbeat</span></div>
-    </header>
+    </div>
 
+    <!-- HUMAN ACTION. A system notification on every page while a run holds a
+         carrier tab for a person. Open Session brings that exact tab to the
+         front of the run's Edge window; Resume asks the run to check the page
+         and carry on. Nothing typed here ever reaches the carrier page. -->
     <div class="hbox" id="hbox" hidden role="alert" aria-live="assertive">
-      <div class="hbox-t" id="hTitle">HUMAN ACTION REQUIRED</div>
-      <div class="hbox-g">
-        <div><b>Carrier</b><span id="hCarrier">—</span></div>
-        <div><b>Shipment</b><span class="mono" id="hRef">—</span></div>
-        <div><b>Run</b><span class="mono" id="hRun">—</span></div>
-        <div><b>Reason</b><span id="hReason">—</span></div>
-        <div><b>Waiting</b><span class="mono" id="hWait">—</span></div>
-        <div><b>Times out</b><span class="mono" id="hDeadline">—</span></div>
-      </div>
-      <div class="hbox-m" id="hHow"></div>
-      <div class="hbox-a">
-        <button class="cbtn warn" id="hOpen">Open Browser Session</button>
-        <button class="cbtn go" id="hResume">Resume</button>
-        <span class="hbox-m" id="hMsg"></span>
+      <div class="hbox-i"><svg><use href="#ct-hand"/></svg></div>
+      <div class="hbox-e"><span id="hTitleK">Human action required</span><span id="hWaitE"></span></div>
+      <div class="hbox-t" id="hTitle">Human verification required</div>
+      <div>
+        <div class="hbox-g">
+          <div><b>Carrier</b><span id="hCarrier">—</span></div>
+          <div><b>Shipment</b><span class="mono" id="hRef">—</span></div>
+          <div><b>Run</b><span class="mono" id="hRun">—</span></div>
+          <div><b>Waiting</b><span class="mono" id="hWait">—</span></div>
+          <div><b>Times out</b><span class="mono" id="hDeadline">—</span></div>
+          <span id="hReason" hidden></span>
+        </div>
+        <div class="hbox-m" id="hHow"></div>
+        <div class="hbox-a">
+          <button class="cbtn" id="hOpen" title="Bring the paused carrier tab to the front of the automation's Edge window">Open Session</button>
+          <button class="cbtn solid" id="hResume">Resume</button>
+          <span class="hbox-m" id="hMsg"></span>
+        </div>
       </div>
     </div>
 
+    <!-- ═══ OVERVIEW ═══ -->
     <section class="page on" data-p="overview">
-      <div class="ctl">
-        <div class="hero">
-          <div class="kick">Automation status</div>
-          <div class="hero-v" id="bigState">Standing by</div>
-          <div class="hero-s" id="dryFlag"></div>
-          <div class="hero-g">
-            <div><div class="fk">Current operation</div><div class="fv" id="cOp">—</div></div>
-            <div><div class="fk">Current carrier</div><div class="fv" id="cSys">—</div></div>
-            <div><div class="fk">Current action</div><div class="fv" id="cAct">—</div></div>
-            <div><div class="fk">Runtime</div><div class="fv mono" id="cRun">00:00:00</div></div>
-            <div><div class="fk">Last heartbeat</div><div class="fv mono" id="cBeat">—</div></div>
-            <div><div class="fk">Hub list page</div><div class="fv mono" id="cPage">—</div></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-h"><div class="card-t">Run progress</div></div>
-          <div class="card-b">
-            <div class="bar" id="pBar"><div class="bar-f" id="pFill" style="width:0%"></div></div>
-            <div class="leg"><span id="pTxt">Waiting for the first page scan</span><span id="pPct"></span></div>
-            <div style="height:16px"></div>
-            <div class="leg" style="margin:0">
-              <span>Updated <b style="color:var(--grn)" id="nS">0</b></span>
-              <span>Skipped <b style="color:var(--mid)" id="nK">0</b></span>
-              <span>Failed <b style="color:var(--red)" id="nF">0</b></span>
-              <span>Remaining <b id="nR">—</b></span>
-            </div>
-          </div>
+      <div class="hello">
+        <div>
+          <div class="hello-k" id="helloDate">ATA operations</div>
+          <div class="hello-t" id="helloT">Good morning</div>
+          <div class="hello-s" id="dryFlag"></div>
         </div>
       </div>
       <div class="kpis" id="kpis"></div>
-      <div class="g2">
+      <div class="ov">
         <div class="card">
-          <div class="card-h"><div class="card-t">Operations timeline</div><div class="sp"></div><div class="kick" id="tlN"></div></div>
-          <div class="tl" id="timeline"></div>
+          <div class="card-h"><div><div class="card-t">Live operations</div>
+            <div class="card-s">Every shipment this run, newest first. Select one for its timeline.</div></div>
+            <div class="sp"></div><div class="kick" id="opsN"></div></div>
+          <div class="tw"><table>
+            <thead><tr><th>Shipment</th><th>Carrier</th><th>Status</th><th>Current step</th>
+            <th>ATA</th><th>Duration</th><th>Last update</th><th>Run ID</th></tr></thead>
+            <tbody id="opsRows"></tbody></table></div>
+          <div id="opsEmpty"></div>
+          <div class="ops-f" id="opsFoot" hidden><span id="opsMore"></span><div class="sp"></div>
+            <button class="link" data-go="shipments">All shipments</button></div>
+        </div>
+        <div class="ov-side">
+          <div class="card hero">
+            <div class="kick">Current run</div>
+            <div class="hero-v" id="bigState">Standing by</div>
+            <div class="hero-s" id="runIdLine"></div>
+            <div class="hero-g">
+              <div><div class="fk">Current operation</div><div class="fv" id="cOp">—</div></div>
+              <div><div class="fk">Carrier</div><div class="fv" id="cSys">—</div></div>
+              <div style="grid-column:1 / -1"><div class="fk">Current action</div><div class="fv" id="cAct">—</div></div>
+              <div><div class="fk">Runtime</div><div class="fv mono" id="cRun">00:00:00</div></div>
+              <div><div class="fk">Last heartbeat</div><div class="fv mono" id="cBeat">—</div></div>
+              <div><div class="fk">Hub list page</div><div class="fv mono" id="cPage">—</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><div class="card-t">Run progress</div></div>
+            <div class="card-b">
+              <div class="bar" id="pBar"><div class="bar-f" id="pFill" style="width:0%"></div></div>
+              <div class="leg"><span id="pTxt">Waiting for the first page scan</span><span id="pPct"></span></div>
+              <div style="height:14px"></div>
+              <div class="leg" style="margin:0">
+                <span>Updated <b style="color:var(--grn)" id="nS">0</b></span>
+                <span>Skipped <b style="color:var(--mid)" id="nK">0</b></span>
+                <span>Failed <b style="color:var(--red)" id="nF">0</b></span>
+                <span>Remaining <b id="nR">—</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><div class="card-t">ATLAS</div><div class="sp"></div>
+              <button class="link" data-go="atlas">Open</button></div>
+            <div class="card-b" id="atlasGlance"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ LIVE RUNS ═══ -->
+    <section class="page" data-p="live">
+      <div class="live">
+        <div class="stack">
+          <div class="card">
+            <div class="card-h"><div class="card-t">Shipment in progress</div><div class="sp"></div><span id="liveTag"></span></div>
+            <div class="card-b" id="liveBody"></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><div class="card-t">Operations timeline</div><div class="sp"></div><div class="kick" id="tlN"></div></div>
+            <div class="tl" id="timeline"></div>
+          </div>
         </div>
         <div class="card">
-          <div class="card-h"><div class="card-t">Systems</div></div>
-          <div id="sysMini"></div>
+          <div class="card-h"><div class="card-t">Step trace</div></div>
+          <div class="card-b"><div class="steps" id="steps"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ SHIPMENTS ═══ -->
+    <section class="page" data-p="shipments">
+      <div class="card">
+        <div class="card-h"><div class="card-t">Shipments this run</div><div class="sp"></div>
+          <input class="in" id="shipQ" placeholder="Search BOL / AWB, carrier, error" style="max-width:260px" /></div>
+        <div class="tools" id="shipF"></div>
+        <div class="tw"><table>
+          <thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Hub ETA</th><th>Carrier status</th>
+          <th>Carrier ETA</th><th>Carrier ATA</th><th>Result</th><th>Outcome</th><th>Time</th><th>Detail</th></tr></thead>
+          <tbody id="shipRows"></tbody></table></div>
+        <div id="shipEmpty"></div>
+      </div>
+    </section>
+
+    <!-- ═══ CARRIERS ═══ -->
+    <section class="page" data-p="systems">
+      <div class="g2">
+        <div class="card"><div class="card-h"><div class="card-t">Carrier and system status</div></div>
+          <div id="sysFull"></div></div>
+        <div class="card"><div class="card-h"><div class="card-t">Runner health</div></div>
+          <div id="health"></div></div>
+      </div>
+    </section>
+
+    <!-- ═══ ATLAS ═══
+         Every figure is read from the run state or /api/ml. A value ATLAS has
+         not produced shows as a dash, never as a zero. -->
+    <section class="page" data-p="atlas">
+      <div class="ax" id="atlasStats"></div>
+      <div class="g2">
+        <div class="stack">
+          <div class="card">
+            <div class="card-h"><div><div class="card-t">Recommended action</div>
+              <div class="card-s">Derived from the live run state</div></div></div>
+            <div class="card-b" id="atlasRec"></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><div class="card-t">Recent automation issues</div><div class="sp"></div>
+              <button class="link" data-go="exceptions">All exceptions</button></div>
+            <div id="atlasIssues"></div>
+          </div>
         </div>
         <!-- Every number in here comes from /api/ml, which reads the live ml
              package. An unknown shows as a dash, never as a zero. -->
@@ -1023,34 +1270,37 @@ tr.r-partial .err{color:var(--y)}
       </div>
     </section>
 
-    <section class="page" data-p="live">
-      <div class="live">
+    <!-- ═══ HUMAN ACTION ═══ -->
+    <section class="page" data-p="human">
+      <div class="g2">
         <div class="card">
-          <div class="card-h"><div class="card-t">Shipment in progress</div><div class="sp"></div><span id="liveTag"></span></div>
-          <div class="card-b" id="liveBody"></div>
+          <div class="card-h"><div><div class="card-t">Human action center</div>
+            <div class="card-s">Every pause for a person this run, newest first</div></div>
+            <div class="sp"></div><div class="kick" id="humN"></div></div>
+          <div class="tw"><table>
+            <thead><tr><th>Time</th><th>Event</th><th>Shipment</th><th>Detail</th></tr></thead>
+            <tbody id="humRows"></tbody></table></div>
+          <div id="humEmpty"></div>
         </div>
         <div class="card">
-          <div class="card-h"><div class="card-t">Step trace</div></div>
-          <div class="card-b"><div class="steps" id="steps"></div></div>
+          <div class="card-h"><div class="card-t">How it works</div></div>
+          <div class="card-b hint" id="humHow">
+            <div class="tline how">
+              <div class="tli done"><b></b><span>The run pauses the shipment</span><em>The carrier tab stays open where it stopped, in the same run.</em></div>
+              <div class="tli done"><b></b><span>Open Session</span><em>Brings that exact tab to the front of the automation's Edge window on the automation server — work in it there or over Remote Desktop.</em></div>
+              <div class="tli done"><b></b><span>Complete the step, then Resume</span><em>For Grimaldi: type the security code and press Search. Resume is refused until the page shows the result.</em></div>
+              <div class="tli done"><b></b><span>Read, validate, write, read back</span><em>Only a write that reads back from the Hub is a success.</em></div>
+            </div>
+            <div style="margin-top:6px" id="humCount"></div>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="page" data-p="shipments">
-      <div class="card">
-        <div class="card-h"><div class="card-t">Shipments this run</div><div class="sp"></div>
-          <input class="in" id="shipQ" placeholder="Search BOL / AWB, carrier, error" style="max-width:250px" /></div>
-        <div class="tools" id="shipF"></div>
-        <div class="tw"><table>
-          <thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Hub ETA</th><th>Carrier status</th>
-          <th>Carrier ETA</th><th>Carrier ATA</th><th>Result</th><th>Outcome</th><th>Time</th><th>Detail</th></tr></thead>
-          <tbody id="shipRows"></tbody></table></div>
-        <div id="shipEmpty"></div>
-      </div>
-    </section>
-
+    <!-- ═══ HISTORY: ANALYSIS · EXCEPTIONS · ACTIVITY LOG ═══ -->
     <section class="page" data-p="analysis">
-      <div class="card" style="margin-bottom:14px">
+      <div class="seg" role="tablist"><button data-go="analysis" class="on">Analysis</button><button data-go="exceptions">Exceptions</button><button data-go="logs">Activity log</button></div>
+      <div class="card" style="margin-bottom:18px">
         <div class="card-h"><div class="card-t">Custom analysis</div><div class="sp"></div>
           <div class="kick" id="anCount"></div></div>
         <div class="an-bar">
@@ -1062,6 +1312,8 @@ tr.r-partial .err{color:var(--y)}
               <option value="partial">Partly updated</option>
               <option value="failed">Failed</option>
               <option value="processing">Processing</option>
+              <option value="waiting_for_human">Waiting for human</option>
+              <option value="human_timeout">Human timeout</option>
             </select></div>
           <div class="fld"><label for="anCarrier">Carrier</label>
             <select class="sel" id="anCarrier"><option value="all">All carriers</option></select></div>
@@ -1101,16 +1353,8 @@ tr.r-partial .err{color:var(--y)}
       </div>
     </section>
 
-    <section class="page" data-p="systems">
-      <div class="g2">
-        <div class="card"><div class="card-h"><div class="card-t">Integration status</div></div>
-          <div id="sysFull"></div></div>
-        <div class="card"><div class="card-h"><div class="card-t">Runner health</div></div>
-          <div id="health"></div></div>
-      </div>
-    </section>
-
     <section class="page" data-p="exceptions">
+      <div class="seg" role="tablist"><button data-go="analysis">Analysis</button><button data-go="exceptions" class="on">Exceptions</button><button data-go="logs">Activity log</button></div>
       <div class="card">
         <div class="card-h"><div class="card-t">Exceptions</div><div class="sp"></div><div class="kick" id="excN"></div></div>
         <div id="excList"></div>
@@ -1118,6 +1362,7 @@ tr.r-partial .err{color:var(--y)}
     </section>
 
     <section class="page" data-p="logs">
+      <div class="seg" role="tablist"><button data-go="analysis">Analysis</button><button data-go="exceptions">Exceptions</button><button data-go="logs" class="on">Activity log</button></div>
       <div class="card">
         <div class="card-h"><div class="card-t">Activity log</div><div class="sp"></div><div class="kick" id="logN"></div></div>
         <div class="tools">
@@ -1132,19 +1377,31 @@ tr.r-partial .err{color:var(--y)}
       </div>
     </section>
 
+    <!-- ═══ SETTINGS ═══ -->
     <section class="page" data-p="settings">
       <div class="card"><div class="card-h"><div class="card-t">Run configuration</div></div>
         <div class="card-b" id="settings"></div></div>
-          <div class="card" style="margin-top:14px">
+      <div class="card" style="margin-top:18px">
         <div class="card-h"><div class="card-t">Startup sequence</div></div>
         <div class="card-b" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <button class="cbtn" onclick="window.ctReplayIntro && window.ctReplayIntro()">Replay intro</button>
-          <span class="hint">Plays once per browser session. The
-            sound button remembers your choice.</span>
+          <span class="hint">Plays once per browser session.</span>
         </div>
       </div>
-</section>
+    </section>
   </main>
+
+  <!-- SHIPMENT DETAIL. Opens over the page from the right; the table under
+       it is never re-rendered to make room. -->
+  <div class="dw-scrim" id="dwScrim"></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dwRef" aria-hidden="true">
+    <div class="dw-h">
+      <div class="dw-top"><span class="kick">Shipment</span><span id="dwTag"></span>
+        <button class="dw-x" id="dwX" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+      <div class="dw-ref" id="dwRef">—</div>
+    </div>
+    <div class="dw-b" id="dwBody"></div>
+  </aside>
 
   <!-- There is no audio anywhere in this dashboard, by request. The intro is
        a silent cinematic: no <audio> element, no /api/music fetch, no codec
@@ -1373,23 +1630,38 @@ function putHTML(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; st
 stackQ.addEventListener('change', () => document.querySelectorAll('.tw tbody').forEach(stampRowLabels));
 function cls(el, n){ if (el && el.className !== n) el.className = n; }
 
-/* ═══ NAV ═══ */
+/* ═══ NAV ═══
+   Eight destinations. History holds three views behind one segmented
+   control, so its nav item stays lit whichever of them is showing. */
 const PAGES = [
-  {id:'overview',  t:'Overview',      i:'M3 12h4l3 8 4-16 3 8h4'},
-  {id:'live',      t:'Live operation',i:'M12 3v3m0 12v3M3 12h3m12 0h3M6.5 6.5l2 2m7 7 2 2m0-11-2 2m-7 7-2 2'},
+  {g:'Operations'},
+  {id:'overview',  t:'Overview',      i:'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 4v3h6V4z'},
+  {id:'live',      t:'Live Runs',     i:'M3 12h4l3 8 4-16 3 8h4'},
   {id:'shipments', t:'Shipments',     i:'M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4'},
-  {id:'analysis',  t:'Analysis',      i:'M4 20V11m6 9V4m6 16v-6m4 6V8'},
-  {id:'systems',   t:'Systems',       i:'M4 6h16M4 12h16M4 18h16'},
-  {id:'exceptions',t:'Exceptions',    i:'M12 3l9 16H3L12 3zm0 6v5m0 3v.5'},
-  {id:'logs',      t:'Activity log',  i:'M4 4h16v16H4zM8 9h8M8 13h8M8 17h5'},
+  {id:'systems',   t:'Carriers',      i:'M3 17h13V6H3zM16 10h3.5L22 13v4h-6M7 20a2 2 0 100-4 2 2 0 000 4zm11 0a2 2 0 100-4 2 2 0 000 4z'},
+  {g:'Intelligence'},
+  {id:'atlas',     t:'ATLAS',         i:'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zm0 9l8-4.5M12 12v9m0-9L4 7.5'},
+  {id:'human',     t:'Human Action',  i:'M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM4.5 21a7.5 7.5 0 0 1 15 0'},
+  {id:'analysis',  t:'History',       i:'M12 7v5l3 2M3.05 11a9 9 0 1 1 .5 4M3 4v5h5', group:['analysis','exceptions','logs']},
+  {spacer:true},
   {id:'settings',  t:'Settings',      i:'M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2m12 0h2M12 4v2m0 12v2'},
   {id:'film',      t:'Introduction',  i:'M4 4h16v16H4zM4 9h16M9 4v16', film:true}
 ];
+const TITLES = {analysis:'History · Analysis', exceptions:'History · Exceptions',
+                logs:'History · Activity log'};
 let activePage = 'overview';
 PAGES.forEach((p) => {
+  if (p.g){
+    const h = document.createElement('div'); h.className = 'nav-g'; h.textContent = p.g;
+    $('navList').appendChild(h); return;
+  }
+  if (p.spacer){
+    const x = document.createElement('div'); x.className = 'nav-x';
+    $('navList').appendChild(x); return;
+  }
   const b = document.createElement('button');
   b.className = 'nav-i' + (p.id === 'overview' ? ' on' : '');
-  b.dataset.go = p.id;
+  b.dataset.nav = p.id;
   b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' +
     p.i + '"/></svg><span>' + p.t + '</span><span class="nav-c" id="n-' + p.id + '" hidden></span>';
   b.addEventListener('click', () => {
@@ -1401,15 +1673,26 @@ PAGES.forEach((p) => {
   });
   $('navList').appendChild(b);
 });
+function navFor(id){
+  const owner = PAGES.find((p) => p.group && p.group.indexOf(id) >= 0);
+  return owner ? owner.id : id;
+}
 function go(id){
   activePage = id;
-  document.querySelectorAll('.nav-i').forEach((n) => n.classList.toggle('on', n.dataset.go === id));
+  const lit = navFor(id);
+  document.querySelectorAll('.nav-i').forEach((n) => n.classList.toggle('on', n.dataset.nav === lit));
   document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.dataset.p === id));
-  put($('pageTitle'), (PAGES.find((p) => p.id === id) || {}).t || '');
+  put($('pageTitle'), TITLES[id] || (PAGES.find((p) => p.id === id) || {}).t || '');
   $('nav').classList.remove('open'); $('scrim').classList.remove('on');
   $('main').scrollTop = 0;
   if (S) paint(true);
 }
+/* Any element with data-go is a link to a page: the History segments, the
+   "All shipments" footer, the ATLAS card's Open. One listener for all. */
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-go]');
+  if (t && !t.closest('#navList')) go(t.dataset.go);
+});
 $('burger').addEventListener('click', () => {
   $('nav').classList.add('open'); $('scrim').classList.add('on');
 });
@@ -1495,37 +1778,40 @@ function paint(force){
   put($('nF'), String(c.failed));
   put($('nR'), pr.remaining == null ? '—' : String(pr.remaining));
 
-  if (changed('kpi', [c.processed,c.successful,c.skipped,c.failed,c.success_rate,
-                      pr.discovered,pr.pages_scanned].join('|'))){
-    /* Colour marks what an operator has to ACT on, and nothing else.
-       The previous row put seven tiles in six colours — purple, green,
-       amber, amber, red, ice, ink — which is rainbow soup: two different
-       things were amber, and "Processed" was accented for no reason. A
-       count nobody acts on is just a number, so it is set in --ink and
-       the eye goes straight to the two that matter.
-         signal  a date reached the Hub
-         alarm   something needs a person
-         amber   a partial write: one field landed, one did not
-       A zero is dimmed whatever its colour: "Failed 0" is good news and
-       should not glow red. */
+  const all = S.shipments || [];
+  const count = (st) => all.filter((r) => r.state === st).length;
+  const inFlight = count('processing'), waiting = count('waiting_for_human'),
+        timedOut = count('human_timeout');
+  if (changed('kpi', [all.length, inFlight, waiting, timedOut, c.successful, c.partial,
+                      c.skipped, c.failed, c.success_rate, c.needs_human,
+                      pr.discovered, pr.pages_scanned].join('|'))){
+    /* Five numbers, one strip. The dot beside each label carries its state
+       colour only when the number is not zero: a count nobody has to act on
+       is just a number, and "Failed 0" is good news that must not glow. */
     const zero = (v) => v === 0 || v === '0';
     const none = (v) => v === '—' || v === null || v === undefined || v === '';
+    const total = Math.max(pr.discovered || 0, all.length);
     const K = [
-      {k:'Processed', v:c.processed, n:'Under Clearance rows handled', c:'var(--ink)'},
-      {k:'Hub records updated', v:c.successful, n:'COE ETA / BU ATA written', c:'var(--signal)'},
-      {k:'Skipped', v:c.skipped, n:'Carrier gave no ETA or ATA', c:'var(--ink)'},
-      {k:'Partly updated', v:c.partial || 0, n:'One field written, one failed', c:'var(--amber)'},
-      {k:'Failed', v:c.failed, n:'Errors during processing', c:'var(--alarm)'},
-      {k:'Success rate', v:c.success_rate == null ? '—' : c.success_rate + '%',
-       n:'Of shipments processed', c:'var(--ink)'},
-      {k:'Queued from hub', v:pr.discovered, n:pr.pages_scanned + ' list page(s) scanned', c:'var(--ink)'}
+      {k:'Total shipments', v:total, c:'var(--ink)',
+       n:(pr.pages_scanned || 0) + ' hub list page(s) scanned'},
+      {k:'Processing', v:inFlight, c:'var(--blu)',
+       n:inFlight ? 'On a carrier site now' : 'Nothing in flight'},
+      {k:'Completed', v:c.successful, c:'var(--signal)',
+       n:(c.success_rate == null ? 'Written and read back'
+          : c.success_rate + '% of processed') + (c.partial ? ' · ' + c.partial + ' partly' : '')},
+      {k:'Waiting for human', v:waiting, c:'var(--amber)',
+       n:waiting ? 'A person is needed now'
+         : (c.needs_human ? c.needs_human + ' needed a person this run' : 'None this run')},
+      {k:'Failed', v:c.failed, c:'var(--alarm)',
+       n:(timedOut ? timedOut + ' human timeout · ' : '') + (c.skipped || 0) + ' skipped'}
     ];
     putHTML($('kpis'), K.map((x) =>
-      '<div class="kpi"><div class="kpi-k" title="' + x.k + '">' + x.k +
+      '<div class="kpi" style="--c:' + (zero(x.v) || none(x.v) ? 'var(--line-hi)' : x.c) +
+      '"><div class="kpi-k" title="' + x.k + '"><i></i>' + x.k +
       '</div><div class="kpi-v' + (none(x.v) ? ' none' : zero(x.v) ? ' nil' : '') +
-      '" style="--c:' + x.c + '">' + x.v +
-      '</div><div class="kpi-n">' + x.n + '</div></div>').join(''));
+      '">' + x.v + '</div><div class="kpi-n">' + esc(x.n) + '</div></div>').join(''));
   }
+  paintHello();
 
   /* Recovery arrives on the state stream, not on the /api/ml poll, so it is
      painted here. Guarded on a small signature rather than the whole object:
@@ -1572,12 +1858,16 @@ function paint(force){
 
   paintControl();
   paintHuman();
+  paintOps(); paintAtlasPage(); paintHumanPage(); paintDrawer();
   paintLive(); paintShips(); paintAnalysis(); paintExc(); paintLogs(); paintSettings();
 
-  const ne = $('n-exceptions');
+  const ne = $('n-analysis');
   ne.hidden = !S.exceptions.length; put(ne, String(S.exceptions.length)); ne.className = 'nav-c bad';
   const ns = $('n-shipments');
   ns.hidden = !S.shipments.length; put(ns, String(S.shipments.length));
+  const nw = $('n-human');
+  nw.hidden = !waiting; put(nw, String(waiting)); nw.className = 'nav-c wait';
+  put($('runIdLine'), run.run_id ? 'Run ' + run.run_id : 'No run has started yet');
   put($('navFoot'), run.status === 'running' ? 'Live · ' + clock(run.runtime_seconds)
     : 'Updated ' + S.generated_at);
 }
@@ -1709,7 +1999,7 @@ function paintShips(){
       ? '|' + (r.step || '') + '|' + live(r) : '')).join(',');
   if (!changed('ships', key)) return;
   putHTML($('shipRows'), rows.map((r) =>
-    '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
+    '<tr class="r-' + r.state + '" data-ref="' + esc(r.reference) + '" tabindex="0"><td class="ref">' + esc(r.reference) + '</td>' +
     '<td>' + dash(r.carrier) + '</td>' + dtCell(r.internal_eta) +
     '<td>' + dash(r.provider_status) + '</td>' + dtCell(r.provider_eta) +
     dtCell(r.provider_ata, true) +
@@ -1824,7 +2114,7 @@ function paintAnalysis(){
     : empty('Nothing to group', 'Widen the filters above, or wait for the run to process shipments.'));
 
   putHTML($('anRows'), rows.map((r) =>
-    '<tr class="r-' + r.state + '"><td class="ref">' + esc(r.reference) + '</td>' +
+    '<tr class="r-' + r.state + '" data-ref="' + esc(r.reference) + '" tabindex="0"><td class="ref">' + esc(r.reference) + '</td>' +
     '<td>' + dash(r.carrier) + '</td>' + dtCell(r.provider_eta) +
     dtCell(r.provider_ata, true) + '<td>' + tag(r.state) + '</td>' +
     '<td style="font-size:12px">' + dash(r.coe_action || r.bu_action) +
@@ -1914,6 +2204,384 @@ function paintSettings(){
     (p[1] == null ? 'var(--faint)' : 'var(--ink)') + ';word-break:break-all">' +
     dash(p[1]) + '</div></div>').join(''));
 }
+
+/* ═══ GREETING ═══ */
+function paintHello(){
+  const now = new Date();
+  const h = now.getHours();
+  const word = h < 12 ? 'Good morning' : (h < 18 ? 'Good afternoon' : 'Good evening');
+  const day = now.toLocaleDateString(undefined, {weekday:'long', day:'numeric', month:'long'});
+  if (!changed('hello', word + day)) return;
+  put($('helloT'), word);
+  put($('helloDate'), day + ' · ATA operations');
+}
+
+/* ═══ THE ATA PIPELINE ═══
+   The stages a shipment passes through, in the order they happen, worked
+   out ONLY from fields the automation recorded. Nothing is assumed: a stage
+   with no evidence stays empty, a write that was not read back is drawn
+   hollow, and a shipment that stopped is marked at the stage where the
+   evidence runs out. Human verification appears only when there was one,
+   and where it really happens — before the result can be read. */
+const HUMAN_DONE = {HUMAN_RESUMED:1, ATA_EXTRACTION_AFTER_HUMAN:1, SUCCESS:1,
+                    NOT_SUCCESS_AFTER_HUMAN:1};
+function liveRec(r){
+  // The stream trims the step off the record still in flight and carries it
+  // on `current.shipment` instead; merge it back for display.
+  const cur = S.current && S.current.shipment;
+  return cur && cur.reference === r.reference ? Object.assign({}, r, cur) : r;
+}
+function humanFor(ref){
+  const events = (S.human_events || []).filter((e) => e.reference === ref);
+  const action = S.human_action && S.human_action.reference === ref ? S.human_action : null;
+  return {events: events, action: action};
+}
+function verifyText(r, wrote){
+  const v = r.verification || null;
+  if (!wrote) return 'Nothing written to the Hub';
+  if (!v || !Object.keys(v).length) return 'Not recorded for this write';
+  return Object.keys(v).map((k) => k + ': ' + (v[k] === true ? 'read back and matched'
+    : v[k] === false ? 'read back DIFFERENT' : 'saved, not read back')).join(' · ');
+}
+function pipeline(r){
+  const h = humanFor(r.reference);
+  const acts = [r.coe_action, r.bu_action].filter(Boolean).join(' · ');
+  const wrote = /updated with|DRY RUN/i.test(acts);
+  const extracted = r.provider_status != null || has(r.provider_eta) || has(r.provider_ata);
+  let human = null;
+  if (r.state === 'waiting_for_human') human = 'wait';
+  else if (r.state === 'human_timeout' || /HUMAN/.test(r.outcome || '')) human = 'fail';
+  else if (h.events.some((e) => HUMAN_DONE[e.event]) ||
+           (h.action && h.action.state === 'resumed')) human = 'done';
+  else if (h.events.length) human = 'todo';
+  const v = r.verification ? Object.keys(r.verification).map((k) => r.verification[k]) : [];
+  const readback = !wrote ? null : v.some((x) => x === false) ? 'fail'
+    : (v.length && v.every((x) => x === true)) ? 'done' : 'soft';
+  const ataSrc = r.provider_ata_source ? ' · from “' + r.provider_ata_source + '”' : '';
+  const list = [
+    {t:'Started', st:'done', note:r.started_at ? 'Picked up from hub page ' + dash(r.table_page) : ''},
+    {t:'Carrier selected', st:r.provider ? 'done' : 'todo', note:r.provider ? sysName(r.provider) : ''},
+    {t:'Tracking opened', st:(extracted || human) ? 'done' : 'todo'}
+  ];
+  if (human) list.push({t:'Human verification', st:human,
+    note:human === 'wait' ? 'Waiting for a person on the carrier page'
+      : human === 'done' ? 'Completed by a person; the run resumed'
+      : human === 'fail' ? 'Not completed — nothing was written' : ''});
+  list.push(
+    {t:'Data extracted', st:extracted ? 'done' : 'todo',
+     note:extracted ? [r.provider_status, has(r.provider_eta) ? 'ETA ' + r.provider_eta : '']
+       .filter(Boolean).join(' · ') : ''},
+    {t:'ATA validated', st:has(r.provider_ata) ? 'done' : (extracted ? 'soft' : 'todo'),
+     note:has(r.provider_ata) ? 'ATA ' + r.provider_ata + ataSrc
+       : (extracted ? 'No actual arrival published yet' : '')},
+    {t:'Hub write', st:wrote ? 'done' : 'todo', note:acts},
+    {t:'Read-back verification', st:readback || 'todo',
+     note:readback ? verifyText(r, wrote) : ''},
+    {t:'Success', st:r.state === 'updated' ? 'done' : 'todo',
+     note:r.state === 'updated' ? 'Written to the Hub' + (r.duration_ms != null ? ' in ' + ms(r.duration_ms) : '') : ''}
+  );
+  const open = r.state === 'processing' || r.state === 'waiting_for_human';
+  const stopped = !open && r.state !== 'updated';
+  const first = list.findIndex((x) => x.st === 'todo');
+  if (first >= 0 && !list.some((x) => x.st === 'wait' || x.st === 'fail')){
+    if (open){ list[first].st = 'now'; list[first].note = r.step || list[first].note; }
+    else if (stopped){ list[first].st = 'fail';
+      list[first].note = r.error || r.outcome || TAGS[r.state] || 'Stopped here'; }
+  }
+  return list;
+}
+const RAIL = {done:'done', now:'now', wait:'wait', fail:'fail', soft:'soft', todo:''};
+function railHTML(list){
+  return '<span class="rail" aria-hidden="true">' + list.map((x) =>
+    '<i class="' + RAIL[x.st] + '" title="' + esc(x.t) + '"></i>').join('') + '</span>';
+}
+const shortRun = (id) => (id ? String(id).split('-').slice(1).join('-') || id : '—');
+const since = (t0) => {
+  const n = Math.max(0, Math.round(Date.now() / 1000 - t0));
+  return n < 60 ? n + ' s' : Math.floor(n / 60) + ' m ' + (n % 60) + ' s';
+};
+
+/* ═══ LIVE OPERATIONS ═══
+   Keyed by reference: a row is rebuilt only when its own content changed,
+   moved only when the order changed, and its live clock is ticked as text.
+   A new shipment adds one row; it never re-renders the table. */
+const OPS_MAX = 14;
+const opsCache = new Map();
+function opsRowHTML(r, runId){
+  const list = pipeline(r);
+  const open = r.state === 'processing' || r.state === 'waiting_for_human';
+  const step = open ? (r.step || '') : (r.outcome || (r.state === 'updated' ? 'Complete' : ''));
+  return '<td class="ref">' + esc(r.reference) + '</td>' +
+    '<td class="nw">' + dash(r.carrier) + '</td>' +
+    '<td>' + tag(r.state) + '</td>' +
+    '<td><div class="stepc">' + railHTML(list) + '<span title="' + esc(step) + '">' +
+      dash(step) + '</span></div></td>' +
+    dtCell(r.provider_ata, true) +
+    (open && r.started_epoch
+      ? '<td class="n" data-t0="' + r.started_epoch + '"></td>'
+      : '<td class="n">' + ms(r.duration_ms) + '</td>') +
+    '<td class="n">' + dash(r.updated) + '</td>' +
+    '<td class="rid" title="' + esc(runId || '') + '">' + esc(shortRun(runId)) + '</td>';
+}
+function tickClocks(root){
+  if (!root) return;
+  root.querySelectorAll('[data-t0]').forEach((el) => {
+    const v = since(Number(el.dataset.t0));
+    if (el.textContent !== v) el.textContent = v;
+  });
+}
+function paintOps(){
+  if (activePage !== 'overview' && sig.opsInit) return;
+  sig.opsInit = 1;
+  const all = S.shipments || [];
+  const rows = all.slice(0, OPS_MAX);
+  const tb = $('opsRows');
+  const runId = S.run && S.run.run_id;
+  const keep = new Set();
+  let moved = false;
+  rows.forEach((r0, i) => {
+    const r = liveRec(r0);
+    const html = opsRowHTML(r, runId);
+    let ent = opsCache.get(r0.reference);
+    if (!ent){
+      const tr = document.createElement('tr');
+      tr.dataset.ref = r0.reference; tr.tabIndex = 0;
+      ent = {tr: tr, html: ''};
+      opsCache.set(r0.reference, ent);
+    }
+    keep.add(r0.reference);
+    const cl = 'r-' + r.state + (dwRef === r0.reference ? ' sel' : '');
+    if (ent.tr.className !== cl) ent.tr.className = cl;
+    if (ent.html !== html){ ent.tr.innerHTML = html; ent.html = html; moved = true; }
+    if (tb.children[i] !== ent.tr){ tb.insertBefore(ent.tr, tb.children[i] || null); moved = true; }
+  });
+  opsCache.forEach((ent, ref) => {
+    if (!keep.has(ref)){ ent.tr.remove(); opsCache.delete(ref); }
+  });
+  if (moved){ stampRowLabels(tb); tickClocks(tb); }
+  put($('opsN'), all.length ? all.length + ' this run' : '');
+  $('opsFoot').hidden = all.length <= OPS_MAX;
+  put($('opsMore'), 'Showing the newest ' + Math.min(OPS_MAX, all.length) + ' of ' + all.length);
+  putHTML($('opsEmpty'), rows.length ? '' : empty('No shipments yet',
+    S.run.status === 'running'
+      ? 'The first Under Clearance row appears here the moment the run picks it up.'
+      : 'Start a run to watch shipments move through the ATA pipeline.'));
+}
+
+/* ═══ SHIPMENT DETAIL DRAWER ═══ */
+let dwRef = null, dwSig = '', dwFrom = null;
+function markSelected(){
+  document.querySelectorAll('tr[data-ref]').forEach((tr) =>
+    tr.classList.toggle('sel', tr.dataset.ref === dwRef));
+}
+function openDrawer(ref){
+  dwFrom = document.activeElement;
+  dwRef = ref; dwSig = '';
+  $('dwBody').classList.add('fresh');
+  $('drawer').classList.add('on'); $('drawer').setAttribute('aria-hidden', 'false');
+  $('dwScrim').classList.add('on');
+  paintDrawer(); markSelected();
+  setTimeout(() => $('dwX').focus(), 60);
+}
+function closeDrawer(){
+  if (!dwRef) return;
+  dwRef = null;
+  $('drawer').classList.remove('on'); $('drawer').setAttribute('aria-hidden', 'true');
+  $('dwScrim').classList.remove('on');
+  markSelected();
+  if (dwFrom && dwFrom.focus) dwFrom.focus();
+}
+$('dwX').addEventListener('click', closeDrawer);
+$('dwScrim').addEventListener('click', closeDrawer);
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && dwRef) closeDrawer(); });
+['opsRows', 'shipRows', 'anRows', 'humRows'].forEach((id) => {
+  const tb = $(id);
+  tb.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-ref]'); if (tr) openDrawer(tr.dataset.ref);
+  });
+  tb.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const tr = e.target.closest('tr[data-ref]');
+    if (tr){ e.preventDefault(); openDrawer(tr.dataset.ref); }
+  });
+});
+function fact(k, v, wide, mono){
+  return '<div' + (wide ? ' class="w"' : '') + '><div class="fk">' + k + '</div><div class="fv' +
+    (mono ? ' mono' : '') + '">' + v + '</div></div>';
+}
+function paintDrawer(){
+  if (!dwRef || !S) return;
+  const r0 = (S.shipments || []).find((x) => x.reference === dwRef);
+  if (!r0){
+    put($('dwRef'), dwRef); putHTML($('dwTag'), '');
+    putHTML($('dwBody'), empty('Not in this run’s list',
+      'The shipment has scrolled out of the run’s recent history.'));
+    return;
+  }
+  const r = liveRec(r0);
+  const list = pipeline(r);
+  const h = humanFor(r.reference);
+  const open = r.state === 'processing' || r.state === 'waiting_for_human';
+  const key = JSON.stringify([r.state, r.step, r.updated, r.provider_status, r.provider_eta,
+    r.provider_ata, r.coe_action, r.bu_action, r.verification, r.error, r.outcome,
+    (r.steps || []).length, h.events.length, h.action && h.action.state,
+    ((r.atlas || {}).events || []).length, list.map((x) => x.st).join('')]);
+  if (key === dwSig) return;
+  dwSig = key;
+  const acts = [r.coe_action, r.bu_action].filter(Boolean).join(' · ');
+  const wrote = /updated with|DRY RUN/i.test(acts);
+  put($('dwRef'), r.reference);
+  putHTML($('dwTag'), tag(r.state));
+  const runId = S.run && S.run.run_id;
+  const src = r.provider_ata_source || r.provider_eta_source || r.provider_status;
+  let html = '<div class="dw-sec"><div class="facts">' +
+    fact('Carrier', dash(r.carrier)) +
+    fact('Tracking provider', dash(r.provider ? sysName(r.provider) : null)) +
+    fact('Reference', esc(r.reference), false, true) +
+    fact('Current status', esc(TAGS[r.state] || 'Unknown')) +
+    fact('Current automation step', dash(open ? r.step : (r.outcome || (r.state === 'updated' ? 'Complete' : r.step))), true) +
+    fact('ATA', dash(r.provider_ata), false, true) +
+    fact('Carrier ETA', dash(r.provider_eta), false, true) +
+    fact('Source event', dash(src), true) +
+    fact('Verification status', esc(verifyText(r, wrote)), true) +
+    fact('Run ID', dash(runId), true, true) +
+    fact('Hub ETA before', dash(r.internal_eta), false, true) +
+    fact('Duration', open && r.started_epoch
+      ? '<span data-t0="' + r.started_epoch + '"></span>' : ms(r.duration_ms), false, true) +
+    '</div></div>';
+  html += '<div class="dw-sec"><div class="dw-st">Timeline</div><div class="tline">' +
+    list.map((x) => '<div class="tli ' + x.st + '"><b></b><span>' + esc(x.t) + '</span>' +
+      (x.note ? '<em>' + esc(x.note) + '</em>' : '') + '</div>').join('') + '</div></div>';
+  if ((r.steps || []).length)
+    html += '<div class="dw-sec"><div class="dw-st">Step trace</div><div class="trace">' +
+      r.steps.slice(-12).map((x) => '<div><time>' + esc(x.time) + '</time><span>' +
+        esc(x.text) + '</span></div>').join('') + '</div></div>';
+  if (h.events.length)
+    html += '<div class="dw-sec"><div class="dw-st">Human action</div><div class="trace">' +
+      h.events.slice().reverse().map((e) => '<div><time>' + esc(e.time) + '</time><span>' +
+        esc(HUMAN_EVENTS[e.event] || e.event) + (e.detail ? ' — ' + esc(e.detail) : '') +
+        '</span></div>').join('') + '</div></div>';
+  const ae = ((r.atlas || {}).events || []);
+  if (ae.length)
+    html += '<div class="dw-sec"><div class="dw-st">ATLAS ' + atlasTag(r) + '</div><div class="trace">' +
+      ae.slice(-6).reverse().map((e) => '<div><time>' + esc(e.time) + '</time><span>' +
+        esc(e.label) + (e.detail ? ' — ' + esc(e.detail) : '') + '</span></div>').join('') +
+      '</div></div>';
+  if (r.error)
+    html += '<div class="dw-sec"><div class="dw-st">Detail</div><div class="hint">' +
+      esc(r.error) + '</div></div>';
+  putHTML($('dwBody'), html);
+  tickClocks($('dwBody'));
+  setTimeout(() => $('dwBody').classList.remove('fresh'), 450);
+}
+
+/* ═══ ATLAS ═══
+   The analytical view of the engine: what it is diagnosing, how its
+   recoveries have gone this run, and what the run state says to do next.
+   Every value is read from state; an unanswered one is a dash. */
+function paintAtlasPage(){
+  const rec = S.recovery, a = S.atlas || {}, stats = a.recovery || null;
+  const ev = (a.events || [])[0] || null;
+  const hum = S.human_action && S.human_action.waiting ? S.human_action : null;
+  const exc = S.exceptions || [];
+  const key = JSON.stringify([rec && [rec.error_class, rec.status, (rec.attempts || []).length,
+    rec.checkpoint], stats, ev && (ev.time + ev.label), a.influenced_actions, a.fallbacks,
+    exc.length, (exc[0] || {}).message, hum && hum.action_id, activePage === 'atlas']);
+  if (!changed('atlasPage', key)) return;
+
+  const finished = stats ? (stats.recovered || 0) + (stats.exhausted || 0) : 0;
+  const rate = finished ? Math.round((stats.recovered || 0) / finished * 100) + '%' : '—';
+  let advice, acting = false;
+  if (hum){ acting = true;
+    advice = ['Complete the human step for ' + hum.reference + ' on ' + (hum.carrier || 'the carrier page') + ', then press Resume.',
+              'The run is holding the shipment and its browser tab.']; }
+  else if (rec && rec.checkpoint){ acting = true;
+    advice = ['Stopped for a person: ' + rec.checkpoint, rec.message || rec.error_class]; }
+  else if (rec && (rec.status === 'PLANNED' || rec.status === 'RUNNING'))
+    advice = ['ATLAS is working on ' + rec.error_class + '.',
+              rec.why_first ? 'First choice: ' + rec.why_first
+                : ((rec.plan || [])[0] ? 'First choice: ' + rec.plan[0].action : '')];
+  else if (rec && rec.status === 'EXHAUSTED'){ acting = true;
+    advice = ['No safe recovery succeeded for ' + rec.error_class + '. Check the shipment by hand.',
+              rec.reason || '']; }
+  else if (exc.length){ acting = exc[0].severity === 'error';
+    advice = ['Review the latest exception' + (exc[0].reference ? ' on ' + exc[0].reference : '') + '.',
+              exc[0].message]; }
+  else advice = ['No action needed.', 'Nothing in this run is waiting on a person or on ATLAS.'];
+  const ICON = acting ? 'M12 8v5m0 3v.5M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'
+                      : 'M5 13l4 4L19 7';
+  const recHTML = '<div class="rec' + (acting ? ' act' : '') + '"><div class="rec-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="' +
+    ICON + '"/></svg></div><div><div class="rec-t">' + esc(advice[0]) + '</div>' +
+    (advice[1] ? '<div class="rec-n">' + esc(advice[1]) + '</div>' : '') + '</div></div>';
+
+  putHTML($('atlasGlance'),
+    '<div class="fk">Current diagnosis</div><div class="fv">' +
+      (rec ? esc(rec.error_class) : 'None — nothing to recover') + '</div>' +
+    '<div class="fk" style="margin-top:12px">Last ATLAS event</div><div class="fv">' +
+      (ev ? esc(ev.label) + ' <span class="mono" style="color:var(--faint);font-size:12px">' +
+        esc(ev.time) + '</span>' : '—') + '</div>' +
+    '<div class="fk" style="margin-top:12px">This run</div><div class="fv">' +
+      esc(String(a.influenced_actions == null ? '—' : a.influenced_actions)) + ' steered · ' +
+      esc(String(a.fallbacks == null ? '—' : a.fallbacks)) + ' fell back</div>');
+
+  if (activePage !== 'atlas' && sig.atlasInit) return;
+  sig.atlasInit = 1;
+  putHTML($('atlasStats'), [
+    '<div><div class="kpi-k">Current diagnosis</div><b class="txt' + (rec ? '' : ' nil') + '">' +
+      (rec ? esc(rec.error_class) : 'None') + '</b><small>' +
+      esc(rec ? (rec.message || rec.status) : 'Nothing has gone wrong that ATLAS is working on') + '</small></div>',
+    '<div><div class="kpi-k">Recovery attempts</div><b' + (stats && stats.attempts ? '' : ' class="nil"') + '>' +
+      (stats ? esc(String(stats.attempts || 0)) : '—') + '</b><small>' +
+      (stats ? esc(String(stats.diagnosed || 0)) + ' error(s) diagnosed this run' : 'Not reported by this build') + '</small></div>',
+    '<div><div class="kpi-k">Recovery success rate</div><b' + (finished ? '' : ' class="nil"') + '>' + rate +
+      '</b><small>' + (finished ? esc(String(stats.recovered || 0)) + ' recovered · ' +
+        esc(String(stats.exhausted || 0)) + ' exhausted' : 'No recovery has finished yet') + '</small></div>',
+    '<div><div class="kpi-k">Last ATLAS event</div><b class="txt' + (ev ? '' : ' nil') + '">' +
+      (ev ? esc(ev.label) : 'None yet') + '</b><small>' +
+      (ev ? esc(ev.time) + (ev.detail ? ' · ' + esc(ev.detail) : '') : 'ATLAS has not said anything this run') + '</small></div>'
+  ].join(''));
+  putHTML($('atlasRec'), recHTML);
+  putHTML($('atlasIssues'), exc.length
+    ? exc.slice(0, 5).map((x) => '<div class="exc ' + x.severity + '"><div class="exc-i">' +
+        (x.severity === 'warning' ? '!' : '✕') + '</div><div><div class="exc-m">' + esc(x.message) +
+        '</div><div class="exc-d">' + (x.reference ? esc(x.reference) + ' · ' : '') +
+        (x.outcome ? esc(x.outcome) + ' · ' : '') + dash(x.step) + '</div></div><div class="exc-t">' +
+        esc(x.time) + '</div></div>').join('')
+    : empty('No automation issues', 'Skipped and failed shipments appear here with their reason.'));
+}
+
+/* ═══ HUMAN ACTION CENTER ═══ */
+const HUMAN_EVENTS = {
+  HUMAN_VERIFICATION_DETECTED:'Verification detected', WAITING_FOR_HUMAN:'Waiting for a person',
+  HUMAN_SESSION_OPENED:'Session opened', HUMAN_RESUMED:'Resumed',
+  HUMAN_RESUME_FAILED:'Resume refused', HUMAN_TIMEOUT:'Timed out',
+  ATA_EXTRACTION_AFTER_HUMAN:'Result read after the human step', SUCCESS:'Success',
+  NOT_SUCCESS_AFTER_HUMAN:'Did not succeed'};
+function paintHumanPage(){
+  if (activePage !== 'human' && sig.humInit) return;
+  sig.humInit = 1;
+  const ev = S.human_events || [];
+  if (!changed('hum', ev.length + '|' + (ev[0] || {}).time + (ev[0] || {}).event + '|' +
+                (S.counters || {}).needs_human)) return;
+  put($('humN'), ev.length ? ev.length + ' events' : '');
+  putHTML($('humRows'), ev.map((e) =>
+    '<tr data-ref="' + esc(e.reference || '') + '" tabindex="0"><td class="n">' + esc(e.time) + '</td>' +
+    '<td>' + esc(HUMAN_EVENTS[e.event] || e.event) + '</td><td class="ref">' + dash(e.reference) +
+    '</td><td><span class="err" title="' + esc(e.detail || '') + '">' + dash(e.detail) +
+    '</span></td></tr>').join(''));
+  putHTML($('humEmpty'), ev.length ? '' : empty('No human action this run',
+    'When a carrier page needs a person, the pause and everything that follows is listed here.'));
+  const n = (S.counters || {}).needs_human;
+  put($('humCount'), n ? n + ' shipment(s) needed a person this run.' : '');
+}
+
+/* One clock for everything that counts up: a running row, an open drawer,
+   a waiting human action. Text only; nothing re-renders. */
+setInterval(() => {
+  if (document.hidden || !S) return;
+  if (activePage === 'overview') tickClocks($('opsRows'));
+  if (dwRef) tickClocks($('dwBody'));
+}, 1000);
 
 /* ═══ TRANSPORT ═══ */
 let queued = false, lastPaint = 0;
@@ -2131,21 +2799,23 @@ function paintHuman(){
   box.hidden = false;
   const waiting = !!a.waiting;
   box.classList.toggle('done', !waiting);
-  put($('hTitle'), waiting ? 'HUMAN ACTION REQUIRED' : ({
-    resumed: 'HUMAN ACTION COMPLETED — result being read and verified',
-    timeout: 'HUMAN TIMEOUT — nothing written',
-    session_lost: 'BROWSER SESSION LOST — nothing written',
-    unattended: 'NEEDS A PERSON — unattended run'}[a.state] || 'HUMAN ACTION ENDED'));
+  put($('hTitleK'), waiting ? 'Human action required' : 'Human action');
+  put($('hTitle'), waiting ? (HUMAN_REASONS[a.reason] || 'A person is needed') : ({
+    resumed: 'Completed — the result is being read and verified',
+    timeout: 'Timed out — nothing was written',
+    session_lost: 'Browser session lost — nothing was written',
+    unattended: 'Needs a person — this run is unattended'}[a.state] || 'Human action ended'));
   put($('hCarrier'), a.carrier || '—');
   put($('hRef'), a.reference || '—');
   put($('hRun'), a.run_id || '—');
   put($('hReason'), HUMAN_REASONS[a.reason] || a.reason || '—');
   put($('hWait'), waiting ? hSince(a.opened_at) : (a.closed_at ? 'ended ' + a.closed_at.slice(11) : '—'));
+  put($('hWaitE'), waiting ? 'now' : (a.closed_at ? a.closed_at.slice(11) : ''));
   put($('hDeadline'), a.deadline ? a.deadline.slice(11) : '—');
   const mine = !a.claimed_by || a.claimed_by === hClient;
   put($('hHow'), waiting ? (a.instructions || '') +
-    ' The browser is the automation\u2019s own Edge window on the automation server' +
-    ' — work in it there, or over Remote Desktop to that machine.' +
+    ' Open Session brings the paused tab to the front of the automation\u2019s Edge window' +
+    ' on the automation server — work in it there, or over Remote Desktop.' +
     (mine ? '' : ' Another operator has taken over this session.') : '');
   $('hOpen').style.display = waiting ? '' : 'none';
   $('hResume').style.display = waiting ? '' : 'none';
@@ -2157,7 +2827,7 @@ function paintHuman(){
 function sendHuman(op){
   const a = S && S.human_action;
   if (!a) return;
-  hNote = op === 'open' ? 'Asking the run to bring the tab forward…' : 'Sending Resume…';
+  hNote = op === 'open' ? 'Asking the run to bring the tab to the front…' : 'Sending Resume…';
   paintHuman();
   fetch('/api/human', {
     method:'POST', headers:{'Content-Type':'application/json'},
