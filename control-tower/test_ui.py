@@ -703,6 +703,45 @@ check("No ambient animation runs for the life of the page: the film grain "
 check("The human action card offers Open Session and Resume",
       ">Open Session</button>" in INDEX and 'id="hResume">Resume</button>' in INDEX)
 
+print()
+print("=" * 72)
+print("ATLAS — THE CHARACTER")
+print("=" * 72)
+check("One reusable component draws ATLAS everywhere",
+      "function Atlas(el, o)" in INDEX and "function atlasFigure(st)" in INDEX
+      and INDEX.count("<svg viewBox=\"0 0 120 120\"") == 1)
+check("The six states exist, each with its own words",
+      all("{0}:".format(k) in INDEX.split("const ATLAS = {")[1].split("};")[0]
+          for k in ("idle", "monitoring", "analyzing", "recovering", "success",
+                    "human_required")))
+check("The shell, visor and glow are defined once for every figure",
+      INDEX.count('id="axShell"') == 1 and INDEX.count('id="axGlow"') == 1)
+check("ATLAS appears in the four places it was asked for",
+      all("Atlas($('{0}')".format(i) in INDEX for i in (
+          "atlasGlanceFig", "atlasHero", "hAtlas", "dwAtlas")))
+check("WAITING_FOR_HUMAN puts ATLAS in HUMAN ACTION REQUIRED, before anything else",
+      INDEX.split("function atlasRun(){")[1].index("if (hum) return {state:'human_required'")
+      < INDEX.split("function atlasRun(){")[1].index("'recovering'"))
+check("A shipment's ATLAS state comes from its own record",
+      "if (r.state === 'waiting_for_human') return {state:'human_required'" in INDEX
+      and "if (r.state === 'processing'){" in INDEX)
+check("ATLAS says 'read-back confirmed' only when every write read back",
+      "if (v.length && v.every((x) => x === true))" in INDEX.split("function atlasShipment(r){")[1])
+check("Final renders can replace the drawn figure through the manifest",
+      "fetch('/static/assets/atlas/manifest.json')" in INDEX
+      and (HERE / "dashboard" / "static" / "assets" / "atlas" / "manifest.json").exists())
+check("...and only a plain file name in that folder is accepted",
+      "/^[\\w.-]+\\.(webp|png|svg)$/i" in INDEX)
+check("The component keys its work: the figure rebuilds only on a state change",
+      "if (el._axFig !== figKey)" in INDEX and "if (el._axWords !== words)" in INDEX)
+check("...and keeps the host's own layout classes",
+      "el._axBase" in INDEX)
+check("Its motion is transforms and a dash offset only — no canvas, no video",
+      "<canvas" not in INDEX and "requestAnimationFrame(atlas" not in INDEX
+      and "@keyframes axFloat{0%,100%{transform:translateY(0)}" in INDEX)
+check("Human action is calm amber, not alarm red",
+      ".is-human_required{--axc:var(--y)}" in INDEX)
+
 _vb = _bridge_module.ControlTowerState()
 _vb.shipment_started({"bol_awb": "V1", "carrier": "C", "provider": "DHL"})
 _vb.provider_result({"provider": "DHL", "tracking_status": "Arrived",

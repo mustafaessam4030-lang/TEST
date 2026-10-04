@@ -6,6 +6,15 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · ATLAS has a face.** A small companion character for the intelligence
+layer, in six states that follow the run state: Ready, Monitoring,
+Analyzing, Recovering, Verified and Human action required. It appears on the
+Overview's ATLAS card, in the human-action card, at the top of a shipment's
+details, and as a panel on the ATLAS page. It speaks in short operational
+lines ("Grimaldi Lines requires human verification.", "ATA validated. Hub
+read-back confirmed."). Final designed renders can replace the drawn
+character without code changes: see `dashboard/static/assets/atlas/README.txt`.
+
 **New · Dashboard redesign (UI only).** The Control Tower now looks like a
 Mantrac product: a MANTRAC · ATA Control Tower brand bar, a compact sidebar
 (Overview, Live Runs, Shipments, Carriers, ATLAS, Human Action, History,

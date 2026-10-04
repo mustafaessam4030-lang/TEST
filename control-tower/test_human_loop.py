@@ -713,6 +713,12 @@ else:
                   and "Grimaldi Lines" in text and "S330999999" in text
                   and A.RUN_ID in text and "Human verification required" in text,
                   text[:200])
+            check("ATLAS takes the HUMAN ACTION REQUIRED state in the card",
+                  "is-human_required" in (ui.get_attribute("#hAtlas", "class") or ""))
+            check("...and on the overview, saying what the backend says",
+                  "is-human_required" in (ui.get_attribute("#atlasGlanceFig", "class") or "")
+                  and "Grimaldi Lines requires human verification." in
+                  ui.inner_text("#atlasGlanceFig"))
             check("Open Browser Session and Resume are offered",
                   ui.is_visible("#hOpen") and ui.is_visible("#hResume"))
             ui.click("#hResume")
@@ -730,6 +736,8 @@ else:
                 "document.getElementById('dwBody').textContent.indexOf('Human verification') >= 0",
                 timeout=5000)
             drawer = ui.inner_text("#drawer")
+            check("The details panel's ATLAS reflects that shipment's state",
+                  "is-human_required" in (ui.get_attribute("#dwAtlas", "class") or ""))
             check("A live row opens the detail drawer with the shipment's "
                   "timeline, including its human step",
                   "S330999999" in drawer and "Human verification" in drawer
