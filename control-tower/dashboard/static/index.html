@@ -1204,6 +1204,54 @@ td.car{color:var(--ink);font-weight:500}
 .send{width:36px;height:36px;border-radius:50%;background:var(--solid);color:var(--on-solid);
   display:grid;place-items:center;flex:none;transition:transform .2s var(--e)}
 .send:hover{transform:scale(1.06)}
+.attach{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex:none;
+  color:var(--mid);border:1px solid var(--line);background:var(--card)}
+.attach:hover{color:var(--ink);background:var(--surface-2)}
+.attach svg{width:17px;height:17px}
+/* Evidence in the conversation: a real capture, its provenance under it. */
+.evd{margin:6px 0 4px 39px;max-width:calc(100% - 50px);border:1px solid var(--line);
+  border-radius:12px;overflow:hidden;background:var(--card)}
+.evd img{display:block;width:100%;max-height:260px;object-fit:cover;object-position:top;
+  background:var(--surface-2);cursor:zoom-in}
+.evd figcaption{font-size:11.5px;line-height:1.45;color:var(--mid);padding:8px 10px}
+.evd figcaption a{color:var(--blu)}
+.msg.me .evd{margin-left:auto;margin-right:0;max-width:220px}
+.fb-x{display:inline-flex;gap:6px;margin-left:8px}
+/* LEARNING. What ATLAS has learned, from verified outcomes, and the level it
+   has earned at its monthly evaluation. */
+.lrn{margin-top:18px}
+.lrn-top{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(0,2fr);gap:0}
+.lrn-lvl{padding:22px 24px;border-right:1px solid var(--line-2)}
+.lrn-stars{font-size:30px;letter-spacing:4px;line-height:1;color:var(--brand)}
+.lrn-stars .off{color:var(--line)}
+.lrn-title{font-size:20px;font-weight:650;color:var(--ink);margin-top:10px}
+.lrn-sub{font-size:12.5px;color:var(--mid);margin-top:4px;line-height:1.5}
+.lrn-next{padding:18px 24px}
+.lrn-nt{font-size:11px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.lrn-c{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:4px 10px;align-items:center;
+  font-size:13px;padding:5px 0;border-top:1px solid var(--line-2)}
+.lrn-c:first-of-type{border-top:0}
+.lrn-c i{font-style:normal;font-weight:700}
+.lrn-c.ok i{color:var(--grn)} .lrn-c.no i{color:var(--faint)}
+.lrn-c b{font-weight:550;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lrn-c em{grid-column:2 / -1;font-style:normal;font-size:11.5px;color:var(--faint)}
+.lrn-bar{grid-column:2 / -1;height:4px;border-radius:2px;background:var(--line-2);overflow:hidden}
+.lrn-bar span{display:block;height:100%;background:var(--brand)}
+.lrn-c.ok .lrn-bar span{background:var(--grn-dot)}
+.lrn-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));border-top:1px solid var(--line-2)}
+.lrn-sum div{padding:14px 18px;border-right:1px solid var(--line-2)}
+.lrn-sum b{display:block;font-size:22px;font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums}
+.lrn-sum span{font-size:12px;color:var(--mid)}
+.lrn-review{white-space:pre-wrap;font:13px/1.6 var(--sans, inherit);color:var(--ink);margin:0;padding:4px 22px 20px}
+.lrn-p{padding:12px 20px;border-top:1px solid var(--line-2);font-size:13px;line-height:1.5}
+.lrn-p:first-child{border-top:0}
+.lrn-p .kick{display:inline-block;margin-right:6px}
+.lrn-p small{display:block;color:var(--mid);font-size:12px;margin-top:3px}
+.conf{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;
+  background:var(--surface-2);color:var(--mid)}
+.conf.High{background:#E7F6EC;color:var(--grn)} .conf.Medium{background:#E8F1FE;color:var(--blu)}
+.conf.Low{background:#FFF4E5;color:var(--y)}
+@media(max-width:860px){.lrn-top{grid-template-columns:1fr}.lrn-lvl{border-right:0;border-bottom:1px solid var(--line-2)}}
 .send svg{width:15px;height:15px}
 
 
@@ -1660,6 +1708,49 @@ td.car{color:var(--ink);font-weight:500}
           <div class="atlas-f" id="atlasFeed" hidden></div>
         </div>
       </div>
+
+      <!-- LEARNING. Read from /api/atlas/learning and /api/atlas/maturity:
+           counted from recorded runs, verified outcomes only. The level is the
+           one earned at the last monthly evaluation; the criteria beside it
+           are measured now, as a preview, and grant nothing by themselves. -->
+      <div class="card lrn" id="lrnCard">
+        <div class="lrn-top">
+          <div class="lrn-lvl">
+            <div class="lrn-stars" id="lrnStars" aria-label="ATLAS level"></div>
+            <div class="lrn-title" id="lrnTitle">—</div>
+            <div class="lrn-sub" id="lrnSub"></div>
+          </div>
+          <div class="lrn-next"><div class="lrn-nt" id="lrnNextT">Next level</div><div id="lrnCrit"></div></div>
+        </div>
+        <div class="lrn-sum" id="lrnSum"></div>
+      </div>
+      <div class="g2" style="margin-top:18px">
+        <div class="card">
+          <div class="card-h"><div><div class="card-t">What ATLAS has learned</div>
+            <div class="card-s">Recurring issues and the recovery that verifiably worked — a success counts only after a verified Hub write</div></div></div>
+          <div class="tw"><table>
+            <thead><tr><th>Carrier</th><th>Issue</th><th>Seen</th><th>Best strategy</th><th>Verified</th><th>Confidence</th></tr></thead>
+            <tbody id="lrnIssues"></tbody></table></div>
+          <div id="lrnIssuesE"></div>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-h"><div><div class="card-t">Human Action patterns</div>
+              <div class="card-s">Completed means the shipment then ended verified</div></div></div>
+            <div id="lrnHuman"></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><div><div class="card-t">Proposals</div>
+              <div class="card-s">ATLAS proposes; production changes only through a tested, approved deployment</div></div></div>
+            <div id="lrnProps"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="card-h"><div><div class="card-t">Monthly review</div>
+          <div class="card-s" id="lrnRevS">From this month's recorded events</div></div></div>
+        <pre class="lrn-review" id="lrnReview"></pre>
+      </div>
     </section>
 
     <!-- ═══ HUMAN ACTION ═══ -->
@@ -1821,6 +1912,8 @@ td.car{color:var(--ink);font-weight:500}
     <div class="ch-b" id="chatBody"></div>
     <div class="ch-s" id="chatSug"></div>
     <div class="ch-f">
+      <button class="attach" id="chatAttach" type="button" aria-label="Attach a screenshot" title="Attach a screenshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+      <input type="file" id="chatFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
       <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask ATLAS about this run…"></textarea>
       <button class="send" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
     </div>
@@ -2116,6 +2209,7 @@ function navFor(id){
 }
 function go(id){
   activePage = id;
+  if (id === 'atlas') setTimeout(() => loadLearning(true), 0);
   const lit = navFor(id);
   document.querySelectorAll('.nav-i,.tnav-i').forEach((n) => n.classList.toggle('on', n.dataset.nav === lit));
   document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.dataset.p === id));
@@ -3515,6 +3609,79 @@ function paintAtlasPage(){
     : empty('No automation issues', 'Skipped and failed shipments appear here with their reason.'));
 }
 
+/* ═══ LEARNING ═══
+   Fetched only while the ATLAS page is open, at most once a minute. */
+let lrnAt = 0, lrnBusy = false;
+function lrnFmt(v, rate){
+  if (v === null || v === undefined) return 'no data';
+  if (rate) return Math.round(v * 100) + '%';
+  return String(Math.round(v * 100) / 100);
+}
+function loadLearning(force){
+  if (activePage !== 'atlas' || lrnBusy) return;
+  if (!force && Date.now() - lrnAt < 60000) return;
+  lrnBusy = true;
+  Promise.all([fetch('/api/atlas/maturity').then((r) => r.json()),
+               fetch('/api/atlas/learning').then((r) => r.json())])
+    .then((x) => { lrnAt = Date.now(); paintLearning(x[0], x[1]); })
+    .catch(() => put($('lrnTitle'), 'The learning store is not available'))
+    .finally(() => { lrnBusy = false; });
+}
+function paintLearning(m, l){
+  const st = (m && m.status) || {};
+  const lvl = st.level || 0;
+  putHTML($('lrnStars'), '\u2605'.repeat(lvl) + '<span class="off">' + '\u2605'.repeat(5 - lvl) + '</span>');
+  $('lrnStars').setAttribute('aria-label', lvl + ' of 5 stars');
+  put($('lrnTitle'), 'ATLAS ' + (st.title || 'Not yet rated'));
+  put($('lrnSub'), st.last_evaluated
+    ? 'Earned at the ' + st.last_evaluated + ' evaluation. A star is added only when every criterion of the next level is met.'
+    : 'No month evaluated yet. The first evaluation runs when a month with recorded runs ends.');
+  const allMet = (st.next_criteria || []).length && (st.next_criteria || []).every((c) => c.met);
+  put($('lrnNextT'), st.next_level ? 'To reach ' + '\u2605'.repeat(st.next_level) + ' ' + st.next_title +
+    (allMet ? ' \u2014 all met now; the ' + st.preview_month + ' evaluation decides when the month ends'
+            : ' \u2014 measured now, a preview') : 'Highest level reached');
+  putHTML($('lrnCrit'), (st.next_criteria || []).map((c) => {
+    const ratio = typeof c.value === 'number' && c.minimum ? Math.max(0, Math.min(1, c.value / c.minimum)) : 0;
+    return '<div class="lrn-c ' + (c.met ? 'ok' : 'no') + '"><i>' + (c.met ? '\u2713' : '\u2013') + '</i>' +
+      '<span>' + esc(c.label) + '</span><b>' + esc(lrnFmt(c.value, c.minimum < 1 && c.minimum > 0)) +
+      ' / ' + esc(lrnFmt(c.minimum, c.minimum < 1 && c.minimum > 0)) + '</b>' +
+      '<div class="lrn-bar"><span style="width:' + Math.round(ratio * 100) + '%"></span></div>' +
+      (c.why ? '<em>' + esc(c.why) + '</em>' : '') + '</div>';
+  }).join(''));
+  const sm = (l && l.summary) || {};
+  putHTML($('lrnSum'), [['issues_learned', 'recurring issues learned'], ['verified_signals', 'verified learning signals'],
+    ['verified_successes', 'verified recovery successes'], ['verified_strategies', 'strategies with a verified record'],
+    ['unverified', 'attempts not verified (not counted)'], ['recurring_questions', 'recurring operator questions']]
+    .map((x) => '<div><b>' + (sm[x[0]] == null ? '\u2014' : sm[x[0]]) + '</b><span>' + x[1] + '</span></div>').join(''));
+  const issues = (l && l.issues) || [];
+  putHTML($('lrnIssues'), issues.slice(0, 10).map((i) => {
+    const best = i.best ? (i.strategies || []).find((s) => s.name === i.best) : null;
+    const top = best || (i.strategies || []).find((s) => s.decided) || null;
+    return '<tr><td>' + dash(i.carrier || i.provider) + '</td><td>' + esc(String(i.issue).replace(/_/g, ' ').toLowerCase()) +
+      '</td><td class="n">' + i.occurrences + '\u00d7 \u00b7 ' + (i.runs || []).length + ' run(s)</td><td>' +
+      (best ? esc(best.name.replace(/_/g, ' ')) : '<span class="hint">not enough verified outcomes</span>') + '</td><td class="n">' +
+      (top ? top.successes + '/' + top.decided : '\u2014') + '</td><td>' +
+      (top ? '<span class="conf ' + esc(String(top.confidence).split(' ')[0]) + '">' + esc(top.confidence) + '</span>' : '\u2014') +
+      '</td></tr>';
+  }).join(''));
+  putHTML($('lrnIssuesE'), issues.length ? '' : empty('Nothing learned yet',
+    'Each real run adds outcomes. A strategy is credited only after a verified Hub write.'));
+  const human = (l && l.human) || [];
+  putHTML($('lrnHuman'), human.length ? human.slice(0, 5).map((h) => '<div class="lrn-p"><b>' + esc(h.carrier) +
+    '</b> \u00b7 ' + h.tasks + ' task(s)<small>Average wait ' + (h.mean_wait_s == null ? 'unknown' :
+    Math.floor(h.mean_wait_s / 60) + 'm ' + String(Math.round(h.mean_wait_s % 60)).padStart(2, '0') + 's') +
+    ' \u00b7 completed and verified ' + h.completed_verified + '/' + h.tasks + ' \u00b7 timed out ' + h.timed_out +
+    ' \u00b7 sessions lost ' + h.sessions_lost + '</small></div>').join('')
+    : empty('No human actions recorded', 'Carrier verifications and how they ended are learned here.'));
+  const props = (l && l.proposals) || [];
+  putHTML($('lrnProps'), props.length ? props.map((p) => '<div class="lrn-p"><span class="kick">' + esc(p.status) +
+    '</span>' + esc(p.change) + '<small>' + esc(p.evidence.best.name) + ' ' + p.evidence.best.successes + '/' +
+    p.evidence.best.decided + ' verified vs ' + esc(p.evidence.current.name) + ' ' + p.evidence.current.successes + '/' +
+    p.evidence.current.decided + ' \u00b7 confidence ' + esc(p.confidence) + ' \u00b7 ' + esc(p.deploys) + '</small></div>').join('')
+    : empty('No proposals', 'Nothing in the verified record argues for changing the recovery order yet.'));
+  put($('lrnReview'), (m && m.review_text) || '');
+}
+
 /* ═══ HUMAN ACTION CENTER ═══ */
 const HUMAN_EVENTS = {
   HUMAN_VERIFICATION_DETECTED:'Verification detected', WAITING_FOR_HUMAN:'Waiting for a person',
@@ -3547,6 +3714,7 @@ setInterval(() => {
   if (activePage === 'overview') tickClocks($('opsRows'));
   if (dwRef) tickClocks($('dwBody'));
   hqTick();
+  if (activePage === 'atlas') loadLearning(false);
   if (++axTimeTick % 5 === 0 && (S.current && S.current.shipment || (S.human_action || {}).waiting)){
     paintAtlasPage(); paintDrawer(); paintHuman();
   }
@@ -4185,7 +4353,46 @@ document.addEventListener('click', (e) => {
    run's own data, so a chip can never lead somewhere the assistant refuses. */
 (function chat(){
   const body = $('chatBody'), input = $('chatIn');
-  let busy = false, lastReference = null, lastFocus = '';
+  let busy = false, lastReference = null, lastFocus = '', lastEvidence = '';
+  /* A real image — a capture from the automation's browser or one the
+     operator uploaded — with where it came from beneath it. Nothing is ever
+     drawn or generated here. */
+  function evidenceFig(e, mine){
+    if (!e || !e.url) return;
+    const fig = document.createElement('figure');
+    fig.className = 'evd';
+    fig.innerHTML = '<a href="' + esc(e.url) + '" target="_blank" rel="noopener"><img alt="' +
+      esc(e.provenance || 'Evidence image') + '" loading="lazy" src="' + esc(e.url) + '"></a>' +
+      '<figcaption>' + esc(e.provenance || '') +
+      (e.width ? ' · ' + e.width + '×' + e.height : '') +
+      (e.has_page_text ? ' · page text captured with it' : '') +
+      ' · <a href="' + esc(e.url) + '" target="_blank" rel="noopener">Open full size</a></figcaption>';
+    if (mine){
+      const wrap = document.createElement('div'); wrap.className = 'msg me'; wrap.appendChild(fig);
+      body.appendChild(wrap);
+    } else body.appendChild(fig);
+    body.scrollTop = body.scrollHeight;
+  }
+  function uploadImage(file){
+    if (!file || busy) return;
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type || '')){
+      bubble('bot').innerHTML = fmt('That is not a PNG, JPEG, WebP or GIF image.'); return;
+    }
+    busy = true;
+    const note1 = document.createElement('div'); note1.className = 'ch-done';
+    note1.textContent = 'Uploading ' + (file.name || 'image') + '\u2026'; body.appendChild(note1);
+    fetch('/api/evidence/upload', {method:'POST', body:file,
+      headers:{'Content-Type': file.type, 'X-Filename': (file.name || 'upload').slice(0, 80)}})
+      .then((r) => r.json()).then((r) => {
+        note1.remove(); busy = false;
+        if (!r.accepted){ bubble('bot').innerHTML = fmt(r.message || 'The image was not accepted.'); return; }
+        lastEvidence = r.evidence.id;
+        evidenceFig(r.evidence, true);
+        input.value = 'What does this screenshot tell us?';
+        send();
+      }).catch(() => { note1.remove(); busy = false;
+        bubble('bot').innerHTML = fmt('The image could not be uploaded.'); });
+  }
   // Queue progress lands in the conversation as ATLAS's own lines.
   atlasSay = (text) => {
     if (!body.children.length) return;
@@ -4215,9 +4422,19 @@ document.addEventListener('click', (e) => {
   function feedbackRow(bubbleEl, question, reply){
     const row = document.createElement('div');
     row.className = 'fb';
+    // An explanation can be judged right or wrong; a recommendation useful or
+    // not. Both are opinions: they are counted as such and never mark an
+    // automation outcome as verified.
+    const EXPLAINS = {why:1, latest_failure:1, learn_failure:1, stuck:1, story:1,
+                      why_recovery_failed:1, image_read:1, image_compare:1};
+    const ADVISES = {what_fixes:1, try_next:1, plan:1, next_step:1, why_recommend:1};
     row.innerHTML = '<span class="fb-t">Useful?</span>'
       + '<button data-v="helpful" title="Helpful">&#128077;</button>'
-      + '<button data-v="not_helpful" title="Not helpful">&#128078;</button>';
+      + '<button data-v="not_helpful" title="Not helpful">&#128078;</button>'
+      + (EXPLAINS[reply.intent] ? '<span class="fb-x"><button data-v="correct">Correct</button>'
+         + '<button data-v="incorrect">Incorrect</button></span>' : '')
+      + (ADVISES[reply.intent] ? '<span class="fb-x"><button data-v="suggestion_useful">Useful suggestion</button>'
+         + '<button data-v="suggestion_not_useful">Not useful</button></span>' : '');
     bubbleEl.appendChild(row);
 
     row.addEventListener('click', (e) => {
@@ -4249,7 +4466,7 @@ document.addEventListener('click', (e) => {
         });
       };
 
-      if (verdict === 'not_helpful'){
+      if (verdict === 'not_helpful' || verdict === 'incorrect'){
         // Ask what was wrong. A correction is worth far more than a count.
         const box = document.createElement('input');
         box.className = 'fb-in';
@@ -4443,7 +4660,8 @@ document.addEventListener('click', (e) => {
 
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q, context: {reference: lastReference, action_id: lastFocus}})
+      body: JSON.stringify({question: q, context: {reference: lastReference, action_id: lastFocus,
+                                                   evidence_id: lastEvidence}})
     })
       .then((r) => r.json())
       .then((d) => {
@@ -4459,6 +4677,8 @@ document.addEventListener('click', (e) => {
           if (d.downloads && d.downloads.length) downloads(d.downloads);
           if (d.reference) lastReference = d.reference;
           lastFocus = d.focus || '';
+          if (d.evidence_id) lastEvidence = d.evidence_id;
+          (d.evidence || []).forEach((e) => evidenceFig(e, false));
           if (d.operation && d.operation.type === 'human_open' && d.operation.op === 'open'){
             // The operator asked for it in so many words, and named which.
             // Sent through the queue's own request; the reply is the run's.
@@ -4485,6 +4705,14 @@ document.addEventListener('click', (e) => {
     if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
   });
   $('chatSend').addEventListener('click', send);
+  $('chatAttach').addEventListener('click', () => $('chatFile').click());
+  $('chatFile').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = ''; uploadImage(f);
+  });
+  input.addEventListener('paste', (e) => {
+    const item = [...((e.clipboardData || {}).items || [])].find((x) => /^image\//.test(x.type));
+    if (item){ e.preventDefault(); uploadImage(item.getAsFile()); }
+  });
 
   $('fab').addEventListener('click', () => {
     $('chat').classList.add('on'); $('fab').classList.add('hide');

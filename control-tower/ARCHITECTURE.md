@@ -219,3 +219,40 @@ doing its job.
 | `ml/data/telemetry.test.jsonl` | the test suite | nothing — it exists so the suite can exercise the real writer without contaminating the file above |
 | `ml/models/challenger.json` | `python -m ml.trainer` | the evaluator |
 | `ml/models/champion.json` | `python -m ml.trainer --promote`, only on a `BETTER` verdict | **the predictor** — this is the only file a run loads |
+
+## The intelligence layer (`intelligence/`)
+
+ATLAS's long-term learning, beside the ML engine in `ml/` (which stays in
+SHADOW). Standard library only; it never touches a browser or the Hub, and
+nothing in it changes what the automation does.
+
+    OBSERVE   events.py    events.jsonl — shipment outcomes (verified only when
+                           every Hub write read back), navigation strategies,
+                           recovery episodes joined to that outcome, closed
+                           Human Action tasks, question intents, feedback
+    LEARN     learning.py  issues, strategies ranked by the Wilson lower bound
+                           on VERIFIED successes; unverified kept and labelled;
+                           human-action patterns; question patterns; proposals
+    PLAN      plans.py     recovery plans from ml/recovery.py's safe vocabulary
+                           and the AFKL ladder, ordered by the verified record;
+                           a step is NOT EXECUTED unless it ran
+    EVIDENCE  evidence.py  evidence.jsonl — real captures (with the page text of
+                           the same moment) and operator uploads, with SHA-256;
+                           verification screens are never stored
+              vision.py    Tesseract CLI (optional) or the captured page text;
+                           visual facts, unclear reads and rule-based inferences
+                           kept apart; nothing read from a verification screen
+    EVALUATE  maturity.py  maturity.json — monthly evaluation once a month has
+                           ended; one level at most per evaluation, only when
+                           every criterion of the next level is met
+
+Who writes: the bridge, after `update_eta.main()` attaches the event store;
+`take_screenshot` indexes real captures; the dashboard server records
+question intents and feedback only when started with `learning=True` (the
+automation and the supervisor do; tests and tools do not). The store lives in
+`ml/data/intelligence/` (ATLAS_INTEL_DIR), gitignored.
+
+What can change production: nothing here. A proposal ("try X before Y") is
+recorded with its evidence; a person may mark it APPROVED or REJECTED
+(`learning.decide`), and the change itself still goes through a tested,
+approved deployment.

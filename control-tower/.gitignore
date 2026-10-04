@@ -8,3 +8,6 @@ __pycache__/
 C:\\Automation/
 ml/data/*.jsonl
 ml/models/*.json
+
+# ATLAS learning store (events, evidence, maturity) — real operational data
+ml/data/intelligence/

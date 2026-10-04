@@ -33,6 +33,7 @@ SUITES = [
     ("test_atlas_copilot.py",  "ATLAS copilot: grounded answers, insights, safe UI actions"),
     ("test_human_queue.py",    "Human Action Queue: states, choosing, safe points, main()"),
     ("test_atlas_operations.py", "ATLAS + queue: conversation, operations, security boundary"),
+    ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
@@ -45,6 +46,11 @@ SUITES = [
 def main():
     total_passed = total_failed = 0
     broken = []
+    # ATLAS's learning store is real operational data. Every suite gets an
+    # empty one of its own, so a test can neither read nor write the real one.
+    import os
+    import tempfile
+    os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="ct_atlas_intel_")
 
     print("=" * 74)
     print("CONTROL TOWER — FULL TEST SUITE")

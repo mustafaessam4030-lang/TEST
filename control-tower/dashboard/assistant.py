@@ -1119,6 +1119,11 @@ def _help(data):
 import time as _time
 from datetime import datetime as _datetime
 
+try:
+    from . import atlas_learning
+except Exception:                                   # pragma: no cover
+    import atlas_learning
+
 MODE_WORDS = {"air": "Air", "ocean": "Ocean", "road": "Road", "rail": "Rail",
               "unknown": "Unknown"}
 MODE_PHRASES = [("ocean", r"\b(ocean|sea|ship|ships|vessel|maritime)\b"),
@@ -1355,7 +1360,28 @@ def suggestions(data):
         if chip not in seen:
             seen.add(chip)
             out.append(chip)
-    return out[:6]
+    return _by_habit(out)[:6]
+
+
+def _by_habit(chips):
+    """
+    What operators keep asking comes first — among the chips the run's state
+    already justifies. Nothing is added this way, so learning makes the
+    interface more useful without making it louder. Intents asked fewer than
+    three times change nothing.
+    """
+    try:
+        asked = {q["intent"]: q["count"] for q in
+                 atlas_learning.learning.snapshot()["questions"] if q["count"] >= 3}
+    except Exception:
+        return chips
+    if not asked:
+        return chips
+
+    def weight(chip):
+        intent = atlas_learning.detect(chip) or detect_intent(chip)
+        return asked.get(intent, 0)
+    return sorted(chips, key=lambda c: -weight(c))
 
 
 def _queue_line(waiting):
@@ -2422,6 +2448,25 @@ def _answer_core(question, state, context=None):
             return {"answer": _answer_code_request(data), "card": None,
                     "reference": context.get("reference"), "grounded": True,
                     "intent": intent}
+
+        # -- what ATLAS has learned, its evidence, its evaluation ----------
+        # From the intelligence stores, read-only. Checked before the run's
+        # own answers so "which recovery strategy works best" is about the
+        # verified record, not this run's snapshot.
+        learned_intent = atlas_learning.detect(question)
+        if learned_intent:
+            produced = atlas_learning.answer(learned_intent, question, data, context,
+                                             context.get("evidence_id"))
+            if produced is not None:
+                text, extras = produced
+                reply = {"answer": text, "card": None, "grounded": True,
+                         "intent": learned_intent,
+                         "reference": extras.get("reference") or context.get("reference"),
+                         "sources": ["intelligence"]}
+                for key in ("evidence", "reading", "plan", "maturity", "evidence_id"):
+                    if key in extras:
+                        reply[key] = extras[key]
+                return reply
 
         # -- resolve which shipment is being discussed ---------------------
         record, wanted = None, None

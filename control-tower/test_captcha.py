@@ -182,8 +182,12 @@ check("It re-checks the page rather than assuming the person succeeded",
       "captcha_on_page(page)" in body)
 check("It tells the operator what to do, in the run log",
       "HUMAN VERIFICATION REQUIRED" in body and "browser window" in body)
-check("It captures evidence for the operator",
-      "take_screenshot" in body and "save_page_text" in body)
+check("It never stores the verification screen — no screenshot, no page text of it",
+      "take_screenshot" not in body and "save_page_text" not in body)
+_shot = SRC.split("def take_screenshot")[1].split("\ndef ")[0]
+check("...and no screenshot is ever taken while a verification is on screen",
+      "if verification_on_screen(page):" in _shot
+      and _shot.index("verification_on_screen") < _shot.index("page.screenshot"))
 
 print()
 print("=" * 72)

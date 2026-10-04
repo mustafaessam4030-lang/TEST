@@ -577,14 +577,75 @@ def safe_filename(value):
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
 
 
+# ATLAS's event and evidence stores, attached by main() for a real run only.
+INTEL = {"events": None, "evidence": None}
+_VERIFY_SCREEN = re.compile(r"security\s*code|captcha|verify\s+(?:that\s+)?you\s+are\s+"
+                            r"(?:a\s+)?human|enter\s+(?:the\s+)?code|i'?m\s+not\s+a\s+robot|"
+                            r"slide\s+right\s+to", re.I)
+
+
+def verification_on_screen(page):
+    """
+    True when the page is showing a security verification — a challenge, a
+    security code, a CAPTCHA. Screenshots of those are never taken: the
+    evidence store must not hold a verification code.
+    """
+    try:
+        if captcha_on_page(page):
+            return True
+    except Exception:
+        pass
+    try:
+        text = page.locator("body").inner_text(timeout=2000) or ""
+        return bool(_VERIFY_SCREEN.search(text[:20000]))
+    except Exception:
+        return False
+
+
 def take_screenshot(page, bol_awb, suffix):
     path = SCREENSHOT_FOLDER / f"{safe_filename(bol_awb)}_{suffix}.png"
+    if verification_on_screen(page):
+        write_log("Screenshot not taken for {0} ({1}): a security verification is on "
+                  "screen, and verification screens are never stored.".format(bol_awb, suffix))
+        return path
     try:
         page.screenshot(path=str(path), full_page=True)
         write_log(f"Screenshot saved: {path}")
     except Exception as error:
         write_log(f"Screenshot failed: {error}")
+        return path
+    _register_evidence(page, path, bol_awb, suffix)
     return path
+
+
+def _register_evidence(page, path, bol_awb, suffix):
+    """
+    Index a real capture in ATLAS's evidence store, with the page's text from
+    the same moment beside it. Only for a real run (main() attaches the
+    store); a failure here never touches the run.
+    """
+    evidence = INTEL.get("evidence")
+    if evidence is None:
+        return None
+    try:
+        text_path = LOG_FOLDER / f"{safe_filename(bol_awb)}_{suffix}.txt"
+        if not text_path.exists():
+            try:
+                text = page.locator("body").inner_text(timeout=3000) or ""
+                if not _VERIFY_SCREEN.search(text):
+                    text_path.write_text(redact_secrets(text)[:200000], encoding="utf-8")
+            except Exception:
+                pass
+        shipment = HUMAN_STATE.get("shipment") or {}
+        same = shipment.get("bol_awb") == bol_awb or shipment.get("lookup_ref") == bol_awb
+        return evidence.register_capture(
+            path, run_id=RUN_ID, reference=bol_awb,
+            carrier=shipment.get("carrier") if same else None,
+            provider=shipment.get("provider") if same else None,
+            event=suffix, text_path=text_path if text_path.exists() else None)
+    except Exception as error:
+        note_suppressed("indexing a screenshot as ATLAS evidence", error)
+        return None
 
 
 def save_page_text(page, bol_awb, suffix):
@@ -1801,6 +1862,7 @@ def atlas_recover(page, error, plan, verify=None, category=None):
                                    scores.get(action.name), "SUCCESS", True)
             tower_recovery_done(True, "{0} succeeded and verified".format(
                 action.name), verified=True)
+            _recovery_evidence(page, "recovery_succeeded")
             outcome.update(recovered=True, verified=True,
                            reason="{0} succeeded and verified".format(action.name))
             return outcome
@@ -1832,8 +1894,20 @@ def atlas_recover(page, error, plan, verify=None, category=None):
     atlas_log(ATLAS_RECOVERY_EXHAUSTED,
               "{0}; the deterministic outcome stands".format(exhausted))
     tower_recovery_done(False, exhausted)
+    _recovery_evidence(page, "recovery_exhausted")
     outcome["reason"] = exhausted
     return outcome
+
+
+def _recovery_evidence(page, event):
+    """A screenshot at the end of a recovery, for a real run only."""
+    if INTEL.get("evidence") is None or page is None:
+        return
+    reference = (HUMAN_STATE.get("shipment") or {}).get("bol_awb") or "recovery"
+    try:
+        take_screenshot(page, reference, event)
+    except Exception as error:
+        note_suppressed("capturing recovery evidence", error)
 
 
 def _recovery_telemetry(plan, error_class, signature, considered, chosen,
@@ -6147,11 +6221,8 @@ def await_human_verification(page, tracking_number, label="the carrier page"):
     """
     tower.step("Waiting for human verification on {0}".format(label),
                system="browser")
-    try:
-        take_screenshot(page, tracking_number, "captcha_required")
-        save_page_text(page, tracking_number, "captcha_required")
-    except Exception:
-        pass
+    # No screenshot and no page text of the challenge: a verification screen
+    # is never stored as evidence.
 
     write_log("=" * 62)
     write_log("HUMAN VERIFICATION REQUIRED")
@@ -6752,6 +6823,7 @@ def open_afkl_detail(page, config, tracking_number):
     attempts.append(record)
     if record["awb_verified"]:
         write_log("{0}: shipment page confirmed on attempt 1.".format(label))
+        _report_ladder(attempts)
         return page
 
     # ── 2 · a fresh context on the same browser ─────────────────────
@@ -6780,6 +6852,7 @@ def open_afkl_detail(page, config, tracking_number):
                 # tracked, and the next lookup closes it.
                 AFKL_HELD_CONTEXTS.append(extra_context)
                 extra_context = None
+                _report_ladder(attempts)
                 return fresh
             # Attempt 2 failed. Nothing will read this page again, so it goes
             # now rather than at the end of the run.
@@ -6811,6 +6884,7 @@ def open_afkl_detail(page, config, tracking_number):
             if record["awb_verified"] and kept is not None:
                 write_log("{0}: shipment page confirmed on attempt 3 — HTTP/2 "
                           "was the problem.".format(label))
+                _report_ladder(attempts)
                 return kept
         else:
             write_log("{0}: skipping the HTTP/2 strategy — the failures so far "
@@ -6834,16 +6908,31 @@ def open_afkl_detail(page, config, tracking_number):
         if record["awb_verified"] and kept is not None:
             write_log("{0}: shipment page confirmed on attempt 4 — Edge was the "
                       "problem, the bundled Chromium works.".format(label))
+            _report_ladder(attempts)
             return kept
 
         save_page_text(page, tracking_number, "afkl_navigation_error")
         take_screenshot(page, tracking_number, "afkl_navigation_error")
         log_reachability(url, label)
+        _report_ladder(attempts)
         raise AfklNavigationError(tracking_number, attempts)
     finally:
         # Whichever way this ends — a later strategy won, or every strategy
         # failed — attempt 2's context is not the page anybody will read.
         _close_afkl_context(extra_context)
+
+
+def _report_ladder(attempts):
+    """
+    Tell the dashboard — and through it ATLAS's event store — which
+    navigation strategies ran and whether each reached the right shipment
+    page. Whether that page led to a verified Hub write is decided later, by
+    the shipment's own outcome.
+    """
+    try:
+        tower.strategy_attempts("AFKL", "AFKL navigation", attempts)
+    except Exception:
+        pass
 
 
 def _afkl_budget_left(started, number, attempts, label):
@@ -8546,6 +8635,10 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
                     # go anywhere near the Hub.
                     result = validate_arrival_result(
                         result, config["label"], tracking_number)
+                    # Evidence of the confirmed result page — the
+                    # verification is behind us, and take_screenshot refuses
+                    # if one is still on screen.
+                    take_screenshot(page, tracking_number, "after_human_result")
                     human_event(
                         "ATA_EXTRACTION_AFTER_HUMAN", HUMAN_STATE.get("last"),
                         "ETA={0} ({1}) ATA={2} ({3}); identity checked".format(
@@ -9739,6 +9832,7 @@ def main():
                 open_browser=DASHBOARD_OPEN_BROWSER,
                 host=DASHBOARD_HOST,
                 access_key=DASHBOARD_ACCESS_KEY,
+                learning=True,
             )
     # Under the supervisor the dashboard is served by the parent process, so
     # this run publishes its state to a file instead of hosting a server.
@@ -9760,6 +9854,19 @@ def main():
         DASHBOARD_ALLOW_CONTROL or bool(os.environ.get("CT_CONTROL_FILE")),
         human_enabled=DASHBOARD_ALLOW_HUMAN_ACTIONS)
     write_log("Run ID: {0}".format(RUN_ID))
+    # ATLAS learns from real runs only: outcomes, recoveries, human tasks and
+    # real screenshots go to its stores from here. Observing never changes
+    # what the automation does.
+    try:
+        from intelligence import events as _intel_events, evidence as _intel_evidence
+        INTEL["events"], INTEL["evidence"] = _intel_events, _intel_evidence
+        tower.attach_intelligence(_intel_events)
+        write_log("[ATLAS] Learning from this run: outcomes, recoveries, human "
+                  "actions and evidence are recorded in {0}".format(
+                      _intel_events.store.folder()))
+    except Exception as error:
+        write_log("[ATLAS] Learning store unavailable ({0}); the run is "
+                  "unaffected.".format(str(error)[:120]))
 
     # Tell the dashboard which carriers this build can actually track, so the
     # Systems panel matches the automation instead of a hand-kept list.

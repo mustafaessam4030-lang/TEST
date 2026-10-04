@@ -16,6 +16,33 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 - **On the way:** shipments with an ETA and no ATA yet. The van drives only
   while there is at least one.
 
+**New · ATLAS learns from real runs — and earns its stars.** Every real run
+now feeds ATLAS's learning store (`ml/data/intelligence/`): how each shipment
+ended, which navigation and recovery strategies were tried, closed Human
+Action tasks, what operators ask, and real screenshots.
+
+- A strategy is credited **only** when it worked and the shipment then ended
+  with a read-back-verified Hub write. Anything else is shown as unverified
+  and never counted.
+- ATLAS page → **What ATLAS has learned**: recurring issues, the best verified
+  strategy with its sample and confidence, Human Action patterns, proposals
+  (recorded for a person to approve; nothing changes the automation by
+  itself) and the **monthly review**.
+- **Stars** are earned at a monthly evaluation, once a month has ended, and
+  only when every criterion of the next level is met (one level at most per
+  month). Time alone never adds a star.
+- Ask ATLAS: "What have we learned?", "What keeps failing?", "Which recovery
+  strategy works best for AFKL?", "Create a recovery plan", "Why do you
+  recommend this?", "What changed compared with last month?", "What is
+  ATLAS's star level?", "Show the screenshot from the last AFKL failure".
+- **Screenshots:** attach one with the paperclip (or paste it). ATLAS lists
+  what it can read as visual facts, what it can't read reliably, and any
+  inference with its reason. Reading uploaded images needs Tesseract OCR
+  (optional): on Windows install it from the UB Mannheim build, or set
+  `TESSERACT_CMD`. Captured screenshots are read from the page text saved with
+  them, so they need nothing extra. Security-code screens are never captured,
+  read or kept.
+
 **New · Human Action Queue and ATLAS as your copilot.** A carrier page that
 needs a person no longer holds up the whole run.
 

@@ -28,6 +28,10 @@ _SECRETS = re.compile(
     r"(password|passwd|pwd|secret|token|api[_-]?key|bearer)\s*[:=]\s*\S+", re.I)
 
 
+VERDICTS = ("helpful", "not_helpful", "correct", "incorrect", "recovery_worked",
+            "recovery_failed", "suggestion_useful", "suggestion_not_useful")
+
+
 def path():
     return Path(os.environ.get("ASSISTANT_FEEDBACK_PATH") or DEFAULT_PATH)
 
@@ -43,13 +47,14 @@ def record(question, answer, verdict, correction="", sources=None,
     """
     Store one piece of feedback. Returns (ok, message).
 
-    `verdict` is "helpful" or "not_helpful"; anything else is rejected rather
-    than stored as a shrug, because a field that can hold anything cannot be
-    counted later.
+    `verdict` is one of VERDICTS; anything else is rejected rather than
+    stored as a shrug, because a field that can hold anything cannot be
+    counted later. "recovery_worked" is an operator's opinion and is kept as
+    one: it never marks an automation outcome as a verified success.
     """
     verdict = str(verdict or "").strip().lower()
-    if verdict not in ("helpful", "not_helpful"):
-        return False, "verdict must be 'helpful' or 'not_helpful'"
+    if verdict not in VERDICTS:
+        return False, "verdict must be one of: " + ", ".join(VERDICTS)
     if not str(question or "").strip():
         return False, "there is no question to attach this to"
 
@@ -85,6 +90,8 @@ def stats():
     target = path()
     summary = {"path": str(target), "total": 0, "helpful": 0,
                "not_helpful": 0, "corrections": 0}
+    for verdict in VERDICTS:
+        summary.setdefault(verdict, 0)
     if not target.exists():
         return summary
     try:
@@ -100,10 +107,8 @@ def stats():
                 if row.get("kind") != "assistant_feedback":
                     continue
                 summary["total"] += 1
-                if row.get("user_feedback") == "helpful":
-                    summary["helpful"] += 1
-                elif row.get("user_feedback") == "not_helpful":
-                    summary["not_helpful"] += 1
+                if row.get("user_feedback") in VERDICTS:
+                    summary[row["user_feedback"]] += 1
                 if (row.get("correction") or "").strip():
                     summary["corrections"] += 1
     except OSError:

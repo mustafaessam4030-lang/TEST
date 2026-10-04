@@ -155,6 +155,11 @@ class ControlTowerState:
         # The run's Human Action queue: every shipment parked for a person,
         # with its state and history, as human_queue.py keeps it.
         self.human_queue = []
+        # ATLAS's event store (intelligence.events), when the automation has
+        # attached it. None in tests and demos: nothing is recorded then.
+        self.intel = None
+        self._intel_human_done = set()
+        self._intel_recovery_done = set()
 
         self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
         self.atlas_influenced_actions = 0
@@ -331,6 +336,58 @@ class ControlTowerState:
             self.recovery = None
             self._touch()
 
+    def _emit_outcome(self, record, result):
+        """
+        The shipment's final outcome, and every recovery episode that ran on
+        it, joined to that outcome. Called with the lock held.
+
+        `verified` is the existing pipeline's verdict and nothing else: the
+        shipment counted successful AND every Hub write read back and matched.
+        """
+        if self.intel is None:
+            return
+        try:
+            from intelligence import events as _ev
+            verified_fn = _ev.verified_success
+        except Exception:
+            def verified_fn(res, ver):
+                values = list((ver or {}).values())
+                return res == "SUCCESS" and bool(values) and all(v is True for v in values)
+        verification = dict(record.get("verification") or {})
+        verified = verified_fn(result, verification)
+        reference = record.get("reference")
+        written = any(isinstance(a, str) and ("updated with" in a or "→" in a)
+                      for a in (record.get("coe_action"), record.get("bu_action")))
+        self._emit("shipment", reference=reference, carrier=record.get("carrier"),
+                   provider=record.get("provider"), mode=record.get("transport_mode"),
+                   result=result, outcome_class=record.get("outcome"),
+                   verified=verified, verification=verification,
+                   extracted=bool(record.get("provider_status") or record.get("provider_eta")
+                                  or record.get("provider_ata")),
+                   written=written, duration_ms=record.get("duration_ms"),
+                   error=(record.get("error") or None),
+                   human_step=bool(record.get("human_step")),
+                   strategy_issue=record.get("strategy_issue"),
+                   strategies=record.get("strategies") or [])
+        episodes = [e for e in self.recovery_history if e.get("reference") == reference]
+        if self.recovery and self.recovery.get("reference") == reference \
+                and not self.recovery.get("_archived"):
+            episodes.append(self.recovery)
+        for e in episodes:
+            key = "{0}|{1}|{2}".format(reference, e.get("started"), e.get("error_class"))
+            if key in self._intel_recovery_done:
+                continue
+            self._intel_recovery_done.add(key)
+            self._emit("recovery", reference=reference, carrier=record.get("carrier"),
+                       provider=e.get("provider") or record.get("provider"),
+                       error_class=e.get("error_class"), status=e.get("status"),
+                       atlas_selected=bool(e.get("atlas_selected")),
+                       recovery_verified=e.get("verified"),
+                       attempts=[{"action": a.get("action"), "result": a.get("result"),
+                                  "verified": a.get("verified"), "index": a.get("index")}
+                                 for a in (e.get("attempts") or [])],
+                       shipment_result=result, shipment_verified=verified)
+
     def _archive_recovery(self):
         """Keep a finished (or abandoned) episode once. Caller holds the lock."""
         episode = self.recovery
@@ -374,6 +431,8 @@ class ControlTowerState:
             self.human_events.clear()
             self.human_queue = []
             self.recovery_history.clear()
+            self._intel_human_done = set()
+            self._intel_recovery_done = set()
             for key, value in config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
@@ -569,6 +628,7 @@ class ControlTowerState:
             self.human_action = published
             record = self._index.get(published.get("reference"))
             if record is not None:
+                record["human_step"] = True
                 record["state"] = "waiting_for_human"
                 record["step"] = "Waiting for a person on {0}".format(
                     published.get("carrier") or "the carrier page")
@@ -622,6 +682,27 @@ class ControlTowerState:
             self.human_action.update(
                 waiting=False, state=str(outcome), closed_at=_stamp(),
                 last_response=detail or self.human_action.get("last_response"))
+            queued = any(t.get("action_id") == self.human_action.get("action_id")
+                         for t in self.human_queue)
+            if not queued and outcome in ("resumed", "timeout", "session_lost"):
+                # The single in-place wait. "resumed" is not an outcome: the
+                # shipment's own verified result decides, and learning joins it.
+                waited = None
+                try:
+                    waited = round((_now() - datetime.strptime(
+                        str(self.human_action.get("opened_at")),
+                        "%Y-%m-%d %H:%M:%S")).total_seconds(), 1)
+                except Exception:
+                    pass
+                self._emit("human_task", action_id=self.human_action.get("action_id"),
+                           reference=self.human_action.get("reference"),
+                           carrier=self.human_action.get("carrier"),
+                           provider=self.human_action.get("provider"),
+                           reason=self.human_action.get("reason"),
+                           step=self.human_action.get("step"),
+                           status={"resumed": "RESUMED", "timeout": "TIMEOUT",
+                                   "session_lost": "HUMAN_SESSION_LOST"}[outcome],
+                           waited_s=waited, queued=False)
             record = self._index.get(self.human_action.get("reference"))
             if record is not None and record.get("state") == "waiting_for_human":
                 if outcome == "resumed":
@@ -638,6 +719,44 @@ class ControlTowerState:
             self._mark("ok" if outcome == "resumed" else "warn",
                        "Human action {0} — {1}".format(
                            outcome, self.human_action.get("reference") or ""))
+            self._touch()
+        self._touch_cold()
+
+    def attach_intelligence(self, events):
+        """Record outcomes to ATLAS's event store from now on (or stop: None)."""
+        self.intel = events
+
+    def _emit(self, kind, **fields):
+        """One event to ATLAS's store, if attached. Never raises."""
+        intel = self.intel
+        if intel is None:
+            return
+        try:
+            fields.setdefault("run_id", self.run_id)
+            intel.record(kind, **fields)
+        except Exception:
+            pass
+
+    @_guard
+    def strategy_attempts(self, provider, issue, attempts):
+        """
+        The navigation strategies tried for the current shipment, as the
+        automation recorded them: which ran, which were skipped, and whether
+        each reached the right shipment page. Kept on the record and joined
+        to the shipment's verified outcome when it closes.
+        """
+        with self._lock:
+            record = self._current_record()
+            if record is None:
+                return
+            record["strategy_issue"] = str(issue)[:60]
+            record["strategies"] = [{
+                "attempt": a.get("attempt"),
+                "strategy": str(a.get("strategy") or "")[:60],
+                "page_verified": a.get("awb_verified") is True,
+                "skipped": "skipped" in str(a.get("outcome") or ""),
+                "error": (str(a.get("error") or a.get("outcome") or "")[:160] or None),
+            } for a in (attempts or [])[:8]]
             self._touch()
         self._touch_cold()
 
@@ -663,6 +782,25 @@ class ControlTowerState:
                 item["history"] = list(item.get("history") or [])[-16:]
                 clean.append(item)
             self.human_queue = clean
+            for task in clean:
+                if task.get("status") in ("SUCCESS", "TIMEOUT", "HUMAN_SESSION_LOST",
+                                          "VERIFICATION_NOT_CONFIRMED", "FAILED") \
+                        and task.get("action_id") not in self._intel_human_done:
+                    self._intel_human_done.add(task.get("action_id"))
+                    waited = None
+                    try:
+                        closed = datetime.strptime(str(task.get("closed_at")),
+                                                   "%Y-%m-%d %H:%M:%S").timestamp()
+                        waited = round(max(0.0, closed - float(task.get("created_epoch"))), 1)
+                    except Exception:
+                        pass
+                    self._emit("human_task", action_id=task.get("action_id"),
+                               run_id=task.get("run_id") or self.run_id,
+                               reference=task.get("reference"), carrier=task.get("carrier"),
+                               provider=task.get("provider"), reason=task.get("reason"),
+                               step=task.get("step"), status=task.get("status"),
+                               attempts=task.get("attempts"), waited_s=waited,
+                               queued=True)
             for task in clean:
                 record = self._index.get(task.get("reference"))
                 if record is None or record.get("state") != "waiting_for_human":
@@ -961,6 +1099,9 @@ class ControlTowerState:
                 })
                 if record.get("provider"):
                     self.system_error(record["provider"], details or "Shipment failed")
+
+            if result != "HUMAN_QUEUED":
+                self._emit_outcome(record, result)
 
             self.current_shipment = None
             self.current_step = "Waiting before next shipment"

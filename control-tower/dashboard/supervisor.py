@@ -296,7 +296,7 @@ def main():
     install()
     host = "0.0.0.0" if args.share else args.host
     tower_server.start(port=args.port, open_browser=True, host=host,
-                       access_key=args.key or None)
+                       access_key=args.key or None, learning=True)
 
     print("The dashboard stays up whether or not a run is in progress.", flush=True)
     print("Use Start and Stop in the dashboard header.", flush=True)

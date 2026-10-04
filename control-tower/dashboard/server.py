@@ -383,6 +383,10 @@ class Handler(BaseHTTPRequestHandler):
             }))
             return
 
+        if route.startswith("/api/atlas/") or route.startswith("/api/evidence"):
+            self._intel_get(route)
+            return
+
         if route == "/api/atlas":
             # ATLAS's panel header: status, counts, what it noticed, and the
             # questions worth asking — from the same state the dashboard shows.
@@ -444,6 +448,10 @@ class Handler(BaseHTTPRequestHandler):
                                         "message": message}))
             return
 
+        if route == "/api/evidence/upload":
+            self._evidence_upload()
+            return
+
         if route == "/api/feedback":
             # Feedback is stored as material for a later, deliberate training
             # and evaluation pass. It never reaches a production model on its
@@ -467,6 +475,12 @@ class Handler(BaseHTTPRequestHandler):
                 intent=payload.get("intent"),
                 reference=payload.get("reference"),
             )
+            if accepted and LEARNING["on"] and INTEL_OK:
+                # An opinion about an answer or a recovery — counted as one,
+                # never as a verified outcome.
+                intel_events.record("feedback", verdict=str(payload.get("verdict") or ""),
+                                    intent=str(payload.get("intent") or "")[:40] or None,
+                                    reference=str(payload.get("reference") or "")[:64] or None)
             self._send(200 if accepted else 400,
                        json.dumps({"accepted": accepted, "message": message}))
             return
@@ -487,7 +501,9 @@ class Handler(BaseHTTPRequestHandler):
             # last discussed are accepted — short-term, this tab only.
             raw_context = payload.get("context") or {}
             context = {"reference": str(raw_context.get("reference") or "")[:64],
-                       "action_id": str(raw_context.get("action_id") or "")[:64]}
+                       "action_id": str(raw_context.get("action_id") or "")[:64],
+                       "evidence_id": re.sub(r"[^0-9a-f]", "", str(
+                           raw_context.get("evidence_id") or ""))[:16]}
         except Exception:
             self._send(400, json.dumps({"error": "bad request"}))
             return
@@ -496,6 +512,16 @@ class Handler(BaseHTTPRequestHandler):
         # bridge, the browser or the credentials, so it cannot act on anything.
         # Untrimmed: the assistant should see the whole run, not the wire view.
         reply = assistant.answer(question, _assistant_state(), context)
+        if LEARNING["on"] and INTEL_OK:
+            # The intent and a reference-free pattern — never the conversation.
+            # A request about a verification code keeps no pattern at all.
+            intent = reply.get("intent")
+            fallback = str(reply.get("answer") or "").startswith("I don't have that information")
+            intel_events.record("question", intent=intent or "unrecognised",
+                                pattern=None if intent == "code_request"
+                                else intel_events.question_pattern(question),
+                                answered=bool(intent) and not fallback,
+                                run_id=(bridge.snapshot(trim=True).get("run") or {}).get("run_id"))
 
         # The assistant may ASK for an action but can never perform one. The
         # request goes through the same control channel and the same enabled
@@ -508,6 +534,101 @@ class Handler(BaseHTTPRequestHandler):
             reply["accepted"] = accepted
 
         self._send(200, json.dumps(reply))
+
+    # -- ATLAS intelligence --------------------------------------------------
+
+    def _query(self):
+        from urllib.parse import urlparse, parse_qs
+        return {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+
+    def _intel_get(self, route):
+        if not INTEL_OK:
+            self._send(503, json.dumps({"error": "the intelligence layer is not installed"}))
+            return
+        q = self._query()
+        try:
+            if route == "/api/atlas/learning":
+                snap = intel_learning.snapshot()
+                self._send(200, json.dumps({
+                    "summary": snap["summary"], "built_at": snap["built_at"],
+                    "events": snap["events"],
+                    "issues": [{k: (v if k != "strategies" else sorted(
+                        v.values(), key=lambda s: (s["wilson"], s["successes"]), reverse=True))
+                        for k, v in i.items() if k not in ("first_tried",)}
+                        for i in snap["issues"][:20]],
+                    "human": snap["human"][:10], "questions": snap["questions"][:12],
+                    "feedback": snap["feedback"], "proposals": snap["proposals"],
+                    "months": [{k: v for k, v in m.items() if k != "runs"}
+                               for m in snap["months"][-12:]]}, default=list))
+                return
+            if route == "/api/atlas/maturity":
+                status = intel_maturity.status()
+                review = intel_maturity.review()
+                self._send(200, json.dumps({"status": status, "review": review,
+                                            "review_text": intel_maturity.render_review(review)}))
+                return
+            if route == "/api/atlas/plan":
+                plan = intel_plans.build(q.get("provider"), q.get("issue"))
+                plan.pop("issue", None)
+                self._send(200, json.dumps(plan, default=list))
+                return
+            if route == "/api/evidence":
+                hits = intel_evidence.search(
+                    reference=q.get("reference") or None, run_id=q.get("run") or None,
+                    provider=q.get("provider") or None, source=q.get("source") or None,
+                    failures_only=q.get("failures") == "1",
+                    limit=min(int(q.get("limit") or 20), 50))
+                self._send(200, json.dumps([intel_evidence.public(h) for h in hits]))
+                return
+            if route == "/api/evidence/file":
+                entry, path = intel_evidence.file_for(re.sub(r"[^0-9a-f]", "", q.get("id", ""))[:16])
+                if path is None:
+                    self._send(404, json.dumps({"error": "no such evidence, or it changed "
+                                                         "since it was stored"}))
+                    return
+                data = path.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", entry.get("mime") or "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "private, max-age=3600")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'none'")
+                self._maybe_set_cookie()
+                self.end_headers()
+                self.wfile.write(data)
+                return
+        except Exception as error:
+            self._send(500, json.dumps({"error": str(error)[:200]}))
+            return
+        self._send(404, json.dumps({"error": "not found"}))
+
+    def _evidence_upload(self):
+        """An operator's image: validated, read, refused if it is a verification screen."""
+        if not INTEL_OK:
+            self._send(503, json.dumps({"accepted": False,
+                                        "message": "The intelligence layer is not installed."}))
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > intel_evidence.MAX_UPLOAD:
+            self._send(413, json.dumps({"accepted": False,
+                                        "message": "Send one image up to 6 MB."}))
+            return
+        data = self.rfile.read(length)
+        name = str(self.headers.get("X-Filename") or "upload")[:80]
+        holder = {}
+
+        def read(path):
+            holder["reading"] = intel_vision.read_image(path)
+            return holder["reading"]
+        ok, result = intel_evidence.register_upload(data, filename=name, read=read)
+        if not ok:
+            self._send(200, json.dumps({"accepted": False, "message": result}))
+            return
+        self._send(200, json.dumps({"accepted": True, "evidence": intel_evidence.public(result),
+                                    "reading": holder.get("reading")}))
 
     EXPORT_COLUMNS = [
         ("reference", "BOL_AWB"),
@@ -746,7 +867,27 @@ def replay(base_folder):
 _server = None
 
 
-def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=None):
+# ATLAS's intelligence stores (events, learning, evidence, maturity). Read by
+# the API; written only by the automation, and — for questions and feedback —
+# by this server when learning is switched on.
+try:
+    _ROOT_DIR = str(Path(__file__).resolve().parent.parent)
+    if _ROOT_DIR not in sys.path:
+        sys.path.insert(0, _ROOT_DIR)
+    from intelligence import (events as intel_events, learning as intel_learning,
+                              plans as intel_plans, evidence as intel_evidence,
+                              vision as intel_vision, maturity as intel_maturity)
+    INTEL_OK = True
+except Exception:                                   # pragma: no cover
+    INTEL_OK = False
+
+# Whether operator questions and feedback go to ATLAS's learning store. Set by
+# the real automation and the supervisor; off for tests, demos and tools.
+LEARNING = {"on": False}
+
+
+def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=None,
+          learning=False):
     """
     Start the dashboard in a daemon thread. Never raises into the caller.
 
@@ -755,6 +896,7 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
     """
     global _server, ACCESS_KEY, _shared_host, _shared_port
     ACCESS_KEY = access_key or None
+    LEARNING["on"] = bool(learning)
     _shared_host = host not in ("127.0.0.1", "localhost")
     _shared_port = port
     try:
