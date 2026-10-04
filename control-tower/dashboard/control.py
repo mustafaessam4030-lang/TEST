@@ -14,13 +14,78 @@ Disabled unless the operator explicitly turns it on.
 
 import json
 import os
+import re
 import threading
+import uuid
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 
 MAX_QUEUE = 50
 MAX_HISTORY = 60
+
+# ── Human-in-the-loop requests ────────────────────────────────────────
+#
+# When a carrier page needs a person (a security code, a "verify you are
+# human" check) the run pauses INSIDE the shipment, holding the browser tab
+# where it stopped. The dashboard may then ask for exactly two things, and
+# only for the action the run itself opened:
+#
+#     open    bring that paused tab to the front of the run's Edge window
+#     resume  the person is done; check the page and carry on
+#
+# Every request names the run and the action it is for. A stale tab, an old
+# run or a second operator cannot steer a wait it was not given. Nothing in
+# a request is ever typed into a page: there is no field for it.
+HUMAN_OPS = ("open", "resume")
+_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+def validate_human_request(pending, op, run_id, action_id, client_id=None):
+    """
+    (accepted, message) for a human request against the action the run has
+    published as pending. Pure; shared by the in-process channel and the
+    supervisor so both refuse the same things with the same words.
+    """
+    if op not in HUMAN_OPS:
+        return False, "Unknown human action."
+    for name, value in (("run", run_id), ("action", action_id)):
+        if not _ID.match(str(value or "")):
+            return False, "That request does not name a valid {0}.".format(name)
+    if client_id is not None and client_id != "" and \
+            not _ID.match(str(client_id)):
+        return False, "That request does not come from a valid dashboard tab."
+    if pending and not pending.get("waiting") and \
+            str(action_id) == str(pending.get("action_id")):
+        return False, {
+            "session_lost": "The browser session for this shipment is no "
+                            "longer available. Nothing was written; the "
+                            "shipment is looked up again next run.",
+            "timeout": "That human action timed out. Nothing was written; "
+                       "the shipment is looked up again next run.",
+            "unattended": "That run is unattended; nobody can be asked.",
+            "resumed": "That human action has already been resumed.",
+        }.get(pending.get("state"), "That human action has ended.")
+    if not pending or not pending.get("waiting"):
+        return False, "Nothing is waiting for a person right now."
+    if str(run_id) != str(pending.get("run_id")):
+        return False, ("That request is for run {0}, but run {1} is the one "
+                       "waiting. Refresh the dashboard.".format(
+                           run_id, pending.get("run_id")))
+    if str(action_id) != str(pending.get("action_id")):
+        return False, ("That human action is no longer the current one. "
+                       "Refresh the dashboard.")
+    claimed = pending.get("claimed_by")
+    if claimed and client_id and claimed != client_id:
+        return False, ("Another operator has taken over this browser session. "
+                       "Only they can resume it.")
+    return True, "OK"
+
+
+def human_request_record(op, run_id, action_id, client_id=None):
+    return {"id": uuid.uuid4().hex, "op": op, "run_id": str(run_id),
+            "action_id": str(action_id), "client_id": str(client_id or ""),
+            "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 
 class ControlChannel:
@@ -32,6 +97,13 @@ class ControlChannel:
         self.reprocess = deque(maxlen=MAX_QUEUE)
         self.history = deque(maxlen=MAX_HISTORY)
         self.version = 0
+        # Human-in-the-loop. Allowed independently of `enabled`: these
+        # requests can only answer a wait the run itself opened.
+        self.human_enabled = True
+        self.human = deque(maxlen=MAX_QUEUE)
+        self._human_seen = deque(maxlen=200)
+        # The action the run is waiting on, as the run published it.
+        self.human_pending = None
         # When the supervisor owns the dashboard, the automation runs in a
         # separate process — so requests travel through a small file rather
         # than shared memory. Same queue semantics either way.
@@ -39,10 +111,55 @@ class ControlChannel:
 
     # -- configuration -----------------------------------------------------
 
-    def configure(self, enabled):
+    def configure(self, enabled, human_enabled=None):
         with self._lock:
             self.enabled = bool(enabled)
+            if human_enabled is not None:
+                self.human_enabled = bool(human_enabled)
             self.version += 1
+
+    # -- human-in-the-loop -------------------------------------------------
+
+    def set_human_pending(self, pending):
+        """Called by the run when it opens or closes a human wait."""
+        with self._lock:
+            self.human_pending = dict(pending) if pending else None
+            self.version += 1
+
+    def human_request(self, op, run_id, action_id, client_id=None):
+        """(accepted, message). Never raises."""
+        with self._lock:
+            if not self.human_enabled:
+                return False, ("Human actions from the dashboard are switched "
+                               "off (DASHBOARD_ALLOW_HUMAN_ACTIONS).")
+            accepted, message = validate_human_request(
+                self.human_pending, op, run_id, action_id, client_id)
+            if not accepted:
+                return False, message
+            self.human.append(human_request_record(
+                op, run_id, action_id, client_id))
+            self._record("human_" + op, str(action_id))
+            return True, {
+                "open": "Asked the run to bring the paused tab to the front "
+                        "of its Edge window.",
+                "resume": "Resume sent. The run checks the page and carries "
+                          "on if the result is there.",
+            }[op]
+
+    def take_human_requests(self):
+        """Every human request not yet handed to the run, oldest first."""
+        with self._lock:
+            self._load_file()
+            fresh = []
+            while self.human:
+                request = self.human.popleft()
+                if request.get("id") in self._human_seen:
+                    continue
+                self._human_seen.append(request.get("id"))
+                fresh.append(request)
+            if fresh:
+                self.version += 1
+            return fresh
 
     def _record(self, action, detail=""):
         self.history.appendleft({
@@ -128,6 +245,11 @@ class ControlChannel:
         for reference in data.get("reprocess") or []:
             if reference not in self.reprocess:
                 self.reprocess.append(reference)
+        for request in data.get("human") or []:
+            if isinstance(request, dict) and \
+                    request.get("id") not in self._human_seen and \
+                    all(r.get("id") != request.get("id") for r in self.human):
+                self.human.append(request)
 
     def take_reprocess(self):
         """Pop the next queued reference, or None."""
@@ -155,6 +277,8 @@ class ControlChannel:
             self.paused = False
             self.stop_requested = False
             self.reprocess.clear()
+            self.human.clear()
+            self.human_pending = None
             self.version += 1
 
     def snapshot(self):
@@ -165,6 +289,7 @@ class ControlChannel:
                 "stopping": self.stop_requested,
                 "queued": list(self.reprocess),
                 "history": list(self.history),
+                "human_enabled": self.human_enabled,
             }
 
 

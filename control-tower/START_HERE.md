@@ -6,6 +6,36 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · Human in the loop (Grimaldi first).** When a carrier page needs a
+person, the run no longer skips the shipment. It pauses that shipment in the
+same run and keeps the browser tab open where it stopped:
+
+1. The dashboard shows **HUMAN ACTION REQUIRED**: carrier, shipment, run ID,
+   reason and how long it has been waiting.
+2. **Open Browser Session** brings that exact tab to the front of the
+   automation's Edge window on the automation server. Work in it there, or
+   over Remote Desktop to that machine.
+3. Do the step (for GNET: type the security code and press Search), then
+   press **Resume**. If the result isn't on the page yet, the run says so and
+   keeps waiting.
+4. The run reads the result, checks it is this shipment, validates the
+   dates, writes them and reads them back. Only then is it SUCCESS.
+
+- If nobody finishes within `HUMAN_WAIT_MS` (default 3 minutes; the old
+  `CAPTCHA_WAIT_MS` still works), the shipment becomes **HUMAN TIMEOUT**.
+  Nothing is written, and it is looked up again next run.
+- If the tab or the run process is gone, Resume says the session is no
+  longer available, and the shipment is **FAILED (HUMAN SESSION LOST)**.
+- `HUMAN_AUTO_RESUME=0` makes Resume the only way to continue. By default,
+  the run also continues by itself once the page shows the step done.
+- The first dashboard tab to press Open or Resume holds that session.
+  Another operator's Resume is refused.
+- Every event (`HUMAN_VERIFICATION_DETECTED`, `WAITING_FOR_HUMAN`,
+  `HUMAN_SESSION_OPENED`, `HUMAN_RESUMED`, `HUMAN_RESUME_FAILED`,
+  `HUMAN_TIMEOUT`, `ATA_EXTRACTION_AFTER_HUMAN`, `SUCCESS`) goes to the run
+  log and to `logs/human_actions.jsonl`, with the run ID. The open action is
+  kept in `logs/human_action.json`.
+
 **New · DHL K-references and seven ocean carriers.** A reference like
 K179801 goes to DHL. CMA CGM, MSC, Grimaldi, COSCO, Maersk, ONE and
 Hapag-Lloyd are picked by the Hub's Carrier Name column.

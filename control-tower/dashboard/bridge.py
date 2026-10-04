@@ -16,6 +16,13 @@ MAX_SHIPMENTS = 500
 MAX_EXCEPTIONS = 200
 MAX_TIMELINE = 300
 MAX_ATLAS_EVENTS = 200
+MAX_HUMAN_EVENTS = 60
+
+# Shipment states. WAITING_FOR_HUMAN is not an outcome: the shipment is
+# still open, its lookup paused inside the run until a person acts. It
+# leaves only for PROCESSING (resumed) or HUMAN_TIMEOUT / FAILED.
+SHIPMENT_STATES = ("processing", "waiting_for_human", "updated", "skipped",
+                   "failed", "partial", "human_timeout")
 
 # ATLAS — Adaptive Logistics Strategy Engine. Mirrored from ml/identity.py so
 # the dashboard renders correctly with the ml package absent; the test suite
@@ -90,6 +97,7 @@ class ControlTowerState:
         self.recovery = None
 
         self.run_status = "idle"          # idle | running | finished | fatal
+        self.run_id = None
         self.started_at = None
         self.finished_at = None
         self.last_heartbeat = None
@@ -106,6 +114,11 @@ class ControlTowerState:
         # None until a challenge is seen. The dashboard shows nothing at all
         # rather than a reassuring "no captcha" that was never checked.
         self.human_verification = None
+        # The human-in-the-loop action the run has open (or last had open).
+        # Non-sensitive context only: run, action, reference, carrier, step,
+        # reason, tab, URL without its query string, timestamps.
+        self.human_action = None
+        self.human_events = deque(maxlen=MAX_HUMAN_EVENTS)
 
         self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
         self.atlas_influenced_actions = 0
@@ -123,6 +136,7 @@ class ControlTowerState:
         self.failed = 0
         self.skipped = 0
         self.partial = 0
+        self.needs_human = 0
 
         self.systems = {
             "hub": {
@@ -301,6 +315,8 @@ class ControlTowerState:
             self.run_status = "running"
             self.started_at = _now()
             self.finished_at = None
+            self.human_action = None
+            self.human_events.clear()
             for key, value in config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
@@ -471,6 +487,96 @@ class ControlTowerState:
                 " after " + str(waited_seconds) + "s" if waited_seconds is not None else "",
                 " for " + reference if reference else ""))
             self._touch()
+
+    # -- human in the loop -------------------------------------------------
+
+    _HUMAN_FIELDS = ("run_id", "action_id", "reference", "carrier", "provider",
+                     "step", "reason", "page_id", "url", "opened_at",
+                     "deadline", "timeout_s", "instructions")
+
+    @_guard
+    def human_action_opened(self, action):
+        """
+        The run is now WAITING_FOR_HUMAN on one shipment, holding its tab.
+
+        The shipment record moves to waiting_for_human — not skipped, not
+        failed, not done — and the action is published for the dashboard to
+        offer Open Browser Session and Resume against.
+        """
+        with self._lock:
+            published = {key: action.get(key) for key in self._HUMAN_FIELDS}
+            published.update(waiting=True, state="waiting_for_human",
+                             claimed_by=None, session_opened_at=None,
+                             last_response=None, resumed_via=None,
+                             closed_at=None)
+            self.human_action = published
+            record = self._index.get(published.get("reference"))
+            if record is not None:
+                record["state"] = "waiting_for_human"
+                record["step"] = "Waiting for a person — {0}".format(
+                    published.get("reason") or "human action")
+                record["updated"] = _stamp()
+            self.systems["browser"]["state"] = "waiting"
+            self.systems["browser"]["activity"] = "Waiting for a person on {0}{1}".format(
+                published.get("carrier") or "the carrier page",
+                " for " + str(published["reference"]) if published.get("reference") else "")
+            self.current_step = "Waiting for a person on {0}".format(
+                published.get("carrier") or "the carrier page")
+            self._mark("warn", "HUMAN ACTION REQUIRED — {0} {1}".format(
+                published.get("carrier") or "", published.get("reference") or ""))
+            self._touch()
+        self._touch_cold()
+
+    @_guard
+    def human_action_event(self, event, detail="", **fields):
+        """One entry in the human-intervention log, plus any field updates."""
+        with self._lock:
+            action = self.human_action or {}
+            entry = {"time": _stamp(), "event": str(event)[:40],
+                     "run_id": action.get("run_id") or self.run_id,
+                     "action_id": action.get("action_id"),
+                     "reference": action.get("reference"),
+                     "detail": str(detail)[:300]}
+            self.human_events.appendleft(entry)
+            if self.human_action is not None:
+                for key in ("claimed_by", "session_opened_at", "last_response",
+                            "url", "page_id"):
+                    if key in fields:
+                        self.human_action[key] = fields[key]
+            self._touch()
+
+    @_guard
+    def human_action_closed(self, outcome, detail=""):
+        """
+        The wait is over. `outcome` is resumed, timeout, session_lost or
+        unattended. Resumed puts the shipment back to processing — it is
+        NOT a success: the result still has to be read, validated and
+        written and read back.
+        """
+        with self._lock:
+            if self.human_action is None:
+                return
+            self.human_action.update(
+                waiting=False, state=str(outcome), closed_at=_stamp(),
+                last_response=detail or self.human_action.get("last_response"))
+            record = self._index.get(self.human_action.get("reference"))
+            if record is not None and record.get("state") == "waiting_for_human":
+                if outcome == "resumed":
+                    record["state"] = "processing"
+                    record["step"] = "Resumed after human action — reading the result"
+                else:
+                    record["step"] = {"timeout": "Human timeout",
+                                      "session_lost": "Browser session lost",
+                                      "unattended": "Needs a person"}.get(
+                                          outcome, "Human action ended")
+                record["updated"] = _stamp()
+            self.systems["browser"]["state"] = "connected"
+            self.systems["browser"]["activity"] = None
+            self._mark("ok" if outcome == "resumed" else "warn",
+                       "Human action {0} — {1}".format(
+                           outcome, self.human_action.get("reference") or ""))
+            self._touch()
+        self._touch_cold()
 
     @_guard
     def register_system(self, key, name, role="Carrier AWB tracking"):
@@ -647,6 +753,7 @@ class ControlTowerState:
                 "SKIPPED": "skipped",
                 "FAILED": "failed",
                 "PARTIAL": "partial",
+                "HUMAN_TIMEOUT": "human_timeout",
             }.get(result, "unknown")
             record["error"] = details or None
             # Named operational class from classify_failure(), e.g. NO RESULT.
@@ -677,6 +784,22 @@ class ControlTowerState:
                     "step": record.get("step"),
                     "outcome": record.get("outcome"),
                     "message": details or "Skipped",
+                })
+            elif result == "HUMAN_TIMEOUT":
+                # Nobody completed the human step in time. Nothing was looked
+                # up and nothing was written: not a success, not a statement
+                # about the shipment.
+                record["step"] = "Human timeout"
+                self._mark("warn", "{0} — human action not completed: {1}".format(
+                    reference, details))
+                self.exceptions.appendleft({
+                    "time": _stamp(),
+                    "severity": "warning",
+                    "reference": reference,
+                    "system": record.get("provider"),
+                    "step": record.get("step"),
+                    "outcome": record.get("outcome"),
+                    "message": details or "Human action not completed",
                 })
             elif result == "PARTIAL":
                 # A date WAS written to the Hub; a second field failed. Calling
@@ -717,13 +840,16 @@ class ControlTowerState:
         self._touch_cold()
 
     @_guard
-    def counters(self, successful, failed, skipped, partial=None):
+    def counters(self, successful, failed, skipped, partial=None,
+                 needs_human=None):
         with self._lock:
             self.successful = successful
             self.failed = failed
             self.skipped = skipped
             if partial is not None:
                 self.partial = partial
+            if needs_human is not None:
+                self.needs_human = needs_human
             self._touch()
 
     # -- logs --------------------------------------------------------------
@@ -817,6 +943,7 @@ class ControlTowerState:
                 "generated_at": _stamp(now),
                 "run": {
                     "status": self.run_status,
+                    "run_id": self.run_id,
                     "started_at": _iso(self.started_at),
                     "finished_at": _iso(self.finished_at),
                     "runtime_seconds": runtime,
@@ -838,6 +965,12 @@ class ControlTowerState:
                     "shipment": current,
                 },
                 "human_verification": self.human_verification,
+                # WAITING_FOR_HUMAN: the action the run holds open, and the
+                # intervention log. Elapsed time is computed by the page from
+                # opened_at so it ticks without a push.
+                "human_action": (dict(self.human_action)
+                                 if self.human_action else None),
+                "human_events": list(self.human_events)[:20],
                 # Live recovery status, or None. Small and bounded: one
                 # error, its plan, and the attempts made against it.
                 "recovery": self.recovery,
@@ -861,6 +994,7 @@ class ControlTowerState:
                     "failed": self.failed,
                     "skipped": self.skipped,
                     "partial": self.partial,
+                    "needs_human": self.needs_human,
                     "processed": processed,
                     "success_rate": success_rate,
                 },

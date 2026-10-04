@@ -525,6 +525,20 @@ input,textarea,select{font-family:inherit}
 .tag.partial{color:var(--y);background:var(--y-wash)}
 .tag.failed{color:var(--red);background:var(--red-wash)}
 .tag.unknown{color:var(--mid);background:var(--bone)}
+.tag.waiting_for_human{color:var(--y);background:var(--y-wash);font-weight:700}
+.tag.human_timeout{color:var(--y);background:var(--y-wash)}
+/* HUMAN ACTION REQUIRED. Shown on every page while a run is holding a
+   carrier tab for a person; nothing else on the console is this loud. */
+.hbox{margin:14px 22px 0;padding:14px 16px;border:1px solid var(--y);border-radius:12px;
+  background:var(--y-wash);display:grid;gap:8px}
+.hbox[hidden]{display:none}
+.hbox-t{font-weight:800;letter-spacing:.04em;color:var(--y)}
+.hbox-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font-size:13px}
+.hbox-g b{display:block;font-size:11px;font-weight:600;color:var(--mid);text-transform:uppercase;letter-spacing:.05em}
+.hbox-a{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.hbox-m{font-size:12.5px;color:var(--mid)}
+.hbox.done{border-color:var(--line)}
+.hbox.done .hbox-t{color:var(--mid)}
 
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -925,6 +939,24 @@ tr.r-partial .err{color:var(--y)}
       <div class="pill" id="runPill"><span class="d"></span><span id="runTxt">Connecting</span></div>
       <div class="pill" id="beatPill"><span class="d"></span><span id="beatTxt">No heartbeat</span></div>
     </header>
+
+    <div class="hbox" id="hbox" hidden role="alert" aria-live="assertive">
+      <div class="hbox-t" id="hTitle">HUMAN ACTION REQUIRED</div>
+      <div class="hbox-g">
+        <div><b>Carrier</b><span id="hCarrier">—</span></div>
+        <div><b>Shipment</b><span class="mono" id="hRef">—</span></div>
+        <div><b>Run</b><span class="mono" id="hRun">—</span></div>
+        <div><b>Reason</b><span id="hReason">—</span></div>
+        <div><b>Waiting</b><span class="mono" id="hWait">—</span></div>
+        <div><b>Times out</b><span class="mono" id="hDeadline">—</span></div>
+      </div>
+      <div class="hbox-m" id="hHow"></div>
+      <div class="hbox-a">
+        <button class="cbtn warn" id="hOpen">Open Browser Session</button>
+        <button class="cbtn go" id="hResume">Resume</button>
+        <span class="hbox-m" id="hMsg"></span>
+      </div>
+    </div>
 
     <section class="page on" data-p="overview">
       <div class="ctl">
@@ -1389,7 +1421,8 @@ $('scrim').addEventListener('click', () => {
 let S = null, logLevel = 'all', logQ = '', shipQ = '', shipF = 'all';
 const sig = {};
 const TAGS = {updated:'Updated', processing:'Processing', skipped:'Skipped',
-              partial:'Partly updated', failed:'Failed', unknown:'Unknown'};
+              partial:'Partly updated', failed:'Failed', unknown:'Unknown',
+              waiting_for_human:'Waiting for human', human_timeout:'Human timeout'};
 const tag = (s) => '<span class="tag ' + (TAGS[s] ? s : 'unknown') + '">' + (TAGS[s] || 'Unknown') + '</span>';
 
 /* ATLAS attribution. Rendered ONLY from what the automation actually
@@ -1538,6 +1571,7 @@ function paint(force){
   }
 
   paintControl();
+  paintHuman();
   paintLive(); paintShips(); paintAnalysis(); paintExc(); paintLogs(); paintSettings();
 
   const ne = $('n-exceptions');
@@ -1615,8 +1649,10 @@ function paintAtlasFeed(a){
 }
 
 /* ═══ SHIPMENTS ═══ */
-$('shipF').innerHTML = [['all','All'],['processing','Processing'],['updated','Updated'],
-  ['skipped','Skipped'],['partial','Partly updated'],['failed','Failed']]
+$('shipF').innerHTML = [['all','All'],['processing','Processing'],
+  ['waiting_for_human','Waiting for human'],['updated','Updated'],
+  ['skipped','Skipped'],['partial','Partly updated'],['failed','Failed'],
+  ['human_timeout','Human timeout']]
   .map((p) => '<button class="chip' + (p[0] === 'all' ? ' on' : '') + '" data-s="' + p[0] + '">' + p[1] + '</button>').join('');
 $('shipF').addEventListener('click', (e) => {
   const b = e.target.closest('[data-s]'); if (!b) return;
@@ -1636,7 +1672,8 @@ $('shipQ').addEventListener('input', (e) => {
    only while something is actually in flight, and only this table. */
 let shipTick = null;
 function shipClock(){
-  const busy = S && S.shipments && S.shipments.some((r) => r.state === 'processing');
+  const busy = S && S.shipments && S.shipments.some(
+    (r) => r.state === 'processing' || r.state === 'waiting_for_human');
   if (busy && shipTick === null) {
     shipTick = setInterval(() => { delete sig.ships; paintShips(); }, 1000);
   } else if (!busy && shipTick !== null) {
@@ -1663,11 +1700,12 @@ function paintShips(){
      table actually refreshes while it does. */
   const elapsed = (r) => (r.started_epoch
     ? Math.max(0, Math.round(Date.now() / 1000 - r.started_epoch)) : null);
-  const live = (r) => (r.state !== 'processing' ? null : elapsed(r));
+  const open = (r) => r.state === 'processing' || r.state === 'waiting_for_human';
+  const live = (r) => (!open(r) ? null : elapsed(r));
   const clock = (n) => (n == null ? '—'
     : (n < 60 ? n + ' s' : Math.floor(n / 60) + ' m ' + (n % 60) + ' s'));
   const key = shipF + '|' + shipQ + '|' + rows.map((r) =>
-    r.reference + r.state + (r.state === 'processing'
+    r.reference + r.state + (open(r)
       ? '|' + (r.step || '') + '|' + live(r) : '')).join(',');
   if (!changed('ships', key)) return;
   putHTML($('shipRows'), rows.map((r) =>
@@ -1679,8 +1717,8 @@ function paintShips(){
        find out what happened to a shipment — not in a column of its own. */
     '<td>' + tag(r.state) + (r.coe_action || r.bu_action ? ' ' + atlasTag(r) : '') + '</td>' +
     '<td style="font-size:11.5px">' +
-      (r.state === 'processing' ? dash(r.step) : dash(r.outcome)) + '</td>' +
-    '<td class="n">' + (r.state === 'processing'
+      (open(r) ? dash(r.step) : dash(r.outcome)) + '</td>' +
+    '<td class="n">' + (open(r)
       ? clock(live(r)) : ms(r.duration_ms)) + '</td>' +
     '<td><span class="err" title="' + esc(r.error || '') + '">' + dash(r.error) + '</span></td></tr>').join(''));
   putHTML($('shipEmpty'), rows.length ? '' : empty('No shipments match',
@@ -2058,6 +2096,80 @@ $('btnStop').addEventListener('click', () => {
       + 'Everything already written to the Hub is kept.')) return;
   sendControl('stop').then(paintControl);
 });
+
+/* ═══ HUMAN IN THE LOOP ═══
+   A run that meets a carrier page needing a person (Grimaldi's security
+   code, a "verify you are human" check) holds that shipment and its browser
+   tab and publishes the action here. Two buttons, both scoped to this run
+   and this action, both validated again by the run:
+     Open Browser Session  the run brings that exact tab to the front of its
+                           Edge window on the automation server
+     Resume                the run checks the page and carries on only if
+                           the step is really done
+   Nothing typed here reaches the carrier page; there is no field for it. */
+const HUMAN_REASONS = {human_verification_required: 'Human verification required'};
+const hClient = (function(){
+  const make = () => Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    let id = sessionStorage.getItem('ct_human_client');
+    if (!id) { id = make(); sessionStorage.setItem('ct_human_client', id); }
+    return id;
+  } catch (err) { return make(); }
+})();
+let hTick = null, hNote = '';
+function hSince(stamp){
+  const t = stamp ? new Date(String(stamp).replace(' ', 'T')).getTime() : NaN;
+  if (isNaN(t)) return '—';
+  const n = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return n < 60 ? n + ' s' : Math.floor(n / 60) + ' m ' + (n % 60) + ' s';
+}
+function paintHuman(){
+  const a = S && S.human_action;
+  const box = $('hbox');
+  if (!a){ box.hidden = true; if (hTick){ clearInterval(hTick); hTick = null; } return; }
+  box.hidden = false;
+  const waiting = !!a.waiting;
+  box.classList.toggle('done', !waiting);
+  put($('hTitle'), waiting ? 'HUMAN ACTION REQUIRED' : ({
+    resumed: 'HUMAN ACTION COMPLETED — result being read and verified',
+    timeout: 'HUMAN TIMEOUT — nothing written',
+    session_lost: 'BROWSER SESSION LOST — nothing written',
+    unattended: 'NEEDS A PERSON — unattended run'}[a.state] || 'HUMAN ACTION ENDED'));
+  put($('hCarrier'), a.carrier || '—');
+  put($('hRef'), a.reference || '—');
+  put($('hRun'), a.run_id || '—');
+  put($('hReason'), HUMAN_REASONS[a.reason] || a.reason || '—');
+  put($('hWait'), waiting ? hSince(a.opened_at) : (a.closed_at ? 'ended ' + a.closed_at.slice(11) : '—'));
+  put($('hDeadline'), a.deadline ? a.deadline.slice(11) : '—');
+  const mine = !a.claimed_by || a.claimed_by === hClient;
+  put($('hHow'), waiting ? (a.instructions || '') +
+    ' The browser is the automation\u2019s own Edge window on the automation server' +
+    ' — work in it there, or over Remote Desktop to that machine.' +
+    (mine ? '' : ' Another operator has taken over this session.') : '');
+  $('hOpen').style.display = waiting ? '' : 'none';
+  $('hResume').style.display = waiting ? '' : 'none';
+  $('hOpen').disabled = !mine; $('hResume').disabled = !mine;
+  put($('hMsg'), hNote || a.last_response || '');
+  if (waiting && !hTick) hTick = setInterval(() => put($('hWait'), hSince((S.human_action || {}).opened_at)), 1000);
+  if (!waiting && hTick){ clearInterval(hTick); hTick = null; }
+}
+function sendHuman(op){
+  const a = S && S.human_action;
+  if (!a) return;
+  hNote = op === 'open' ? 'Asking the run to bring the tab forward…' : 'Sending Resume…';
+  paintHuman();
+  fetch('/api/human', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({op: op, run_id: a.run_id, action_id: a.action_id, client_id: hClient})
+  }).then((r) => r.json()).then((r) => {
+    hNote = r.message || '';
+    paintHuman();
+    setTimeout(() => { hNote = ''; paintHuman(); }, 6000);
+  }).catch(() => { hNote = 'Could not reach the dashboard server.'; paintHuman(); });
+}
+$('hOpen').addEventListener('click', () => sendHuman('open'));
+$('hResume').addEventListener('click', () => sendHuman('resume'));
 
 /* ═══ SHARE LINK ═══
    127.0.0.1 means "this computer" on whichever machine opens it, so pasting

@@ -98,6 +98,13 @@ DASHBOARD_ACCESS_KEY = "mantrac2026"
 # want for the people you share with.
 DASHBOARD_ALLOW_CONTROL = False
 
+# Human-in-the-loop. When a carrier page needs a person (Grimaldi's security
+# code, a "verify you are human" check) the run pauses that shipment and the
+# dashboard offers Open Browser Session and Resume for it. Those two buttons
+# can only answer a wait the run itself opened, for that run, and nothing
+# from the dashboard is ever typed into the page.
+DASHBOARD_ALLOW_HUMAN_ACTIONS = True
+
 
 # ============================================================
 # CONFIGURATION - DHL ONLY
@@ -335,6 +342,15 @@ LOG_FILE = LOG_FOLDER / "run_{0:%Y%m%d_%H%M%S_%f}_pid{1}.log".format(
     datetime.now(), os.getpid()
 )
 
+# One identifier for this run, carried by every human-in-the-loop request so
+# a dashboard tab left open from an earlier run cannot steer this one.
+RUN_ID = "{0:%Y%m%d-%H%M%S}-{1}".format(datetime.now(), os.urandom(3).hex())
+# The human action this run has open, as JSON — what it is waiting for and
+# where — and an append-only log of every intervention event. No secrets,
+# no codes, no answers: there is nothing of the kind to put in them.
+HUMAN_ACTION_FILE = LOG_FOLDER / "human_action.json"
+HUMAN_EVENTS_FILE = LOG_FOLDER / "human_actions.jsonl"
+
 
 class SkipShipment(Exception):
     """Expected shipment skip; processing continues with the next shipment."""
@@ -353,15 +369,33 @@ class CaptchaRequired(Exception):
     this class does is stop, say so clearly, and wait for a person.
     """
 
-    def __init__(self, tracking_number, label="the carrier page"):
+    def __init__(self, tracking_number, label="the carrier page", reason=None):
         self.tracking_number = tracking_number
         self.label = label
+        # timeout | unattended | session_lost. Taken from the wait that just
+        # ended for this reference when the raiser does not say.
+        if reason is None:
+            last = HUMAN_STATE.get("last") or {}
+            reason = (last.get("outcome")
+                      if last.get("reference") == tracking_number
+                      and last.get("outcome") != "resumed" else "timeout")
+        self.reason = reason
         Exception.__init__(self, (
-            "HUMAN VERIFICATION REQUIRED on {0} for {1}. The page presented a "
-            "\"confirm you are human\" challenge and it was not completed "
-            "within the wait window. Complete it in the open browser and run "
-            "again; nothing was written for this shipment."
-        ).format(label, tracking_number))
+            "HUMAN VERIFICATION REQUIRED on {0} for {1}. {2} The Hub is "
+            "untouched — nothing was written for this shipment; it is looked "
+            "up again next run."
+        ).format(label, tracking_number, {
+            "session_lost": "The browser session that was waiting for a "
+                            "person is no longer available.",
+            "unattended": "This run is unattended (wait set to 0), so nobody "
+                          "was asked.",
+        }.get(reason, "The page needed a person and the human step was not "
+                      "completed within the wait window.")))
+
+
+# What the human-in-the-loop wait last did, per run. Read by CaptchaRequired
+# and by the shipment loop to log the outcome against the right reference.
+HUMAN_STATE = {"current": None, "last": None}
 
 
 # ============================================================
@@ -5319,7 +5353,8 @@ def _captcha_wait_ms():
     rather than hold a browser open with nobody watching — which is what a
     scheduled overnight run wants.
     """
-    raw = (os.environ.get("CAPTCHA_WAIT_MS") or "").strip()
+    raw = (os.environ.get("HUMAN_WAIT_MS")
+           or os.environ.get("CAPTCHA_WAIT_MS") or "").strip()
     if not raw:
         return 180000                  # 3 minutes
     try:
@@ -5392,6 +5427,376 @@ def captcha_on_page(page):
     return False
 
 
+# ── Human in the loop ─────────────────────────────────────────────────
+#
+# A carrier page that needs a person pauses THIS shipment inside THIS run.
+# The tab stays exactly where it stopped, the Playwright call stack stays
+# where it is, and the run waits — bounded — in one of three ways out:
+#
+#     PROCESSING -> WAITING_FOR_HUMAN -> PROCESSING (resumed) -> read, validate,
+#                                                              write, read back
+#                                     -> HUMAN_TIMEOUT        (nobody came)
+#                                     -> FAILED               (session lost)
+#
+# While waiting it answers two dashboard requests, scoped to this run and this
+# action: "open" brings the paused tab to the front of the run's own Edge
+# window on the server; "resume" says the person is done, and is honoured
+# only when the page really shows the completed state. Nothing the dashboard
+# sends is ever typed into a page, and nothing here reads, solves or submits a
+# verification: the person does that in the browser.
+#
+# A live Playwright session belongs to this process. If the process ends, the
+# session ends with it; Resume then reports that plainly and the shipment is
+# looked up again on the next run.
+HUMAN_REASON = "human_verification_required"
+# When the page itself shows the step done — the person finished in the
+# browser and never touched the dashboard — carry on without waiting for
+# Resume. The same readiness and identity checks apply either way, and the
+# result is still read, validated, written and read back. HUMAN_AUTO_RESUME=0
+# makes the dashboard's Resume the only way on.
+HUMAN_AUTO_RESUME = os.environ.get("HUMAN_AUTO_RESUME", "1").strip().lower() \
+    not in ("0", "false", "no", "off")
+HUMAN_TIMEOUT = "HUMAN TIMEOUT"
+HUMAN_SESSION_LOST = "HUMAN SESSION LOST"
+_HUMAN_PERSISTED = ("run_id", "action_id", "reference", "carrier", "provider",
+                    "step", "reason", "page_id", "url", "opened_at", "deadline",
+                    "timeout_s", "claimed_by", "state", "outcome", "resumed_via",
+                    "closed_at")
+
+
+def _human_now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _page_url_for_log(page):
+    """The page's address without query or fragment — no tokens leave here."""
+    try:
+        url = str(page.url or "")
+    except Exception:
+        return None
+    return url.split("#")[0].split("?")[0][:200] or None
+
+
+def _page_id(page):
+    try:
+        return "tab-{0}".format(page.context.pages.index(page) + 1)
+    except Exception:
+        return None
+
+
+def human_session_alive(page):
+    """Is the tab the run paused on still open, in a connected browser?"""
+    try:
+        if page.is_closed():
+            return False
+    except AttributeError:
+        pass
+    except Exception:
+        return False
+    try:
+        browser = page.context.browser
+        if browser is not None and not browser.is_connected():
+            return False
+    except AttributeError:
+        pass
+    except Exception:
+        return False
+    return True
+
+
+def _persist_human_action(action):
+    try:
+        HUMAN_ACTION_FILE.write_text(json.dumps(
+            {key: action.get(key) for key in _HUMAN_PERSISTED}, indent=2),
+            encoding="utf-8")
+    except Exception as error:
+        note_suppressed("saving the human action context", error)
+
+
+def human_event(event, action, detail="", **fields):
+    """Log one human-intervention event: run log, audit file, dashboard."""
+    action = action or {}
+    entry = {"time": _human_now(), "event": event, "run_id": RUN_ID,
+             "action_id": action.get("action_id"),
+             "reference": action.get("reference"),
+             "carrier": action.get("carrier"), "detail": str(detail)[:300]}
+    write_log("[HUMAN] {0} run={1} action={2} ref={3} carrier={4}{5}".format(
+        event, RUN_ID, entry["action_id"], entry["reference"],
+        entry["carrier"], " — " + entry["detail"] if detail else ""))
+    try:
+        with open(HUMAN_EVENTS_FILE, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+    except Exception as error:
+        note_suppressed("appending to the human action log", error)
+    try:
+        tower.human_action_event(event, detail, **fields)
+    except Exception:
+        pass
+
+
+def _human_ready(ready):
+    """(done, why_not) from a ready check that may return a bool."""
+    try:
+        answer = ready()
+    except Exception as error:
+        return False, "the page could not be read ({0})".format(
+            str(error).split("\n")[0][:80])
+    if isinstance(answer, tuple):
+        return bool(answer[0]), (answer[1] if len(answer) > 1 else "")
+    return bool(answer), "" if answer else "the page does not show it done yet"
+
+
+def _publish_pending(action):
+    try:
+        tower_control.set_human_pending(None if action is None else {
+            "waiting": True, "run_id": action["run_id"],
+            "action_id": action["action_id"],
+            "claimed_by": action.get("claimed_by")})
+    except Exception:
+        pass
+
+
+def _handle_human_request(page, action, request, ready):
+    """
+    Apply one dashboard request to the open action. Returns "resumed",
+    "session_lost" or None (still waiting).
+    """
+    op = request.get("op")
+    client = request.get("client_id") or None
+    if request.get("run_id") != RUN_ID or \
+            request.get("action_id") != action["action_id"]:
+        human_event("HUMAN_RESUME_FAILED", action,
+                    "ignored a {0} request for run {1} / action {2}: not the "
+                    "action this run is waiting on".format(
+                        op, request.get("run_id"), request.get("action_id")),
+                    last_response="That request was for another run or an "
+                                  "older human action. Refresh the dashboard.")
+        return None
+    if action.get("claimed_by") and client and client != action["claimed_by"]:
+        human_event("HUMAN_RESUME_FAILED", action,
+                    "{0} refused: another operator holds this session".format(op),
+                    last_response="Another operator has taken over this browser "
+                                  "session. Only they can resume it.")
+        return None
+    if client and not action.get("claimed_by"):
+        action["claimed_by"] = client
+        _publish_pending(action)
+    if not human_session_alive(page):
+        human_event("HUMAN_RESUME_FAILED", action,
+                    "the paused browser tab is no longer open",
+                    last_response="The browser session for this shipment is no "
+                                  "longer available. Nothing was written; it "
+                                  "will be looked up again next run.")
+        return "session_lost"
+    if op == "open":
+        try:
+            page.bring_to_front()
+        except Exception as error:
+            note_suppressed("bringing the paused tab to the front", error)
+        action["session_opened_at"] = _human_now()
+        _persist_human_action(action)
+        human_event("HUMAN_SESSION_OPENED", action,
+                    "{0} tab brought to the front".format(action.get("carrier")),
+                    claimed_by=action.get("claimed_by"),
+                    session_opened_at=action["session_opened_at"],
+                    url=_page_url_for_log(page), page_id=_page_id(page),
+                    last_response=(
+                        "The {0} tab for {1} is in front of the automation's "
+                        "Edge window on the automation server. Complete the "
+                        "step there, then press Resume.".format(
+                            action.get("carrier"), action.get("reference"))))
+        return None
+    if op == "resume":
+        done, why_not = _human_ready(ready)
+        if done:
+            return "resumed"
+        human_event("HUMAN_RESUME_FAILED", action,
+                    "resume pressed but {0}".format(why_not),
+                    last_response=("Not resumed yet: {0}. The run is still "
+                                   "waiting — finish the step in the browser, "
+                                   "then press Resume again.".format(why_not)))
+    return None
+
+
+def wait_for_human(page, reference, label, ready, instructions="",
+                   wait_ms=None, provider=None, step=None):
+    """
+    WAITING_FOR_HUMAN, on the tab the run is already holding.
+
+    `ready()` says whether the page now shows the step completed — a
+    challenge gone, a result for this reference on screen — as a bool or
+    (bool, why_not). It is consulted on every poll and again when the
+    dashboard presses Resume; a Resume against a page that is not ready is
+    refused and the wait goes on.
+
+    Returns "resumed", "timeout", "session_lost" or "unattended". Never
+    "success": resuming only means the run may go on to read the result,
+    which is then identified, validated, written and read back as usual.
+    """
+    wait_ms = _captcha_wait_ms() if wait_ms is None else int(wait_ms)
+    opened = time.time()
+    action = {
+        "run_id": RUN_ID, "action_id": os.urandom(6).hex(),
+        "reference": str(reference), "carrier": label, "provider": provider,
+        "step": step or "carrier lookup", "reason": HUMAN_REASON,
+        "page_id": _page_id(page), "url": _page_url_for_log(page),
+        "opened_at": _human_now(), "timeout_s": wait_ms // 1000,
+        "deadline": datetime.fromtimestamp(
+            opened + wait_ms / 1000.0).strftime("%Y-%m-%d %H:%M:%S"),
+        "instructions": instructions, "claimed_by": None,
+        "state": "waiting_for_human", "outcome": None,
+    }
+    HUMAN_STATE["current"] = action
+    human_event("HUMAN_VERIFICATION_DETECTED", action,
+                "{0} needs a person ({1})".format(label, action["step"]))
+
+    outcome = "timeout"
+    if wait_ms <= 0:
+        outcome = "unattended"
+    else:
+        _persist_human_action(action)
+        try:
+            tower.human_action_opened(action)
+        except Exception:
+            pass
+        _publish_pending(action)
+        human_event("WAITING_FOR_HUMAN", action,
+                    "timeout {0}s; {1}".format(action["timeout_s"],
+                                               instructions or label))
+        deadline = opened + wait_ms / 1000.0
+        announced = None
+        while time.time() < deadline:
+            try:
+                page.wait_for_timeout(CAPTCHA_POLL_MS)
+            except Exception:
+                if not human_session_alive(page):
+                    human_event("HUMAN_RESUME_FAILED", action,
+                                "the paused browser tab closed while waiting")
+                    outcome = "session_lost"
+                    break
+            if not human_session_alive(page):
+                human_event("HUMAN_RESUME_FAILED", action,
+                            "the paused browser tab closed while waiting",
+                            last_response="The browser session for this "
+                                          "shipment is no longer available.")
+                outcome = "session_lost"
+                break
+            via = None
+            for request in (tower_control.take_human_requests() or []):
+                handled = _handle_human_request(page, action, request, ready)
+                if handled == "resumed":
+                    via = "dashboard"
+                    break
+                if handled == "session_lost":
+                    outcome = "session_lost"
+                    break
+            if outcome == "session_lost":
+                break
+            if via is None and HUMAN_AUTO_RESUME and _human_ready(ready)[0]:
+                # The person finished in the browser and did not press Resume
+                # — the page itself shows it done. Same checks either way.
+                via = "page"
+            if via:
+                outcome = "resumed"
+                action["resumed_via"] = via
+                human_event("HUMAN_RESUMED", action,
+                            "after {0}s via {1}; continuing the same run".format(
+                                int(time.time() - opened), via),
+                            last_response="Resumed. Reading the result for {0}."
+                                          .format(reference))
+                break
+            remaining = int(deadline - time.time())
+            if remaining // 30 != announced:
+                announced = remaining // 30
+                write_log("Still waiting for a person on {0} for {1} — {2}s "
+                          "left.".format(label, reference, remaining))
+
+    if outcome in ("timeout", "unattended"):
+        human_event("HUMAN_TIMEOUT", action,
+                    "unattended run (wait 0): nobody was asked"
+                    if outcome == "unattended" else
+                    "not completed within {0}s".format(action["timeout_s"]))
+    action.update(state=outcome, outcome=outcome, closed_at=_human_now())
+    _persist_human_action(action)
+    try:
+        tower.human_action_closed(outcome, {
+            "resumed": "Resumed — the result is now read and verified.",
+            "timeout": "Not completed within {0}s; nothing written.".format(
+                action["timeout_s"]),
+            "session_lost": "The browser session is no longer available; "
+                            "nothing written.",
+            "unattended": "Unattended run; nobody was asked.",
+        }.get(outcome, outcome))
+    except Exception:
+        pass
+    try:
+        # Closed, with its outcome, so a late Resume is told what happened
+        # rather than just "nothing is waiting".
+        tower_control.set_human_pending({
+            "waiting": False, "run_id": action["run_id"],
+            "action_id": action["action_id"], "state": outcome,
+            "claimed_by": action.get("claimed_by")})
+    except Exception:
+        pass
+    HUMAN_STATE["current"] = None
+    HUMAN_STATE["last"] = action
+    return outcome
+
+
+def validate_arrival_result(result, label, reference):
+    """
+    The dates read after a human step, checked before anything is written.
+
+    An ATA is kept only if it is a real calendar date that is not in the
+    future — an "actual arrival" tomorrow is not one, whatever the page says.
+    An ETA is kept only if it is a real date. A date that fails is dropped
+    and logged, never repaired or replaced by another date from the page.
+    Returns the result, possibly without the dates that failed.
+    """
+    checked = dict(result)
+    for kind in ("eta", "ata"):
+        raw = checked.get(kind)
+        if not raw:
+            continue
+        normal = normalize_date(str(raw))
+        problem = None
+        if normal is None:
+            problem = "is not a date"
+        elif kind == "ata" and datetime.strptime(normal, "%d/%m/%Y").date() > \
+                datetime.now().date():
+            problem = "is in the future, so it cannot be an actual arrival"
+        if problem:
+            write_log("{0}: {1} {2} for {3} {4}; it is not used.".format(
+                label, kind.upper(), raw, reference, problem))
+            checked[kind] = None
+            checked[kind + "_rejected"] = "{0} {1}".format(raw, problem)
+        else:
+            checked[kind] = normal
+    if checked.get("ata") is None and result.get("ata"):
+        checked["tracking_status"] = ("Estimated arrival" if checked.get("eta")
+                                      else checked.get("tracking_status"))
+    return checked
+
+
+def human_shipment_closed(reference, before, after):
+    """
+    After a shipment whose lookup waited for a person: say how it ended.
+    SUCCESS only when the shipment was counted successful — written and read
+    back — never because the person finished.
+    """
+    last = HUMAN_STATE.get("last") or {}
+    if last.get("reference") != str(reference) or last.get("reported") or \
+            last.get("outcome") != "resumed":
+        return None
+    last["reported"] = True
+    names = ("SUCCESS", "FAILED", "SKIPPED", "PARTIAL", "HUMAN")
+    moved = [name for name, b, a in zip(names, before, after) if a > b]
+    event = "SUCCESS" if moved == ["SUCCESS"] else "NOT_SUCCESS_AFTER_HUMAN"
+    human_event(event, last, "shipment ended {0} after the human step".format(
+        moved[0] if moved else "without an outcome"))
+    return event
+
+
 def await_human_verification(page, tracking_number, label="the carrier page"):
     """
     Pause and let a person clear the challenge. Returns True if they did.
@@ -5413,9 +5818,11 @@ def await_human_verification(page, tracking_number, label="the carrier page"):
     write_log("HUMAN VERIFICATION REQUIRED")
     write_log("{0} is asking to confirm a human is present, for {1}."
               .format(label, tracking_number))
-    write_log("Please complete the check in the browser window that is open.")
-    write_log("This run will continue by itself within {0} seconds of it being "
-              "cleared, and will move on after {1} seconds if it is not."
+    write_log("Please complete the check in the browser window that is open "
+              "(dashboard: Open Browser Session brings it to the front), then "
+              "press Resume.")
+    write_log("This run checks every {0} seconds, continues once the check is "
+              "cleared, and moves on after {1} seconds if it is not."
               .format(CAPTCHA_POLL_MS // 1000, CAPTCHA_WAIT_MS // 1000))
     write_log("Nothing is being written to the Hub for this shipment until the "
               "check is cleared. No attempt is made to solve it automatically.")
@@ -5430,35 +5837,29 @@ def await_human_verification(page, tracking_number, label="the carrier page"):
               "captcha_required", False, None, "BOT_CHALLENGE",
               detail=label, reference=tracking_number)
 
-    deadline = time.time() + (CAPTCHA_WAIT_MS / 1000.0)
-    announced = 0
-    while time.time() < deadline:
+    started = time.time()
+    outcome = wait_for_human(
+        page, tracking_number, label,
+        ready=lambda: (not captcha_on_page(page),
+                       "the verification check is still on the page"),
+        instructions="Complete the verification check in the browser.",
+        wait_ms=CAPTCHA_WAIT_MS, step="human verification check")
+    if outcome == "resumed":
+        waited = int(time.time() - started)
+        write_log("Human verification cleared after {0}s. Continuing with "
+                  "{1}.".format(waited, tracking_number))
         try:
-            page.wait_for_timeout(CAPTCHA_POLL_MS)
+            tower.human_verification_cleared(tracking_number, waited)
         except Exception:
-            break
-        if not captcha_on_page(page):
-            waited = int(CAPTCHA_WAIT_MS / 1000.0 - (deadline - time.time()))
-            write_log("Human verification cleared after {0}s. Continuing with "
-                      "{1}.".format(waited, tracking_number))
-            try:
-                tower.human_verification_cleared(tracking_number, waited)
-            except Exception:
-                pass
-            ml_record(ml_context(provider="BROWSER", page="portal_entry",
-                                 field="captcha"),
-                      "captcha_cleared", True, waited * 1000.0, "OK",
-                      detail=label, reference=tracking_number)
-            return True
-        remaining = int(deadline - time.time())
-        if remaining // 30 != announced:
-            announced = remaining // 30
-            write_log("Still waiting for human verification — {0}s left."
-                      .format(remaining))
+            pass
+        ml_record(ml_context(provider="BROWSER", page="portal_entry",
+                             field="captcha"),
+                  "captcha_cleared", True, waited * 1000.0, "OK",
+                  detail=label, reference=tracking_number)
+        return True
 
-    write_log("Human verification was not completed within {0}s. Leaving {1} "
-              "for a later run; nothing was written."
-              .format(CAPTCHA_WAIT_MS // 1000, tracking_number))
+    write_log("Human verification was not completed ({0}). Leaving {1} for a "
+              "later run; nothing was written.".format(outcome, tracking_number))
     return False
 
 
@@ -6675,8 +7076,6 @@ def await_person_search(page, field, config, provider, tracking_number):
             "The {0} reference box would not accept the number (typed '{1}', "
             "field holds '{2}').".format(config["label"], formatted, landed))
 
-    tower.step("Waiting for a person: {0} security code".format(
-        config["label"]), system="browser")
     try:
         take_screenshot(page, tracking_number, "security_code")
     except Exception:
@@ -6685,44 +7084,40 @@ def await_person_search(page, field, config, provider, tracking_number):
     write_log("=" * 62)
     write_log("HUMAN STEP REQUIRED — {0}".format(config["label"]))
     write_log("{0} is filled in on the {1} page. Please type the security "
-              "code shown there and press Search.".format(
-                  formatted, config["label"]))
-    write_log("The run reads the result by itself once it appears, and moves "
-              "on after {0} seconds if it does not. The code is never read "
-              "or typed by the automation.".format(wait_s))
+              "code shown there and press Search, then press Resume on the "
+              "dashboard (Open Browser Session brings the tab to the front)."
+              .format(formatted, config["label"]))
+    write_log("The run reads the result once it is on the page, and moves on "
+              "after {0} seconds if it is not. The code is never read or typed "
+              "by the automation.".format(wait_s))
     write_log("=" * 62)
-    try:
-        tower.human_verification_required(tracking_number, config["label"])
-    except Exception:
-        pass
+    tower.step("Waiting for a person: {0} security code".format(
+        config["label"]), system="browser")
 
-    started = time.time()
-    deadline = started + wait_s
-    while time.time() < deadline:
-        try:
-            page.wait_for_timeout(CAPTCHA_POLL_MS)
-        except Exception:
-            break
+    def result_for_this_reference():
         try:
             result = extract_portal_result(page, provider)
         except Exception:
             result = None
-        if result and (result.get("no_result")
-                       or awb_on_page(page, tracking_number)):
-            waited = int(time.time() - started)
-            write_log("{0}: search done by a person after {1}s; reading the "
-                      "result for {2}.".format(config["label"], waited,
-                                               tracking_number))
-            try:
-                tower.human_verification_cleared(tracking_number, waited)
-            except Exception:
-                pass
-            return True
+        if not result:
+            return False, ("no {0} result is on the page yet — type the code "
+                           "and press Search".format(config["label"]))
+        if result.get("no_result") or awb_on_page(page, tracking_number):
+            return True, ""
+        return False, ("the page shows a result, but not for {0}".format(
+            tracking_number))
 
-    write_log("Nobody completed the {0} search within {1}s. Leaving {2} for a "
-              "later run; nothing was written.".format(
-                  config["label"], wait_s, tracking_number))
-    raise CaptchaRequired(tracking_number, config["label"])
+    outcome = wait_for_human(
+        page, tracking_number, config["label"], result_for_this_reference,
+        instructions=("Type the security code shown on the {0} page and press "
+                      "Search. The reference is already filled in.".format(
+                          config["label"])),
+        provider=provider, step="security code before search")
+    if outcome == "resumed":
+        return True
+    write_log("The {0} search for {1} was not completed ({2}); nothing was "
+              "written.".format(config["label"], tracking_number, outcome))
+    raise CaptchaRequired(tracking_number, config["label"], reason=outcome)
 
 
 def afkl_destination(text):
@@ -7715,6 +8110,7 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
     write_log(f"Opening {config['label']} tracking for {tracking_number} ({airline})")
     page.bring_to_front()
 
+    after_human = False
     for attempt in range(1, config.get("attempts", 2) + 1):
         # AFKL: go straight to the shipment page. Everything after this point
         # — the wait loop, the extraction, the ETA/ATA rules — is unchanged and
@@ -7762,11 +8158,12 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             if config.get("needs_person") and _captcha_wait_ms() == 0:
                 # An unattended run: nobody is there to type the code, so
                 # the page is not even opened.
-                raise CaptchaRequired(tracking_number, config["label"])
+                raise CaptchaRequired(tracking_number, config["label"],
+                                      reason="unattended")
             field = open_portal(page, config, tracking_number)
             if config.get("needs_person"):
-                await_person_search(page, field, config, provider,
-                                    tracking_number)
+                after_human = await_person_search(page, field, config,
+                                                  provider, tracking_number)
             else:
                 submit_portal_awb(page, field, config, tracking_number)
 
@@ -7777,7 +8174,8 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             # challenge page carries no shipment data and reading it would
             # produce "no result" for a shipment that was never looked up.
             if captcha_on_page(page):
-                await_human_verification(page, tracking_number, config["label"])
+                after_human = await_human_verification(
+                    page, tracking_number, config["label"]) or after_human
                 if captcha_on_page(page):
                     raise CaptchaRequired(tracking_number, config["label"])
                 continue
@@ -7803,6 +8201,17 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
                     f"{config['label']} result: status={result['tracking_status']} | "
                     f"ETA={result.get('eta')} | ATA={result.get('ata')}"
                 )
+                if after_human:
+                    # Same identity check and same readers as any other
+                    # lookup. The dates are then validated before they can
+                    # go anywhere near the Hub.
+                    result = validate_arrival_result(
+                        result, config["label"], tracking_number)
+                    human_event(
+                        "ATA_EXTRACTION_AFTER_HUMAN", HUMAN_STATE.get("last"),
+                        "ETA={0} ({1}) ATA={2} ({3}); identity checked".format(
+                            result.get("eta"), result.get("eta_source", "-"),
+                            result.get("ata"), result.get("ata_source", "-")))
                 save_page_text(page, tracking_number, slug + "_result")
                 return result
             page.wait_for_timeout(1000)
@@ -9004,7 +9413,9 @@ def main():
         write_log("Publishing live state to the Control Tower supervisor.")
 
     tower_control.configure(
-        DASHBOARD_ALLOW_CONTROL or bool(os.environ.get("CT_CONTROL_FILE")))
+        DASHBOARD_ALLOW_CONTROL or bool(os.environ.get("CT_CONTROL_FILE")),
+        human_enabled=DASHBOARD_ALLOW_HUMAN_ACTIONS)
+    write_log("Run ID: {0}".format(RUN_ID))
 
     # Tell the dashboard which carriers this build can actually track, so the
     # Systems panel matches the automation instead of a hand-kept list.
@@ -9022,6 +9433,7 @@ def main():
         )
     tower_control.clear()
     tower.run_started(
+        run_id=RUN_ID,
         dry_run=DRY_RUN,
         target_status=TARGET_STATUS,
         max_records=MAX_RECORDS_PER_RUN,
@@ -9184,6 +9596,8 @@ def main():
 
                     processed_bols.add(bol_awb)
                     dhl_result = {}
+                    _counts_before = (successful, failed, skipped, partial,
+                                      needs_human)
 
                     try:
                         tower.shipment_started(shipment)
@@ -9231,7 +9645,14 @@ def main():
                         # It is counted separately so a run full of challenges
                         # cannot read as a run full of bad shipments, and the
                         # Hub is left untouched.
+                        #
+                        # WAITING_FOR_HUMAN ended without the person: either
+                        # nobody came in time (HUMAN_TIMEOUT) or the paused
+                        # browser session went away (FAILED, session lost).
+                        # Neither is a success and neither is a skip.
                         needs_human += 1
+                        _lost = getattr(error, "reason", "") == "session_lost"
+                        _human_class = HUMAN_SESSION_LOST if _lost else HUMAN_TIMEOUT
                         write_log("HUMAN VERIFICATION REQUIRED for {0}: {1}"
                                   .format(bol_awb, error))
                         log_operation_failure(
@@ -9239,11 +9660,12 @@ def main():
                             error, 1, 1, CAPTCHA_REQUIRED, final=True,
                         )
                         save_result(shipment, dhl_result, "No update",
-                                    "HUMAN VERIFICATION REQUIRED", str(error))
+                                    _human_class, str(error))
                         tower.shipment_finished(
-                            bol_awb, "SKIPPED", str(error),
-                            outcome=CAPTCHA_REQUIRED)
-                        tower.counters(successful, failed, skipped, partial)
+                            bol_awb, "FAILED" if _lost else "HUMAN_TIMEOUT",
+                            str(error), outcome=_human_class)
+                        tower.counters(successful, failed, skipped, partial,
+                                       needs_human=needs_human)
                         try:
                             ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
                         except Exception as restore_error:
@@ -9340,6 +9762,9 @@ def main():
                         except Exception as restore_error:
                             write_log(f"Internal page restore warning: {restore_error}")
 
+                    human_shipment_closed(
+                        bol_awb, _counts_before,
+                        (successful, failed, skipped, partial, needs_human))
                     wait_between_shipments()
 
             write_log(

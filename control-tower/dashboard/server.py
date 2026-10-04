@@ -397,6 +397,32 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"accepted": accepted, "message": message}))
             return
 
+        if route == "/api/human":
+            # Human-in-the-loop: open or resume the ONE browser session a run
+            # paused for a person. Scoped by run and action; validated here
+            # and again by the run. Nothing in it is typed into a page.
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 1000:
+                    self._send(413, json.dumps({"error": "request too long"}))
+                    return
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                op = str(payload.get("op", ""))[:10]
+                run_id = str(payload.get("run_id", ""))[:64]
+                action_id = str(payload.get("action_id", ""))[:64]
+                client_id = str(payload.get("client_id", ""))[:64]
+            except Exception:
+                self._send(400, json.dumps({"error": "bad request"}))
+                return
+            handler = getattr(control, "human_request", None)
+            if handler is None:
+                accepted, message = False, "Human actions are not available."
+            else:
+                accepted, message = handler(op, run_id, action_id, client_id)
+            self._send(200, json.dumps({"accepted": accepted,
+                                        "message": message}))
+            return
+
         if route == "/api/feedback":
             # Feedback is stored as material for a later, deliberate training
             # and evaluation pass. It never reaches a production model on its

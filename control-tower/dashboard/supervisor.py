@@ -31,9 +31,14 @@ if __package__ in (None, ""):
 try:
     from dashboard import server as tower_server
     from dashboard.bridge import bridge
+    from dashboard.control import (validate_human_request,
+                                   human_request_record)
 except ImportError:
     import server as tower_server
     from bridge import bridge
+    from control import validate_human_request, human_request_record
+
+MAX_HUMAN_REQUESTS = 20
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "update_eta.py"
@@ -153,6 +158,43 @@ class Supervisor:
 
         return False, "Unknown request."
 
+    def _published(self):
+        try:
+            if STATE_FILE.exists():
+                return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return None
+
+    def human_request(self, op, run_id, action_id, client_id=None):
+        """
+        Relay a human-in-the-loop request to the running automation.
+
+        Checked here against what the run last published, so a stale tab is
+        told at once; checked again by the run itself, which owns the truth.
+        """
+        with self.lock:
+            if not self.is_running():
+                return False, ("No run is in progress, so the browser session "
+                               "that was waiting no longer exists. The "
+                               "shipment will be looked up again next run.")
+            pending = (self._published() or {}).get("human_action")
+            accepted, message = validate_human_request(
+                pending, op, run_id, action_id, client_id)
+            if not accepted:
+                return False, message
+            data = self._read_control()
+            queue = data.setdefault("human", [])
+            queue.append(human_request_record(op, run_id, action_id, client_id))
+            del queue[:-MAX_HUMAN_REQUESTS]
+            self._write_control(data)
+            return True, {
+                "open": "Asked the run to bring the paused tab to the front "
+                        "of its Edge window.",
+                "resume": "Resume sent. The run checks the page and carries "
+                          "on if the result is there.",
+            }[op]
+
     # -- state ------------------------------------------------------------
 
     def snapshot(self):
@@ -179,6 +221,15 @@ class Supervisor:
             # The process is gone but its last state said running — report the
             # truth rather than a run that is not happening.
             published["run"]["status"] = "finished"
+
+        action = published.get("human_action")
+        if not running and isinstance(action, dict) and action.get("waiting"):
+            # The run is gone, and its browser with it. Say so instead of
+            # offering a Resume that has nothing to resume.
+            published["human_action"] = dict(
+                action, waiting=False, state="session_lost",
+                last_response="The automation process ended while waiting; "
+                              "the browser session no longer exists.")
 
         published["control"] = {
             "enabled": True,
