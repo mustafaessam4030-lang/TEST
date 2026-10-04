@@ -16,6 +16,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+# main() is driven below and attaches ATLAS's learning store: keep it off the
+# real one, whoever runs this file.
+import os as _os
+_os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="ct_queue_intel_")
 import human_queue as HQ                                      # noqa: E402
 
 PASS, FAIL = [], []

@@ -148,9 +148,9 @@ def _pick_issue(snap, question, context_record=None):
 
 def _none(snap):
     if not snap["events"]:
-        return ("**Fact** — nothing has been recorded yet. ATLAS learns from real runs: "
-                "outcomes, recoveries, human actions and evidence start accumulating with the "
-                "next run.")
+        return ("**Fact** — nothing measured yet: no real run has been recorded, so I have "
+                "no learning to answer from and I won't guess. Outcomes, recoveries, human "
+                "actions and evidence start accumulating with the next run.")
     return None
 
 

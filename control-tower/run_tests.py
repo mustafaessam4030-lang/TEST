@@ -50,7 +50,6 @@ def main():
     # empty one of its own, so a test can neither read nor write the real one.
     import os
     import tempfile
-    os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="ct_atlas_intel_")
 
     print("=" * 74)
     print("CONTROL TOWER — FULL TEST SUITE")
@@ -62,9 +61,13 @@ def main():
             print("  {0:<26} MISSING".format(name))
             broken.append(name)
             continue
+        # ATLAS's learning store is real operational data: each suite gets an
+        # empty one of its own, so a test can neither read nor write the real
+        # store, nor see what another suite recorded.
+        env = dict(os.environ, ATLAS_INTEL_DIR=tempfile.mkdtemp(prefix="ct_atlas_intel_"))
         result = subprocess.run(
             [sys.executable, str(path)], cwd=str(HERE),
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=env)
         line = ""
         for candidate in reversed(result.stdout.splitlines()):
             if "passed," in candidate:
