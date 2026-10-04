@@ -318,7 +318,9 @@ def shipment_card(data, record):
         "state": record.get("state"),
         "rows": [
             ["Carrier", _show(record.get("carrier"))],
+            ["Mode", MODE_WORDS.get(record.get("transport_mode"), "Unknown")],
             ["Tracking via", provider_name(record.get("provider"))],
+            ["Current step", _show(record.get("step"))],
             ["Status", STATE_WORDS.get(record.get("state"), "unknown").capitalize()],
             ["Hub ETA (before)", _show(record.get("internal_eta"))],
             ["Carrier ETA", _show(record.get("provider_eta"))],
@@ -370,6 +372,23 @@ INTENTS = [
                      "are you ai", "are you a bot"]),
     ("capabilities",["what can you do", "what do you know", "how can you help",
                      "what should i ask"]),
+    # ATLAS copilot. A request to solve a verification is refused before
+    # anything else can match it.
+    ("code_request", ["solve the code", "solve the security", "enter the code",
+                      "type the code", "read the code", "fill the code", "fill in the code",
+                      "bypass", "captcha", "security code for me", "do the verification"]),
+    ("attention",   ["need my attention", "needs my attention", "needs attention",
+                     "what should i look at", "where should i look", "anything urgent",
+                     "what do i need to do", "requires attention", "what needs"]),
+    ("human",       ["human action", "waiting for human", "waiting for a person",
+                     "waiting shipments", "show waiting", "needs a person",
+                     "human verification", "shipments waiting"]),
+    ("latest_failure", ["latest failure", "last failure", "most recent failure",
+                        "why did the latest", "why did the last"]),
+    ("summary",     ["summarize", "summarise", "sum up", "summary of this run",
+                     "summary of the run", "summarize this run"]),
+    ("changed",     ["what changed", "changed recently", "what's new", "whats new",
+                     "anything new", "recent changes"]),
     # A full written report, and the "all X" cuts of it.
     ("report",      ["analysis", "analyse", "analyze", "report", "breakdown",
                      "give me the analysis", "full picture", "overview of the run",
@@ -1049,6 +1068,456 @@ def _help(data):
     )
 
 
+
+
+# ══════════════════════════════════════════════════════════════
+# ATLAS — OPERATIONAL COPILOT
+# ══════════════════════════════════════════════════════════════
+#
+# The same grounded assistant, made proactive. Everything below reads the
+# run snapshot through RunData and nothing else: no network, no model, no
+# write. Three additions:
+#
+#   notices(data)      what ATLAS noticed — only actionable conditions
+#   suggestions(data)  the questions worth asking about THIS run, now
+#   ui actions         safe dashboard navigation attached to a reply:
+#                      filter Live operations, open a shipment, go to a page.
+#                      Nothing here can change a shipment, the run, or a
+#                      human verification — there is no action of that kind
+#                      to attach.
+
+import time as _time
+from datetime import datetime as _datetime
+
+MODE_WORDS = {"air": "Air", "ocean": "Ocean", "road": "Road", "rail": "Rail",
+              "unknown": "Unknown"}
+MODE_PHRASES = [("ocean", r"\b(ocean|sea|ship|ships|vessel|maritime)\b"),
+                ("air", r"\b(air|plane|planes|flight|airline)\b"),
+                ("road", r"\b(road|truck|trucks|van|courier)\b"),
+                ("rail", r"\b(rail|train|trains|railway)\b")]
+STATE_PHRASES = [("failed", r"\b(fail|failed|failure|failures|failing)\b"),
+                 ("skipped", r"\bskipped\b"),
+                 ("processing", r"\b(processing|in progress|in flight|running now)\b"),
+                 ("human_timeout", r"\b(timed out|timeout)\b"),
+                 ("updated", r"\b(completed|complete|successful|success|succeeded|written|updated)\b")]
+IMPERATIVE = re.compile(r"^\s*(show|open|filter|list|display|view|find|go to|take me|bring up)\b", re.I)
+UI_ACTIONS = ("filter", "open", "page")      # the whole vocabulary
+
+
+def mode_of(record):
+    mode = (record or {}).get("transport_mode")
+    return mode if mode in MODE_WORDS else "unknown"
+
+
+def _dur(seconds):
+    if seconds is None:
+        return UNKNOWN
+    seconds = int(seconds)
+    if seconds < 60:
+        return "{0}s".format(seconds)
+    if seconds < 3600:
+        return "{0}m {1:02d}s".format(seconds // 60, seconds % 60)
+    return "{0}h {1:02d}m".format(seconds // 3600, seconds % 3600 // 60)
+
+
+def _since(stamp):
+    """Seconds since a bridge 'YYYY-mm-dd HH:MM:SS' local stamp, or None."""
+    try:
+        return max(0, (_datetime.now() - _datetime.strptime(
+            str(stamp), "%Y-%m-%d %H:%M:%S")).total_seconds())
+    except Exception:
+        return None
+
+
+def human_waiting(data):
+    action = data.state.get("human_action") or {}
+    return action if action.get("waiting") else None
+
+
+def carriers_in(data):
+    """Carrier names this run has seen, with their provider keys."""
+    seen = {}
+    for record in data.shipments:
+        if record.get("carrier"):
+            seen[record["carrier"]] = record.get("provider")
+    return seen
+
+
+def carrier_named(data, question):
+    """The carrier a question names, matched against THIS run's carriers."""
+    lowered = question.casefold()
+    best = None
+    for name, provider in carriers_in(data).items():
+        tokens = [name.casefold()] + [t for t in re.split(r"[\s/,-]+", name.casefold())
+                                      if len(t) >= 3 and t not in ("lines", "cargo", "the",
+                                                                   "express", "line", "shipping")]
+        if provider:
+            tokens.append(str(provider).casefold())
+        for token in tokens:
+            if re.search(r"\b" + re.escape(token) + r"\b", lowered):
+                if best is None or len(token) > len(best[1]):
+                    best = (name, token)
+    return best
+
+
+def _filter_of(data, question):
+    """state / mode / carrier the question asks to see, or {}."""
+    found = {}
+    lowered = question.casefold()
+    for state, pattern in STATE_PHRASES:
+        if re.search(pattern, lowered):
+            found["state"] = state
+            break
+    for mode, pattern in MODE_PHRASES:
+        if re.search(pattern, lowered):
+            found["mode"] = mode
+            break
+    named = carrier_named(data, question)
+    if named:
+        found["carrier"] = named[1]
+        found["carrier_name"] = named[0]
+    return found
+
+
+def _filter_label(f):
+    words = {"failed": "Failed", "skipped": "Skipped", "processing": "Processing",
+             "updated": "Completed", "human_timeout": "Human timeout"}
+    parts = []
+    if f.get("state"):
+        parts.append(words.get(f["state"], f["state"]))
+    if f.get("carrier_name"):
+        parts.append(f["carrier_name"])
+    if f.get("mode"):
+        parts.append(MODE_WORDS[f["mode"]])
+    return " · ".join(parts)
+
+
+def _matches(record, f):
+    if f.get("state") and record.get("state") != f["state"]:
+        return False
+    if f.get("mode") and mode_of(record) != f["mode"]:
+        return False
+    if f.get("carrier"):
+        hay = " ".join(str(x) for x in (record.get("carrier"), record.get("provider"))).casefold()
+        if f["carrier"] not in hay:
+            return False
+    return True
+
+
+def notices(data):
+    """What ATLAS noticed. Only conditions an operator can act on — an empty
+    list is the right answer when nothing needs anyone."""
+    out = []
+    waiting = human_waiting(data)
+    if waiting:
+        waited = _since(waiting.get("opened_at"))
+        out.append({"level": "warn",
+                    "text": "{0} needs human action on {1} — waiting {2}.".format(
+                        waiting.get("reference"), waiting.get("carrier") or "the carrier page",
+                        _dur(waited)),
+                    "action": {"type": "page", "page": "human"}})
+    if data.status == "fatal":
+        out.append({"level": "error", "text": "The run stopped on an error.",
+                    "action": {"type": "page", "page": "logs"}})
+    groups = {}
+    for record in data.failed:
+        groups.setdefault(record.get("carrier") or "Unknown carrier", []).append(record)
+    for name, rows in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:2]:
+        out.append({"level": "error",
+                    "text": "{0} {1} shipment{2} failed.".format(len(rows), name,
+                                                                "" if len(rows) == 1 else "s"),
+                    "action": {"type": "filter", "state": "failed", "carrier": name.casefold(),
+                               "label": "Failed · " + name}})
+    rest = len(data.failed) - sum(len(r) for _, r in sorted(
+        groups.items(), key=lambda kv: -len(kv[1]))[:2])
+    if rest > 0:
+        out.append({"level": "error", "text": "{0} more failure{1} on other carriers.".format(
+            rest, "" if rest == 1 else "s"),
+            "action": {"type": "filter", "state": "failed", "label": "Failed"}})
+    timeouts = data.by_state("human_timeout")
+    if timeouts:
+        out.append({"level": "warn",
+                    "text": "{0} shipment{1} timed out waiting for a person.".format(
+                        len(timeouts), "" if len(timeouts) == 1 else "s"),
+                    "action": {"type": "filter", "state": "human_timeout", "label": "Human timeout"}})
+    recovery = data.state.get("recovery") or {}
+    if recovery.get("status") == "EXHAUSTED":
+        out.append({"level": "error", "text": "No safe recovery succeeded for {0}.".format(
+            recovery.get("error_class")), "action": {"type": "page", "page": "atlas"}})
+    current = data.in_flight
+    if current and current.get("started_epoch") and current.get("state") == "processing":
+        elapsed = _time.time() - current["started_epoch"]
+        if elapsed >= 120:
+            out.append({"level": "info",
+                        "text": "{0} has been on “{1}” for {2}.".format(
+                            current.get("reference"),
+                            data.current.get("step") or current.get("step") or "its current step",
+                            _dur(elapsed)),
+                        "action": {"type": "open", "reference": current.get("reference")}})
+    done = len(data.updated)
+    if done:
+        out.append({"level": "ok",
+                    "text": "{0} shipment{1} completed and verified in the Hub.".format(
+                        done, "" if done == 1 else "s"),
+                    "action": {"type": "filter", "state": "updated", "label": "Completed"}})
+    return out[:5]
+
+
+def suggestions(data):
+    """3–6 questions worth asking about this run right now."""
+    chips = []
+    if human_waiting(data) or data.by_state("waiting_for_human"):
+        chips += ["What needs my attention?", "Show waiting shipments"]
+    if data.failed:
+        chips += ["Show failed shipments", "Why did the latest shipment fail?"]
+    if data.is_running:
+        chips += ["What is still processing?", "How long has it been running?"]
+    if data.shipments and not data.failed and not human_waiting(data):
+        chips += ["Summarize this run", "Compare the carriers"]
+    for extra in ("What changed recently?", "Summarize this run", "Compare the carriers",
+                  "What needs my attention?"):
+        if len(chips) >= 6:
+            break
+        if extra not in chips and data.shipments:
+            chips.append(extra)
+    if not chips:
+        chips = ["How is the run going?", "What can you do?"]
+    seen, out = set(), []
+    for chip in chips:
+        if chip not in seen:
+            seen.add(chip)
+            out.append(chip)
+    return out[:6]
+
+
+def atlas_brief(state):
+    """The ATLAS panel's header: status, the counts that matter, notices,
+    suggestions. One snapshot in, one dict out."""
+    try:
+        data = RunData(state)
+        waiting = human_waiting(data)
+        status = ("Waiting for your action" if waiting
+                  else "Watching this run" if data.is_running
+                  else "Run complete" if data.status == "finished"
+                  else "Run stopped on an error" if data.status == "fatal"
+                  else "Standing by")
+        return {
+            "status": status,
+            "run_id": data.run.get("run_id"),
+            "summary": {
+                "completed": len(data.updated),
+                "failed": len(data.failed),
+                "waiting": len(data.by_state("waiting_for_human")),
+                "processing": len(data.processing),
+                "skipped": len(data.skipped),
+            },
+            "notices": notices(data),
+            "suggestions": suggestions(data),
+            "grounded": True,
+        }
+    except Exception as error:
+        return {"status": "Unavailable", "summary": {}, "notices": [], "suggestions": [],
+                "error": str(error)[:200], "grounded": True}
+
+
+# -- answers ---------------------------------------------------------------
+
+def _answer_attention(data):
+    found = [n for n in notices(data) if n["level"] != "ok"]
+    if not found:
+        if not data.shipments:
+            return "Nothing needs your attention — no shipment has been processed yet."
+        return ("Nothing needs your attention right now. {0} completed, {1} failed, "
+                "{2} still processing.").format(len(data.updated), len(data.failed),
+                                                len(data.processing))
+    lines = ["{0} thing{1} need{2} your attention:".format(
+        len(found), "" if len(found) == 1 else "s", "s" if len(found) == 1 else "")]
+    lines += ["• " + n["text"] for n in found]
+    return "\n".join(lines)
+
+
+def _answer_human(data):
+    waiting = human_waiting(data)
+    rows = data.by_state("waiting_for_human")
+    if not waiting and not rows:
+        timeouts = data.by_state("human_timeout")
+        text = "No shipment is waiting for human action right now."
+        if timeouts:
+            text += " {0} timed out earlier in this run: {1}.".format(
+                len(timeouts), ", ".join(r.get("reference") for r in timeouts[:5]))
+        return text
+    lines = []
+    if waiting:
+        lines.append("**{0}** is waiting for a person on {1}.".format(
+            waiting.get("reference"), waiting.get("carrier") or "the carrier page"))
+        lines.append("Action: {0}".format(waiting.get("instructions") or "human verification"))
+        lines.append("Waiting: {0}".format(_dur(_since(waiting.get("opened_at")))))
+        if waiting.get("deadline"):
+            lines.append("Times out: {0}".format(str(waiting["deadline"])[11:]))
+        lines.append("Run: {0}".format(waiting.get("run_id") or UNKNOWN))
+    others = [r for r in rows if not waiting or r.get("reference") != waiting.get("reference")]
+    if others:
+        lines.append("Also waiting: " + ", ".join(r.get("reference") for r in others))
+    lines.append("")
+    lines.append("Open Human Action brings that tab to the front. The verification is "
+                 "done by a person; the automation never reads or types a code.")
+    return "\n".join(lines)
+
+
+def _answer_code_request(data):
+    text = ("I won't do that. Security verification is completed by a person, in the "
+            "browser — the automation never reads, solves or types a verification code, "
+            "and neither do I.")
+    waiting = human_waiting(data)
+    if waiting:
+        text += ("\n\n**{0}** is waiting on {1}. Open Human Action to bring the tab "
+                 "forward, complete the step there, then press Resume.").format(
+                     waiting.get("reference"), waiting.get("carrier") or "the carrier page")
+    return text
+
+
+def _explain(data, record):
+    """Why a shipment ended as it did — from its recorded events only."""
+    reference = record.get("reference")
+    state = record.get("state")
+    lines = ["**{0}** — {1}.".format(reference, STATE_WORDS.get(state, state or "unknown"))]
+    if record.get("outcome"):
+        lines.append("Outcome: {0}".format(record["outcome"]))
+    if record.get("error"):
+        lines.append("Recorded reason: {0}".format(record["error"]))
+    steps = record.get("steps") or []
+    human = [e for e in (data.state.get("human_events") or []) if e.get("reference") == reference]
+    atlas_events = ((record.get("atlas") or {}).get("events")) or []
+    if steps:
+        lines += ["", "What the automation recorded, in order:"]
+        lines += ["• {0} — {1}".format(s.get("time"), s.get("text")) for s in steps[-10:]]
+    if human:
+        lines += ["", "Human action:"]
+        lines += ["• {0} — {1}{2}".format(e.get("time"), e.get("event"),
+                                          " — " + e["detail"] if e.get("detail") else "")
+                  for e in reversed(human[:6])]
+    if atlas_events:
+        lines += ["", "ATLAS:"]
+        lines += ["• {0} — {1}{2}".format(e.get("time"), e.get("label"),
+                                          " — " + e["detail"] if e.get("detail") else "")
+                  for e in atlas_events[-5:]]
+    if not steps and not human and not atlas_events:
+        lines += ["", "No step-by-step trace was recorded for it in this view, so this "
+                      "is all I can confirm."]
+    else:
+        lines += ["", "That is everything recorded; I can't confirm anything beyond it."]
+    return "\n".join(lines)
+
+
+def _answer_latest_failure(data):
+    if not data.failed:
+        return "No shipment has failed in this run."
+    return _explain(data, data.failed[0])
+
+
+def _answer_summary(data):
+    if not data.shipments:
+        return "Nothing to summarize yet — no shipment has been processed in this run."
+    lines = ["Run {0} · {1}{2}".format(
+        data.run.get("run_id") or UNKNOWN, data.status,
+        " for " + data.runtime if data.runtime else "")]
+    lines.append("{0} completed · {1} failed · {2} waiting · {3} processing · {4} skipped".format(
+        len(data.updated), len(data.failed), len(data.by_state("waiting_for_human")),
+        len(data.processing), len(data.skipped)))
+    modes = {}
+    for record in data.shipments:
+        modes[mode_of(record)] = modes.get(mode_of(record), 0) + 1
+    lines.append("By mode: " + ", ".join("{0} {1}".format(n, MODE_WORDS[m].lower())
+                                        for m, n in sorted(modes.items(), key=lambda kv: -kv[1])))
+    noticed = [n for n in notices(data) if n["level"] != "ok"]
+    if noticed:
+        lines += ["", "ATLAS noticed:"] + ["• " + n["text"] for n in noticed]
+    return "\n".join(lines)
+
+
+def _answer_changed(data):
+    events = data.latest_events(6)
+    if not events:
+        return NO_DATA
+    return "Most recent changes:\n\n" + "\n".join(
+        "• {0} — {1}".format(e.get("time"), e.get("text")) for e in events)
+
+
+def _answer_filtered(data, f):
+    rows = [r for r in data.shipments if _matches(r, f)]
+    label = _filter_label(f) or "Matching"
+    if not data.shipments:
+        return NO_DATA
+    if not rows:
+        return "No {0} shipments in this run.".format(label.lower() if label else "matching")
+    by_state = {}
+    for record in rows:
+        by_state[record.get("state")] = by_state.get(record.get("state"), 0) + 1
+    words = {"updated": "completed", "failed": "failed", "skipped": "skipped",
+             "processing": "processing", "waiting_for_human": "waiting for a person",
+             "human_timeout": "human timeout", "partial": "partly updated"}
+    head = "{0} shipment{1} — {2}: {3}.".format(
+        label, "" if len(rows) == 1 else "s", len(rows),
+        ", ".join("{0} {1}".format(n, words.get(s, s)) for s, n in by_state.items()))
+    return head + "\n\n" + _list_shipments(rows)
+
+
+def ui_actions(data, question, reply, intent):
+    """
+    The dashboard actions a reply may carry, and whether the question asked
+    for one to happen now ("show…", "open…"). Navigation and filtering only.
+    """
+    question = question or ""
+    buttons, actions = [], []
+    imperative = bool(IMPERATIVE.search(question))
+    reference = reply.get("reference")
+    record = data.find(reference) if reference else None
+
+    if record is not None and reply.get("card"):
+        open_it = {"type": "open", "reference": record.get("reference")}
+        buttons.append({"label": "Open shipment {0}".format(record.get("reference")), "action": open_it})
+        if imperative:
+            actions.append(open_it)
+
+    if intent in ("human", "attention", "code_request") and (
+            human_waiting(data) or data.by_state("waiting_for_human")):
+        go = {"type": "page", "page": "human"}
+        buttons.append({"label": "Open Human Action", "action": go})
+        if imperative and intent == "human":
+            actions.append(go)
+
+    if intent == "latest_failure" and data.failed:
+        go = {"type": "open", "reference": data.failed[0].get("reference")}
+        buttons.append({"label": "Open {0}".format(data.failed[0].get("reference")), "action": go})
+        if imperative:
+            actions.append(go)
+
+    if record is None and intent not in ("human", "code_request", "latest_failure"):
+        f = _filter_of(data, question)
+        if intent == "failed" and "state" not in f:
+            f["state"] = "failed"
+        if f:
+            rows = [r for r in data.shipments if _matches(r, f)]
+            if rows:
+                act = {"type": "filter", "label": _filter_label(f)}
+                for key in ("state", "mode", "carrier"):
+                    if f.get(key):
+                        act[key] = f[key]
+                buttons.append({"label": "View {0} in Live operations".format(
+                    _filter_label(f) or "these"), "action": act})
+                if imperative:
+                    actions.append(act)
+
+    if intent == "attention":
+        for n in notices(data):
+            if n["level"] != "ok" and n.get("action") and n["action"].get("type") != "page":
+                buttons.append({"label": n["text"].rstrip("."), "action": n["action"]})
+    # Only the whitelisted vocabulary ever leaves this function.
+    buttons = [b for b in buttons if b["action"].get("type") in UI_ACTIONS][:4]
+    actions = [a for a in actions if a.get("type") in UI_ACTIONS][:1]
+    return buttons, actions
+
+
 # ══════════════════════════════════════════════════════════════
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════════
@@ -1138,11 +1607,17 @@ def answer(question, state, context=None):
         record = data.find(reply.get("reference")) if reply.get("reference") else None
         intent = detect_intent((question or "").strip())
         reply.setdefault("intent", intent)
-        reply["suggestions"] = follow_ups(data, record, intent)
+        reply["suggestions"] = (follow_ups(data, record, intent) if record is not None
+                                else suggestions(data)[:4])
         reply["downloads"] = downloads_for(data, intent, record)
+        buttons, actions = ui_actions(data, question, reply, reply.get("intent"))
+        reply["buttons"] = buttons
+        reply["actions"] = actions
     except Exception:
         reply["suggestions"] = []
         reply["downloads"] = []
+        reply["buttons"] = []
+        reply["actions"] = []
     return reply
 
 
@@ -1245,12 +1720,15 @@ def _answer_core(question, state, context=None):
                     "reference": reference, "grounded": True,
                 }
 
+            if record.get("state") == "waiting_for_human" and intent in (
+                    None, "why", "shipment", "human"):
+                return {"answer": _answer_human(data), "card": shipment_card(data, record),
+                        "reference": reference, "grounded": True}
+
             if intent == "why":
-                if record.get("state") in ("failed", "skipped"):
-                    text = ("**{0}** was {1}.\n\nOutcome: {2}\nReason: {3}\n"
-                            "Step reached: {4}").format(
-                        reference, record["state"], _show(record.get("outcome")),
-                        _show(record.get("error")), _show(record.get("step")))
+                if record.get("state") in ("failed", "skipped", "human_timeout", "partial"):
+                    text = _explain(data, record) + "\n\nStep reached: {0}".format(
+                        _show(record.get("step")))
                 else:
                     text = "**{0}** didn't fail — it's {1}.".format(
                         reference, STATE_WORDS.get(record.get("state"), "unknown"))
@@ -1273,6 +1751,12 @@ def _answer_core(question, state, context=None):
 
         # -- run-scoped answers --------------------------------------------
         handlers = {
+            "code_request": lambda: _answer_code_request(data),
+            "attention": lambda: _answer_attention(data),
+            "human": lambda: _answer_human(data),
+            "latest_failure": lambda: _answer_latest_failure(data),
+            "summary": lambda: _answer_summary(data),
+            "changed": lambda: _answer_changed(data),
             "greeting": lambda: _answer_greeting(data),
             "thanks": lambda: _answer_thanks(data),
             "identity": lambda: _answer_identity(data),
@@ -1330,6 +1814,12 @@ def _answer_core(question, state, context=None):
                     "reference": context.get("reference"), "grounded": True,
                     "sources": sources, "intent": intent}
 
+        wanted_filter = _filter_of(data, question) if intent in (None, "system") else {}
+        if wanted_filter and (intent is None or IMPERATIVE.search(question)):
+            return {"answer": _answer_filtered(data, wanted_filter), "card": None,
+                    "reference": context.get("reference"), "grounded": True,
+                    "intent": "filter"}
+
         if intent in ("eta", "carrier", "why", "shipment"):
             return {
                 "answer": "I need a shipment reference for that — give me the BOL "
@@ -1343,8 +1833,8 @@ def _answer_core(question, state, context=None):
         counters = data.counters
         if data.shipments:
             summary = (
-                "I am not certain what you are asking, so here is where the run "
-                "stands:\n\n{0} processed — {1} written to the Hub, {2} skipped, "
+                "I don't have that information in this run — I answer only from "
+                "its data. Here is where the run stands:\n\n{0} processed — {1} written to the Hub, {2} skipped, "
                 "{3} failed. The run looks {4}.\n\nTry a shipment number, "
                 "\u201cwhich shipments failed\u201d, \u201ccompare the "
                 "carriers\u201d, or \u201cdownload the data\u201d."
@@ -1352,7 +1842,7 @@ def _answer_core(question, state, context=None):
                      counters.get("skipped", 0), counters.get("failed", 0),
                      data.health_summary())
         else:
-            summary = ("I am not certain what you are asking, and no shipments "
+            summary = ("I don't have that information in this run, and no shipments "
                        "have been processed yet. Once a run starts I can answer "
                        "about any of them.")
         return {"answer": summary, "card": None,

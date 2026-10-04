@@ -197,6 +197,21 @@ def build_payload(trim=True, since_cold=None):
     return data
 
 
+def _assistant_state():
+    """
+    The run state ATLAS answers from: whatever the dashboard itself is
+    showing. Under the supervisor that is the running automation's published
+    state, not the supervisor's own (empty) bridge — reading the bridge
+    directly is what left the assistant knowing nothing in that mode.
+    """
+    try:
+        return build_payload(trim=False)
+    except TypeError:
+        return build_payload()
+    except Exception:
+        return bridge.snapshot()
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -368,6 +383,12 @@ class Handler(BaseHTTPRequestHandler):
             }))
             return
 
+        if route == "/api/atlas":
+            # ATLAS's panel header: status, counts, what it noticed, and the
+            # questions worth asking — from the same state the dashboard shows.
+            self._send(200, json.dumps(assistant.atlas_brief(_assistant_state())))
+            return
+
         if route == "/api/ml":
             # Real values from the live ml package. Nothing here is a demo
             # figure: an unknown is null, not zero.
@@ -472,7 +493,7 @@ class Handler(BaseHTTPRequestHandler):
         # The assistant only ever receives a snapshot. It has no handle on the
         # bridge, the browser or the credentials, so it cannot act on anything.
         # Untrimmed: the assistant should see the whole run, not the wire view.
-        reply = assistant.answer(question, bridge.snapshot(), context)
+        reply = assistant.answer(question, _assistant_state(), context)
 
         # The assistant may ASK for an action but can never perform one. The
         # request goes through the same control channel and the same enabled

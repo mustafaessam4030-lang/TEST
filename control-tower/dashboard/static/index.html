@@ -47,7 +47,7 @@
      Measured: every colour below clears WCAG AA on both the page and a
      card. The worst is --grn at 4.61:1.
      ─────────────────────────────────────────────────────────────────── */
-  --bg:#F5F5F7;         /* the page */
+  --bg:#F6F7F9;         /* the page */
   --surface:#FFFFFF;    /* a card */
   --surface-2:#FAFAFA;  /* recessed: inputs, table headers, inner panels */
   --surface-3:#F0F0F2;  /* pressed / active */
@@ -57,9 +57,9 @@
   --void:var(--bg); --deck:var(--surface); --riser:var(--surface-2);
   --crest:var(--surface-3);
 
-  --ink:#1D1D1F;        /* primary       15.5:1 on page */
-  --mid:#5E5E63;        /* secondary      5.9:1 */
-  --faint:#6E6E73;      /* labels         4.7:1 */
+  --ink:#0B1F33;        /* primary       15.6:1 on page — Mantrac navy */
+  --mid:#475569;        /* secondary      7.2:1 */
+  --faint:#64748B;      /* labels         4.8:1 on a card */
 
   /* Hairlines. A separator's job is to be found when looked for and
      ignored otherwise, so it is an alpha over whatever is behind it
@@ -72,8 +72,11 @@
      nothing else. */
   /* Mantrac. The brand colour marks the product, the active page and the
      one primary action of a view — and nothing else. 5.5:1 on white. */
-  --brand:#BF3B0E; --brand-hi:#A8330B; --brand-wash:rgba(191,59,14,.07);
-  --solid:var(--brand); --on-solid:#FFFFFF;
+  /* Mantrac orange for marks, markers and accents; a deeper shade of it
+     fills a button, because white on #E85D04 is 3.5:1 and a label has to
+     read. */
+  --brand:#E85D04; --brand-hi:#C2410C; --brand-wash:rgba(232,93,4,.08);
+  --solid:var(--brand-hi); --on-solid:#FFFFFF;
   /* Interaction blue, for selection and focus only: a selected filter, a
      focused field, a link, ATLAS's own mark. */
   --vio:#0B5FD9; --vio-wash:rgba(11,95,217,.07); --vio-line:rgba(11,95,217,.22);
@@ -84,14 +87,21 @@
   /* Measured on real pixels: #1B7F4B cleared AA on its wash over a card
      (4.52:1) but not over the page ground (4.18:1), and the run-state pill
      sits on the page ground in the header. Two steps darker clears both. */
-  --grn:#197746; --grn-wash:rgba(27,127,75,.08);     /* verified, healthy */
-  --grn-line:rgba(25,119,70,.24);
-  --y:#8A5300;   --y-wash:rgba(138,83,0,.08);        /* needs a person */
-  --y-line:rgba(138,83,0,.22);
-  --red:#C0261C; --red-wash:rgba(192,38,28,.07);     /* failed */
-  --red-line:rgba(192,38,28,.24);
-  --blu:#0A6E9E; --blu-wash:rgba(10,110,158,.07);    /* an ATA: it arrived */
-  --blu-line:rgba(10,110,158,.24);
+  /* Status. Each has a DOT colour (the palette) and a TEXT colour (its AA
+     shade) — a dot can be bright, a word has to read. */
+  --grn:#15803D; --grn-wash:rgba(22,163,74,.09);     /* success  text 5.0:1 */
+  --grn-dot:#16A34A;
+  --grn-line:rgba(22,163,74,.28);
+  --y:#B45309;   --y-wash:rgba(217,119,6,.10);       /* human action  5.0:1 */
+  --y-dot:#D97706;
+  --y-line:rgba(217,119,6,.30);
+  --red:#DC2626; --red-wash:rgba(220,38,38,.07);     /* failed   text 4.8:1 */
+  --red-line:rgba(220,38,38,.26);
+  --blu:#2563EB; --blu-wash:rgba(37,99,235,.08);     /* processing   5.2:1 */
+  --teal:#0F766E; --teal-dot:#0F9D8A; --teal-wash:rgba(15,157,138,.10); /* on the way */
+  /* Transport modes: illustration and route accents, never body text. */
+  --air:#3B82F6; --ocean:#0F9D8A; --road:#E85D04; --rail:#7C6BD6; --nomode:#94A3B8;
+  --blu-line:rgba(37,99,235,.26);
   --signal:var(--grn); --alarm:var(--red);
   --amber:var(--y); --amber-wash:var(--y-wash); --amber-line:var(--y-line);
   --ice:var(--blu);
@@ -123,7 +133,7 @@
   --r:12px; --r-sm:8px; --r-lg:16px;
   /* One shadow, one elevation. Anything that needs more than this is
      asking to be a separate surface instead. */
-  --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04);
+  --shadow:0 1px 2px rgba(11,31,51,.04),0 6px 18px rgba(11,31,51,.045);
   --sidebar:224px;
   --barh:64px;
   --player:0px;
@@ -375,9 +385,13 @@ input,textarea,select{font-family:inherit}
 .brand{display:flex;align-items:center;gap:12px;min-width:0;text-decoration:none;color:inherit}
 /* The official Mantrac logo is loaded from /static/brand/. Nothing here
    draws a logo: when the file is absent the slot says so, plainly. */
-.logo{height:26px;display:flex;align-items:center;flex:none}
-.logo img{height:26px;width:auto;display:block}
-.logo.missing{width:74px;border:1px dashed var(--line-hi);border-radius:6px;
+.logo{height:28px;display:flex;align-items:center;flex:none}
+.logo img{height:28px;width:auto;display:block;border-radius:3px}
+/* The official lockup already reads MANTRAC (with CAT), so the text beside
+   it says only what the logo does not: ATA Control Tower. */
+.brand.has-logo .brand-n{display:none}
+.brand.has-logo .brand-p{font-size:11px;color:var(--ink);font-weight:600;letter-spacing:.18em}
+.logo.missing{width:112px;border:1px dashed var(--line-hi);border-radius:6px;
   justify-content:center;font:500 10px/1 var(--s);letter-spacing:.08em;
   text-transform:uppercase;color:var(--faint)}
 .logo.missing::after{content:"Logo"}
@@ -461,10 +475,10 @@ input,textarea,select{font-family:inherit}
 /* A card is a hairline, a radius and room to breathe. One shadow at low
    opacity so it sits a millimetre above the page — not a stack, not a glow,
    and never a second border to do the same job twice. */
-.card{background:var(--surface);border:1px solid var(--line-2);
+.card{background:var(--surface);border:1px solid rgba(11,31,51,.07);
   border-radius:var(--r-lg);box-shadow:var(--shadow);position:relative}
 .card-h{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line-2)}
-.card-t{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.card-t{font-size:15px;font-weight:650;letter-spacing:-.015em;color:var(--ink)}
 .card-s{font-size:12px;color:var(--faint);margin-top:2px}
 .card-b{padding:18px 20px}
 .link{font-size:12.5px;font-weight:500;color:var(--vio)}
@@ -844,12 +858,14 @@ tr.r-partial .err{color:var(--y)}
 .atlas-sm{--ax:54px;gap:12px}
 .atlas-md{--ax:88px}
 .atlas-lg{--ax:150px;gap:26px}
-.is-idle{--axc:var(--mid)}
-.is-monitoring{--axc:var(--blu)}
+/* ATLAS's state colours are its own and are pinned here, so a change to the
+   dashboard's tokens never changes how ATLAS looks. */
+.is-idle{--axc:#5E5E63}
+.is-monitoring{--axc:#0A6E9E}
 .is-analyzing{--axc:#5B57D1}
 .is-recovering{--axc:#A65A0B}
-.is-success{--axc:var(--grn)}
-.is-human_required{--axc:var(--y)}
+.is-success{--axc:#197746}
+.is-human_required{--axc:#8A5300}
 .atlas-fig{position:relative;flex:none;width:var(--ax);height:var(--ax)}
 .atlas-fig::after{content:"";position:absolute;left:31%;right:31%;bottom:1%;height:6%;
   border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.18),rgba(0,0,0,0));
@@ -881,6 +897,15 @@ tr.r-partial .err{color:var(--y)}
 .ax-spark{animation:axTwinkle 2.4s ease-in-out 2 both}
 @keyframes axTwinkle{0%,100%{opacity:0;transform:scale(.6)}50%{opacity:1;transform:none}}
 .is-human_required .ax-look{transform:translateX(2.4px)}
+/* Long waits, same character: a wider glance, a tilt to check again, a
+   slower breath. Transforms on the figure's existing parts only. */
+.is-monitoring .ax-head{transform-box:view-box;transform-origin:60px 46px;transition:transform 1.1s var(--e)}
+.atlas[data-tier="waiting"].is-monitoring .ax-look,.atlas[data-tier="very_long"].is-monitoring .ax-look{transform:translateX(3.2px)}
+.atlas[data-tier="waiting"].is-monitoring.alt .ax-look,.atlas[data-tier="very_long"].is-monitoring.alt .ax-look{transform:translateX(-3.4px)}
+.atlas[data-tier="waiting"].is-monitoring.alt .ax-head{transform:rotate(-4deg)}
+.atlas[data-tier="very_long"].is-monitoring .ax-head{transform:rotate(3deg)}
+.atlas[data-tier="very_long"].is-monitoring.alt .ax-head{transform:rotate(-6deg)}
+.atlas[data-tier="very_long"] .atlas-float{animation-duration:6.6s}
 .is-human_required .ax-head{transform-box:view-box;transform-origin:60px 46px;
   animation:axAttend .9s var(--e) .1s both}
 @keyframes axAttend{to{transform:rotate(7deg) translateX(1px)}}
@@ -953,7 +978,7 @@ a.cbtn{text-decoration:none}
   margin-bottom:18px;align-items:start}
 .ov-vis-r{display:grid;gap:18px}
 .route-g{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,1fr)}
-.route-map{padding:16px 0 16px 16px}
+.route-map{padding:16px 0 16px 16px;align-self:center}
 .route-map svg{display:block;width:100%;height:auto;border-radius:14px}
 .route-side{padding:16px 20px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
 .rt-ref{font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--ink);
@@ -983,7 +1008,7 @@ a.cbtn{text-decoration:none}
 .fleet-b{display:grid;grid-template-columns:auto 1fr;align-items:end;gap:8px;padding:14px 0 0 20px;
   overflow:hidden}
 .fleet-n{padding-bottom:18px}
-.fleet-n b{display:block;font-size:34px;font-weight:600;letter-spacing:-.035em;line-height:1;
+.fleet-n > b{display:block;font-size:34px;font-weight:600;letter-spacing:-.035em;line-height:1;
   font-variant-numeric:tabular-nums}
 .fleet-n > span{display:block;font-size:12px;color:var(--faint);margin-top:6px}
 .fleet-st{display:inline-flex;align-items:center;gap:7px;margin-top:14px;padding:4px 10px;
@@ -993,18 +1018,67 @@ a.cbtn{text-decoration:none}
 .fleet.on .fleet-st i{background:var(--grn);animation:blip 1.8s infinite}
 .fleet-art{margin-right:-14px;min-width:0}
 .fleet-art svg{display:block;width:100%;max-width:300px;height:auto;margin-left:auto}
-.tk-wheel{transform-box:fill-box;transform-origin:center}
-.tk-road{transform-box:view-box}
-.fleet.on .tk-wheel{animation:tkSpin .9s linear infinite}
-.fleet.on .tk-road{animation:tkRoad .7s linear infinite}
-.fleet.on .tk-body{animation:tkRide 1.4s ease-in-out infinite}
 @keyframes tkSpin{to{transform:rotate(360deg)}}
-@keyframes tkRoad{to{transform:translateX(-40px)}}
-@keyframes tkRide{0%,100%{transform:translateY(0)}50%{transform:translateY(-.8px)}}
 @media(max-width:1240px){.ov-vis{grid-template-columns:1fr}.ov-vis-r{grid-template-columns:1fr 1fr}}
 @media(max-width:1100px){.brand-t{display:none}}
 @media(max-width:760px){.route-g{grid-template-columns:1fr}.route-map{padding:16px 16px 0}
   .ov-vis-r{grid-template-columns:1fr}.top .top-t{font-size:24px}}
+
+/* ═══════════ TRANSPORT ═══════════ */
+.t-art{width:100%;max-width:260px}
+.t-art svg{display:block;width:100%;height:auto;overflow:visible}
+/* Motion only while the shipment is actually moving: a slow, composited
+   bob for air and sea, a wheel turn for road and rail. */
+.t-art.moving.t-air svg,.t-art.moving.t-ocean svg{animation:tBob 4.6s ease-in-out infinite;will-change:transform}
+@keyframes tBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.t-wheel{transform-box:fill-box;transform-origin:center}
+.t-art.moving .t-wheel{animation:tkSpin 1.3s linear infinite}
+.mode{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:550;color:var(--mid);
+  white-space:nowrap}
+.mode .m-ico{flex:none}
+.mode.m-air .m-ico{color:var(--air)} .mode.m-ocean .m-ico{color:var(--ocean)}
+.mode.m-road .m-ico{color:var(--road)} .mode.m-rail .m-ico{color:var(--rail)}
+.mode.m-unknown{color:var(--faint)} .mode.m-unknown .m-ico{color:var(--nomode)}
+
+/* journey pills: what the carrier said */
+.jp{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:100px;font-size:11.5px;
+  font-weight:600;white-space:nowrap}
+.jp::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.jp.j-processing{color:var(--blu);background:var(--blu-wash)}
+.jp.j-onway{color:var(--teal);background:var(--teal-wash)}
+.jp.j-onway::before{background:var(--teal-dot)}
+.jp.j-human{color:var(--y);background:var(--y-wash)}
+.jp.j-human::before{background:var(--y-dot)}
+.jp.j-arrived{color:var(--grn);background:var(--grn-wash)}
+.jp.j-arrived::before{background:var(--grn-dot)}
+.jp.j-failed{color:var(--red);background:var(--red-wash)}
+.jp.j-nodata,.jp.j-none{color:var(--mid);background:var(--surface-3)}
+.arr{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mid)}
+.arr i{width:6px;height:6px;border-radius:50%}
+.arr b{font-family:var(--mono);font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.arr.ok i{background:var(--grn-dot)} .arr.way i{background:var(--teal-dot)}
+.arr.none{color:var(--faint)}
+td.car{color:var(--ink);font-weight:500}
+
+/* filter bar above Live operations */
+.ops-fb{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--line-2);
+  background:var(--surface-2);font-size:12.5px;color:var(--ink)}
+.ops-fb[hidden]{display:none}
+.ops-fb-i{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+
+/* the shipment card in Tracking */
+.sc-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sc-car{font-size:15px;font-weight:650;color:var(--ink);letter-spacing:-.01em}
+.route-side .t-art{max-width:230px;margin:2px auto 0}
+.sc-g{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+.sc-t{display:grid;gap:8px;padding-top:12px;border-top:1px solid var(--line-2)}
+.sc-open{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:auto;
+  padding:9px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);
+  font-size:12.5px;font-weight:550;color:var(--ink);transition:background .16s}
+.sc-open:hover{background:var(--surface-3)}
+.fleet-lead{margin-top:10px;font-size:12px;color:var(--mid);line-height:1.45}
+.fleet-lead b{color:var(--ink);font-weight:600}
+.fleet-art .t-art{max-width:290px;margin-left:auto}
 
 /* ═══════════ CHAT ═══════════ */
 .fab{position:fixed;right:22px;bottom:calc(var(--player) + 18px);z-index:70;
@@ -1015,7 +1089,6 @@ a.cbtn{text-decoration:none}
 /* No position:relative here — it would override the fixed positioning above
    and drop the launcher into normal flow, stretching it across the window.
    position:fixed already establishes the containing block the pulse needs. */
-.fab svg{width:15px;height:15px}
 .fab.hide{display:none}
 .chat{position:fixed;right:24px;bottom:calc(var(--player) + 22px);z-index:71;
   width:396px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 150px);
@@ -1087,6 +1160,40 @@ a.cbtn{text-decoration:none}
   display:grid;place-items:center;flex:none;transition:transform .2s var(--e)}
 .send:hover{transform:scale(1.06)}
 .send svg{width:15px;height:15px}
+
+
+/* ═══ ATLAS PANEL ═══ the assistant is ATLAS, run-scoped */
+.ch-av{background:transparent;width:36px;height:36px}
+.ch-nm{font-size:14px;font-weight:700;letter-spacing:.08em;color:var(--ink)}
+.ch-nm span{font-size:11.5px;font-weight:500;letter-spacing:0;color:var(--faint);margin-left:6px}
+.ch-rl{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--mid)}
+.ch-rl i{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+.ch-rl[data-s="live"] i{background:var(--grn-dot)} .ch-rl[data-s="wait"] i{background:var(--y-dot)}
+.ch-rl[data-s="bad"] i{background:var(--red)}
+.ch-n{padding:10px 14px 12px;border-bottom:1px solid var(--line-2);background:var(--surface);
+  display:grid;gap:6px;max-height:210px;overflow:auto}
+.ch-n[hidden]{display:none}
+/* Once a conversation starts the notices fold to one line, so the answers
+   keep the room; the line opens them again. */
+.ch-n.fold .ch-ni{display:none}
+.ch-nt{display:flex;align-items:center;gap:6px;width:100%;text-align:left;cursor:pointer}
+.ch-nt svg{transition:transform .2s;flex:none}
+.ch-n.fold .ch-nt svg{transform:rotate(-90deg)}
+.ch-sum{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--mid)}
+.ch-sum b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+.ch-nt{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);
+  margin-top:4px}
+.ch-ni{display:flex;align-items:flex-start;gap:8px;text-align:left;font-size:12.5px;line-height:1.4;
+  color:var(--ink);padding:6px 8px;border-radius:9px;transition:background .16s}
+.ch-ni:hover{background:var(--surface-2)}
+.ch-ni i{width:7px;height:7px;border-radius:50%;margin-top:5px;flex:none;background:var(--faint)}
+.ch-ni.lv-warn i{background:var(--y-dot)} .ch-ni.lv-error i{background:var(--red)}
+.ch-ni.lv-ok i{background:var(--grn-dot)} .ch-ni.lv-info i{background:var(--blu)}
+.m-av.ax-av{background:transparent;width:30px;height:30px}
+.dl.act{cursor:pointer;border-color:var(--line);background:var(--surface);color:var(--ink);font-weight:550}
+.dl.act:hover{background:var(--surface-2)}
+.ch-done{align-self:center;font-size:11.5px;color:var(--faint)}
+.fab #fabAtlas{width:26px;height:26px;margin-left:-6px}
 
 /* ═══════════ RESPONSIVE ═══════════
    Desktop first: this is an operations console. A laptop narrows the side
@@ -1239,6 +1346,9 @@ a.cbtn{text-decoration:none}
     <stop offset="0" stop-color="#2B2E37"/><stop offset="1" stop-color="#07080A"/></linearGradient>
   <linearGradient id="axAmber" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0" stop-color="#FFC04A"/><stop offset="1" stop-color="#E0761A"/></linearGradient>
+  <!-- Transport illustrations share one body gradient. -->
+  <linearGradient id="tBody" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#EDF1F6"/></linearGradient>
   <radialGradient id="axHalo"><stop offset="0" stop-color="#FFC14D" stop-opacity=".55"/>
     <stop offset="1" stop-color="#FFC14D" stop-opacity="0"/></radialGradient>
 </defs></svg>
@@ -1256,6 +1366,7 @@ a.cbtn{text-decoration:none}
     </button>
     <div class="brand">
       <span class="logo" id="brandLogo"><img src="/static/brand/mantrac-logo.svg" alt="Mantrac"
+        onload="this.closest('.brand').classList.add('has-logo')"
         onerror="if(!this.dataset.png){this.dataset.png=1;this.src='/static/brand/mantrac-logo.png';}else{this.parentNode.classList.add('missing');this.remove();}"></span>
       <span class="brand-t"><span class="brand-n">MANTRAC</span>
         <span class="brand-p">ATA Control Tower</span></span>
@@ -1329,7 +1440,7 @@ a.cbtn{text-decoration:none}
              mode: a plane for air, a ship for ocean, a van for the rest. -->
         <div class="card route">
           <div class="card-h"><div><div class="card-t">Tracking</div>
-            <div class="card-s" id="routeSub">The selected shipment on its way through ATA</div></div>
+            <div class="card-s" id="routeSub">The selected shipment's journey · route drawn abstractly — carriers report status and dates, not positions</div></div>
             <div class="sp"></div><span id="routeTag"></span></div>
           <div class="route-g">
             <div class="route-map" id="routeMap"></div>
@@ -1342,7 +1453,8 @@ a.cbtn{text-decoration:none}
               <div class="card-s">ETA known, not yet arrived</div></div></div>
             <div class="fleet-b">
               <div class="fleet-n"><b id="fleetN">0</b><span id="fleetSub">shipments this run</span>
-                <div class="fleet-st" id="fleetSt"><i></i><span>Nothing on the way</span></div></div>
+                <div class="fleet-st" id="fleetSt"><i></i><span>Nothing on the way</span></div>
+                <div class="fleet-lead" id="fleetLead"></div></div>
               <div class="fleet-art" id="fleetArt"></div>
             </div>
           </div>
@@ -1357,11 +1469,13 @@ a.cbtn{text-decoration:none}
       <div class="ov">
         <div class="card">
           <div class="card-h"><div><div class="card-t">Live operations</div>
-            <div class="card-s">Every shipment this run, newest first. Select one for its timeline.</div></div>
+            <div class="card-s" id="opsRun">Every shipment this run, newest first</div></div>
             <div class="sp"></div><div class="kick" id="opsN"></div></div>
+          <div class="ops-fb" id="opsFilterBar" hidden><span class="ops-fb-i">Filter</span>
+            <span id="opsFilterT"></span><button class="link" id="opsClear">Clear</button></div>
           <div class="tw"><table>
-            <thead><tr><th>Shipment</th><th>Carrier</th><th>Status</th><th>Current step</th>
-            <th>ATA</th><th>Duration</th><th>Last update</th><th>Run ID</th></tr></thead>
+            <thead><tr><th>Shipment</th><th>Mode</th><th>Carrier</th><th>Status</th><th>Current step</th>
+            <th>Arrival</th><th>Last update</th></tr></thead>
             <tbody id="opsRows"></tbody></table></div>
           <div id="opsEmpty"></div>
           <div class="ops-f" id="opsFoot" hidden><span id="opsMore"></span><div class="sp"></div>
@@ -1628,22 +1742,21 @@ a.cbtn{text-decoration:none}
        a silent cinematic: no <audio> element, no /api/music fetch, no codec
        negotiation, no mute state, and no soundtrack asset in the build. -->
 
-  <button class="fab" id="fab">
-    <svg><use href="#ct-mark"/></svg>
-    Ask
-  </button>
-  <div class="chat" id="chat">
+  <button class="fab" id="fab" aria-label="Ask ATLAS"><span id="fabAtlas"></span>Ask ATLAS</button>
+  <div class="chat" id="chat" role="dialog" aria-label="ATLAS">
     <div class="ch-h">
-      <div class="ch-av"><svg><use href="#ct-mark"/></svg></div>
-      <div><div class="ch-nm">Shipment Assistant</div>
-        <div class="ch-rl" id="chRole">Answers only from this run's data</div>
-        <div class="ch-ty" id="chTy">typing…</div></div>
+      <div class="ch-av" id="chAtlas"></div>
+      <div><div class="ch-nm">ATLAS <span>Operational Intelligence</span></div>
+        <div class="ch-rl" id="chRole"><i></i><span id="chStatus">Watching this run</span></div>
+        <div class="ch-ty" id="chTy">ATLAS is looking at the run…</div></div>
       <button class="ch-x" id="chatX" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
+    <!-- What ATLAS noticed, from the run state. Each line takes you to it. -->
+    <div class="ch-n" id="chNotice" hidden></div>
     <div class="ch-b" id="chatBody"></div>
     <div class="ch-s" id="chatSug"></div>
     <div class="ch-f">
-      <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask about a shipment…"></textarea>
+      <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask ATLAS about this run…"></textarea>
       <button class="send" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
     </div>
   </div>
@@ -1972,7 +2085,7 @@ $('scrim').addEventListener('click', () => {
 /* ═══ STATE ═══ */
 let S = null, logLevel = 'all', logQ = '', shipQ = '', shipF = 'all';
 const sig = {};
-const TAGS = {updated:'Updated', processing:'Processing', skipped:'Skipped',
+const TAGS = {updated:'Success', processing:'Processing', skipped:'Skipped',
               partial:'Partly updated', failed:'Failed', unknown:'Unknown',
               waiting_for_human:'Waiting for human', human_timeout:'Human timeout'};
 const tag = (s) => '<span class="tag ' + (TAGS[s] ? s : 'unknown') + '">' + (TAGS[s] || 'Unknown') + '</span>';
@@ -2631,6 +2744,8 @@ function Atlas(el, o){
     say.innerHTML = words;
     say.hidden = !words;
   }
+  const tier = o.tier || 'normal';
+  if (el.dataset.tier !== tier) el.dataset.tier = tier;
   el.setAttribute('aria-label', 'ATLAS — ' + ATLAS[st].label + (message ? '. ' + message : ''));
 }
 
@@ -2656,11 +2771,72 @@ setInterval(() => {
       if (!el.offsetParent) return;                         // on a hidden page
       const dw = el.closest('.drawer');
       if (dw && !dw.classList.contains('on')) return;       // drawer closed
-      el.classList.toggle('alt', atlasBeat % 2 === 1);
-      el.classList.add('blink');
-      setTimeout(() => el.classList.remove('blink'), 260);
+      // A calm figure moves every other beat (6.5 s); one whose operation is
+      // taking long moves on every beat (3.25 s) and glances further.
+      const tier = el.dataset.tier || 'normal';
+      if (tier === 'normal' && atlasBeat % 2) return;
+      el._beat = (el._beat || 0) + 1;
+      el.classList.toggle('alt', el._beat % 2 === 1);
+      if (tier === 'normal' || el._beat % 2 === 0){
+        el.classList.add('blink');
+        setTimeout(() => el.classList.remove('blink'), 260);
+      }
     });
-}, 6500);
+}, 3250);
+
+/* ═══ TIME-AWARE ATLAS ═══
+   How long the thing ATLAS is watching has actually been going on — the
+   shipment's own start time, or when the human action opened. Presentation
+   only: it changes how ATLAS phrases and carries itself, never the state.
+   And it never claims an activity: the words name the step the automation
+   reported, and "the carrier" only when the current system IS the carrier. */
+const AX_TIERS = [[180, 'very_long'], [120, 'waiting'], [60, 'long_monitoring'], [30, 'long'], [0, 'normal']];
+function axTier(seconds){
+  for (const t of AX_TIERS) if (seconds >= t[0]) return t[1];
+  return 'normal';
+}
+const axMins = (sec) => { const m = Math.floor(sec / 60); return m + ' min'; };
+function axElapsed(stamp){
+  const t = stamp ? new Date(String(stamp).replace(' ', 'T')).getTime() : NaN;
+  return isNaN(t) ? null : Math.max(0, (Date.now() - t) / 1000);
+}
+function axActor(){
+  const k = S.current && S.current.system;
+  if (!k || k === 'browser') return null;
+  if (k === 'hub') return 'the Logistics Hub';
+  return sysName(k);
+}
+function axMonitoring(rec, prefix){
+  const sec = rec && rec.started_epoch ? Math.max(0, Date.now() / 1000 - rec.started_epoch) : 0;
+  const tier = axTier(sec);
+  const step = (S.current && S.current.step) || rec.step || '';
+  const actor = axActor();
+  const who = rec.reference + (rec.carrier ? ' on ' + rec.carrier : '');
+  let message = prefix + who + '.';
+  if (tier === 'long_monitoring')
+    message = 'Still monitoring ' + who + (step ? ': ' + step : '') + '.';
+  else if (tier === 'waiting')
+    // "waiting for the carrier" only when the system working is that carrier.
+    message = (S.current && S.current.system && S.current.system === rec.provider
+      ? 'Still waiting for the ' + actor + ' response'
+      : 'Still working on ' + rec.reference + (actor ? ' with ' + actor : '')) +
+      (step ? ' — ' + step : '') + ', ' + axMins(sec) + ' so far.';
+  else if (tier === 'very_long')
+    message = 'This is taking longer than expected: ' + (step || 'the current step') +
+      ' for ' + rec.reference + ', ' + axMins(sec) + '.';
+  return {state:'monitoring', message:message, tier:tier};
+}
+function axHuman(hum){
+  const sec = axElapsed(hum.opened_at) || 0;
+  const tier = axTier(sec);
+  const base = (hum.carrier || 'A carrier') + ' requires human verification.';
+  let message = base;
+  if (sec >= 180 && hum.deadline)
+    message = 'Still waiting for your action — ' + axMins(sec) + '. ' + base + ' The step times out at ' +
+      String(hum.deadline).slice(11) + '.';
+  else if (sec >= 60) message = 'Still waiting for your action — ' + axMins(sec) + '. ' + base;
+  return {state:'human_required', message:message, tier:tier};
+}
 
 /* What ATLAS says about the run, from the run state and nothing else. */
 const axName = (s) => String(s || '').replace(/_/g, ' ').toLowerCase()
@@ -2669,8 +2845,7 @@ function atlasRun(){
   const rec = S.recovery, run = S.run || {}, c = S.counters || {};
   const hum = S.human_action && S.human_action.waiting ? S.human_action : null;
   const cur = S.current && S.current.shipment;
-  if (hum) return {state:'human_required',
-    message:(hum.carrier || 'A carrier') + ' requires human verification.'};
+  if (hum) return axHuman(hum);
   if (rec && rec.checkpoint) return {state:'human_required',
     message:'Stopped for a person: ' + rec.checkpoint};
   if (rec && rec.status === 'RUNNING'){
@@ -2688,8 +2863,7 @@ function atlasRun(){
   if (rec && rec.status === 'EXHAUSTED') return {state:'analyzing',
     message:'No safe recovery for ' + axName(rec.error_class) + '. The deterministic outcome stands.'};
   if (run.status === 'running'){
-    if (cur) return {state:'monitoring', message:'Monitoring ' + cur.reference +
-                     (cur.carrier ? ' on ' + cur.carrier : '') + '.'};
+    if (cur) return axMonitoring(cur, 'Monitoring ');
     const last = (S.shipments || [])[0];
     if (last && last.state === 'failed') return {state:'analyzing',
       message:'I classified the last failure on ' + last.reference +
@@ -2714,14 +2888,17 @@ function atlasShipment(r){
   const h = humanFor(r.reference);
   const cur = S.current && S.current.shipment;
   const rec = S.recovery;
-  if (r.state === 'waiting_for_human') return {state:'human_required',
-    message:((h.action && h.action.carrier) || r.carrier || 'The carrier') + ' requires human verification.'};
+  if (r.state === 'waiting_for_human')
+    return h.action && h.action.waiting ? axHuman(h.action)
+      : {state:'human_required', message:(r.carrier || 'The carrier') + ' requires human verification.'};
   if (r.state === 'processing'){
     if (rec && cur && cur.reference === r.reference && rec.status === 'RUNNING')
       return {state:'recovering', message:'Applying recovery strategy to this shipment.'};
     if (rec && cur && cur.reference === r.reference && rec.status === 'PLANNED')
       return {state:'analyzing', message:'I detected ' + axName(rec.error_class) + ' on this shipment.'};
-    return {state:'monitoring', message:'Currently monitoring this shipment.'};
+    const m = axMonitoring(r, 'Currently monitoring ');
+    if (m.tier === 'normal' || m.tier === 'long') m.message = 'Currently monitoring this shipment.';
+    return m;
   }
   if (r.state === 'updated'){
     const v = r.verification ? Object.keys(r.verification).map((k) => r.verification[k]) : [];
@@ -2837,27 +3014,178 @@ const since = (t0) => {
   return n < 60 ? n + ' s' : Math.floor(n / 60) + ' m ' + (n % 60) + ' s';
 };
 
+/* ═══ TRANSPORT ═════════════════════════════════════════════════════
+   getTransportMode(r) reads the mode the bridge put on the record, which it
+   took from the tracking provider the automation used (bridge.TRANSPORT_MODES).
+   Nothing here guesses a mode: a record without one is "unknown", and gets the
+   neutral illustration, never a vehicle.
+
+   TransportIllustration(mode, moving) draws the five illustrations in one
+   visual language — white rounded bodies, one mode accent, a soft ground
+   shadow. `moving` adds a slow bob (composited) and, for wheels, a turn. */
+const MODES = {
+  air:     {label:'Air',     color:'var(--air)'},
+  ocean:   {label:'Ocean',   color:'var(--ocean)'},
+  road:    {label:'Road',    color:'var(--road)'},
+  rail:    {label:'Rail',    color:'var(--rail)'},
+  unknown: {label:'Unknown', color:'var(--nomode)'}
+};
+function getTransportMode(r){
+  const m = r && r.transport_mode;
+  return MODES[m] ? m : 'unknown';
+}
+const MODE_ICON = {
+  air:     'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z',
+  ocean:   'M4 18.5 2.5 15h19L20 18.5c-1.4 1-3 1-4.5 0-1.4 1-3 1-4.5 0-1.4 1-3 1-4.5 0-.8.6-1.7.8-2.5 0zM6 13l1-5h4V4h2v4h4l1 5z',
+  road:    'M2 7h11v9H2zm11 3h4l3 3v3h-7zM6.5 19.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm11 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  rail:    'M7 3h10a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3l2 3h-2.4l-2-3H9.4l-2 3H5l2-3a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zm-1 4v4h12V7zm2 7a1.3 1.3 0 1 0 0 2.6A1.3 1.3 0 0 0 8 14zm8 0a1.3 1.3 0 1 0 0 2.6A1.3 1.3 0 0 0 16 14z',
+  unknown: 'M12 2 3 6.5v11L12 22l9-4.5v-11zm0 2.3 6.6 3.3L12 10.9 5.4 7.6zM5 9.3l6 3V19l-6-3zm8 9.7v-6.7l6-3V16z'
+};
+function modeIcon(mode, size){
+  return '<svg class="m-ico" viewBox="0 0 24 24" width="' + (size || 16) + '" height="' + (size || 16) +
+    '" aria-hidden="true"><path d="' + MODE_ICON[mode] + '" fill="currentColor"/></svg>';
+}
+function modeChip(mode){
+  return '<span class="mode m-' + mode + '">' + modeIcon(mode, 14) + MODES[mode].label + '</span>';
+}
+
+function TransportIllustration(mode, moving){
+  const SH = '<ellipse cx="130" cy="118" rx="96" ry="4.5" fill="rgba(11,31,51,.07)"/>';
+  const BODY = 'fill="url(#tBody)" stroke="#D8DEE6" stroke-width="1.2"';
+  const wheel = (cx, cy, r) => '<g class="t-wheel"><circle cx="' + cx + '" cy="' + cy + '" r="' + r +
+    '" fill="#1E293B"/><circle cx="' + cx + '" cy="' + cy + '" r="' + (r * .48).toFixed(1) +
+    '" fill="#CBD5E1"/><path d="M' + (cx - r * .48) + ' ' + cy + ' H' + (cx + r * .48) + ' M' + cx + ' ' +
+    (cy - r * .48) + ' V' + (cy + r * .48) + '" stroke="#94A3B8" stroke-width="1.6"/></g>';
+  let art = '';
+  if (mode === 'air'){
+    art = '<ellipse cx="140" cy="118" rx="62" ry="3.5" fill="rgba(11,31,51,.06)"/>' +
+      '<g fill="#EEF2F7"><circle cx="42" cy="92" r="9"/><circle cx="54" cy="88" r="12"/><circle cx="68" cy="93" r="8"/>' +
+        '<circle cx="206" cy="30" r="7"/><circle cx="217" cy="27" r="9"/></g>' +
+      '<path d="M8 59 H62 M20 66 H58" stroke="var(--air)" stroke-opacity=".28" stroke-width="2" stroke-linecap="round"/>' +
+      '<path d="M120 58 L150 58 L139 42 L131 42 Z" fill="#E4E9F0"/>' +
+      '<path d="M66 50 H202 C221 50 234 56 238 63 C234 70 221 76 202 76 H66 C58 76 53 70 53 63 C53 56 58 50 66 50 Z" ' + BODY + '/>' +
+      '<path d="M70 51 L57 23 H72 L95 51 Z" ' + BODY + '/>' +
+      '<path d="M61 27 H71 L85 45 H75 Z" fill="var(--air)"/>' +
+      '<path d="M62 60 L88 60 L82 68 L58 68 Z" ' + BODY + '/>' +
+      '<rect x="68" y="64" width="150" height="4" rx="2" fill="var(--air)"/>' +
+      '<path d="M213 55.5 H223 Q229 55.5 232.5 61 H213 Z" fill="#1E293B"/>' +
+      '<path d="M112 66 L158 66 L134 98 L119 98 Z" ' + BODY + '/>' +
+      '<rect x="124" y="80" width="24" height="10" rx="5" ' + BODY + '/>' +
+      '<rect x="144" y="81.5" width="4" height="7" rx="2" fill="#1E293B"/>';
+  } else if (mode === 'ocean'){
+    const C = ['var(--ocean)', 'var(--brand)', '#64748B', 'var(--air)', '#CBD5E1', 'var(--ocean)'];
+    let boxes = '';
+    for (let i = 0; i < 6; i++){
+      boxes += '<rect x="' + (64 + i * 24) + '" y="70" width="22" height="12" rx="1.5" fill="' + C[i] + '" opacity=".92"/>';
+      if (i !== 2 && i !== 5)
+        boxes += '<rect x="' + (64 + i * 24) + '" y="56" width="22" height="12" rx="1.5" fill="' + C[(i + 3) % 6] + '" opacity=".85"/>';
+    }
+    art = '<g stroke="var(--ocean)" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none">' +
+        '<path d="M14 110 q10 -5 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>' +
+        '<path d="M40 119 q10 -4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/></g>' +
+      boxes +
+      '<path d="M26 82 H236 L244 74 V82 L224 104 H46 Z" fill="#0B1F33"/>' +
+      '<path d="M37 95 H230 L226 99 H41 Z" fill="var(--ocean)"/>' +
+      '<rect x="32" y="44" width="24" height="38" rx="3" ' + BODY + '/>' +
+      '<rect x="36" y="49" width="16" height="5" rx="1.5" fill="#1E293B"/>' +
+      '<rect x="40" y="33" width="9" height="11" rx="2" fill="var(--brand)"/>' +
+      '<path d="M226 82 V64" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round"/>';
+  } else if (mode === 'road'){
+    art = SH +
+      '<rect x="18" y="28" width="160" height="68" rx="9" ' + BODY + '/>' +
+      '<rect x="18" y="78" width="160" height="6" fill="var(--road)"/>' +
+      '<path d="M178 44 H207 Q217 44 223 52 L239 74 Q243 80 243 87 V94 Q243 100 237 100 H178 Z" ' + BODY + '/>' +
+      '<path d="M186 51 H205 Q211 51 215 57 L226 72 H186 Z" fill="#1E293B"/>' +
+      '<path d="M191 55 H204" stroke="#FFFFFF" stroke-opacity=".3" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<rect x="178" y="78" width="65" height="6" fill="var(--road)"/>' +
+      '<rect x="234" y="88" width="9" height="5" rx="2" fill="#FFC14D"/>' +
+      wheel(62, 100, 14) + wheel(210, 100, 14);
+  } else if (mode === 'rail'){
+    let ties = '';
+    for (let i = 0; i < 18; i++) ties += '<rect x="' + (8 + i * 14) + '" y="105" width="8" height="5" rx="1" fill="#E2E8F0"/>';
+    art = ties + '<path d="M4 106 H256" stroke="#CBD5E1" stroke-width="2.4"/>' +
+      '<rect x="14" y="86" width="72" height="8" rx="2" fill="#475569"/><rect x="92" y="86" width="72" height="8" rx="2" fill="#475569"/>' +
+      '<rect x="18" y="62" width="64" height="24" rx="2" fill="var(--rail)" opacity=".9"/>' +
+      '<rect x="96" y="58" width="64" height="28" rx="2" fill="#94A3B8"/>' +
+      '<path d="M170 50 H226 Q240 50 244 62 L248 82 Q249 94 238 94 H170 Z" ' + BODY + '/>' +
+      '<path d="M222 56 H232 Q238 56 240 62 L242 70 H222 Z" fill="#1E293B"/>' +
+      '<rect x="170" y="76" width="78" height="5" fill="var(--rail)"/>' +
+      wheel(28, 98, 6) + wheel(72, 98, 6) + wheel(106, 98, 6) + wheel(150, 98, 6) +
+      wheel(184, 98, 7) + wheel(228, 98, 7);
+  } else {
+    art = SH +
+      '<path d="M130 26 L176 46 L130 66 L84 46 Z" fill="#F1F5F9" stroke="#D8DEE6" stroke-width="1.2"/>' +
+      '<path d="M84 46 L130 66 V108 L84 88 Z" ' + BODY + '/>' +
+      '<path d="M176 46 L130 66 V108 L176 88 Z" fill="#E9EDF3" stroke="#D8DEE6" stroke-width="1.2"/>' +
+      '<path d="M107 36 L153 56 V70 L107 50 Z" fill="var(--nomode)" opacity=".5"/>' +
+      '<path d="M30 96 C 52 70, 60 50, 76 44 M184 44 C 200 50, 210 70, 230 96" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>';
+  }
+  return '<div class="t-art t-' + mode + (moving ? ' moving' : '') + '" role="img" aria-label="' +
+    esc(MODES[mode].label) + ' transport"><svg viewBox="0 0 260 130" xmlns="http://www.w3.org/2000/svg">' +
+    art + '</svg></div>';
+}
+
+/* The shipment's journey, from its own record: what the carrier said, and
+   whether the automation could finish with it. Dates are the carrier's. */
+function journeyOf(r){
+  if (!r) return {k:'none', label:'No shipment'};
+  if (r.state === 'waiting_for_human') return {k:'human', label:'Human action required'};
+  if (r.state === 'failed' || r.state === 'human_timeout') return {k:'failed', label:'Exception'};
+  if (has(r.provider_ata)) return {k:'arrived', label:'Arrived', date:r.provider_ata};
+  if (has(r.provider_eta)) return {k:'onway', label:'On the way', date:r.provider_eta};
+  if (r.state === 'processing') return {k:'processing', label:'Processing'};
+  if (r.state === 'skipped') return {k:'nodata', label:'No carrier data'};
+  return {k:'nodata', label:'Not reported'};
+}
+const jpill = (j) => '<span class="jp j-' + j.k + '">' + esc(j.label) + '</span>';
+
 /* ═══ LIVE OPERATIONS ═══
    Keyed by reference: a row is rebuilt only when its own content changed,
    moved only when the order changed, and its live clock is ticked as text.
-   A new shipment adds one row; it never re-renders the table. */
+   A new shipment adds one row; it never re-renders the table.
+
+   opsFilter narrows the table — set by the operator or by ATLAS ("show DHL",
+   "show failed shipments"). It is a view filter only; it changes nothing. */
 const OPS_MAX = 14;
 const opsCache = new Map();
-function opsRowHTML(r, runId){
+let opsFilter = null;
+function opsMatch(r){
+  if (!opsFilter) return true;
+  if (opsFilter.state && r.state !== opsFilter.state) return false;
+  if (opsFilter.mode && getTransportMode(r) !== opsFilter.mode) return false;
+  if (opsFilter.carrier){
+    const q = String(opsFilter.carrier).toLowerCase();
+    const hay = [r.carrier, r.provider, r.provider ? sysName(r.provider) : ''].join(' ').toLowerCase();
+    if (hay.indexOf(q) < 0) return false;
+  }
+  if (opsFilter.refs && opsFilter.refs.indexOf(r.reference) < 0) return false;
+  return true;
+}
+function setOpsFilter(f, label){
+  opsFilter = f && (f.state || f.mode || f.carrier || f.refs) ? Object.assign({label: label || ''}, f) : null;
+  if (activePage !== 'overview') go('overview'); else paintOps();
+  const card = $('opsRows').closest('.card');
+  if (card && opsFilter) card.scrollIntoView({behavior:'smooth', block:'start'});
+}
+function arrivalCell(j){
+  if (j.k === 'arrived') return '<span class="arr ok"><i></i>Arrived <b>' + esc(j.date) + '</b></span>';
+  if (j.k === 'onway') return '<span class="arr way"><i></i>ETA <b>' + esc(j.date) + '</b></span>';
+  return '<span class="arr none">—</span>';
+}
+function opsRowHTML(r){
   const list = pipeline(r);
+  const mode = getTransportMode(r);
   const open = r.state === 'processing' || r.state === 'waiting_for_human';
   const step = open ? (r.step || '') : (r.outcome || (r.state === 'updated' ? 'Complete' : ''));
   return '<td class="ref">' + esc(r.reference) + '</td>' +
-    '<td class="nw">' + dash(r.carrier) + '</td>' +
+    '<td>' + modeChip(mode) + '</td>' +
+    '<td class="nw car">' + dash(r.carrier) + '</td>' +
     '<td>' + tag(r.state) + '</td>' +
-    '<td><div class="stepc">' + railHTML(list) + '<span title="' + esc(step) + '">' +
-      dash(step) + '</span></div></td>' +
-    dtCell(r.provider_ata, true) +
-    (open && r.started_epoch
-      ? '<td class="n" data-t0="' + r.started_epoch + '"></td>'
-      : '<td class="n">' + ms(r.duration_ms) + '</td>') +
-    '<td class="n">' + dash(r.updated) + '</td>' +
-    '<td class="rid" title="' + esc(runId || '') + '">' + esc(shortRun(runId)) + '</td>';
+    '<td><div class="stepc">' + railHTML(list) + '<span title="' + esc(step) + '">' + dash(step) +
+      (open && r.started_epoch ? ' · <span class="mono" data-t0="' + r.started_epoch + '"></span>' : '') +
+      '</span></div></td>' +
+    '<td class="nw">' + arrivalCell(journeyOf(r)) + '</td>' +
+    '<td class="n">' + dash(r.updated) + '</td>';
 }
 function tickClocks(root){
   if (!root) return;
@@ -2870,14 +3198,14 @@ function paintOps(){
   if (activePage !== 'overview' && sig.opsInit) return;
   sig.opsInit = 1;
   const all = S.shipments || [];
-  const rows = all.slice(0, OPS_MAX);
+  const matching = all.filter(opsMatch);
+  const rows = matching.slice(0, OPS_MAX);
   const tb = $('opsRows');
-  const runId = S.run && S.run.run_id;
   const keep = new Set();
   let moved = false;
   rows.forEach((r0, i) => {
     const r = liveRec(r0);
-    const html = opsRowHTML(r, runId);
+    const html = opsRowHTML(r);
     let ent = opsCache.get(r0.reference);
     if (!ent){
       const tr = document.createElement('tr');
@@ -2895,14 +3223,21 @@ function paintOps(){
     if (!keep.has(ref)){ ent.tr.remove(); opsCache.delete(ref); }
   });
   if (moved){ stampRowLabels(tb); tickClocks(tb); }
+  const runId = S.run && S.run.run_id;
   put($('opsN'), all.length ? all.length + ' this run' : '');
-  $('opsFoot').hidden = all.length <= OPS_MAX;
-  put($('opsMore'), 'Showing the newest ' + Math.min(OPS_MAX, all.length) + ' of ' + all.length);
-  putHTML($('opsEmpty'), rows.length ? '' : empty('No shipments yet',
-    S.run.status === 'running'
+  put($('opsRun'), runId ? 'Run ' + shortRun(runId) + ' · newest first · select a row for its timeline'
+                         : 'Every shipment this run, newest first');
+  $('opsFilterBar').hidden = !opsFilter;
+  if (opsFilter) put($('opsFilterT'), (opsFilter.label || 'Filtered') + ' · ' + matching.length + ' of ' + all.length);
+  $('opsFoot').hidden = matching.length <= OPS_MAX;
+  put($('opsMore'), 'Showing the newest ' + Math.min(OPS_MAX, matching.length) + ' of ' + matching.length);
+  putHTML($('opsEmpty'), rows.length ? '' : (opsFilter
+    ? empty('Nothing matches this filter', 'No shipment in this run matches. Clear the filter to see them all.')
+    : empty('No shipments yet', S.run.status === 'running'
       ? 'The first Under Clearance row appears here the moment the run picks it up.'
-      : 'Start a run to watch shipments move through the ATA pipeline.'));
+      : 'Start a run to watch shipments move through the ATA pipeline.')));
 }
+$('opsClear').addEventListener('click', () => setOpsFilter(null));
 
 /* ═══ SHIPMENT DETAIL DRAWER ═══ */
 let dwRef = null, dwSig = '', dwFrom = null;
@@ -3025,6 +3360,9 @@ function paintAtlasPage(){
   const exc = S.exceptions || [];
   const ax = atlasRun();
   cls($('axDot'), 'axdot is-' + ax.state);
+  // The panel header and its launcher wear ATLAS's live state too.
+  Atlas($('chAtlas'), {size:'xs', text:false, state:ax.state, tier:ax.tier});
+  Atlas($('fabAtlas'), {size:'xs', text:false, state:ax.state});
   const all = S.shipments || [];
   const inFlight = all.filter((r) => r.state === 'processing' || r.state === 'waiting_for_human').length;
   const key = JSON.stringify([ax, rec && [rec.error_class, rec.status, (rec.attempts || []).length,
@@ -3059,7 +3397,7 @@ function paintAtlasPage(){
     (advice[1] ? '<div class="rec-n">' + esc(advice[1]) + '</div>' : '') + '</div></div>';
 
   /* Overview: ATLAS beside the run's health, saying one thing. */
-  Atlas($('atlasGlanceFig'), {state:ax.state, message:ax.message, size:'md', title:true});
+  Atlas($('atlasGlanceFig'), {state:ax.state, message:ax.message, size:'md', title:true, tier:ax.tier});
   putHTML($('atlasGlance'),
     '<span>Open issues <b>' + exc.length + '</b></span>' +
     '<span>Recoveries <b>' + (stats ? (stats.recovered || 0) + ' of ' + finished : '—') + '</b></span>' +
@@ -3072,7 +3410,7 @@ function paintAtlasPage(){
   /* The ATLAS page: the character with what it is doing, and the figures
      behind it. Every number is from the run state; an unanswered one is a
      dash, never a zero dressed up as a measurement. */
-  Atlas($('atlasHero'), {state:ax.state, message:ax.message, size:'lg', title:true});
+  Atlas($('atlasHero'), {state:ax.state, message:ax.message, size:'lg', title:true, tier:ax.tier});
   const cell = (k, v, sub, nil) => '<div><div class="kpi-k">' + k + '</div><b' +
     (nil ? ' class="nil"' : '') + '>' + v + '</b><small>' + sub + '</small></div>';
   putHTML($('atlasHeroStats'), [
@@ -3135,55 +3473,57 @@ setInterval(() => {
   if (document.hidden || !S) return;
   if (activePage === 'overview') tickClocks($('opsRows'));
   if (dwRef) tickClocks($('dwBody'));
+  if (++axTimeTick % 5 === 0 && (S.current && S.current.shipment || (S.human_action || {}).waiting)){
+    paintAtlasPage(); paintDrawer(); paintHuman();
+  }
 }, 1000);
+let axTimeTick = 0;
 
 /* ═══ TRACKING MAP ═══════════════════════════════════════════════════
-   The selected shipment on its way through ATA, drawn as a journey: Hub,
-   carrier, data, Hub write, verified. It is NOT a GPS map — the run records
-   no position, so none is drawn. Where the vehicle sits comes from the
-   shipment's pipeline (the same stages as its rail and its timeline), and
-   the vehicle is its real mode: a plane for air, a ship for ocean, a van
-   for the rest.
+   The selected shipment's journey, drawn from its record:
 
-   Built once; after that only the route's dash offset, the vehicle's
-   transform and a few attributes change, and the browser glides between
-   them. */
-const AIR = {AFKL:1, QATAR:1};
-const OCEAN = {CMA_CGM:1, MSC:1, GRIMALDI:1, COSCO:1, MAERSK:1, ONE:1, HAPAG:1};
-const MODE_ICON = {
-  air:  'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z',
-  sea:  'M4 18.5 2.5 15h19L20 18.5c-1.4 1-3 1-4.5 0-1.4 1-3 1-4.5 0-1.4 1-3 1-4.5 0-.8.6-1.7.8-2.5 0zM6 13l1-5h4V4h2v4h4l1 5z',
-  road: 'M2 7h11v9H2zm11 3h4l3 3v3h-7zM6.5 19.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm11 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'
+     processing / waiting   at the origin; the route ahead is not yet known
+     on the way             the carrier gave an ETA: in transit, destination
+                            labelled with that ETA
+     arrived                the carrier gave an ATA: the route is complete
+     exception              stopped where the evidence stops, in red, still
+
+   The route is ABSTRACT. The carrier reports a status and dates, never a
+   position, so no point on this map is a place: "in transit" means the
+   carrier said so, and nothing more precise is drawn. Its shape follows the
+   mode — an arc for air, a long curve for sea, streets for road. */
+const ROUTE_PATHS = {
+  air:   'M46 204 Q 180 18 354 72',
+  ocean: 'M46 204 C 122 214, 150 122, 214 132 S 304 92, 354 72',
+  road:  'M46 204 C 92 190, 82 140, 132 136 S 212 150, 238 112 S 300 70, 354 72'
 };
-const modeOf = (p) => (AIR[p] ? 'air' : OCEAN[p] ? 'sea' : 'road');
-const ROUTE_D = 'M38 214 C 74 198, 66 150, 106 140 S 178 158, 198 120 S 236 60, 286 70 S 352 98, 366 46';
-let routeRef = null, routeLen = 0, routeSig = '', routeBuilt = false, fleetBuilt = false;
-const ROUTE_COL = {done:'#1D1D1F', now:'var(--blu)', wait:'var(--y)', fail:'var(--red)', ok:'var(--grn)'};
+const JOURNEY_RING = {processing:'var(--blu)', onway:'var(--teal-dot)', human:'var(--y-dot)',
+                      arrived:'var(--grn-dot)', failed:'var(--red)', nodata:'#94A3B8', none:'#94A3B8'};
+let routeRef = null, routeLen = 0, routeSig = '', routeBuilt = false, fleetBuilt = false, routeMode = '';
 
 function routeMapSVG(){
-  // The ground: a quiet city block, a river, the streets. Static, drawn once.
-  return '<svg viewBox="0 0 400 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Route through ATA">' +
-    '<rect width="400" height="260" fill="#EEF0F3"/>' +
-    '<path d="M250 -10 C 236 60, 300 96, 284 150 S 300 230, 330 270" fill="none" stroke="#DCE5F0" stroke-width="30"/>' +
-    '<g fill="#E5E8ED">' +
-      '<rect x="18" y="20" width="70" height="48" rx="6"/><rect x="104" y="22" width="56" height="70" rx="6"/>' +
-      '<rect x="176" y="18" width="52" height="38" rx="6"/><rect x="20" y="88" width="58" height="40" rx="6"/>' +
-      '<rect x="120" y="176" width="66" height="54" rx="6"/><rect x="204" y="160" width="40" height="72" rx="6"/>' +
-      '<rect x="318" y="120" width="60" height="44" rx="6"/><rect x="332" y="184" width="50" height="52" rx="6"/>' +
+  return '<svg viewBox="0 0 400 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shipment route">' +
+    '<rect width="400" height="260" fill="#F2F5F8"/>' +
+    '<path d="M250 -10 C 236 60, 300 96, 284 150 S 300 230, 330 270" fill="none" stroke="#E4ECF3" stroke-width="30"/>' +
+    '<g fill="#EAEEF3">' +
+      '<rect x="18" y="20" width="70" height="48" rx="7"/><rect x="104" y="22" width="56" height="70" rx="7"/>' +
+      '<rect x="176" y="18" width="52" height="38" rx="7"/><rect x="20" y="88" width="58" height="40" rx="7"/>' +
+      '<rect x="120" y="176" width="66" height="54" rx="7"/><rect x="204" y="160" width="40" height="72" rx="7"/>' +
+      '<rect x="318" y="120" width="60" height="44" rx="7"/><rect x="332" y="184" width="50" height="52" rx="7"/>' +
     '</g>' +
     '<g fill="none" stroke="#FFFFFF" stroke-linecap="round">' +
-      '<path d="M0 78 H400" stroke-width="7"/><path d="M0 162 H230 L400 110" stroke-width="7"/>' +
-      '<path d="M96 0 V260" stroke-width="6"/><path d="M168 0 C 160 90, 200 150, 190 260" stroke-width="6"/>' +
-      '<path d="M310 0 V260" stroke-width="5"/><path d="M0 240 H400" stroke-width="5"/>' +
+      '<path d="M0 78 H400" stroke-width="6"/><path d="M0 162 H230 L400 110" stroke-width="6"/>' +
+      '<path d="M96 0 V260" stroke-width="5"/><path d="M168 0 C 160 90, 200 150, 190 260" stroke-width="5"/>' +
+      '<path d="M310 0 V260" stroke-width="4"/><path d="M0 240 H400" stroke-width="4"/>' +
     '</g>' +
-    '<path d="' + ROUTE_D + '" fill="none" stroke="#C3C8D1" stroke-width="3.5" stroke-dasharray="0.5 8" stroke-linecap="round"/>' +
-    '<path class="rt-done" id="rtDone" d="' + ROUTE_D + '" fill="none" stroke="#1D1D1F" stroke-width="4" stroke-linecap="round"/>' +
-    '<g id="rtStops"></g>' +
+    '<path id="rtBase" fill="none" stroke="#B9C2CE" stroke-width="3" stroke-dasharray="0.5 8" stroke-linecap="round"/>' +
+    '<path class="rt-done" id="rtDone" fill="none" stroke-width="4" stroke-linecap="round"/>' +
+    '<g id="rtNodes"></g>' +
     '<g class="rt-car" id="rtCar">' +
-      '<circle r="19" cy="2" fill="rgba(0,0,0,.08)"/>' +
-      '<circle class="rt-pulse" id="rtPulse" r="16" fill="none" stroke-width="2"/>' +
-      '<circle r="16" fill="#FFFFFF" stroke="rgba(0,0,0,.06)"/>' +
-      '<path id="rtIcon" transform="translate(-9 -9) scale(.75)" fill="#1D1D1F"/>' +
+      '<circle r="20" cy="2" fill="rgba(11,31,51,.08)"/>' +
+      '<circle class="rt-pulse" id="rtPulse" r="17" fill="none" stroke-width="2"/>' +
+      '<circle id="rtRing" r="17" fill="#FFFFFF" stroke-width="2.2"/>' +
+      '<path id="rtIcon" transform="translate(-9 -9) scale(.75)"/>' +
     '</g></svg>';
 }
 
@@ -3195,118 +3535,131 @@ function routeShipment(){
   return pick ? liveRec(pick) : null;
 }
 
+const svgText = (x, y, t, o) => '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" text-anchor="' +
+  ((o && o.anchor) || 'middle') + '" font-size="' + ((o && o.size) || 11) + '" font-weight="' +
+  ((o && o.weight) || 500) + '" fill="' + ((o && o.fill) || '#475569') +
+  '" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif">' + esc(t) + '</text>';
+
 function paintRoute(){
   if (activePage !== 'overview' && routeBuilt) return;
-  const map = $('routeMap');
-  if (!routeBuilt){
-    routeBuilt = true;
-    map.innerHTML = routeMapSVG();
-    routeLen = $('rtDone').getTotalLength();
-    $('rtDone').style.strokeDasharray = routeLen + ' ' + routeLen;
-    $('rtDone').style.strokeDashoffset = String(routeLen);
-    routeSig = '';
-  }
+  if (!routeBuilt){ routeBuilt = true; $('routeMap').innerHTML = routeMapSVG(); routeSig = ''; routeMode = ''; }
   const r = routeShipment();
+  const mode = getTransportMode(r);
+  const j = journeyOf(r);
   const list = r ? pipeline(r) : [];
-  const key = r ? JSON.stringify([r.reference, r.state, r.step, r.provider, list.map((x) => x.st).join('')]) : 'none';
-  if (key === routeSig) return;
+  /* "Last update" changes on every write, and it is one text cell. It is
+     kept out of the key so a new timestamp does not rebuild the route, the
+     nodes and the illustration — that rebuild cost 2 ms a frame. */
+  const key = r ? JSON.stringify([r.reference, r.state, r.step, r.provider_eta, r.provider_ata,
+    r.provider_ata_source, r.provider_eta_source, r.provider_status, r.carrier,
+    mode, j.k, list.map((x) => x.st + x.t + (x.note || '')).join('|')]) : 'none';
+  if (key === routeSig){ if (r) put($('scUpd'), r.updated ? String(r.updated) : '—'); return; }
   routeSig = key;
 
-  // Where the shipment is: the furthest stage reached, or between two while
-  // it is still moving.
-  const n = Math.max(list.length - 1, 1);
-  let at = 0, tone = 'done';
-  list.forEach((x, i) => { if (x.st === 'done' || x.st === 'soft') at = Math.max(at, i); });
-  const stop = list.findIndex((x) => x.st === 'now' || x.st === 'wait' || x.st === 'fail');
-  if (stop >= 0){
-    tone = list[stop].st;
-    at = list[stop].st === 'now' ? Math.max(stop - .5, 0) : stop;
-  } else if (r && r.state === 'updated'){ at = n; tone = 'ok'; }
-  const frac = r ? Math.min(at / n, 1) : 0;
-  const path = $('rtDone');
-  path.style.strokeDashoffset = String(routeLen * (1 - frac));
-  path.setAttribute('stroke', tone === 'fail' ? '#C0261C' : '#1D1D1F');
-  const pt = path.getPointAtLength(routeLen * frac);
-  $('rtCar').style.transform = 'translate(' + pt.x.toFixed(1) + 'px,' + pt.y.toFixed(1) + 'px)';
-  const mode = modeOf(r && r.provider);
+  // The route's shape is the mode's; it changes only when the mode does.
+  const shape = ROUTE_PATHS[mode] || ROUTE_PATHS.road;
+  const base = $('rtBase'), done = $('rtDone');
+  if (routeMode !== shape){
+    routeMode = shape;
+    base.setAttribute('d', shape); done.setAttribute('d', shape);
+    routeLen = done.getTotalLength();
+    done.style.strokeDasharray = routeLen + ' ' + routeLen;
+  }
+  const knowsTransit = has(r && r.provider_eta) || has(r && r.provider_ata);
+  const frac = !r ? 0 : j.k === 'arrived' ? 1 : j.k === 'onway' ? .5
+    : j.k === 'failed' ? (knowsTransit ? .5 : .02) : .02;
+  done.style.strokeDashoffset = String(routeLen * (1 - frac));
+  done.setAttribute('stroke', j.k === 'arrived' ? 'var(--grn-dot)' : j.k === 'failed' ? '#94A3B8'
+                              : MODES[mode].color);
+  const at = done.getPointAtLength(routeLen * frac);
+  $('rtCar').style.transform = 'translate(' + at.x.toFixed(1) + 'px,' + at.y.toFixed(1) + 'px)';
+  const ring = JOURNEY_RING[j.k] || '#94A3B8';
+  $('rtRing').setAttribute('stroke', ring);
   $('rtIcon').setAttribute('d', MODE_ICON[mode]);
-  $('rtIcon').setAttribute('fill', tone === 'done' ? '#1D1D1F' : ROUTE_COL[tone]);
+  $('rtIcon').setAttribute('fill', j.k === 'failed' ? 'var(--red)' : MODES[mode].color);
   const pulse = $('rtPulse');
-  pulse.style.display = tone === 'now' || tone === 'wait' ? '' : 'none';
-  pulse.setAttribute('stroke', ROUTE_COL[tone] || '#1D1D1F');
+  const live = j.k === 'processing' || j.k === 'onway' || j.k === 'human';
+  pulse.style.display = live ? '' : 'none';
+  pulse.setAttribute('stroke', ring);
 
-  // The five places a shipment passes, at the stages that are those places.
-  const idx = (t) => list.findIndex((x) => x.t === t);
-  const STOPS = [['Hub', 0], ['Carrier', idx('Tracking opened')], ['Data', idx('Data extracted')],
-                 ['Hub write', idx('Hub write')], ['Verified', list.length - 1]];
-  $('rtStops').innerHTML = r ? STOPS.filter((x) => x[1] >= 0).map((x, k) => {
-    const f = x[1] / n, p2 = path.getPointAtLength(routeLen * f);
-    const reached = (list[x[1]] || {}).st === 'done' || (list[x[1]] || {}).st === 'soft';
-    const up = k % 2 === 0;
-    return '<circle cx="' + p2.x.toFixed(1) + '" cy="' + p2.y.toFixed(1) + '" r="5" fill="#FFFFFF" stroke="' +
-      (reached ? '#1D1D1F' : '#C3C8D1') + '" stroke-width="2"/>' +
-      '<text x="' + p2.x.toFixed(1) + '" y="' + (p2.y + (up ? -12 : 20)).toFixed(1) +
-      '" text-anchor="middle" font-size="10.5" font-weight="500" fill="' + (reached ? '#1D1D1F' : '#8A8A8F') +
-      '" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif">' + esc(x[0]) + '</text>';
-  }).join('') : '';
+  // Origin, destination, and "in transit" only when the carrier said so.
+  const o = done.getPointAtLength(0), d = done.getPointAtLength(routeLen), m = done.getPointAtLength(routeLen * .5);
+  const destDone = j.k === 'arrived';
+  let nodes = '<circle cx="' + o.x + '" cy="' + o.y + '" r="6" fill="#FFFFFF" stroke="#0B1F33" stroke-width="2.2"/>' +
+    svgText(o.x - 8, o.y + 38, 'Origin', {weight:600, fill:'#0B1F33', anchor:'start'});
+  nodes += destDone
+    ? '<circle cx="' + d.x + '" cy="' + d.y + '" r="9" fill="var(--grn-dot)"/>' +
+      '<path d="M' + (d.x - 4) + ' ' + d.y + ' l2.8 2.8 l5 -5.4" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+    : '<circle cx="' + d.x + '" cy="' + d.y + '" r="6" fill="#FFFFFF" stroke="' +
+      (j.k === 'onway' ? 'var(--teal-dot)' : '#B9C2CE') + '" stroke-width="2.2"/>';
+  // Right-aligned to the node so a date never runs off the map.
+  nodes += svgText(d.x + 14, d.y - 34, 'Destination', {weight:600, fill:destDone ? '#15803D' : '#0B1F33', anchor:'end'});
+  if (j.k === 'arrived') nodes += svgText(d.x + 14, d.y - 20, 'Arrived ' + j.date, {size:10.5, fill:'#15803D', anchor:'end'});
+  else if (j.k === 'onway') nodes += svgText(d.x + 14, d.y - 20, 'ETA ' + j.date, {size:10.5, fill:'#0F766E', anchor:'end'});
+  if (j.k === 'onway') nodes += svgText(m.x, m.y + 34, 'In transit', {size:10.5, fill:'#0F766E'});
+  if (j.k === 'failed') nodes += svgText(at.x + 26, at.y - 22, 'Exception — stopped here', {size:10.5, weight:600, fill:'#DC2626', anchor:'start'});
+  if (j.k === 'human') nodes += svgText(at.x + 26, at.y - 22, 'Waiting for a person', {size:10.5, anchor:'start', fill:'#B45309'});
+  if (j.k === 'processing') nodes += svgText(at.x + 26, at.y - 22, 'Tracking in progress', {size:10.5, anchor:'start', fill:'#2563EB'});
+  $('rtNodes').innerHTML = r ? nodes : '';
 
-  putHTML($('routeTag'), r ? tag(r.state) : '');
+  putHTML($('routeTag'), r ? jpill(j) : '');
   if (!r){
-    putHTML($('routeSide'), '<div class="hint">No shipment yet. The first one picked up from the Hub appears here, on its way.</div>');
+    putHTML($('routeSide'), '<div class="hint">No shipment yet. The first one picked up from the Hub appears here.</div>');
     return;
   }
-  // The stages either side of where it is: two behind, where it is, one ahead.
-  const front = stop >= 0 ? stop : (r.state === 'updated' ? list.length - 1 : Math.ceil(at));
-  const shown = list.slice(Math.max(0, front - 2), Math.min(list.length, front + 2));
+  // The shipment card: who carries it, how, where it stands, and the last
+  // automation steps — all from the record.
+  const front = list.findIndex((x) => x.st === 'now' || x.st === 'wait' || x.st === 'fail');
+  const reach = front >= 0 ? front : (r.state === 'updated' ? list.length - 1 : 0);
+  const shown = list.slice(Math.max(0, reach - 2), Math.min(list.length, reach + 1));
+  const moving = j.k === 'onway' || j.k === 'processing';
   putHTML($('routeSide'),
-    '<div><div class="fk">Shipment</div><div class="rt-ref">' + esc(r.reference) + '</div></div>' +
-    '<div style="display:grid;gap:9px">' + shown.map((x) =>
+    '<div class="sc-h"><span class="sc-car">' + dash(r.carrier) + '</span>' + modeChip(mode) + '</div>' +
+    TransportIllustration(mode, moving) +
+    '<div class="sc-g">' +
+      '<div><div class="fk">Shipment</div><div class="rt-ref">' + esc(r.reference) + '</div></div>' +
+      '<div><div class="fk">' + (j.k === 'arrived' ? 'ATA' : 'ETA') + '</div><div class="fv mono">' +
+        dash(j.k === 'arrived' ? r.provider_ata : r.provider_eta) + '</div></div>' +
+      '<div><div class="fk">Last update</div><div class="fv mono" id="scUpd">' + dash(r.updated) + '</div></div>' +
+      '<div><div class="fk">Source</div><div class="fv">' +
+        dash(r.provider_ata_source || r.provider_eta_source || r.provider_status) + '</div></div>' +
+    '</div>' +
+    '<div class="sc-t">' + shown.map((x) =>
       '<div class="rt-ev"><i class="' + x.st + '"></i><span>' + esc(x.t) + '</span>' +
       (x.note ? '<em>' + esc(x.note) + '</em>' : '') + '</div>').join('') + '</div>' +
-    '<div class="rt-who"><span class="rt-av"><svg viewBox="0 0 24 24"><path d="' + MODE_ICON[mode] +
-      '" fill="currentColor"/></svg></span><span><small>Carrier</small><b>' + dash(r.carrier) + '</b></span>' +
-      '<button class="ibtn" data-open="' + esc(r.reference) + '" title="Open the shipment details" aria-label="Open the shipment details">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></div>');
+    '<button class="sc-open" data-open="' + esc(r.reference) + '">Open shipment details' +
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>');
 }
 $('routeSide').addEventListener('click', (e) => {
   const b = e.target.closest('[data-open]'); if (b) openDrawer(b.dataset.open);
 });
 
 /* ═══ ON THE WAY ═══
-   Shipments whose carrier has given an ETA and no ATA yet. The van only
-   drives while there is at least one; with none it is parked. */
-function truckSVG(){
-  return '<svg viewBox="0 0 330 150" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-    '<g class="tk-road" fill="#D9DCE2">' +
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => '<rect x="' + (i * 40) + '" y="138" width="22" height="3" rx="1.5"/>').join('') +
-    '</g>' +
-    '<ellipse cx="190" cy="134" rx="150" ry="6" fill="rgba(0,0,0,.07)"/>' +
-    '<g class="tk-body">' +
-      '<rect x="40" y="28" width="196" height="84" rx="9" fill="#FFFFFF" stroke="#DADDE3"/>' +
-      '<rect x="40" y="88" width="196" height="7" fill="url(#axAmber)"/>' +
-      '<path d="M236 46 H272 Q284 46 291 56 L310 82 Q316 90 316 99 V108 Q316 116 308 116 H236 Z" fill="#FFFFFF" stroke="#DADDE3"/>' +
-      '<path d="M246 55 H270 Q277 55 282 62 L295 81 H246 Z" fill="#2B2E37"/>' +
-      '<path d="M252 59 H266" stroke="#FFFFFF" stroke-opacity=".3" stroke-width="2.5" stroke-linecap="round"/>' +
-      '<rect x="236" y="88" width="80" height="7" fill="url(#axAmber)"/>' +
-      '<rect x="306" y="98" width="10" height="6" rx="2" fill="#FFC14D"/>' +
-      '<rect x="232" y="60" width="4" height="40" fill="#E9EBEF"/>' +
-    '</g>' +
-    [92, 270].map((cx) => '<g class="tk-wheel"><circle cx="' + cx + '" cy="116" r="17" fill="#1D1D1F"/>' +
-      '<circle cx="' + cx + '" cy="116" r="8" fill="#C9CCD3"/>' +
-      '<path d="M' + (cx - 8) + ' 116 H' + (cx + 8) + ' M' + cx + ' 108 V124" stroke="#8E929B" stroke-width="2"/></g>').join('') +
-    '</svg>';
-}
+   Shipments whose carrier gave an ETA and no ATA yet. The illustration is
+   the newest one's real mode; it moves only while something is on the way. */
+let fleetKey = '';
 function paintFleet(){
   if (activePage !== 'overview' && fleetBuilt) return;
-  if (!fleetBuilt){ fleetBuilt = true; $('fleetArt').innerHTML = truckSVG(); }
+  fleetBuilt = true;
   const all = S.shipments || [];
-  const onWay = all.filter((r) => has(r.provider_eta) && !has(r.provider_ata)).length;
+  const onWay = all.filter((r) => has(r.provider_eta) && !has(r.provider_ata));
   const arrived = all.filter((r) => has(r.provider_ata)).length;
-  if (!changed('fleet', onWay + '|' + arrived + '|' + all.length)) return;
-  put($('fleetN'), String(onWay));
-  put($('fleetSub'), 'of ' + all.length + ' this run · ' + arrived + ' arrived');
-  $('fleet').classList.toggle('on', onWay > 0);
-  put($('fleetSt').lastChild, onWay ? 'In transit' : 'Nothing on the way');
+  const lead = onWay[0] || null;
+  const mode = lead ? getTransportMode(lead) : 'unknown';
+  const byMode = {};
+  onWay.forEach((r) => { const m = getTransportMode(r); byMode[m] = (byMode[m] || 0) + 1; });
+  const WORD = {air:'by air', ocean:'by sea', road:'by road', rail:'by rail', unknown:'mode not known'};
+  const mix = Object.keys(byMode).map((m) => byMode[m] + ' ' + WORD[m]).join(' · ');
+  const key = [onWay.length, arrived, all.length, mode, lead && lead.reference, lead && lead.provider_eta, mix].join('|');
+  if (key === fleetKey) return;
+  fleetKey = key;
+  put($('fleetN'), String(onWay.length));
+  put($('fleetSub'), (mix || 'of ' + all.length + ' this run') + ' · ' + arrived + ' arrived');
+  $('fleet').classList.toggle('on', onWay.length > 0);
+  put($('fleetSt').lastChild, onWay.length ? 'In transit' : 'Nothing on the way');
+  putHTML($('fleetLead'), lead
+    ? '<b>' + dash(lead.carrier) + '</b> · ' + esc(lead.reference) + ' · ETA ' + esc(lead.provider_eta) : '');
+  putHTML($('fleetArt'), TransportIllustration(mode, onWay.length > 0));
 }
 
 /* ═══ TRANSPORT ═══ */
@@ -3528,7 +3881,8 @@ function paintHuman(){
   put($('hTitleK'), waiting ? 'ATLAS · Human action required' : 'ATLAS · Human action');
   Atlas($('hAtlas'), {size:'sm', text:false,
     state:waiting ? 'human_required' : (a.state === 'resumed' ? 'success' : 'idle'),
-    message:waiting ? (a.carrier || 'A carrier') + ' requires human verification.' : ''});
+    message:waiting ? (a.carrier || 'A carrier') + ' requires human verification.' : '',
+    tier:waiting ? axHuman(a).tier : 'normal'});
   put($('hTitle'), waiting ? (HUMAN_REASONS[a.reason] || 'A person is needed') : ({
     resumed: 'Completed — the result is being read and verified',
     timeout: 'Timed out — nothing was written',
@@ -3691,7 +4045,9 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
     wrap.className = 'msg ' + who;
     wrap.innerHTML = who === 'me'
       ? '<div class="m-av">You</div>'
-      : '<div class="m-av"><svg><use href="#ct-mark"/></svg></div>';
+      : '<div class="m-av ax-av"></div>';
+    if (who !== 'me') Atlas(wrap.querySelector('.ax-av'), {size:'xs', text:false,
+      state:(typeof S !== 'undefined' && S) ? atlasRun().state : 'idle'});
     const b = document.createElement('div');
     b.className = 'bub';
     wrap.appendChild(b);
@@ -3743,16 +4099,101 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
     body.scrollTop = body.scrollHeight;
   }
 
+  /* Dashboard actions ATLAS may take: filter Live operations, open a
+     shipment, go to a page. A whitelist, checked here as well as on the
+     server; anything else is ignored. Returns what was done, in words. */
+  const UI_PAGES = {human:1, atlas:1, logs:1, exceptions:1, shipments:1, overview:1,
+                    live:1, systems:1, analysis:1};
+  function runUi(a){
+    if (!a || typeof a !== 'object') return '';
+    if (a.type === 'filter'){
+      setOpsFilter({state:a.state || null, mode:a.mode || null, carrier:a.carrier || null}, a.label || '');
+      return 'Filtered Live operations to ' + (a.label || 'that selection') + '.';
+    }
+    if (a.type === 'open' && a.reference &&
+        (S.shipments || []).some((r) => r.reference === a.reference)){
+      if (activePage !== 'overview') go('overview');
+      openDrawer(a.reference);
+      return 'Opened ' + a.reference + '.';
+    }
+    if (a.type === 'page' && UI_PAGES[a.page]){
+      go(a.page);
+      return 'Opened ' + ((PAGES.find((p) => p.id === a.page) || {}).t || TITLES[a.page] || a.page) + '.';
+    }
+    return '';
+  }
+  function actionsRow(list){
+    const row = document.createElement('div');
+    row.className = 'dl-row';
+    row.style.marginLeft = '39px';
+    list.forEach((b) => {
+      const el = document.createElement('button');
+      el.className = 'dl act'; el.type = 'button'; el.textContent = b.label;
+      el.addEventListener('click', () => { const done = runUi(b.action); if (done) note(done); });
+      row.appendChild(el);
+    });
+    body.appendChild(row);
+    body.scrollTop = body.scrollHeight;
+  }
+  function note(text){
+    const el = document.createElement('div');
+    el.className = 'ch-done'; el.textContent = text;
+    body.appendChild(el); body.scrollTop = body.scrollHeight;
+  }
+  /* What ATLAS noticed, the counts that matter, and run-aware suggestions —
+     from /api/atlas, which reads the same state as the dashboard. Loaded
+     when the panel opens and refreshed only while it is open. */
+  let briefAt = 0, briefCold = -1, briefBusy = false;
+  function loadBrief(){
+    if (briefBusy) return;
+    briefBusy = true;
+    fetch('/api/atlas').then((r) => r.json()).then((d) => {
+      briefAt = Date.now(); briefCold = (S && S.cold_version) || 0;
+      put($('chStatus'), d.status || 'Watching this run');
+      $('chRole').dataset.s = /action/i.test(d.status || '') ? 'wait'
+        : /error/i.test(d.status || '') ? 'bad' : /watching/i.test(d.status || '') ? 'live' : 'idle';
+      const sm = d.summary || {}, ns = d.notices || [];
+      const counts = [['completed', sm.completed], ['failed', sm.failed], ['waiting', sm.waiting],
+                      ['processing', sm.processing]].filter((x) => x[1]);
+      const box = $('chNotice');
+      box.hidden = !counts.length && !ns.length;
+      box.innerHTML = (counts.length ? '<div class="ch-sum">' + counts.map((x) =>
+          '<span><b>' + x[1] + '</b> ' + x[0] + '</span>').join('') + '</div>' : '') +
+        (ns.length ? '<button class="ch-nt" data-fold aria-expanded="' + !box.classList.contains('fold') + '">ATLAS noticed ' + ns.length + ' thing' + (ns.length === 1 ? '' : 's') +
+          '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>' +
+          ns.map((n, i) => '<button class="ch-ni lv-' + esc(n.level) + '" data-ni="' + i + '"><i></i>' +
+            esc(n.text) + '</button>').join('') : '');
+      box._notices = ns;
+      if (!busy && (d.suggestions || []).length) chips(d.suggestions);
+    }).catch(() => {}).finally(() => { briefBusy = false; });
+  }
+  $('chNotice').addEventListener('click', (e) => {
+    const f = e.target.closest('[data-fold]');
+    if (f){ const on = $('chNotice').classList.toggle('fold'); f.setAttribute('aria-expanded', String(!on)); return; }
+    const b = e.target.closest('[data-ni]'); if (!b) return;
+    const n = ($('chNotice')._notices || [])[Number(b.dataset.ni)];
+    if (n){ const done = runUi(n.action); if (done) note(done); }
+  });
+  // While open, follow the run: a changed shipment list refreshes the brief,
+  // at most every few seconds.
+  setInterval(() => {
+    if (!$('chat').classList.contains('on') || document.hidden || !S) return;
+    if (S.cold_version !== briefCold && Date.now() - briefAt > 3000) loadBrief();
+    else if (Date.now() - briefAt > 15000) loadBrief();
+  }, 1500);
+
   function send(){
     const q = input.value.trim();
     if (!q || busy) return;
     input.value = ''; input.style.height = 'auto';
     busy = true;
+    const nb = $('chNotice'); nb.classList.add('fold');
+    const nf = nb.querySelector('[data-fold]'); if (nf) nf.setAttribute('aria-expanded', 'false');
     const mine = bubble('me'); mine.innerHTML = fmt(q);
 
     const wait = document.createElement('div');
     wait.className = 'msg';
-    wait.innerHTML = '<div class="m-av"><svg><use href="#ct-mark"/></svg></div>' +
+    wait.innerHTML = '<div class="m-av ax-av"></div>' +
       '<div class="td-b"><span></span><span></span><span></span></div>';
     body.appendChild(wait);
     body.scrollTop = body.scrollHeight;
@@ -3768,6 +4209,11 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
         const b = bubble('bot');
         return typeOut(b, d.answer || 'No answer came back.').then(() => {
           if (d.card) card(d.card);
+          if (d.buttons && d.buttons.length) actionsRow(d.buttons);
+          if (d.actions && d.actions.length){
+            const done = runUi(d.actions[0]);
+            if (done) note(done);
+          }
           if (d.downloads && d.downloads.length) downloads(d.downloads);
           if (d.reference) lastReference = d.reference;
           feedbackRow(b, q, d);
@@ -3796,12 +4242,13 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
     $('chat').classList.add('on'); $('fab').classList.add('hide');
     if (!body.children.length){
       const b = bubble('bot');
-      typeOut(b, "Hello. I read this run's data and answer from it — nothing else.\n\n"
-                 + "Ask about a shipment, how the run is going, how the carriers "
-                 + "compare, or say \u201cdownload the data\u201d. If I don't have "
-                 + "something, I'll tell you rather than guess.");
+      typeOut(b, "I'm ATLAS. I watch this run and answer from its data only.\n\n"
+                 + "Ask what needs your attention, why something failed, or say "
+                 + "\u201cshow DHL\u201d and I'll take you there. If it isn't in the run, "
+                 + "I'll say so rather than guess.");
       chips(OPENERS.map((o) => o[1]));
     }
+    loadBrief();
     input.focus();
   });
   $('chatX').addEventListener('click', () => {

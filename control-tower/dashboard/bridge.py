@@ -18,6 +18,31 @@ MAX_TIMELINE = 300
 MAX_ATLAS_EVENTS = 200
 MAX_HUMAN_EVENTS = 60
 
+# Transport mode, for display. Decided by the tracking provider the
+# automation routed the shipment to — never guessed from a reference. One
+# table, here, so the dashboard and ATLAS read the same answer; to add a
+# carrier, add its provider key. A provider not listed is "unknown", and the
+# dashboard then shows a neutral illustration rather than a vehicle.
+TRANSPORT_MODES = {
+    "AFKL": "air", "QATAR": "air",
+    "CMA_CGM": "ocean", "MSC": "ocean", "GRIMALDI": "ocean", "COSCO": "ocean",
+    "MAERSK": "ocean", "ONE": "ocean", "HAPAG": "ocean",
+    "DHL": "road",
+}
+# Only for a provider the table does not know: a carrier NAME that says rail.
+RAIL_NAMES = re.compile(r"\brail(?:way)?s?\b|\bRZD\b|\bDB\s+Cargo\b|\bEgyptian\s+National\s+Railways\b", re.I)
+
+
+def transport_mode(provider, carrier=None):
+    """air | ocean | road | rail | unknown."""
+    mode = TRANSPORT_MODES.get(str(provider or "").upper())
+    if mode:
+        return mode
+    if carrier and RAIL_NAMES.search(str(carrier)):
+        return "rail"
+    return "unknown"
+
+
 # Shipment states. WAITING_FOR_HUMAN is not an outcome: the shipment is
 # still open, its lookup paused inside the run until a person acts. It
 # leaves only for PROCESSING (resumed) or HUMAN_TIMEOUT / FAILED.
@@ -655,6 +680,8 @@ class ControlTowerState:
                 "reference": reference,
                 "carrier": shipment.get("carrier"),
                 "provider": shipment.get("provider"),
+                "transport_mode": transport_mode(shipment.get("provider"),
+                                                 shipment.get("carrier")),
                 "internal_eta": shipment.get("current_eta") or None,
                 "table_page": shipment.get("table_page"),
                 "hub_status": self.target_status,

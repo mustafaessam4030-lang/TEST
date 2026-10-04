@@ -141,7 +141,7 @@ print("=" * 72)
 # ground (4.18:1), and the header pill sits on the page ground.
 check("There are four surface levels, so elevation is a step in the neutral "
       "ramp plus one soft shadow, not a pile of shadows",
-      all(t in INDEX for t in ("--bg:#F5F5F7", "--surface:#FFFFFF",
+      all(t in INDEX for t in ("--bg:#F6F7F9", "--surface:#FFFFFF",
                                "--surface-2:#FAFAFA", "--surface-3:#F0F0F2")))
 check("color-scheme is light, so native controls follow",
       "color-scheme:light" in INDEX)
@@ -149,12 +149,13 @@ check("Hairlines are an alpha over whatever is behind them, so one token "
       "works on every surface", "--line:rgba(0,0,0,.09)" in INDEX)
 check("A filled control is the accent on its own foreground token, so no "
       "control fills with the text colour and becomes a white pill",
-      "--solid:var(--brand)" in INDEX and "--on-solid:#FFFFFF" in INDEX
+      "--solid:var(--brand-hi)" in INDEX and "--on-solid:#FFFFFF" in INDEX
       and "background:var(--solid)" in INDEX)
-check("The Mantrac brand colour clears AA on white for its own label",
-      "--brand:#BF3B0E" in INDEX)
-check("The green that failed AA over the page ground was corrected",
-      "--grn:#197746" in INDEX and "--grn:#1B7F4B" not in INDEX)
+check("Mantrac orange marks; its AA shade fills a labelled button",
+      "--brand:#E85D04; --brand-hi:#C2410C;" in INDEX)
+check("Status text uses AA shades; the palette's bright tones are dots only",
+      "--grn:#15803D" in INDEX and "--grn-dot:#16A34A" in INDEX
+      and "--y:#B45309" in INDEX and "--y-dot:#D97706" in INDEX)
 check("The legacy semantic names still resolve, so nothing that referred to "
       "them silently lost its colour",
       all(t in INDEX for t in ("--signal:var(--grn)", "--alarm:var(--red)",
@@ -487,7 +488,8 @@ for name, source in (("assistant.py", ASSISTANT), ("insights.py", INSIGHTS)):
 check("insights.py only ever reads telemetry",
       '"r"' in INSIGHTS and '"w"' not in INSIGHTS and '"a"' not in INSIGHTS)
 check("The assistant receives a snapshot, never the bridge itself",
-      "assistant.answer(question, bridge.snapshot()" in SERVER)
+      "assistant.answer(question, _assistant_state(), context)" in SERVER
+      and "return build_payload(trim=False)" in SERVER)
 check("An action it asks for still goes through the control channel",
       "control.request(" in SERVER)
 
@@ -676,8 +678,8 @@ check("The five overview metrics are the ones asked for",
           "Failed")))
 check("Live operations has the requested columns",
       all("<th>{0}</th>".format(t) in INDEX for t in (
-          "Shipment", "Carrier", "Status", "Current step", "ATA", "Duration",
-          "Last update", "Run ID")))
+          "Shipment", "Mode", "Carrier", "Status", "Current step", "Arrival",
+          "Last update")))
 check("Live operations updates only the rows that changed",
       "const opsCache = new Map()" in INDEX
       and "if (ent.html !== html){ ent.tr.innerHTML = html;" in INDEX)
@@ -720,10 +722,10 @@ check("ATLAS appears in the four places it was asked for",
       all("Atlas($('{0}')".format(i) in INDEX for i in (
           "atlasGlanceFig", "atlasHero", "hAtlas", "dwAtlas")))
 check("WAITING_FOR_HUMAN puts ATLAS in HUMAN ACTION REQUIRED, before anything else",
-      INDEX.split("function atlasRun(){")[1].index("if (hum) return {state:'human_required'")
+      INDEX.split("function atlasRun(){")[1].index("if (hum) return axHuman(hum);")
       < INDEX.split("function atlasRun(){")[1].index("'recovering'"))
 check("A shipment's ATLAS state comes from its own record",
-      "if (r.state === 'waiting_for_human') return {state:'human_required'" in INDEX
+      "if (r.state === 'waiting_for_human')\n    return h.action && h.action.waiting ? axHuman(h.action)" in INDEX
       and "if (r.state === 'processing'){" in INDEX)
 check("ATLAS says 'read-back confirmed' only when every write read back",
       "if (v.length && v.every((x) => x === true))" in INDEX.split("function atlasShipment(r){")[1])
@@ -740,7 +742,7 @@ check("Its motion is transforms and a dash offset only — no canvas, no video",
       "<canvas" not in INDEX and "requestAnimationFrame(atlas" not in INDEX
       and "@keyframes axFloat{0%,100%{transform:translateY(0)}" in INDEX)
 check("Human action is calm amber, not alarm red",
-      ".is-human_required{--axc:var(--y)}" in INDEX)
+      ".is-human_required{--axc:#8A5300}" in INDEX)
 
 _run = INDEX.split("function atlasRun(){")[1].split("\nfunction ")[0]
 check("A run going normally is MONITORING, not idle",
@@ -774,18 +776,57 @@ check("...with its own fill and foreground tokens",
       "--nav-on:#1D1D1F; --on-nav:#FFFFFF;" in INDEX)
 check("The sidebar remains the menu on phones and tablets",
       "  .tnav{display:none}" in INDEX and "  .nav{display:flex;position:fixed;" in INDEX)
-check("The tracking map is labelled as a route through ATA, not a GPS map",
-      "not a GPS map" in INDEX and "The selected shipment on its way through ATA" in INDEX)
+check("The tracking map says it is an abstract route, never a GPS map",
+      "The route is ABSTRACT" in INDEX and "route drawn abstractly" in INDEX)
 check("...the vehicle's place comes from the shipment's own pipeline",
       "const list = r ? pipeline(r) : [];" in INDEX.split("function paintRoute(){")[1])
-check("...and its icon is the shipment's real mode: air, sea or road",
-      "const modeOf = (p) => (AIR[p] ? 'air' : OCEAN[p] ? 'sea' : 'road');" in INDEX)
+check("...and its vehicle is the shipment's real mode, read from the record",
+      "const m = r && r.transport_mode;" in INDEX and "return MODES[m] ? m : 'unknown';" in INDEX)
 check("...and it glides by transform only, built once",
       ".rt-car{transition:transform 1.1s var(--e)}" in INDEX and "if (!routeBuilt){" in INDEX)
 check("On the way counts shipments with an ETA and no ATA yet",
       "has(r.provider_eta) && !has(r.provider_ata)" in INDEX)
-check("...and the van only drives while one is on the way",
-      ".fleet.on .tk-wheel{animation" in INDEX and "$('fleet').classList.toggle('on', onWay > 0)" in INDEX)
+check("...and the illustration only moves while one is on the way",
+      "TransportIllustration(mode, onWay.length > 0)" in INDEX
+      and ".t-art.moving .t-wheel{animation" in INDEX)
+
+print()
+print("=" * 72)
+print("TRANSPORT, JOURNEY AND TIME")
+print("=" * 72)
+_ti = INDEX.split("function TransportIllustration(mode, moving){")[1].split("\nfunction ")[0]
+check("One TransportIllustration draws all five modes",
+      all("mode === '{0}'".format(m) in _ti for m in ("air", "ocean", "road", "rail")))
+check("...and an unknown mode gets the neutral parcel, never a vehicle",
+      "} else {" in _ti and "MODES[m] ? m : 'unknown'" in INDEX)
+_j = INDEX.split("function journeyOf(r){")[1].split("\n}")[0]
+check("The journey is read from the record: exception, arrived (ATA), on the way (ETA)",
+      _j.index("'failed'") < _j.index("provider_ata") < _j.index("provider_eta"))
+_rt = INDEX.split("function paintRoute(){")[1].split("\n$('routeSide')")[0]
+check("An exception does not move: no pulse, a grey route",
+      "const live = j.k === 'processing' || j.k === 'onway' || j.k === 'human';" in _rt
+      and "j.k === 'failed' ? '#94A3B8'" in _rt)
+check("'In transit' is drawn only when the carrier gave an ETA",
+      "if (j.k === 'onway') nodes += svgText(m.x, m.y + 34, 'In transit'" in _rt)
+check("ATLAS's time tiers come from elapsed time: 30 s, 1, 2 and 3 minutes",
+      "[[180, 'very_long'], [120, 'waiting'], [60, 'long_monitoring'], [30, 'long'], [0, 'normal']]" in INDEX)
+check("...measured from the shipment's own start and the action's opening",
+      "rec.started_epoch" in INDEX and "axElapsed(hum.opened_at)" in INDEX)
+check("ATLAS blames the carrier only when the carrier is the system working",
+      "S.current.system === rec.provider" in INDEX)
+check("The tiers change carriage, not the character: transforms on existing parts",
+      '.atlas[data-tier="very_long"].is-monitoring.alt .ax-head{transform:rotate(-6deg)}' in INDEX)
+check("A new 'last update' time patches one cell instead of rebuilding the map card",
+      "if (key === routeSig){ if (r) put($('scUpd')" in _rt and "r.updated, mode" not in _rt)
+check("The ATLAS notices fold to one line once a question is asked, and reopen on click",
+      "nb.classList.add('fold')" in INDEX and "classList.toggle('fold')" in INDEX)
+check("ATLAS's own colours are pinned, untouched by the dashboard tokens",
+      ".is-monitoring{--axc:#0A6E9E}" in INDEX and ".is-success{--axc:#197746}" in INDEX)
+check("The assistant panel is ATLAS, run-scoped",
+      ">Ask ATLAS</button>" in INDEX and "Ask ATLAS about this run" in INDEX
+      and "fetch('/api/atlas')" in INDEX)
+check("...and its dashboard actions are a whitelist checked in the browser too",
+      "if (a.type === 'filter'){" in INDEX and "UI_PAGES[a.page]" in INDEX)
 
 _vb = _bridge_module.ControlTowerState()
 _vb.shipment_started({"bol_awb": "V1", "carrier": "C", "provider": "DHL"})
