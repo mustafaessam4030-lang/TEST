@@ -45,12 +45,26 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
+# Every error _guard swallows, by method, with the last message. The guard
+# stays — a dashboard fault must never stop the automation — but it no longer
+# swallows in silence. shipment_finished raised a TypeError on every skipped,
+# failed and partly updated shipment for weeks, and nothing anywhere said so.
+GUARDED_ERRORS = {}
+
+
 def _guard(method):
     def wrapper(self, *args, **kwargs):
         try:
             return method(self, *args, **kwargs)
-        except Exception:
+        except Exception as error:
+            entry = GUARDED_ERRORS.setdefault(
+                method.__name__, {"count": 0, "last": None})
+            entry["count"] += 1
+            entry["last"] = "{0}: {1}".format(type(error).__name__,
+                                              str(error)[:200])
             return None
+    wrapper.__name__ = method.__name__
+    wrapper.__wrapped__ = method
     return wrapper
 
 
@@ -607,22 +621,36 @@ class ControlTowerState:
         self._touch_cold()
 
     @_guard
-    def shipment_finished(self, reference, outcome, details="", actions=None,
-                          outcome_class=None, **kwargs):
+    def shipment_finished(self, reference, result, details="", actions=None,
+                          outcome_class=None, outcome=None, **kwargs):
+        """
+        Close a shipment's record.
+
+        `result` is SUCCESS, SKIPPED, FAILED or PARTIAL. `outcome` — or its
+        older spelling `outcome_class` — is the named operational class,
+        e.g. NO RESULT.
+
+        Both used to be called `outcome`: the second positional parameter and
+        the keyword every failure path passed. Python refuses a call that
+        gives one name two values, _guard swallowed the TypeError, and so
+        every skipped, failed or partly updated shipment stayed "Processing"
+        on the dashboard for the rest of the run. Only SUCCESS, which passes
+        no keyword, ever closed.
+        """
         with self._lock:
             record = self._index.get(reference)
             if record is None:
                 return
-            outcome = (outcome or "").upper()
+            result = (result or "").upper()
             record["state"] = {
                 "SUCCESS": "updated",
                 "SKIPPED": "skipped",
                 "FAILED": "failed",
                 "PARTIAL": "partial",
-            }.get(outcome, "unknown")
+            }.get(result, "unknown")
             record["error"] = details or None
             # Named operational class from classify_failure(), e.g. NO RESULT.
-            record["outcome"] = outcome_class or kwargs.get("outcome")
+            record["outcome"] = outcome_class or outcome
             record["updated"] = _stamp()
             record["duration_ms"] = int(
                 (_now().timestamp() - record["started_epoch"]) * 1000
@@ -631,10 +659,10 @@ class ControlTowerState:
                 record["coe_action"] = actions.get("coe") or record["coe_action"]
                 record["bu_action"] = actions.get("bu") or record["bu_action"]
 
-            if outcome == "SUCCESS":
+            if result == "SUCCESS":
                 record["step"] = "Complete"
                 self._mark("ok", "{0} updated in Logistics Hub".format(reference))
-            elif outcome == "SKIPPED":
+            elif result == "SKIPPED":
                 record["step"] = "Skipped"
                 provider = record.get("provider")
                 if provider and self.systems.get(provider, {}).get("state") == "processing":
@@ -650,7 +678,7 @@ class ControlTowerState:
                     "outcome": record.get("outcome"),
                     "message": details or "Skipped",
                 })
-            elif outcome == "PARTIAL":
+            elif result == "PARTIAL":
                 # A date WAS written to the Hub; a second field failed. Calling
                 # the whole shipment a failure understated the work done.
                 record["step"] = "Partly updated"

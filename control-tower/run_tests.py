@@ -20,6 +20,7 @@ SUITES = [
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),
     ("test_afkl_resources.py", "AFKL ladder's footprint on the server"),
     ("test_afkl_search.py",    "AFKL through the header search, current layout"),
+    ("test_ocean.py",          "ocean carriers: routing, reading, read-only"),
     ("test_flight_status.py",  "AFKL flight status card, and the two forms"),
     ("test_ata_field.py",       "ATA field lookup and guards"),
     ("test_coe_fallback.py",    "COE view fallback"),
@@ -93,6 +94,8 @@ def main():
     print("      python diagnose_afkl.py 057-05765454")
     print("  What the run costs the SERVER (A/B/C/D, run it on the server):")
     print("      python diagnose_server.py A   then B, C, D, then report")
+    print("  Check one ocean carrier against its real site (nothing written):")
+    print("      python diagnose_ocean.py MAERSK 231045678")
     print("  What myCargo really offers, and the flight card (real site):")
     print("      python diagnose_flight_status.py AF0877 04/09/2026")
     print("=" * 74)

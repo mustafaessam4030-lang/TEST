@@ -567,6 +567,61 @@ check("The dashboard does not import the automation",
 
 print()
 print("=" * 72)
+print("A FINISHED SHIPMENT IS CLOSED, HOWEVER IT FINISHED")
+print("=" * 72)
+# shipment_finished took the result as a positional parameter named
+# `outcome`, and every failure path in the automation ALSO passed
+# `outcome=<class>` as a keyword. Python refused the call, _guard swallowed
+# the TypeError, and every skipped, failed or partly updated shipment stayed
+# "Processing" on the dashboard for the rest of the run — K179801 and K179750
+# on the 4th, six minutes after they had been skipped. The tests passed
+# `outcome_class=` instead, so they never made the call the way production
+# does.
+import re as _re                                              # noqa: E402
+_bridge_module = bridge
+_UPDATE_SRC = (HERE / "update_eta.py").read_text(encoding="utf-8")
+_calls = _re.findall(r"tower\.shipment_finished\(([^)]*)\)", _UPDATE_SRC, _re.S)
+_keywords = set(_re.findall(r"\b([a-z_]+)=", " ".join(_calls)))
+import inspect as _inspect                                    # noqa: E402
+_params = set(_inspect.signature(
+    _bridge_module.ControlTowerState.shipment_finished.__wrapped__).parameters)
+check("Every keyword the automation passes to shipment_finished is accepted",
+      _keywords <= _params, "missing: {0}".format(sorted(_keywords - _params)))
+check("...and the result and the outcome class no longer share a name",
+      "result" in _params and "outcome" in _params)
+
+_fresh = _bridge_module.ControlTowerState()
+_bridge_module.GUARDED_ERRORS.clear()
+_shapes = [("K179750", "SKIPPED", {"outcome": "FAILED"}, "skipped"),
+           ("074-47798553", "FAILED", {"outcome": "AFKL NAVIGATION ERROR"},
+            "failed"),
+           ("9280901092", "PARTIAL", {"outcome": "UNEXPECTED PAGE STATE"},
+            "partial"),
+           ("157 - 50601530", "SUCCESS", {}, "updated"),
+           ("X1", "SKIPPED", {"outcome_class": "NO RESULT"}, "skipped")]
+for _ref, _result, _kw, _want in _shapes:
+    _fresh.shipment_started({"bol_awb": _ref, "carrier": "C", "provider": "AFKL",
+                             "current_eta": "", "table_page": 1})
+    _fresh.step("Tracking " + _ref, system="AFKL")
+    _fresh.shipment_finished(_ref, _result, "detail", **_kw)
+    _fresh.step("Cooling down 4s before the next shipment")
+_rows = {r["reference"]: r for r in _fresh.snapshot(trim=True)["shipments"]}
+for _ref, _result, _kw, _want in _shapes:
+    check("A {0} shipment is closed as {1}, not left Processing".format(
+          _result, _want), _rows[_ref]["state"] == _want,
+          str(_rows[_ref]["state"]))
+check("The failure class reaches the row",
+      _rows["074-47798553"]["outcome"] == "AFKL NAVIGATION ERROR")
+check("The cool-down between shipments is not pinned to the one that "
+      "just finished", _rows["K179750"]["step"] != "Cooling down 4s before "
+      "the next shipment", str(_rows["K179750"]["step"]))
+check("A whole simulated run makes the guard swallow nothing",
+      not _bridge_module.GUARDED_ERRORS, str(_bridge_module.GUARDED_ERRORS))
+check("The guard still never lets a dashboard fault reach the automation",
+      _fresh.shipment_finished("never-started", "SKIPPED") is None)
+
+print()
+print("=" * 72)
 print("A SHIPMENT IN FLIGHT SAYS WHAT IT IS DOING")
 print("=" * 72)
 # "Processing" on its own told an operator nothing: a row can sit there for

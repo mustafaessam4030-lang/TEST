@@ -468,8 +468,14 @@ check("Astral half-drawn page yields nothing",
 
 check("Both portals share one implementation",
       SRC_A.count("def get_portal_result") == 1)
+# Was `len(A.PORTALS) == 2`, which pinned the count rather than the point.
+# Seven ocean carriers were added on the 4th of October as entries in
+# OCEAN_PORTALS — still configuration, read by the one portal path.
 check("Adding a carrier is a config entry, not new code",
-      len(A.PORTALS) == 2 and "urls" in A.PORTALS["ASTRAL"])
+      all(isinstance(entry, dict) and "urls" in entry and "label" in entry
+          for entry in A.PORTALS.values())
+      and "urls" in A.PORTALS["ASTRAL"]
+      and all(key in A.PORTALS for key in A.OCEAN_PORTALS))
 
 
 print()
@@ -695,6 +701,43 @@ for name in ["collect_supported_shipments", "update_internal_shipment", "save_re
              "extract_event_log_result", "wait_until_processing_finishes",
              "event_log_ready", "parse_qatar_awb"]:
     check("{0}() still present".format(name), hasattr(A, name))
+
+print()
+print("=" * 68)
+print("A K-REFERENCE IS A DHL SHIPMENT")
+print("=" * 68)
+# The operator, on the 4th: references like K179801 and K179750 belong to
+# DHL, although the Hub lists them under KLM Royal Dutch Airlines. They used
+# to be refused as "neither an air waybill nor a flight number" — and worse,
+# the airline-prefix check read the first three digits of anything, so a
+# K-reference could be sent to whichever airline those digits happened to
+# name.
+for reference in ("K179801", "K179750", "k179801", "K 179801"):
+    check("{0!r} with a KLM carrier goes to DHL".format(reference),
+          A.carrier_provider("KLM Royal Dutch Airlines", reference) == "DHL")
+check("K157123 no longer goes to Qatar Airways because its digits start 157",
+      A.carrier_provider("KLM Royal Dutch Airlines", "K157123") == "DHL")
+check("K020999 no longer goes to Lufthansa because its digits start 020",
+      A.carrier_provider("KLM", "K020999") == "DHL")
+check("Only K followed by exactly six digits: K1798011 is not one",
+      not A.is_dhl_k_reference("K1798011"))
+check("...nor is a real air waybill",
+      not A.is_dhl_k_reference("074-46285514"))
+check("A real KLM air waybill still goes to AFKL",
+      A.carrier_provider("KLM Royal Dutch Airlines", "074-46285514") == "AFKL")
+check("Qatar and DHL Express are untouched",
+      A.carrier_provider("Qatar Airways", "157 - 50601530") == "QATAR"
+      and A.carrier_provider("DHL Express", "6029402481") == "DHL")
+SRC_K = Path(A.__file__).read_text(encoding="utf-8")
+collect = SRC_K.split("def collect_supported_shipments")[1].split("\ndef ")[0]
+check("The Hub row's reference is read BEFORE its provider is decided",
+      collect.index("bol_awb = cells.nth(columns[\"bol_awb\"])")
+      < collect.index("provider = carrier_provider(carrier, bol_awb)"))
+check("A K-reference is tracked as itself, never replaced by an airline "
+      "waybill from another column",
+      "if is_dhl_k_reference(bol_awb):" in collect)
+check("...and the log says why a KLM row went to DHL",
+      "a K-reference, so DHL tracks it" in collect)
 
 print()
 print("=" * 68)

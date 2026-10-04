@@ -3242,14 +3242,39 @@ def airline_from_awb(bol_awb):
     return (prefix, AIRLINES[prefix]) if prefix in AIRLINES else (prefix, None)
 
 
+# A Hub reference that is K followed by six digits — K179801, K179750 — is a
+# DHL shipment, whatever the carrier column says. The operator confirmed it;
+# the Hub lists these rows under KLM Royal Dutch Airlines because KLM flies
+# them, but DHL is the one that tracks them.
+DHL_K_REFERENCE = re.compile(r"^\s*K\s*\d{6}\s*$", re.I)
+
+
+def is_dhl_k_reference(value):
+    return bool(DHL_K_REFERENCE.match(str(value or "")))
+
+
 def carrier_provider(carrier_name, bol_awb=None):
     """
     Which tracking integration handles this shipment.
 
-    The AWB prefix is authoritative when we have it; the carrier name is only
-    a fallback for records where the number is missing or malformed.
+    A DHL K-reference wins outright. Then the AWB prefix, when the number is
+    shaped like an air waybill; the carrier name is only a fallback for
+    records where the number is missing or malformed.
+
+    The K-rule has to come first. The prefix check reads the first three
+    digits of whatever it is given, so before it K157123 went to Qatar
+    Airways (157) and K020999 to Lufthansa (020).
     """
-    if bol_awb:
+    if is_dhl_k_reference(bol_awb):
+        return "DHL"
+    # An ocean carrier is named by the carrier column: a bill of lading has
+    # no airline prefix, and a numeric one can begin with any three digits.
+    ocean = ocean_provider(carrier_name)
+    if ocean:
+        return ocean
+    # The prefix decides only for a number shaped like an air waybill —
+    # eleven digits. Read off anything shorter, it sent K157123 to Qatar.
+    if bol_awb and len(re.sub(r"\D", "", str(bol_awb))) >= 11:
         _prefix, entry = airline_from_awb(bol_awb)
         if entry:
             return entry["provider"]
@@ -3340,12 +3365,14 @@ def collect_supported_shipments(page, table_page):
 
         status = cells.nth(columns["status"]).inner_text().strip()
         carrier = cells.nth(columns["carrier"]).inner_text().strip()
-        provider = carrier_provider(carrier)
+        bol_awb = cells.nth(columns["bol_awb"]).inner_text().strip()
+        # The reference is read BEFORE the provider is decided: a K-reference
+        # is DHL's even though the carrier column says KLM.
+        provider = carrier_provider(carrier, bol_awb)
 
         if status.casefold() != TARGET_STATUS.casefold() or provider is None:
             continue
 
-        bol_awb = cells.nth(columns["bol_awb"]).inner_text().strip()
         current_eta = cells.nth(columns["eta"]).inner_text().strip()
 
         if bol_awb:
@@ -3369,7 +3396,15 @@ def collect_supported_shipments(page, table_page):
                 if found_flight:
                     row["hub_flight"] = found_flight
 
-            reference = carrier_reference(cells, columns, bol_awb)
+            if is_dhl_k_reference(bol_awb):
+                # Tracked by DHL with the K-reference itself. An airline air
+                # waybill in another column must not replace it.
+                reference = bol_awb
+                write_log(
+                    "Hub row {0}: a K-reference, so DHL tracks it — although "
+                    "the Hub lists {1}.".format(bol_awb, carrier or "no carrier"))
+            else:
+                reference = carrier_reference(cells, columns, bol_awb)
             if reference != bol_awb:
                 row["tracking_reference"] = reference
                 write_log(
@@ -5040,6 +5075,166 @@ PORTALS = {
 }
 
 
+# ── Ocean carriers ────────────────────────────────────────────────────
+#
+# Added on the 4th of October from the operator's list. Sea freight is
+# tracked by bill of lading, container or booking number, which carry
+# letters — MEDUAB123456, MSCU1234567, LJK010SHAAKI001 — so these portals
+# type the reference exactly as the Hub holds it and confirm it on the page
+# letter for letter, not on its digits.
+#
+# Where the carrier's own link shows the reference going straight into the
+# address (COSCO), or the tracking page takes it as a path (Maersk), the
+# shipment page is opened directly. The others are searched from the page
+# the operator gave.
+#
+# NONE OF THESE PAGES HAS BEEN SEEN BY THIS CODE YET. Until one has been
+# confirmed on a real run, each carrier is looked up and its result logged,
+# but nothing is written to the Hub: OCEAN_WRITE=1 turns writing on. A
+# wrong ETA in the Hub is worse than no ETA, and seven sites read for the
+# first time are seven chances of one.
+OCEAN_WRITE = os.environ.get("OCEAN_WRITE", "0").strip().lower() in (
+    "1", "true", "yes", "on")
+OCEAN_REFERENCE_BOX = (r"B\s*/\s*L|Bill\s+of\s+Lading|Container|Booking|"
+                       r"Reference|Tracking|Shipment\s+number|Enter")
+OCEAN_SEARCH_BUTTON = r"^\s*(Search|Track|Find|Go|Submit)\b"
+
+OCEAN_PORTALS = {
+    "CMA_CGM": {
+        "label": "CMA CGM",
+        "carrier": r"\bCMA\s*-?\s*CGM\b",
+        "urls": ["https://www.cma-cgm.com/ebusiness/tracking/search"],
+    },
+    "MSC": {
+        "label": "MSC",
+        "carrier": r"\bMSC\b|Mediterranean\s+Shipping",
+        "urls": ["https://www.msc.com/en/track-a-shipment"],
+    },
+    "GRIMALDI": {
+        "label": "Grimaldi Lines",
+        "carrier": r"Grimaldi",
+        # The sheet names "GNET Grimaldi Corporate" but the address behind
+        # that link was not in it. Recognised, and skipped with that reason,
+        # until the address is known.
+        "urls": [],
+    },
+    "COSCO": {
+        "label": "COSCO Shipping",
+        "carrier": r"\bCOSCO\b",
+        "urls": ["https://elines.coscoshipping.com/ebusiness/cargoTracking"],
+        "deep_link": ("https://elines.coscoshipping.com/ebusiness/cargoTracking"
+                      "?trackingType=BILLOFLADING&number={0}"),
+    },
+    "MAERSK": {
+        "label": "Maersk",
+        "carrier": r"Maersk",
+        "urls": ["https://www.maersk.com/tracking/"],
+        "deep_link": "https://www.maersk.com/tracking/{0}",
+    },
+    "ONE": {
+        "label": "Ocean Network Express (ONE)",
+        "carrier": r"Ocean\s+Network\s+Express|^\s*ONE\s*(?:Line)?\s*$",
+        "urls": ["https://www.one-line.com/one-ecom/manage-shipment/cargo-tracking"],
+    },
+    "HAPAG": {
+        "label": "Hapag-Lloyd",
+        "carrier": r"Hapag",
+        # The sheet's link was named, not shown. This is Hapag-Lloyd's own
+        # public tracking page; confirm it is the one meant.
+        "urls": ["https://www.hapag-lloyd.com/en/online-business/track/"
+                 "track-by-booking-solution.html"],
+    },
+}
+for _key, _carrier in OCEAN_PORTALS.items():
+    PORTALS[_key] = dict(
+        _carrier, ocean=True, verify_identity=True, verbatim=True,
+        placeholder=OCEAN_REFERENCE_BOX, button=OCEAN_SEARCH_BUTTON,
+        dashed=False, wait=45, attempts=1)
+
+
+def ocean_provider(carrier_name):
+    """The ocean carrier this Hub carrier name belongs to, or None."""
+    name = str(carrier_name or "")
+    for key, carrier in OCEAN_PORTALS.items():
+        if re.search(carrier["carrier"], name, re.I):
+            return key
+    return None
+
+
+# What an ocean result page calls its dates. A voyage has several legs, and
+# an ETA at a transshipment port is not the shipment's arrival, so an ETA
+# that sits beside the port of discharge or the final destination is taken
+# first, and otherwise the LAST one on the page — the final leg is the one
+# listed last.
+OCEAN_ETA_LABELS = [
+    r"Estimated\s+(?:Time\s+of\s+)?Arrival", r"\bETA\b",
+    r"Expected\s+Arrival", r"Est\.?\s+Arrival", r"Arrival\s*\(\s*estimated\s*\)",
+]
+OCEAN_ATA_LABELS = [
+    r"Actual\s+(?:Time\s+of\s+)?Arrival", r"\bATA\b",
+    r"Vessel\s+arrived", r"Arrival\s*\(\s*actual\s*\)",
+    r"Discharged(?:\s+(?:at|from))?",
+]
+OCEAN_FINAL_PORT = re.compile(
+    r"Port\s+of\s+Discharge|\bPOD\b|Final\s+Destination|Place\s+of\s+Delivery|"
+    r"Destination", re.I)
+OCEAN_NO_RESULT = GENERIC_NO_RESULT + [
+    r"no\s+data\s+(?:found|available)", r"invalid\s+(?:b\s*/\s*l|bill\s+of\s+lading|"
+    r"container|booking)", r"we\s+could\s+not\s+find",
+]
+
+
+def _ocean_dates(text, labels):
+    """[(position, date, label)] — the first date within 60 characters after
+    each occurrence of each label."""
+    found = []
+    for label in labels:
+        for match in re.finditer(label, text, re.I):
+            window = text[match.end():match.end() + 60]
+            dates = extract_all_dates(window, allow_yearless=True)
+            if dates:
+                found.append((match.start(), dates[0][1],
+                              " ".join(match.group(0).split())))
+    found.sort()
+    return found
+
+
+def _read_ocean_page(page, provider):
+    """
+    Read an ocean carrier's result, or None.
+
+    Nothing is inferred: a date is only read when a label naming it as an
+    estimated or an actual arrival sits right before it. Which label each
+    date came from is kept on the result, so the run log can say.
+    """
+    text = _page_text(page)
+    if len(text.strip()) < 120:
+        return None
+    if _matches(text, OCEAN_NO_RESULT):
+        return {"provider": provider, "tracking_status": "No result",
+                "eta": None, "ata": None, "no_result": True}
+
+    etas = _ocean_dates(text, OCEAN_ETA_LABELS)
+    atas = _ocean_dates(text, OCEAN_ATA_LABELS)
+
+    def at_final_port(found):
+        for position, date, label in found:
+            before = text[max(0, position - 200):position]
+            if OCEAN_FINAL_PORT.search(before):
+                return position, date, label
+        return found[-1] if found else None
+
+    eta = at_final_port(etas)
+    ata = at_final_port(atas)
+    if eta is None and ata is None:
+        return None
+    status = "Arrived" if ata else "Estimated arrival"
+    return {"provider": provider, "tracking_status": status,
+            "eta": eta[1] if eta else None, "ata": ata[1] if ata else None,
+            "eta_source": eta[2] if eta else None,
+            "ata_source": ata[2] if ata else None}
+
+
 AFKL_DETAIL_URL = "https://www.afklcargo.com/mycargo/shipment/detail/{0}"
 
 
@@ -5114,6 +5309,11 @@ CAPTCHA_SELECTORS = (
     "div.h-captcha",
     "#challenge-form",
     "input[name='cf-turnstile-response']",
+    # DataDome — the "Verification Required / Slide right to secure your
+    # access" slider CMA CGM put in front of its tracking page on the 4th of
+    # October. Its challenge is served from captcha-delivery.com.
+    "iframe[src*='captcha-delivery.com']",
+    "iframe[title*='DataDome' i]",
 )
 
 # Text is the fallback, and it is deliberately narrow. "verify" on its own
@@ -5123,8 +5323,10 @@ CAPTCHA_PHRASES = re.compile(
     r"i'?m\s+not\s+a\s+robot|are\s+you\s+a\s+robot|"
     r"checking\s+if\s+the\s+site\s+connection\s+is\s+secure|"
     r"needs\s+to\s+review\s+the\s+security\s+of\s+your\s+connection|"
-    r"complete\s+the\s+security\s+check|unusual\s+traffic\s+from\s+your",
-    re.I)
+    r"complete\s+the\s+security\s+check|unusual\s+traffic\s+from\s+your|"
+    r"slide\s+right\s+to\s+(?:secure\s+your\s+access|complete)|"
+    r"^\s*verification\s+required\s*$",
+    re.I | re.M)
 
 
 def captcha_on_page(page):
@@ -5237,13 +5439,20 @@ def awb_on_page(page, tracking_number):
     search-form fallback did not, so a stale or mis-resolved result would have
     been extracted and filed under the AWB that was asked for.
     """
-    digits = re.sub(r"\D", "", str(tracking_number or ""))
-    if not digits:
+    reference = str(tracking_number or "")
+    digits = re.sub(r"\D", "", reference)
+    if not digits and not re.search(r"[A-Za-z]", reference):
         return True                  # nothing to verify against
     try:
         text = _page_text(page)
     except Exception:
         return False
+    if re.search(r"[A-Za-z]", reference):
+        # A bill of lading or a container — MEDUAB123456, MSCU1234567. Its
+        # digits alone would match any page carrying 123456, so it has to be
+        # found as written, ignoring only spacing and dashes.
+        wanted = re.sub(r"[\s\-/]", "", reference).upper()
+        return wanted in re.sub(r"[\s\-/]", "", text).upper()
     return digits in re.sub(r"\D", "", text)
 
 
@@ -6351,7 +6560,8 @@ def submit_portal_awb(page, field, config, tracking_number):
             "form, not to Track a shipment. Nothing was typed and nothing was "
             "submitted.".format(config["label"]))
 
-    formatted = portal_awb(tracking_number, config.get("dashed", True))
+    formatted = (str(tracking_number).strip() if config.get("verbatim")
+                 else portal_awb(tracking_number, config.get("dashed", True)))
     landed = type_into(field, formatted, f"the {config['label']} air waybill box")
 
     if re.sub(r"\D", "", landed) != re.sub(r"\D", "", formatted):
@@ -7332,6 +7542,8 @@ def extract_portal_result(page, provider):
     """
     if provider == "AFKL":
         return _read_afkl_page(page, provider)
+    if PORTALS.get(provider, {}).get("ocean"):
+        return _read_ocean_page(page, provider)
 
     return _read_generic_portal_page(page, provider)
 
@@ -7397,6 +7609,23 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             if landed is not None:
                 page = landed          # a later strategy may hand back its own page
                 direct = True
+
+        if not direct and config.get("deep_link"):
+            # The carrier takes the reference in the address itself.
+            link = config["deep_link"].format(
+                quote(str(tracking_number).strip(), safe=""))
+            write_log("{0}: opening the shipment page directly — {1}".format(
+                config["label"], link))
+            try:
+                page.goto(link, wait_until="commit",
+                          timeout=NAVIGATION_TIMEOUT_MS)
+                wait_until_settled(page, page_has_content,
+                                   PAGE_SETTLE_MAX_SECONDS)
+                accept_cookie_banner(page, config["label"])
+                direct = True
+            except Exception as error:
+                write_log("{0}: could not open {1} — {2}".format(
+                    config["label"], link, str(error).split("\n")[0][:120]))
 
         if not direct:
             if config.get("detail_url"):
@@ -7560,6 +7789,16 @@ def get_provider_result(provider_pages, shipment):
         return get_qatar_result(provider_pages["QATAR"], reference)
 
     if provider in PORTALS:
+        config = PORTALS[provider]
+        if config.get("ocean") and not config.get("urls"):
+            raise SkipShipment(
+                "{0} is recognised, but no tracking address is configured for "
+                "it yet, so the carrier was not asked.".format(config["label"]))
+        if provider not in provider_pages:
+            # Opened on first use, in the same browser as everything else.
+            anchor = next(page for page in provider_pages.values()
+                          if page is not None)
+            provider_pages[provider] = anchor.context.new_page()
         page = provider_pages[provider]
         # The AFKL form takes air waybills and nothing else — its own box
         # says "AWB starts with 074 or 057". Putting a booking reference to
@@ -7599,7 +7838,19 @@ def get_provider_result(provider_pages, shipment):
                 "so the carrier was not asked."
                 .format(reference, PORTALS[provider]["label"]))
         try:
-            return get_portal_result(page, provider, reference, shipment)
+            result = get_portal_result(page, provider, reference, shipment)
+            if config.get("ocean") and result and not result.get("no_result") \
+                    and not OCEAN_WRITE:
+                read = "; ".join(
+                    "{0} {1} (from '{2}')".format(kind, result[kind],
+                                                  result.get(kind + "_source"))
+                    for kind in ("eta", "ata") if result.get(kind))
+                raise SkipShipment(
+                    "{0} read {1} for {2}. Not written: ocean carriers run "
+                    "read-only until their result page has been confirmed on "
+                    "a real run (OCEAN_WRITE=1 writes).".format(
+                        config["label"], read or "no date", reference))
+            return result
         except SkipShipment as error:
             # The air waybill produced nothing readable. If the HUB names a
             # flight, that is a second question this shipment can still
@@ -8716,6 +8967,10 @@ def main():
         provider_pages = {"DHL": dhl_page, "QATAR": qatar_page}
         # One tab per simple portal, opened once and reused for the whole run.
         for _portal in PORTALS:
+            # Ocean carriers open their tab the first time one of their
+            # shipments comes up; seven idle tabs at start-up help nobody.
+            if PORTALS[_portal].get("ocean"):
+                continue
             provider_pages[_portal] = context.new_page()
 
         fatal_error = None

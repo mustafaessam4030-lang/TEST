@@ -116,6 +116,24 @@ check("A LONG page carrying the phrase in prose is not a challenge — a real "
 check("A detector failure is False, never an exception",
       A.captcha_on_page(object()) is False)
 
+# CMA CGM, the 4th of October: "Verification Required — Slide right to
+# secure your access", DataDome's slider. Unrecognised, the run would have
+# looked for a search box, found none and reported the page as broken.
+# Recognised, it pauses and asks the operator to slide it — and still never
+# slides it itself.
+check("The CMA CGM slider page is recognised as human verification",
+      A.captcha_on_page(Page("CMA CGM\nVerification Required\n"
+                             "Slide right to secure your access")))
+check("...and so is DataDome's challenge frame on its own",
+      A.captcha_on_page(Page(CARGO, {"iframe[src*='captcha-delivery.com']"})))
+check("A cargo page that merely says 'verification required' in a sentence "
+      "is not a challenge",
+      not A.captcha_on_page(Page(
+          "Dangerous goods: verification required before booking. " + "x" * 300)))
+check("Nothing in the code moves a slider",
+      not re.search(r"(slide|slider|drag)[^\n]*\.(?:drag_to|mouse\.move)\(",
+                    SRC, re.I) and "drag_to(" not in SRC)
+
 print()
 print("=" * 72)
 print("3. THERE IS NO AUTOMATED SOLVE")
