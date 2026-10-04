@@ -40,12 +40,49 @@ MAX_HISTORY = 60
 HUMAN_OPS = ("open", "resume")
 _ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
+# The Human Action Queue, as the run published it: shipments parked for a
+# person. An operator may choose one that is waiting (Open & Continue); the
+# run picks it up between shipments. The states are human_queue.py's.
+QUEUE_TERMINAL = {
+    "SUCCESS": "That human action is finished: written and read back.",
+    "TIMEOUT": "That human action timed out. Nothing was written; the "
+               "shipment is looked up again next run.",
+    "HUMAN_SESSION_LOST": "The browser session for that shipment is no longer "
+                          "available. Nothing was written.",
+    "VERIFICATION_NOT_CONFIRMED": "That verification was not confirmed by the "
+                                  "carrier page. Nothing was written.",
+    "FAILED": "That shipment failed after the verification.",
+}
 
-def validate_human_request(pending, op, run_id, action_id, client_id=None):
+
+def queue_task(queue, action_id):
+    for task in queue or []:
+        if isinstance(task, dict) and str(task.get("action_id")) == str(action_id):
+            return task
+    return None
+
+
+def human_ok_message(op, queued=False):
+    if queued:
+        return ("Open & Continue accepted. After the current shipment the run "
+                "brings this shipment back to the verification step and puts "
+                "the carrier tab in front of its Edge window. Complete the "
+                "verification there — the run continues by itself.")
+    return {
+        "open": "Asked the run to bring the paused tab to the front of its "
+                "Edge window.",
+        "resume": "Resume sent. The run checks the page and carries on if the "
+                  "result is there.",
+    }[op]
+
+
+def validate_human_request(pending, op, run_id, action_id, client_id=None,
+                           queue=None):
     """
     (accepted, message) for a human request against the action the run has
-    published as pending. Pure; shared by the in-process channel and the
-    supervisor so both refuse the same things with the same words.
+    published as pending, or a task it has parked in the Human Action
+    queue. Pure; shared by the in-process channel and the supervisor so both
+    refuse the same things with the same words.
     """
     if op not in HUMAN_OPS:
         return False, "Unknown human action."
@@ -55,6 +92,25 @@ def validate_human_request(pending, op, run_id, action_id, client_id=None):
     if client_id is not None and client_id != "" and \
             not _ID.match(str(client_id)):
         return False, "That request does not come from a valid dashboard tab."
+    live = bool(pending and pending.get("waiting")
+                and str(action_id) == str(pending.get("action_id")))
+    task = None if live else queue_task(queue, action_id)
+    if task is not None:
+        if str(run_id) != str(task.get("run_id")):
+            return False, ("That request is for run {0}, but the task belongs "
+                           "to run {1}. Refresh the dashboard.".format(
+                               run_id, task.get("run_id")))
+        status = task.get("status")
+        if status in QUEUE_TERMINAL:
+            return False, QUEUE_TERMINAL[status]
+        claimed = task.get("claimed_by")
+        if claimed and client_id and claimed != client_id:
+            return False, "Another operator is already handling this shipment."
+        if status != "WAITING_FOR_HUMAN":
+            return False, ("Already in progress for {0}. Watch the carrier tab "
+                           "on the automation server.".format(
+                               task.get("reference") or "this shipment"))
+        return True, "OK"
     if pending and not pending.get("waiting") and \
             str(action_id) == str(pending.get("action_id")):
         return False, {
@@ -104,6 +160,8 @@ class ControlChannel:
         self._human_seen = deque(maxlen=200)
         # The action the run is waiting on, as the run published it.
         self.human_pending = None
+        # The run's Human Action queue (identity and status only).
+        self.human_queue = []
         # When the supervisor owns the dashboard, the automation runs in a
         # separate process — so requests travel through a small file rather
         # than shared memory. Same queue semantics either way.
@@ -126,6 +184,13 @@ class ControlChannel:
             self.human_pending = dict(pending) if pending else None
             self.version += 1
 
+    def set_human_queue(self, tasks):
+        """Called by the run whenever its Human Action queue changes."""
+        with self._lock:
+            self.human_queue = [dict(t) for t in (tasks or [])
+                                if isinstance(t, dict)]
+            self.version += 1
+
     def human_request(self, op, run_id, action_id, client_id=None):
         """(accepted, message). Never raises."""
         with self._lock:
@@ -133,18 +198,23 @@ class ControlChannel:
                 return False, ("Human actions from the dashboard are switched "
                                "off (DASHBOARD_ALLOW_HUMAN_ACTIONS).")
             accepted, message = validate_human_request(
-                self.human_pending, op, run_id, action_id, client_id)
+                self.human_pending, op, run_id, action_id, client_id,
+                self.human_queue)
             if not accepted:
                 return False, message
             self.human.append(human_request_record(
                 op, run_id, action_id, client_id))
             self._record("human_" + op, str(action_id))
-            return True, {
-                "open": "Asked the run to bring the paused tab to the front "
-                        "of its Edge window.",
-                "resume": "Resume sent. The run checks the page and carries "
-                          "on if the result is there.",
-            }[op]
+            queued = queue_task(self.human_queue, action_id) is not None and \
+                not (self.human_pending and self.human_pending.get("waiting")
+                     and str(self.human_pending.get("action_id")) == str(action_id))
+            if queued:
+                # Claimed at once, so a second tab is refused before the run
+                # has even picked the request up.
+                task = queue_task(self.human_queue, action_id)
+                task["status"] = "OPERATOR_OPENED"
+                task["claimed_by"] = client_id or task.get("claimed_by")
+            return True, human_ok_message(op, queued)
 
     def take_human_requests(self):
         """Every human request not yet handed to the run, oldest first."""
@@ -279,6 +349,7 @@ class ControlChannel:
             self.reprocess.clear()
             self.human.clear()
             self.human_pending = None
+            self.human_queue = []
             self.version += 1
 
     def snapshot(self):

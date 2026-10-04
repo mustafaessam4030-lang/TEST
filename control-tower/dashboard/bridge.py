@@ -124,6 +124,10 @@ class ControlTowerState:
         # ATLAS page. Counted from the same three calls that drive the panel.
         self.recovery_stats = {"diagnosed": 0, "attempts": 0,
                                "recovered": 0, "exhausted": 0}
+        # Finished recovery episodes, newest first, each with the shipment it
+        # was for. The live panel above forgets an episode when the shipment
+        # moves on; ATLAS's chat still has to be able to say what happened.
+        self.recovery_history = deque(maxlen=30)
 
         self.run_status = "idle"          # idle | running | finished | fatal
         self.run_id = None
@@ -148,6 +152,9 @@ class ControlTowerState:
         # reason, tab, URL without its query string, timestamps.
         self.human_action = None
         self.human_events = deque(maxlen=MAX_HUMAN_EVENTS)
+        # The run's Human Action queue: every shipment parked for a person,
+        # with its state and history, as human_queue.py keeps it.
+        self.human_queue = []
 
         self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
         self.atlas_influenced_actions = 0
@@ -269,6 +276,8 @@ class ControlTowerState:
                 "verified": None,
                 "reason": None,
                 "started": _stamp(),
+                "reference": self.current_shipment,
+                "provider": self.current_system,
             }
             self.recovery_stats["diagnosed"] += 1
             self._mark("warn", "ATLAS diagnosed {0}".format(error_class))
@@ -306,7 +315,9 @@ class ControlTowerState:
                 self.recovery_stats["recovered" if recovered else "exhausted"] += 1
             self.recovery.update(
                 status="RECOVERED" if recovered else "EXHAUSTED",
-                recovered=bool(recovered), reason=reason, verified=verified)
+                recovered=bool(recovered), reason=reason, verified=verified,
+                finished=_stamp())
+            self._archive_recovery()
             self._mark("ok" if recovered else "warn",
                        "ATLAS recovery {0}".format(
                            "succeeded" if recovered else "exhausted"))
@@ -316,8 +327,19 @@ class ControlTowerState:
     def recovery_cleared(self):
         """The shipment moved on. The panel stops showing a stale error."""
         with self._lock:
+            self._archive_recovery()
             self.recovery = None
             self._touch()
+
+    def _archive_recovery(self):
+        """Keep a finished (or abandoned) episode once. Caller holds the lock."""
+        episode = self.recovery
+        if not episode or episode.get("_archived"):
+            return
+        episode["_archived"] = True
+        self.recovery_history.appendleft(
+            {k: (list(v) if isinstance(v, list) else v)
+             for k, v in episode.items() if k != "_archived"})
 
     def _touch_cold(self):
         """
@@ -350,6 +372,8 @@ class ControlTowerState:
             self.finished_at = None
             self.human_action = None
             self.human_events.clear()
+            self.human_queue = []
+            self.recovery_history.clear()
             for key, value in config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
@@ -565,13 +589,19 @@ class ControlTowerState:
         """One entry in the human-intervention log, plus any field updates."""
         with self._lock:
             action = self.human_action or {}
+            # The event names its own action when it has one: a queue task's
+            # events must not be filed under whatever wait is live.
+            action_id = fields.get("action_id") or action.get("action_id")
             entry = {"time": _stamp(), "event": str(event)[:40],
                      "run_id": action.get("run_id") or self.run_id,
-                     "action_id": action.get("action_id"),
-                     "reference": action.get("reference"),
+                     "action_id": action_id,
+                     "reference": fields.get("reference")
+                     or (action.get("reference")
+                         if action_id == action.get("action_id") else None),
                      "detail": str(detail)[:300]}
             self.human_events.appendleft(entry)
-            if self.human_action is not None:
+            if self.human_action is not None and \
+                    action_id == self.human_action.get("action_id"):
                 for key in ("claimed_by", "session_opened_at", "last_response",
                             "url", "page_id"):
                     if key in fields:
@@ -608,6 +638,43 @@ class ControlTowerState:
             self._mark("ok" if outcome == "resumed" else "warn",
                        "Human action {0} — {1}".format(
                            outcome, self.human_action.get("reference") or ""))
+            self._touch()
+        self._touch_cold()
+
+    _QUEUE_FIELDS = ("action_id", "run_id", "reference", "carrier", "provider",
+                     "step", "reason", "created_at", "created_epoch",
+                     "timeout_at", "timeout_epoch", "status", "label",
+                     "claimed_by", "attempts", "last_detail", "updated_at",
+                     "closed_at", "history")
+
+    @_guard
+    def human_queue_changed(self, tasks):
+        """
+        The run's Human Action queue changed. Published as the run keeps it
+        — no codes, answers or credentials exist in a task to publish. A
+        parked shipment's row says where its task stands.
+        """
+        with self._lock:
+            clean = []
+            for task in (tasks or [])[-100:]:
+                if not isinstance(task, dict):
+                    continue
+                item = {key: task.get(key) for key in self._QUEUE_FIELDS}
+                item["history"] = list(item.get("history") or [])[-16:]
+                clean.append(item)
+            self.human_queue = clean
+            for task in clean:
+                record = self._index.get(task.get("reference"))
+                if record is None or record.get("state") != "waiting_for_human":
+                    continue
+                if record["reference"] == self.current_shipment and \
+                        self.human_action and self.human_action.get("waiting"):
+                    continue        # the live wait already says it
+                step = "Human Action queue — {0}".format(
+                    (task.get("label") or "").lower() or "waiting")
+                if record.get("step") != step:
+                    record["step"] = step
+                    record["updated"] = _stamp()
             self._touch()
         self._touch_cold()
 
@@ -704,6 +771,15 @@ class ControlTowerState:
                 "updated": _stamp(),
                 "steps": [],
             }
+            previous = self._index.get(reference)
+            if previous is not None and previous.get("state") in (
+                    "waiting_for_human", "human_timeout"):
+                # Looked up again from the Human Action queue: the same
+                # shipment, so one row, not two.
+                try:
+                    self.shipments.remove(previous)
+                except ValueError:
+                    pass
             self._index[reference] = record
             self.shipments.appendleft(record)
             # The deque drops old records but _index kept them forever. Prune
@@ -801,6 +877,8 @@ class ControlTowerState:
                 "FAILED": "failed",
                 "PARTIAL": "partial",
                 "HUMAN_TIMEOUT": "human_timeout",
+                # Parked for a person: still waiting, not an outcome.
+                "HUMAN_QUEUED": "waiting_for_human",
             }.get(result, "unknown")
             record["error"] = details or None
             # Named operational class from classify_failure(), e.g. NO RESULT.
@@ -832,6 +910,10 @@ class ControlTowerState:
                     "outcome": record.get("outcome"),
                     "message": details or "Skipped",
                 })
+            elif result == "HUMAN_QUEUED":
+                record["step"] = "Human Action queue — waiting for you"
+                self._mark("warn", "{0} paused safely and added to the Human "
+                           "Action queue".format(reference))
             elif result == "HUMAN_TIMEOUT":
                 # Nobody completed the human step in time. Nothing was looked
                 # up and nothing was written: not a success, not a statement
@@ -1018,9 +1100,12 @@ class ControlTowerState:
                 "human_action": (dict(self.human_action)
                                  if self.human_action else None),
                 "human_events": list(self.human_events)[:20],
+                "human_queue": [dict(t) for t in self.human_queue],
                 # Live recovery status, or None. Small and bounded: one
                 # error, its plan, and the attempts made against it.
-                "recovery": self.recovery,
+                "recovery": ({k: v for k, v in self.recovery.items()
+                              if k != "_archived"} if self.recovery else None),
+                "recovery_history": list(self.recovery_history)[:15],
                 "atlas": {
                     "name": ATLAS_NAME,
                     "full_name": ATLAS_FULL_NAME,

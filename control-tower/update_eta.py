@@ -15,6 +15,19 @@ import tempfile
 
 from playwright.sync_api import sync_playwright
 
+# The Human Action Queue: the book of shipments waiting for a person. Pure
+# Python, next to this script; it never touches a page. Optional: without it
+# the run keeps the single in-place wait, exactly as before the queue.
+try:
+    import human_queue as hq
+except ImportError:
+    import sys as _hq_sys
+    _hq_sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import human_queue as hq
+    except ImportError:
+        hq = None
+
 # ------------------------------------------------------------
 # CONTROL TOWER DASHBOARD (optional, never blocks the run)
 # ------------------------------------------------------------
@@ -350,6 +363,8 @@ RUN_ID = "{0:%Y%m%d-%H%M%S}-{1}".format(datetime.now(), os.urandom(3).hex())
 # no codes, no answers: there is nothing of the kind to put in them.
 HUMAN_ACTION_FILE = LOG_FOLDER / "human_action.json"
 HUMAN_EVENTS_FILE = LOG_FOLDER / "human_actions.jsonl"
+# Every shipment parked for a person, with its state and history.
+HUMAN_QUEUE_FILE = LOG_FOLDER / "human_queue.json"
 
 
 class SkipShipment(Exception):
@@ -389,6 +404,10 @@ class CaptchaRequired(Exception):
                             "person is no longer available.",
             "unattended": "This run is unattended (wait set to 0), so nobody "
                           "was asked.",
+            "queued": "It is paused safely in the Human Action queue — choose "
+                      "Open & Continue when you are available.",
+            "not_confirmed": "The person's verification was not confirmed by "
+                             "the carrier page.",
         }.get(reason, "The page needed a person and the human step was not "
                       "completed within the wait window.")))
 
@@ -5458,6 +5477,162 @@ HUMAN_AUTO_RESUME = os.environ.get("HUMAN_AUTO_RESUME", "1").strip().lower() \
     not in ("0", "false", "no", "off")
 HUMAN_TIMEOUT = "HUMAN TIMEOUT"
 HUMAN_SESSION_LOST = "HUMAN SESSION LOST"
+HUMAN_QUEUED = "HUMAN ACTION QUEUED"
+
+
+def _env_int(name, default, low, high):
+    try:
+        return max(low, min(int(os.environ.get(name, "").strip() or default),
+                            high))
+    except ValueError:
+        return default
+
+
+# ── The Human Action Queue ────────────────────────────────────────────
+#
+# With the queue on (the default), a challenge does not hold the whole run
+# hostage. A person who is watching gets HUMAN_QUEUE_GRACE_MS to act at
+# once; if nobody does, the shipment is parked in the queue and the run goes
+# on with the next one. Choosing the task on the dashboard (Open & Continue,
+# or asking ATLAS) makes the run — between shipments, never mid-write — look
+# the shipment up again in its own browser, bring the carrier tab to the
+# front at the verification step, and wait the full HUMAN_WAIT_MS for the
+# person. Once the page shows the step done AND the right shipment, it
+# carries on by itself. Before the run ends it holds for HUMAN_QUEUE_HOLD_S
+# so parked tasks can still be handled; what is left then times out.
+#
+# HUMAN_QUEUE=0 restores the single in-place wait. A wait of 0 (unattended)
+# never queues: nobody is there to choose anything.
+HUMAN_QUEUE_ON = os.environ.get("HUMAN_QUEUE", "1").strip().lower() \
+    not in ("0", "false", "no", "off")
+HUMAN_QUEUE_GRACE_MS = _env_int("HUMAN_QUEUE_GRACE_MS", 30000, 0, 900000)
+HUMAN_QUEUE_HOLD_S = _env_int("HUMAN_QUEUE_HOLD_S", 600, 0, 7200)
+HUMAN_QUEUE_TTL_S = _env_int("HUMAN_QUEUE_TTL_S", 1800, 60, 86400)
+# How many times an operator may open a task and let the window run out
+# before it times out for good.
+HUMAN_QUEUE_MAX_ATTEMPTS = 3
+# After the page shows the step done, how long to let it settle before it is
+# read again. Both readings must agree before the run carries on.
+HUMAN_CONFIRM_MS = 1200
+# Requests for a parked task that arrive while the run is busy with another
+# wait. Kept, in order, for the next safe point — never dropped.
+_HUMAN_DEFERRED = []
+
+
+def _publish_queue(snapshot):
+    try:
+        tower.human_queue_changed(snapshot)
+    except Exception:
+        pass
+    try:
+        tower_control.set_human_queue([
+            {key: task.get(key) for key in
+             ("action_id", "run_id", "reference", "status", "claimed_by")}
+            for task in snapshot])
+    except Exception:
+        pass
+
+
+class _NoQueue(object):
+    """Stands in when human_queue.py is not installed: an empty queue."""
+    path = None
+
+    def __getattr__(self, name):
+        if name in ("take_chosen", "expire", "close_open", "waiting",
+                    "open_tasks", "snapshot"):
+            return lambda *args, **kwargs: []
+        if name in ("transition", "requeue"):
+            return lambda *args, **kwargs: (False, None)
+        if name == "choose":
+            return lambda *args, **kwargs: (False, "The queue is not installed.",
+                                            None)
+        return lambda *args, **kwargs: None
+
+
+class _QueueStates(object):
+    """The queue's state names, so the run's code reads the same either way."""
+    WAITING, OPENED, PENDING = ("WAITING_FOR_HUMAN", "OPERATOR_OPENED",
+                                "VERIFICATION_PENDING")
+    COMPLETED, CHECK, RESUMING = ("HUMAN_COMPLETED", "POST_VERIFICATION_CHECK",
+                                  "RESUMING")
+    SUCCESS, TIMEOUT, LOST = "SUCCESS", "TIMEOUT", "HUMAN_SESSION_LOST"
+    NOT_CONFIRMED, FAILED = "VERIFICATION_NOT_CONFIRMED", "FAILED"
+    TERMINAL = frozenset((SUCCESS, TIMEOUT, LOST, NOT_CONFIRMED, FAILED))
+    SHIPMENT_FIELDS = ("bol_awb", "carrier", "provider", "current_eta",
+                       "table_page")
+
+    @staticmethod
+    def summarize(tasks, now=None):
+        return "Nothing needs a person right now."
+
+
+if hq is None:
+    hq = _QueueStates
+    HUMAN_QUEUE_ON = False
+    HUMAN_QUEUE = _NoQueue()
+else:
+    HUMAN_QUEUE = hq.HumanQueue(path=HUMAN_QUEUE_FILE, on_change=_publish_queue)
+
+
+def _queue_move(action_id, state, detail=""):
+    """Move a queue task, logging a refused move instead of forcing it."""
+    if not action_id:
+        return False
+    applied, task = HUMAN_QUEUE.transition(action_id, state, detail)
+    if not applied and task is not None:
+        write_log("[HUMAN] queue: {0} -> {1} refused for {2} (it is {3})".format(
+            task.get("status"), state, task.get("reference"), task.get("status")))
+    return applied
+
+
+def _take_human_requests():
+    """Deferred requests first, then whatever the dashboard sent since."""
+    taken = list(_HUMAN_DEFERRED)
+    del _HUMAN_DEFERRED[:]
+    return taken + list(tower_control.take_human_requests() or [])
+
+
+def _queued_task_for(request):
+    task = HUMAN_QUEUE.get(request.get("action_id"))
+    if task and task.get("run_id") == RUN_ID and \
+            task.get("status") not in hq.TERMINAL:
+        return task
+    return None
+
+
+def human_queue_service():
+    """
+    Between shipments: apply the operator's choices. Returns
+    [(task, shipment)] to look up again now, oldest choice first. Expired
+    tasks time out here too.
+    """
+    if not HUMAN_QUEUE_ON:
+        return []
+    for request in _take_human_requests():
+        task = _queued_task_for(request)
+        if task is None:
+            human_event("HUMAN_RESUME_FAILED", request,
+                        "ignored a {0} request for action {1}: nothing in the "
+                        "queue matches it".format(request.get("op"),
+                                                  request.get("action_id")))
+            continue
+        if request.get("op") not in ("open", "resume"):
+            continue
+        accepted, message, chosen = HUMAN_QUEUE.choose(
+            task["action_id"], request.get("run_id"),
+            request.get("client_id") or None)
+        human_event("HUMAN_TASK_CHOSEN" if accepted else "HUMAN_RESUME_FAILED",
+                    task, "operator chose it; bringing {0} back to the "
+                    "verification point".format(task["reference"])
+                    if accepted else message,
+                    last_response=("Preparing {0} on {1}. The carrier tab comes "
+                                   "to the front at the verification step."
+                                   .format(task["reference"], task["carrier"]))
+                    if accepted else message)
+    for task in HUMAN_QUEUE.expire():
+        human_event("HUMAN_TIMEOUT", task, "nobody chose it before {0}".format(
+            task.get("timeout_at")))
+    return HUMAN_QUEUE.take_chosen()
 _HUMAN_PERSISTED = ("run_id", "action_id", "reference", "carrier", "provider",
                     "step", "reason", "page_id", "url", "opened_at", "deadline",
                     "timeout_s", "claimed_by", "state", "outcome", "resumed_via",
@@ -5528,6 +5703,8 @@ def human_event(event, action, detail="", **fields):
             handle.write(json.dumps(entry) + "\n")
     except Exception as error:
         note_suppressed("appending to the human action log", error)
+    fields.setdefault("action_id", entry["action_id"])
+    fields.setdefault("reference", entry["reference"])
     try:
         tower.human_action_event(event, detail, **fields)
     except Exception:
@@ -5544,6 +5721,42 @@ def _human_ready(ready):
     if isinstance(answer, tuple):
         return bool(answer[0]), (answer[1] if len(answer) > 1 else "")
     return bool(answer), "" if answer else "the page does not show it done yet"
+
+
+def _confirm_after_human(page, ready, action):
+    """
+    The page shows the step done. Let it settle, read it again, and only
+    then say so: (True, "") confirmed, (False, why) not, ("lost", why) the
+    tab went away. Reading only — nothing is clicked, typed or reloaded.
+    """
+    task_id = action.get("queue_id")
+    _queue_move(task_id, hq.COMPLETED, "the page shows the step done")
+    _queue_move(task_id, hq.CHECK, "reading the page again after it settles")
+    human_event("POST_VERIFICATION_CHECK", action,
+                "the page shows the step done; confirming it is {0}".format(
+                    action.get("reference")))
+    try:
+        page.wait_for_timeout(HUMAN_CONFIRM_MS)
+    except Exception:
+        pass
+    if not human_session_alive(page):
+        return "lost", "the browser tab closed during the check"
+    done, why_not = _human_ready(ready)
+    if done:
+        _queue_move(task_id, hq.RESUMING, "verification confirmed; continuing "
+                    "{0} automatically".format(action.get("reference")))
+        human_event("VERIFICATION_CONFIRMED", action,
+                    "confirmed twice, {0} ms apart".format(HUMAN_CONFIRM_MS),
+                    last_response="Verification confirmed. Continuing {0} — "
+                                  "reading the result.".format(
+                                      action.get("reference")))
+        return True, ""
+    _queue_move(task_id, hq.PENDING, "not confirmed: {0}".format(why_not))
+    human_event("VERIFICATION_NOT_CONFIRMED", action, why_not,
+                last_response="Not confirmed yet: {0}. The run keeps waiting; "
+                              "nothing is written until the page confirms it."
+                              .format(why_not))
+    return False, why_not
 
 
 def _publish_pending(action):
@@ -5627,28 +5840,56 @@ def wait_for_human(page, reference, label, ready, instructions="",
     challenge gone, a result for this reference on screen — as a bool or
     (bool, why_not). It is consulted on every poll and again when the
     dashboard presses Resume; a Resume against a page that is not ready is
-    refused and the wait goes on.
+    refused and the wait goes on. Before the run carries on, the page is
+    read a second time after it settles (POST_VERIFICATION_CHECK): both
+    readings must agree.
 
-    Returns "resumed", "timeout", "session_lost" or "unattended". Never
-    "success": resuming only means the run may go on to read the result,
-    which is then identified, validated, written and read back as usual.
+    With the Human Action Queue on, a fresh challenge gets a short window
+    (HUMAN_QUEUE_GRACE_MS) and is then parked — "queued" — so the run can go
+    on. A shipment the operator CHOSE from the queue gets the tab brought to
+    the front at once and the full window.
+
+    Returns "resumed", "queued", "timeout", "session_lost" or "unattended".
+    Never "success": resuming only means the run may go on to read the
+    result, which is then identified, validated, written and read back.
     """
     wait_ms = _captcha_wait_ms() if wait_ms is None else int(wait_ms)
+    queue_on = HUMAN_QUEUE_ON and wait_ms > 0
+    shipment = HUMAN_STATE.get("shipment") or {}
+    hub_ref = str(shipment.get("bol_awb") or reference) \
+        if str(shipment.get("lookup_ref") or "") == str(reference) \
+        else str(reference)
+    task = HUMAN_QUEUE.for_reference(hub_ref, RUN_ID) if queue_on else None
+    # Chosen by an operator, who is waiting at the dashboard for this tab.
+    present = task is not None and task["status"] in (
+        hq.OPENED, hq.PENDING, hq.RESUMING)
+    if queue_on and not present:
+        wait_ms = min(wait_ms, HUMAN_QUEUE_GRACE_MS)
     opened = time.time()
     action = {
-        "run_id": RUN_ID, "action_id": os.urandom(6).hex(),
-        "reference": str(reference), "carrier": label, "provider": provider,
+        "run_id": RUN_ID,
+        "action_id": task["action_id"] if task else os.urandom(6).hex(),
+        "reference": hub_ref, "carrier": label, "provider": provider,
         "step": step or "carrier lookup", "reason": HUMAN_REASON,
         "page_id": _page_id(page), "url": _page_url_for_log(page),
         "opened_at": _human_now(), "timeout_s": wait_ms // 1000,
         "deadline": datetime.fromtimestamp(
             opened + wait_ms / 1000.0).strftime("%Y-%m-%d %H:%M:%S"),
-        "instructions": instructions, "claimed_by": None,
+        "instructions": instructions,
+        "claimed_by": task.get("claimed_by") if present else None,
         "state": "waiting_for_human", "outcome": None,
     }
     HUMAN_STATE["current"] = action
     human_event("HUMAN_VERIFICATION_DETECTED", action,
                 "{0} needs a person ({1})".format(label, action["step"]))
+    if queue_on and task is None:
+        task = HUMAN_QUEUE.create(
+            RUN_ID, hub_ref, label, provider=provider, step=action["step"],
+            shipment=shipment if shipment.get("bol_awb") == hub_ref else None,
+            session={"page_id": action["page_id"], "url": action["url"]},
+            ttl_s=HUMAN_QUEUE_TTL_S, action_id=action["action_id"],
+            detail="{0} needs a person ({1})".format(label, action["step"]))
+    action["queue_id"] = task["action_id"] if task else None
 
     outcome = "timeout"
     if wait_ms <= 0:
@@ -5663,6 +5904,29 @@ def wait_for_human(page, reference, label, ready, instructions="",
         human_event("WAITING_FOR_HUMAN", action,
                     "timeout {0}s; {1}".format(action["timeout_s"],
                                                instructions or label))
+        if present:
+            # The operator asked for exactly this: the run's own tab, at the
+            # verification step, in front. Nothing else is done to it.
+            try:
+                page.bring_to_front()
+            except Exception as error:
+                note_suppressed("bringing the verification tab to the front",
+                                error)
+            action["session_opened_at"] = _human_now()
+            _queue_move(action["queue_id"], hq.PENDING,
+                        "{0} shows its verification step; the tab is in front "
+                        "for the person".format(label))
+            human_event("HUMAN_SESSION_OPENED", action,
+                        "{0} tab brought to the front at the verification "
+                        "step".format(label),
+                        claimed_by=action.get("claimed_by"),
+                        session_opened_at=action["session_opened_at"],
+                        url=action["url"], page_id=action["page_id"],
+                        last_response=(
+                            "The {0} tab for {1} is in front of the "
+                            "automation's Edge window. Complete the "
+                            "verification there — the run continues by itself "
+                            "once the page confirms it.".format(label, hub_ref)))
         deadline = opened + wait_ms / 1000.0
         announced = None
         while time.time() < deadline:
@@ -5682,8 +5946,34 @@ def wait_for_human(page, reference, label, ready, instructions="",
                 outcome = "session_lost"
                 break
             via = None
-            for request in (tower_control.take_human_requests() or []):
+            for request in _take_human_requests():
+                if request.get("action_id") != action["action_id"] and \
+                        _queued_task_for(request) is not None:
+                    # Another parked shipment: kept for the next safe point.
+                    _HUMAN_DEFERRED.append(request)
+                    human_event("HUMAN_TASK_REQUEST_HELD", request,
+                                "will be handled after the current shipment")
+                    continue
                 handled = _handle_human_request(page, action, request, ready)
+                if request.get("op") == "open" and handled is None and \
+                        action.get("session_opened_at") and \
+                        (HUMAN_QUEUE.get(action.get("queue_id")) or {}).get(
+                            "status") == hq.WAITING:
+                    HUMAN_QUEUE.transition(action["queue_id"], hq.OPENED,
+                                           "operator opened the live tab",
+                                           claimed_by=action.get("claimed_by"))
+                    _queue_move(action["queue_id"], hq.PENDING,
+                                "the tab is in front for the person")
+                    # A person is at the tab now: the short grace window
+                    # becomes the full one.
+                    full = opened + _captcha_wait_ms() / 1000.0
+                    if full > deadline:
+                        deadline = full
+                        present = True
+                        action["timeout_s"] = int(full - opened)
+                        action["deadline"] = datetime.fromtimestamp(
+                            full).strftime("%Y-%m-%d %H:%M:%S")
+                        _persist_human_action(action)
                 if handled == "resumed":
                     via = "dashboard"
                     break
@@ -5697,30 +5987,59 @@ def wait_for_human(page, reference, label, ready, instructions="",
                 # — the page itself shows it done. Same checks either way.
                 via = "page"
             if via:
+                confirmed, why_not = _confirm_after_human(page, ready, action)
+                if confirmed == "lost":
+                    human_event("HUMAN_RESUME_FAILED", action, why_not)
+                    outcome = "session_lost"
+                    break
+                if not confirmed:
+                    continue
                 outcome = "resumed"
                 action["resumed_via"] = via
                 human_event("HUMAN_RESUMED", action,
                             "after {0}s via {1}; continuing the same run".format(
                                 int(time.time() - opened), via),
                             last_response="Resumed. Reading the result for {0}."
-                                          .format(reference))
+                                          .format(hub_ref))
                 break
             remaining = int(deadline - time.time())
             if remaining // 30 != announced:
                 announced = remaining // 30
                 write_log("Still waiting for a person on {0} for {1} — {2}s "
-                          "left.".format(label, reference, remaining))
+                          "left.".format(label, hub_ref, remaining))
 
-    if outcome in ("timeout", "unattended"):
+    queue_id = action.get("queue_id")
+    if outcome == "timeout" and queue_id:
+        attempts = int((HUMAN_QUEUE.get(queue_id) or {}).get("attempts") or 0)
+        if present and attempts >= HUMAN_QUEUE_MAX_ATTEMPTS:
+            _queue_move(queue_id, hq.TIMEOUT, "opened {0} times; the window ran "
+                        "out each time".format(attempts))
+            human_event("HUMAN_TIMEOUT", action, "opened {0} times without the "
+                        "step being completed".format(attempts))
+        else:
+            HUMAN_QUEUE.requeue(queue_id, "not completed within {0}s; parked "
+                                "in the queue".format(action["timeout_s"]))
+            outcome = "queued"
+            human_event("HUMAN_QUEUED", action,
+                        "added to the Human Action queue; the run carries on "
+                        "with the next shipment",
+                        last_response="Paused safely and added to the Human "
+                                      "Action queue. Choose Open & Continue "
+                                      "when you are available.")
+    elif outcome in ("timeout", "unattended"):
         human_event("HUMAN_TIMEOUT", action,
                     "unattended run (wait 0): nobody was asked"
                     if outcome == "unattended" else
                     "not completed within {0}s".format(action["timeout_s"]))
+    elif outcome == "session_lost":
+        _queue_move(queue_id, hq.LOST, "the browser tab is no longer open")
     action.update(state=outcome, outcome=outcome, closed_at=_human_now())
     _persist_human_action(action)
     try:
         tower.human_action_closed(outcome, {
             "resumed": "Resumed — the result is now read and verified.",
+            "queued": "Paused safely in the Human Action queue; nothing "
+                      "written yet.",
             "timeout": "Not completed within {0}s; nothing written.".format(
                 action["timeout_s"]),
             "session_lost": "The browser session is no longer available; "
@@ -5778,19 +6097,39 @@ def validate_arrival_result(result, label, reference):
     return checked
 
 
-def human_shipment_closed(reference, before, after):
+def human_shipment_closed(reference, before, after, looked_up=None):
     """
     After a shipment whose lookup waited for a person: say how it ended.
     SUCCESS only when the shipment was counted successful — written and read
-    back — never because the person finished.
+    back — never because the person finished. A task the operator chose
+    from the queue is closed here with the same rule; `looked_up` False
+    (no carrier result was ever read) means the verification was never
+    confirmed by a page showing this shipment.
     """
+    names = ("SUCCESS", "FAILED", "SKIPPED", "PARTIAL", "HUMAN")
+    moved = [name for name, b, a in zip(names, before, after) if a > b]
+    task = HUMAN_QUEUE.for_reference(reference, RUN_ID)
+    if task is not None and task["status"] in (hq.OPENED, hq.RESUMING) and \
+            moved != ["HUMAN"]:
+        if task["status"] == hq.OPENED:
+            _queue_move(task["action_id"], hq.RESUMING,
+                        "the carrier page did not ask for verification again")
+        if moved == ["SUCCESS"]:
+            _queue_move(task["action_id"], hq.SUCCESS,
+                        "written to the Hub and read back")
+        elif looked_up is False:
+            _queue_move(task["action_id"], hq.NOT_CONFIRMED,
+                        "no result for {0} was read after the verification; "
+                        "nothing written".format(reference))
+        else:
+            _queue_move(task["action_id"], hq.FAILED,
+                        "the shipment ended {0} after the verification".format(
+                            moved[0] if moved else "without an outcome"))
     last = HUMAN_STATE.get("last") or {}
     if last.get("reference") != str(reference) or last.get("reported") or \
             last.get("outcome") != "resumed":
         return None
     last["reported"] = True
-    names = ("SUCCESS", "FAILED", "SKIPPED", "PARTIAL", "HUMAN")
-    moved = [name for name, b, a in zip(names, before, after) if a > b]
     event = "SUCCESS" if moved == ["SUCCESS"] else "NOT_SUCCESS_AFTER_HUMAN"
     human_event(event, last, "shipment ended {0} after the human step".format(
         moved[0] if moved else "without an outcome"))
@@ -8323,6 +8662,10 @@ def describe_page_dates(page, label, tracking_number):
 def get_provider_result(provider_pages, shipment):
     # The Hub's identifier and the carrier's are not always the same cell.
     reference = shipment.get("tracking_reference") or shipment["bol_awb"]
+    # Which Hub shipment a human step during this lookup belongs to, so a
+    # parked task can be looked up again from the queue.
+    HUMAN_STATE["shipment"] = dict(
+        {k: shipment.get(k) for k in hq.SHIPMENT_FIELDS}, lookup_ref=reference)
     provider = shipment.get("provider") or carrier_provider(
         shipment.get("carrier", ""), reference)
 
@@ -9528,6 +9871,230 @@ def main():
             login_internal(internal_page, username, password)
             tower.system_ok("hub", "Signed in")
 
+            def _process_shipment(shipment, table_page):
+                """
+                One shipment, start to finish: look it up, write, read back,
+                and map how it ended to one outcome. The same sequence for a
+                shipment from the Hub list and for one an operator chose
+                from the Human Action queue.
+                """
+                nonlocal successful, failed, skipped, partial, needs_human
+                bol_awb = shipment["bol_awb"]
+                dhl_result = {}
+                _counts_before = (successful, failed, skipped, partial,
+                                  needs_human)
+
+                try:
+                    tower.shipment_started(shipment)
+                    shipment_log(
+                        bol_awb,
+                        "Opening tracking page (hub page {0}, existing ETA {1})".format(
+                            table_page, shipment["current_eta"] or "none"),
+                        carrier=shipment["carrier"],
+                    )
+
+                    tower.step(
+                        f"Tracking {bol_awb} on the carrier site",
+                        system=shipment.get("provider"),
+                    )
+                    dhl_result = get_provider_result(provider_pages, shipment)
+                    tower.system_ok(
+                        shipment.get("provider"),
+                        f"Result returned for {bol_awb}",
+                    )
+                    tower.provider_result(dhl_result)
+
+                    write_log(
+                        f"Provider result for {bol_awb}: "
+                        f"{dhl_result.get('provider')} | "
+                        f"Status={dhl_result.get('tracking_status')} | "
+                        f"ETA={dhl_result.get('eta')} | "
+                        f"ATA={dhl_result.get('ata')}"
+                    )
+
+                    action = update_internal_shipment(
+                        internal_page,
+                        shipment,
+                        dhl_result,
+                    )
+
+                    save_result(shipment, dhl_result, action, "SUCCESS")
+                    successful += 1
+                    tower.shipment_finished(bol_awb, "SUCCESS", "", action)
+                    tower.counters(successful, failed, skipped, partial)
+
+                except CaptchaRequired as error:
+                    if getattr(error, "reason", "") == "queued":
+                        # Parked in the Human Action queue. Not a failure,
+                        # not a timeout: it waits for an operator to choose
+                        # it, and the run carries on. Counted as needing a
+                        # person; nothing was written.
+                        needs_human += 1
+                        write_log("HUMAN ACTION QUEUED for {0}: {1}".format(
+                            bol_awb, error))
+                        save_result(shipment, dhl_result, "No update",
+                                    HUMAN_QUEUED, str(error))
+                        tower.shipment_finished(
+                            bol_awb, "HUMAN_QUEUED", str(error),
+                            outcome=HUMAN_QUEUED)
+                        tower.counters(successful, failed, skipped, partial,
+                                       needs_human=needs_human)
+                        try:
+                            ensure_filtered_page(internal_page, SOURCE_VIEW,
+                                                 table_page)
+                        except Exception as restore_error:
+                            write_log("Internal page restore warning: "
+                                      "{0}".format(restore_error))
+                        human_shipment_closed(
+                            bol_awb, _counts_before,
+                            (successful, failed, skipped, partial,
+                             needs_human), looked_up=bool(dhl_result))
+                        return
+                    # NOT a failure and NOT a skip. A skip says "this
+                    # shipment has nothing for us", which is a claim about
+                    # the shipment; this says the lookup never happened.
+                    # It is counted separately so a run full of challenges
+                    # cannot read as a run full of bad shipments, and the
+                    # Hub is left untouched.
+                    #
+                    # WAITING_FOR_HUMAN ended without the person: either
+                    # nobody came in time (HUMAN_TIMEOUT) or the paused
+                    # browser session went away (FAILED, session lost).
+                    # Neither is a success and neither is a skip.
+                    needs_human += 1
+                    _lost = getattr(error, "reason", "") == "session_lost"
+                    _human_class = HUMAN_SESSION_LOST if _lost else HUMAN_TIMEOUT
+                    write_log("HUMAN VERIFICATION REQUIRED for {0}: {1}"
+                              .format(bol_awb, error))
+                    log_operation_failure(
+                        shipment.get("carrier"), bol_awb, "human verification",
+                        error, 1, 1, CAPTCHA_REQUIRED, final=True,
+                    )
+                    save_result(shipment, dhl_result, "No update",
+                                _human_class, str(error))
+                    tower.shipment_finished(
+                        bol_awb, "FAILED" if _lost else "HUMAN_TIMEOUT",
+                        str(error), outcome=_human_class)
+                    tower.counters(successful, failed, skipped, partial,
+                                   needs_human=needs_human)
+                    try:
+                        ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                    except Exception as restore_error:
+                        write_log(f"Internal page restore warning: {restore_error}")
+
+                except AfklNavigationError as error:
+                    # NOT "no shipment found". The carrier was never
+                    # reached, so nothing has been learned about the AWB.
+                    failed += 1
+                    # `error` already opens with "AFKL NAVIGATION ERROR
+                    # for <awb>", so prefixing it again produced the
+                    # doubled line in the run log. The per-attempt detail
+                    # goes on its own line rather than being truncated
+                    # into the summary.
+                    write_log(str(error))
+                    write_log("AFKL nav strategies tried | {0}".format(
+                        getattr(error, "detail", "")))
+                    log_operation_failure(
+                        shipment.get("carrier"), bol_awb, "carrier navigation",
+                        error, 1, 1, AFKL_NAVIGATION_ERROR, final=True,
+                    )
+                    save_result(shipment, dhl_result, "No update",
+                                "FAILED", str(error))
+                    tower.shipment_finished(
+                        bol_awb, "FAILED", str(error),
+                        outcome=AFKL_NAVIGATION_ERROR)
+                    tower.counters(successful, failed, skipped, partial)
+                    try:
+                        ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                    except Exception as restore_error:
+                        write_log(f"Internal page restore warning: {restore_error}")
+
+                except SkipShipment as error:
+                    skipped += 1
+                    write_log(f"SKIPPED {bol_awb}: {error}")
+                    _outcome = classify_failure(error)
+                    log_operation_failure(
+                        shipment.get("carrier"), bol_awb, "carrier tracking",
+                        error, 1, 1, _outcome, final=True,
+                    )
+                    save_result(shipment, dhl_result, "Skipped", "SKIPPED", str(error))
+                    tower.shipment_finished(
+                        bol_awb, "SKIPPED", str(error), outcome=_outcome
+                    )
+                    tower.counters(successful, failed, skipped, partial)
+
+                    try:
+                        ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                    except Exception as restore_error:
+                        write_log(f"Internal page restore warning: {restore_error}")
+
+                except Exception as error:
+                    failed += 1
+                    take_screenshot(internal_page, bol_awb, "error")
+                    write_log(f"ERROR for {bol_awb}: {error}")
+                    _outcome = classify_failure(error)
+                    log_operation_failure(
+                        shipment.get("carrier"), bol_awb, "shipment update",
+                        error, 1, 1, _outcome, final=True,
+                    )
+                    # If a date already reached the Hub before this failed,
+                    # the shipment is PARTIAL, not FAILED. Marking the whole
+                    # thing a failure hid work that was genuinely done and
+                    # made the run look worse than it was.
+                    _actions = getattr(error, "actions", None)
+                    _wrote_something = bool(
+                        _actions and any(
+                            isinstance(v, str) and "updated with" in v
+                            for v in _actions.values()
+                        )
+                    )
+                    if _wrote_something:
+                        partial += 1
+                        save_result(shipment, dhl_result, _actions,
+                                    "PARTIAL", str(error))
+                        tower.shipment_finished(
+                            bol_awb, "PARTIAL", str(error), outcome=_outcome
+                        )
+                        shipment_log(
+                            bol_awb,
+                            "Partly updated - one field written, one failed",
+                            carrier=shipment.get("carrier"), level="WARNING",
+                        )
+                    else:
+                        save_result(shipment, dhl_result,
+                                    _actions or "No update", "FAILED", str(error))
+                        tower.shipment_finished(
+                            bol_awb, "FAILED", str(error), outcome=_outcome
+                        )
+                    tower.counters(successful, failed, skipped, partial)
+
+                    try:
+                        ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                    except Exception as restore_error:
+                        write_log(f"Internal page restore warning: {restore_error}")
+
+                human_shipment_closed(
+                    bol_awb, _counts_before,
+                    (successful, failed, skipped, partial, needs_human),
+                    looked_up=bool(dhl_result))
+
+            def _human_reruns():
+                """
+                Shipments an operator chose from the Human Action queue,
+                ready to be looked up again now. Each was counted as
+                needing a person when it was parked; that count is given
+                back here and its new outcome counted instead.
+                """
+                nonlocal needs_human
+                chosen = human_queue_service()
+                for task, _shipment in chosen:
+                    needs_human = max(0, needs_human - 1)
+                    write_log("Operator chose {0} ({1}) from the Human Action "
+                              "queue. Looking it up again now.".format(
+                                  task["reference"], task["carrier"]))
+                return [s for _task, s in chosen]
+
+
             for table_page in range(1, MAX_TABLE_PAGES + 1):
                 if successful + failed + skipped >= MAX_RECORDS_PER_RUN:
                     write_log(f"Maximum record limit reached: {MAX_RECORDS_PER_RUN}")
@@ -9585,188 +10152,72 @@ def main():
                     shipments = [match] + [s for s in shipments
                                            if s["bol_awb"] != _requested]
 
-                for shipment in shipments:
+                # A work list rather than a plain loop: a shipment an
+                # operator chose from the Human Action queue goes to the front
+                # at the next safe point — between shipments, never mid-write.
+                _work = list(shipments)
+                _reruns = set()
+                while True:
+                    if not stop_requested:
+                        for _chosen in reversed(_human_reruns()):
+                            _work.insert(0, _chosen)
+                            _reruns.add(_chosen["bol_awb"])
+                    if not _work:
+                        break
+                    shipment = _work.pop(0)
                     bol_awb = shipment["bol_awb"]
 
-                    if bol_awb in processed_bols:
+                    if bol_awb in processed_bols and bol_awb not in _reruns:
                         continue
+                    _reruns.discard(bol_awb)
 
                     if honour_control_requests() == "stop":
                         stop_requested = True
                         break
 
                     processed_bols.add(bol_awb)
-                    dhl_result = {}
-                    _counts_before = (successful, failed, skipped, partial,
-                                      needs_human)
-
-                    try:
-                        tower.shipment_started(shipment)
-                        shipment_log(
-                            bol_awb,
-                            "Opening tracking page (hub page {0}, existing ETA {1})".format(
-                                table_page, shipment["current_eta"] or "none"),
-                            carrier=shipment["carrier"],
-                        )
-
-                        tower.step(
-                            f"Tracking {bol_awb} on the carrier site",
-                            system=shipment.get("provider"),
-                        )
-                        dhl_result = get_provider_result(provider_pages, shipment)
-                        tower.system_ok(
-                            shipment.get("provider"),
-                            f"Result returned for {bol_awb}",
-                        )
-                        tower.provider_result(dhl_result)
-
-                        write_log(
-                            f"Provider result for {bol_awb}: "
-                            f"{dhl_result.get('provider')} | "
-                            f"Status={dhl_result.get('tracking_status')} | "
-                            f"ETA={dhl_result.get('eta')} | "
-                            f"ATA={dhl_result.get('ata')}"
-                        )
-
-                        action = update_internal_shipment(
-                            internal_page,
-                            shipment,
-                            dhl_result,
-                        )
-
-                        save_result(shipment, dhl_result, action, "SUCCESS")
-                        successful += 1
-                        tower.shipment_finished(bol_awb, "SUCCESS", "", action)
-                        tower.counters(successful, failed, skipped, partial)
-
-                    except CaptchaRequired as error:
-                        # NOT a failure and NOT a skip. A skip says "this
-                        # shipment has nothing for us", which is a claim about
-                        # the shipment; this says the lookup never happened.
-                        # It is counted separately so a run full of challenges
-                        # cannot read as a run full of bad shipments, and the
-                        # Hub is left untouched.
-                        #
-                        # WAITING_FOR_HUMAN ended without the person: either
-                        # nobody came in time (HUMAN_TIMEOUT) or the paused
-                        # browser session went away (FAILED, session lost).
-                        # Neither is a success and neither is a skip.
-                        needs_human += 1
-                        _lost = getattr(error, "reason", "") == "session_lost"
-                        _human_class = HUMAN_SESSION_LOST if _lost else HUMAN_TIMEOUT
-                        write_log("HUMAN VERIFICATION REQUIRED for {0}: {1}"
-                                  .format(bol_awb, error))
-                        log_operation_failure(
-                            shipment.get("carrier"), bol_awb, "human verification",
-                            error, 1, 1, CAPTCHA_REQUIRED, final=True,
-                        )
-                        save_result(shipment, dhl_result, "No update",
-                                    _human_class, str(error))
-                        tower.shipment_finished(
-                            bol_awb, "FAILED" if _lost else "HUMAN_TIMEOUT",
-                            str(error), outcome=_human_class)
-                        tower.counters(successful, failed, skipped, partial,
-                                       needs_human=needs_human)
-                        try:
-                            ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
-                        except Exception as restore_error:
-                            write_log(f"Internal page restore warning: {restore_error}")
-
-                    except AfklNavigationError as error:
-                        # NOT "no shipment found". The carrier was never
-                        # reached, so nothing has been learned about the AWB.
-                        failed += 1
-                        # `error` already opens with "AFKL NAVIGATION ERROR
-                        # for <awb>", so prefixing it again produced the
-                        # doubled line in the run log. The per-attempt detail
-                        # goes on its own line rather than being truncated
-                        # into the summary.
-                        write_log(str(error))
-                        write_log("AFKL nav strategies tried | {0}".format(
-                            getattr(error, "detail", "")))
-                        log_operation_failure(
-                            shipment.get("carrier"), bol_awb, "carrier navigation",
-                            error, 1, 1, AFKL_NAVIGATION_ERROR, final=True,
-                        )
-                        save_result(shipment, dhl_result, "No update",
-                                    "FAILED", str(error))
-                        tower.shipment_finished(
-                            bol_awb, "FAILED", str(error),
-                            outcome=AFKL_NAVIGATION_ERROR)
-                        tower.counters(successful, failed, skipped, partial)
-                        try:
-                            ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
-                        except Exception as restore_error:
-                            write_log(f"Internal page restore warning: {restore_error}")
-
-                    except SkipShipment as error:
-                        skipped += 1
-                        write_log(f"SKIPPED {bol_awb}: {error}")
-                        _outcome = classify_failure(error)
-                        log_operation_failure(
-                            shipment.get("carrier"), bol_awb, "carrier tracking",
-                            error, 1, 1, _outcome, final=True,
-                        )
-                        save_result(shipment, dhl_result, "Skipped", "SKIPPED", str(error))
-                        tower.shipment_finished(
-                            bol_awb, "SKIPPED", str(error), outcome=_outcome
-                        )
-                        tower.counters(successful, failed, skipped, partial)
-
-                        try:
-                            ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
-                        except Exception as restore_error:
-                            write_log(f"Internal page restore warning: {restore_error}")
-
-                    except Exception as error:
-                        failed += 1
-                        take_screenshot(internal_page, bol_awb, "error")
-                        write_log(f"ERROR for {bol_awb}: {error}")
-                        _outcome = classify_failure(error)
-                        log_operation_failure(
-                            shipment.get("carrier"), bol_awb, "shipment update",
-                            error, 1, 1, _outcome, final=True,
-                        )
-                        # If a date already reached the Hub before this failed,
-                        # the shipment is PARTIAL, not FAILED. Marking the whole
-                        # thing a failure hid work that was genuinely done and
-                        # made the run look worse than it was.
-                        _actions = getattr(error, "actions", None)
-                        _wrote_something = bool(
-                            _actions and any(
-                                isinstance(v, str) and "updated with" in v
-                                for v in _actions.values()
-                            )
-                        )
-                        if _wrote_something:
-                            partial += 1
-                            save_result(shipment, dhl_result, _actions,
-                                        "PARTIAL", str(error))
-                            tower.shipment_finished(
-                                bol_awb, "PARTIAL", str(error), outcome=_outcome
-                            )
-                            shipment_log(
-                                bol_awb,
-                                "Partly updated - one field written, one failed",
-                                carrier=shipment.get("carrier"), level="WARNING",
-                            )
-                        else:
-                            save_result(shipment, dhl_result,
-                                        _actions or "No update", "FAILED", str(error))
-                            tower.shipment_finished(
-                                bol_awb, "FAILED", str(error), outcome=_outcome
-                            )
-                        tower.counters(successful, failed, skipped, partial)
-
-                        try:
-                            ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
-                        except Exception as restore_error:
-                            write_log(f"Internal page restore warning: {restore_error}")
-
-                    human_shipment_closed(
-                        bol_awb, _counts_before,
-                        (successful, failed, skipped, partial, needs_human))
+                    _process_shipment(shipment, table_page)
                     wait_between_shipments()
+
+            # The Human Action queue, before the run lets its browser go.
+            # Parked shipments can still be chosen for HUMAN_QUEUE_HOLD_S;
+            # whatever is left then times out — nothing written for it, and
+            # it is looked up again next run.
+            if HUMAN_QUEUE_ON and HUMAN_QUEUE.waiting() and not stop_requested:
+                _hold_until = time.time() + HUMAN_QUEUE_HOLD_S
+                write_log("{0} Holding up to {1}s for the operator before the "
+                          "run ends.".format(hq.summarize(HUMAN_QUEUE.waiting()),
+                                             HUMAN_QUEUE_HOLD_S))
+                _said = None
+                while HUMAN_QUEUE.open_tasks() and time.time() < _hold_until:
+                    _line = "Holding for the operator — {0}".format(
+                        hq.summarize(HUMAN_QUEUE.open_tasks()))
+                    if _line != _said:
+                        tower.step(_line)
+                        _said = _line
+                    if honour_control_requests() == "stop":
+                        stop_requested = True
+                        break
+                    _chosen = _human_reruns()
+                    if not _chosen:
+                        time.sleep(1.0)
+                        continue
+                    for shipment in _chosen:
+                        _process_shipment(shipment, shipment.get("table_page") or 1)
+            for _task in HUMAN_QUEUE.close_open(
+                    hq.TIMEOUT, "the run ended before anyone handled it"):
+                human_event("HUMAN_TIMEOUT", _task,
+                            "still in the queue when the run ended")
+                tower.shipment_finished(
+                    _task["reference"], "HUMAN_TIMEOUT",
+                    "Still in the Human Action queue when the run ended; "
+                    "nothing written. It is looked up again next run.",
+                    outcome=HUMAN_TIMEOUT)
+                _shipment = {"bol_awb": _task["reference"],
+                             "carrier": _task.get("carrier"),
+                             "provider": _task.get("provider")}
+                save_result(_shipment, {}, "No update", HUMAN_TIMEOUT,
+                            "still in the Human Action queue when the run ended")
 
             write_log(
                 f"DHL/Qatar automation finished. Successful: {successful}, "
@@ -9834,6 +10285,12 @@ def main():
             # Strategies 3 and 4 may have left a browser of their own open so
             # the caller could read the page they landed on. They close here,
             # with everything else.
+            # Anything still open in the Human Action queue dies with the
+            # browser: say so rather than leave a task that looks choosable.
+            for _task in HUMAN_QUEUE.close_open(
+                    hq.LOST, "the run ended; its browser closed with it"):
+                human_event("HUMAN_SESSION_LOST", _task,
+                            "the run ended with the task still open")
             close_afkl_side_browsers()
             browser.close()
             write_log("Microsoft Edge closed automatically.")

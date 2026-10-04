@@ -71,6 +71,11 @@ def rule(title):
 WORK = Path(tempfile.mkdtemp(prefix="ct_human_"))
 A.HUMAN_ACTION_FILE = WORK / "human_action.json"
 A.HUMAN_EVENTS_FILE = WORK / "human_actions.jsonl"
+A.HUMAN_QUEUE.path = WORK / "human_queue.json"
+# Sections 5-8 exercise the single in-place wait (HUMAN_QUEUE=0); section
+# 12 turns the Human Action Queue on.
+A.HUMAN_QUEUE_ON = False
+A.HUMAN_CONFIRM_MS = 300
 LOG = []
 A.write_log = lambda message, *args, **kwargs: LOG.append(str(message))
 A.save_page_text = lambda *args, **kwargs: None
@@ -109,6 +114,7 @@ def process(pages, shipment, counts):
     before = tuple(counts[k] for k in ("ok", "failed", "skipped", "partial",
                                        "human"))
     A.tower.shipment_started(shipment)
+    result = None
     try:
         result = A.get_provider_result(pages, shipment)
         A.tower.provider_result(result)
@@ -118,10 +124,15 @@ def process(pages, shipment, counts):
         outcome = ("SUCCESS", result)
     except A.CaptchaRequired as error:
         counts["human"] += 1
-        lost = getattr(error, "reason", "") == "session_lost"
-        A.tower.shipment_finished(
-            reference, "FAILED" if lost else "HUMAN_TIMEOUT", str(error),
-            outcome=A.HUMAN_SESSION_LOST if lost else A.HUMAN_TIMEOUT)
+        reason = getattr(error, "reason", "")
+        lost = reason == "session_lost"
+        if reason == "queued":
+            A.tower.shipment_finished(reference, "HUMAN_QUEUED", str(error),
+                                      outcome=A.HUMAN_QUEUED)
+        else:
+            A.tower.shipment_finished(
+                reference, "FAILED" if lost else "HUMAN_TIMEOUT", str(error),
+                outcome=A.HUMAN_SESSION_LOST if lost else A.HUMAN_TIMEOUT)
         outcome = ("HUMAN", error)
     except A.SkipShipment as error:
         counts["skipped"] += 1
@@ -135,7 +146,7 @@ def process(pages, shipment, counts):
                      counts["partial"], needs_human=counts["human"])
     after = tuple(counts[k] for k in ("ok", "failed", "skipped", "partial",
                                       "human"))
-    A.human_shipment_closed(reference, before, after)
+    A.human_shipment_closed(reference, before, after, looked_up=bool(result))
     return outcome
 
 
@@ -145,6 +156,9 @@ DASH_PORT = int(os.environ.get("HUMAN_DASH_PORT", "9742"))
 CDP_PORT = int(os.environ.get("HUMAN_CDP_PORT", "9743"))
 PERSON = {"go": False}
 SUBMITTED = []
+# When set, the carrier answers the search with ANOTHER shipment's page —
+# the verification "worked" but the right shipment is not on screen.
+STUB = {"wrong": False}
 
 GNET = ("<!doctype html><html><body><h2>Container Tracking</h2>"
         "<form id='f' action='/gresult'><table>"
@@ -206,7 +220,8 @@ class Carrier(BaseHTTPRequestHandler):
             query = {k: v[0] for k, v in parse_qs(
                 parsed.query, keep_blank_values=True).items()}
             SUBMITTED.append(query)
-            body = result_page(query.get("ship") or query.get("equip"))
+            body = result_page("S000000000" if STUB["wrong"]
+                               else query.get("ship") or query.get("equip"))
         elif parsed.path.startswith("/tracking/"):
             reference = parsed.path.split("/tracking/", 1)[1]
             body = ("<html><body><p>Bill of Lading " + reference + "</p>"
@@ -645,7 +660,7 @@ else:
             pages.pop("GRIMALDI", None)        # a fresh tab for the next one
 
             # ── D. Nobody comes ──
-            rule("8. HUMAN TIMEOUT")
+            rule("8. HUMAN TIMEOUT (THE SINGLE IN-PLACE WAIT, HUMAN_QUEUE=0)")
             os.environ["HUMAN_WAIT_MS"] = "2500"
             calls = len(VERIFY_CALLS)
             kind, error = process(pages, {"bol_awb": "S330000001",
@@ -686,6 +701,195 @@ else:
                   "{0} {1}".format(kind, row["state"]))
             check("...and its date is not put through the human-step "
                   "validation path", "eta_rejected" not in (result or {}))
+
+            # ── F. The Human Action Queue ──
+            rule("12. HUMAN ACTION QUEUE: PARK -> OPEN & CONTINUE -> "
+                 "AUTOMATIC RESUME -> SUCCESS")
+            import human_queue as HQ
+            A.HUMAN_QUEUE_ON = True
+            A.HUMAN_QUEUE_GRACE_MS = 1500
+            A.HUMAN_AUTO_RESUME = True
+            os.environ["HUMAN_WAIT_MS"] = "30000"
+            PERSON["go"] = False
+            pages.pop("GRIMALDI", None)
+            calls = len(VERIFY_CALLS)
+            q1 = {"bol_awb": "S330400001", "carrier": "Grimaldi",
+                  "provider": "GRIMALDI", "current_eta": "", "table_page": 2}
+            q2 = {"bol_awb": "S330400002", "carrier": "Grimaldi",
+                  "provider": "GRIMALDI", "current_eta": "", "table_page": 3}
+            started = time.time()
+            kind1, err1 = process(pages, q1, counts)
+            parked_in = time.time() - started
+            kind2, err2 = process(pages, q2, counts)
+            final = state()
+            queue = final.get("human_queue") or []
+            t1 = [t for t in queue if t["reference"] == "S330400001"]
+            t2 = [t for t in queue if t["reference"] == "S330400002"]
+            row1 = [r for r in final["shipments"]
+                    if r["reference"] == "S330400001"][0]
+            check("Q1. Nobody at the screen: the shipment is parked, not failed",
+                  kind1 == "HUMAN" and getattr(err1, "reason", "") == "queued"
+                  and row1["state"] == "waiting_for_human",
+                  "{0} {1} {2}".format(kind1, getattr(err1, "reason", ""),
+                                       row1["state"]))
+            check("...after the short grace window, not the full wait",
+                  parked_in < 20, "{0:.1f}s".format(parked_in))
+            check("Q2. A persistent task with run, shipment, carrier, step, "
+                  "reason, created and timeout times",
+                  t1 and t1[0]["status"] == "WAITING_FOR_HUMAN"
+                  and t1[0]["run_id"] == A.RUN_ID and t1[0]["carrier"] ==
+                  "Grimaldi Lines" and t1[0]["reason"] ==
+                  "human_verification_required" and t1[0]["created_at"]
+                  and t1[0]["timeout_at"] and t1[0]["step"], str(t1))
+            saved = json.loads(A.HUMAN_QUEUE.path.read_text(encoding="utf-8"))
+            check("...persisted to disk", any(
+                t["reference"] == "S330400001" for t in saved["tasks"]))
+            check("Q3. The run carried on: the second shipment was looked at "
+                  "and parked too", t2 and t2[0]["status"] == "WAITING_FOR_HUMAN")
+            check("...and the queue says how many wait and for how long",
+                  "2 human actions waiting" in HQ.summarize(queue))
+            check("Nothing was written for a parked shipment",
+                  len(VERIFY_CALLS) == calls)
+            check("Parked shipments count as needing a person",
+                  final["counters"]["needs_human"] == counts["human"])
+
+            # The operator chooses the first one: Open & Continue.
+            choice = api("/api/human", {"op": "open", "run_id": A.RUN_ID,
+                                        "action_id": t1[0]["action_id"],
+                                        "client_id": "opA"})
+            check("Q4. Open & Continue on a parked task is accepted",
+                  choice.get("accepted") is True
+                  and "Open & Continue" in choice.get("message", ""),
+                  str(choice))
+            other = api("/api/human", {"op": "open", "run_id": A.RUN_ID,
+                                       "action_id": t1[0]["action_id"],
+                                       "client_id": "opB"})
+            check("...a second operator cannot take the same task",
+                  other.get("accepted") is False, str(other))
+            stale = api("/api/human", {"op": "open",
+                                       "run_id": "20200101-000000-aaaaaa",
+                                       "action_id": t2[0]["action_id"],
+                                       "client_id": "opA"})
+            check("...a request from another run is refused",
+                  stale.get("accepted") is False, str(stale))
+            chosen = A.human_queue_service()
+            check("Q5. At the next safe point the run picks it up, with the "
+                  "shipment it has to look up again",
+                  len(chosen) == 1 and chosen[0][0]["status"] == "OPERATOR_OPENED"
+                  and chosen[0][1]["bol_awb"] == "S330400001"
+                  and chosen[0][1]["table_page"] == 2, str(chosen))
+            # The person sits at the browser and does ONLY the verification.
+            PERSON["go"] = True
+            SUBMITTED[:] = []
+            counts["human"] -= 1          # main() gives the parked count back
+            kind, result = process(pages, chosen[0][1], counts)
+            final = state()
+            task = A.HUMAN_QUEUE.get(t1[0]["action_id"])
+            walked = [h["state"] for h in task["history"]]
+            names = [e["event"] for e in final["human_events"]]
+            row1 = [r for r in final["shipments"]
+                    if r["reference"] == "S330400001"]
+            check("Q6. The run brought the shipment back to the verification "
+                  "step and put the tab in front",
+                  "VERIFICATION_PENDING" in walked
+                  and "HUMAN_SESSION_OPENED" in names, str(walked))
+            check("Q7. The person's step was detected from the page, and "
+                  "checked twice", walked.index("HUMAN_COMPLETED") <
+                  walked.index("POST_VERIFICATION_CHECK") <
+                  walked.index("RESUMING") and "VERIFICATION_CONFIRMED" in names,
+                  str(walked))
+            check("Q8. No Resume press was needed: it continued by itself",
+                  A.HUMAN_STATE["last"]["resumed_via"] == "page")
+            check("Q9. Extraction, validation, Hub write and read-back ran, "
+                  "and only then SUCCESS",
+                  kind == "SUCCESS" and task["status"] == "SUCCESS"
+                  and ("BU", "ATA", "03/10/2026") in VERIFY_CALLS[calls:],
+                  "{0} {1}".format(kind, task["status"]))
+            check("...one row for the shipment, now updated",
+                  len(row1) == 1 and row1[0]["state"] == "updated",
+                  str([r["state"] for r in row1]))
+            check("...the security code box was left to the person",
+                  SUBMITTED and SUBMITTED[-1]["untouched"] == "1")
+            again = api("/api/human", {"op": "open", "run_id": A.RUN_ID,
+                                       "action_id": t1[0]["action_id"],
+                                       "client_id": "opA"})
+            check("A finished task cannot be opened again",
+                  again.get("accepted") is False
+                  and "read back" in again.get("message", ""), str(again))
+
+            rule("12b. OPENED DURING THE GRACE WINDOW: THE PERSON GETS THE FULL WINDOW")
+            os.environ["HUMAN_WAIT_MS"] = "30000"
+            PERSON["go"] = False
+            seen = {}
+
+            def operator_live():
+                s_ = until(lambda: (state().get("human_action") or {}).get(
+                    "waiting") and state())
+                if not s_:
+                    return
+                act = s_["human_action"]
+                seen["open"] = api("/api/human", {
+                    "op": "open", "run_id": act["run_id"],
+                    "action_id": act["action_id"], "client_id": "opA"})
+                time.sleep(2.5)            # past the 1.5 s grace window
+                PERSON["go"] = True
+
+            calls = len(VERIFY_CALLS)
+            operator = threading.Thread(target=operator_live, daemon=True)
+            operator.start()
+            kind, result = process(pages, {"bol_awb": "S330400003",
+                                           "carrier": "Grimaldi",
+                                           "provider": "GRIMALDI",
+                                           "current_eta": "", "table_page": 1},
+                                   counts)
+            operator.join(10)
+            task = A.HUMAN_QUEUE.for_reference("S330400003", A.RUN_ID) or \
+                [t for t in A.HUMAN_QUEUE.snapshot()
+                 if t["reference"] == "S330400003"][-1]
+            check("Open & Continue on the live wait is accepted",
+                  seen.get("open", {}).get("accepted") is True, str(seen.get("open")))
+            check("...the person finished after the grace window and it still "
+                  "resumed and succeeded", kind == "SUCCESS"
+                  and task["status"] == "SUCCESS" and len(VERIFY_CALLS) > calls,
+                  "{0} {1}".format(kind, task["status"]))
+
+            rule("13. VERIFICATION NOT CONFIRMED: THE WRONG SHIPMENT IS ON SCREEN")
+            os.environ["HUMAN_WAIT_MS"] = "3500"
+            api("/api/human", {"op": "open", "run_id": A.RUN_ID,
+                               "action_id": t2[0]["action_id"],
+                               "client_id": "opA"})
+            chosen = A.human_queue_service()
+            STUB["wrong"] = True
+            SUBMITTED[:] = []
+            calls = len(VERIFY_CALLS)
+            counts["human"] -= 1
+            kind, error = process(pages, chosen[0][1], counts)
+            STUB["wrong"] = False
+            task = A.HUMAN_QUEUE.get(t2[0]["action_id"])
+            check("The person searched, but the page shows another shipment: "
+                  "the run does not continue", kind == "HUMAN"
+                  and len(VERIFY_CALLS) == calls, "{0}".format(kind))
+            check("...the task goes back to the queue for another try",
+                  task["status"] == "WAITING_FOR_HUMAN"
+                  and task["attempts"] == 1 and task["claimed_by"] is None,
+                  str(task["status"]))
+
+            rule("14. THE RUN ENDS WITH A TASK STILL WAITING")
+            closed = A.HUMAN_QUEUE.close_open(HQ.TIMEOUT, "the run ended")
+            check("What is left when the run ends times out",
+                  [t["status"] for t in closed] == ["TIMEOUT"])
+            late = api("/api/human", {"op": "open", "run_id": A.RUN_ID,
+                                      "action_id": t2[0]["action_id"],
+                                      "client_id": "opA"})
+            check("...and a late Open & Continue says so",
+                  late.get("accepted") is False
+                  and "timed out" in late.get("message", ""), str(late))
+            trail = A.HUMAN_EVENTS_FILE.read_text(encoding="utf-8") + \
+                A.HUMAN_QUEUE.path.read_text(encoding="utf-8")
+            check("The security code is in no queue file or audit line",
+                  CODE not in trail)
+            os.environ.pop("HUMAN_WAIT_MS", None)
+            A.HUMAN_QUEUE_ON = False
 
             rule("11. THE DASHBOARD SHOWS IT AND THE BUTTONS WORK")
             ui_action = {"run_id": A.RUN_ID, "action_id": "uiaction01",

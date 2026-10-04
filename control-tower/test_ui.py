@@ -551,7 +551,7 @@ check("There is a typing state", "chTy" in INDEX)
 check("The conversation keeps a reference between turns",
       "lastReference" in INDEX)
 check("...and sends it back as context",
-      "context: {reference: lastReference}" in INDEX)
+      "context: {reference: lastReference, action_id: lastFocus}" in INDEX)
 
 print()
 print("=" * 72)
@@ -848,6 +848,58 @@ check("Recoveries are tallied for the run, once each",
       _vb.snapshot()["atlas"]["recovery"] == {"diagnosed": 1, "attempts": 1,
                                              "recovered": 1, "exhausted": 0},
       str(_vb.snapshot()["atlas"]["recovery"]))
+
+print()
+print("=" * 72)
+print("HUMAN ACTION QUEUE AND ATLAS OPERATIONS")
+print("=" * 72)
+_hq = INDEX.split("/* ═══ HUMAN ACTION QUEUE ═══")[1].split("/* ═══ SHARE LINK")[0]
+check("A queue card on every page, with the count and the oldest wait",
+      'id="hq"' in INDEX and 'id="hqN"' in INDEX and "Oldest waiting" in _hq)
+check("...and the full queue on the Human Action page, where the card steps aside",
+      'id="hqPage"' in INDEX and "activePage === 'human'" in _hq)
+check("Open & Continue posts the scoped human request, with this tab's id",
+      "fetch('/api/human'" in _hq and "op:'open'" in _hq and "client_id:hClient" in _hq)
+check("...only for a waiting task, and not for one another operator holds",
+      "wait ? '<button class=\"cbtn solid hq-go\"" in _hq and "Another operator is handling" in _hq)
+check("Progress is narrated from the task's own state and the shipment's record",
+      "'Verification confirmed. I\\u2019m continuing '" in _hq
+      and "'Hub write completed and read-back verified.'" in _hq
+      and "has(rec.provider_status)" in _hq)
+check("...and only for tasks this tab started", "if (r.accepted) hqWatch(t);" in _hq)
+check("The single-wait card steps aside when the queue holds the live action",
+      "(S.human_queue || []).some((t) => t.action_id === a.action_id)" in INDEX)
+check("The chat sends the shipment and the task it last discussed",
+      "context: {reference: lastReference, action_id: lastFocus}" in INDEX)
+check("An operation runs only as the queue's own request, for human_open / open",
+      "d.operation.type === 'human_open' && d.operation.op === 'open'" in INDEX
+      and "hqOpen(d.operation.action_id)" in INDEX)
+check("An operation button runs only on its click",
+      "if (b.action && b.action.type === 'human_open'){" in INDEX)
+check("Opening a shipment from the chat moves the chat aside for the drawer",
+      "$('chat').classList.remove('on'); $('fab').classList.remove('hide');" in INDEX)
+check("Nothing in the page can send a code: the request has no field for one",
+      "JSON.stringify({op:'open', run_id:t.run_id, action_id:t.action_id, client_id:hClient})" in _hq)
+_srv = (HERE / "dashboard" / "server.py").read_text(encoding="utf-8")
+check("The server keeps only the reference and task id as conversation context",
+      '"action_id": str(raw_context.get("action_id") or "")[:64]' in _srv)
+_qb = bridge.ControlTowerState()
+_qb.run_started(run_id="rq")
+_qb.shipment_started({"bol_awb": "S1", "carrier": "Grimaldi", "provider": "GRIMALDI"})
+_qb.shipment_finished("S1", "HUMAN_QUEUED", "parked", outcome="HUMAN ACTION QUEUED")
+_cold = _qb.cold_version
+_qb.human_queue_changed([{"action_id": "a1", "run_id": "rq", "reference": "S1",
+                          "status": "WAITING_FOR_HUMAN", "label": "Waiting for you",
+                          "code": "SHOULD-NOT-PASS"}])
+_snap = _qb.snapshot()
+check("A parked shipment is waiting for a person, not failed",
+      _snap["shipments"][0]["state"] == "waiting_for_human")
+check("The queue is published, field by field — nothing else passes",
+      _snap["human_queue"][0]["reference"] == "S1" and "code" not in _snap["human_queue"][0])
+check("...and a queue change moves the cold version", _qb.cold_version > _cold)
+_qb.shipment_started({"bol_awb": "S1", "carrier": "Grimaldi", "provider": "GRIMALDI"})
+check("Looked up again from the queue: one row, not two",
+      [r["reference"] for r in _qb.snapshot()["shipments"]].count("S1") == 1)
 
 print()
 print("=" * 72)

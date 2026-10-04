@@ -31,6 +31,8 @@ SUITES = [
     ("test_logging.py",         "logging and redaction"),
     ("test_assistant.py",       "dashboard assistant"),
     ("test_atlas_copilot.py",  "ATLAS copilot: grounded answers, insights, safe UI actions"),
+    ("test_human_queue.py",    "Human Action Queue: states, choosing, safe points, main()"),
+    ("test_atlas_operations.py", "ATLAS + queue: conversation, operations, security boundary"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),

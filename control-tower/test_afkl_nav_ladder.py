@@ -56,7 +56,7 @@ check("The run loop handles it as a navigation error",
       "except AfklNavigationError as error:" in SRC
       and 'outcome=AFKL_NAVIGATION_ERROR' in SRC)
 check("...and records FAILED rather than pretending it processed",
-      'save_result(shipment, dhl_result, "No update",\n                                    "FAILED"' in SRC)
+      'save_result(shipment, dhl_result, "No update",\n                                "FAILED"' in SRC)
 
 print()
 print("=" * 74)

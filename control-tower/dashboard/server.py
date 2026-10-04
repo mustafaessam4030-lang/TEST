@@ -483,9 +483,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length) or b"{}")
             question = str(payload.get("question", ""))[:1000]
             # Follow-up context is owned by the caller; the assistant keeps no
-            # state between requests. Only a reference is accepted.
+            # state between requests. Only the shipment and the human task
+            # last discussed are accepted — short-term, this tab only.
             raw_context = payload.get("context") or {}
-            context = {"reference": str(raw_context.get("reference") or "")[:64]}
+            context = {"reference": str(raw_context.get("reference") or "")[:64],
+                       "action_id": str(raw_context.get("action_id") or "")[:64]}
         except Exception:
             self._send(400, json.dumps({"error": "bad request"}))
             return

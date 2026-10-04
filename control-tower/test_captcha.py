@@ -210,7 +210,7 @@ check("...and the run summary reports it",
       "Human verification required: {needs_human}" in SRC)
 check("Nothing is written to the Hub on that path",
       'save_result(shipment, dhl_result, "No update",\n'
-      '                                    _human_class, str(error))' in SRC)
+      '                                _human_class, str(error))' in SRC)
 
 print()
 print("=" * 72)

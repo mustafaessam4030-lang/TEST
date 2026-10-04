@@ -16,6 +16,39 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 - **On the way:** shipments with an ETA and no ATA yet. The van drives only
   while there is at least one.
 
+**New · Human Action Queue and ATLAS as your copilot.** A carrier page that
+needs a person no longer holds up the whole run.
+
+1. If nobody acts within `HUMAN_QUEUE_GRACE_MS` (default 30 s), the shipment
+   is **parked** in the Human Action queue and the run carries on with the
+   next one. Nothing is written for it.
+2. The **HUMAN ACTIONS · N** card shows every parked shipment with how long
+   it has waited. Press **Open & Continue** on one (or ask ATLAS: "resume
+   Grimaldi").
+3. Between shipments, the run looks that shipment up again in its own
+   browser and brings the carrier tab to the front of its Edge window, at the
+   verification step.
+4. You do **only the verification** (for GNET: type the code, press Search).
+   No Resume press is needed: the run reads the page twice to confirm the
+   right shipment is there, then extracts, validates, writes and reads back
+   by itself. ATLAS reports each step only when the state confirms it.
+
+- Task states: `WAITING_FOR_HUMAN`, `OPERATOR_OPENED`, `VERIFICATION_PENDING`,
+  `HUMAN_COMPLETED`, `POST_VERIFICATION_CHECK`, `RESUMING`, then `SUCCESS`,
+  `TIMEOUT`, `HUMAN_SESSION_LOST`, `VERIFICATION_NOT_CONFIRMED` or `FAILED`.
+  Kept in `logs/human_queue.json`.
+- If the window runs out after you open a task, it goes back to the queue
+  (up to 3 tries). Before the run ends it holds up to `HUMAN_QUEUE_HOLD_S`
+  (default 600 s) for parked tasks; what is left then times out.
+- `HUMAN_QUEUE=0` restores the single in-place wait described below. A wait of
+  0 (unattended) never queues.
+- ATLAS answers from the run only ("What needs me?", "Why did AFKL fail?",
+  "Open it", "How long has it been waiting?", "Show recovery attempts",
+  "What should I do next?"). It navigates the dashboard by itself, but the
+  only thing it can ask the run to do is Open & Continue, and only when you
+  asked for it and named which shipment. It never reads, solves or types a
+  security code.
+
 **New · ATLAS has a face.** A small companion character for the intelligence
 layer, in six states that follow the run state: Ready, Monitoring,
 Analyzing, Recovering, Verified and Human action required. It appears on the

@@ -32,11 +32,13 @@ try:
     from dashboard import server as tower_server
     from dashboard.bridge import bridge
     from dashboard.control import (validate_human_request,
-                                   human_request_record)
+                                   human_request_record, human_ok_message,
+                                   queue_task)
 except ImportError:
     import server as tower_server
     from bridge import bridge
-    from control import validate_human_request, human_request_record
+    from control import (validate_human_request, human_request_record,
+                         human_ok_message, queue_task)
 
 MAX_HUMAN_REQUESTS = 20
 
@@ -178,22 +180,32 @@ class Supervisor:
                 return False, ("No run is in progress, so the browser session "
                                "that was waiting no longer exists. The "
                                "shipment will be looked up again next run.")
-            pending = (self._published() or {}).get("human_action")
+            published = self._published() or {}
+            pending = published.get("human_action")
+            tasks = published.get("human_queue") or []
+            # A choice relayed but not yet picked up by the run counts as
+            # taken, so a second tab is refused before the run catches up.
+            data = self._read_control()
+            for request in data.get("human") or []:
+                task = queue_task(tasks, request.get("action_id"))
+                if task is not None and \
+                        task.get("status") == "WAITING_FOR_HUMAN" and \
+                        str(request.get("at") or "") >= str(
+                            task.get("updated_at") or ""):
+                    task["status"] = "OPERATOR_OPENED"
+                    task["claimed_by"] = request.get("client_id") or None
             accepted, message = validate_human_request(
-                pending, op, run_id, action_id, client_id)
+                pending, op, run_id, action_id, client_id, tasks)
             if not accepted:
                 return False, message
-            data = self._read_control()
             queue = data.setdefault("human", [])
             queue.append(human_request_record(op, run_id, action_id, client_id))
             del queue[:-MAX_HUMAN_REQUESTS]
             self._write_control(data)
-            return True, {
-                "open": "Asked the run to bring the paused tab to the front "
-                        "of its Edge window.",
-                "resume": "Resume sent. The run checks the page and carries "
-                          "on if the result is there.",
-            }[op]
+            live = bool(pending and pending.get("waiting")
+                        and str(pending.get("action_id")) == str(action_id))
+            return True, human_ok_message(
+                op, queued=not live and queue_task(tasks, action_id) is not None)
 
     # -- state ------------------------------------------------------------
 
@@ -230,6 +242,17 @@ class Supervisor:
                 action, waiting=False, state="session_lost",
                 last_response="The automation process ended while waiting; "
                               "the browser session no longer exists.")
+
+        if not running and isinstance(published.get("human_queue"), list):
+            # Parked tasks lived in that run's browser. With the process gone
+            # none of them can be opened any more.
+            published["human_queue"] = [
+                dict(t, status="HUMAN_SESSION_LOST",
+                     label="Browser session lost — nothing written")
+                if isinstance(t, dict) and t.get("status") not in (
+                    "SUCCESS", "TIMEOUT", "HUMAN_SESSION_LOST",
+                    "VERIFICATION_NOT_CONFIRMED", "FAILED") else t
+                for t in published["human_queue"]]
 
         published["control"] = {
             "enabled": True,

@@ -594,6 +594,51 @@ input,textarea,select{font-family:inherit}
 .hbox-a{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
 .hbox-a .cbtn{padding:7px 16px;font-size:13px}
 .hbox.done{box-shadow:var(--shadow)}
+/* HUMAN ACTION QUEUE. Shipments parked for a person, oldest first. One quiet
+   card on every page while anything waits; one primary button per task. */
+.hq{margin:6px 0 0 max(32px, calc((100% - 1480px) / 2 + 32px));width:calc(100% - 64px);max-width:860px;
+  background:var(--surface);border-radius:18px;box-shadow:var(--shadow-l, var(--shadow));
+  border:1px solid var(--line-2);padding:14px 18px 12px;display:grid;gap:4px}
+.hq[hidden]{display:none}
+.hq-h{display:flex;align-items:center;gap:10px;min-width:0}
+.hq-i{flex:none;margin:-8px -4px -8px -6px}
+.hq-t{font-size:11px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.hq-t b{color:var(--y);font-weight:700}
+.hq-s{margin-left:auto;font-size:12px;color:var(--mid);text-align:right}
+.hq-l{display:grid}
+.hq-r{display:grid;grid-template-columns:minmax(140px,1fr) minmax(180px,1.5fr) 132px 164px;align-items:center;
+  gap:6px 18px;padding:10px 0;border-top:1px solid var(--line-2);transition:background .3s}
+.hq-r:first-child{border-top:0}
+.hq-r.flash{background:var(--y-wash, #FFF7E8)}
+.hq-who{display:grid;min-width:0}
+.hq-car{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hq-ref{font-size:12.5px;color:var(--mid)}
+.hq-st{display:grid;gap:5px;min-width:0}
+.hq-lab{font-size:13px;color:var(--ink)}
+.hq-r.wait .hq-lab{font-weight:550}
+.hq-r.end .hq-lab{color:var(--mid)}
+.hq-r.ok .hq-lab{color:var(--grn)}
+.hq-r.bad .hq-lab{color:var(--red)}
+.hq-p{display:flex;gap:4px}
+.hq-p i{width:18px;height:4px;border-radius:2px;background:var(--line)}
+.hq-p i.on{background:var(--y-dot)}
+.hq-p i.now{background:var(--blu);animation:hqPulse 1.6s ease-in-out infinite}
+@keyframes hqPulse{50%{opacity:.45}}
+.hq-w{font-size:12.5px;color:var(--mid);white-space:nowrap;text-align:right}
+.hq-go{white-space:nowrap}
+.hq-go[disabled]{opacity:.45;cursor:not-allowed}
+.hq-m{font-size:12px;color:var(--mid);line-height:1.5;min-height:0}
+.hq-m:empty{display:none}
+.hq-page .hq-r{grid-template-columns:minmax(150px,1fr) minmax(200px,2fr) 132px 164px}
+.hq-go{justify-self:end}
+@media (prefers-reduced-motion: reduce){.hq-p i.now{animation:none}}
+@media (max-width:760px){
+  .hq{margin:14px 16px 0;width:auto}
+  .hq-r,.hq-page .hq-r{grid-template-columns:1fr auto}
+  .hq-st{grid-column:1 / -1;order:3}
+  .hq-w{order:2}
+  .hq-go{grid-column:1 / -1;order:4;justify-self:start}
+}
 .hbox.done .hbox-t{color:var(--mid)}
 
 /* ── TABLES ── */
@@ -1430,6 +1475,19 @@ td.car{color:var(--ink);font-weight:500}
       </div>
     </div>
 
+    <!-- HUMAN ACTION QUEUE. Every shipment parked for a person, oldest
+         first, on every page while anything waits. Open & Continue asks the
+         run to bring that shipment back to its verification step in its own
+         browser; the person does only the verification there, and the run
+         carries on by itself once the page confirms it. -->
+    <div class="hq" id="hq" hidden role="region" aria-label="Human actions">
+      <div class="hq-h"><div class="hq-i" id="hqAtlas"></div>
+        <div class="hq-t">Human actions · <b id="hqN">0</b></div>
+        <span class="hq-s" id="hqLine"></span></div>
+      <div class="hq-l" id="hqList"></div>
+      <div class="hq-m" id="hqMsg" aria-live="polite"></div>
+    </div>
+
     <!-- ═══ OVERVIEW ═══ -->
     <section class="page on" data-p="overview">
       <div class="kpis" id="kpis"></div>
@@ -1606,6 +1664,13 @@ td.car{color:var(--ink);font-weight:500}
 
     <!-- ═══ HUMAN ACTION ═══ -->
     <section class="page" data-p="human">
+      <div class="card hq-page" style="margin-bottom:18px">
+        <div class="card-h"><div><div class="card-t">Human Action queue</div>
+          <div class="card-s" id="hqPageS">Shipments parked for a person this run, oldest first</div></div>
+          <div class="sp"></div><div class="kick" id="hqPageN"></div></div>
+        <div class="card-b" style="padding-top:0"><div class="hq-l" id="hqPage"></div>
+          <div class="hq-m" id="hqPageMsg" aria-live="polite"></div></div>
+      </div>
       <div class="g2">
         <div class="card">
           <div class="card-h"><div><div class="card-t">Human action center</div>
@@ -1620,10 +1685,10 @@ td.car{color:var(--ink);font-weight:500}
           <div class="card-h"><div class="card-t">How it works</div></div>
           <div class="card-b hint" id="humHow">
             <div class="tline how">
-              <div class="tli done"><b></b><span>The run pauses the shipment</span><em>The carrier tab stays open where it stopped, in the same run.</em></div>
-              <div class="tli done"><b></b><span>Open Session</span><em>Brings that exact tab to the front of the automation's Edge window on the automation server — work in it there or over Remote Desktop.</em></div>
-              <div class="tli done"><b></b><span>Complete the step, then Resume</span><em>For Grimaldi: type the security code and press Search. Resume is refused until the page shows the result.</em></div>
-              <div class="tli done"><b></b><span>Read, validate, write, read back</span><em>Only a write that reads back from the Hub is a success.</em></div>
+              <div class="tli done"><b></b><span>The shipment is parked safely</span><em>If nobody acts within a short window, it joins the Human Action queue and the run carries on. Nothing is written for it.</em></div>
+              <div class="tli done"><b></b><span>Open &amp; Continue</span><em>Between shipments, the run looks that shipment up again in its own browser and brings the carrier tab to the front of its Edge window, at the verification step.</em></div>
+              <div class="tli done"><b></b><span>You do only the verification</span><em>For Grimaldi: type the security code and press Search. The automation never reads, solves or types a code.</em></div>
+              <div class="tli done"><b></b><span>ATLAS takes over</span><em>The page is read twice to confirm the right shipment is there, then extraction, validation, Hub write and read-back run by themselves. Only a write that reads back is a success.</em></div>
             </div>
             <div style="margin-top:6px" id="humCount"></div>
           </div>
@@ -2239,7 +2304,7 @@ function paint(force){
   }
 
   paintControl();
-  paintHuman();
+  paintHuman(); paintQueue(); hqNarrate();
   paintOps(); paintAtlasPage(); paintHumanPage(); paintDrawer();
   paintLive(); paintShips(); paintAnalysis(); paintExc(); paintLogs(); paintSettings();
 
@@ -2846,6 +2911,14 @@ function atlasRun(){
   const hum = S.human_action && S.human_action.waiting ? S.human_action : null;
   const cur = S.current && S.current.shipment;
   if (hum) return axHuman(hum);
+  const hqOpenNow = (S.human_queue || []).filter((t) => !HQ_END[t.status]);
+  const atStep = hqOpenNow.find((t) => t.status === 'VERIFICATION_PENDING');
+  if (atStep) return {state:'human_required', message:'Your verification is needed for ' +
+    atStep.reference + ' on ' + (atStep.carrier || 'the carrier page') + '.'};
+  if (run.status === 'running' && !cur && hqOpenNow.some((t) => t.status === 'WAITING_FOR_HUMAN'))
+    return {state:'human_required', message:hqOpenNow.length === 1
+      ? hqOpenNow[0].reference + ' on ' + (hqOpenNow[0].carrier || 'its carrier') + ' is waiting for you.'
+      : hqOpenNow.length + ' human actions are waiting for you.'};
   if (rec && rec.checkpoint) return {state:'human_required',
     message:'Stopped for a person: ' + rec.checkpoint};
   if (rec && rec.status === 'RUNNING'){
@@ -3473,6 +3546,7 @@ setInterval(() => {
   if (document.hidden || !S) return;
   if (activePage === 'overview') tickClocks($('opsRows'));
   if (dwRef) tickClocks($('dwBody'));
+  hqTick();
   if (++axTimeTick % 5 === 0 && (S.current && S.current.shipment || (S.human_action || {}).waiting)){
     paintAtlasPage(); paintDrawer(); paintHuman();
   }
@@ -3874,7 +3948,10 @@ function hSince(stamp){
 function paintHuman(){
   const a = S && S.human_action;
   const box = $('hbox');
-  if (!a){ box.hidden = true; if (hTick){ clearInterval(hTick); hTick = null; } return; }
+  // With the Human Action queue on, the live wait is one of its tasks and the
+  // queue card shows it; this card is for the single in-place wait only.
+  const queued = a && (S.human_queue || []).some((t) => t.action_id === a.action_id);
+  if (!a || queued){ box.hidden = true; if (hTick){ clearInterval(hTick); hTick = null; } return; }
   box.hidden = false;
   const waiting = !!a.waiting;
   box.classList.toggle('done', !waiting);
@@ -3924,6 +4001,152 @@ function sendHuman(op){
 $('hOpen').addEventListener('click', () => sendHuman('open'));
 $('hResume').addEventListener('click', () => sendHuman('resume'));
 
+/* ═══ HUMAN ACTION QUEUE ═══
+   Read from S.human_queue, which the run publishes. Open & Continue posts the
+   same scoped request as every human action button (/api/human, op "open");
+   the run picks it up between shipments. Progress is narrated only from the
+   task's own state and the shipment's record — never ahead of them. */
+const HQ_END = {SUCCESS:'ok', TIMEOUT:'end', HUMAN_SESSION_LOST:'end',
+                VERIFICATION_NOT_CONFIRMED:'bad', FAILED:'bad'};
+const HQ_STEPS = ['OPERATOR_OPENED', 'VERIFICATION_PENDING', 'POST_VERIFICATION_CHECK', 'RESUMING'];
+function hqTasks(all){
+  return ((S && S.human_queue) || []).filter((t) => all || !HQ_END[t.status])
+    .sort((a, b) => (a.created_epoch || 0) - (b.created_epoch || 0));
+}
+function hqClock(epoch){
+  const n = Math.max(0, Math.round(Date.now() / 1000 - (epoch || 0)));
+  const p = (x) => String(x).padStart(2, '0');
+  return n >= 3600 ? Math.floor(n / 3600) + ':' + p(Math.floor(n % 3600 / 60)) + ':' + p(n % 60)
+                   : p(Math.floor(n / 60)) + ':' + p(n % 60);
+}
+let hqNote = '';
+function hqRow(t){
+  const end = HQ_END[t.status], wait = t.status === 'WAITING_FOR_HUMAN';
+  const mine = !t.claimed_by || t.claimed_by === hClient;
+  const idx = t.status === 'HUMAN_COMPLETED' ? 2 : HQ_STEPS.indexOf(t.status);
+  const prog = !wait && !end && idx >= 0 ? '<span class="hq-p" aria-hidden="true">' +
+    HQ_STEPS.map((_, i) => '<i class="' + (i < idx ? 'on' : i === idx ? 'now' : '') + '"></i>').join('') +
+    '</span>' : '';
+  const label = wait ? (HUMAN_REASONS[t.reason] || 'A person is needed') : (t.label || t.status);
+  return '<div class="hq-r ' + (wait ? 'wait' : end || 'run') + '" data-aid="' + esc(t.action_id) + '">' +
+    '<div class="hq-who"><span class="hq-car">' + esc(t.carrier || 'Carrier') + '</span>' +
+    '<span class="mono hq-ref">' + esc(t.reference) + '</span></div>' +
+    '<div class="hq-st"><span class="hq-lab">' + esc(label) + '</span>' + prog + '</div>' +
+    '<div class="hq-w mono">' + (end ? (t.closed_at ? 'Ended ' + esc(t.closed_at.slice(11, 16)) : '')
+      : '<span data-hq-since="' + Number(t.created_epoch || 0) + '">Waiting ' +
+        hqClock(t.created_epoch) + '</span>') + '</div>' +
+    (wait ? '<button class="cbtn solid hq-go" data-hq="' + esc(t.action_id) + '"' +
+      (mine ? '' : ' disabled title="Another operator is handling this shipment"') +
+      '>Open &amp; Continue</button>' : '<span></span>') + '</div>';
+}
+function hqLine(open){
+  return open.length > 1 ? 'Oldest waiting ' + hqClock(open[0].created_epoch)
+    : open.length ? 'The run carries on with other shipments meanwhile' : '';
+}
+function paintQueue(){
+  if (!S) return;
+  const open = hqTasks(false), all = hqTasks(true);
+  if (!changed('hq', JSON.stringify(all.map((t) => [t.action_id, t.status, t.claimed_by])) + '|' +
+                     hqNote + '|' + activePage)) return;
+  const box = $('hq');
+  const was = box.hidden;
+  // The Human Action page carries the full queue; the card would repeat it.
+  box.hidden = !open.length || activePage === 'human';
+  put($('hqN'), String(open.length));
+  put($('hqLine'), hqLine(open));
+  if (open.length && (was || !$('hqAtlas').firstChild))
+    Atlas($('hqAtlas'), {size:'xs', text:false, state:'human_required'});
+  putHTML($('hqList'), open.map(hqRow).join(''));
+  put($('hqMsg'), hqNote);
+  if (activePage === 'human' || !sig.hqPage){
+    sig.hqPage = 1;
+    putHTML($('hqPage'), all.length ? all.map(hqRow).join('') :
+      empty('Nothing is waiting for a person', 'When a carrier page needs a person and nobody is ' +
+            'at the screen, the shipment is parked here and the run carries on.'));
+    put($('hqPageN'), open.length ? open.length + ' waiting' : '');
+    put($('hqPageMsg'), hqNote);
+  }
+}
+function hqTick(){
+  if ($('hq').hidden && activePage !== 'human') return;
+  document.querySelectorAll('[data-hq-since]').forEach((el) =>
+    put(el, 'Waiting ' + hqClock(Number(el.dataset.hqSince))));
+  put($('hqLine'), hqLine(hqTasks(false)));
+}
+function hqFocus(actionId){
+  const sel = '[data-aid="' + String(actionId).replace(/"/g, '') + '"]';
+  const el = document.querySelector('#hqPage ' + sel) || document.querySelector('#hqList ' + sel);
+  if (!el) return;
+  el.scrollIntoView({block:'center', behavior:'smooth'});
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1800);
+}
+/* Progress, told from state. Watched only for tasks this tab started. */
+const hqWatched = {};
+let atlasSay = null;            // set by the ATLAS panel
+function hqSay(text, ref){
+  // On the queue card a line has to say which shipment it is about.
+  hqNote = ref && text.indexOf(ref) < 0 ? ref + ' \u2014 ' + text : text;
+  paintQueue();
+  if (atlasSay) atlasSay(text);
+}
+function hqWatch(t){
+  hqWatched[t.action_id] = {status:t.status, ref:t.reference, carrier:t.carrier || 'the carrier',
+                            extracted:false};
+}
+function hqNarrate(){
+  for (const id in hqWatched){
+    const w = hqWatched[id];
+    const t = ((S && S.human_queue) || []).find((x) => x.action_id === id);
+    if (!t) continue;
+    const rec = (S.shipments || []).find((r) => r.reference === w.ref);
+    const resumed = t.status === 'RESUMING' || t.status === 'SUCCESS' || t.status === 'FAILED';
+    if (t.status !== w.status && resumed && w.status !== 'RESUMING' && t.status !== 'RESUMING')
+      hqSay('Verification confirmed. I\u2019m continuing ' + w.ref + '.', w.ref);
+    if (resumed && !w.extracted && rec && rec.state !== 'waiting_for_human' &&
+        (has(rec.provider_status) || has(rec.provider_eta) || has(rec.provider_ata))){
+      w.extracted = true;
+      if (t.status === 'RESUMING' || t.status === 'SUCCESS')
+        hqSay('Data extraction completed. I\u2019m validating the result.', w.ref);
+    }
+    if (t.status === w.status) continue;
+    w.status = t.status;
+    const m = {
+      OPERATOR_OPENED: 'Preparing ' + w.ref + ' on ' + w.carrier + ' \u2014 I\u2019ll bring it back to the verification step after the current shipment.',
+      VERIFICATION_PENDING: 'The ' + w.carrier + ' tab is in front at the verification step. Complete it there \u2014 I\u2019ll take over once the page confirms it.',
+      RESUMING: 'Verification confirmed. I\u2019m continuing ' + w.ref + '.',
+      SUCCESS: 'Hub write completed and read-back verified.',
+      WAITING_FOR_HUMAN: 'The window ended before the page confirmed it. ' + w.ref + ' is back in the queue \u2014 nothing was written.',
+      TIMEOUT: w.ref + ' timed out. Nothing was written.',
+      HUMAN_SESSION_LOST: 'The browser session for ' + w.ref + ' is gone. Nothing was written.',
+      VERIFICATION_NOT_CONFIRMED: 'I couldn\u2019t confirm the right shipment page for ' + w.ref + ', so I stopped safely. Nothing was written.',
+      FAILED: w.ref + ' did not complete after the verification: ' + (t.last_detail || 'see the shipment') + '.'
+    }[t.status];
+    if (m) hqSay(m, w.ref);
+    if (HQ_END[t.status] || t.status === 'WAITING_FOR_HUMAN') delete hqWatched[id];
+  }
+}
+function hqOpen(actionId){
+  const t = ((S && S.human_queue) || []).find((x) => x.action_id === actionId);
+  if (!t) return Promise.resolve({accepted:false, message:'That human action is no longer in the queue.'});
+  hqNote = 'Asking the run to prepare ' + t.reference + '\u2026'; paintQueue();
+  return fetch('/api/human', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({op:'open', run_id:t.run_id, action_id:t.action_id, client_id:hClient})
+  }).then((r) => r.json()).then((r) => {
+    hqNote = r.message || ''; paintQueue();
+    if (r.accepted) hqWatch(t);
+    return r;
+  }).catch(() => {
+    hqNote = 'Could not reach the dashboard server.'; paintQueue();
+    return {accepted:false, message:hqNote};
+  });
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-hq]');
+  if (b && !b.disabled) hqOpen(b.dataset.hq);
+});
+
 /* ═══ SHARE LINK ═══
    127.0.0.1 means "this computer" on whichever machine opens it, so pasting
    that link elsewhere always fails. This copies the LAN link instead. */
@@ -3962,7 +4185,13 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
    run's own data, so a chip can never lead somewhere the assistant refuses. */
 (function chat(){
   const body = $('chatBody'), input = $('chatIn');
-  let busy = false, lastReference = null;
+  let busy = false, lastReference = null, lastFocus = '';
+  // Queue progress lands in the conversation as ATLAS's own lines.
+  atlasSay = (text) => {
+    if (!body.children.length) return;
+    const b = bubble('bot'); b.innerHTML = fmt(text);
+    body.scrollTop = body.scrollHeight;
+  };
 
   const OPENERS = [
     ['How is it going?', 'How is it going?'],
@@ -4114,10 +4343,14 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
         (S.shipments || []).some((r) => r.reference === a.reference)){
       if (activePage !== 'overview') go('overview');
       openDrawer(a.reference);
+      // The drawer and this panel share the right edge: step aside so the
+      // shipment is visible. The conversation is kept; Ask ATLAS reopens it.
+      $('chat').classList.remove('on'); $('fab').classList.remove('hide');
       return 'Opened ' + a.reference + '.';
     }
     if (a.type === 'page' && UI_PAGES[a.page]){
       go(a.page);
+      if (a.focus) setTimeout(() => hqFocus(a.focus), 120);
       return 'Opened ' + ((PAGES.find((p) => p.id === a.page) || {}).t || TITLES[a.page] || a.page) + '.';
     }
     return '';
@@ -4129,7 +4362,16 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
     list.forEach((b) => {
       const el = document.createElement('button');
       el.className = 'dl act'; el.type = 'button'; el.textContent = b.label;
-      el.addEventListener('click', () => { const done = runUi(b.action); if (done) note(done); });
+      el.addEventListener('click', () => {
+        if (b.action && b.action.type === 'human_open'){
+          // An operation, and only on this click: the same request the queue
+          // button sends. What the run answered is what is shown.
+          el.disabled = true;
+          hqOpen(b.action.action_id).then((r) => note(r.message || ''));
+          return;
+        }
+        const done = runUi(b.action); if (done) note(done);
+      });
       row.appendChild(el);
     });
     body.appendChild(row);
@@ -4201,7 +4443,7 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
 
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q, context: {reference: lastReference}})
+      body: JSON.stringify({question: q, context: {reference: lastReference, action_id: lastFocus}})
     })
       .then((r) => r.json())
       .then((d) => {
@@ -4216,6 +4458,12 @@ $('hResume').addEventListener('click', () => sendHuman('resume'));
           }
           if (d.downloads && d.downloads.length) downloads(d.downloads);
           if (d.reference) lastReference = d.reference;
+          lastFocus = d.focus || '';
+          if (d.operation && d.operation.type === 'human_open' && d.operation.op === 'open'){
+            // The operator asked for it in so many words, and named which.
+            // Sent through the queue's own request; the reply is the run's.
+            hqOpen(d.operation.action_id).then((r) => note(r.message || ''));
+          }
           feedbackRow(b, q, d);
           chips(d.suggestions && d.suggestions.length
             ? d.suggestions : OPENERS.map((o) => o[1]));

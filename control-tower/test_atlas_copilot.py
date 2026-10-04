@@ -121,7 +121,8 @@ rule("3. WHAT NEEDS MY ATTENTION?")
 r = ask("What needs my attention?")
 check("The waiting human action comes first", r["answer"].index("S330348776") < r["answer"].index("failed"),
       r["answer"][:120])
-check("...with how long it has waited", re.search(r"waiting \d+m \d{2}s", r["answer"]) is not None)
+check("...with how long it has waited, in plain words",
+      re.search(r"It's been waiting for \d+ minutes?", r["answer"]) is not None, r["answer"][:160])
 check("...and a way to it", any(x["action"] == {"type": "page", "page": "human"} for x in r["buttons"]))
 check("The failure is in the list", "Air France Cargo" in r["answer"])
 
@@ -197,11 +198,12 @@ brief = assistant.atlas_brief(STATE)
 check("The panel says it is waiting for your action", brief["status"] == "Waiting for your action")
 check("The first thing ATLAS noticed is the waiting shipment",
       brief["notices"][0]["level"] == "warn" and "S330348776" in brief["notices"][0]["text"]
-      and brief["notices"][0]["action"] == {"type": "page", "page": "human"}, str(brief["notices"][:1]))
+      and brief["notices"][0]["action"] == {"type": "page", "page": "human",
+                                            "focus": "9f2c11ab33d0"}, str(brief["notices"][:1]))
 check("Its counts are the run's", brief["summary"] == {"completed": 1, "failed": 1, "waiting": 1,
                                                        "processing": 0, "skipped": 2}, str(brief["summary"]))
 check("Suggestions fit the run: attention and failures first",
-      brief["suggestions"][:4] == ["What needs my attention?", "Show waiting shipments",
+      brief["suggestions"][:4] == ["What needs me?", "Open pending human action",
                                    "Show failed shipments", "Why did the latest shipment fail?"],
       str(brief["suggestions"]))
 quiet = ControlTowerState()
