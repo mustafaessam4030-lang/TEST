@@ -715,7 +715,7 @@ check("The six states exist, each with its own words",
           for k in ("idle", "monitoring", "analyzing", "recovering", "success",
                     "human_required")))
 check("The shell, visor and glow are defined once for every figure",
-      INDEX.count('id="axShell"') == 1 and INDEX.count('id="axGlow"') == 1)
+      INDEX.count('id="axShell"') == 1 and INDEX.count('id="axHalo"') == 1 and 'feGaussianBlur' not in INDEX)
 check("ATLAS appears in the four places it was asked for",
       all("Atlas($('{0}')".format(i) in INDEX for i in (
           "atlasGlanceFig", "atlasHero", "hAtlas", "dwAtlas")))
@@ -741,6 +741,23 @@ check("Its motion is transforms and a dash offset only — no canvas, no video",
       and "@keyframes axFloat{0%,100%{transform:translateY(0)}" in INDEX)
 check("Human action is calm amber, not alarm red",
       ".is-human_required{--axc:var(--y)}" in INDEX)
+
+_run = INDEX.split("function atlasRun(){")[1].split("\nfunction ")[0]
+check("A run going normally is MONITORING, not idle",
+      "return {state:'monitoring', message:'All operations are running normally.'};" in _run)
+check("Between shipments, a failure ATLAS classified is ANALYZING, from the record",
+      "if (last && last.state === 'failed') return {state:'analyzing'," in _run)
+check("...and a write that read back is SUCCESS, only when every write did",
+      "last.state === 'updated' && v.length && v.every((x) => x === true)" in _run)
+check("In the human card ATLAS sits beside Open Session and Resume, pointing at them",
+      INDEX.index('id="hAtlas"') < INDEX.index('id="hOpen"')
+      and "'human_required' ? 'rotate(-94 78 77)'" in INDEX)
+check("ATLAS can take the operator to the action, from the overview and its page",
+      INDEX.count('data-act="human"') >= 2 and "box.classList.add('flash')" in INDEX)
+check("ATLAS's live state is a dot on its own navigation pill",
+      "d.id = 'axDot'" in INDEX and "cls($('axDot'), 'axdot is-' + ax.state);" in INDEX)
+check("Failure names keep their acronyms",
+      "(afkl|ata|eta|dhl|coe|bu|awb|hub)" in INDEX)
 
 print()
 print("=" * 72)

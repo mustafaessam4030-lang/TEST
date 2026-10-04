@@ -414,7 +414,7 @@ input,textarea,select{font-family:inherit}
 .nav-f{padding:12px 20px;border-top:1px solid var(--line-2);font-size:11.5px;color:var(--faint)}
 
 .main{grid-area:main;overflow-y:auto;position:relative}
-.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
+.top{position:relative;z-index:2;display:flex;align-items:center;gap:10px;
   /* Solid, not blurred. A backdrop-filter forces a compositing layer and
      repaints it on every scroll frame; a hairline over an opaque surface
      costs nothing and reads more precisely. */
@@ -554,13 +554,18 @@ input,textarea,select{font-family:inherit}
 /* ── HUMAN ACTION ──
    A system notification, not an error box: a white card with an app glyph,
    a plain title, the facts, and the two things a person can do. */
-.hbox{margin:6px auto 0;width:calc(100% - 64px);max-width:1416px;display:grid;grid-template-columns:54px minmax(0,820px);
+.hbox{margin:6px 0 0 max(32px, calc((100% - 1480px) / 2 + 32px));width:calc(100% - 64px);max-width:860px;display:grid;grid-template-columns:minmax(0,1fr);
   gap:4px 14px;padding:16px 18px;background:var(--surface);border:1px solid var(--line-2);
   border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 32px rgba(0,0,0,.08);
   animation:note .42s var(--e) both}
 .hbox[hidden]{display:none}
 @keyframes note{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:none}}
-.hbox-i{grid-row:1 / span 4;width:54px;align-self:start;margin-top:-2px}
+/* "Go to the action" from anywhere ATLAS mentions it: one soft amber ring. */
+.hbox.flash{animation:hFlash 1.6s var(--e)}
+@keyframes hFlash{0%{box-shadow:0 0 0 0 rgba(240,144,30,.0),var(--shadow)}
+  20%{box-shadow:0 0 0 6px rgba(240,144,30,.28),var(--shadow)}100%{box-shadow:0 0 0 0 rgba(240,144,30,0),var(--shadow)}}
+.axdot{width:6px;height:6px;border-radius:50%;background:var(--axc);flex:none}
+.hbox-i{flex:none;margin:-10px 0 -10px -6px}
 .hbox-e{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;
   letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 .hbox-e span:last-child{margin-left:auto;font-family:var(--mono);letter-spacing:0;
@@ -572,7 +577,7 @@ input,textarea,select{font-family:inherit}
 .hbox-g span{color:var(--ink);white-space:nowrap}
 .hbox-m{font-size:12px;color:var(--mid);line-height:1.5}
 #hHow{margin-top:6px}
-.hbox-a{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.hbox-a{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
 .hbox-a .cbtn{padding:7px 16px;font-size:13px}
 .hbox.done{box-shadow:var(--shadow)}
 .hbox.done .hbox-t{color:var(--mid)}
@@ -848,9 +853,10 @@ tr.r-partial .err{color:var(--y)}
 .atlas-fig{position:relative;flex:none;width:var(--ax);height:var(--ax)}
 .atlas-fig::after{content:"";position:absolute;left:31%;right:31%;bottom:1%;height:6%;
   border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.18),rgba(0,0,0,0));
-  animation:axShadow 4.8s ease-in-out infinite}
-.atlas-float{width:100%;height:100%;animation:axFloat 4.8s ease-in-out infinite}
+  animation:axShadow 4.8s ease-in-out infinite;will-change:transform,opacity}
+.atlas-float{width:100%;height:100%;animation:axFloat 4.8s ease-in-out infinite;will-change:transform}
 .atlas-float svg,.atlas-float img{width:100%;height:100%;display:block;overflow:visible}
+.atlas-sm .atlas-float,.atlas-xs .atlas-float,.atlas-sm .atlas-fig::after,.atlas-xs .atlas-fig::after{animation:none}
 @keyframes axFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3.5%)}}
 @keyframes axShadow{0%,100%{transform:scaleX(1);opacity:1}50%{transform:scaleX(.82);opacity:.65}}
 .atlas-say{min-width:0}
@@ -866,17 +872,6 @@ tr.r-partial .err{color:var(--y)}
 
 /* inside the figure */
 .ax-eyes,.ax-look,.ax-pn,.ax-gear,.ax-badge,.ax-spark{transform-box:fill-box;transform-origin:center}
-.is-monitoring .ax-eyes,.is-analyzing .ax-eyes,.is-human_required .ax-eyes{animation:axBlink 6.5s infinite}
-@keyframes axBlink{0%,93%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
-.is-monitoring .ax-look{animation:axLook 9s ease-in-out infinite}
-@keyframes axLook{0%,100%{transform:translateX(0)}25%,42%{transform:translateX(-2.6px)}
-  62%,80%{transform:translateX(2.6px)}}
-.ax-pn{animation:axBob 5.2s ease-in-out infinite}
-.ax-pn.b{animation-delay:-2.6s}
-.ax-pn.c{animation-delay:-1.3s}
-@keyframes axBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
-.is-analyzing .ax-pn{animation:axDrift 6.4s ease-in-out infinite}
-@keyframes axDrift{0%,100%{transform:translate(0,0)}50%{transform:translate(1.5px,-2.5px)}}
 .ax-orbit{animation:axDash 2.6s linear infinite}
 @keyframes axDash{to{stroke-dashoffset:-22}}
 .ax-gear{animation:axSpin 6s linear infinite}
@@ -885,11 +880,21 @@ tr.r-partial .err{color:var(--y)}
 @keyframes axPop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
 .ax-spark{animation:axTwinkle 2.4s ease-in-out 2 both}
 @keyframes axTwinkle{0%,100%{opacity:0;transform:scale(.6)}50%{opacity:1;transform:none}}
+.is-human_required .ax-look{transform:translateX(2.4px)}
 .is-human_required .ax-head{transform-box:view-box;transform-origin:60px 46px;
   animation:axAttend .9s var(--e) .1s both}
 @keyframes axAttend{to{transform:rotate(7deg) translateX(1px)}}
-.is-human_required .ax-badge{animation:axPop .5s var(--e) both,axSoft 3s ease-in-out .6s infinite}
-@keyframes axSoft{0%,100%{opacity:1}50%{opacity:.7}}
+/* Life between states is a blink and a glance, driven by one shared timer
+   (atlasTick): a quarter-second of motion every 6.5 s on figures that are on
+   screen, and nothing in between. A continuous loop inside an SVG repaints it
+   on every frame; this does not. */
+.atlas.blink .ax-eyes{animation:axBlink .24s ease-in-out}
+@keyframes axBlink{50%{transform:scaleY(.12)}}
+.ax-look,.ax-pn{transition:transform 1s var(--e)}
+.is-monitoring .ax-look{transform:translateX(1.6px)}
+.is-monitoring.alt .ax-look{transform:translateX(-2.4px)}
+.atlas.alt .ax-pn.a,.atlas.alt .ax-pn.c{transform:translateY(-2.5px)}
+.atlas.alt .ax-pn.b{transform:translateY(2px)}
 
 /* places */
 .atlas-hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:0;
@@ -1234,9 +1239,8 @@ a.cbtn{text-decoration:none}
     <stop offset="0" stop-color="#2B2E37"/><stop offset="1" stop-color="#07080A"/></linearGradient>
   <linearGradient id="axAmber" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0" stop-color="#FFC04A"/><stop offset="1" stop-color="#E0761A"/></linearGradient>
-  <filter id="axGlow" x="-60%" y="-60%" width="220%" height="220%">
-    <feGaussianBlur stdDeviation="1.5" result="b"/>
-    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <radialGradient id="axHalo"><stop offset="0" stop-color="#FFC14D" stop-opacity=".55"/>
+    <stop offset="1" stop-color="#FFC14D" stop-opacity="0"/></radialGradient>
 </defs></svg>
 
 <div id="app">
@@ -1294,7 +1298,6 @@ a.cbtn{text-decoration:none}
          front of the run's Edge window; Resume asks the run to check the page
          and carry on. Nothing typed here ever reaches the carrier page. -->
     <div class="hbox" id="hbox" hidden role="alert" aria-live="assertive">
-      <div class="hbox-i" id="hAtlas"></div>
       <div class="hbox-e"><span id="hTitleK">ATLAS · Human action required</span><span id="hWaitE"></span></div>
       <div class="hbox-t" id="hTitle">Human verification required</div>
       <div>
@@ -1308,6 +1311,7 @@ a.cbtn{text-decoration:none}
         </div>
         <div class="hbox-m" id="hHow"></div>
         <div class="hbox-a">
+          <div class="hbox-i" id="hAtlas"></div>
           <button class="cbtn" id="hOpen" title="Bring the paused carrier tab to the front of the automation's Edge window">Open Session</button>
           <button class="cbtn solid" id="hResume">Resume</button>
           <span class="hbox-m" id="hMsg"></span>
@@ -1901,6 +1905,11 @@ PAGES.forEach((p) => {
   b.addEventListener('click', () => go(p.id));
   $('tnav').appendChild(b);
 });
+(function(){
+  const pill = $('tnav').querySelector('[data-nav="atlas"]');
+  if (pill){ const d = document.createElement('i'); d.id = 'axDot'; d.className = 'axdot is-idle';
+    d.setAttribute('aria-hidden', 'true'); pill.insertBefore(d, pill.firstChild); }
+})();
 function moveNavPill(){
   const on = $('tnav').querySelector('.tnav-i.on'), ind = $('tnavInd');
   if (!on){ ind.style.width = '0px'; return; }
@@ -1944,6 +1953,14 @@ function go(id){
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-go]');
   if (t && !t.closest('#navList')) go(t.dataset.go);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-act="human"]')) return;
+  const box = $('hbox');
+  if (box.hidden) return;
+  $('main').scrollTo({top:0, behavior:'smooth'});
+  box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+  setTimeout(() => $('hResume').focus({preventScroll:true}), 450);
 });
 $('burger').addEventListener('click', () => {
   $('nav').classList.add('open'); $('scrim').classList.add('on');
@@ -2142,13 +2159,13 @@ function paintLive(){
   putHTML($('liveBody'),
     (isLive ? '' : '<div class="kick" style="margin-bottom:12px">Most recent shipment</div>') +
     '<div class="live-r">' + esc(cur.reference) + '</div><div class="hero-g" style="position:relative">' +
-    f('Carrier', cur.carrier) + f('Tracking provider', cur.provider === 'QATAR' ? 'Qatar Airways Cargo' : cur.provider) +
+    f('Carrier', cur.carrier) + f('Tracking provider', cur.provider ? sysName(cur.provider) : null) +
     f('Hub status filter', cur.hub_status) + f('Hub list page', cur.table_page) +
     f('Existing hub ETA', cur.internal_eta) + f('Carrier status', cur.provider_status) +
     f('Carrier ETA', cur.provider_eta) + f('Carrier ATA', cur.provider_ata) +
     f('COE view', cur.coe_action) + f('BU view', cur.bu_action) + f('Outcome', cur.outcome) +
     '</div><div style="margin-top:20px"><div class="fk">Current step</div>' +
-    '<div style="font-size:14.5px;color:var(--vio);margin-top:5px;font-weight:500">' +
+    '<div style="font-size:14.5px;color:var(--ink);margin-top:5px;font-weight:550">' +
     dash(cur.step) + '</div></div>');
   putHTML($('steps'), (cur.steps || []).length
     ? cur.steps.map((x) => '<div><time>' + esc(x.time) + '</time><span>' + esc(x.text) + '</span></div>').join('')
@@ -2550,7 +2567,7 @@ function atlasProps(st){
 function atlasFigure(st){
   // The right arm says where ATLAS's attention is: raised toward the panel it
   // is watching, toward the action a person has to take, or at rest.
-  const arm = st === 'human_required' ? 'rotate(-112 78 77)'
+  const arm = st === 'human_required' ? 'rotate(-94 78 77)'
             : st === 'monitoring' || st === 'recovering' ? 'rotate(-62 78 77)'
             : st === 'success' ? 'rotate(-150 78 77)' : 'rotate(-14 78 77)';
   return '<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
@@ -2572,7 +2589,10 @@ function atlasFigure(st){
         '<path d="M49.5 17.6 Q60 12.2 70.5 17.6" fill="none" stroke="' + AX_AMBER + '" stroke-width="4.4" stroke-linecap="round"/>' +
         '<rect x="33.5" y="26.5" width="53" height="39" rx="19.5" fill="url(#axVisor)"/>' +
         '<path d="M40.5 36 Q46.5 29.6 56.5 29.4" fill="none" stroke="#FFFFFF" stroke-opacity=".26" stroke-width="2.4" stroke-linecap="round"/>' +
-        '<g class="ax-look"><g class="ax-eyes" filter="url(#axGlow)">' + atlasEyes(st) + '</g></g>' +
+        // The glow is a static halo, not a blur filter: nothing here has to be
+        // re-rasterised when the eyes move.
+        '<ellipse cx="50" cy="46.5" rx="9" ry="9" fill="url(#axHalo)"/><ellipse cx="70" cy="46.5" rx="9" ry="9" fill="url(#axHalo)"/>' +
+        '<g class="ax-look"><g class="ax-eyes">' + atlasEyes(st) + '</g></g>' +
       '</g>' +
     '</g></svg>';
 }
@@ -2627,8 +2647,24 @@ fetch('/static/assets/atlas/manifest.json').then((r) => (r.ok ? r.json() : null)
   if (any && S) paint(true);
 }).catch(() => {});
 
+let atlasBeat = 0;
+setInterval(() => {
+  if (document.hidden) return;
+  atlasBeat++;
+  document.querySelectorAll('.atlas.is-monitoring,.atlas.is-analyzing,.atlas.is-human_required')
+    .forEach((el) => {
+      if (!el.offsetParent) return;                         // on a hidden page
+      const dw = el.closest('.drawer');
+      if (dw && !dw.classList.contains('on')) return;       // drawer closed
+      el.classList.toggle('alt', atlasBeat % 2 === 1);
+      el.classList.add('blink');
+      setTimeout(() => el.classList.remove('blink'), 260);
+    });
+}, 6500);
+
 /* What ATLAS says about the run, from the run state and nothing else. */
-const axName = (s) => String(s || '').replace(/_/g, ' ').toLowerCase();
+const axName = (s) => String(s || '').replace(/_/g, ' ').toLowerCase()
+  .replace(/\b(afkl|ata|eta|dhl|coe|bu|awb|hub)\b/g, (w) => (w === 'hub' ? 'Hub' : w.toUpperCase()));
 function atlasRun(){
   const rec = S.recovery, run = S.run || {}, c = S.counters || {};
   const hum = S.human_action && S.human_action.waiting ? S.human_action : null;
@@ -2651,10 +2687,20 @@ function atlasRun(){
       ' Everything is back on track.'};
   if (rec && rec.status === 'EXHAUSTED') return {state:'analyzing',
     message:'No safe recovery for ' + axName(rec.error_class) + '. The deterministic outcome stands.'};
-  if (run.status === 'running')
-    return cur ? {state:'monitoring', message:'Monitoring ' + cur.reference +
-                  (cur.carrier ? ' on ' + cur.carrier : '') + '.'}
-               : {state:'idle', message:'All operations are running normally.'};
+  if (run.status === 'running'){
+    if (cur) return {state:'monitoring', message:'Monitoring ' + cur.reference +
+                     (cur.carrier ? ' on ' + cur.carrier : '') + '.'};
+    const last = (S.shipments || [])[0];
+    if (last && last.state === 'failed') return {state:'analyzing',
+      message:'I classified the last failure on ' + last.reference +
+        (last.outcome ? ': ' + axName(last.outcome) : '') + '.'};
+    const v = last && last.verification
+      ? Object.keys(last.verification).map((k) => last.verification[k]) : [];
+    if (last && last.state === 'updated' && v.length && v.every((x) => x === true))
+      return {state:'success', message:(has(last.provider_ata) ? 'ATA validated. ' : '') +
+        'Hub read-back confirmed for ' + last.reference + '.'};
+    return {state:'monitoring', message:'All operations are running normally.'};
+  }
   if (run.status === 'finished')
     return (c.failed || 0) === 0 && (c.successful || 0) > 0
       ? {state:'success', message:'Run complete. ' + c.successful +
@@ -2978,6 +3024,7 @@ function paintAtlasPage(){
   const hum = S.human_action && S.human_action.waiting ? S.human_action : null;
   const exc = S.exceptions || [];
   const ax = atlasRun();
+  cls($('axDot'), 'axdot is-' + ax.state);
   const all = S.shipments || [];
   const inFlight = all.filter((r) => r.state === 'processing' || r.state === 'waiting_for_human').length;
   const key = JSON.stringify([ax, rec && [rec.error_class, rec.status, (rec.attempts || []).length,
@@ -3017,7 +3064,8 @@ function paintAtlasPage(){
     '<span>Open issues <b>' + exc.length + '</b></span>' +
     '<span>Recoveries <b>' + (stats ? (stats.recovered || 0) + ' of ' + finished : '—') + '</b></span>' +
     '<span>Last event <b>' + (ev ? esc(ev.label) + '</b> ' + esc(ev.time) : '—</b>') + '</span>' +
-    '<button class="link" data-go="atlas" style="margin-left:auto">Open ATLAS</button>');
+    (hum ? '<button class="link" data-act="human" style="margin-left:auto">Go to the action</button>'
+         : '<button class="link" data-go="atlas" style="margin-left:auto">Open ATLAS</button>'));
 
   if (activePage !== 'atlas' && sig.atlasInit) return;
   sig.atlasInit = 1;
@@ -3045,7 +3093,8 @@ function paintAtlasPage(){
       (ev ? ' · ' + esc(ev.time) : '') + '</span>' +
     '<span>This run <b>' + esc(String(a.influenced_actions == null ? '—' : a.influenced_actions)) +
       '</b> steered · <b>' + esc(String(a.fallbacks == null ? '—' : a.fallbacks)) + '</b> fell back</span>');
-  putHTML($('atlasRec'), recHTML);
+  putHTML($('atlasRec'), recHTML + (hum
+    ? '<div style="margin:12px 0 0 40px"><button class="cbtn solid" data-act="human">Go to the action</button></div>' : ''));
   putHTML($('atlasIssues'), exc.length
     ? exc.slice(0, 5).map((x) => '<div class="exc ' + x.severity + '"><div class="exc-i">' +
         (x.severity === 'warning' ? '!' : '✕') + '</div><div><div class="exc-m">' + esc(x.message) +
