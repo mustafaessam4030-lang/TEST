@@ -562,10 +562,10 @@ check("A bare X can dismiss a cookie panel",
 _open = SRC_F.split("def open_portal")[1].split("\ndef ")[0]
 check("The page is settled before anything is typed",
       _open.index("wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)")
-      < _open.index("field = find_portal_input(page, config[\"placeholder\"])"))
+      < _open.index("field = find_portal_input(page, config[\"placeholder\"]"))
 check("The cookie banner is dealt with before the form is sought",
       _open.index("accept_cookie_banner") 
-      < _open.index("field = find_portal_input(page, config[\"placeholder\"])"))
+      < _open.index("field = find_portal_input(page, config[\"placeholder\"]"))
 check("A human-verification challenge is checked before either — a challenge "
       "page has no air waybill box to find",
       _open.index("captcha_on_page(page)") < _open.index("accept_cookie_banner"))
@@ -601,7 +601,7 @@ check("find_portal_input has a strict mode that drops the "
 check("...and the poll uses it", "strict=True" in _open)
 check("...while the catch-all is still consulted once at the end, so "
       "portals whose placeholder differs keep working",
-      _open.rindex('find_portal_input(page, config["placeholder"])')
+      _open.rindex('find_portal_input(page, config["placeholder"],\n                                  strict=')
       > _open.index("strict=True"))
 check("The polled probe is cheap — first_visible spends its timeout PER "
       "candidate", "timeout_ms=250" in _open)

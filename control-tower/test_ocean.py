@@ -134,6 +134,45 @@ check("Air waybills are still matched on their digits",
       A.awb_on_page(Page("074 4628 5514"), "074-46285514"))
 
 
+print()
+print("=" * 74)
+print("3b. THE OPERATOR'S OWN HUB ROWS, AND WHICH PAGE EACH ONE NEEDS")
+print("=" * 74)
+for carrier, reference, want in (
+        ("Grimaldi", "S330348776", "GRIMALDI"),
+        ("Grimaldi", "ANRB76464", "GRIMALDI"),
+        ("MSC", "MEDUWO942017", "MSC"),
+        ("Maersk", "274599284", "MAERSK"),
+        ("CMA CGM", "NAM8681835", "CMA_CGM"),
+        ("Hapag-Lloyd", "HLCUTA12609EPQF2", "HAPAG")):
+    check("{0} {1} -> {2}".format(carrier, reference, want),
+          A.carrier_provider(carrier, reference) == want,
+          str(A.carrier_provider(carrier, reference)))
+check("A Grimaldi S-reference is not mistaken for a DHL K-reference",
+      not A.is_dhl_k_reference("S330348776"))
+check("HLCU1234567 is a container number; HLCUTA12609EPQF2 is not",
+      A.is_container_number("HLCU1234567")
+      and not A.is_container_number("HLCUTA12609EPQF2"))
+booking = A.portal_config_for("HAPAG", "HLCUTA12609EPQF2")
+container = A.portal_config_for("HAPAG", "HLCU1234567")
+check("A Hapag-Lloyd bill of lading goes to the booking page",
+      "track-by-booking" in booking["urls"][0], booking["urls"][0])
+check("A Hapag-Lloyd container goes to 'Tracing by Container'",
+      "track-by-container" in container["urls"][0]
+      and "Container" in container["box_label"], container["urls"][0])
+shipment_box = A.portal_config_for("GRIMALDI", "S330348776")
+equipment_box = A.portal_config_for("GRIMALDI", "GRIU1234567")
+check("A Grimaldi shipment number goes in 'Shipment #'",
+      "Shipment" in shipment_box["box_label"])
+check("A Grimaldi container goes in 'Equipment #'",
+      "Equipment" in equipment_box["box_label"])
+check("Grimaldi needs a person for every search; nobody else does",
+      [k for k in A.OCEAN_PORTALS if A.PORTALS[k].get("needs_person")]
+      == ["GRIMALDI"])
+check("The generic reference box no longer matches 'Enter code'",
+      not __import__("re").search(A.OCEAN_REFERENCE_BOX, "Enter code", 2))
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # TWO CARRIER SITES: ONE OPENED BY ADDRESS, ONE SEARCHED
 # ─────────────────────────────────────────────────────────────────────────
@@ -157,6 +196,36 @@ SEARCH = ("<!doctype html><html><body><h1>Track a shipment</h1>"
           "<p>" + "x" * 200 + "</p></body></html>")
 
 
+# GNET as the operator's screenshot shows it: labels BESIDE the boxes, a
+# security-code image, an "Enter code" box and Search. The "person" is a
+# script that, once a reference has been typed and left alone, checks the
+# code box is still empty, types the code a human would read, and presses
+# Search. With ?person=0 nobody comes.
+GNET = ("<!doctype html><html><body><h2>Container Tracking</h2>"
+        "<form id='f' action='/gresult'><table>"
+        "<tr><td>Equipment #</td><td><input name='equip' type='text'></td>"
+        "<td>Shipment #</td><td><input name='ship' type='text'></td></tr>"
+        "<tr><td>From Date</td><td><input name='from' type='text'></td>"
+        "<td>To Date</td><td><input name='to' type='text'></td></tr>"
+        "<tr><td>Security Code</td><td><img alt='code' src='data:,'></td>"
+        "<td><input name='code' type='text' placeholder='Enter code'></td>"
+        "<td><input type='hidden' name='untouched' value='?'>"
+        "<button type='submit'>Search</button></td></tr></table></form>"
+        "<script>"
+        "var person = location.search.indexOf('person=0') < 0, last='', since=0;"
+        "setInterval(function(){"
+        " var f=document.getElementById('f'), v=f.equip.value+'|'+f.ship.value;"
+        " if (v==='|') return;"
+        " if (v!==last){last=v; since=Date.now(); return;}"
+        " if (!person || Date.now()-since<1500) return;"
+        " person=false;"
+        " f.untouched.value = f.code.value==='' ? '1' : '0';"
+        " f.code.value='7Q4K'; f.submit();"
+        "}, 250);"
+        "</script><p>" + "x" * 200 + "</p></body></html>")
+GNET_SEEN = []
+
+
 class Carrier(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -170,6 +239,13 @@ class Carrier(BaseHTTPRequestHandler):
             body = voyage_page(reference) if reference == GOOD else (
                 "<html><body>No data found for this reference." + "x" * 200 +
                 "</body></html>")
+        elif parsed.path.startswith("/gnet"):
+            body = GNET
+        elif parsed.path.startswith("/gresult"):
+            query = {k: v[0] for k, v in parse_qs(
+                parsed.query, keep_blank_values=True).items()}
+            GNET_SEEN.append(query)
+            body = voyage_page(query.get("ship") or query.get("equip"))
         elif parsed.path.startswith("/result"):
             reference = parse_qs(parsed.query).get("ref", [""])[0]
             body = voyage_page(reference)
@@ -225,7 +301,9 @@ except Exception as error:
     WHY = str(error)[:80]
 
 NAMES = ("read-only by default", "written when enabled", "searched carrier",
-         "wrong bill of lading", "grimaldi", "lazy tab")
+         "wrong bill of lading", "grimaldi shipment", "grimaldi container",
+         "grimaldi code untouched", "grimaldi nobody", "grimaldi unattended",
+         "lazy tab")
 if sync_playwright is None:
     for name in NAMES:
         skip(name, WHY)
@@ -272,17 +350,62 @@ else:
             check("A bill of lading the carrier does not have is reported, "
                   "not read off another page", wrong is not None, wrong)
 
-            grimaldi = None
+            A.PORTALS["GRIMALDI"] = dict(
+                A.PORTALS["GRIMALDI"], urls=[BASE + "/gnet?person=1"], wait=6)
+            A.CAPTCHA_POLL_MS = 500
+            os.environ["CAPTCHA_WAIT_MS"] = "20000"
+            grimaldi = A.get_provider_result(
+                pages, {"bol_awb": "S330348776", "carrier": "Grimaldi",
+                        "provider": "GRIMALDI", "current_eta": ""})
+            seen = GNET_SEEN[-1] if GNET_SEEN else {}
+            check("Grimaldi S330348776: typed in Shipment #, read after the "
+                  "person searched", (grimaldi or {}).get("eta") == "12/10/2026"
+                  and seen.get("ship") == "S330348776"
+                  and seen.get("equip") == "", "{0} {1}".format(grimaldi, seen))
+            check("The security code box was empty when the person reached it "
+                  "— the run never typed in it", seen.get("untouched") == "1",
+                  str(seen))
+
+            GNET_SEEN[:] = []
+            boxed = A.get_provider_result(
+                pages, {"bol_awb": "GRIU1234567", "carrier": "Grimaldi Lines",
+                        "provider": "GRIMALDI", "current_eta": ""})
+            seen = GNET_SEEN[-1] if GNET_SEEN else {}
+            check("A Grimaldi container is typed in Equipment #",
+                  (boxed or {}).get("eta") == "12/10/2026"
+                  and seen.get("equip") == "GRIU1234567"
+                  and seen.get("ship") == "" and seen.get("untouched") == "1",
+                  "{0} {1}".format(boxed, seen))
+
+            A.PORTALS["GRIMALDI"]["urls"] = [BASE + "/gnet?person=0"]
+            os.environ["CAPTCHA_WAIT_MS"] = "3000"
+            GNET_SEEN[:] = []
+            nobody = None
             try:
-                A.get_provider_result(pages, {"bol_awb": "GRI0001",
-                                              "carrier": "Grimaldi Lines",
-                                              "provider": "GRIMALDI",
-                                              "current_eta": ""})
-            except A.SkipShipment as error:
-                grimaldi = str(error)
-            check("Grimaldi is recognised and skipped with the real reason",
-                  grimaldi is not None and "no tracking address" in grimaldi,
-                  grimaldi)
+                A.get_provider_result(
+                    pages, {"bol_awb": "ANRB76464", "carrier": "Grimaldi",
+                            "provider": "GRIMALDI", "current_eta": ""})
+            except A.CaptchaRequired as error:
+                nobody = str(error)
+            check("Nobody types the code: HUMAN VERIFICATION REQUIRED, nothing "
+                  "submitted", nobody is not None and not GNET_SEEN,
+                  "{0} {1}".format(nobody, GNET_SEEN))
+
+            os.environ["CAPTCHA_WAIT_MS"] = "0"
+            before = pages["GRIMALDI"].url
+            pages["GRIMALDI"].goto("about:blank")
+            unattended = None
+            try:
+                A.get_provider_result(
+                    pages, {"bol_awb": "S330221931", "carrier": "Grimaldi",
+                            "provider": "GRIMALDI", "current_eta": ""})
+            except A.CaptchaRequired as error:
+                unattended = str(error)
+            check("An unattended run (CAPTCHA_WAIT_MS=0) does not even open "
+                  "GNET", unattended is not None
+                  and pages["GRIMALDI"].url == "about:blank",
+                  "{0} {1}".format(unattended, before))
+            os.environ.pop("CAPTCHA_WAIT_MS", None)
             A.OCEAN_WRITE = False
             browser.close()
 

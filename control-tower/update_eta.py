@@ -5096,7 +5096,7 @@ PORTALS = {
 OCEAN_WRITE = os.environ.get("OCEAN_WRITE", "0").strip().lower() in (
     "1", "true", "yes", "on")
 OCEAN_REFERENCE_BOX = (r"B\s*/\s*L|Bill\s+of\s+Lading|Container|Booking|"
-                       r"Reference|Tracking|Shipment\s+number|Enter")
+                       r"Reference|Tracking|Shipment\s+number")
 OCEAN_SEARCH_BUTTON = r"^\s*(Search|Track|Find|Go|Submit)\b"
 
 OCEAN_PORTALS = {
@@ -5113,10 +5113,19 @@ OCEAN_PORTALS = {
     "GRIMALDI": {
         "label": "Grimaldi Lines",
         "carrier": r"Grimaldi",
-        # The sheet names "GNET Grimaldi Corporate" but the address behind
-        # that link was not in it. Recognised, and skipped with that reason,
-        # until the address is known.
-        "urls": [],
+        "urls": ["https://www.gnet.grimaldi-eservice.com/gnet/pages_gatlas/"
+                 "wfcontainertracking"],
+        # GNET asks for a security code with every search. That is a human
+        # check, and it is answered by a human: the run fills the reference,
+        # then waits for a person to type the code and press Search.
+        "needs_person": True,
+        # Hub references for Grimaldi are shipment numbers — S330348776,
+        # ANRB76464 — so they go in "Shipment #". A container number goes in
+        # "Equipment #".
+        "placeholder": r"shipment\s*#|enter\s+shipment",
+        "box_label": r"^\s*Shipment\s*#?\s*:?\s*$",
+        "container": {"placeholder": r"equipment\s*#|enter\s+equipment",
+                      "box_label": r"^\s*Equipment\s*#?\s*:?\s*$"},
     },
     "COSCO": {
         "label": "COSCO Shipping",
@@ -5139,17 +5148,45 @@ OCEAN_PORTALS = {
     "HAPAG": {
         "label": "Hapag-Lloyd",
         "carrier": r"Hapag",
-        # The sheet's link was named, not shown. This is Hapag-Lloyd's own
-        # public tracking page; confirm it is the one meant.
+        # The Hub holds bills of lading for Hapag-Lloyd — HLCUTA12609EPQF2 —
+        # which its "Tracing by Container" page does not take. A container
+        # number goes to the container page the operator gave; anything else
+        # to Hapag-Lloyd's tracing by booking.
         "urls": ["https://www.hapag-lloyd.com/en/online-business/track/"
                  "track-by-booking-solution.html"],
+        "box_label": r"^\s*(?:Booking|B\s*/\s*L|Bill\s+of\s+Lading)[\w\s./]*:?\s*$",
+        "container": {
+            "urls": ["https://www.hapag-lloyd.com/en/online-business/track/"
+                     "track-by-container-solution.html"],
+            "box_label": r"^\s*Container\s*No\.?\s*:?\s*$"},
     },
 }
 for _key, _carrier in OCEAN_PORTALS.items():
     PORTALS[_key] = dict(
-        _carrier, ocean=True, verify_identity=True, verbatim=True,
-        placeholder=OCEAN_REFERENCE_BOX, button=OCEAN_SEARCH_BUTTON,
-        dashed=False, wait=45, attempts=1)
+        dict(placeholder=OCEAN_REFERENCE_BOX), **_carrier)
+    PORTALS[_key].update(
+        ocean=True, verify_identity=True, verbatim=True,
+        button=OCEAN_SEARCH_BUTTON, dashed=False, wait=45, attempts=1)
+
+# ISO 6346: four letters — owner code and category — then six digits and a
+# check digit. HLCU1234567, MSCU1234567, GRIU1234567.
+CONTAINER_NUMBER = re.compile(r"^\s*[A-Z]{4}\s*\d{6}\s*-?\s*\d\s*$", re.I)
+
+
+def is_container_number(reference):
+    return bool(CONTAINER_NUMBER.match(str(reference or "")))
+
+
+def portal_config_for(provider, reference):
+    """
+    The portal's settings for THIS reference. A carrier that tracks
+    containers on one page and bills of lading on another says so with a
+    `container` block; everything else is unchanged.
+    """
+    config = PORTALS[provider]
+    if config.get("container") and is_container_number(reference):
+        return dict(config, **config["container"])
+    return config
 
 
 def ocean_provider(carrier_name):
@@ -6244,7 +6281,8 @@ def portal_awb(tracking_number, dashed=True):
     return "{0}-{1}".format(digits[:3], digits[3:11]) if dashed else digits[:11]
 
 
-def find_portal_input(page, placeholder, strict=False, timeout_ms=None):
+def find_portal_input(page, placeholder, strict=False, timeout_ms=None,
+                      label=None):
     """
     The air waybill box, or None.
 
@@ -6262,6 +6300,16 @@ def find_portal_input(page, placeholder, strict=False, timeout_ms=None):
         page.get_by_label(re.compile(r"Air\s*waybill|AWB", re.I)),
         page.locator("input[name*='awb' i], input[id*='awb' i]"),
     ]
+    if label:
+        # A box named by the text BESIDE it rather than inside it — Hapag-
+        # Lloyd's "Container No.", Grimaldi's "Shipment #". Anchored, so it
+        # names one field and not a paragraph that mentions it.
+        pattern = re.compile(label, re.I)
+        candidates[1:1] = [
+            page.get_by_label(pattern),
+            page.get_by_text(pattern).locator(
+                "xpath=following::input[not(@type='hidden')][1]"),
+        ]
     if not strict:
         # The catch-all, minus the flight status card. myCargo puts a second
         # form beside the air waybill one — flight number, origin,
@@ -6274,7 +6322,9 @@ def find_portal_input(page, placeholder, strict=False, timeout_ms=None):
             "input[type='text']:visible"
             ":not([placeholder*='flight' i]):not([placeholder*='origin' i])"
             ":not([placeholder*='destination' i]):not([placeholder*='date' i])"
-            ":not([name*='flight' i]):not([id*='flight' i])"))
+            ":not([name*='flight' i]):not([id*='flight' i])"
+            ":not([placeholder*='code' i]):not([name*='captcha' i])"
+            ":not([id*='captcha' i]):not([name*='code' i])"))
     # first_visible spends its timeout PER candidate, so a polled probe has
     # to be given a small one or each poll costs seconds.
     return first_visible(candidates,
@@ -6440,11 +6490,17 @@ def open_portal(page, config, tracking_number):
             page,
             [("the air waybill box",
               lambda: find_portal_input(page, config["placeholder"],
-                                        strict=True,
-                                        timeout_ms=250) is not None)],
+                                        strict=True, timeout_ms=250,
+                                        label=config.get("box_label"))
+              is not None)],
             PORTAL_FORM_READY_MS,
             reason="the {0} air waybill box".format(config["label"]))
-        field = find_portal_input(page, config["placeholder"])
+        # A page with a security-code box never gets the catch-all: "any
+        # visible text box" there could be the code box, and the run must
+        # not type into it.
+        field = find_portal_input(page, config["placeholder"],
+                                  strict=bool(config.get("needs_person")),
+                                  label=config.get("box_label"))
         if field is not None:
             if url != config["urls"][0]:
                 write_log(f"{config['label']}: used the fallback entry point {url}")
@@ -6598,6 +6654,75 @@ def submit_portal_awb(page, field, config, tracking_number):
         return
 
     click_postback(button, f"{config['label']} search")
+
+
+def await_person_search(page, field, config, provider, tracking_number):
+    """
+    The carrier's search needs a person: GNET puts a security code beside
+    every search. The run types the reference and nothing else — it never
+    reads the code image, never types in the code box, never presses Search.
+    A person does those two things; the run waits, bounded, for the result
+    of THIS reference to appear, then carries on reading it as usual.
+    """
+    formatted = str(tracking_number).strip()
+    landed = type_into(field, formatted,
+                       "the {0} reference box".format(config["label"]))
+    if re.sub(r"[\s\-/]", "", landed).upper() != \
+            re.sub(r"[\s\-/]", "", formatted).upper():
+        save_page_text(page, tracking_number,
+                       config["label"].lower() + "_not_typed")
+        raise SkipShipment(
+            "The {0} reference box would not accept the number (typed '{1}', "
+            "field holds '{2}').".format(config["label"], formatted, landed))
+
+    tower.step("Waiting for a person: {0} security code".format(
+        config["label"]), system="browser")
+    try:
+        take_screenshot(page, tracking_number, "security_code")
+    except Exception:
+        pass
+    wait_s = _captcha_wait_ms() // 1000
+    write_log("=" * 62)
+    write_log("HUMAN STEP REQUIRED — {0}".format(config["label"]))
+    write_log("{0} is filled in on the {1} page. Please type the security "
+              "code shown there and press Search.".format(
+                  formatted, config["label"]))
+    write_log("The run reads the result by itself once it appears, and moves "
+              "on after {0} seconds if it does not. The code is never read "
+              "or typed by the automation.".format(wait_s))
+    write_log("=" * 62)
+    try:
+        tower.human_verification_required(tracking_number, config["label"])
+    except Exception:
+        pass
+
+    started = time.time()
+    deadline = started + wait_s
+    while time.time() < deadline:
+        try:
+            page.wait_for_timeout(CAPTCHA_POLL_MS)
+        except Exception:
+            break
+        try:
+            result = extract_portal_result(page, provider)
+        except Exception:
+            result = None
+        if result and (result.get("no_result")
+                       or awb_on_page(page, tracking_number)):
+            waited = int(time.time() - started)
+            write_log("{0}: search done by a person after {1}s; reading the "
+                      "result for {2}.".format(config["label"], waited,
+                                               tracking_number))
+            try:
+                tower.human_verification_cleared(tracking_number, waited)
+            except Exception:
+                pass
+            return True
+
+    write_log("Nobody completed the {0} search within {1}s. Leaving {2} for a "
+              "later run; nothing was written.".format(
+                  config["label"], wait_s, tracking_number))
+    raise CaptchaRequired(tracking_number, config["label"])
 
 
 def afkl_destination(text):
@@ -7582,7 +7707,9 @@ def _read_generic_portal_page(page, provider):
 
 
 def get_portal_result(page, provider, tracking_number, shipment=None):
-    config = PORTALS[provider]
+    # Some carriers track containers on one page and bills of lading on
+    # another; the reference decides which.
+    config = portal_config_for(provider, tracking_number)
     airline = (airline_from_awb(tracking_number)[1] or {}).get("name", config["label"])
     slug = provider.lower()
     write_log(f"Opening {config['label']} tracking for {tracking_number} ({airline})")
@@ -7632,8 +7759,16 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
                 write_log(
                     "{0}: no detail URL could be built for {1}; using the "
                     "search form.".format(config["label"], tracking_number))
+            if config.get("needs_person") and _captcha_wait_ms() == 0:
+                # An unattended run: nobody is there to type the code, so
+                # the page is not even opened.
+                raise CaptchaRequired(tracking_number, config["label"])
             field = open_portal(page, config, tracking_number)
-            submit_portal_awb(page, field, config, tracking_number)
+            if config.get("needs_person"):
+                await_person_search(page, field, config, provider,
+                                    tracking_number)
+            else:
+                submit_portal_awb(page, field, config, tracking_number)
 
         end_time = time.time() + config.get("wait", 40)
         identity_required = bool(config.get("verify_identity"))

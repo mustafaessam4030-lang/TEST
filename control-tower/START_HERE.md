@@ -6,6 +6,25 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · DHL K-references and seven ocean carriers.** A reference like
+K179801 goes to DHL. CMA CGM, MSC, Grimaldi, COSCO, Maersk, ONE and
+Hapag-Lloyd are picked by the Hub's Carrier Name column.
+
+- **Ocean results are read and logged, but not written to the Hub yet.**
+  First run `diagnose_ocean.bat <CARRIER> <reference>` with a real reference
+  and check the result. Then set `OCEAN_WRITE=1` to turn writing on.
+- **Hapag-Lloyd:** a container number (HLCU1234567) uses *Tracing by
+  Container*. A bill of lading (HLCUTA12609EPQF2) uses tracing by booking.
+- **Grimaldi (GNET) needs a person for every search.** The run fills in
+  *Shipment #* (or *Equipment #* for a container) and then waits for you to
+  type the security code and press **Search**. It never reads or types the
+  code. If nobody does it within `CAPTCHA_WAIT_MS` (3 minutes by default),
+  the shipment shows HUMAN VERIFICATION REQUIRED and is left for the next run.
+  With `CAPTCHA_WAIT_MS=0` (unattended), Grimaldi rows are skipped without
+  opening GNET.
+- **CMA CGM's "slide right" check** is detected, and the run waits for a
+  person to do it. It is never solved automatically.
+
 **1 · The AFKL lookup was leaking a browser context per shipment.** Each one
 stayed open for the rest of the run holding a page on the carrier, and behind
 it a live connection. That is the "Edge cannot open AFKL while the automation
