@@ -28,6 +28,13 @@ Action tasks, what operators ask, and real screenshots.
   strategy with its sample and confidence, Human Action patterns, proposals
   (recorded for a person to approve; nothing changes the automation by
   itself) and the **monthly review**.
+- **Review and decide:** `atlas_review.bat` (or `python -m intelligence.review`)
+  — `status`, `review`, `learned`, `proposals`, `approve ID --by NAME`,
+  `reject ID --by NAME`. Approving records who decided and when; the change
+  itself still goes through a tested deployment.
+- **Evidence:** real screenshots are kept for failures, recoveries, the result
+  page after a human step, and each read-back-verified Hub write (viewport
+  only). Never of a verification screen.
 - **Stars** are earned at a monthly evaluation, once a month has ended, and
   only when every criterion of the next level is met (one level at most per
   month). Time alone never adds a star.

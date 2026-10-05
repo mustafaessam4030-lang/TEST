@@ -254,5 +254,6 @@ automation and the supervisor do; tests and tools do not). The store lives in
 
 What can change production: nothing here. A proposal ("try X before Y") is
 recorded with its evidence; a person may mark it APPROVED or REJECTED
-(`learning.decide`), and the change itself still goes through a tested,
-approved deployment.
+(`python -m intelligence.review approve ID --by NAME`), and the change itself
+still goes through a tested, approved deployment. Ended months are evaluated
+when the automation starts and when the dashboard asks.

@@ -603,6 +603,49 @@ check("The learning layer never touches a browser",
           "no playwright", "") for f in ("events.py", "learning.py", "plans.py", "maturity.py",
                                          "evidence.py", "vision.py", "store.py")))
 
+rule("12. THE HUMAN SIDE: REVIEW, DECIDE, EVALUATE")
+import io                                                     # noqa: E402
+import contextlib                                             # noqa: E402
+from intelligence import review                               # noqa: E402
+os.environ["ATLAS_INTEL_DIR"] = str(WORK / "review")
+events.invalidate()
+learning.invalidate()
+for r in big:
+    events.record("shipment", **{k: v for k, v in r.items() if k != "kind"})
+learning.invalidate()
+pid = learning.snapshot()["proposals"][0]["id"]
+
+
+def run_cli(*argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = review.main(list(argv))
+    return code, out.getvalue()
+
+
+code, out = run_cli("proposals")
+check("The review lists each proposal with its verified evidence", code == 0 and pid in out
+      and "verified" in out and "tested deployment" in out)
+code, out = run_cli("approve", pid, "--by", "Ops lead")
+check("Approving names who decided and changes nothing in the automation",
+      code == 0 and "Nothing in the automation changed" in out
+      and learning.snapshot()["proposals"][0]["status"] == "APPROVED"
+      and learning.snapshot()["proposals"][0]["decided_by"] == "Ops lead")
+code, out = run_cli("approve", "nope000000", "--by", "x")
+check("An unknown proposal cannot be approved", code == 1)
+code, out = run_cli("status")
+check("Status shows the level and the next level's criteria as a preview",
+      code == 0 and "preview, not an evaluation" in out)
+code, out = run_cli("learned")
+check("'learned' prints issues with verified, unverified and skipped kept apart",
+      "verified" in out and "unverified" in out and "skipped" in out)
+check("The automation evaluates ended months at start, as well as the dashboard",
+      "_intel_maturity.ensure_evaluated()" in SRC)
+uv = SRC.split("def update_one_view")[1].split("\ndef ")[0]
+check("A verified Hub write is captured as evidence — viewport only, real runs only",
+      'if episode_verified is True and INTEL.get("evidence") is not None:' in uv
+      and "full_page=False" in uv)
+
 print()
 print("=" * 74)
 print("{0} passed, {1} failed{2}".format(len(PASS), len(FAIL),

@@ -602,14 +602,14 @@ def verification_on_screen(page):
         return False
 
 
-def take_screenshot(page, bol_awb, suffix):
+def take_screenshot(page, bol_awb, suffix, full_page=True):
     path = SCREENSHOT_FOLDER / f"{safe_filename(bol_awb)}_{suffix}.png"
     if verification_on_screen(page):
         write_log("Screenshot not taken for {0} ({1}): a security verification is on "
                   "screen, and verification screens are never stored.".format(bol_awb, suffix))
         return path
     try:
-        page.screenshot(path=str(path), full_page=True)
+        page.screenshot(path=str(path), full_page=full_page)
         write_log(f"Screenshot saved: {path}")
     except Exception as error:
         write_log(f"Screenshot failed: {error}")
@@ -9740,6 +9740,15 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
 
         tower.view_updated(view_name, field_name, date_value,
                            verified=episode_verified)
+        if episode_verified is True and INTEL.get("evidence") is not None:
+            # Evidence of a verified write: the Hub page as it stood when the
+            # value read back. Viewport only — one small image per write —
+            # and only for a real run.
+            try:
+                take_screenshot(page, bol_awb, "hub_{0}_{1}_verified".format(
+                    view_name.lower(), field_name.lower()), full_page=False)
+            except Exception as error:
+                note_suppressed("capturing verified-write evidence", error)
         action = f"{view_name} {field_name} updated with {date_value} and saved"
         write_log(f"{action} for {bol_awb}.")
         if return_to_table:
@@ -9864,6 +9873,16 @@ def main():
         write_log("[ATLAS] Learning from this run: outcomes, recoveries, human "
                   "actions and evidence are recorded in {0}".format(
                       _intel_events.store.folder()))
+        # A month that has ended is evaluated here even if nobody opens the
+        # ATLAS page. Recorded once per month; a star only if every criterion
+        # of the next level is met.
+        from intelligence import maturity as _intel_maturity
+        for _evaluation in _intel_maturity.ensure_evaluated():
+            write_log("[ATLAS] Monthly evaluation {0}: level {1} -> {2}{3}".format(
+                _evaluation["month"], _evaluation["level_before"],
+                _evaluation["level_after"],
+                " (promoted)" if _evaluation["promoted"] else
+                " (not every criterion of the next level was met)"))
     except Exception as error:
         write_log("[ATLAS] Learning store unavailable ({0}); the run is "
                   "unaffected.".format(str(error)[:120]))
