@@ -778,8 +778,17 @@ else:
                   len(chosen) == 1 and chosen[0][0]["status"] == "OPERATOR_OPENED"
                   and chosen[0][1]["bol_awb"] == "S330400001"
                   and chosen[0][1]["table_page"] == 2, str(chosen))
-            # The person sits at the browser and does ONLY the verification.
-            PERSON["go"] = True
+            # The person sits at the browser and does ONLY the verification
+            # — once the run has the tab in front at the verification step,
+            # as a real person would. Releasing them before that raced the
+            # run on a loaded machine: they could submit before the run was
+            # waiting, and the queue skipped VERIFICATION_PENDING.
+            PERSON["go"] = False
+            _task_id = t1[0]["action_id"]
+            threading.Thread(target=lambda: (until(
+                lambda: (A.HUMAN_QUEUE.get(_task_id) or {}).get("status") ==
+                "VERIFICATION_PENDING", 60), PERSON.__setitem__("go", True)),
+                daemon=True).start()
             SUBMITTED[:] = []
             counts["human"] -= 1          # main() gives the parked count back
             kind, result = process(pages, chosen[0][1], counts)

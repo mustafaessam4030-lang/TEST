@@ -386,8 +386,7 @@ inbound) and optional Azure Bastion for administrators.
 
 1. `az login`; `az group create -n rg-ata -l westeurope`
 2. `cp deploy/azure/main.parameters.example.json main.parameters.json`; set `publicUrl`.
-3. `az bicep build --file deploy/azure/main.bicep` (fix any reported API drift), then
-   `az deployment group create -g rg-ata -f deploy/azure/main.bicep -p @main.parameters.json -p pgAdminPassword=… vmAdminPassword=…`
+3. `az deployment group create -g rg-ata -f deploy/azure/main.bicep -p @main.parameters.json -p pgAdminPassword=… vmAdminPassword=…`
 4. Entra ID (recommended): App registrations → New → name "ATA Control Tower",
    single tenant, redirect URI (Web) `https://ata.mantrac.com/auth/sso/callback`;
    Certificates & secrets → new client secret → store it:
@@ -454,8 +453,9 @@ typed through the live view found nowhere afterwards.
 
 ## 19. Remaining limitations
 
-* **Not deployed.** No Azure subscription is available here: the Bicep has not
-  been compiled (`az bicep build`) or deployed, and the App Service, Key Vault
+* **Not deployed.** No Azure subscription is available here. The Bicep
+  template compiles and lints clean (Bicep CLI 0.47.16, no errors or
+  warnings), but it has not been deployed: the App Service, Key Vault
   references, PostgreSQL Flexible Server, custom domain and certificate are
   untested in Azure. The packaged app was started standalone and works.
 * **Entra ID** was tested against a locally generated RSA key and simulated

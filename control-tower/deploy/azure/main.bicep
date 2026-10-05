@@ -12,8 +12,9 @@
 // security group allows no inbound traffic from the internet; administrators
 // reach it through Azure Bastion (optional, deployBastion=true).
 //
-// NOT COMPILED IN THE ENVIRONMENT THAT WROTE IT: run `az bicep build --file
-// main.bicep` first; fix any API-version drift it reports. See PLATFORM.md.
+// Compiled and linted clean with Bicep CLI 0.47.16 (`bicep build`, `bicep
+// lint`: no errors, no warnings). Not yet deployed to a subscription — the
+// first `az deployment group create` is the real test. See PLATFORM.md.
 
 targetScope = 'resourceGroup'
 
