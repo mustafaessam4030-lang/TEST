@@ -363,13 +363,9 @@ class Handler(BaseHTTPRequestHandler):
             self._export_csv()
             return
 
-        # /intro is the honest name; /film stays so older links keep working.
+        # The ATLAS film on its own page. /film stays so older links work.
         if route in ("/intro", "/film"):
-            self._send_file(STATIC_DIR / "film.html")
-            return
-
-        if route == "/api/film":
-            self._send(200, json.dumps(film_scenes()))
+            self._send_file(STATIC_DIR / "intro" / "index.html")
             return
 
         if route == "/api/share":
@@ -743,53 +739,6 @@ FILM_SLOTS = [
     "05-arrival", "06-clearance", "07-hub", "08-close",
 ]
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".webp", ".avif")
-
-
-def film_scenes():
-    """
-    Report which scene photographs are actually present.
-
-    Files are matched by the number that starts the filename, so "03 port at
-    dawn.jpg" and "03-port.jpg" both land in slot three. A missing photo is
-    reported as missing — the film draws its own artwork for that scene rather
-    than showing a broken image.
-    """
-    folder = STATIC_DIR / "film"
-    folder.mkdir(parents=True, exist_ok=True)
-
-    found = {}
-    try:
-        for item in sorted(folder.iterdir()):
-            if item.suffix.lower() not in IMAGE_TYPES:
-                continue
-            head = item.name.split("-")[0].split(" ")[0].split(".")[0]
-            if head.isdigit():
-                found.setdefault(int(head), "/static/film/" + item.name)
-    except Exception:
-        pass
-
-    # An optional video takes over as the backdrop and is scrubbed by scroll.
-    video = None
-    for item in sorted(folder.iterdir()):
-        if item.suffix.lower() in (".mp4", ".webm", ".mov"):
-            video = "/static/film/" + item.name
-            break
-
-    return {
-        "slots": [
-            {"index": i + 1, "name": name, "image": found.get(i + 1)}
-            for i, name in enumerate(FILM_SLOTS)
-        ],
-        "video": video,
-        "folder": str(folder),
-        "have": len(found),
-        "total": len(FILM_SLOTS),
-    }
-# ============================================================
-# REPLAY — rebuild state from a real finished run
-# ============================================================
-
-LOG_LINE = re.compile(r"^\[(?P<ts>[\d\-: ]+)\]\s(?P<msg>.*)$")
 
 
 def replay(base_folder):

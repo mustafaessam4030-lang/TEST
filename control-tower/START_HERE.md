@@ -16,6 +16,16 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 - **On the way:** shipments with an ETA and no ATA yet. The van drives only
   while there is at least one.
 
+**New · The ATLAS film is the introduction.** The dashboard opens with the
+30-second ATLAS film from the design handoff: ATLAS watches the network, a
+shipment fails, it diagnoses, plans, recovers, asks a person for one step,
+takes over and learns, ending on the MANTRAC lockup with **Open dashboard**.
+Once per browser session; **Skip intro** or Escape leave it at any point;
+replay it from the menu (Introduction) or Settings, or open `/intro`. It is
+drawn live from one local file (`dashboard/static/intro/film.js`) — no video,
+no audio, nothing fetched from the internet — and removed completely when it
+ends. With reduced motion turned on, it shows the closing frame only.
+
 **New · ATLAS learns from real runs — and earns its stars.** Every real run
 now feeds ATLAS's learning store (`ml/data/intelligence/`): how each shipment
 ended, which navigation and recovery strategies were tried, closed Human
@@ -102,8 +112,9 @@ Settings), five overview metrics, and a Live Operations table.
   it was read, read-back result, run ID, and the full timeline.
 - **Human verification:** shown as a notification card with **Open Session**
   and **Resume** (same behaviour as before).
-- **Logo:** put the official file at `dashboard/static/brand/mantrac-logo.svg`
-  (or `.png`). Until then the top-left slot shows a dashed "Logo" placeholder.
+- **Logo:** the official Mantrac | CAT logo is in
+  `dashboard/static/brand/mantrac-logo.png` (from the ATLAS film handoff). A
+  sharper `.svg` of the same name, if you have one, takes precedence.
 
 **New · Human in the loop (Grimaldi first).** When a carrier page needs a
 person, the run no longer skips the shipment. It pauses that shipment in the
@@ -275,7 +286,7 @@ whichever machine opens it, so it will not work for them.
 **Systems** — DHL, Qatar Airways, the Hub and the browser
 **Exceptions** — every failure with its shipment, carrier, step and reason
 **Activity log** — the full run log, searchable by level
-**Intro film** — the scroll-driven story of the project
+**Intro film** — the 30-second ATLAS film (also at `/intro`)
 
 ### The assistant
 

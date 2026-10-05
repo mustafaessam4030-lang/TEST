@@ -41,37 +41,58 @@ print("1. THE INTRO")
 print("=" * 72)
 check("It is the first thing in the body",
       INDEX.index('id="gate"') < INDEX.index('id="app"'))
-import re as _re
-_scenes = _re.findall(r'<div class="g-s(?:\s[^"]*)?"', INDEX)
-check("Five scenes", len(_scenes) == 5, str(len(_scenes)))
-check("Runs about 6.6s, inside the 5-8s the brief asked for",
-      "const TOTAL = 6600;" in INDEX)
-check("It ends ON the Open dashboard scene rather than dismissing itself",
-      "function hold()" in INDEX and "gate.classList.add('ended')" in INDEX)
+FILM = (HERE / "dashboard" / "static" / "intro" / "film.js").read_text(encoding="utf-8")
+FILM_SRC = (HERE / "dashboard" / "static" / "intro" / "film.src.jsx").read_text(encoding="utf-8")
+_intro_js = INDEX.split("function intro()")[1].split("/* ═══ ATLAS")[0]
+check("The intro is the ATLAS film, eight scenes over 30 s, from the design handoff",
+      all("['{0}', ".format(n) in FILM_SRC for n in ("Enter", "Observe", "Diagnose", "Plan",
+                                                    "Recover", "Human", "Takeover", "Learn"))
+      and "function Piece(" in FILM_SRC)
+check("...played from one local file — nothing fetched from the internet",
+      "tag.src = '/static/intro/film.js'" in _intro_js and "fetch(" not in FILM
+      and "import(" not in FILM
+      # The only addresses in the bundle are XML namespace names and the
+      # licence credit — identifiers, never requested.
+      and not re.search(r"https?://(?!www\.w3\.org/|preactjs\.com)", FILM))
+check("...loaded only when the intro runs, not in the dashboard's load path",
+      '<script src="/static/intro/film.js"' not in INDEX)
+check("Its ATLAS poses and the MANTRAC logo are the handoff's own renders",
+      all((HERE / "dashboard" / "static" / "intro" / "atlas" / f).exists() for f in
+          ("w-hello.png", "w-monitor.png", "w-analyze.png", "w-recover.png", "w-success.png",
+           "w-action.png", "mantrac-logo.png")))
+check("It ends ON the lockup with Open dashboard rather than dismissing itself",
+      "function hold()" in INDEX and "gate.classList.add('ended')" in INDEX
+      and "onEnd: hold" in _intro_js)
 check("OPEN DASHBOARD exists", 'id="openDash"' in INDEX
       and "Open dashboard" in INDEX)
 check("...and it dismisses the intro without a reload",
       "$('openDash').addEventListener('click', finish)" in INDEX
-      and "location.href" not in INDEX.split("function intro()")[1][:6000])
-check("The scenes are tied together by one spine, not five loose cards",
-      "@keyframes gspine" in INDEX and 'class="g-spine"' in INDEX)
+      and "location.href" not in _intro_js)
+check("When it ends, the film is unmounted — nothing of it keeps running",
+      "player.stop()" in _intro_js and "render(null, stage)" in FILM_SRC
+      and "cancelAnimationFrame(raf)" in FILM_SRC)
+check("If the film cannot load, the dashboard opens anyway", ".catch(finish)" in _intro_js)
+check("A frame that throws ends the film at its way out, never freezes it",
+      "broken = true" in FILM_SRC and "T >= TOTAL || broken" in FILM_SRC)
 check("The sidebar Introduction replays THIS intro, not a second page",
       "if (p.film){ if (window.ctReplayIntro) window.ctReplayIntro(); return; }"
       in INDEX)
-check("There is a skip control", 'id="skip"' in INDEX)
+check("There is a skip control", 'id="skip"' in INDEX and "Skip intro" in INDEX)
 check("Escape also skips", "e.key === 'Escape'" in INDEX)
-check("It reaches its close on its own", "lastTimer = setTimeout(hold, TOTAL)" in INDEX)
-check("It is CSS animation, not a video file",
-      "@keyframes gscene" in INDEX and "<video" not in INDEX)
+check("It is drawn live, not a video file", "<video" not in INDEX and "<video" not in FILM_SRC)
 check("No animation library was added",
-      "gsap" not in INDEX.lower() and "anime.min" not in INDEX.lower())
-check("A progress indicator runs with it", "@keyframes gbar" in INDEX)
+      "gsap" not in (INDEX + FILM).lower() and "anime.min" not in (INDEX + FILM).lower())
+check("A progress indicator runs with it", 'id="filmBar"' in INDEX and "onProgress" in _intro_js)
 check("It plays once per browser session",
       "sessionStorage.getItem('ct-intro')" in INDEX)
 check("It can be replayed from settings",
       "ctReplayIntro" in INDEX and "Replay intro" in INDEX)
-check("Reduced motion goes straight to the close",
-      "prefers-reduced-motion" in INDEX and "if (reduced){ hold(); return; }" in INDEX)
+check("Reduced motion shows the closing frame, still, with the way in",
+      "prefers-reduced-motion" in INDEX and "still: reduced" in _intro_js
+      and "if (opts.still) { finish(); }" in FILM_SRC)
+check("The human step never shows a code: an operator completes it",
+      "Operator completes this step" in FILM_SRC
+      and not re.search(r"captcha|security code", FILM_SRC.split("function Piece")[1], re.I))
 
 print()
 print("=" * 72)
@@ -125,10 +146,8 @@ check("The sidebar's Introduction still replays the same one intro",
 # Scoped to the rule, and anchored so `border-color:var(--ink)` cannot
 # satisfy a substring search for `color:var(--ink)`.
 _gopen = INDEX.split(".g-open{")[1].split("}")[0]
-check("OPEN DASHBOARD is not black-on-black — a filled control carries its "
-      "own foreground",
-      "color:var(--paper)" in _gopen and "background:var(--ink)" in _gopen
-      and not re.search(r"(?<!-)color:var\(--ink\)", _gopen), _gopen[:120])
+check("OPEN DASHBOARD is not dark-on-dark — white on the film's ink",
+      "color:#FFFFFF" in _gopen and "background:#0E1A33" in _gopen, _gopen[:160])
 
 print()
 print("=" * 72)
@@ -166,12 +185,10 @@ check("...and no dashboard control still fills with --ink",
 check("No hardcoded light-theme colour survives in the markup",
       "#946200" not in INDEX and "#C48A00" not in INDEX and "#A9A294" not in INDEX)
 
-# The intro was signed off as-is and keeps its own palette, scoped.
+# The film keeps its own white palette, independent of the dashboard tokens.
 _gate = INDEX.split("#gate{")[1].split("}")[0]
-check("The Introduction pins its own bone-and-ink values",
-      "--paper:#EFEBE3" in _gate and "--ink:#0A0A0B" in _gate, _gate[:120])
-check("...so a dark dashboard does not swallow the cinematic",
-      "--card:#F6F3EC" in _gate)
+check("The Introduction paints the film's own vignette, edge to edge",
+      "#FFFFFF 40%,#F6F8FB 100%" in _gate and "var(--" not in _gate, _gate[:160])
 
 # One accent, one meaning.
 check("An ACTUAL arrival is the only date that carries colour",

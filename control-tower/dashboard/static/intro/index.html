@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATLAS — Operational Intelligence</title>
+<style>
+  html,body{margin:0;height:100%;color:#0E1A33;overflow:hidden;
+    background:radial-gradient(ellipse 80% 70% at 50% 55%,#FFFFFF 40%,#F6F8FB 100%) #FFFFFF;
+    font-family:-apple-system,'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif}
+  #host{position:fixed;inset:0}
+  .bar{position:fixed;left:0;right:0;bottom:0;height:3px;background:#E4E8EF}
+  .bar span{display:block;height:100%;width:0;background:#FFC72C}
+  .ctl{position:fixed;right:20px;top:18px;display:flex;gap:8px;z-index:2}
+  .ctl a,.ctl button{font:600 12px/1 inherit;font-family:inherit;letter-spacing:.12em;text-transform:uppercase;
+    color:#33405C;background:rgba(255,255,255,.86);border:1px solid #E4E8EF;border-radius:999px;
+    padding:10px 16px;cursor:pointer;text-decoration:none}
+  .ctl a:hover,.ctl button:hover{color:#fff;background:#0E1A33;border-color:#0E1A33}
+</style>
+</head>
+<body>
+<div id="host"></div>
+<div class="bar"><span id="bar"></span></div>
+<div class="ctl"><button id="replay" type="button">Replay</button><a href="/">Open dashboard</a></div>
+<script src="/static/intro/film.js"></script>
+<script>
+  var player = null;
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function play(){
+    if (player) player.stop();
+    document.getElementById('bar').style.width = '0';
+    player = window.AtlasIntro.start(document.getElementById('host'), {
+      still: reduced,
+      onProgress: function(p){ document.getElementById('bar').style.width = (p * 100) + '%'; },
+      onEnd: function(){ document.getElementById('bar').style.width = '100%'; }
+    });
+  }
+  document.getElementById('replay').addEventListener('click', play);
+  play();
+</script>
+</body>
+</html>

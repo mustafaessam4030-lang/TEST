@@ -1,7 +1,8 @@
 OFFICIAL MANTRAC LOGO
 =====================
 
-Put the official Mantrac logo file here, named:
+The official Mantrac | CAT logo is here as mantrac-logo.png (supplied with
+the ATLAS film handoff). To replace it, put the official file here, named:
 
     mantrac-logo.svg      (preferred — sharp at every size)
     mantrac-logo.png      (used if there is no .svg; ~52px tall or more)

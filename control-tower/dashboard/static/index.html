@@ -243,128 +243,42 @@ input,textarea,select{font-family:inherit}
 .fb-in{width:100%;margin-top:7px;font:inherit;font-size:12px;padding:7px 9px;
   border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink)}
 .fb-done{font-size:11px;color:var(--grn)}
-/* ═══ INTRO ═══════════════════════════════════════════════════════════
-   A short film made of slides, in the dashboard's own language: same paper,
-   same ink, same mono kickers. What makes it read as ONE sequence rather
-   than five unrelated cards is the spine — a rule that grows across the
-   whole run — and the fact that every scene enters and leaves on the same
-   short, hard cut. No library, no video, ~700 bytes of DOM. */
-/* ── THE INTRODUCTION KEEPS ITS OWN PALETTE ──────────────────────────
-   The cinematic is bone and ink and it stays that way: it is the piece of
-   this product that was signed off as-is, and a dark intro followed by a
-   dark dashboard also loses the one thing the sequence is for — the moment
-   the picture gives way and the console appears.
-   These are the original light-theme values, scoped. Not one scene, word,
-   timing or animation changes; only the tokens the intro reads are held. */
-#gate{
-  --paper:#EFEBE3; --bone:#E3DED2; --card:#F6F3EC;
-  --ink:#0A0A0B; --mid:#6B6862; --faint:#6B6862;
-  --line:#D8D2C4; --line-2:#E3DED2;
-  --vio:#1B34E8; --vio-wash:rgba(27,52,232,.08); --vio-line:rgba(27,52,232,.32);
-  --amber-wash:rgba(185,106,0,.10);
-  --grn:#0F7A50;
-  /* The cinematic was set in Inter and is not being redesigned, so it keeps
-     asking for it. With no webfont loaded it falls through to the system
-     stack, which is the same shapes at these sizes and weights. */
-  --s:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Display','Segoe UI',
-      system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
-}
+/* ═══ INTRO ═════════════════════════════════════════════════════════════
+   The ATLAS product film (30 s, from the design handoff), played by our own
+   small clock. White stage, letterboxed to fit; the film itself is one
+   bundled file, loaded only when the intro runs and unmounted the moment it
+   ends — nothing of it keeps running behind the dashboard. Skip, Escape and
+   Open dashboard all leave it; it plays once per browser session. */
 #gate{position:fixed;inset:0;z-index:100;overflow:hidden;
-  background:radial-gradient(ellipse 62% 52% at 50% 6%,var(--amber-wash),transparent 62%),
-             radial-gradient(ellipse 52% 42% at 50% 100%,var(--vio-wash),transparent 60%),
-             var(--paper);
-  display:grid;place-items:center;
-  transition:opacity .5s var(--e),visibility .5s}
+  background:radial-gradient(ellipse 80% 70% at 50% 55%,#FFFFFF 40%,#F6F8FB 100%) #FFFFFF;
+  transition:opacity .5s cubic-bezier(.22,1,.32,1),visibility .5s}
 #gate.gone{opacity:0;visibility:hidden;pointer-events:none}
-
-/* the spine: one line drawn across the whole sequence, so each cut lands
-   on a picture that is visibly further along than the last */
-.g-spine{position:absolute;left:50%;top:calc(50% + 132px);width:min(560px,74vw);
-  height:1px;transform:translateX(-50%);background:var(--line);overflow:hidden}
-.g-spine::after{content:"";position:absolute;inset:0;background:var(--vio);
-  transform:scaleX(0);transform-origin:left}
-#gate.play .g-spine::after{animation:gspine var(--total,6600ms) cubic-bezier(.6,0,.2,1) forwards}
-@keyframes gspine{to{transform:scaleX(1)}}
-.g-mark{position:absolute;top:-3px;width:7px;height:7px;border-radius:50%;
-  background:var(--vio);opacity:.35}
-.g-mark.m1{left:22%}.g-mark.m2{left:46%}.g-mark.m3{left:70%}
-
-.g-stage{position:relative;width:min(880px,90vw);height:min(300px,46vh);
-  display:grid;place-items:center;text-align:center}
-.g-s{position:absolute;inset:0;display:grid;place-items:center;align-content:center;
-  gap:13px;opacity:0;pointer-events:none}
-/* Short in, hold, short out — a cut, not a dissolve. The blur is 3px and
-   brief; anything more starts to feel like a screensaver. */
-#gate.play .g-s{animation:gscene var(--dur,1.3s) cubic-bezier(.22,1,.32,1) var(--at,0s) both}
-@keyframes gscene{
-  0%{opacity:0;transform:translateY(10px) scale(.99);filter:blur(3px)}
-  12%,80%{opacity:1;transform:none;filter:blur(0)}
-  100%{opacity:0;transform:translateY(-7px) scale(1.006);filter:blur(2px)}
-}
-/* the words arrive a beat apart, which is what stops a line landing flat */
-#gate.play .g-s > *{animation:grise .5s cubic-bezier(.22,1,.32,1) both;
-  animation-delay:calc(var(--at,0s) + var(--i,0) * .07s)}
-@keyframes grise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
-
-.g-kick{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(10px,1.05vw,12px);
-  font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--vio)}
-.g-h1{font-size:clamp(38px,7.2vw,88px);font-weight:800;letter-spacing:-.058em;
-  line-height:.94;color:var(--ink)}
-.g-h1 .l{font-weight:300;color:var(--faint)}
-.g-t{font-size:clamp(28px,4.6vw,56px);font-weight:800;letter-spacing:-.042em;
-  line-height:1.0;color:var(--ink);max-width:17ch}
-.g-p{font-size:clamp(13px,1.3vw,16px);color:var(--mid);max-width:46ch;line-height:1.5}
-.g-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
-.g-chip{font-family:var(--mono,ui-monospace,monospace);font-size:clamp(11px,1.2vw,14px);
-  font-weight:700;letter-spacing:.16em;padding:8px 15px;border:1px solid var(--line);
-  border-radius:999px;color:var(--mid);background:rgba(0,0,0,.03)}
-.g-list{display:flex;flex-wrap:wrap;gap:7px 22px;justify-content:center;
-  font-size:clamp(13px,1.45vw,17px);color:var(--mid)}
-.g-list b{color:var(--ink);font-weight:650}
-.g-flow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;
-  font-family:var(--mono,ui-monospace,monospace);font-size:clamp(12px,1.45vw,17px);
-  font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mid)}
-.g-flow i{font-style:normal;color:var(--vio)}
-.g-flow b{color:var(--ink)}
-.g-ok{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono,ui-monospace,monospace);
-  font-size:clamp(11px,1.15vw,13px);font-weight:700;letter-spacing:.2em;
-  text-transform:uppercase;color:var(--grn)}
-.g-ok::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--grn)}
-
-/* OPEN DASHBOARD — the conclusion, not a control bolted on */
-.g-open{margin-top:6px;display:inline-flex;align-items:center;gap:10px;
-  font-family:var(--mono,ui-monospace,monospace);font-size:12px;font-weight:700;
-  letter-spacing:.18em;text-transform:uppercase;color:var(--paper);background:var(--ink);
-  border:none;border-radius:999px;padding:15px 30px;cursor:pointer;
-  box-shadow:0 8px 24px rgba(0,0,0,.18);
-  transition:transform .18s var(--e),box-shadow .18s var(--e),background .18s}
-.g-open:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.24)}
-.g-open:active{transform:translateY(0)}
-.g-open svg{width:15px;height:15px}
-/* It appears with the last scene and then STAYS — the sequence ends on it. */
-.g-last{opacity:0;pointer-events:none}
-#gate.play .g-last{animation:glast .55s cubic-bezier(.22,1,.32,1) var(--lastAt,5.3s) forwards}
-#gate.ended .g-last{opacity:1;pointer-events:auto;animation:none;filter:none;transform:none}
-#gate.ended .g-s:not(.g-last){opacity:0;animation:none}
-@keyframes glast{from{opacity:0;transform:translateY(10px);filter:blur(3px)}
-                 to{opacity:1;transform:none;filter:blur(0)}}
-#gate.play .g-last{pointer-events:auto}
-
-.g-bar{position:fixed;left:0;top:0;height:2px;width:0;background:var(--vio);z-index:101}
-#gate.play .g-bar{animation:gbar var(--total,6600ms) linear forwards}
-@keyframes gbar{to{width:100%}}
-.g-ctl{position:fixed;right:18px;bottom:16px;display:flex;gap:8px;z-index:102}
-.g-btn{font-family:var(--mono,ui-monospace,monospace);font-size:11px;font-weight:700;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--mid);background:rgba(0,0,0,.04);
-  border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;
+.fi-host{position:absolute;inset:0}
+.fi-bar{position:fixed;left:0;right:0;bottom:0;height:3px;background:#E4E8EF;z-index:102}
+.fi-bar span{display:block;height:100%;width:0;background:#FFC72C;transition:width .12s linear}
+#gate.ended .fi-bar{opacity:0;transition:opacity .4s}
+.fi-ctl{position:fixed;right:20px;top:18px;z-index:103;display:flex;gap:8px}
+.fi-btn{font:600 12px/1 -apple-system,'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;
+  letter-spacing:.12em;text-transform:uppercase;color:#33405C;background:rgba(255,255,255,.86);
+  border:1px solid #E4E8EF;border-radius:999px;padding:10px 16px;cursor:pointer;
   transition:color .2s,border-color .2s,background .2s}
-.g-btn:hover{color:var(--paper);border-color:var(--ink);background:var(--ink)}
-@media(max-width:640px){.g-spine{top:calc(50% + 116px)}}
-@media(prefers-reduced-motion:reduce){
-  #gate.play .g-s,#gate.play .g-s > *,#gate.play .g-spine::after{animation:none}
-  #gate.play .g-bar{animation:none;width:100%}
-  #gate .g-last{opacity:1;pointer-events:auto}
-}
+.fi-btn:hover{color:#FFFFFF;background:#0E1A33;border-color:#0E1A33}
+.fi-btn:focus-visible,.g-open:focus-visible{outline:2px solid #2F6BFF;outline-offset:3px}
+/* OPEN DASHBOARD — arrives with the film's closing lockup and stays. */
+.fi-end{position:fixed;left:0;right:0;bottom:7vh;z-index:103;display:flex;justify-content:center;
+  opacity:0;transform:translateY(10px);pointer-events:none;
+  transition:opacity .45s cubic-bezier(.22,1,.32,1),transform .45s cubic-bezier(.22,1,.32,1)}
+#gate.ended .fi-end{opacity:1;transform:none;pointer-events:auto}
+.g-open{display:inline-flex;align-items:center;gap:10px;
+  font:600 13px/1 -apple-system,'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;
+  letter-spacing:.14em;text-transform:uppercase;color:#FFFFFF;background:#0E1A33;
+  border:none;border-radius:999px;padding:16px 30px;cursor:pointer;
+  box-shadow:0 10px 28px rgba(14,26,51,.18);transition:transform .18s,box-shadow .18s}
+.g-open:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(14,26,51,.24)}
+.g-open svg{width:15px;height:15px}
+.fi-load{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font:500 13px -apple-system,'Helvetica Neue',Arial,sans-serif;color:#6A7388;letter-spacing:.06em}
+#gate.playing .fi-load,#gate.ended .fi-load{display:none}
 
 /* ═══════════ SHELL ═══════════
    A brand bar across the top, a compact sidebar, the work on the right.
@@ -1360,63 +1274,20 @@ td.car{color:var(--ink);font-weight:500}
 <body>
 
 <!-- ═══ INTRO ═══════════════════════════════════════════════════════
-     Five scenes over ~6.6s, cut rather than dissolved, tied together by a
-     spine that grows across the whole run. No video, no library, no audio,
-     and nothing here sits in the critical path. -->
-<div id="gate" aria-label="Control Tower startup">
-  <div class="g-bar"></div>
-  <div class="g-stage">
-
-    <div class="g-s" style="--at:0s;--dur:1.25s">
-      <div class="g-kick" style="--i:0">Mantrac Logistics</div>
-      <h1 class="g-h1" style="--i:1">Control <span class="l">Tower</span></h1>
-      <p class="g-p" style="--i:2">Shipment intelligence &amp; automation</p>
-    </div>
-
-    <div class="g-s" style="--at:1.15s;--dur:1.2s">
-      <div class="g-t" style="--i:0">Real-time shipment processing</div>
-      <div class="g-chips" style="--i:1">
-        <span class="g-chip">DHL</span><span class="g-chip">AFKL</span>
-        <span class="g-chip">QATAR</span><span class="g-chip">ASTRAL</span>
-      </div>
-    </div>
-
-    <div class="g-s" style="--at:2.25s;--dur:1.2s">
-      <div class="g-t" style="--i:0">AI-assisted automation</div>
-      <div class="g-list" style="--i:1">
-        <span><b>Adaptive</b> execution</span>
-        <span><b>Smart</b> field detection</span>
-        <span><b>Intelligent</b> retries</span>
-        <span>Learns from <b>telemetry</b></span>
-      </div>
-    </div>
-
-    <div class="g-s" style="--at:3.35s;--dur:1.25s">
-      <div class="g-t" style="--i:0">Verify everything</div>
-      <div class="g-flow" style="--i:1"><b>Write</b><i>&rarr;</i><b>Save</b><i>&rarr;</i>
-        <b>Reload</b><i>&rarr;</i><b>Verify</b></div>
-      <p class="g-p" style="--i:2">A completed postback is not a completed write</p>
-    </div>
-
-    <!-- The close. It arrives and then holds, so OPEN
-         DASHBOARD is where the sequence lands rather than an escape hatch. -->
-    <div class="g-s g-last" id="gLast">
-      <h1 class="g-h1" style="--i:0">Control <span class="l">Tower</span></h1>
-      <div class="g-ok" style="--i:1">Ready</div>
-      <button class="g-open" id="openDash" style="--i:2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-          stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        Open dashboard
-      </button>
-    </div>
-
-  </div>
-
-  <div class="g-spine"><span class="g-mark m1"></span><span class="g-mark m2"></span>
-    <span class="g-mark m3"></span></div>
-
-  <div class="g-ctl">
-    <button class="g-btn" id="skip">Skip</button>
+     The ATLAS film: observe, diagnose, plan, recover, ask a person for one
+     step, take over, learn — 30 s. Played from intro/film.js; no video file,
+     no audio, and the dashboard behind it is already live. -->
+<div id="gate" aria-label="ATLAS introduction" role="dialog">
+  <div class="fi-host" id="filmHost"></div>
+  <div class="fi-load" id="filmLoad">Loading…</div>
+  <div class="fi-bar" aria-hidden="true"><span id="filmBar"></span></div>
+  <div class="fi-ctl"><button class="fi-btn" id="skip">Skip intro</button></div>
+  <div class="fi-end" id="gLast">
+    <button class="g-open" id="openDash">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      Open dashboard
+    </button>
   </div>
 </div>
 
@@ -1927,18 +1798,35 @@ const $ = (id) => document.getElementById(id);
 /* ═══ INTRO ═══ */
 (function intro(){
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const TOTAL = 6600;            // must match --total / the CSS delays
-  const LAST_AT = 5300;          // when the closing scene arrives
   const gate = $('gate');
-  let done = false, endTimer = null, lastTimer = null;
+  let done = false, player = null, loading = null;
 
   const seen = (() => { try { return sessionStorage.getItem('ct-intro') === '1'; }
                         catch (e) { return false; } })();
 
+  /* The film is fetched only when the intro actually runs. If it cannot be
+     loaded, the dashboard opens — an intro never stands between an operator
+     and the console. */
+  function loadFilm(){
+    if (window.AtlasIntro) return Promise.resolve(window.AtlasIntro);
+    if (!loading) loading = new Promise((ok, fail) => {
+      const tag = document.createElement('script');
+      tag.src = '/static/intro/film.js';
+      tag.onload = () => (window.AtlasIntro ? ok(window.AtlasIntro) : fail());
+      tag.onerror = fail;
+      document.head.appendChild(tag);
+    });
+    return loading;
+  }
+
+  function stopFilm(){
+    if (player){ player.stop(); player = null; }
+  }
+
   function finish(){
     if (done) return;
     done = true;
-    clearTimeout(endTimer); clearTimeout(lastTimer);
+    stopFilm();
     try { sessionStorage.setItem('ct-intro', '1'); } catch (e) {}
     gate.classList.add('gone');
     $('app').classList.add('on');
@@ -1946,30 +1834,38 @@ const $ = (id) => document.getElementById(id);
     setTimeout(() => { gate.style.display = 'none'; }, 520);
   }
 
-  /* The sequence ENDS on the closing scene and waits there. It does not
-     dismiss itself — Open dashboard is the conclusion, so the operator
-     decides when the picture gives way. */
+  /* The film ENDS on its MANTRAC lockup and holds there, with Open dashboard
+     beneath it. The operator decides when the picture gives way. */
   function hold(){
     gate.classList.add('ended');
-    gate.classList.remove('play');
+    gate.classList.remove('playing');
+    $('filmBar').style.width = '100%';
   }
 
   function run(){
-    gate.style.setProperty('--total', TOTAL + 'ms');
-    gate.style.setProperty('--lastAt', LAST_AT + 'ms');
     gate.style.display = '';
-    gate.classList.remove('gone', 'ended');
+    gate.classList.remove('gone', 'ended', 'playing');
+    $('filmBar').style.width = '0';
     done = false;
-    void gate.offsetWidth;                   // restart the CSS animations
-    gate.classList.add('play');
-    clearTimeout(lastTimer); clearTimeout(endTimer);
-    if (reduced){ hold(); return; }
-    lastTimer = setTimeout(hold, TOTAL);
+    stopFilm();
+    loadFilm().then((film) => {
+      if (done) return;
+      gate.classList.add('playing');
+      // Reduced motion: the closing frame, still, and the way in.
+      player = film.start($('filmHost'), {
+        still: reduced,
+        onProgress: (p) => { $('filmBar').style.width = (p * 100).toFixed(1) + '%'; },
+        onEnd: hold
+      });
+    }).catch(finish);
   }
 
   $('openDash').addEventListener('click', finish);
   $('skip').addEventListener('click', finish);
-  addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(); });
+  addEventListener('keydown', (e) => {
+    if (done) return;
+    if (e.key === 'Escape' || (e.key === 'Enter' && gate.classList.contains('ended'))) finish();
+  });
 
   if (seen) { finish(); } else { run(); }
 
