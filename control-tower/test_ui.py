@@ -568,7 +568,7 @@ check("There is a typing state", "chTy" in INDEX)
 check("The conversation keeps a reference between turns",
       "lastReference" in INDEX)
 check("...and sends it back as context",
-      "context: {reference: lastReference, action_id: lastFocus," in INDEX and "evidence_id: lastEvidence}" in INDEX)
+      "context: {reference: lastReference, action_id: lastFocus," in INDEX and "evidence_id: lastEvidence, conduct: conductCount}" in INDEX)
 
 print()
 print("=" * 72)
@@ -887,7 +887,7 @@ check("...and only for tasks this tab started", "if (r.accepted) hqWatch(t);" in
 check("The single-wait card steps aside when the queue holds the live action",
       "(S.human_queue || []).some((t) => t.action_id === a.action_id)" in INDEX)
 check("The chat sends the shipment and the task it last discussed",
-      "context: {reference: lastReference, action_id: lastFocus," in INDEX and "evidence_id: lastEvidence}" in INDEX)
+      "context: {reference: lastReference, action_id: lastFocus," in INDEX and "evidence_id: lastEvidence, conduct: conductCount}" in INDEX)
 check("An operation runs only as the queue's own request, for human_open / open",
       "d.operation.type === 'human_open' && d.operation.op === 'open'" in INDEX
       and "hqOpen(d.operation.action_id)" in INDEX)
