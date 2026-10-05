@@ -16,6 +16,18 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 - **On the way:** shipments with an ETA and no ATA yet. The van drives only
   while there is at least one.
 
+**New · The remote Control Tower (PLATFORM.md).** The dashboard can now run
+as a multi-user web app at a stable address (e.g. https://ata.mantrac.com):
+each person signs in with their own account (or Microsoft), sees only the
+controls their role allows (Admin, Operator, Viewer — enforced on the server),
+and every sign-in, run, Human Action, approval and access change is in the
+audit log. Start automation creates the run on the server and a Windows
+worker runs the same update_eta.py. Open & Continue shows the run's own
+carrier tab in your browser: you complete the verification there and the run
+carries on by itself — no RDP. Light, Dark and System themes, kept per user.
+The local dashboard is unchanged. Setup, Azure deployment and limitations:
+PLATFORM.md.
+
 **Fixed · Transport mode is how a shipment moves, not who tracks it.** DHL
 tracks the K-references, but an airline flies them — K223259 is Brussels
 Airlines, K179801 is KLM — and they showed as Road. The mode now comes from the

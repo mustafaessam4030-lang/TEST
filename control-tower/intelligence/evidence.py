@@ -174,6 +174,52 @@ def register_upload(data, filename="upload", reference=None, read=None):
     return True, entry
 
 
+SYNCED_FIELDS = ("id", "source", "mime", "bytes", "sha256", "width", "height", "run_id",
+                 "reference", "carrier", "provider", "event", "step", "at", "epoch")
+
+
+def register_synced(entry, data, via, text=None):
+    """
+    A capture the worker's automation took, forwarded to the control plane:
+    kept only if it is an image whose SHA-256 is the one in its index line,
+    and only as a browser capture (the worker never forwards uploads).
+    Idempotent: the same id twice is stored once. (ok, message)
+    """
+    if not isinstance(entry, dict) or not data:
+        return False, "No capture came with that request."
+    if entry.get("source") != "browser_capture" or not re.match(
+            r"^[0-9a-f]{12}$", str(entry.get("id") or "")):
+        return False, "Only automation captures are synced."
+    if len(data) > MAX_UPLOAD:
+        return False, "That capture is larger than 6 MB."
+    ext, mime = image_kind(data[:16])
+    if ext is None:
+        return False, "That is not an image."
+    digest = hashlib.sha256(data).hexdigest()
+    if entry.get("sha256") != digest:
+        return False, "The capture does not match its index entry."
+    if find(entry["id"]) is not None:
+        return True, "Already stored."
+    target_dir = store.folder() / "synced"
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / "{0}.{1}".format(digest[:20], ext)
+        target.write_bytes(data)
+        text_path = None
+        if text:
+            text_path = target.with_suffix(".txt")
+            text_path.write_text(store.redact(text, 200000), encoding="utf-8")
+    except Exception as error:
+        return False, "The capture could not be saved: {0}".format(error)
+    new = {k: entry.get(k) for k in SYNCED_FIELDS}
+    new.update(path=str(target.resolve()), mime=mime,
+               text_path=str(text_path.resolve()) if text_path else None,
+               via=str(via)[:40])
+    if not store.append(FILE, new):
+        return False, "The evidence store refused it (data origin differs)."
+    return True, "Stored."
+
+
 def find(evidence_id):
     for entry in entries():
         if entry.get("id") == evidence_id:

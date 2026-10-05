@@ -28,6 +28,14 @@ except ImportError:
     except ImportError:
         hq = None
 
+# The remote Human Action session: this run's own tab, shown in an operator's
+# browser through the worker agent while the run waits for them. Optional and
+# inert unless the worker agent started this run (CT_SESSION_PORT).
+try:
+    import remote_session
+except ImportError:
+    remote_session = None
+
 # ------------------------------------------------------------
 # CONTROL TOWER DASHBOARD (optional, never blocks the run)
 # ------------------------------------------------------------
@@ -214,6 +222,10 @@ HUB_POLL_MS = 120                  # cheap: one DOM read per poll
 
 # False means update and save the real internal ETA.
 DRY_RUN = False
+# A run started from the web as a dry run reads every carrier and writes
+# nothing to the Hub. Only ever turns dry-run ON.
+if os.environ.get("CT_DRY_RUN") == "1":
+    DRY_RUN = True
 
 # Reload the Manage page after a save and confirm the value is actually there.
 #
@@ -358,6 +370,10 @@ LOG_FILE = LOG_FOLDER / "run_{0:%Y%m%d_%H%M%S_%f}_pid{1}.log".format(
 # One identifier for this run, carried by every human-in-the-loop request so
 # a dashboard tab left open from an earlier run cannot steer this one.
 RUN_ID = "{0:%Y%m%d-%H%M%S}-{1}".format(datetime.now(), os.urandom(3).hex())
+# Started from the web, the run's id is the one the control plane created
+# for it, so the dashboard, the audit trail and this run's own records agree.
+if re.match(r"^\d{8}-\d{6}-[0-9a-f]{6}$", os.environ.get("CT_RUN_ID") or ""):
+    RUN_ID = os.environ["CT_RUN_ID"]
 # The human action this run has open, as JSON — what it is waiting for and
 # where — and an append-only log of every intervention event. No secrets,
 # no codes, no answers: there is nothing of the kind to put in them.
@@ -5810,13 +5826,14 @@ def _confirm_after_human(page, ready, action):
                 "the page shows the step done; confirming it is {0}".format(
                     action.get("reference")))
     try:
-        page.wait_for_timeout(HUMAN_CONFIRM_MS)
+        _human_pause(page, action, HUMAN_CONFIRM_MS)
     except Exception:
         pass
     if not human_session_alive(page):
         return "lost", "the browser tab closed during the check"
     done, why_not = _human_ready(ready)
     if done:
+        _remote_note(action, "confirmed")
         _queue_move(task_id, hq.RESUMING, "verification confirmed; continuing "
                     "{0} automatically".format(action.get("reference")))
         human_event("VERIFICATION_CONFIRMED", action,
@@ -5903,6 +5920,34 @@ def _handle_human_request(page, action, request, ready):
                                    "waiting — finish the step in the browser, "
                                    "then press Resume again.".format(why_not)))
     return None
+
+
+def _human_pause(page, action, ms):
+    """
+    Wait on the paused tab. When an operator has the remote view open for
+    this action, the wait streams the tab to them and applies their pointer
+    and keys — on this thread, only for this tab, only inside this wait.
+    """
+    if remote_session is None or not remote_session.SESSIONS.enabled:
+        page.wait_for_timeout(ms)
+        return
+    remote_session.SESSIONS.pause(page, action, ms)
+
+
+def _remote_note(action, page_state, reason=None):
+    if remote_session is not None and remote_session.SESSIONS.enabled:
+        try:
+            remote_session.SESSIONS.note(action, page_state, reason)
+        except Exception:
+            pass
+
+
+def _remote_end(action, outcome):
+    if remote_session is not None and remote_session.SESSIONS.enabled:
+        try:
+            remote_session.SESSIONS.end(action, outcome)
+        except Exception as error:
+            note_suppressed("closing the remote Human Action view", error)
 
 
 def wait_for_human(page, reference, label, ready, instructions="",
@@ -6005,7 +6050,7 @@ def wait_for_human(page, reference, label, ready, instructions="",
         announced = None
         while time.time() < deadline:
             try:
-                page.wait_for_timeout(CAPTCHA_POLL_MS)
+                _human_pause(page, action, CAPTCHA_POLL_MS)
             except Exception:
                 if not human_session_alive(page):
                     human_event("HUMAN_RESUME_FAILED", action,
@@ -6109,6 +6154,7 @@ def wait_for_human(page, reference, label, ready, instructions="",
         _queue_move(queue_id, hq.LOST, "the browser tab is no longer open")
     action.update(state=outcome, outcome=outcome, closed_at=_human_now())
     _persist_human_action(action)
+    _remote_end(action, outcome)
     try:
         tower.human_action_closed(outcome, {
             "resumed": "Resumed — the result is now read and verified.",
@@ -9863,9 +9909,19 @@ def main():
         DASHBOARD_ALLOW_CONTROL or bool(os.environ.get("CT_CONTROL_FILE")),
         human_enabled=DASHBOARD_ALLOW_HUMAN_ACTIONS)
     write_log("Run ID: {0}".format(RUN_ID))
+    if remote_session is not None and os.environ.get("CT_SESSION_PORT"):
+        try:
+            if remote_session.start_local_server():
+                write_log("[HUMAN] Remote Human Action view available to the worker "
+                          "agent (loopback only).")
+        except Exception as error:
+            note_suppressed("starting the remote Human Action view", error)
     # ATLAS learns from real runs only: outcomes, recoveries, human tasks and
     # real screenshots go to its stores from here. Observing never changes
     # what the automation does.
+    # A real run's learning is REAL PRODUCTION DATA. Tests and demos never
+    # reach main(), and their stores are labelled TEST.
+    os.environ.setdefault("ATLAS_DATA_ORIGIN", "production")
     try:
         from intelligence import events as _intel_events, evidence as _intel_evidence
         INTEL["events"], INTEL["evidence"] = _intel_events, _intel_evidence

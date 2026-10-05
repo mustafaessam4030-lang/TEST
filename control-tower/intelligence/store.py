@@ -33,6 +33,46 @@ _locks = {}
 _guard = threading.Lock()
 _noted = set()
 
+# REAL PRODUCTION DATA or TEST / DEMO DATA — decided per store folder, once,
+# by the first process to write to it, and written down in ORIGIN. A process
+# whose own origin differs is refused: test data can never be appended to a
+# production store, nor production data to a test one. A process is
+# "production" only when its entry point says so (the automation, the
+# supervisor, the control plane set ATLAS_DATA_ORIGIN=production); anything
+# else — tests, demos, tools — is "test".
+ORIGINS = ("production", "test")
+ORIGIN_FILE = "ORIGIN"
+
+
+def origin():
+    """This process's origin."""
+    raw = str(os.environ.get("ATLAS_DATA_ORIGIN") or "").strip().lower()
+    return raw if raw in ORIGINS else "test"
+
+
+def store_origin():
+    """The store's origin, or None while it has never been written to."""
+    try:
+        text = (folder() / ORIGIN_FILE).read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return None
+    return text if text in ORIGINS else None
+
+
+def _admitted():
+    marker = store_origin()
+    mine = origin()
+    if marker is None:
+        try:
+            with open(folder() / ORIGIN_FILE, "x", encoding="utf-8") as handle:
+                handle.write(mine + "\n")
+        except FileExistsError:
+            return store_origin() == mine
+        except OSError:
+            return False
+        return True
+    return marker == mine
+
 
 def folder():
     path = Path(os.environ.get("ATLAS_INTEL_DIR") or DEFAULT_DIR)
@@ -76,6 +116,18 @@ def _lock(path):
 def append(name, record):
     """Append one record to <folder>/<name>. Returns True when written."""
     path = folder() / name
+    if not _admitted():
+        key = "origin:" + name
+        if key not in _noted:
+            _noted.add(key)
+            try:
+                import sys
+                sys.stderr.write("ATLAS intelligence: not written to {0} — it holds {1} "
+                                 "data and this process is {2}.\n".format(
+                                     path, store_origin(), origin()))
+            except Exception:
+                pass
+        return False
     line = json.dumps(clean(record), ensure_ascii=False, sort_keys=True)
     try:
         with _lock(path):

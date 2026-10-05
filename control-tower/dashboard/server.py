@@ -558,6 +558,9 @@ class Handler(BaseHTTPRequestHandler):
                         for i in snap["issues"][:20]],
                     "human": snap["human"][:10], "questions": snap["questions"][:12],
                     "feedback": snap["feedback"], "proposals": snap["proposals"],
+                    # REAL PRODUCTION DATA or TEST / DEMO DATA, from the store's
+                    # own marker; None while nothing has been recorded.
+                    "data_origin": intel_store.store_origin(),
                     "months": [{k: v for k, v in m.items() if k != "runs"}
                                for m in snap["months"][-12:]]}, default=list))
                 return
@@ -829,7 +832,8 @@ try:
         sys.path.insert(0, _ROOT_DIR)
     from intelligence import (events as intel_events, learning as intel_learning,
                               plans as intel_plans, evidence as intel_evidence,
-                              vision as intel_vision, maturity as intel_maturity)
+                              vision as intel_vision, maturity as intel_maturity,
+                              store as intel_store)
     INTEL_OK = True
 except Exception:                                   # pragma: no cover
     INTEL_OK = False

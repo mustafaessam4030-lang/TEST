@@ -13,3 +13,8 @@ playwright>=1.40
 # build) or point TESSERACT_CMD at tesseract.exe. Without it ATLAS says it
 # cannot read uploaded images; captured screenshots are read from the page
 # text saved with them.
+
+# Remote Control Tower (controlplane/) only, and only with PostgreSQL:
+#     pip install "psycopg[binary]>=3.1,<4"
+# The worker agent (worker/) needs nothing beyond the automation's own
+# dependency above.

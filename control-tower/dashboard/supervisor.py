@@ -43,8 +43,12 @@ except ImportError:
 MAX_HUMAN_REQUESTS = 20
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "update_eta.py"
-RUNTIME = ROOT / "dashboard" / ".runtime"
+# The automation this supervisor starts, and where it keeps the files it
+# shares with it. Both default to the standard install; ATA_RUNNER_SCRIPT and
+# ATA_RUNTIME_DIR exist so a worker can be pointed at another install path,
+# and so the platform tests can run a worker as a real separate process.
+SCRIPT = Path(os.environ.get("ATA_RUNNER_SCRIPT") or ROOT / "update_eta.py")
+RUNTIME = Path(os.environ.get("ATA_RUNTIME_DIR") or ROOT / "dashboard" / ".runtime")
 STATE_FILE = RUNTIME / "state.json"
 CONTROL_FILE = RUNTIME / "control.json"
 
@@ -66,7 +70,12 @@ class Supervisor:
         with self.lock:
             return self.process is not None and self.process.poll() is None
 
-    def start(self):
+    def start(self, extra_env=None):
+        """
+        Launch update_eta.py. `extra_env` is how the worker agent hands the
+        run its id and its loopback session settings; the supervisor's own
+        start passes nothing, exactly as before.
+        """
         with self.lock:
             if self.is_running():
                 return False, "A run is already in progress."
@@ -83,6 +92,9 @@ class Supervisor:
             environment["CT_STATE_FILE"] = str(STATE_FILE)
             environment["CT_CONTROL_FILE"] = str(CONTROL_FILE)
             environment["PYTHONUNBUFFERED"] = "1"
+            for key, value in (extra_env or {}).items():
+                if str(key).startswith("CT_") and value is not None:
+                    environment[str(key)] = str(value)
 
             try:
                 self.process = subprocess.Popen(
@@ -293,6 +305,8 @@ def main():
                         help="begin a run immediately on launch")
     args = parser.parse_args()
 
+    # Questions and feedback asked here are real operational data.
+    os.environ.setdefault("ATLAS_DATA_ORIGIN", "production")
     install()
     host = "0.0.0.0" if args.share else args.host
     tower_server.start(port=args.port, open_browser=True, host=host,

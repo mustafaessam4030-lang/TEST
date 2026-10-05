@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sign in · ATA Control Tower</title>
+<link rel="stylesheet" href="/static/login/login.css">
+</head>
+<body>
+<main class="wrap">
+  <section class="card" aria-labelledby="title">
+    <div class="lockup">
+      <img src="/static/brand/mantrac-logo.png" alt="Mantrac" width="135" height="36">
+    </div>
+    <h1 id="title"><span class="eyebrow">Mantrac</span>ATA Control Tower</h1>
+
+    <p class="note" id="note" role="status" hidden></p>
+
+    <form id="signin" novalidate>
+      <label for="email">Work email</label>
+      <input id="email" name="email" type="email" autocomplete="username" inputmode="email"
+             autocapitalize="off" spellcheck="false" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit" class="primary" id="go">Sign in</button>
+    </form>
+
+    <form id="setpw" novalidate hidden>
+      <p class="lead">Choose your password. At least 12 characters, mixing three of: lower
+        case, upper case, digits, symbols.</p>
+      <label for="pw1">New password</label>
+      <input id="pw1" type="password" autocomplete="new-password" required>
+      <label for="pw2">Confirm password</label>
+      <input id="pw2" type="password" autocomplete="new-password" required>
+      <button type="submit" class="primary" id="save">Set password</button>
+    </form>
+
+    <div class="sso" id="ssoBox" hidden>
+      <div class="or"><span>or</span></div>
+      <a class="secondary" id="sso" href="/auth/sso/start">Sign in with Microsoft</a>
+    </div>
+
+    <p class="fine">For Mantrac employees with an ATA account. Access is set by your
+      administrator; every sign-in is recorded.</p>
+  </section>
+</main>
+<script src="/static/login/login.js"></script>
+</body>
+</html>

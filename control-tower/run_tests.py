@@ -40,6 +40,8 @@ SUITES = [
     ("test_atlas.py",           "ATLAS identity and attribution"),
     ("test_captcha.py",         "human verification, AFKL URL and AWB prefix"),
     ("test_recovery.py",        "safe error recovery, bounded and attributed"),
+    ("test_platform.py",        "remote platform: auth, roles, audit, workers, runs"),
+    ("test_remote_session.py",  "remote Human Action end to end, in a real browser"),
 ]
 
 
@@ -64,7 +66,10 @@ def main():
         # ATLAS's learning store is real operational data: each suite gets an
         # empty one of its own, so a test can neither read nor write the real
         # store, nor see what another suite recorded.
-        env = dict(os.environ, ATLAS_INTEL_DIR=tempfile.mkdtemp(prefix="ct_atlas_intel_"))
+        # Every suite's data is labelled TEST, so none of it can ever be mixed
+        # into a production store.
+        env = dict(os.environ, ATLAS_INTEL_DIR=tempfile.mkdtemp(prefix="ct_atlas_intel_"),
+                   ATLAS_DATA_ORIGIN="test")
         result = subprocess.run(
             [sys.executable, str(path)], cwd=str(HERE),
             capture_output=True, text=True, env=env)
