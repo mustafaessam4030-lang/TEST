@@ -1404,6 +1404,17 @@ ATLAS_RECOVERY_ENABLED = (
     os.environ.get("ATLAS_RECOVERY", "1").strip().lower()
     not in ("0", "false", "no", "off"))
 
+# ATLAS's work list, in this run. A shipment that failed for a transient
+# carrier-side reason with nothing written (intelligence/failures.work_mode:
+# RETRY_THIS_RUN) is retried ONCE, after every other shipment, through the
+# same pipeline — look up, write, read back. The run never waits for it and
+# never stops for it; everything else stays on the work list for the next
+# run, a person, or the owner. ATLAS_DEFERRED_RETRY=0 turns the retry off.
+ATLAS_DEFERRED_RETRY = (
+    os.environ.get("ATLAS_DEFERRED_RETRY", "1").strip().lower()
+    not in ("0", "false", "no", "off"))
+ATLAS_DEFERRED_RETRY_MAX = 10          # per run
+
 # The budget. Deliberately small: recovery exists to survive a flake, not to
 # grind at a page that has genuinely changed.
 RECOVERY_MAX_ATTEMPTS = 3
@@ -10318,6 +10329,39 @@ def main():
                     (successful, failed, skipped, partial, needs_human),
                     looked_up=bool(dhl_result))
 
+            # Every shipment this run picked up, for its one deferred retry.
+            _picked_up = {}
+
+            def _deferred_retries():
+                """
+                ATLAS's work list, worked in this run: failures queued for one
+                retry (transient, nothing written), retried after every other
+                shipment. Each was counted failed; that count is given back
+                here and the retry's own outcome counted instead.
+                """
+                nonlocal failed, stop_requested
+                if not ATLAS_DEFERRED_RETRY or stop_requested:
+                    return 0
+                queued = [r for r in tower.deferred_retries() if r in _picked_up]
+                queued = queued[:ATLAS_DEFERRED_RETRY_MAX]
+                if not queued:
+                    return 0
+                write_log("[ATLAS] Work list: retrying {0} failed shipment(s) once, now that "
+                          "the others are done: {1}".format(len(queued), ", ".join(queued)))
+                done = 0
+                for reference in queued:
+                    if honour_control_requests() == "stop":
+                        stop_requested = True
+                        break
+                    shipment, page_no = _picked_up[reference]
+                    failed = max(0, failed - 1)
+                    tower.deferred_retry_started(reference)
+                    tower.step("ATLAS work list: retrying {0} once".format(reference))
+                    _process_shipment(shipment, page_no)
+                    done += 1
+                    wait_between_shipments()
+                return done
+
             def _human_reruns():
                 """
                 Shipments an operator chose from the Human Action queue,
@@ -10416,8 +10460,17 @@ def main():
                         break
 
                     processed_bols.add(bol_awb)
+                    _picked_up[bol_awb] = (shipment, table_page)
                     _process_shipment(shipment, table_page)
                     wait_between_shipments()
+
+            # ATLAS's work list, worked in this run: the transient failures,
+            # retried once each, after every other shipment.
+            try:
+                _deferred_retries()
+            except Exception as retry_error:
+                # A retry pass that breaks must never end the run either.
+                note_suppressed("the deferred retry pass", retry_error)
 
             # The Human Action queue, before the run lets its browser go.
             # Parked shipments can still be chosen for HUMAN_QUEUE_HOLD_S;

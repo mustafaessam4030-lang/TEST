@@ -303,3 +303,29 @@ action table, verifies each action with the caller's check, and learning
 credits a strategy only when the action verified AND the shipment then
 verified (every Hub write read back). Expected skips (NO RESULT) are not
 failures. Tested end to end in `test_failure_intelligence.py`.
+
+## ATLAS's work list (`intelligence/backlog.py`) — the run never stops
+
+A failure never stops the run: the shipment ends, the run moves on, and the
+failure goes on ATLAS's work list with its plan. What happens to it is a
+fixed rule over the evidence (`failures.work_mode`), not ATLAS's choice:
+
+    RETRY_THIS_RUN  NAVIGATION_FAILURE, TIMEOUT, NETWORK_FAILURE or
+                    PAGE_NOT_READY, state failed, nothing written: retried
+                    ONCE by main(), after every other shipment, through the
+                    same pipeline (look up, write, read back). At most
+                    ATLAS_DEFERRED_RETRY_MAX (10) per run; a second failure
+                    is not retried again. ATLAS_DEFERRED_RETRY=0 turns it off.
+    NEXT_RUN        nothing written: the next run looks it up again
+    NEEDS_PERSON    human verification / a person's step (Open & Continue)
+    NEEDS_DECISION  a rule (e.g. OCEAN_WRITE), validation, Hub write or
+                    read-back problem, part already written, or unknown cause
+
+`recovery_backlog.json` keeps one item per provider:category:reference with
+occurrences, runs, plan, history. An item is RESOLVED_VERIFIED only when a
+later outcome for that shipment is written AND read back; an unverified
+success becomes AWAITING_VERIFICATION and stays open. ATLAS never closes an
+item; a person can (`python -m intelligence.backlog close KEY --by NAME`).
+Events: work_item_recorded, deferred_retry_started, work_item_resolved.
+Chat: "What's on your work list?", "What will you do about it?"; the ATLAS
+page shows a Work list card. Tested in `test_work_list.py` (the real main()).

@@ -339,6 +339,10 @@ def from_record(record, run_id=None, recoveries=None, learning=None, events=None
     if evidence is not None:
         item["evidence_refs"] = evidence_refs(item, evidence)
     item["learning_status"] = learning_status(item, events)
+    mode, why = work_mode(item)
+    item["work"] = {"mode": mode, "why": why,
+                    "retried": bool(record.get("deferred_retry")),
+                    "earlier_attempt": record.get("deferred_retry") or None}
     return item
 
 
@@ -508,6 +512,42 @@ def plan(item, learning=None):
     return {"status": status, "statement": statement, "steps": steps,
             "recovery_class": klass, "recommendations": recs,
             "executes": "ATLAS never acts on a page; the run's executor acts and verifies."}
+
+
+# ── WORK: WHAT HAPPENS TO THIS FAILURE, WITHOUT STOPPING THE RUN ─────
+#
+# Every failure goes on ATLAS's work list (intelligence/backlog.py). How it
+# is worked depends on what the evidence supports — never on a guess:
+#
+#   RETRY_THIS_RUN  a transient carrier-side failure with nothing written:
+#                   the run retries it ONCE, after the other shipments, by
+#                   the same pipeline (look up, write, read back). The run
+#                   never waits for it.
+#   NEXT_RUN        nothing was written and the shipment is still in the
+#                   Hub's list: the next run looks it up again by itself.
+#   NEEDS_PERSON    a person's step (human verification) — Open & Continue.
+#   NEEDS_DECISION  a rule, a validation, a Hub write or read-back problem,
+#                   or an unknown cause: an owner decides; retrying would
+#                   not change it, or could write twice.
+RETRY_IN_RUN = ("NAVIGATION_FAILURE", "TIMEOUT", "NETWORK_FAILURE", "PAGE_NOT_READY")
+WORK_MODES = ("RETRY_THIS_RUN", "NEXT_RUN", "NEEDS_PERSON", "NEEDS_DECISION")
+
+
+def work_mode(item):
+    """(mode, why) for one failure record. Deterministic; ATLAS does not choose."""
+    category = item["classification"]
+    state = item["observed_state"].get("state")
+    written = bool(item["observed_state"].get("written"))
+    if category in ("SECURITY_VERIFICATION_REQUIRED", "HUMAN_ACTION_REQUIRED"):
+        return "NEEDS_PERSON", "the carrier needs a person; the automation never does that step"
+    if category in RETRY_IN_RUN and state == "failed" and not written:
+        return "RETRY_THIS_RUN", ("{0} is transient and nothing was written, so the run retries "
+                                  "it once after the other shipments".format(category))
+    if category in ("CARRIER_POLICY_BLOCK", "VALIDATION_FAILURE", "HUB_WRITE_FAILURE",
+                    "HUB_READBACK_FAILURE", "UNKNOWN_FAILURE") or written:
+        return "NEEDS_DECISION", ("a retry would not change a {0}{1}".format(
+            category, " and part was already written" if written else ""))
+    return "NEXT_RUN", "nothing was written, so the next run looks it up again by itself"
 
 
 # ── LEARNING, KNOWN PATTERNS, EVIDENCE ───────────────────────────────

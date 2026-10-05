@@ -1296,6 +1296,15 @@ def notices(data):
         out.append({"level": "error" if state == "partial" else "warn",
                     "text": f["headline"], "failure_id": f["failure_id"],
                     "action": {"type": "open", "reference": f["shipment_id"]}})
+    # The plan for them: the run did not stop, and the retryable ones are
+    # queued for one retry after the other shipments.
+    queued = list(data.state.get("retry_queue") or [])
+    if queued:
+        out.append({"level": "warn",
+                    "text": "{0} failed shipment{1} on ATLAS's work list, queued for one retry after "
+                            "the others: {2}. The run carries on.".format(
+                                len(queued), "" if len(queued) == 1 else "s", ", ".join(queued[:5])),
+                    "action": {"type": "page", "page": "atlas"}})
     timeouts = data.by_state("human_timeout")
     if timeouts:
         out.append({"level": "warn",
@@ -1430,6 +1439,7 @@ def atlas_brief(state):
             # The same failure records the chat answers from — for the panel's
             # failure card and the shipment drawer.
             "failures": [failure_card(f) for f in run_failures(data)[:10]],
+            "work": work_list(data),
             "grounded": True,
         }
     except Exception as error:
@@ -2418,6 +2428,11 @@ FAILURE_QUESTIONS = (
     ("known", r"\b(known|familiar) (failure|error|issue|problem)\b|\bseen (this|it|that) before\b|"
               r"\bhappened before\b|\bhas this happened\b"),
     ("learned", r"\blearn(ed|t)? from (similar|this|these|past|previous)\b|\bsimilar (failures|errors|issues)\b"),
+    ("work", r"\bwork ?list\b|\bbacklog\b|\bopen (issues|items|failures|problems)\b|"
+             r"\b(issues|problems|failures) (are )?(still )?open\b|\bwhat (will|are) you (do|doing|going to do) "
+             r"(about|with) (it|this|that|them|the (error|failure|issue)s?)\b|\bwork on (it|this|that|them) later\b|"
+             r"\bwhat('s| is) (on )?(your|the|atlas'?s?) (plan|work list|list)\b|\bretry (queue|later)\b|"
+             r"\bwill (you|it|atlas) retry\b|\bqueued for (a )?retry\b"),
     ("recovery", r"\brecover|\brecovery\b|\bself[- ]?heal|\bfix (it|this|that)\b|\bhow (do|can) (we|i|you) fix\b"),
     ("evidence", r"\b(show|give|see)( me)? (the )?(evidence|proof|screenshot)\b|\bwhat (is|was) the evidence\b"),
     ("carrier", r"\bwhich carrier (failed|broke|had the (error|failure|problem))\b|"
@@ -2462,6 +2477,7 @@ def failure_card(f):
                             "safety": s["safety"], "executes": s["executes"]}
                            for s in f["recovery_plan"]["steps"][:4]]},
         "attempts": f["recovery_attempts"], "recovery_result": f["recovery_result"],
+        "work": f.get("work"),
         "verification": f["verification_result"], "learning": f["learning_status"],
         "evidence": f["evidence_refs"], "message": f["error_message"][:300],
     }
@@ -2568,6 +2584,90 @@ def _recovery_lines(f):
     return out
 
 
+try:
+    from intelligence import backlog as _backlog
+except Exception:                                   # pragma: no cover
+    _backlog = None
+
+WORK_WORDS = {
+    "RETRY_THIS_RUN": "retry once after the other shipments, in this run — the run does not stop",
+    "NEXT_RUN": "the next run looks it up again by itself",
+    "NEEDS_PERSON": "needs a person (Open & Continue)",
+    "NEEDS_DECISION": "needs a decision from the automation's owner",
+}
+
+
+def _work_line(f, data):
+    """What happens to this failure — the plan to work on it, from its record."""
+    work = f.get("work") or {}
+    mode = work.get("mode")
+    if not mode:
+        return None
+    queued = f["shipment_id"] in (data.state.get("retry_queue") or [])
+    if work.get("retried"):
+        text = "Retried once in this run and it failed again; it stays on the work list and " \
+               "the next run looks it up again."
+    elif mode == "RETRY_THIS_RUN":
+        text = "On ATLAS's work list: {0}{1}.".format(
+            WORK_WORDS[mode], " (queued now)" if queued else "")
+    else:
+        text = "On ATLAS's work list: {0} — {1}.".format(WORK_WORDS[mode], work.get("why"))
+    return "**Work** — " + text
+
+
+def work_list(data):
+    """ATLAS's open work: this run's failures and the persistent list."""
+    out = {"run": [], "open": [], "summary": {}}
+    for f in run_failures(data):
+        work = f.get("work") or {}
+        out["run"].append({"reference": f["shipment_id"], "carrier": f["carrier"],
+                           "classification": f["classification"], "mode": work.get("mode"),
+                           "why": work.get("why"), "retried": bool(work.get("retried")),
+                           "queued": f["shipment_id"] in (data.state.get("retry_queue") or [])})
+    if _backlog is not None:
+        try:
+            out["open"] = [{k: i.get(k) for k in ("key", "reference", "carrier", "classification",
+                                                  "status", "mode", "why", "occurrences",
+                                                  "last_seen", "plan_statement", "headline")}
+                           for i in _backlog.items(open_only=True, limit=20)]
+            out["summary"] = _backlog.summary()
+        except Exception:
+            pass
+    return out
+
+
+def _answer_work(data):
+    work = work_list(data)
+    lines = []
+    if work["run"]:
+        lines.append("This run did not stop for any of them. What happens to each failure:")
+        for w in work["run"][:10]:
+            lines.append("• {0} ({1}, {2}) — {3}{4}.".format(
+                w["reference"], w["carrier"], w["classification"],
+                "retried once in this run, failed again; the next run looks it up again"
+                if w["retried"] else WORK_WORDS.get(w["mode"], w["mode"]),
+                " (queued now)" if w["queued"] else ""))
+    earlier = [i for i in work["open"] if i["reference"] not in {w["reference"] for w in work["run"]}]
+    if earlier:
+        lines.append("")
+        lines.append("Still open from earlier runs ({0}):".format(len(earlier)))
+        for i in earlier[:8]:
+            lines.append("• {0} ({1}, {2}) — {3}, seen {4} time(s), last {5}.".format(
+                i["reference"], i["carrier"], i["classification"],
+                (_backlog.WORDS.get(i["status"], i["status"]) if _backlog else i["status"]),
+                i["occurrences"], i["last_seen"]))
+    if not lines:
+        return "ATLAS's work list is empty: no failure is open in this run or from earlier runs."
+    summary = work.get("summary") or {}
+    if summary:
+        lines.append("")
+        lines.append("Work list: {0} open, {1} resolved by verification, {2} closed by a person. "
+                     "An item is resolved only when its shipment is written and read back.".format(
+                         summary.get("open", 0), summary.get("resolved", 0),
+                         summary.get("closed", 0)))
+    return "\n".join(lines)
+
+
 def answer_failure(kind, data, question, record, context):
     """A reply built from failure intelligence, or None to let other answers run."""
     if kind == "noticed":
@@ -2581,6 +2681,10 @@ def answer_failure(kind, data, question, record, context):
                 "\n".join("{0}. {1}".format(i + 1, n["text"]) for i, n in enumerate(found)))
         return {"answer": text, "card": None, "grounded": True, "intent": "noticed",
                 "reference": context.get("reference"), "sources": ["run state", "notices"]}
+    if kind == "work":
+        return {"answer": _answer_work(data), "card": None, "grounded": True,
+                "intent": "failure_work", "reference": context.get("reference"),
+                "sources": ["run state", "failure intelligence", "work list"]}
     failures = run_failures(data)
     if not failures:
         return None
@@ -2598,7 +2702,8 @@ def answer_failure(kind, data, question, record, context):
                                                          "Nothing was written", "Hub actions"))]
         diagnosis = _lines(key) + _lines(f["inferences"]) + _lines(f["unverified"]) + \
             [_root_line(f)] + _lines(f["recommendations"]) + \
-            ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])]
+            ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])] + \
+            [x for x in [_work_line(f, data)] if x]
         prefix = ""
         named = _carrier_records(data, question)[0] if "_carrier_records" in globals() else None
         if named:
@@ -2639,7 +2744,8 @@ def answer_failure(kind, data, question, record, context):
         # What the run actually tried — its own recovery record — then the
         # plan for this failure. Never a recovery that did not happen.
         story = _answer_recovery(data, record, question)
-        text = story + "\n\n" + title + "\n".join(_recovery_lines(f) + _lines(f["recommendations"]))
+        text = story + "\n\n" + title + "\n".join(_recovery_lines(f) + _lines(f["recommendations"]) +
+                                                   [x for x in [_work_line(f, data)] if x])
     elif kind == "known":
         text = title + ("\n".join(_lines(f["learned"])) if f["learned"] else
                         "**Fact** — The learning store has no earlier occurrence of {0} on {1}. "
@@ -2675,7 +2781,8 @@ def answer_failure(kind, data, question, record, context):
         return reply
     elif kind == "next":
         text = title + "\n".join(_lines(f["recommendations"]) +
-                                 ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])])
+                                 ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])] +
+                                 [x for x in [_work_line(f, data)] if x])
     else:
         return None
     reply = {"answer": text, "card": None, "grounded": True, "intent": "failure_" + kind,
@@ -2884,6 +2991,8 @@ def _answer_core(question, state, context=None):
         # was learned, its evidence — is answered from the failure record
         # first; the learning store's general answers follow when there is none.
         fq_early = failure_question(question)
+        if fq_early == "work":
+            return answer_failure("work", data, question, None, context)
         if fq_early in ("learned", "known", "evidence", "recovery") and run_failures(data) \
                 and not data.references_in(question):
             chosen = _pick_failure(run_failures(data), question, None, context)

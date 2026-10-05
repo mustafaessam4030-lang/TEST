@@ -1458,6 +1458,10 @@ td.car{color:var(--ink);font-weight:500}
 .fi-g li{margin:1px 0}
 .dw-sec .fi-h,.dw-sec .fi-g{padding-left:0;padding-right:0}
 @media (max-width:760px){.fi-g{grid-template-columns:1fr}.fi-g dt{margin-top:6px}}
+.wl{list-style:none;margin:0;padding:0 20px 14px}
+.wl-i{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.wl-i:first-child{border-top:0}
+.wl-w{margin-left:auto;color:var(--faint)}
 </style>
 </head>
 <body>
@@ -1758,6 +1762,15 @@ td.car{color:var(--ink);font-weight:500}
             <div class="card-h"><div><div class="card-t">Failure intelligence</div>
               <div class="card-s">From this run's records · every line says what kind of knowledge it is</div></div></div>
             <div id="fiList"></div>
+          </div>
+          <!-- ATLAS'S WORK LIST. Every failure, with what happens to it: one
+               retry later in this run, the next run, a person, or the owner.
+               The run never stops for it; an item closes only when its
+               shipment is written and read back. -->
+          <div class="card" id="wlCard" hidden>
+            <div class="card-h"><div><div class="card-t">Work list</div>
+              <div class="card-s" id="wlSub">The run never stops for a failure · resolved only by verification</div></div></div>
+            <div id="wlList"></div>
           </div>
           <div class="card">
             <div class="card-h"><div><div class="card-t">Recommended action</div>
@@ -4070,7 +4083,7 @@ function loadFailures(force){
   if (!force && cold === FI.cold && Date.now() - FI.at < 15000) return;
   FI.busy = true;
   fetch('/api/atlas').then((r) => r.json()).then((d) => {
-    FI.list = d.failures || []; FI.cold = cold; FI.at = Date.now();
+    FI.list = d.failures || []; FI.work = d.work || null; FI.cold = cold; FI.at = Date.now();
     paintFailures(); if (dwRef){ dwSig = ''; paintDrawer(); }
   }).catch(() => {}).finally(() => { FI.busy = false; });
 }
@@ -4099,15 +4112,41 @@ function fiCard(f, open){
           esc(a.action) + ' → ' + esc(String(a.result).toLowerCase()) +
           (a.verified === true ? ' (verified)' : a.verified === false ? ' (verification failed)' : '')).join(', ') + '</div>' : '') +
       '</dd>' +
+      (f.work && f.work.mode ? '<dt>Work</dt><dd>' + esc(f.work.retried
+        ? 'Retried once in this run and failed again; the next run looks it up again.'
+        : (WL_MODE[f.work.mode] || f.work.mode) + ' \u2014 ' + f.work.why + '. The run did not stop.') + '</dd>' : '') +
       '<dt>Verification</dt><dd>' + esc(f.verification) + '</dd>' +
       '<dt>Learning</dt><dd>' + esc(f.learning) + ((f.learned || []).length ? fiList(f.learned, '') : '') + '</dd>' +
       '<dt>Recommendation</dt><dd>' + fiList(f.recommendations, '—') + '</dd>' +
     '</dl></details>';
 }
+const WL_MODE = {RETRY_THIS_RUN:'Retry once, later in this run', NEXT_RUN:'Next run looks it up again',
+  NEEDS_PERSON:'Needs a person', NEEDS_DECISION:'Needs the owner\u2019s decision'};
+const WL_STATUS = {RETRY_QUEUED:'Queued for retry', RETRYING:'Retrying', RETRY_FAILED:'Retried, failed again',
+  AWAITING_VERIFICATION:'Written, not yet read back', OPEN:'Open \u00b7 next run', NEEDS_PERSON:'Needs a person', NEEDS_DECISION:'Needs a decision'};
+function paintWork(){
+  const w = FI.work || {}, run = w.run || [], runRefs = new Set(run.map((x) => x.reference));
+  const earlier = (w.open || []).filter((i) => !runRefs.has(i.reference));
+  $('wlCard').hidden = !run.length && !earlier.length;
+  const sum = w.summary || {};
+  $('wlSub').textContent = (sum.open != null ? sum.open + ' open \u00b7 ' + (sum.resolved || 0) +
+    ' resolved by verification \u00b7 ' : '') + 'the run never stops for a failure';
+  const row = (ref, carrier, cls, what) => '<li class="wl-i"><b class="mono">' + esc(ref) + '</b>' +
+    '<span>' + esc(carrier || '') + '</span><span class="fi-chip">' +
+    esc(String(cls || '').replace(/_/g, ' ').toLowerCase()) + '</span><span class="wl-w">' + esc(what) + '</span></li>';
+  putHTML($('wlList'), '<ul class="wl">' +
+    run.map((x) => row(x.reference, x.carrier, x.classification,
+      x.retried ? 'Retried once in this run, failed again \u00b7 next run' :
+      (WL_MODE[x.mode] || x.mode) + (x.queued ? ' \u00b7 queued' : ''))).join('') +
+    earlier.slice(0, 8).map((i) => row(i.reference, i.carrier, i.classification,
+      (WL_STATUS[i.status] || i.status) + ' \u00b7 earlier run, seen ' + i.occurrences + '\u00d7')).join('') +
+    '</ul>');
+}
 function paintFailures(){
   const list = FI.list || [];
   $('fiCard').hidden = !list.length;
   putHTML($('fiList'), list.map((f, i) => fiCard(f, i === 0)).join(''));
+  paintWork();
 }
 
 function paintDrawer(){

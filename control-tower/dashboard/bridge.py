@@ -21,7 +21,10 @@ MAX_INTEL_LOG = 200
 INTEL_EVENTS = ("failure_detected", "failure_classified", "diagnosis_created",
                 "recovery_plan_created", "recovery_started", "recovery_completed",
                 "recovery_failed", "verification_started", "verification_passed",
-                "verification_failed", "learning_recorded")
+                "verification_failed", "learning_recorded",
+                # ATLAS's work list: every failure is put on it, worked
+                # without stopping the run, and resolved only by verification.
+                "work_item_recorded", "deferred_retry_started", "work_item_resolved")
 FAILURE_KEYS = ("category", "stage", "operation", "last_success", "detail")
 
 # Transport mode, for display: how the shipment MOVES, which is not the same
@@ -203,6 +206,10 @@ class ControlTowerState:
         # not, and what was recorded for learning. Ids, classes and short
         # reasons only — never a value a person typed, never a credential.
         self.intel_log = deque(maxlen=MAX_INTEL_LOG)
+        # Shipments to retry once, after the others, in this run (failures
+        # whose work mode is RETRY_THIS_RUN), and those already retried.
+        self.retry_queue = []
+        self._retried = set()
         # Where the same lines go in the run log (the automation sets it).
         self.log_hook = None
 
@@ -426,6 +433,24 @@ class ControlTowerState:
                           root_cause_status=item["root_cause_status"])
         self._intel_event("recovery_plan_created", ref, failure_id=fid,
                           plan=item["recovery_plan"]["status"])
+        # ── WORK: the run does not stop. A transient failure with nothing
+        #    written is queued for one retry after the other shipments; every
+        #    failure goes on ATLAS's work list with its plan.
+        work = item["work"]
+        record["work"] = {"mode": work["mode"], "why": work["why"]}
+        if work["mode"] == "RETRY_THIS_RUN" and ref not in self._retried \
+                and ref not in self.retry_queue:
+            self.retry_queue.append(ref)
+            record["work"]["queued"] = True
+        if self.intel is not None:
+            try:
+                from intelligence import backlog as _backlog
+                stored = _backlog.add(item)
+            except Exception:
+                stored = None
+            if stored:
+                self._intel_event("work_item_recorded", ref, failure_id=fid, key=stored["key"],
+                                  mode=work["mode"], status=stored["status"])
 
     def _emit_outcome(self, record, result):
         """
@@ -460,6 +485,14 @@ class ControlTowerState:
                    human_step=bool(record.get("human_step")),
                    strategy_issue=record.get("strategy_issue"),
                    strategies=record.get("strategies") or [])
+        try:
+            from intelligence import backlog as _backlog
+            for item in _backlog.outcome(reference, self.run_id, result, verified):
+                if item["status"] == "RESOLVED_VERIFIED":
+                    self._intel_event("work_item_resolved", reference, key=item["key"],
+                                      by=item["resolved"]["by"])
+        except Exception:
+            pass
         episodes = [e for e in self.recovery_history if e.get("reference") == reference]
         if self.recovery and self.recovery.get("reference") == reference \
                 and not self.recovery.get("_archived"):
@@ -525,6 +558,8 @@ class ControlTowerState:
             self._intel_human_done = set()
             self._intel_recovery_done = set()
             self.intel_log.clear()
+            self.retry_queue = []
+            self._retried = set()
             for key, value in config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
@@ -854,6 +889,30 @@ class ControlTowerState:
             except Exception:
                 pass
 
+    def deferred_retries(self):
+        """References to retry once, after the other shipments. Never raises."""
+        try:
+            with self._lock:
+                return [r for r in self.retry_queue if r not in self._retried]
+        except Exception:
+            return []
+
+    @_guard
+    def deferred_retry_started(self, reference):
+        """The run is retrying this shipment now — its one deferred retry."""
+        with self._lock:
+            if reference in self.retry_queue:
+                self.retry_queue.remove(reference)
+            self._retried.add(reference)
+            self._intel_event("deferred_retry_started", reference)
+            if self.intel is not None:
+                try:
+                    from intelligence import backlog as _backlog
+                    _backlog.retrying(reference, self.run_id)
+                except Exception:
+                    pass
+            self._touch()
+
     def set_log_hook(self, hook):
         """The automation's write_log, so ATLAS's intelligence lines reach the run log."""
         self.log_hook = hook
@@ -1031,7 +1090,19 @@ class ControlTowerState:
                 "steps": [],
             }
             previous = self._index.get(reference)
-            if previous is not None and previous.get("state") in (
+            if previous is not None and reference in self._retried \
+                    and previous.get("state") in ("failed", "skipped", "partial"):
+                # The run's one deferred retry of a failed shipment: one row,
+                # which remembers how the first attempt ended.
+                record["deferred_retry"] = {
+                    "state": previous.get("state"), "outcome": previous.get("outcome"),
+                    "error": (previous.get("error") or "")[:300],
+                    "at": previous.get("updated")}
+                try:
+                    self.shipments.remove(previous)
+                except ValueError:
+                    pass
+            elif previous is not None and previous.get("state") in (
                     "waiting_for_human", "human_timeout"):
                 # Looked up again from the Human Action queue: the same
                 # shipment, so one row, not two.
@@ -1374,6 +1445,7 @@ class ControlTowerState:
                 "recovery_history": list(self.recovery_history)[:15],
                 # ATLAS's operational intelligence log, newest first.
                 "intel_log": list(self.intel_log)[:100],
+                "retry_queue": list(self.retry_queue),
                 "atlas": {
                     "name": ATLAS_NAME,
                     "full_name": ATLAS_FULL_NAME,

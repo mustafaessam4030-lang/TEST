@@ -35,6 +35,7 @@ SUITES = [
     ("test_atlas_operations.py", "ATLAS + queue: conversation, operations, security boundary"),
     ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
     ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
+    ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
@@ -91,7 +92,7 @@ def main():
         total_failed += failed
         if result.returncode != 0 or failed:
             broken.append(name)
-            print("  {0:<26} {1:>4} passed  {2:>3} FAILED   {3}".format(
+            print("  {0:<30} {1:>4} passed  {2:>3} FAILED   {3}".format(
                 name, passed, failed, description))
             for candidate in result.stdout.splitlines():
                 if candidate.strip().startswith("FAIL"):
@@ -99,7 +100,7 @@ def main():
             if result.stderr.strip():
                 print("        " + result.stderr.strip().splitlines()[-1])
         else:
-            print("  {0:<26} {1:>4} passed              {2}".format(
+            print("  {0:<30} {1:>4} passed              {2}".format(
                 name, passed, description))
 
     print("=" * 74)
