@@ -420,10 +420,10 @@ inbound) and optional Azure Bastion for administrators.
 
 | Suite | Result |
 |---|---|
-| Full suite (`run_tests.py`), last complete run | **2,325 passed, 1 failed**. The failure (`test_afkl_resources`: the automation must set no environment variable — `main()` set the data origin in `os.environ`) is fixed: the origin is now declared on the store; that suite then passed 46/46. In the same run `test_human_loop.py` stopped early on a timing check under load; run on its own it passed 101/101 three times in a row |
+| Full suite (`run_tests.py`), last complete run | **2,426 passed, 1 failed** of 2,427 across 29 suites. The one failure was a timing check in `test_remote_session.py` (it read the Start button before the first live state had painted it); fixed, and the suite then passed 51/51 in two consecutive runs. Earlier fixes in this round: the automation no longer sets an environment variable (`test_afkl_resources` 46/46), and the Human Action loop test's person now waits for the run (`test_human_loop` 101/101) |
 | `test_platform.py` | **139 passed, 0 failed** (PostgreSQL section skipped without a server): auth, access matrix, security, SSO, users, audit, workers, runs, human action, ATLAS, theme, stream, perf, local mode |
 | `test_platform.py` with `ATA_TEST_PG_URL` (PostgreSQL 16) | all checks pass, incl. 10 simultaneous Starts → 1 run, 12 operators racing for one Human Action → 1 holder |
-| `test_remote_session.py` | **51 passed, 0 failed**: real worker subprocess + real Chromium + the run's own Human Action code: parked → Open & Continue → streamed → typed → verified → written + read back; timeout; agent killed → WORKER_DISCONNECTED → adopted → RUNNING; stop while held → session lost; dashboard sign-in, theme per user, viewer, roles |
+| `test_remote_session.py` | **51 passed, 0 failed** (twice): real worker subprocess + real Chromium + the run's own Human Action code: parked → Open & Continue → streamed → typed → verified → written + read back; timeout; agent killed → WORKER_DISCONNECTED → adopted → RUNNING; stop while held → session lost; dashboard sign-in, theme per user, viewer, roles |
 
 ## 17. Security test results
 
