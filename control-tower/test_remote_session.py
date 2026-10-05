@@ -335,8 +335,12 @@ try:
         page.wait_for_selector("#pfMe:not([hidden])", timeout=15000)
         check("Signed in: name and role in the header",
               page.inner_text("#pfName") == "Omar Farouk" and page.inner_text("#pfRole").lower() == "operator")
-        check("Start automation is offered to an Operator", page.is_visible("#btnStart") and
-              page.inner_text("#btnStart") == "Start automation")
+        # The button is drawn from the first live state, a moment after sign-in.
+        offered = until(lambda: page.is_visible("#btnStart") and
+                        page.inner_text("#btnStart") == "Start automation" and
+                        not page.is_disabled("#btnStart"), 20)
+        check("Start automation is offered to an Operator", bool(offered),
+              page.inner_text("#btnStart") if page.is_visible("#btnStart") else "hidden")
         page.click("[data-theme-set='dark']")
         page.wait_for_timeout(600)
         check("Choosing Dark switches the page to the dark theme",
