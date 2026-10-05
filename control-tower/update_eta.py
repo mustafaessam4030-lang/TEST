@@ -372,8 +372,9 @@ LOG_FILE = LOG_FOLDER / "run_{0:%Y%m%d_%H%M%S_%f}_pid{1}.log".format(
 RUN_ID = "{0:%Y%m%d-%H%M%S}-{1}".format(datetime.now(), os.urandom(3).hex())
 # Started from the web, the run's id is the one the control plane created
 # for it, so the dashboard, the audit trail and this run's own records agree.
-if re.match(r"^\d{8}-\d{6}-[0-9a-f]{6}$", os.environ.get("CT_RUN_ID") or ""):
-    RUN_ID = os.environ["CT_RUN_ID"]
+_CT_RUN_ID = os.environ.get("CT_RUN_ID") or ""
+if re.match(r"^\d{8}-\d{6}-[0-9a-f]{6}$", _CT_RUN_ID):
+    RUN_ID = _CT_RUN_ID
 # The human action this run has open, as JSON — what it is waiting for and
 # where — and an append-only log of every intervention event. No secrets,
 # no codes, no answers: there is nothing of the kind to put in them.
@@ -9919,11 +9920,13 @@ def main():
     # ATLAS learns from real runs only: outcomes, recoveries, human tasks and
     # real screenshots go to its stores from here. Observing never changes
     # what the automation does.
-    # A real run's learning is REAL PRODUCTION DATA. Tests and demos never
-    # reach main(), and their stores are labelled TEST.
-    os.environ.setdefault("ATLAS_DATA_ORIGIN", "production")
     try:
         from intelligence import events as _intel_events, evidence as _intel_evidence
+        # A real run's learning is REAL PRODUCTION DATA. Tests and demos
+        # never reach main(), and their stores are labelled TEST. Set on the
+        # store, not in the environment: the automation sets no environment.
+        from intelligence import store as _intel_store
+        _intel_store.set_origin("production")
         INTEL["events"], INTEL["evidence"] = _intel_events, _intel_evidence
         tower.attach_intelligence(_intel_events)
         write_log("[ATLAS] Learning from this run: outcomes, recoveries, human "

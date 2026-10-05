@@ -44,8 +44,19 @@ ORIGINS = ("production", "test")
 ORIGIN_FILE = "ORIGIN"
 
 
+_PROCESS_ORIGIN = {"value": None}
+
+
+def set_origin(value):
+    """An entry point declaring what its data is (the automation's main())."""
+    if value in ORIGINS:
+        _PROCESS_ORIGIN["value"] = value
+
+
 def origin():
-    """This process's origin."""
+    """This process's origin: declared by its entry point, else the environment."""
+    if _PROCESS_ORIGIN["value"]:
+        return _PROCESS_ORIGIN["value"]
     raw = str(os.environ.get("ATLAS_DATA_ORIGIN") or "").strip().lower()
     return raw if raw in ORIGINS else "test"
 

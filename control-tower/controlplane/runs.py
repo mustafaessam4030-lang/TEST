@@ -345,6 +345,12 @@ class Orchestrator(object):
         self.db.execute("UPDATE runs SET summary = ?, last_state_at = ?, status = ?, "
                         "started_at = COALESCE(started_at, ?) WHERE run_id = ?",
                         (dumps(summary), stamp, status, stamp, run_id))
+        if run["status"] == "WORKER_DISCONNECTED" and status == "RUNNING":
+            # The worker is back and its run is still going — reconciled from
+            # the run's own report, whichever of state or heartbeat came first.
+            self.audit.record("RUN_RECONCILED", target_type="run", target_id=run_id,
+                              run_id=run_id, result="RUNNING",
+                              metadata={"worker": worker["worker_id"], "by": "state"})
         if self.on_state:
             try:
                 self.on_state(run_id, state)

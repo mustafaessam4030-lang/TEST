@@ -421,10 +421,10 @@ inbound) and optional Azure Bastion for administrators.
 
 | Suite | Result |
 |---|---|
-| Full suite (`run_tests.py`) | see the summary at the end of this file |
-| `test_platform.py` | auth, access matrix, security, SSO, users, audit, workers, runs, human action, ATLAS, theme, stream, perf, local mode |
+| Full suite (`run_tests.py`), last complete run | **2,325 passed, 1 failed**. The failure (`test_afkl_resources`: the automation must set no environment variable — `main()` set the data origin in `os.environ`) is fixed: the origin is now declared on the store; that suite then passed 46/46. In the same run `test_human_loop.py` stopped early on a timing check under load; run on its own it passed 101/101 three times in a row |
+| `test_platform.py` | **139 passed, 0 failed** (PostgreSQL section skipped without a server): auth, access matrix, security, SSO, users, audit, workers, runs, human action, ATLAS, theme, stream, perf, local mode |
 | `test_platform.py` with `ATA_TEST_PG_URL` (PostgreSQL 16) | all checks pass, incl. 10 simultaneous Starts → 1 run, 12 operators racing for one Human Action → 1 holder |
-| `test_remote_session.py` | real worker subprocess + real Chromium + the run's own Human Action code: parked → Open & Continue → streamed → typed → verified → written + read back; timeout; agent killed → WORKER_DISCONNECTED → adopted → RUNNING; stop while held → session lost; dashboard sign-in, theme per user, viewer, roles |
+| `test_remote_session.py` | **51 passed, 0 failed**: real worker subprocess + real Chromium + the run's own Human Action code: parked → Open & Continue → streamed → typed → verified → written + read back; timeout; agent killed → WORKER_DISCONNECTED → adopted → RUNNING; stop while held → session lost; dashboard sign-in, theme per user, viewer, roles |
 
 ## 17. Security test results
 
@@ -443,8 +443,8 @@ typed through the live view found nowhere afterwards.
 
 * Dashboard screen refresh (`paint()`, 120 shipments, measured in Chromium,
   net of state copying): before this change ≈0.25–0.30 ms, after ≈0.29–0.31 ms
-  in local mode (run-to-run noise; baseline 0.34 ms). Remote mode: measured in
-  `test_remote_session.py` (budget 1 ms).
+  in local mode (run-to-run noise; baseline 0.34 ms). Remote mode, signed in,
+  with the platform layer active: **0.21 ms** (`test_remote_session.py`).
 * Control-plane state for 300 shipments: built in a few ms (budget 25 ms,
   `test_platform.py` §12); unchanged shipments are omitted from SSE frames as
   before.
