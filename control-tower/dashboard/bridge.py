@@ -18,28 +18,45 @@ MAX_TIMELINE = 300
 MAX_ATLAS_EVENTS = 200
 MAX_HUMAN_EVENTS = 60
 
-# Transport mode, for display. Decided by the tracking provider the
-# automation routed the shipment to — never guessed from a reference. One
-# table, here, so the dashboard and ATLAS read the same answer; to add a
-# carrier, add its provider key. A provider not listed is "unknown", and the
-# dashboard then shows a neutral illustration rather than a vehicle.
+# Transport mode, for display: how the shipment MOVES, which is not the same
+# as who tracks it. DHL tracks the K-references, but an airline flies them —
+# the Hub lists K223259 under Brussels Airlines and K179801 under KLM. So the
+# carrier the Hub names is read first; the tracking provider decides only when
+# the carrier name says nothing about the mode. Never guessed from a
+# reference. One function, here, so the dashboard and ATLAS read the same
+# answer. Nothing recognised is "unknown", and the dashboard then shows a
+# neutral illustration rather than a vehicle.
 TRANSPORT_MODES = {
-    "AFKL": "air", "QATAR": "air",
+    "AFKL": "air", "QATAR": "air", "ASTRAL": "air",
+    # DHL Express moves international shipments through its air network;
+    # every DHL row the Hub clears is an import. DHL's road freight is named
+    # as such in the carrier column, and ROAD_NAMES catches it first.
+    "DHL": "air",
     "CMA_CGM": "ocean", "MSC": "ocean", "GRIMALDI": "ocean", "COSCO": "ocean",
     "MAERSK": "ocean", "ONE": "ocean", "HAPAG": "ocean",
-    "DHL": "road",
 }
-# Only for a provider the table does not know: a carrier NAME that says rail.
+# What a carrier NAME says about the mode. Rail and road are checked before
+# air, so "DHL Freight" is road even though DHL's default is air.
+AIR_NAMES = re.compile(r"\bair(?:lines?|ways)?\b|\baviation\b|\bsky\s*cargo\b|\bKLM\b"
+                       r"|\bLufthansa\b|\bEgyptAir\b|\bSaudia\b|\bEmirates\b|\bRwandAir\b"
+                       r"|\bAstral\b", re.I)
 RAIL_NAMES = re.compile(r"\brail(?:way)?s?\b|\bRZD\b|\bDB\s+Cargo\b|\bEgyptian\s+National\s+Railways\b", re.I)
+ROAD_NAMES = re.compile(r"\broad\b|\btruck(?:ing)?s?\b|\bhaulage\b|\bDHL\s+Freight\b|\bland\s+freight\b", re.I)
 
 
 def transport_mode(provider, carrier=None):
-    """air | ocean | road | rail | unknown."""
-    mode = TRANSPORT_MODES.get(str(provider or "").upper())
-    if mode:
-        return mode
-    if carrier and RAIL_NAMES.search(str(carrier)):
-        return "rail"
+    """air | ocean | road | rail | unknown — how the shipment moves."""
+    name = str(carrier or "")
+    known = TRANSPORT_MODES.get(str(provider or "").upper())
+    if name:
+        if RAIL_NAMES.search(name):
+            return "rail"
+        if ROAD_NAMES.search(name):
+            return "road"
+        if AIR_NAMES.search(name):
+            return "air"
+    if known:
+        return known
     return "unknown"
 
 

@@ -499,7 +499,10 @@ class Handler(BaseHTTPRequestHandler):
             context = {"reference": str(raw_context.get("reference") or "")[:64],
                        "action_id": str(raw_context.get("action_id") or "")[:64],
                        "evidence_id": re.sub(r"[^0-9a-f]", "", str(
-                           raw_context.get("evidence_id") or ""))[:16]}
+                           raw_context.get("evidence_id") or ""))[:16],
+                       # How many rude messages this tab has sent — a count only.
+                       "conduct": int(raw_context.get("conduct") or 0)
+                       if str(raw_context.get("conduct") or "0").isdigit() else 0}
         except Exception:
             self._send(400, json.dumps({"error": "bad request"}))
             return
@@ -513,8 +516,9 @@ class Handler(BaseHTTPRequestHandler):
             # A request about a verification code keeps no pattern at all.
             intent = reply.get("intent")
             fallback = str(reply.get("answer") or "").startswith("I don't have that information")
+            # A rude message is logged by its label alone — not its words.
             intel_events.record("question", intent=intent or "unrecognised",
-                                pattern=None if intent == "code_request"
+                                pattern=None if intent == "code_request" or reply.get("conduct")
                                 else intel_events.question_pattern(question),
                                 answered=bool(intent) and not fallback,
                                 run_id=(bridge.snapshot(trim=True).get("run") or {}).get("run_id"))

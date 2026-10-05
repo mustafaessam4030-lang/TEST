@@ -1128,7 +1128,7 @@ MODE_WORDS = {"air": "Air", "ocean": "Ocean", "road": "Road", "rail": "Rail",
               "unknown": "Unknown"}
 MODE_PHRASES = [("ocean", r"\b(ocean|sea|ship|ships|vessel|maritime)\b"),
                 ("air", r"\b(air|plane|planes|flight|airline)\b"),
-                ("road", r"\b(road|truck|trucks|van|courier)\b"),
+                ("road", r"\b(road|truck|trucks|van)\b"),
                 ("rail", r"\b(rail|train|trains|railway)\b")]
 STATE_PHRASES = [("failed", r"\b(fail|failed|failure|failures|failing)\b"),
                  ("skipped", r"\bskipped\b"),
@@ -2375,6 +2375,101 @@ def downloads_for(data, intent, record=None):
     return offers[:4]
 
 
+
+# ══════════════════════════════════════════════════════════════
+# CONDUCT
+# ══════════════════════════════════════════════════════════════
+#
+# Swearing at ATLAS, or around it, gets a calm, firm reply: ATLAS notices,
+# asks for professional language, and still helps. A real question inside a
+# rude message is answered — the note comes first, then the answer. Repeats
+# within one browser tab get firmer (the page sends the count back as
+# context.conduct; the server keeps nothing). Only the label "conduct" is
+# logged with the question's intent; the words themselves are never stored.
+
+PROFANITY = re.compile(
+    r"\b(?:f+u+c+k+\w*|f[\*\#@]+c?k\w*|fck\w*|fuk\w*|motherf\w*|wtf|stfu|"
+    r"sh+i+t+(?:s|ty|tier|ting|head|heads|hole|show)?|sh[\*\#@]+t\w*|bullshit\w*|b+i+t+c+h+\w*|bastards?|"
+    r"assholes?|arseholes?|dickheads?|cunts?|"
+    # Egyptian Arabic, in Franco-Arab spelling
+    r"a7a+|kos+\s*omm?ak|kosomm?ak|kosom\w*|metnak\w*|sharmo+t\w*|sharmou?ta|"
+    r"[5k]h?awal|3ars|yel3an\w*)\b"
+    # Egyptian Arabic, in Arabic script
+    r"|(?<!\w)(?:احا+|كسم\w*|كس\s*ام\w*|متناك\w*|شرموط\w*|خول|عرص|يلعن\w*)(?!\w)",
+    re.I)
+# Insults count only when aimed at ATLAS — "this stupid site" is venting,
+# "you're stupid" is not.
+INSULTS = re.compile(r"\b(?:idiot\w*|stupid|dumb|moron\w*|useless|trash|garbage|"
+                     r"shut\s+up|loser|7mar|homar|ghabi|غبي|حمار|اخرس)\b|(?<!\w)(?:غبي|حمار|اخرس)(?!\w)",
+                     re.I)
+AT_ATLAS = re.compile(r"\b(?:you|u|ur|your|you're|youre|ya|atlas|bot|robot|enta|inta|enty)\b"
+                      r"|(?<!\w)(?:انت|إنت|انتي|يا)(?!\w)", re.I)
+ARABIC = re.compile(r"[؀-ۿ]")
+
+
+def conduct_of(question):
+    """None, "at_atlas" (aimed at ATLAS) or "venting" (swearing about things)."""
+    text = str(question or "")
+    swore = bool(PROFANITY.search(text))
+    insulted = bool(INSULTS.search(text)) and bool(AT_ATLAS.search(text))
+    if insulted or (swore and AT_ATLAS.search(text)
+                    and re.search(r"\b(?:fuck|f\*+k|stfu|screw)\w*\s+(?:you|u|off|atlas)\b|"
+                                  r"\b(?:you|u|atlas|bot)\s*(?:are|r|is|'re)?\s*(?:a\s+)?"
+                                  r"(?:piece\s+of\s+)?(?:shit|crap|trash|useless|garbage|f\w*ing)",
+                                  text, re.I)):
+        return "at_atlas"
+    # A short swear that names ATLAS ("a7a ya atlas", "screw you bot") is
+    # aimed at it, whatever the words.
+    if swore and AT_ATLAS.search(text) and len(text.split()) <= 5:
+        return "at_atlas"
+    if swore:
+        return "venting"
+    return None
+
+
+def without_profanity(question):
+    """The message with the swearing taken out, for finding a real question."""
+    text = PROFANITY.sub(" ", str(question or ""))
+    text = re.sub(r"\b(?:the|what|why|how)\s+(?:hell|heck)\b", lambda m: m.group(0).split()[0], text, flags=re.I)
+    text = INSULTS.sub(" ", text) if AT_ATLAS.search(str(question or "")) else text
+    text = re.sub(r"\b(?:you|u|atlas|bot)\s+(?:are|r|is)\s*(?:a\s+)?(?:piece\s+of\s*)?\s*[,.!?]*", " ", text, flags=re.I)
+    return re.sub(r"\s+", " ", text).strip(" ,.!?-")
+
+
+CONDUCT_REPLIES = {
+    "at_atlas": [
+        "Let's keep it respectful, please. I'm here to help — tell me what's "
+        "going wrong and I'll check the run.",
+        "I'll ask again: please keep the language professional. If something "
+        "isn't working, give me the shipment number or tell me what you "
+        "expected, and I'll look into it.",
+        "I'll keep helping with the run, but I won't reply to insults. Ask me "
+        "about a shipment, a failure or the Human Action queue.",
+    ],
+    "venting": [
+        "Sounds like something has gone wrong. Let's keep the language clean, "
+        "though — tell me what happened and I'll check. You can start with "
+        "“what failed?”",
+        "Please keep the language professional. Tell me which shipment or "
+        "carrier is the problem and I'll look at what the run recorded.",
+        "I'll keep helping, but please mind the language. Ask me what failed, "
+        "or give me a shipment number.",
+    ],
+}
+CONDUCT_ARABIC = "خلّينا نحافظ على أسلوب محترم من فضلك. أنا هنا علشان أساعد — قولّي إيه المشكلة وأنا أراجع التشغيل."
+CONDUCT_PREFIX = ["Easy on the language, please — here's what you asked.",
+                  "Please keep it professional. Here's the answer.",
+                  "Language, please. Here's the answer."]
+
+
+def _conduct_reply(kind, strikes, question):
+    level = min(strikes, 2)
+    text = CONDUCT_REPLIES[kind][level]
+    if ARABIC.search(str(question or "")):
+        text = CONDUCT_ARABIC + "\n\n" + text
+    return text
+
+
 def answer(question, state, context=None):
     """
     Answer one question and attach contextual follow-up chips.
@@ -2382,7 +2477,27 @@ def answer(question, state, context=None):
     The suggestions are computed once, here, from the reply's own reference —
     so every chip is backed by data the assistant has already seen.
     """
-    reply = _answer_core(question, state, context)
+    context = context or {}
+    kind = conduct_of(question)
+    if kind:
+        try:
+            strikes = max(0, min(9, int(context.get("conduct") or 0)))
+        except (TypeError, ValueError):
+            strikes = 0
+        cleaned = without_profanity(question)
+        reply = (_answer_core(cleaned, state, context)
+                 if len(cleaned.split()) >= 2 or detect_intent(cleaned) else None)
+        if reply is not None and reply.get("understood") is not False \
+                and reply.get("intent") not in ("greeting", "thanks"):
+            reply["answer"] = CONDUCT_PREFIX[min(strikes, 2)] + "\n\n" + reply.get("answer", "")
+            question = cleaned
+        else:
+            reply = {"answer": _conduct_reply(kind, strikes, question), "card": None,
+                     "reference": context.get("reference"), "grounded": True,
+                     "intent": "conduct"}
+        reply["conduct"] = {"kind": kind, "strikes": strikes + 1}
+    else:
+        reply = _answer_core(question, state, context)
     reply.setdefault("sources", ["bridge.snapshot"])
     try:
         data = RunData(state)
@@ -2676,7 +2791,7 @@ def _answer_core(question, state, context=None):
             summary = ("I don't have that information in this run, and no shipments "
                        "have been processed yet. Once a run starts I can answer "
                        "about any of them.")
-        return {"answer": summary, "card": None,
+        return {"answer": summary, "card": None, "understood": False,
                 "reference": context.get("reference"), "grounded": True}
 
     except Exception as error:

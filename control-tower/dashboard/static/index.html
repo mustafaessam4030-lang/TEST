@@ -1028,6 +1028,7 @@ td.car{color:var(--ink);font-weight:500}
 /* the shipment card in Tracking */
 .sc-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .sc-car{font-size:15px;font-weight:650;color:var(--ink);letter-spacing:-.01em}
+.sc-via{display:block;margin-top:2px;font-size:12px;font-weight:450;color:var(--mid);letter-spacing:0}
 .route-side .t-art{max-width:230px;margin:2px auto 0}
 .sc-g{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
 .sc-t{display:grid;gap:8px;padding-top:12px;border-top:1px solid var(--line-2)}
@@ -1079,8 +1080,13 @@ td.car{color:var(--ink);font-weight:500}
 .msg.me .m-av{background:var(--solid);color:var(--on-solid)}
 .bub{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--y);
   padding:11px 14px;font-size:14px;line-height:1.65;border-radius:0 12px 12px 12px;
-  color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  color:var(--ink);white-space:pre-wrap;word-break:break-word;unicode-bidi:plaintext}
 .msg.me .bub{background:var(--solid);color:var(--on-solid);border:none;border-radius:12px 0 12px 12px;font-weight:450}
+.bub.stern{border-left-color:var(--amber);background:var(--amber-wash)}
+.ax-av.stern .atlas-fig{animation:axNo .7s var(--e) 1}
+@keyframes axNo{0%,100%{transform:none}20%{transform:translateX(-3px) rotate(-6deg)}
+  45%{transform:translateX(3px) rotate(5deg)}70%{transform:translateX(-2px) rotate(-3deg)}}
+@media(prefers-reduced-motion:reduce){.ax-av.stern .atlas-fig{animation:none}}
 .bub strong{font-weight:700}
 .bub code{font-family:var(--mono);background:var(--bone);padding:2px 6px;border-radius:4px;font-size:12px}
 .cur{display:inline-block;width:7px;height:14px;background:var(--ink);vertical-align:middle;
@@ -1414,7 +1420,7 @@ td.car{color:var(--ink);font-weight:500}
         <!-- TRACKING. A map of the shipment's way through ATA — Hub, carrier,
              data, Hub write, verified — not a GPS map: no position is
              recorded, so none is drawn. The vehicle is the shipment's own
-             mode: a plane for air, a ship for ocean, a van for the rest. -->
+             mode: a plane for air, a ship for ocean, a van for road. -->
         <div class="card route">
           <div class="card-h"><div><div class="card-t">Tracking</div>
             <div class="card-s" id="routeSub">The selected shipment's journey · route drawn abstractly — carriers report status and dates, not positions</div></div>
@@ -3078,8 +3084,9 @@ const since = (t0) => {
 };
 
 /* ═══ TRANSPORT ═════════════════════════════════════════════════════
-   getTransportMode(r) reads the mode the bridge put on the record, which it
-   took from the tracking provider the automation used (bridge.TRANSPORT_MODES).
+   getTransportMode(r) reads the mode the bridge put on the record
+   (bridge.transport_mode): how the shipment moves — the carrier the Hub names
+   first, the tracking provider only when the name says nothing.
    Nothing here guesses a mode: a record without one is "unknown", and gets the
    neutral illustration, never a vehicle.
 
@@ -3678,6 +3685,16 @@ const svgText = (x, y, t, o) => '<text x="' + x.toFixed(1) + '" y="' + y.toFixed
   ((o && o.weight) || 500) + '" fill="' + ((o && o.fill) || '#475569') +
   '" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif">' + esc(t) + '</text>';
 
+/* Who tracks it, when that is not the carrier the Hub names: DHL tracks the
+   K-references an airline flies, so "Brussels Airlines" alone would hide
+   which site the run reads. */
+const TRACKER = {DHL:'DHL', AFKL:'AFKL myCargo', QATAR:'Qatar Airways Cargo', ASTRAL:'Astral'};
+function trackedBy(r){
+  const t = r && TRACKER[String(r.provider || '').toUpperCase()];
+  if (!t || String(r.carrier || '').toUpperCase().includes(t.split(' ')[0].toUpperCase())) return '';
+  return '<span class="sc-via">Tracked by ' + esc(t) + '</span>';
+}
+
 function paintRoute(){
   if (activePage !== 'overview' && routeBuilt) return;
   if (!routeBuilt){ routeBuilt = true; $('routeMap').innerHTML = routeMapSVG(); routeSig = ''; routeMode = ''; }
@@ -3752,7 +3769,7 @@ function paintRoute(){
   const shown = list.slice(Math.max(0, reach - 2), Math.min(list.length, reach + 1));
   const moving = j.k === 'onway' || j.k === 'processing';
   putHTML($('routeSide'),
-    '<div class="sc-h"><span class="sc-car">' + dash(r.carrier) + '</span>' + modeChip(mode) + '</div>' +
+    '<div class="sc-h"><span class="sc-car">' + dash(r.carrier) + trackedBy(r) + '</span>' + modeChip(mode) + '</div>' +
     TransportIllustration(mode, moving) +
     '<div class="sc-g">' +
       '<div><div class="fk">Shipment</div><div class="rt-ref">' + esc(r.reference) + '</div></div>' +
@@ -4250,6 +4267,8 @@ document.addEventListener('click', (e) => {
 (function chat(){
   const body = $('chatBody'), input = $('chatIn');
   let busy = false, lastReference = null, lastFocus = '', lastEvidence = '';
+  // Rude messages this tab has sent — a count, for a firmer reply each time.
+  let conductCount = 0;
   /* A real image — a capture from the automation's browser or one the
      operator uploaded — with where it came from beneath it. Nothing is ever
      drawn or generated here. */
@@ -4557,12 +4576,19 @@ document.addEventListener('click', (e) => {
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({question: q, context: {reference: lastReference, action_id: lastFocus,
-                                                   evidence_id: lastEvidence}})
+                                                   evidence_id: lastEvidence, conduct: conductCount}})
     })
       .then((r) => r.json())
       .then((d) => {
         wait.remove(); $('chTy').classList.remove('show');
         const b = bubble('bot');
+        if (d.conduct){
+          // ATLAS noticed the language: an amber bubble and a short shake.
+          conductCount = d.conduct.strikes || conductCount + 1;
+          b.classList.add('stern');
+          const av = b.parentNode.querySelector('.ax-av');
+          if (av) av.classList.add('stern');
+        }
         return typeOut(b, d.answer || 'No answer came back.').then(() => {
           if (d.card) card(d.card);
           if (d.buttons && d.buttons.length) actionsRow(d.buttons);

@@ -48,7 +48,7 @@ def started(ref, carrier, provider):
                         "current_eta": "", "table_page": 1})
 
 
-# DHL — road, written and read back
+# DHL Express — air, written and read back
 started("K179801", "DHL Express", "DHL")
 b.step("Tracking K179801 on the carrier site", system="DHL")
 b.provider_result({"provider": "DHL", "tracking_status": "Delivered", "eta": "05/10/2026",
@@ -96,7 +96,13 @@ def dates(text):
 rule("TRANSPORT MODE COMES FROM THE PROVIDER, NEVER A GUESS")
 check("KLM / Air France → air", transport_mode("AFKL") == "air")
 check("Grimaldi and MSC → ocean", transport_mode("GRIMALDI") == "ocean" and transport_mode("MSC") == "ocean")
-check("DHL → road", transport_mode("DHL") == "road")
+check("DHL Express → air (its network flies)", transport_mode("DHL", "DHL Express") == "air")
+check("A DHL K-reference flown by Brussels Airlines → air, not road",
+      transport_mode("DHL", "Brussels Airlines") == "air"
+      and transport_mode("DHL", "KLM Royal Dutch Airlines") == "air")
+check("DHL road freight, named so → road", transport_mode("DHL", "DHL Freight") == "road")
+check("An airline name decides even with no tracking provider",
+      transport_mode(None, "Turkish Airlines") == "air")
 check("A rail carrier name → rail", transport_mode("XYZ", "Egyptian National Railways") == "rail")
 check("Anything else → unknown, never a vehicle", transport_mode("XYZ", "Unlisted Forwarder") == "unknown")
 rows = {r["reference"]: r for r in STATE["shipments"]}
@@ -272,6 +278,42 @@ check("{0} answers while shipments were being written, no error".format(answers)
 latest = assistant.atlas_brief(b.snapshot())
 check("...and the brief reflects the new shipments", latest["summary"]["completed"] > 1,
       str(latest["summary"]))
+
+rule("14. ATLAS NOTICES RUDE LANGUAGE, ASKS FOR RESPECT, AND STILL HELPS")
+r = ask("fuck you")
+check("Swearing at ATLAS gets a request to keep it respectful",
+      r.get("intent") == "conduct" and "respectful" in r["answer"]
+      and r.get("conduct") == {"kind": "at_atlas", "strikes": 1}, str(r))
+r2 = ask("fuck you", {"conduct": 1}); r3 = ask("you are useless", {"conduct": 2})
+check("A second and third time the reply is firmer, never ruder",
+      "ask again" in r2["answer"] and "won't reply to insults" in r3["answer"]
+      and r3["conduct"]["strikes"] == 3, r2["answer"] + " | " + r3["answer"])
+r = ask("this shit is broken")
+check("Swearing about things (not at ATLAS) gets a calm request and an offer to check",
+      r.get("conduct", {}).get("kind") == "venting" and "language clean" in r["answer"], str(r))
+r = ask("what the fuck failed?")
+check("A real question inside a rude message is still answered, after the note",
+      r["answer"].startswith("Easy on the language") and "057-05765454" in r["answer"]
+      and r.get("intent") != "conduct", r["answer"][:200])
+r = ask("احا يا atlas")
+check("Egyptian Arabic swearing is understood, and answered in Arabic too",
+      r.get("conduct", {}).get("kind") == "at_atlas" and "محترم" in r["answer"], str(r))
+check("Franco-Arab spelling too", assistant.conduct_of("a7a ya atlas") == "at_atlas"
+      and assistant.conduct_of("kosomak") == "venting")
+check("Ordinary words that contain a swear are left alone",
+      all(assistant.conduct_of(w) is None for w in
+          ("Shipment K223259", "Shiitake", "assistant", "classic", "Scunthorpe",
+           "this stupid site is slow", "المعرض", "which shipments failed")))
+check("A clean question carries no conduct mark", "conduct" not in ask("Which shipments failed?"))
+r = ask("fuck you", {"conduct": "lots"})
+check("A malformed count is treated as none", r.get("conduct", {}).get("strikes") == 1, str(r))
+_ui = (Path(__file__).parent / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+check("The chat sends the count and shows ATLAS reacting (stern bubble, short shake)",
+      "conduct: conductCount" in _ui and "b.classList.add('stern')" in _ui
+      and "@keyframes axNo" in _ui and ".ax-av.stern .atlas-fig{animation:none}" in _ui)
+_srv = (Path(__file__).parent / "dashboard" / "server.py").read_text(encoding="utf-8")
+check("The words of a rude message are never logged — only its label",
+      'reply.get("conduct")' in _srv and "pattern=None if" in _srv)
 
 print()
 print("=" * 72)

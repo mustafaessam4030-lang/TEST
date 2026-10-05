@@ -16,6 +16,23 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 - **On the way:** shipments with an ETA and no ATA yet. The van drives only
   while there is at least one.
 
+**Fixed · Transport mode is how a shipment moves, not who tracks it.** DHL
+tracks the K-references, but an airline flies them — K223259 is Brussels
+Airlines, K179801 is KLM — and they showed as Road. The mode now comes from the
+carrier the Hub names first (an airline is Air, a shipping line is Ocean), and
+from the tracking provider only when the name says nothing. DHL Express is Air;
+DHL road freight, named so, is Road. The shipment card also says **Tracked by
+DHL** when the tracker is not the carrier.
+
+**New · ATLAS minds its manners — and yours.** Swear at ATLAS ("fuck you",
+"you're useless", "احا", "a7a ya atlas") and it asks, calmly, for respectful
+language and offers to help; a second and third time it is firmer. Swearing
+about something ("this shit is broken") gets a request to keep it clean and an
+offer to check the run. A real question inside a rude message ("what the fuck
+failed?") is still answered, after a short note. The reply shows in amber with
+a small head-shake. English, Egyptian Arabic and Franco-Arab are recognised;
+the words are never stored, only the label.
+
 **New · The ATLAS film is the introduction.** The dashboard opens with the
 30-second ATLAS film from the design handoff: ATLAS watches the network, a
 shipment fails, it diagnoses, plans, recovers, asks a person for one step,
