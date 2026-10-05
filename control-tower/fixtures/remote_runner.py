@@ -104,13 +104,17 @@ def process(pages, shipment, counts):
                 outcome=A.HUMAN_SESSION_LOST if lost else A.HUMAN_TIMEOUT)
     except A.SkipShipment as error:
         counts["skipped"] += 1
-        A.tower.shipment_finished(reference, "SKIPPED", str(error))
+        A.tower.shipment_finished(reference, "SKIPPED", str(error),
+                                  outcome=A.classify_failure(error),
+                                  failure=getattr(error, "failure", None))
     except Exception as error:
         import traceback
         LOG.write(traceback.format_exc())
         LOG.flush()
         counts["failed"] += 1
-        A.tower.shipment_finished(reference, "FAILED", str(error))
+        A.tower.shipment_finished(reference, "FAILED", str(error),
+                                  outcome=A.classify_failure(error),
+                                  failure=getattr(error, "failure", None))
     A.tower.counters(counts["ok"], counts["failed"], counts["skipped"],
                      counts["partial"], needs_human=counts["human"])
     after = tuple(counts[k] for k in ("ok", "failed", "skipped", "partial", "human"))

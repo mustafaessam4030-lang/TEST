@@ -17,6 +17,12 @@ MAX_EXCEPTIONS = 200
 MAX_TIMELINE = 300
 MAX_ATLAS_EVENTS = 200
 MAX_HUMAN_EVENTS = 60
+MAX_INTEL_LOG = 200
+INTEL_EVENTS = ("failure_detected", "failure_classified", "diagnosis_created",
+                "recovery_plan_created", "recovery_started", "recovery_completed",
+                "recovery_failed", "verification_started", "verification_passed",
+                "verification_failed", "learning_recorded")
+FAILURE_KEYS = ("category", "stage", "operation", "last_success", "detail")
 
 # Transport mode, for display: how the shipment MOVES, which is not the same
 # as who tracks it. DHL tracks the K-references, but an airline flies them —
@@ -117,6 +123,21 @@ def _guard(method):
     return wrapper
 
 
+def _clean_failure(failure):
+    """A declared failure, reduced to its known fields and bounded strings."""
+    if not isinstance(failure, dict):
+        return None
+    out = {k: str(failure[k])[:240] for k in FAILURE_KEYS if failure.get(k)}
+    cause = failure.get("cause")
+    if isinstance(cause, dict):
+        out["cause"] = {k: str(cause[k])[:240] for k in (
+            "kind", "name", "value", "decided_by", "stated_condition") if cause.get(k)}
+    observed = failure.get("observed")
+    if isinstance(observed, dict):
+        out["observed"] = {str(k)[:30]: str(v)[:80] for k, v in list(observed.items())[:8]}
+    return out or None
+
+
 class ControlTowerState:
     """Single source of truth. All mutations bump `version`."""
 
@@ -177,6 +198,13 @@ class ControlTowerState:
         self.intel = None
         self._intel_human_done = set()
         self._intel_recovery_done = set()
+        # ATLAS's operational intelligence, as it happens: failure detected,
+        # classified, diagnosed, a recovery planned, started, verified or
+        # not, and what was recorded for learning. Ids, classes and short
+        # reasons only — never a value a person typed, never a credential.
+        self.intel_log = deque(maxlen=MAX_INTEL_LOG)
+        # Where the same lines go in the run log (the automation sets it).
+        self.log_hook = None
 
         self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
         self.atlas_influenced_actions = 0
@@ -303,6 +331,10 @@ class ControlTowerState:
             }
             self.recovery_stats["diagnosed"] += 1
             self._mark("warn", "ATLAS diagnosed {0}".format(error_class))
+            self._intel_event("recovery_plan_created", self.current_shipment,
+                              error_class=error_class,
+                              plan=",".join(order or []) or "none",
+                              checkpoint=checkpoint)
             self._touch()
 
     @_guard
@@ -322,6 +354,16 @@ class ControlTowerState:
                                  "action": action, "confidence": confidence,
                                  "result": result, "verified": verified,
                                  "time": _stamp()})
+            ref = self.recovery.get("reference")
+            if result == "RUNNING":
+                self._intel_event("recovery_started", ref, action=action, attempt=index)
+                self._intel_event("verification_started", ref, action=action,
+                                  check=self.recovery.get("verifies"))
+            elif verified is True:
+                self._intel_event("verification_passed", ref, action=action)
+            elif verified is False or result == "FAILED":
+                self._intel_event("verification_failed", ref, action=action,
+                                  result=result, verified=verified)
             self.recovery["status"] = "RUNNING"
             self._touch()
 
@@ -339,6 +381,10 @@ class ControlTowerState:
                 status="RECOVERED" if recovered else "EXHAUSTED",
                 recovered=bool(recovered), reason=reason, verified=verified,
                 finished=_stamp())
+            self._intel_event("recovery_completed" if recovered else "recovery_failed",
+                              self.recovery.get("reference"),
+                              error_class=self.recovery.get("error_class"),
+                              verified=verified, reason=reason)
             self._archive_recovery()
             self._mark("ok" if recovered else "warn",
                        "ATLAS recovery {0}".format(
@@ -352,6 +398,34 @@ class ControlTowerState:
             self._archive_recovery()
             self.recovery = None
             self._touch()
+
+    def _failure_intelligence(self, record):
+        """
+        A shipment that did not complete: detect, classify, diagnose and plan,
+        from this record and this run's recovery history. Caller holds the lock.
+        """
+        try:
+            from intelligence import failures as _failures
+        except Exception:
+            return
+        try:
+            episodes = [e for e in self.recovery_history
+                        if e.get("reference") == record.get("reference")]
+            item = _failures.from_record(record, run_id=self.run_id, recoveries=episodes)
+        except Exception:
+            return
+        if item is None:
+            return
+        ref, fid = record.get("reference"), item["failure_id"]
+        self._intel_event("failure_detected", ref, failure_id=fid, carrier=record.get("carrier"),
+                          stage=item["stage"], state=record.get("state"))
+        self._intel_event("failure_classified", ref, failure_id=fid,
+                          classification=item["classification"],
+                          basis=item["classification_basis"])
+        self._intel_event("diagnosis_created", ref, failure_id=fid,
+                          root_cause_status=item["root_cause_status"])
+        self._intel_event("recovery_plan_created", ref, failure_id=fid,
+                          plan=item["recovery_plan"]["status"])
 
     def _emit_outcome(self, record, result):
         """
@@ -450,6 +524,7 @@ class ControlTowerState:
             self.recovery_history.clear()
             self._intel_human_done = set()
             self._intel_recovery_done = set()
+            self.intel_log.clear()
             for key, value in config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
@@ -750,9 +825,38 @@ class ControlTowerState:
             return
         try:
             fields.setdefault("run_id", self.run_id)
-            intel.record(kind, **fields)
+            if intel.record(kind, **fields) and kind in ("shipment", "recovery"):
+                self._intel_event(
+                    "learning_recorded", fields.get("reference"), kind=kind,
+                    verified=bool(fields.get("verified") if kind == "shipment"
+                                  else fields.get("shipment_verified")),
+                    status=fields.get("result") if kind == "shipment" else fields.get("status"))
         except Exception:
             pass
+
+    def _intel_event(self, event, reference=None, **fields):
+        """One line of ATLAS's operational intelligence log. Caller may hold the lock."""
+        if event not in INTEL_EVENTS:
+            return
+        entry = {"at": _stamp(), "event": event, "reference": reference,
+                 "run_id": self.run_id}
+        for key, value in fields.items():
+            if value is None or key in entry:
+                continue
+            entry[key] = value if isinstance(value, (bool, int, float)) else str(value)[:160]
+        self.intel_log.appendleft(entry)
+        hook = self.log_hook
+        if hook is not None:
+            try:
+                hook("[ATLAS] {0} | {1}".format(event, " | ".join(
+                    "{0}={1}".format(k, v) for k, v in entry.items()
+                    if k not in ("at", "event") and v is not None)))
+            except Exception:
+                pass
+
+    def set_log_hook(self, hook):
+        """The automation's write_log, so ATLAS's intelligence lines reach the run log."""
+        self.log_hook = hook
 
     @_guard
     def strategy_attempts(self, provider, issue, attempts):
@@ -1006,7 +1110,7 @@ class ControlTowerState:
 
     @_guard
     def shipment_finished(self, reference, result, details="", actions=None,
-                          outcome_class=None, outcome=None, **kwargs):
+                          outcome_class=None, outcome=None, failure=None, **kwargs):
         """
         Close a shipment's record.
 
@@ -1038,6 +1142,9 @@ class ControlTowerState:
             record["error"] = details or None
             # Named operational class from classify_failure(), e.g. NO RESULT.
             record["outcome"] = outcome_class or outcome
+            # What the code that stopped this shipment declared about it:
+            # stage, category, the rule that decided, what was already read.
+            record["failure"] = _clean_failure(failure)
             record["updated"] = _stamp()
             record["duration_ms"] = int(
                 (_now().timestamp() - record["started_epoch"]) * 1000
@@ -1118,6 +1225,7 @@ class ControlTowerState:
                     self.system_error(record["provider"], details or "Shipment failed")
 
             if result != "HUMAN_QUEUED":
+                self._failure_intelligence(record)
                 self._emit_outcome(record, result)
 
             self.current_shipment = None
@@ -1264,6 +1372,8 @@ class ControlTowerState:
                 "recovery": ({k: v for k, v in self.recovery.items()
                               if k != "_archived"} if self.recovery else None),
                 "recovery_history": list(self.recovery_history)[:15],
+                # ATLAS's operational intelligence log, newest first.
+                "intel_log": list(self.intel_log)[:100],
                 "atlas": {
                     "name": ATLAS_NAME,
                     "full_name": ATLAS_FULL_NAME,

@@ -1125,6 +1125,7 @@ td.car{color:var(--ink);font-weight:500}
 @keyframes axNo{0%,100%{transform:none}20%{transform:translateX(-3px) rotate(-6deg)}
   45%{transform:translateX(3px) rotate(5deg)}70%{transform:translateX(-2px) rotate(-3deg)}}
 @media(prefers-reduced-motion:reduce){.ax-av.stern .atlas-fig{animation:none}}
+.ch-calm{font-size:12.5px;color:var(--mid);padding:2px 0}
 .bub strong{font-weight:700}
 .bub code{font-family:var(--mono);background:var(--bone);padding:2px 6px;border-radius:4px;font-size:12px}
 .cur{display:inline-block;width:7px;height:14px;background:var(--ink);vertical-align:middle;
@@ -1439,6 +1440,24 @@ td.car{color:var(--ink);font-weight:500}
 :root[data-theme="dark"] .conf.Low{background:var(--y-wash)}
 :root[data-theme="dark"] .hq-r.flash{background:var(--y-wash)}
 :root[data-theme="dark"] .rv-scrim{background:rgba(0,0,0,.6)}
+
+/* Failure intelligence */
+.fi{border-top:1px solid var(--line-2)}
+.fi:first-child{border-top:0}
+.fi-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 20px;cursor:pointer;list-style:none;font-size:13.5px}
+.fi-h::-webkit-details-marker{display:none}
+.fi-h b{color:var(--ink)}
+.fi-chip{font-size:11px;font-weight:650;letter-spacing:.03em;padding:2px 9px;border-radius:100px;
+  background:var(--y-wash);color:var(--y);text-transform:capitalize}
+.fi-st{margin-left:auto;font-size:12px;color:var(--faint)}
+.fi-g dd.fi-what{color:var(--ink);font-weight:550}
+.fi-g{display:grid;grid-template-columns:132px 1fr;gap:6px 14px;padding:4px 20px 16px;margin:0;font-size:13px}
+.fi-g dt{color:var(--faint);font-weight:550}
+.fi-g dd{margin:0;color:var(--ink)}
+.fi-g ul{margin:0;padding-left:16px}
+.fi-g li{margin:1px 0}
+.dw-sec .fi-h,.dw-sec .fi-g{padding-left:0;padding-right:0}
+@media (max-width:760px){.fi-g{grid-template-columns:1fr}.fi-g dt{margin-top:6px}}
 </style>
 </head>
 <body>
@@ -1730,6 +1749,16 @@ td.car{color:var(--ink);font-weight:500}
       </div>
       <div class="g2">
         <div class="stack">
+          <!-- FAILURE INTELLIGENCE. Each shipment that did not complete, as
+               ATLAS understands it from the run's own records: what happened,
+               why it matters, what is known, what is only inferred, the
+               recovery plan, verification and learning. The chat answers
+               "why the error?" from exactly these records. -->
+          <div class="card" id="fiCard" hidden>
+            <div class="card-h"><div><div class="card-t">Failure intelligence</div>
+              <div class="card-s">From this run's records · every line says what kind of knowledge it is</div></div></div>
+            <div id="fiList"></div>
+          </div>
           <div class="card">
             <div class="card-h"><div><div class="card-t">Recommended action</div>
               <div class="card-s">Derived from the live run state</div></div></div>
@@ -2790,7 +2819,7 @@ function navFor(id){
 }
 function go(id){
   activePage = id;
-  if (id === 'atlas') setTimeout(() => loadLearning(true), 0);
+  if (id === 'atlas') setTimeout(() => { loadLearning(true); loadFailures(true); }, 0);
   if (id === 'access') setTimeout(loadAccess, 0);
   const lit = navFor(id);
   document.querySelectorAll('.nav-i,.tnav-i').forEach((n) => n.classList.toggle('on', n.dataset.nav === lit));
@@ -4030,6 +4059,57 @@ function fact(k, v, wide, mono){
   return '<div' + (wide ? ' class="w"' : '') + '><div class="fk">' + k + '</div><div class="fv' +
     (mono ? ' mono' : '') + '">' + v + '</div></div>';
 }
+/* ═══ FAILURE INTELLIGENCE ═══
+   From /api/atlas — the same records ATLAS's chat and "ATLAS noticed" use.
+   Loaded when the ATLAS page or a failed shipment's drawer is open, and
+   again only when the shipment list itself changes. */
+const FI = {list:[], cold:-1, at:0, busy:false};
+function loadFailures(force){
+  if (FI.busy) return;
+  const cold = (S && S.cold_version) || 0;
+  if (!force && cold === FI.cold && Date.now() - FI.at < 15000) return;
+  FI.busy = true;
+  fetch('/api/atlas').then((r) => r.json()).then((d) => {
+    FI.list = d.failures || []; FI.cold = cold; FI.at = Date.now();
+    paintFailures(); if (dwRef){ dwSig = ''; paintDrawer(); }
+  }).catch(() => {}).finally(() => { FI.busy = false; });
+}
+const FI_KIND = {VERIFIED:'Confirmed by the run', INFERRED:'Inferred — not confirmed', UNKNOWN:'Unknown'};
+function fiList(items, empty){
+  return items && items.length ? '<ul>' + items.map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul>'
+    : '<span class="hint">' + esc(empty) + '</span>';
+}
+function fiCard(f, open){
+  const plan = f.plan || {};
+  return '<details class="fi"' + (open ? ' open' : '') + '><summary class="fi-h">' +
+    '<span class="fi-chip">' + esc(String(f.classification).replace(/_/g, ' ').toLowerCase()) + '</span>' +
+    '<b class="mono">' + esc(f.reference) + '</b><span>' + esc(f.carrier || '') + '</span>' +
+    '<span class="fi-st">' + esc(f.stage) + '</span></summary>' +
+    '<dl class="fi-g">' +
+      '<dt>What happened</dt><dd class="fi-what">' + esc(f.headline) + '</dd>' +
+      '<dt>Why it matters</dt><dd>' + esc(f.impact) + '</dd>' +
+      '<dt>Known</dt><dd>' + fiList(f.known, 'Nothing recorded.') + '</dd>' +
+      '<dt>Inferred</dt><dd>' + fiList(f.inferred, 'Nothing inferred — the run itself declared what stopped it.') + '</dd>' +
+      '<dt>Not established</dt><dd>' + fiList(f.unverified, '—') + '</dd>' +
+      '<dt>Root cause</dt><dd>' + esc(FI_KIND[f.root_cause_status] || f.root_cause_status) + '</dd>' +
+      '<dt>Recovery plan</dt><dd>' + esc(plan.statement || '—') +
+        ((plan.steps || []).length ? '<ul>' + plan.steps.map((s) => '<li><b>' + esc(s.strategy) + '</b> · ' +
+          esc(s.source) + ' · ' + esc(s.executes) + '</li>').join('') + '</ul>' : '') +
+        ((f.attempts || []).length ? '<div class="hint">Tried by the run: ' + f.attempts.map((a) =>
+          esc(a.action) + ' → ' + esc(String(a.result).toLowerCase()) +
+          (a.verified === true ? ' (verified)' : a.verified === false ? ' (verification failed)' : '')).join(', ') + '</div>' : '') +
+      '</dd>' +
+      '<dt>Verification</dt><dd>' + esc(f.verification) + '</dd>' +
+      '<dt>Learning</dt><dd>' + esc(f.learning) + ((f.learned || []).length ? fiList(f.learned, '') : '') + '</dd>' +
+      '<dt>Recommendation</dt><dd>' + fiList(f.recommendations, '—') + '</dd>' +
+    '</dl></details>';
+}
+function paintFailures(){
+  const list = FI.list || [];
+  $('fiCard').hidden = !list.length;
+  putHTML($('fiList'), list.map((f, i) => fiCard(f, i === 0)).join(''));
+}
+
 function paintDrawer(){
   if (!dwRef || !S) return;
   const r0 = (S.shipments || []).find((x) => x.reference === dwRef);
@@ -4046,7 +4126,7 @@ function paintDrawer(){
   const h = humanFor(r.reference);
   const open = r.state === 'processing' || r.state === 'waiting_for_human';
   Atlas($('dwAtlas'), Object.assign({size:'sm'}, atlasShipment(r)));
-  const key = JSON.stringify([r.state, r.step, r.updated, r.provider_status, r.provider_eta,
+  const key = JSON.stringify([FI.at, r.state, r.step, r.updated, r.provider_status, r.provider_eta,
     r.provider_ata, r.coe_action, r.bu_action, r.verification, r.error, r.outcome,
     (r.steps || []).length, h.events.length, h.action && h.action.state,
     ((r.atlas || {}).events || []).length, list.map((x) => x.st).join('')]);
@@ -4094,6 +4174,12 @@ function paintDrawer(){
   if (r.error)
     html += '<div class="dw-sec"><div class="dw-st">Detail</div><div class="hint">' +
       esc(r.error) + '</div></div>';
+  // ATLAS's diagnosis of this shipment, when it did not complete.
+  if (/^(failed|skipped|partial|human_timeout)$/.test(r.state)){
+    const f = (FI.list || []).find((x) => x.reference === r.reference);
+    if (f) html += '<div class="dw-sec"><div class="dw-st">ATLAS diagnosis</div>' + fiCard(f, true) + '</div>';
+    else loadFailures(false);
+  }
   putHTML($('dwBody'), html);
   tickClocks($('dwBody'));
   setTimeout(() => $('dwBody').classList.remove('fresh'), 450);
@@ -4104,6 +4190,7 @@ function paintDrawer(){
    recoveries have gone this run, and what the run state says to do next.
    Every value is read from state; an unanswered one is a dash. */
 function paintAtlasPage(){
+  if (activePage === 'atlas' && S.cold_version !== FI.cold) loadFailures(false);
   const rec = S.recovery, a = S.atlas || {}, stats = a.recovery || null;
   const ev = (a.events || [])[0] || null;
   const hum = S.human_action && S.human_action.waiting ? S.human_action : null;
@@ -5228,7 +5315,10 @@ document.addEventListener('click', (e) => {
       put($('chStatus'), d.status || 'Watching this run');
       $('chRole').dataset.s = /action/i.test(d.status || '') ? 'wait'
         : /error/i.test(d.status || '') ? 'bad' : /watching/i.test(d.status || '') ? 'live' : 'idle';
-      const sm = d.summary || {}, ns = d.notices || [];
+      const sm = d.summary || {}, all = d.notices || [];
+      // "ATLAS noticed N" counts what needs someone — the same list the chat
+      // gives for "what did you notice?". Calm lines are shown, not counted.
+      const ns = all.filter((n) => n.level !== 'ok'), calm = all.filter((n) => n.level === 'ok');
       const counts = [['completed', sm.completed], ['failed', sm.failed], ['waiting', sm.waiting],
                       ['processing', sm.processing]].filter((x) => x[1]);
       const box = $('chNotice');
@@ -5238,7 +5328,9 @@ document.addEventListener('click', (e) => {
         (ns.length ? '<button class="ch-nt" data-fold aria-expanded="' + !box.classList.contains('fold') + '">ATLAS noticed ' + ns.length + ' thing' + (ns.length === 1 ? '' : 's') +
           '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>' +
           ns.map((n, i) => '<button class="ch-ni lv-' + esc(n.level) + '" data-ni="' + i + '"><i></i>' +
-            esc(n.text) + '</button>').join('') : '');
+            esc(n.text) + '</button>').join('') : '') +
+        (!ns.length && calm.length ? calm.map((n) => '<div class="ch-calm">' + esc(n.text) + '</div>').join('') : '');
+      box.hidden = box.hidden && !calm.length;
       box._notices = ns;
       if (!busy && (d.suggestions || []).length) chips(d.suggestions);
     }).catch(() => {}).finally(() => { briefBusy = false; });

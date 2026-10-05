@@ -34,6 +34,7 @@ SUITES = [
     ("test_human_queue.py",    "Human Action Queue: states, choosing, safe points, main()"),
     ("test_atlas_operations.py", "ATLAS + queue: conversation, operations, security boundary"),
     ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
+    ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),

@@ -385,7 +385,19 @@ HUMAN_QUEUE_FILE = LOG_FOLDER / "human_queue.json"
 
 
 class SkipShipment(Exception):
-    """Expected shipment skip; processing continues with the next shipment."""
+    """
+    Expected shipment skip; processing continues with the next shipment.
+
+    `failure`, when the code that decides to skip knows exactly why, carries
+    that as data — the stage, the category, the configuration or rule that
+    decided, and what had already been read — so ATLAS can explain it from
+    the run instead of re-reading the sentence. Optional; most skips have
+    nothing more to say than their message.
+    """
+
+    def __init__(self, message="", failure=None):
+        Exception.__init__(self, message)
+        self.failure = failure if isinstance(failure, dict) else None
 
 
 class CaptchaRequired(Exception):
@@ -935,6 +947,9 @@ AFKL_NAVIGATION_ERROR = "AFKL NAVIGATION ERROR"
 # what resolves it.
 CAPTCHA_REQUIRED = "HUMAN VERIFICATION REQUIRED"
 FAILED = "FAILED"
+# Read from the carrier, deliberately not written: a rule or configuration of
+# this automation decided, not an error on a page.
+WRITE_BLOCKED = "WRITE BLOCKED BY POLICY"
 
 # Only these are worth a second attempt. Everything else is permanent for this
 # run and retrying just wastes a browser round-trip.
@@ -943,6 +958,11 @@ RETRYABLE = {TIMEOUT, TEMPORARY_WEBSITE_ISSUE, UNEXPECTED_PAGE_STATE}
 
 def classify_failure(error):
     """Map an exception onto one of the named operational outcomes."""
+    # The code that raised it may have said exactly what it was. That is
+    # stronger than any reading of the message.
+    declared = (getattr(error, "failure", None) or {}).get("category")
+    if declared == "CARRIER_POLICY_BLOCK":
+        return WRITE_BLOCKED
     text = "{0} {1}".format(type(error).__name__, error).casefold()
 
     # Checked FIRST: the message carries its own verdict, and it must not be
@@ -8583,6 +8603,9 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
     airline = (airline_from_awb(tracking_number)[1] or {}).get("name", config["label"])
     slug = provider.lower()
     write_log(f"Opening {config['label']} tracking for {tracking_number} ({airline})")
+    # The shipment's own trace, for the dashboard and ATLAS: which carrier
+    # page was opened for it. Recording only — the bridge never raises.
+    tower.step("Opening {0} tracking for {1}".format(config["label"], tracking_number))
     page.bring_to_front()
 
     after_human = False
@@ -8676,6 +8699,9 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
                     f"{config['label']} result: status={result['tracking_status']} | "
                     f"ETA={result.get('eta')} | ATA={result.get('ata')}"
                 )
+                tower.step("{0} result read: status {1}, ETA {2}, ATA {3}".format(
+                    config["label"], result.get("tracking_status") or "—",
+                    result.get("eta") or "—", result.get("ata") or "—"))
                 if after_human:
                     # Same identity check and same readers as any other
                     # lookup. The dates are then validated before they can
@@ -8872,11 +8898,35 @@ def get_provider_result(provider_pages, shipment):
                     "{0} {1} (from '{2}')".format(kind, result[kind],
                                                   result.get(kind + "_source"))
                     for kind in ("eta", "ata") if result.get(kind))
+                # What was read is a fact of this run: it reaches the
+                # dashboard and ATLAS as data, not only inside the sentence.
+                try:
+                    tower.provider_result(result)
+                    tower.step("Hub write not performed: OCEAN_WRITE is off, so {0} "
+                               "runs read-only".format(config["label"]))
+                except Exception as publish_error:
+                    note_suppressed("publishing a read-only carrier result", publish_error)
                 raise SkipShipment(
                     "{0} read {1} for {2}. Not written: ocean carriers run "
                     "read-only until their result page has been confirmed on "
                     "a real run (OCEAN_WRITE=1 writes).".format(
-                        config["label"], read or "no date", reference))
+                        config["label"], read or "no date", reference),
+                    failure={
+                        "category": "CARRIER_POLICY_BLOCK",
+                        "stage": "hub_write",
+                        "operation": "Hub write",
+                        "last_success": "{0} read from {1}".format(
+                            read or "the result page", config["label"]),
+                        "detail": "The Hub write was not performed: writing for "
+                                  "this carrier is switched off by configuration.",
+                        "cause": {"kind": "configuration", "name": "OCEAN_WRITE",
+                                  "value": "off", "decided_by": "the run's own write check",
+                                  "stated_condition": "ocean carriers run read-only until "
+                                  "their result page has been confirmed on a real run"},
+                        "observed": {k: result.get(k) for k in (
+                            "tracking_status", "eta", "eta_source", "ata", "ata_source")
+                            if result.get(k)},
+                    })
             return result
         except SkipShipment as error:
             # The air waybill produced nothing readable. If the HUB names a
@@ -9929,6 +9979,9 @@ def main():
         _intel_store.set_origin("production")
         INTEL["events"], INTEL["evidence"] = _intel_events, _intel_evidence
         tower.attach_intelligence(_intel_events)
+        # ATLAS's intelligence lines (failure detected, classified, planned,
+        # verified, learned) go to the run log as structured lines too.
+        tower.set_log_hook(write_log)
         write_log("[ATLAS] Learning from this run: outcomes, recoveries, human "
                   "actions and evidence are recorded in {0}".format(
                       _intel_events.store.folder()))
@@ -10204,7 +10257,8 @@ def main():
                     )
                     save_result(shipment, dhl_result, "Skipped", "SKIPPED", str(error))
                     tower.shipment_finished(
-                        bol_awb, "SKIPPED", str(error), outcome=_outcome
+                        bol_awb, "SKIPPED", str(error), outcome=_outcome,
+                        failure=getattr(error, "failure", None)
                     )
                     tower.counters(successful, failed, skipped, partial)
 
@@ -10249,7 +10303,8 @@ def main():
                         save_result(shipment, dhl_result,
                                     _actions or "No update", "FAILED", str(error))
                         tower.shipment_finished(
-                            bol_awb, "FAILED", str(error), outcome=_outcome
+                            bol_awb, "FAILED", str(error), outcome=_outcome,
+                            failure=getattr(error, "failure", None)
                         )
                     tower.counters(successful, failed, skipped, partial)
 

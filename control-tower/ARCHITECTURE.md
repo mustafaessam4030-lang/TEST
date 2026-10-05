@@ -257,3 +257,49 @@ recorded with its evidence; a person may mark it APPROVED or REJECTED
 (`python -m intelligence.review approve ID --by NAME`), and the change itself
 still goes through a tested, approved deployment. Ended months are evaluated
 when the automation starts and when the dashboard asks.
+
+## Failure intelligence (`intelligence/failures.py`)
+
+Answers "why did it fail?" from the run's own records. Before this, the
+context was lost in five places: the runner put the read result and the
+read-only rule only inside an exception string; `classify_failure()` re-read
+that string as NO RESULT; the bridge kept one `error` string; nothing joined
+the record, steps and recovery episodes into a failure; and the chat's
+intents had no failure route, so "why the error?" fell through to "I don't
+have that information" while ATLAS NOTICED said nothing needed attention.
+
+    runner      SkipShipment(message, failure={category, stage, operation,
+                last_success, detail, cause{kind,name,value,decided_by,
+                stated_condition}, observed{...}}) where the code KNOWS why
+                it stopped (today: the OCEAN_WRITE read-only rule); the read
+                result is published to the bridge before raising; main()
+                passes `failure=` to shipment_finished on both failure paths
+    bridge      record["failure"]; failure intelligence built at
+                shipment_finished; `intel_log` (snapshot) + "[ATLAS] event |
+                k=v" run-log lines for failure_detected, failure_classified,
+                diagnosis_created, recovery_plan_created, recovery_started,
+                recovery_completed, recovery_failed, verification_started,
+                verification_passed, verification_failed, learning_recorded
+    failures.py from_record() → the failure record: failure_id, run_id,
+                shipment_id, carrier, operation, stage, timestamp,
+                error_type, error_message, observed_state, evidence_refs,
+                previous_events, recovery_attempts, recovery_result,
+                verification_result, classification (+ basis), root_cause_status,
+                recovery_plan, learning_status; every statement typed FACT,
+                LEARNED, INFERENCE, RECOMMENDATION or UNVERIFIED
+    consumers   chat (assistant.answer_failure), ATLAS NOTICED (notices),
+                the ATLAS page's failure card and the shipment drawer
+                (/api/atlas → failures) — one source, so they cannot disagree
+
+Classification, strongest first: declared by the run's code → the run's
+outcome class → the recovery executor's diagnosis → a stated message rule →
+UNKNOWN_FAILURE. Root cause is VERIFIED only when declared; INFERRED from a
+class, diagnosis or message; otherwise UNKNOWN. A recovery plan lists, in
+order: verified history (the learning store's best strategy for this
+provider and failure, with its counts), APPROVED proposals, then the run's
+built-in safe actions; with none, "No verified recovery strategy exists for
+this failure class." ATLAS never executes: `atlas_recover()` runs the fixed
+action table, verifies each action with the caller's check, and learning
+credits a strategy only when the action verified AND the shipment then
+verified (every Hub write read back). Expected skips (NO RESULT) are not
+failures. Tested end to end in `test_failure_intelligence.py`.

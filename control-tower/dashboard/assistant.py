@@ -1286,6 +1286,16 @@ def notices(data):
         out.append({"level": "error", "text": "{0} more failure{1} on other carriers.".format(
             rest, "" if rest == 1 else "s"),
             "action": {"type": "filter", "state": "failed", "label": "Failed"}})
+    # Shipments that did not complete without being "failed": a write blocked
+    # by a rule, a partial write, a classified skip. The same failure records
+    # the chat explains — so what ATLAS notices, it can explain.
+    for f in run_failures(data):
+        state = f["observed_state"]["state"]
+        if state in ("failed", "human_timeout"):
+            continue                 # counted above, in their own notices
+        out.append({"level": "error" if state == "partial" else "warn",
+                    "text": f["headline"], "failure_id": f["failure_id"],
+                    "action": {"type": "open", "reference": f["shipment_id"]}})
     timeouts = data.by_state("human_timeout")
     if timeouts:
         out.append({"level": "warn",
@@ -1417,6 +1427,9 @@ def atlas_brief(state):
             "notices": notices(data),
             "suggestions": suggestions(data),
             "queue": {"open": len(waiting), "line": _queue_line(waiting)},
+            # The same failure records the chat answers from — for the panel's
+            # failure card and the shipment drawer.
+            "failures": [failure_card(f) for f in run_failures(data)[:10]],
             "grounded": True,
         }
     except Exception as error:
@@ -2377,6 +2390,305 @@ def downloads_for(data, intent, record=None):
 
 
 # ══════════════════════════════════════════════════════════════
+# FAILURE INTELLIGENCE IN THE CONVERSATION
+# ══════════════════════════════════════════════════════════════
+#
+# "Why the error?", "what failed?", "what stage?", "is the root cause
+# confirmed?", "did you try recovery?" — answered from the run's failure
+# intelligence records (intelligence/failures.py): the SAME records that
+# feed "ATLAS noticed", the failure card and the run log. Each line says what
+# kind of knowledge it is. Used only when the run actually has a failure; with
+# none, the ordinary answers stand ("No shipment has failed in this run").
+
+try:
+    from intelligence import failures as _failures
+except Exception:                                   # pragma: no cover
+    _failures = None
+
+FAILURE_QUESTIONS = (
+    ("noticed", r"\bwhat (did|have) (you|atlas) (notice|noticed|spot|spotted|see|seen)\b|"
+                r"\bwhat (is|was) noticed\b|\bwhat did atlas notice\b|\byou noticed\b"),
+    ("root", r"\broot[- ]?cause\b|\bcause (confirmed|verified|known)\b|\bis (it|that|this) confirmed\b"),
+    ("last_ok", r"\blast (successful|good|working) (step|event)\b|\blast success\b|"
+                r"\bwhat (worked|succeeded) (before|last)\b"),
+    ("stage", r"\b(what|which) (stage|step|phase) (failed|broke|went wrong|stopped)\b|"
+              r"\bwhere did (it|the \w+) (fail|break|stop)\b|\bat (what|which) (stage|step)\b"),
+    ("facts", r"\bknow for (sure|certain)\b|\bwhat (are|were) the facts\b|\bwhat is (certain|confirmed)\b|"
+              r"\bwhat do you know (about|of) (the|this|that) (error|failure|problem)\b"),
+    ("known", r"\b(known|familiar) (failure|error|issue|problem)\b|\bseen (this|it|that) before\b|"
+              r"\bhappened before\b|\bhas this happened\b"),
+    ("learned", r"\blearn(ed|t)? from (similar|this|these|past|previous)\b|\bsimilar (failures|errors|issues)\b"),
+    ("recovery", r"\brecover|\brecovery\b|\bself[- ]?heal|\bfix (it|this|that)\b|\bhow (do|can) (we|i|you) fix\b"),
+    ("evidence", r"\b(show|give|see)( me)? (the )?(evidence|proof|screenshot)\b|\bwhat (is|was) the evidence\b"),
+    ("carrier", r"\bwhich carrier (failed|broke|had the (error|failure|problem))\b|"
+                r"\bwhat carrier (failed|broke)\b"),
+    ("what", r"\bwhat (failed|broke|went wrong)\b|\bwhich (shipment|shipments|one|reference) "
+             r"(failed|broke|had the (error|failure|problem))\b|\bwhat (is|was) the (error|failure|problem|issue)\b|"
+             r"\bwhat error\b|\bshow (me )?the (error|failure)s?\b|\bwhat failures?\b"),
+    ("why", r"\bwhat'?s? (is )?(wrong|the matter)\b|\bwhat is wrong\b|"
+            r"\bwhy\b.*\b(error|errors|fail|failed|failure|failing|problem|issue|wrong|skip|skipped|"
+            r"blocked|not written|didn'?t (it )?(write|work|complete)|stop|stopped)\b|"
+            r"\bwhat (caused|went wrong)\b|\breason (for|behind) (the|this|that) (error|failure|problem)\b|"
+            r"\bexplain (the|this|that) (error|failure|problem)\b|\bwhy\s*\?*$"),
+    ("next", r"\bwhat should (i|we) do\b|\bnext step\b|\bwhat now\b|\bwhat'?s next\b|\bwhat do (i|we) do\b"),
+)
+# Words that make an otherwise unmatched question about a failure. Used only
+# to stop the "I don't have that information" fallback from answering one.
+ERRORISH = re.compile(r"\b(error|errors|fail|failed|failure|failures|wrong|problem|issue|"
+                      r"broke|broken|exception|blocked|skipped|why)\b", re.I)
+
+# ...and only when it is a question. "This is broken" is a statement, which
+# the conduct and fallback replies answer by asking what happened.
+ASKING = re.compile(r"\?|^\s*(why|what|whats|what's|which|how|where|when|who|is|are|was|were|did|"
+                    r"does|do|can|could|tell|explain|show|give)\b", re.I)
+
+
+def failure_card(f):
+    """The failure record as the panel shows it: compact, every line typed."""
+    return {
+        "failure_id": f["failure_id"], "reference": f["shipment_id"], "carrier": f["carrier"],
+        "classification": f["classification"], "label": f["classification_label"],
+        "basis": f["classification_basis"], "stage": f["stage_label"],
+        "headline": f["headline"], "impact": f["impact"],
+        "known": [x["text"] for x in f["facts"] if x["source"] != "run message"][:6],
+        "inferred": [x["text"] for x in f["inferences"]],
+        "unverified": [x["text"] for x in f["unverified"]],
+        "learned": [x["text"] for x in f["learned"]],
+        "recommendations": [x["text"] for x in f["recommendations"]],
+        "root_cause_status": f["root_cause_status"],
+        "plan": {"status": f["recovery_plan"]["status"],
+                 "statement": f["recovery_plan"]["statement"],
+                 "steps": [{"strategy": s["strategy"], "source": s["source"],
+                            "safety": s["safety"], "executes": s["executes"]}
+                           for s in f["recovery_plan"]["steps"][:4]]},
+        "attempts": f["recovery_attempts"], "recovery_result": f["recovery_result"],
+        "verification": f["verification_result"], "learning": f["learning_status"],
+        "evidence": f["evidence_refs"], "message": f["error_message"][:300],
+    }
+
+
+def failure_question(question):
+    text = str(question or "").casefold().strip()
+    for name, pattern in FAILURE_QUESTIONS:
+        if re.search(pattern, text):
+            return name
+    return None
+
+
+def run_failures(data):
+    """This run's failure intelligence records, enriched from the stores. Cached per RunData."""
+    if _failures is None:
+        return []
+    cached = getattr(data, "_failure_cache", None)
+    if cached is None:
+        ctx = _failures.context()
+        cached = _failures.build(data.state, learning=ctx["learning"], events=ctx["events"],
+                                 evidence=ctx["evidence"])
+        data._failure_cache = cached
+    return cached
+
+
+def _pick_failure(failures, question, record, context):
+    if record is not None:
+        for f in failures:
+            if f["shipment_id"] == record.get("reference"):
+                return f
+        return None
+    if context.get("reference"):
+        for f in failures:
+            if f["shipment_id"] == context["reference"]:
+                return f
+    text = str(question or "").casefold()
+    for f in failures:
+        for name in (f.get("carrier"), f.get("provider")):
+            if name and re.search(r"\b{0}\b".format(re.escape(str(name).casefold())), text):
+                return f
+    return failures[0] if failures else None
+
+
+KIND_WORDS = {"FACT": "Fact", "LEARNED": "Learned (past runs)", "INFERENCE": "Inference",
+              "RECOMMENDATION": "Recommendation", "UNVERIFIED": "Not established"}
+
+
+def _lines(items):
+    return ["**{0}** — {1}".format(KIND_WORDS.get(i["type"], i["type"]), i["text"]) for i in items]
+
+
+def _others(failures, chosen):
+    rest = [f for f in failures if f is not chosen]
+    if not rest:
+        return ""
+    return "\n\n{0} other failure{1} in this run: {2}.".format(
+        len(rest), "" if len(rest) == 1 else "s",
+        "; ".join("{0} ({1}, {2})".format(f["shipment_id"], f["carrier"], f["classification"])
+                  for f in rest[:5]))
+
+
+def _root_line(f):
+    if f["root_cause_status"] == "VERIFIED":
+        return "**Root cause** — confirmed: declared by the run's own code at the point it stopped."
+    if f["root_cause_status"] == "INFERRED":
+        return ("**Root cause** — inferred, not confirmed: {0} (from {1}).".format(
+            f["classification_label"],
+            _failures.BASIS_WORDS.get(f["classification_basis"], "record")))
+    return "**Root cause** — unknown: the run does not contain enough evidence."
+
+
+def _safety_word(value):
+    """A recovery action's risk, in the words ml/recovery.py defines its levels with."""
+    try:
+        risk = float(value)
+    except (TypeError, ValueError):
+        return str(value or "unknown")
+    if risk <= 0.0:
+        return "observes only, changes nothing"
+    if risk <= 0.2:
+        return "re-queries or waits, no navigation"
+    if risk <= 0.5:
+        return "changes page UI state, not data"
+    return "rebuilds the page (reload or re-navigate), no data change"
+
+
+def _recovery_lines(f):
+    p = f["recovery_plan"]
+    out = ["**Recovery** — {0}".format(p["statement"])]
+    for step in p["steps"][:4]:
+        out.append("• {0} ({1}) — {2} Evidence: {3}. Safety: {4}. Runs: {5}.".format(
+            step["strategy"], step["source"], step["reason"], step["evidence"],
+            _safety_word(step["safety"]), step["executes"]))
+    if f["recovery_attempts"]:
+        out.append("**Fact** — Tried by the run: {0}; result {1}.".format(
+            ", ".join("{0} → {1}{2}".format(a["action"], str(a["result"]).lower(),
+                                             " (verified)" if a["verified"] is True else
+                                             " (verification failed)" if a["verified"] is False
+                                             else " (not verified)")
+                      for a in f["recovery_attempts"]), f["recovery_result"]))
+    else:
+        out.append("**Fact** — No recovery was attempted for {0} in this run.".format(f["shipment_id"]))
+    return out
+
+
+def answer_failure(kind, data, question, record, context):
+    """A reply built from failure intelligence, or None to let other answers run."""
+    if kind == "noticed":
+        found = [n for n in notices(data) if n["level"] != "ok"]
+        if not found:
+            calm = [n["text"] for n in notices(data)]
+            text = "Nothing that needs you. " + (" ".join(calm) if calm else "No run data yet.")
+        else:
+            text = "I noticed {0} thing{1}:\n\n{2}".format(
+                len(found), "" if len(found) == 1 else "s",
+                "\n".join("{0}. {1}".format(i + 1, n["text"]) for i, n in enumerate(found)))
+        return {"answer": text, "card": None, "grounded": True, "intent": "noticed",
+                "reference": context.get("reference"), "sources": ["run state", "notices"]}
+    failures = run_failures(data)
+    if not failures:
+        return None
+    if kind == "next" and pending_human(data):
+        return None          # a person is waiting: the queue answer comes first
+    f = _pick_failure(failures, question, record, context)
+    if f is None:
+        return None
+    title = "**{0}**\n\n".format(f["headline"])
+    facts = f["facts"]
+    by_source = lambda src: [x for x in facts if x["source"] == src]      # noqa: E731
+    if kind in ("why", "what", "carrier"):
+        key = [x for x in facts if x["text"].startswith(("Data extraction", "Read before",
+                                                         "Stopped at", "Decided by",
+                                                         "Nothing was written", "Hub actions"))]
+        diagnosis = _lines(key) + _lines(f["inferences"]) + _lines(f["unverified"]) + \
+            [_root_line(f)] + _lines(f["recommendations"]) + \
+            ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])]
+        prefix = ""
+        named = _carrier_records(data, question)[0] if "_carrier_records" in globals() else None
+        if named:
+            bad = [r for r in data.shipments if (r.get("carrier") or "").casefold() ==
+                   (f.get("carrier") or "").casefold() and r.get("state") in
+                   ("failed", "partial", "human_timeout", "skipped")]
+            if len(bad) > 1:
+                prefix = "{0} {1} shipments did not complete; the latest is below.\n\n".format(
+                    len(bad), f["carrier"])
+        if kind == "carrier":
+            title = "**{0}** — {1} ({2}).\n\n".format(f["carrier"], f["shipment_id"],
+                                                       f["classification_label"])
+        record_now = data.find(f["shipment_id"])
+        sequence = ("\n\n" + _explain(data, record_now)) if record_now else ""
+        text = prefix + title + "**ATLAS diagnosis**\n" + "\n".join(diagnosis) + sequence + \
+            _others(failures, f)
+    elif kind == "stage":
+        text = title + "\n".join([
+            "**Fact** — Stage: {0}.".format(f["stage_label"]),
+            "**Fact** — Last successful step: {0}.".format(f["last_successful_event"] or "not recorded"),
+            "**Fact** — First failing event: {0}".format(f["first_failing_event"] or "not recorded"),
+        ] + ([] if f["classification_basis"] == "declared" else
+             ["**Inference** — the stage is read from {0}, not declared by the run.".format(
+                 _failures.BASIS_WORDS.get(f["classification_basis"], "record"))]))
+    elif kind == "last_ok":
+        text = title + "**Fact** — Last successful step: {0}.\n**Fact** — Then: {1}".format(
+            f["last_successful_event"] or "not recorded", f["first_failing_event"] or "—")
+    elif kind == "facts":
+        text = title + "What I know for sure, from this run's records:\n\n" + \
+            "\n".join(_lines(facts)) + "\n\n" + "\n".join(_lines(f["unverified"]))
+    elif kind == "root":
+        # What decided it, when the run's code declared it; otherwise the
+        # inference and its basis. Then what the evidence does not establish.
+        decided = by_source("declared by the run's code")
+        text = title + "\n".join([_root_line(f)] + _lines(decided) + _lines(f["inferences"]) +
+                                  _lines(f["unverified"]))
+    elif kind == "recovery":
+        # What the run actually tried — its own recovery record — then the
+        # plan for this failure. Never a recovery that did not happen.
+        story = _answer_recovery(data, record, question)
+        text = story + "\n\n" + title + "\n".join(_recovery_lines(f) + _lines(f["recommendations"]))
+    elif kind == "known":
+        text = title + ("\n".join(_lines(f["learned"])) if f["learned"] else
+                        "**Fact** — The learning store has no earlier occurrence of {0} on {1}. "
+                        "It is new as far as the verified record goes.".format(
+                            f["classification"], f["carrier"]))
+    elif kind == "learned":
+        verified = [s for s in f["recovery_plan"]["steps"] if s["source"] == "verified history"]
+        text = title + "\n".join(
+            (_lines(f["learned"]) or ["**Fact** — Nothing in the learning store matches {0} on "
+                                      "{1} yet.".format(f["classification"], f["carrier"])]) +
+            ["**Learned (past runs)** — verified strategy {0}: {1}".format(s["strategy"], s["evidence"])
+             for s in verified] +
+            ["**Fact** — {0}".format(f["learning_status"])])
+    elif kind == "evidence":
+        lines = []
+        for e in f["evidence_refs"]:
+            lines.append("• capture {0} ({1}, {2})".format(e["id"], e.get("event"), e.get("at")))
+        if not lines:
+            lines.append("**Fact** — No screenshot was captured for {0} in this run. I won't make "
+                         "one up.".format(f["shipment_id"]))
+        lines.append("**Fact** — The evidence is the run's own record:")
+        lines += ["• {0} {1}".format(s["at"] or "", s["text"]) for s in f["previous_events"][-6:]]
+        lines.append('• the run\'s message: "{0}"'.format(f["error_message"][:300]))
+        log = [e for e in (data.state.get("intel_log") or []) if e.get("reference") == f["shipment_id"]]
+        lines += ["• {0} {1}{2}".format(e.get("at"), e.get("event"),
+                                         " — " + e["classification"] if e.get("classification") else "")
+                  for e in reversed(log[:6])]
+        text = title + "\n".join(lines)
+        reply = {"answer": text, "card": None, "grounded": True, "intent": "failure_evidence",
+                 "reference": f["shipment_id"], "sources": ["run state", "evidence store"]}
+        if f["evidence_refs"]:
+            reply["evidence_id"] = f["evidence_refs"][0]["id"]
+        return reply
+    elif kind == "next":
+        text = title + "\n".join(_lines(f["recommendations"]) +
+                                 ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])])
+    else:
+        return None
+    reply = {"answer": text, "card": None, "grounded": True, "intent": "failure_" + kind,
+             "reference": f["shipment_id"], "failure_id": f["failure_id"]}
+    if kind in ("what", "carrier") and data.failed:
+        reply["preset_buttons"] = [{"label": "Show failed in Live operations",
+                                    "action": {"type": "filter", "state": "failed", "label": "Failed"}}]
+    reply["sources"] = ["run state", "failure intelligence"] + \
+        (["learning store"] if f["learned"] else [])
+    return reply
+
+
+# ══════════════════════════════════════════════════════════════
 # CONDUCT
 # ══════════════════════════════════════════════════════════════
 #
@@ -2568,6 +2880,18 @@ def _answer_core(question, state, context=None):
         # From the intelligence stores, read-only. Checked before the run's
         # own answers so "which recovery strategy works best" is about the
         # verified record, not this run's snapshot.
+        # A question about THIS run's failure — has it happened before, what
+        # was learned, its evidence — is answered from the failure record
+        # first; the learning store's general answers follow when there is none.
+        fq_early = failure_question(question)
+        if fq_early in ("learned", "known", "evidence", "recovery") and run_failures(data) \
+                and not data.references_in(question):
+            chosen = _pick_failure(run_failures(data), question, None, context)
+            if chosen is not None and not (fq_early == "evidence" and chosen["evidence_refs"]):
+                produced = answer_failure(fq_early, data, question, None, context)
+                if produced is not None:
+                    return produced
+
         learned_intent = atlas_learning.detect(question)
         if learned_intent:
             produced = atlas_learning.answer(learned_intent, question, data, context,
@@ -2616,6 +2940,15 @@ def _answer_core(question, state, context=None):
                 record = data.find(context["reference"])
             if record is None and data.in_flight:
                 record = data.in_flight
+
+        # -- failure intelligence: why, what, where, recovery, evidence ------
+        # Before the copilot's general answers, so "why the error?" is
+        # answered from the failure records the run actually holds.
+        fq = failure_question(question)
+        if fq:
+            produced = answer_failure(fq, data, question, record, context)
+            if produced is not None:
+                return produced
 
         # -- ATLAS copilot: queue, operations, follow-ups -------------------
         produced = copilot(question, data, context, intent, record)
@@ -2773,6 +3106,14 @@ def _answer_core(question, state, context=None):
                           "has touched {0} shipment(s).".format(len(data.shipments)),
                 "card": None, "reference": None, "grounded": True,
             }
+
+        # The run HAS a failure and this question is about it: answer from
+        # the failure record. "I don't have that information" is only for
+        # information the run genuinely does not hold.
+        if ERRORISH.search(question) and ASKING.search(question) and run_failures(data):
+            produced = answer_failure("why", data, question, record, context)
+            if produced is not None:
+                return produced
 
         # Rather than shrugging, say where the run stands and point at the
         # nearest useful thing.
