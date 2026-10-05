@@ -2597,6 +2597,16 @@ WORK_WORDS = {
 }
 
 
+def _work_pointer(f):
+    """For an answer about what HAPPENED: only that a plan exists. The plan
+    itself (a future step) is told by the work, recovery and next answers, so
+    an explanation never mentions a step the run has not recorded."""
+    if not (f.get("work") or {}).get("mode"):
+        return None
+    return ("**Work** — On ATLAS's work list; the run carried on. Ask “what will you do "
+            "about it?” for its plan.")
+
+
 def _work_line(f, data):
     """What happens to this failure — the plan to work on it, from its record."""
     work = f.get("work") or {}
@@ -2703,7 +2713,7 @@ def answer_failure(kind, data, question, record, context):
         diagnosis = _lines(key) + _lines(f["inferences"]) + _lines(f["unverified"]) + \
             [_root_line(f)] + _lines(f["recommendations"]) + \
             ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])] + \
-            [x for x in [_work_line(f, data)] if x]
+            [x for x in [_work_pointer(f)] if x]
         prefix = ""
         named = _carrier_records(data, question)[0] if "_carrier_records" in globals() else None
         if named:

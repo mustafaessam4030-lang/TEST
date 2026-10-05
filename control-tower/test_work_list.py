@@ -175,8 +175,13 @@ check("...and what is still open from earlier runs", "earlier runs" in r["answer
       and "T2" in r["answer"], r["answer"])
 check("...and that items resolve only by verification", "written and read back" in r["answer"])
 r = assistant.answer("why the error?", st, {"reference": "N1b"})
-check("'Why the error?' includes the plan for it, from the same record",
-      "**Work**" in r["answer"] and "retry once" in r["answer"], r["answer"][-400:])
+check("'Why the error?' says it is on the work list and the run carried on — "
+      "without telling a future retry as if it had happened",
+      "**Work**" in r["answer"] and "run carried on" in r["answer"]
+      and "retry once" not in r["answer"], r["answer"][-400:])
+r = assistant.answer("What should I do next?", st, {"reference": "N1b"})
+check("'What should I do next?' gives the plan: one retry after the other shipments",
+      "retry once after the other shipments" in r["answer"], r["answer"][-400:])
 r = assistant.answer("What will you do about it?", st, {})
 check("'What will you do about it?' answers from the work list",
       r.get("intent") == "failure_work" and "N1b" in r["answer"], str(r.get("intent")))
