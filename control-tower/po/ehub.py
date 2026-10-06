@@ -98,11 +98,12 @@ def select(entries):
     if len(candidates) == 1:
         return candidates[0], candidates, "the only document whose name starts with 'Bill Entry' (eHub writes 'BillofEntry_')", \
             "selected"
-    return candidates[0], candidates, ("{0} documents carry the same identifier {1}; the first "
-                                       "listed in the Documents section was taken (the PDF is "
-                                       "then checked against that identifier)".format(
-                                           len(candidates), candidates[0]["identifier"])), \
-        "selected"
+    # Several entries, one identifier: the list order decides nothing. They
+    # are all downloaded and compared byte for byte (EHubSource.fetch) — the
+    # same file listed twice is one document; different files are a review.
+    return None, candidates, ("{0} documents carry the same identifier {1}; they are compared "
+                              "byte for byte before one is used".format(
+                                  len(candidates), candidates[0]["identifier"])), "compare"
 
 
 def _kind_of(error):
@@ -155,7 +156,8 @@ MANAGE_IDENTITY_JS = r"""() => {
   };
   return {text: text.slice(0, 20000),
           status: valueAfter(/^\s*current\s+status\s*:?\s*$/i),
-          declaration: valueAfter(/^\s*boe\s*\/\s*sgd.*declaration.*:?\s*$/i)};
+          declaration: valueAfter(/^\s*boe\s*\/\s*sgd.*declaration.*:?\s*$/i),
+          shipment_ref: valueAfter(/^\s*(bol\s*\/\s*awb|bol|b\/l|awb|bill\s+of\s+lading|air\s*way\s*bill)(\s*(no\.?|number|#))?\s*:?\s*$/i)};
 }"""
 
 
@@ -173,7 +175,14 @@ def manage_identity(page, row):
                 "error": str(error)[:160]}
     ref = normal_reference(row.get("bol_awb"))
     flat = normal_reference(got.get("text"))
-    return {"reference_on_page": bool(ref) and ref in flat,
+    shown = " ".join((got.get("shipment_ref") or "").split()) or None
+    on_page = bool(ref) and ref in flat
+    # A BOL/AWB the page labels as ITS shipment, that is not the row's — and
+    # the row's appears nowhere on the page: Manage opened another record.
+    conflict = shown if shown and ref and normal_reference(shown) != ref and not on_page \
+        else None
+    return {"reference_on_page": on_page, "shipment_ref_shown": shown,
+            "identity_conflict": conflict,
             "status": " ".join((got.get("status") or "").split()) or None,
             "declaration": " ".join((got.get("declaration") or "").split()) or None,
             "url": getattr(page, "url", None)}
@@ -321,7 +330,16 @@ def download(page, frame, entry):
         if response.status >= 400:
             raise SourceError("eHub answered {0} for the document".format(response.status),
                               "permanent")
-        return response.body(), url, "link", response.headers.get("content-disposition")
+        body = response.body()
+        ctype = (response.headers.get("content-type") or "").lower()
+        if "text/html" in ctype:
+            raise SourceError("eHub served an HTML page (content-type {0}), not the document — "
+                              "a sign-in or error page".format(ctype[:60]), "unreadable")
+        length = response.headers.get("content-length")
+        if length and length.isdigit() and int(length) != len(body):
+            raise SourceError("the download was cut short: {0} of {1} bytes".format(
+                len(body), length), "transient")
+        return body, url, "link", response.headers.get("content-disposition")
     if NEVER_CLICK.search(entry.get("text") or "") or NEVER_CLICK.search(entry.get("name") or ""):
         raise SourceError("refused to click '{0}': it is a control that changes the eHub record, "
                           "not a document".format(entry.get("text") or entry["name"]), "permanent")
@@ -523,7 +541,23 @@ class EHubSource(object):
         # was read), and the declaration number it shows.
         identity = manage_identity(self.page, row)
         trail["identity"] = {k: identity.get(k) for k in ("reference_on_page", "status",
-                                                          "declaration", "url")}
+                                                          "declaration", "url",
+                                                          "shipment_ref_shown",
+                                                          "identity_conflict")}
+        if identity.get("identity_conflict"):
+            step("identity", False, shown=identity["identity_conflict"],
+                 evidence=capture(self.page, "identity"))
+            error = stop("Manage opened a record showing {0}, not {1} (whose BOL/AWB is nowhere "
+                         "on the page): the page belongs to another shipment, nothing was "
+                         "read from it.".format(identity["identity_conflict"],
+                                                row.get("bol_awb")),
+                         "identity_mismatch", "identity", row=row)
+            error.identity = {"decision": "MISMATCH", "stage": "manage",
+                              "contradictions": ["the Manage page shows {0}".format(
+                                  identity["identity_conflict"])],
+                              "why": "the Manage page shows {0}, not {1}".format(
+                                  identity["identity_conflict"], row.get("bol_awb"))}
+            raise error
         if identity.get("status") and not status_ok(identity["status"]):
             step("identity", False, page_status=identity["status"])
             raise stop("Manage for {0} shows its current status as '{1}', no longer '{2}': the "
@@ -568,13 +602,47 @@ class EHubSource(object):
             step("bill_entry", False, rule=rule)
             raise stop(rule[0].upper() + rule[1:] + ".", "review", "bill_entry", row=row,
                        candidates=[c["name"] for c in candidates])
+        prefetched = None
+        if outcome == "compare":
+            import hashlib
+            fetched = []
+            for c in candidates[:4]:
+                try:
+                    got = download(self.page, section["frame"], c)
+                except SourceError as error:
+                    step("bill_entry", False, rule=rule, error=str(error)[:200])
+                    seal(False)
+                    error.trail = trail
+                    error.stage = "download"
+                    raise
+                fetched.append((hashlib.sha256(got[0]).hexdigest(), c, got))
+            hashes = sorted({h for h, _c, _g in fetched})
+            trail["bill_entry"]["compared"] = [{"name": c["name"], "sha256": h}
+                                               for h, c, _g in fetched]
+            if len(hashes) != 1 or len(candidates) > 4:
+                rule = ("{0} documents carry the identifier {1} but are different files "
+                        "(sha256 {2}); there is no safe rule to choose — a person decides"
+                        .format(len(candidates), candidates[0]["identifier"],
+                                ", ".join(h[:12] for h in hashes)))
+                trail["bill_entry"]["rule"] = rule
+                step("bill_entry", False, rule=rule)
+                raise stop(rule[0].upper() + rule[1:] + ".", "review", "bill_entry", row=row,
+                           candidates=[c["name"] for c in candidates])
+            selected = fetched[0][1]
+            prefetched = fetched[0][2]
+            rule = ("{0} documents carry the identifier {1} and are byte-identical (sha256 "
+                    "{2}): one document listed {0} times".format(
+                        len(candidates), selected["identifier"], hashes[0][:16]))
+            trail["bill_entry"].update(selected=selected["name"],
+                                       identifier=selected["identifier"], rule=rule)
         step("bill_entry", True, filename=selected["name"], rule=rule)
         step("identifier", True, identifier=selected["identifier"],
              source="the document name after 'Bill Entry'")
 
         # 6. download it
         try:
-            data, url, method, disposition = download(self.page, section["frame"], selected)
+            data, url, method, disposition = prefetched[:4] if prefetched else \
+                download(self.page, section["frame"], selected)[:4]
         except SourceError as error:
             step("download", False, error=str(error)[:200])
             seal(False)
@@ -591,7 +659,8 @@ class EHubSource(object):
         served = unquote(m.group(1)) if m else None
         trail["download"] = {"method": method, "url": url, "served_filename": served,
                              "bytes": len(data), "link": selected.get("href") or None,
-                             "element_id": selected.get("id") or None}
+                             "element_id": selected.get("id") or None,
+                             "content_type": getattr(self, "_last_content_type", None)}
         observed["download"] = _host_of(url)
         trail["navigation_path"].append({"page": "Bill Entry document", "url": url,
                                          "filename": filename})
@@ -599,6 +668,7 @@ class EHubSource(object):
         seal(True)
         hub = dict(row, identifier=selected["identifier"], bill_entry=filename,
                    identity_on_manage=identity.get("reference_on_page"),
+                   identity_conflict=identity.get("identity_conflict"),
                    manage_declaration=identity.get("declaration"))
         return {"data": data, "filename": filename, "url": url, "origin": "ehub", "hub": hub,
                 "identifier": selected["identifier"], "trail": trail}

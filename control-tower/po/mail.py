@@ -16,7 +16,12 @@ THREE STEPS, each with its own evidence:
   3. confirm  the message is in the mailbox's Sent Items, found by its
               internetMessageId
 
-"Sent" is claimed only on 202, "confirmed" only when step 3 finds it.
+"Sent" is claimed only on 202, "confirmed" only when step 3 finds it AND
+inspect() reads back that its recipient, subject and attachment are the
+ones prepared.
+
+Every call carries a client-request-id; Graph's request-id comes back with
+it. Both are kept on the job (never the token).
 
 Sending the SAME draft twice cannot produce two emails: after the first send
 the draft no longer exists, so a retry of step 2 fails rather than
@@ -29,6 +34,7 @@ import json
 import os
 import socket
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -73,11 +79,17 @@ class GraphMailer(object):
         self.timeout = timeout
         self._token = None
         self._token_until = 0
+        self.last = {}
 
     # -- HTTP ------------------------------------------------------------------
     def _call(self, method, url, body=None, headers=None, step=None, form=False):
         data = None
         headers = dict(headers or {})
+        correlation = str(uuid.uuid4())
+        headers["client-request-id"] = correlation
+        headers["return-client-request-id"] = "true"
+        self.last = {"step": step, "client_request_id": correlation, "request_id": None,
+                     "status": None}
         if body is not None:
             if form:
                 data = urllib.parse.urlencode(body).encode("utf-8")
@@ -89,9 +101,13 @@ class GraphMailer(object):
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 raw = response.read()
+                self.last.update(status=response.status,
+                                 request_id=response.headers.get("request-id"))
                 return response.status, (json.loads(raw) if raw.strip() else None)
         except urllib.error.HTTPError as error:
             status = error.code
+            self.last.update(status=status, request_id=error.headers.get("request-id")
+                             if error.headers else None)
             try:
                 detail = json.loads(error.read() or b"{}").get("error")
                 detail = detail.get("message") if isinstance(detail, dict) else \
@@ -104,6 +120,8 @@ class GraphMailer(object):
                 kind = "unknown"
             err = MailError("Microsoft Graph returned {0} at {1}{2}".format(
                 status, step, ": " + detail[:200] if detail else ""), kind, status, step)
+            err.request_id = self.last.get("request_id")
+            err.client_request_id = correlation
             # Throttling: Graph says how long to wait; the retry honours it.
             try:
                 err.retry_after = min(120.0, float(error.headers.get("Retry-After") or 0))
@@ -112,9 +130,11 @@ class GraphMailer(object):
             raise err
         except (urllib.error.URLError, socket.timeout, ConnectionError, TimeoutError) as error:
             reason = getattr(error, "reason", error)
-            raise MailError("Microsoft Graph could not be reached at {0}: {1}".format(
+            err = MailError("Microsoft Graph could not be reached at {0}: {1}".format(
                 step, str(reason)[:160]), "unknown" if step == "send" else "transient",
                 None, step)
+            err.client_request_id = correlation
+            raise err
 
     def token(self):
         if self._token and time.time() < self._token_until - 60:
@@ -158,7 +178,8 @@ class GraphMailer(object):
             raise MailError("the draft was not created (HTTP {0})".format(status), "permanent",
                             status, "create")
         return {"message_id": body["id"], "internet_message_id": body.get("internetMessageId"),
-                "http_status": status}
+                "http_status": status, "request_id": self.last.get("request_id"),
+                "client_request_id": self.last.get("client_request_id")}
 
     def send(self, message_id):
         status, _ = self._call("POST", "{0}/messages/{1}/send".format(
@@ -167,7 +188,8 @@ class GraphMailer(object):
         if status != 202:
             raise MailError("the send was not accepted (HTTP {0})".format(status), "unknown",
                             status, "send")
-        return {"accepted": True, "http_status": status}
+        return {"accepted": True, "http_status": status, "request_id": self.last.get("request_id"),
+                "client_request_id": self.last.get("client_request_id")}
 
     def get_message(self, message_id):
         """The message by id ({'id', 'isDraft', ...}), or None when it no longer exists."""
@@ -189,10 +211,51 @@ class GraphMailer(object):
         query = urllib.parse.urlencode({
             "$filter": "internetMessageId eq '{0}'".format(internet_message_id.replace("'", "''")),
             "$select": "id,sentDateTime,internetMessageId,subject"})
+        # (inspect() then reads the recipient and attachments of the row found.)
         status, body = self._call("GET", "{0}/mailFolders/SentItems/messages?{1}".format(
             self._mailbox(), query), None, self._auth(), step="confirm")
         rows = (body or {}).get("value") or []
         return rows[0] if rows else None
+
+    def inspect(self, message_id):
+        """
+        What the message really is, read back from the mailbox: recipients,
+        subject, sender and attachment names and sizes (never content).
+        {"to": [...], "subject", "from", "attachments": [{"name", "size"}]}
+        """
+        quoted = urllib.parse.quote(message_id, safe="")
+        status, body = self._call("GET", "{0}/messages/{1}?$select=id,subject,toRecipients,"
+                                  "from,sentDateTime,internetMessageId".format(
+                                      self._mailbox(), quoted), None, self._auth(),
+                                  step="verify")
+        status, att = self._call("GET", "{0}/messages/{1}/attachments?$select=name,size,"
+                                 "contentType".format(self._mailbox(), quoted), None,
+                                 self._auth(), step="verify")
+        body = body or {}
+        return {"to": [((r or {}).get("emailAddress") or {}).get("address")
+                       for r in body.get("toRecipients") or []],
+                "subject": body.get("subject"),
+                "from": ((body.get("from") or {}).get("emailAddress") or {}).get("address"),
+                "attachments": [{"name": a.get("name"), "size": a.get("size")}
+                                for a in (att or {}).get("value") or []]}
+
+    def find_by_attachment(self, folder, subject, attachment_name):
+        """
+        A message in Sent Items / Drafts that carries this job's attachment —
+        for a crash before the message id was recorded. The attachment name is
+        unique to the job (it ends with the job id). Read-only.
+        """
+        folder = {"sentitems": "SentItems", "drafts": "Drafts"}.get(folder, folder)
+        query = urllib.parse.urlencode({
+            "$filter": "subject eq '{0}'".format(str(subject or "").replace("'", "''")),
+            "$select": "id,subject,sentDateTime,internetMessageId,isDraft", "$top": "10"})
+        status, body = self._call("GET", "{0}/mailFolders/{1}/messages?{2}".format(
+            self._mailbox(), folder, query), None, self._auth(), step="reconcile")
+        for row in (body or {}).get("value") or []:
+            names = [a["name"] for a in self.inspect(row["id"])["attachments"]]
+            if attachment_name in names:
+                return row
+        return None
 
     def confirm(self, internet_message_id, wait_s=30, every_s=2.0):
         """Poll Sent Items until the message appears or the wait ends."""

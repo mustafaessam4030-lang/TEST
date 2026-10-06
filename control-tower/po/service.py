@@ -40,6 +40,8 @@ KPI_OF = {
     S.DOCUMENT_AMBIGUOUS: "validation_required", S.PDF_DOWNLOAD_FAILED: "failed",
     S.SAVE_FAILED: "failed", S.EMAIL_UNKNOWN: "validation_required",
     S.WORKER_DISCONNECTED: "pending",
+    S.IDENTITY_MISMATCH: "failed", S.REVIEW_REJECTED: "failed",
+    S.EMAIL_RECONCILIATION_FAILED: "validation_required",
 }
 KPIS = ("pending", "processing", "validation_required", "generated", "sent", "failed")
 PAGE_STATUS = {"pending": "Processing", "processing": "Processing",
@@ -165,9 +167,10 @@ def _extraction_word(record):
 def _email_word(record):
     """What happened to the email, from the state — never ahead of Graph."""
     state, email = record["state"], record.get("email") or {}
-    if state == S.VALIDATION_FAILED:
+    if state in (S.VALIDATION_FAILED, S.IDENTITY_MISMATCH, S.REVIEW_REJECTED):
         return "NOT SENT"               # never sent for a document that failed validation
     return {S.EMAIL_CONFIRMED: "CONFIRMED", S.EMAIL_SENT: "ACCEPTED (confirming)",
+            S.EMAIL_RECONCILIATION_FAILED: "SENT — DOES NOT MATCH (check the mailbox)",
             S.EMAIL_SENDING: "SUBMITTED", S.EMAIL_FAILED: "FAILED",
             S.EMAIL_UNKNOWN: "UNKNOWN — reconcile, do not resend",
             S.EMAIL_PREPARED: "READY (not sent)"}.get(state) or \
@@ -353,6 +356,11 @@ class PoService(object):
             document = dict(document, evidence=str(path))
         for key in ("state", "label", "progress", "hub", "fields", "request_fields", "number",
                     "validation", "email", "failure", "history", "attempts",
+                    # the transaction itself: what was proven, and how
+                    "milestones", "superseded_milestones", "identity", "invoice_candidate",
+                    "calculations", "provenance_map", "review", "attempt", "previous_state",
+                    "started_at", "completed_at", "worker", "idempotency_key",
+                    "correlation_id", "request",
                     # the worker's own discovery evidence (eHub row, Manage,
                     # Bill Entry, provenance) and what it generated
                     "discovery", "identifier", "provenance", "template", "reference", "po_key"):
@@ -367,8 +375,8 @@ class PoService(object):
         for event in payload.get("events") or []:
             if event.get("event_id") in known or event.get("event") not in S.EVENTS:
                 continue
-            with open(self.store.folder / "events.jsonl", "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(S._clean(event), ensure_ascii=False) + "\n")
+            # Into this store's own hash chain — never written around it.
+            event = self.store.import_event(event)
             for fn in list(self.store._sink):
                 try:
                     fn(event, current)
@@ -546,16 +554,24 @@ class PoService(object):
         return self.store.get(po_id), "STARTED", []
 
     def supply(self, actor, po_id, values):
-        """A person supplies what review asked for (G4); validation runs again in full."""
+        """The earlier review entry: G4 is accepted only as one of the values the
+        Bill of Entry prints (review action 'choose')."""
+        return self.review(actor, po_id, "choose", value=(values or {}).get("invoice_no"))
+
+    def review(self, actor, po_id, action, value=None, reason=None, source=None):
+        """A person resolves a job in review: choose a printed value, confirm
+        OCR-read values, fetch again, or reject. Audited either way."""
         record = self.store.get(po_id)
         if record is None:
             raise KeyError(po_id)
         who = actor.get("work_email") if isinstance(actor, dict) else actor
-        done, problems = P.supply(self.store, record, values, by=who, config=self.config())
+        done, problems = P.resolve_review(self.store, record, action, who, value=value,
+                                          reason=reason, config=self.config(), source=source)
         self.audit("PO_REVIEW_SUPPLIED", result="BLOCKED" if problems else "SUCCESS",
                    actor=actor, target=po_id,
-                   metadata={"fields": sorted((values or {}).keys()), "state": done["state"],
-                             "problems": problems})
+                   metadata={"action": action, "state": done["state"], "problems": problems})
+        if not problems and done["state"] not in S.ACTIVE_STATES:
+            self.processed(done)
         return done, problems
 
     def reconfirm(self, po_id):
@@ -565,14 +581,8 @@ class PoService(object):
             return record
         mailer = (self.mailer_factory or __import__("po.mail", fromlist=["GraphMailer"])
                   .GraphMailer)()
-        found = mailer.find_sent((record.get("email") or {}).get("internet_message_id"))
-        if found:
-            record["email"].update(status="CONFIRMED", confirmed_at=found.get("sentDateTime"),
-                                   confirmation="Found in the mailbox's Sent Items.")
-            record = self.store.transition(record, S.EMAIL_CONFIRMED, "Completed")
-            self.store.event(record, "EMAIL_CONFIRMED", "email", "OK",
-                             sent_at=found.get("sentDateTime"))
-            self.store.event(record, "PO_COMPLETED", "complete", "OK")
+        record, outcome = P.confirm(self.store, record, mailer, wait_s=0, by="reconfirm")
+        if outcome == "CONFIRMED":
             self.audit("PO_EMAIL_CONFIRMED", target=po_id,
                        metadata={"reference": record["reference"],
                                  "recipient": record["email"].get("recipient"),

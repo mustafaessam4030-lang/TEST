@@ -9,7 +9,12 @@ remote control plane alike, so the two cannot drift apart.
     POST /api/po/<id>/send          send it                        po.send
                                     (authorize_resend: po.resend)
     POST /api/po/<id>/confirm       look for it in Sent Items again po.send
-    POST /api/po/<id>/supply        a value review asked for (G4)  po.process
+    POST /api/po/<id>/review        resolve a review: {action:      po.process
+                                    choose (a value the Bill of
+                                    Entry PRINTS) | confirm_values |
+                                    reject (with a reason)}
+    POST /api/po/<id>/supply        the earlier name of review      po.process
+                                    "choose"
     GET  /api/po/quality            reliability metrics, from the  po.view
                                     recorded jobs only
 
@@ -39,7 +44,7 @@ def permission_for(method, route, body=None):
             return "po.resend" if (body or {}).get("authorize_resend") else "po.send"
         if parts[4] == "confirm":
             return "po.send"
-        if parts[4] == "supply":
+        if parts[4] in ("supply", "review"):
             return "po.process"
     return None
 
@@ -107,6 +112,23 @@ def handle(service, method, route, body, actor, can):
             return "json", 409, {"accepted": False, "message": "; ".join(problems)}
         return "json", 200, {"accepted": True, "state": record["state"],
                              "message": "Validated again: {0}.".format(record.get("label"))}
+    if action == "review" and method == "POST":
+        kind = str((body or {}).get("action") or "")
+        if kind not in ("choose", "confirm_values", "reject"):
+            return "json", 400, {"accepted": False, "message":
+                                 "action must be choose, confirm_values or reject"}
+        try:
+            record, problems = service.review(
+                actor, po_id, kind, value=str((body or {}).get("value") or "")[:60] or None,
+                reason=str((body or {}).get("reason") or "")[:300] or None)
+        except KeyError:
+            return "json", 404, {"error": "not_found"}
+        if problems:
+            return "json", 409, {"accepted": False, "message": "; ".join(problems)}
+        return "json", 200, {"accepted": True, "state": record["state"],
+                             "message": "{0}: {1}.".format(
+                                 "Rejected" if kind == "reject" else "Validated again",
+                                 record.get("label"))}
     if action == "confirm" and method == "POST":
         record = service.reconfirm(po_id)
         return "json", 200, {"ok": bool(record), "state": (record or {}).get("state")}

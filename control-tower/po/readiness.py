@@ -16,6 +16,19 @@ from how the dashboard looks.
                                  and a recorded security/business sign-off
 
 Every gate is PASS, FAIL or UNVERIFIED, with the evidence that decided it.
+
+READINESS LEVELS, kept apart so one green level never reads as another:
+
+    A CODE_READY            the PO engine suites pass (test_po, test_po_hardening,
+                            test_po_engine) in the last complete run
+    B TEST_READY            the last complete run of every suite is green
+    C SECURITY_READY        the automated security checks pass (release hygiene,
+                            dashboard key) AND a human security review is recorded
+    D ENVIRONMENT_READY     this machine is configured: Graph settings, the
+                            recipient, the eHub credentials file, a writable
+                            output folder (presence only — never the values)
+    E REAL_WORLD_VERIFIED   the pilot gates on REAL / VERIFIED jobs
+    F PRODUCTION_READY      E plus the production gates and the sign-off
 A stand-in, test or simulated job never passes a REAL gate: only jobs whose
 document provenance is REAL / VERIFIED (observed in the real eHub session by
 the worker's own browser) count.
@@ -99,6 +112,12 @@ def evaluate(store=None):
     gates.append(_gate("Audit trail whole for a real job (discovery → saved)",
                        "PASS" if whole else "UNVERIFIED",
                        "{0} real job(s) with every event of the chain".format(len(whole))))
+    audit = store.verify_audit()
+    gates.append(_gate("Audit trail hash chain intact (nothing altered, removed or reordered)",
+                       "PASS" if audit["ok"] and audit["chained"] else
+                       "FAIL" if not audit["ok"] else "UNVERIFIED",
+                       "{0} chained event(s){1}".format(audit["chained"], "" if audit["ok"] else
+                                                       "; " + str(audit["problem"]))))
     pilot = all(g["status"] == "PASS" for g in gates)
 
     q = quality.metrics(store)["real"]
@@ -127,6 +146,86 @@ def evaluate(store=None):
     production = pilot and all(g["status"] == "PASS" for g in prod)
     status = "PRODUCTION READY" if production else \
         "READY FOR CONTROLLED PILOT" if pilot else "NOT READY"
-    return {"status": status, "pilot_gates": gates, "production_gates": prod,
+    return {"status": status, "levels": levels(store, gates, prod, so),
+            "pilot_gates": gates, "production_gates": prod,
             "real_quality": q,
             "rule": "Only jobs whose document was observed in the real eHub session count."}
+
+
+def _results():
+    path = Path(os.environ.get("PO_TEST_RESULTS") or (HERE / "test_results.json"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if data.get("complete") else None
+
+
+def levels(store, pilot_gates, production_gates, signoff):
+    """A–F, each PASS / FAIL / UNVERIFIED with its evidence."""
+    from . import mail
+    data = _results()
+    suites = {s["suite"]: s["status"] for s in (data or {}).get("suites") or []}
+
+    def suites_ok(names):
+        if data is None:
+            return "UNVERIFIED", "no complete test run on record (python run_tests.py)"
+        missing = [n for n in names if n not in suites]
+        bad = [n for n in names if suites.get(n) not in (None, "OK")]
+        if missing:
+            return "UNVERIFIED", "not in the last run: " + ", ".join(missing)
+        return ("FAIL", "failing: " + ", ".join(bad)) if bad else \
+            ("PASS", "{0} green in the run of {1}".format(", ".join(names), data.get("at")))
+    out = {}
+    out["A_CODE_READY"] = dict(zip(("status", "evidence"), suites_ok(
+        ["test_po.py", "test_po_hardening.py", "test_po_engine.py"])))
+    if data is None:
+        out["B_TEST_READY"] = {"status": "UNVERIFIED", "evidence": "no complete test run"}
+    else:
+        green = data.get("failed") == 0 and not data.get("broken")
+        out["B_TEST_READY"] = {"status": "PASS" if green else "FAIL",
+                               "evidence": "{0} passed, {1} failed, {2} skipped, problems: {3} "
+                                           "({4})".format(data.get("passed"), data.get("failed"),
+                                                          data.get("skipped"),
+                                                          data.get("broken") or "none",
+                                                          data.get("at"))}
+    auto, why = suites_ok(["test_release.py", "test_dashboard_access.py"])
+    audit = store.verify_audit()
+    human = bool(signoff and signoff.get("security_review") == "clean" and signoff.get("by"))
+    out["C_SECURITY_READY"] = {
+        "status": "FAIL" if auto == "FAIL" or not audit["ok"] else
+        "PASS" if auto == "PASS" and human else "UNVERIFIED",
+        "evidence": "automated: {0}; audit chain: {1}; human security review: {2}".format(
+            why, "intact" if audit["ok"] else audit["problem"],
+            "recorded" if human else "NOT recorded")}
+    graph_ok, missing = mail.configured()
+    creds = Path(os.environ.get("PO_CREDENTIALS_FILE") or r"C:\Automation\credentials.txt")
+    out_dir = store.output_dir
+    writable = False
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        probe = out_dir / ".write-probe"
+        probe.write_text("x")
+        probe.unlink()
+        writable = True
+    except OSError:
+        pass
+    env = {"graph_settings": graph_ok, "recipient": bool(os.environ.get("PO_MAIL_RECIPIENT")),
+           "ehub_credentials_file": creds.is_file(), "output_folder_writable": writable}
+    out["D_ENVIRONMENT_READY"] = {
+        "status": "PASS" if all(env.values()) else "UNVERIFIED",
+        "evidence": "{0}{1}".format(", ".join("{0}: {1}".format(k, "yes" if v else "NO")
+                                              for k, v in env.items()),
+                                    "; Graph missing: " + ", ".join(missing) if missing else "")}
+    real = [g for g in pilot_gates if g["gate"] != "Automated tests green"]
+    out["E_REAL_WORLD_VERIFIED"] = {
+        "status": "PASS" if real and all(g["status"] == "PASS" for g in real) else "UNVERIFIED",
+        "evidence": "{0} of {1} real-world pilot gates PASS — NOT VERIFIED until the real worker "
+                    "runbook (PO_WORKER_RUNBOOK.md) is executed".format(
+                        sum(1 for g in real if g["status"] == "PASS"), len(real))}
+    out["F_PRODUCTION_READY"] = {
+        "status": "PASS" if out["E_REAL_WORLD_VERIFIED"]["status"] == "PASS" and
+        all(g["status"] == "PASS" for g in production_gates) else "UNVERIFIED",
+        "evidence": "{0} of {1} production gates PASS".format(
+            sum(1 for g in production_gates if g["status"] == "PASS"), len(production_gates))}
+    return out

@@ -5010,14 +5010,23 @@ function paintPODrawer(){
   const fl = d.failure || {};
   if (fl.next_action && d.state !== 'EMAIL_CONFIRMED')
     html += '<div class="po-sec"><h4>' + esc(fl.code || d.label || 'Next') + '</h4><div>' + esc(fl.next_action) + '</div></div>';
-  // Review: G4 has no proven source (none printed, several printed, or a disagreement);
-  // a person supplies it and validation then runs again in full.
-  if (d.state === 'NEEDS_REVIEW' && fl.code === 'G4_SOURCE_UNPROVEN' && PF.can('po.process'))
-    acts.push('<input class="in" id="poInv" placeholder="Supplier invoice No. (G4)" style="max-width:220px"' +
-              ' aria-describedby="poInvHint">' +
-              '<button class="btn" type="button" id="poSupply">Validate again</button>' +
-              '<span class="po-msg" id="poInvHint">' + esc(fl.detail || 'Supplier invoice No. (G4) has no source.') +
-              ((fl.candidates || []).length ? ' Check the document before using either value.' : '') + '</span>');
+  // Review: the job stopped because something is not PROVEN. G4 comes only from the
+  // Bill of Entry, so a person can only choose one of the values it PRINTS — never type
+  // one; or confirm OCR-read values; or reject the job (with a reason). Validation then
+  // runs again in full.
+  const rv = d.review || {};
+  if ((d.state === 'NEEDS_REVIEW' || d.state === 'DOCUMENT_AMBIGUOUS') && PF.can('po.process')){
+    let box = '<span class="po-msg" id="poRvHint">' + esc(rv.why || fl.detail || 'This job needs a decision.') + '</span>';
+    if (fl.code === 'G4_SOURCE_UNPROVEN')
+      (fl.candidates || []).forEach((c) => {
+        box += '<button class="btn" type="button" data-rv="choose" data-val="' + esc(c) + '">Use ' + esc(c) + ' (printed on the Bill of Entry)</button>';
+      });
+    if (fl.code === 'LOW_CONFIDENCE_EXTRACTION')
+      box += '<button class="btn" type="button" data-rv="confirm_values">I compared the OCR values with the PDF</button>';
+    box += '<input class="in" id="poRvWhy" placeholder="Why reject? (audited)" style="max-width:220px">' +
+           '<button class="btn ghost" type="button" data-rv="reject">Reject job</button>';
+    acts.push(box);
+  }
   if (canSend && email.status !== 'BLOCKED') acts.push('<button class="btn" type="button" id="poSend">Send PO</button>');
   if ((email.duplicate_of || d.state === 'EMAIL_CONFIRMED' || d.state === 'EMAIL_SENT') && PF.can('po.resend'))
     acts.push('<input class="in" id="poWhy" placeholder="Why send it again? (audited)" style="max-width:240px">' +
@@ -5051,12 +5060,17 @@ document.addEventListener('click', (e) => {
     if (!why.trim()){ const m = $('poSendMsg'); m.className = 'po-msg bad'; put(m, 'Say why it is sent again — it is recorded in the audit log.'); return; }
     poSend({authorize_resend:true, reason:why.trim()}); return;
   }
-  if (e.target.closest('#poSupply')){
-    const v = (($('poInv') || {}).value || '').trim();
-    const m = $('poSendMsg');
-    if (!v){ m.className = 'po-msg bad'; put(m, 'Type the supplier invoice No. — nothing is guessed.'); return; }
-    fetch('/api/po/' + encodeURIComponent(PO.open) + '/supply', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({invoice_no: v})}).then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
+  const rvb = e.target.closest('[data-rv]');
+  if (rvb){
+    const action = rvb.dataset.rv, m = $('poSendMsg');
+    const body = {action: action};
+    if (action === 'choose') body.value = rvb.dataset.val;
+    if (action === 'reject'){
+      body.reason = (($('poRvWhy') || {}).value || '').trim();
+      if (!body.reason){ m.className = 'po-msg bad'; put(m, 'Say why the job is rejected — it is recorded in the audit log.'); return; }
+    }
+    fetch('/api/po/' + encodeURIComponent(PO.open) + '/review', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)}).then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
         m.className = 'po-msg' + (st >= 400 ? ' bad' : ''); put(m, x.message || '');
         setTimeout(() => { loadPODetail(true); loadPO(true); }, 300);
       }).catch(() => { m.className = 'po-msg bad'; put(m, 'The request did not reach the server.'); });

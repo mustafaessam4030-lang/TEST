@@ -396,8 +396,23 @@ def explain(store, po_id):
         "failure": record.get("failure"), "skip_reason": record.get("skip_reason"),
         "idempotency_key": record.get("idempotency_key"),
         "timings_ms": record.get("timings"),
+        "attempt": record.get("attempt"), "started_at": record.get("started_at"),
+        "completed_at": record.get("completed_at"), "worker": record.get("worker"),
+        "milestones": [{"name": m["name"], "at": m["at"], "attempt": m.get("attempt")}
+                       for m in record.get("milestones") or []],
+        "shipment_identity": record.get("identity"),
+        "calculations": record.get("calculations"),
+        "review": record.get("review"),
+        "reconciliation": email.get("reconciliation"),
+        # Every state change, with who and why — the audit trail.
+        "transitions": [{"at": e["timestamp"], "from": (e.get("metadata") or {}).get(
+            "old_state"), "to": (e.get("metadata") or {}).get("new_state"),
+            "actor": e.get("actor"), "attempt": e.get("attempt")}
+            for e in events if e["event"] == "STATE_CHANGED"],
+        # What happened, stage by stage (state changes and milestones above).
         "timeline": [{"at": e["timestamp"], "event": e["event"], "stage": e["stage"],
-                      "status": e["status"]} for e in events],
+                      "status": e["status"]} for e in events
+                     if e["event"] not in ("STATE_CHANGED", "MILESTONE")],
     }
 
 
@@ -434,6 +449,25 @@ def cmd_supply(args):
     return 0 if not problems else 1
 
 
+def cmd_review(args):
+    """Resolve a job in review: choose a PRINTED value, confirm OCR values, or reject."""
+    store = S.Store()
+    record = store.get(args.po_id)
+    if record is None:
+        return 2
+    record, problems = P.resolve_review(store, record, args.action, args.by, value=args.value,
+                                        reason=args.reason)
+    print(record["state"], "—", "; ".join(problems) or record.get("progress") or "")
+    return 0 if not problems else 1
+
+
+def cmd_audit_verify(args):
+    """Prove the event trail is intact: nothing altered, removed or reordered."""
+    report = S.Store().verify_audit()
+    print(json.dumps(report, indent=2))
+    return 0 if report["ok"] else 1
+
+
 def cmd_send(args):
     from po.mail import GraphMailer
     store = S.Store()
@@ -455,10 +489,14 @@ def cmd_read(args):
     except X.Unreadable as error:
         print("UNREADABLE:", error)
         return 1
-    fields = X.extract(read["text"], doctype)
-    request = P._request_fields(doctype, {"invoice_no": args.invoice_no}, P.config_from_env())
-    result = V.validate(doctype, fields, {"bol_awb": args.hub_bol, "identifier": args.identifier},
-                        request)
+    fields = X.extract(read["text"], doctype, read.get("spans"))
+    request = P._request_fields(doctype, {}, P.config_from_env())
+    printed = X.printed_invoice_no(read["text"], read.get("spans"))
+    request["invoice_no"], g4_issue = P._g4_source(
+        doctype, {"invoice_no": args.invoice_no} if args.invoice_no else {}, printed)
+    hub = {"bol_awb": args.hub_bol, "identifier": args.identifier}
+    result = V.validate(doctype, fields, hub, request,
+                        identity=P.identity_decision(hub, fields), g4_issue=g4_issue)
     print(json.dumps({"pages": read["pages"], "methods": read["methods"],
                       "sha256": hashlib.sha256(data).hexdigest(),
                       "fields": {n: {k: f.get(k) for k in ("status", "value", "evidence",
@@ -492,10 +530,18 @@ def main(argv=None):
     ex.add_argument("po_id")
     sub.add_parser("quality", help="reliability metrics from the recorded jobs")
     sub.add_parser("readiness", help="the production-readiness gate, from evidence")
-    su = sub.add_parser("supply", help="give a job in review the value it needs (G4)")
+    su = sub.add_parser("supply", help="choose, for G4, one of the invoice numbers the Bill of "
+                                       "Entry prints (a typed value is refused)")
     su.add_argument("--po-id", required=True)
     su.add_argument("--invoice-no", required=True)
     su.add_argument("--by")
+    rv = sub.add_parser("review", help="resolve a job in review")
+    rv.add_argument("--po-id", required=True)
+    rv.add_argument("--action", required=True, choices=("choose", "confirm_values", "reject"))
+    rv.add_argument("--value")
+    rv.add_argument("--reason")
+    rv.add_argument("--by", required=True)
+    sub.add_parser("audit-verify", help="verify the hash-chained event trail")
     w = sub.add_parser("sweep", help="the automatic run: a PO job for every Under Clearance "
                                      "record that has none yet")
     w.add_argument("--limit", type=int, default=int(os.environ.get("PO_SWEEP_LIMIT") or 20))
@@ -510,7 +556,8 @@ def main(argv=None):
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
             "ehub-check": cmd_check, "sweep": cmd_sweep,
             "read": cmd_read, "recover": cmd_recover, "explain": cmd_explain,
-            "quality": cmd_quality, "readiness": cmd_readiness, "supply": cmd_supply}[args.cmd](args)
+            "quality": cmd_quality, "readiness": cmd_readiness, "supply": cmd_supply,
+            "review": cmd_review, "audit-verify": cmd_audit_verify}[args.cmd](args)
 
 
 if __name__ == "__main__":

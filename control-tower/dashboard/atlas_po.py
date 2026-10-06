@@ -173,7 +173,10 @@ def answer(kind, question, context=None):
         failing = [r for r in records if F.from_po(r) is not None]
         record = failing[0] if kind in ("what_failed", "why_not_sent", "missing", "match",
                                         "next", "known") and failing else records[0]
-    events = service.store.events(record["po_id"])
+    # The business timeline: state changes and milestones are on the record
+    # (its history and milestones), not repeated here.
+    events = [e for e in service.store.events(record["po_id"], limit=2000)
+              if e.get("event") not in ("STATE_CHANGED", "MILESTONE")]
     try:
         from intelligence import learning as L
         learning = L.snapshot()
@@ -278,9 +281,18 @@ def answer(kind, question, context=None):
         elif state == "EMAIL_FAILED":
             text = title + "**Fact** — No. The send failed: {0}.".format(
                 email.get("error") or (record.get("failure") or {}).get("detail"))
-        elif state == "VALIDATION_FAILED":
+        elif state in ("VALIDATION_FAILED", "IDENTITY_MISMATCH"):
             text = title + "**Fact** — No. Validation failed, and an email is never sent for a " \
                            "document that did not pass validation."
+        elif state == "EMAIL_RECONCILIATION_FAILED":
+            rec = email.get("reconciliation") or {}
+            text = title + "**Fact** — A message for this job IS in Sent Items, but it does not " \
+                           "match what was prepared: {0}.\n**Recommendation** — Check the " \
+                           "mailbox; it is never resent automatically.".format(
+                               "; ".join(rec.get("mismatches") or []) or "see the job")
+        elif state == "REVIEW_REJECTED":
+            text = title + "**Fact** — No. A person rejected the job at review: {0}".format(
+                (record.get("failure") or {}).get("detail"))
         elif state == "EMAIL_PREPARED":
             text = title + "**Fact** — No. It is prepared for {0} and waits for someone to press " \
                            "Send PO.".format(email.get("recipient"))
@@ -402,7 +414,7 @@ def answer(kind, question, context=None):
                         "was chosen."
             for reason in validation.get("reasons") or []:
                 text += "\n**Fact** — " + reason
-            if record["state"] == "VALIDATION_FAILED":
+            if record["state"] in ("VALIDATION_FAILED", "IDENTITY_MISMATCH"):
                 text += "\n**Fact** — No template was generated and no email was sent."
                 if failure is not None:
                     text += "\n" + "\n".join(_lines(failure["recommendations"]))

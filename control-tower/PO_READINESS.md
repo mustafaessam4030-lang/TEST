@@ -1,5 +1,9 @@
 # PO Automation — production-readiness report
 
+> Engine design and guarantees: `PO_ENGINE.md`. Real-worker evidence
+> procedure: `PO_WORKER_RUNBOOK.md` (NOT EXECUTED). Readiness levels A–F:
+> `python -m po readiness`.
+
 Date: 6 Oct 2026. Branch `claude/maia-m6rhri`. Written from the code and test
 runs in this repository. **No run on the real Windows worker or the real eHub was
 possible from the environment this was written in.** The cloud container has no
@@ -125,11 +129,11 @@ or `test_po.py`.
   (SKIPPED_STATUS_CHANGED), no sign-in screenshots, URLs without queries.
 - Extraction: exact precision, signs, strict number grammar, duplicate VAT →
   AMBIGUOUS, PDF integrity (empty, HTML, truncated, repaired, oversize).
-- G4 (decided by the business, this round): the Bill of Entry's explicit
-  "Invoice No." (one distinct value) is the source. If it is absent, ambiguous
-  or in conflict, the job goes to NEEDS_REVIEW, and a person supplies the value
-  (drawer / API / CLI) before validation runs again in full. There is never a
-  UNA+ fallback.
+- G4 (business rule 12): ONLY the Bill of Entry's explicit "Invoice No." (one
+  distinct, well-formed value). Absent, ambiguous, malformed or in conflict →
+  NEEDS_REVIEW; a reviewer may only choose among the PRINTED values, fetch
+  again, or reject. No typed value, never UNA+. Enforced again by the store
+  (`PO_ENGINE.md` §F).
 - Observability: stage timings, provenance map, `python -m po explain`,
   `quality`, `readiness`, `/api/po/quality`, ATLAS "Show me the calculation" and
   "How reliable is PO automation?".
@@ -146,7 +150,7 @@ or `test_po.py`.
 | Total duty (GHS) | PDF, "Total Duty and Levies" | exact, sign kept | required, > 0, arithmetic | G6 |
 | Import duty line | PDF, "Import Duty" | exact | arithmetic only | — |
 | VAT/levy lines (5 labels) | PDF, rightmost figure per labelled line | one per label; repeat → AMBIGUOUS | required | G20 (`=a+b+…`) |
-| Supplier invoice No. | PDF, explicit "Invoice No." / "Invoice Number" (one value); else a person at review | text; digits → int | required; job value must agree → NEEDS_REVIEW if absent / ambiguous / conflict | G4 |
+| Supplier invoice No. | PDF, explicit "Invoice No." / "Invoice Number" (one well-formed value) only | text; digits → int | required; job value must agree → NEEDS_REVIEW if absent / ambiguous / malformed / conflict | G4 |
 | Supplier, branch, charge to, priority | configuration / request | text | supplier required | G10, G11, G13, C9 |
 
 Calculations (written as formulas by the approved template, never by the job):
@@ -169,8 +173,9 @@ formula).
 - If nothing is printed, several values are printed, or the job's value
   disagrees, the job goes to NEEDS_REVIEW (`G4_SOURCE_UNPROVEN`, `g4_reason`
   absent / ambiguous / conflict). Nothing is generated or sent.
-- A person then supplies the value at review (origin "supplied by X at
-  review"). That value wins, and validation runs again in full.
+- A reviewer may only choose one of the values the document PRINTS (origin
+  `bill_of_entry:chosen_at_review`), fetch again, or reject. A typed value is
+  refused; the store refuses VALIDATED for any other G4 origin.
 - eHub's "UNA+ Invoice Number" is never a source or a fallback.
 
 Regression tests: `test_po_hardening.py` §3 and `test_po.py` §27. This rule
@@ -261,9 +266,12 @@ the obvious bottleneck to measure on the worker before optimising.
 
 ## 18. Test results
 
-`test_po_hardening.py` 68 passed, 0 failed. `test_po.py` 306 passed, 0 failed,
-1 skipped (the real-discovery section only runs with `ATA_REAL_EHUB_TESTS=1` on the worker). Full regression: see
-the commit message / report that accompanies this file.
+Not typed here: counts go stale. The current result is what `python run_tests.py`
+prints and writes to `test_results.json` (complete runs only), and what
+`python -m po readiness` reports as levels A and B. The PO suites are
+`test_po.py` (its real-discovery section runs only with `ATA_REAL_EHUB_TESTS=1`
+on the worker), `test_po_hardening.py` and `test_po_engine.py` — all against
+stand-ins.
 
 ## 19. Real worker result
 
@@ -296,8 +304,16 @@ sends to one named address only, and records the Graph answer on the job.
 4. G4 on real Bills of Entry: confirm real ICUMS PDFs print an explicit
    "Invoice No." where the reader looks (else every job will wait in review).
 5. Graph: Mail.Send application permission, admin consent, application access
-   policy, sender mailbox.
+   policy, sender mailbox — and confirmation that Graph's read-back
+   (`GraphMailer.inspect`) returns recipient, subject and attachments for the
+   ATA mailbox (without it a send stays EMAIL SENT, never CONFIRMED).
 6. Security review and sign-off (`<PO_DATA_DIR>/readiness/signoff.json`).
+7. A business rule for multi-item Bills of Entry (per-item VAT / totals): none
+   exists in the current logic and none was invented; until defined from real
+   documents, a repeated VAT label stops the job (fail closed).
+8. OCR: a scanned Bill of Entry's required values go to review
+   (LOW_CONFIDENCE_EXTRACTION); whether real Bills of Entry are text PDFs is
+   unverified.
 
 ## 23. Final status
 

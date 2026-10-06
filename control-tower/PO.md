@@ -55,7 +55,7 @@ existing eHub list navigation, read-only; `update_eta.py` is not changed.
 | Clearance status | the row's Status cell must be exactly `Under Clearance` (spacing normalised; nothing else forgiven) | anything else → **SKIPPED**, the status recorded, Manage never opened |
 | Manage | `update_eta.click_manage_in_view` on that row | cannot open → failed, retried if transient |
 | Documents | a "Documents" tab is clicked if there is one; the section under the "Documents" heading is read | no section → DOCUMENT_NOT_FOUND |
-| Bill Entry | a document whose name starts with `Bill Entry`, `Bill of Entry`, `Bill_Entry` or `BillofEntry` (a "View" link in the same row is paired with the name in that row). Other files on the record — e.g. `KIA1-G-40926696852-01 (1).pdf`, `20260910094658174 (1).pdf` — are listed but never taken | none → **DOCUMENT_NOT_FOUND**; different identifiers → **NEEDS_REVIEW** (no rule is safe); the same identifier on copies → the first listed, the rule recorded |
+| Bill Entry | a document whose name starts with `Bill Entry`, `Bill of Entry`, `Bill_Entry` or `BillofEntry` (a "View" link in the same row is paired with the name in that row). Other files on the record — e.g. `KIA1-G-40926696852-01 (1).pdf`, `20260910094658174 (1).pdf` — are listed but never taken | none → **DOCUMENT_NOT_FOUND**; different identifiers → **NEEDS_REVIEW** (no rule is safe); the same identifier on several entries → all downloaded and compared byte for byte: identical → one document (the rule and hashes recorded), different → **DOCUMENT_AMBIGUOUS** (list order decides nothing) |
 | Identifier | the token after "Bill Entry" (an optional "No." skipped; `.pdf` and any number of ` (1)` copy suffixes not part of it) | none → **NEEDS_REVIEW** |
 | Download | a link is fetched, a WebForms postback / button is clicked and its download (or popup) captured, through the same eHub session | not a PDF → failed |
 
@@ -84,7 +84,7 @@ handled except one whose last job failed for a transient reason.
 | Total duty (GHS) | PDF | yes | G6 |
 | VAT / levy lines | PDF | yes | G20 (`=a+b+…`, the template's own style) |
 | Import duty line, User reference | PDF | no | — (cross-check / shown) |
-| Supplier invoice No. | the Bill of Entry's explicit "Invoice No.", else a person at review | yes | G4 |
+| Supplier invoice No. | ONLY the Bill of Entry's explicit "Invoice No." (a reviewer may choose among printed values, never type one) | yes | G4 |
 | Supplier, Branch, Charge to, Priority | configuration or operator | supplier only | G10, G11, G13, C9 |
 
 G19, C24, C26, G41 and F16 are the template's formulas and are never written.
@@ -169,10 +169,17 @@ at NEEDS_REVIEW (`G4_SOURCE_UNPROVEN`), with nothing generated or sent:
 - two different printed values (`ambiguous`, none chosen);
 - a disagreement between the job and the document (`conflict`).
 
-A person then supplies G4 in the drawer (`/api/po/<id>/supply`, `python -m po
-supply`), and validation runs again in full. eHub's "UNA+ Invoice Number" column
-is kept as evidence only. It is never a G4 source or fallback, and neither is
-"Invoice Value".
+- the label is printed but its value is not a clean invoice number
+  (`malformed`: `2600 005261`, `INV#12`, `N/A` — never trimmed).
+
+A person can then only **choose one of the values the Bill of Entry prints**
+(drawer, `/api/po/<id>/review`, `python -m po review --action choose`), fetch
+the document again once it is corrected in eHub, or **reject** the job with a
+reason. A typed value is refused: G4 is never anything the document does not
+print. eHub's "UNA+ Invoice Number" column is kept as evidence only. It is never
+a G4 source or fallback, and neither is "Invoice Value". The full engine —
+milestones, invariants, identity, number grammar, email reconciliation, audit
+chain — is described in `PO_ENGINE.md`.
 
 PO jobs open eHub with the ETA run's own browser launch (headed Edge) and
 sign-in; `PO_HEADLESS` / `PO_BROWSER_EXECUTABLE` override it.

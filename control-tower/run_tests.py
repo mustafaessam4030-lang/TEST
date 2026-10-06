@@ -60,6 +60,7 @@ SUITES = [
     ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
     ("test_po.py",              "PO Automation: eHub → Bill Entry → extract → validate → template → save → Graph"),
     ("test_po_hardening.py",    "PO hardening: idempotency, recovery, email reconciliation, numbers"),
+    ("test_po_engine.py",       "PO transaction engine: invariants, crash points, races, properties"),
     ("test_verification.py",    "real eHub verification: worker evidence, levels, never from the cloud"),
     ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),
@@ -129,10 +130,19 @@ def _leftovers(proc):
     except (ProcessLookupError, PermissionError):
         return False
     try:
+        rows = subprocess.run(["ps", "-o", "pid=,stat=,args=", "-g", str(proc.pid)],
+                              capture_output=True, text=True, timeout=5).stdout.split("\n")
+        rows = [r.split(None, 2) for r in rows if r.strip()]
+        # A zombie (finished, not yet reaped) runs nothing and holds nothing.
+        live = [" ".join([r[0]] + r[2:])[:140] for r in rows
+                if len(r) >= 2 and not r[1].startswith("Z")]
+    except (OSError, subprocess.SubprocessError):
+        live = ["(could not list them)"]
+    try:
         os.killpg(proc.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
-    return True
+    return live[:6] or False
 
 
 def run_suite(path, timeout, log_dir):
@@ -170,7 +180,7 @@ def run_suite(path, timeout, log_dir):
         status = "OK"
     return {"suite": path.name, "status": status, "passed": passed, "failed": failed,
             "skipped": skipped, "seconds": round(seconds, 1), "returncode": proc.returncode,
-            "left_processes": bool(leftovers), "log": str(out_path),
+            "left_processes": leftovers or False, "log": str(out_path),
             "fail_lines": [l.strip() for l in text.splitlines()
                            if l.strip().startswith("FAIL ")][:12],
             "tail": text.splitlines()[-25:] if status != "OK" else []}
@@ -230,6 +240,8 @@ def main(argv=None):
         if r.get("left_processes"):
             print("        WARNING: processes started by this suite were still running after it "
                   "exited; they were killed")
+            for name in r["left_processes"] if isinstance(r["left_processes"], list) else []:
+                print("          left running: " + name)
         for line in r["fail_lines"]:
             print("        " + line)
         if r["status"] in ("TIMEOUT", "ERROR"):

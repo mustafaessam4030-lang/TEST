@@ -818,7 +818,14 @@ PO_LABELS = {
     "SAVE_FAILED": "the generated document could not be saved and read back",
     "EMAIL_UNKNOWN": "the email may or may not have gone out — the mailbox must be checked",
     "WORKER_DISCONNECTED": "the worker stopped mid-job (resumable)",
-    "G4_SOURCE_UNPROVEN": "the Bill of Entry gives no single explicit Invoice No. (G4) — a person must supply it",
+    "G4_SOURCE_UNPROVEN": "the Bill of Entry gives no single explicit Invoice No. (G4): a person "
+                          "chooses one it prints, fetches it again, or rejects the job",
+    "IDENTITY_UNPROVEN": "the record could not be tied to the shipment with enough evidence",
+    "LOW_CONFIDENCE_EXTRACTION": "a required value was read by OCR and must be confirmed",
+    "NORMALIZATION_FAILED": "a value printed on the Bill of Entry is not a well-formed number",
+    "REVIEW_REJECTED": "a person rejected the job at review",
+    "EMAIL_RECONCILIATION_FAILED": "a message for this job was sent but does not match what was "
+                                   "prepared",
     "SKIPPED_DUPLICATE": "the same Bill of Entry is already handled by another job",
 }
 PO_STAGES = {"ehub_record": "checking the eHub record's clearance status",
@@ -924,7 +931,8 @@ def from_po(record, events=None, learning=None, history=None):
                        "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED", "NEEDS_REVIEW",
                        "SKIPPED", "DISCOVERY_FAILED", "AUTH_REQUIRED",
                        "MANAGE_NAVIGATION_FAILED", "DOCUMENT_AMBIGUOUS", "PDF_DOWNLOAD_FAILED",
-                       "SAVE_FAILED", "EMAIL_UNKNOWN", "WORKER_DISCONNECTED")
+                       "SAVE_FAILED", "EMAIL_UNKNOWN", "WORKER_DISCONNECTED",
+                       "IDENTITY_MISMATCH", "REVIEW_REJECTED", "EMAIL_RECONCILIATION_FAILED")
     blocked = email.get("status") == "BLOCKED" and not failed
     if not failed and not blocked:
         return None

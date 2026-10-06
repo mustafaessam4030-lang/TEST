@@ -41,6 +41,7 @@ os.environ["PO_ALLOW_TEST_SEND"] = "1"            # the mocked mailer only
 os.environ.setdefault("ATLAS_INTEL_DIR", str(WORK / "intel"))
 
 import fitz                                        # noqa: E402
+from po import validate as V  # noqa: E402
 
 from po import doctypes, extract as X, pipeline as P, store as S, template as T  # noqa: E402
 from po import quality as Q, readiness as RD                                    # noqa: E402
@@ -66,7 +67,10 @@ def rule(title):
 
 
 def boe_text(bl="176-88452310", number="40726534505 / 00", duty="653,492.35",
-             import_duty="246,320.05", rate="11.20", vat=None, extra=""):
+             import_duty="246,320.05", rate="11.20", vat=None, extra="", invoice="9116093"):
+    # The normal Bill of Entry prints the supplier invoice No. — G4's only
+    # source. invoice=None: a document that does not.
+    extra = ("Invoice No: {0}\n".format(invoice) if invoice else "") + extra
     vat = vat if vat is not None else (
         "Import VAT                        304,446.44\n"
         "Network Charge VAT                  1,066.03\n"
@@ -167,7 +171,8 @@ class Mailer(object):
         if msg is None:
             raise MailError("ErrorItemNotFound", "permanent", 404, "send")
         self.sends += 1
-        self.sent[msg["imid"]] = dict(msg, sentDateTime="2026-10-06T10:00:00Z")
+        self.sent[msg["imid"]] = dict(msg, id=mid, internetMessageId=msg["imid"],
+                                      sentDateTime="2026-10-06T10:00:00Z")
         if step == "unknown-sent":
             raise MailError("connection dropped after the send", "unknown", None, "send")
         return {"accepted": True, "http_status": 202}
@@ -181,16 +186,63 @@ class Mailer(object):
     def get_message(self, mid):
         return {"id": mid, "isDraft": True} if mid in self.drafts else None
 
+    def inspect(self, mid):
+        """What the mailbox holds for the message: recipient, subject, attachment."""
+        msg = self.drafts.get(mid) or next((m for m in self.sent.values()
+                                            if m.get("id") == mid), None)
+        if msg is None:
+            return None
+        return {"to": [msg["to"]], "subject": msg["subject"], "from": "ata@mantrac.com",
+                "attachments": [{"name": msg["name"], "size": msg["bytes"] + 120}]}
+
+    def find_by_attachment(self, folder, subject, name):
+        rows = self.sent.values() if folder == "sentitems" else \
+            [dict(m, id=k, isDraft=True) for k, m in self.drafts.items()]
+        return next((m for m in rows if m["subject"] == subject and m["name"] == name), None)
+
 
 # ═════════════════════════════════════════════════════════════════════════
 rule("1. NUMBERS — normalisation, signs, precision; nothing coerced, nothing assumed zero")
 # ═════════════════════════════════════════════════════════════════════════
-cases = {"1,234.56": 1234.56, "1.234,56": 1234.56, "1 234.56": 1234.56, "653,492.35": 653492.35,
-         "-12.50": -12.5, "(12.50)": -12.5, "11.2045": 11.2045, "0": 0.0, "12,50": 12.5,
-         "1,2,3": None, "12.34.56": None, "abc": None, "": None, None: None}
+# The grammar is ICUMS / en-GH: comma thousands, dot decimal — one locale.
+cases = {"1,234.56": 1234.56, "653,492.35": 653492.35, "1,234": 1234.0, "1234": 1234.0,
+         "-12.50": -12.5, "(12.50)": -12.5, "11.2045": 11.2045, "0": 0.0, "0.5": 0.5,
+         # rejected: other locales, broken grouping, letters, partial numbers
+         "1.234,56": None, "1 234.56": None, "12,50": None, "1234,56": None,
+         "1,2,3": None, "12,34,567": None, "1,23": None, "1.2.3": None, "12.34.56": None,
+         ".5": None, "10O0": None, "1O00": None, "abc": None, "": None, None: None}
 bad = {k: (X.to_float(k), v) for k, v in cases.items() if X.to_float(k) != v}
-check("to_float: every printed form read exactly; malformed numbers are None, never coerced",
+check("to_float: the accepted grammar read exactly; everything else is None, never coerced",
       not bad, bad)
+st = store("n0")
+r = job(st, data=pdf_of(boe_text(duty="653,4O2.35")))
+check("A malformed amount on the document (653,4O2.35): EXTRACTION_FAILED "
+      "(NORMALIZATION_FAILED), the raw text kept, nothing coerced or generated",
+      r["state"] == S.EXTRACTION_FAILED and r["failure"]["code"] == "NORMALIZATION_FAILED"
+      and r["fields"]["duty_amount_ghs"]["status"] == "MALFORMED"
+      and "653,4O2.35" in r["fields"]["duty_amount_ghs"]["note"] and not r.get("output"),
+      (r["state"], r.get("failure"), r["fields"]["duty_amount_ghs"]))
+for bad_amount, label in (("1.234,56", "another locale's decimal comma"),
+                          ("12,34,567", "grouping not in threes"),
+                          ("1O00", "a letter inside the number")):
+    st = store("n0" + label[:3])
+    r = job(st, data=pdf_of(boe_text(import_duty=bad_amount)))
+    check("Import duty printed {0!r} ({1}): stopped as malformed, never read as a number"
+          .format(bad_amount, label), r["state"] == S.EXTRACTION_FAILED and
+          r["fields"]["stated_import_duty"]["status"] == "MALFORMED", (r["state"],
+                                                                       r["fields"].get(
+                                                                           "stated_import_duty")))
+st = store("n0v")
+r = job(st, data=pdf_of(boe_text(vat="Import VAT                        3O4,446.44\n"
+                                      "Network Charge VAT                  1,066.03\n")))
+check("A VAT line printed 3O4,446.44: MALFORMED — never read as 4,446.44",
+      r["state"] == S.EXTRACTION_FAILED and r["fields"]["vat_lines"]["status"] == "MALFORMED",
+      (r["state"], r["fields"]["vat_lines"]))
+st = store("n0d")
+r = job(st, data=pdf_of(boe_text().replace("Exchange Rate 11.20", "Exchange Rate 01/10/2026")))
+check("A date where the exchange rate should be: MALFORMED, never read as 1",
+      r["state"] == S.EXTRACTION_FAILED and r["fields"]["exchange_rate"]["status"] == "MALFORMED",
+      (r["state"], r["fields"]["exchange_rate"]))
 st = store("n1")
 r = job(st, data=pdf_of(boe_text(rate="11.2045")))
 check("An exchange rate printed 11.2045 reaches C21 as 11.2045 — not rounded to 11.20",
@@ -226,13 +278,30 @@ pm = {m["field"]: m for m in r["provenance_map"]}
 check("Field-level provenance: raw text → normalised value → template cell → rules",
       pm["duty_amount_ghs"]["raw"] == "653,492.35" and pm["duty_amount_ghs"]["normalized"] ==
       653492.35 and pm["duty_amount_ghs"]["cell"] == "G6" and "> 0" in pm["duty_amount_ghs"]["rules"]
-      and pm["invoice_no"]["cell"] == "G4" and pm["invoice_no"]["source"] == "request"
+      and pm["invoice_no"]["cell"] == "G4" and pm["invoice_no"]["source"] == "bill_of_entry"
       and pm["document_number"]["cell"] == "C13", pm["duty_amount_ghs"])
 cells = r["output"]["cells"]
 check("Calculation inputs reach exactly their cells; the template computes G19/C24/C26 itself",
       cells["G6"] == 653492.35 and cells["C19"] == 169740.11 and cells["C21"] == 11.2 and
       cells["G20"] == "=304446.44+1066.03+50741.08+50741.08+177.67" and "G19" not in cells,
       cells)
+calc = {c["rule"]: c for c in r["calculations"]}
+check("The calculation trace: rule, inputs, formula, rounding, result — exact decimals",
+      calc["G20_VAT_BLOCK"]["result"] == "407172.30" and
+      calc["G19_IMPORT_DUTY"]["result"] == "246320.05" and
+      calc["XCHECK_IMPORT_DUTY"]["result"] == "OK" and
+      calc["C24_DUTY_USD"]["result"] == "58347.53" and
+      all(k in calc["C24_DUTY_USD"] for k in ("inputs", "formula", "intermediate", "rounding")),
+      {k: v["result"] for k, v in calc.items()})
+fields_ev = r["fields"]["duty_amount_ghs"]
+check("Field-level evidence: page, method and confidence recorded for every value",
+      fields_ev["page"] == 1 and fields_ev["method"] == "text" and
+      fields_ev["confidence"] == "HIGH", fields_ev)
+check("The same inputs always give the same outputs (validation run twice, identical)",
+      V.validate(doctypes.get(), r["fields"], r["hub"], r["request_fields"],
+                 identity=r["identity"]) ==
+      V.validate(doctypes.get(), r["fields"], r["hub"], r["request_fields"],
+                 identity=r["identity"]))
 
 # ═════════════════════════════════════════════════════════════════════════
 rule("2. PDF INTEGRITY — nothing extracted from a file that cannot be trusted")
@@ -251,48 +320,78 @@ check("A sound PDF: integrity recorded (bytes, %PDF header, %%EOF, not repaired)
       r["document"]["integrity"]["eof_marker"] and r["document"]["integrity"]["repaired"] is False)
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("3. G4 — SUPPLIER INVOICE No.: the Bill of Entry's explicit Invoice No., never UNA+, never a guess")
+rule("3. G4 — ONLY AN EXPLICIT INVOICE No. ON THE BILL OF ENTRY; never UNA+, never typed")
 # ═════════════════════════════════════════════════════════════════════════
 st = store("g4")
-r = job(st, invoice=None, data=pdf_of(boe_text(extra="Invoice No: 2600005261\n")))
-check("Printed explicitly ('Invoice No: 2600005261'), none given: G4 from the Bill of Entry, "
-      "origin and evidence recorded, EMAIL READY",
+r = job(st, invoice=None, data=pdf_of(boe_text(invoice="2600005261")))
+check("Printed explicitly ('Invoice No: 2600005261'), none given with the job: G4 from the "
+      "Bill of Entry, origin, page and evidence recorded, EMAIL READY",
       r["state"] == S.EMAIL_PREPARED and r["output"]["cells"]["G4"] == 2600005261
       and r["request_fields"]["invoice_no"]["origin"] == "bill_of_entry"
+      and r["request_fields"]["invoice_no"]["page"] == 1
       and "Invoice No: 2600005261" in r["request_fields"]["invoice_no"]["evidence"],
       (r["state"], r.get("failure"), r.get("request_fields", {}).get("invoice_no")))
 st = store("g4-none")
-r = job(st, invoice=None, data=pdf_of(boe_text(extra="UNA+ Invoice Number 70076\n"
-                                                    "Total Invoice Value (CIF) 169,740.11\n")))
-check("No explicit Invoice No. (only UNA+ and 'Invoice Value'): NEEDS_REVIEW (absent) — "
-      "no UNA+ fallback, nothing generated",
+r = job(st, invoice="INV-77", data=pdf_of(boe_text(invoice=None, extra="UNA+ Invoice Number "
+                                                                       "70076\n")))
+check("No explicit Invoice No. (only UNA+), even with a value given with the job: "
+      "NEEDS_REVIEW (absent) — no UNA+ fallback, the job's value NOT used, nothing generated",
       r["state"] == S.NEEDS_REVIEW and r["failure"]["code"] == "G4_SOURCE_UNPROVEN"
       and r["failure"]["g4_reason"] == "absent" and not r.get("output")
       and r["request_fields"]["invoice_no"]["value"] is None
       and "70076" not in json.dumps(r["request_fields"]), (r["state"], r.get("failure")))
-r, problems = P.supply(st, r, {"invoice_no": "INV-77"}, by="ada", config=CONFIG)
-check("Supplied at review: validated again in full, G4 = the supplied value, EMAIL READY",
-      r["state"] == S.EMAIL_PREPARED and r["output"]["cells"]["G4"] == "INV-77" and not problems)
-check("REGRESSION — G4's source → field → cell: invoice_no → G4, origin recorded",
+check("...and the review tells the operator what happened, why, the evidence and what to do",
+      all(k in r["review"] for k in ("what_happened", "why", "evidence", "missing",
+                                    "operator_action", "after_resolution"))
+      and "reject the job" in r["review"]["operator_action"], r.get("review"))
+r2, problems = P.supply(st, r, {"invoice_no": "INV-77"}, by="ada", config=CONFIG)
+check("A typed invoice No. is REFUSED at review (it is not printed on the Bill of Entry)",
+      problems and "not printed on the Bill of Entry" in problems[0]
+      and r2["state"] == S.NEEDS_REVIEW, problems)
+r3, problems = P.resolve_review(st, r2, "reject", "ada", reason="")
+check("Rejecting needs a reason", problems and "reason" in problems[0])
+r3, problems = P.resolve_review(st, r2, "reject", "ada",
+                                reason="BOE without invoice No.; Accounts will handle by hand")
+check("Rejected with a reason: REVIEW_REJECTED, nothing generated or sent, audited",
+      not problems and r3["state"] == S.REVIEW_REJECTED and not r3.get("output")
+      and any(e["event"] == "REVIEW_RESOLVED" for e in st.events(r3["po_id"])), r3["state"])
+check("REGRESSION — G4's source → field → cell: invoice_no (source pdf) → G4",
       [m for m in doctypes.get()["mapping"] if m["cell"] == "G4"][0]["field"] == "invoice_no"
-      and "supplied by ada at review" in r["request_fields"]["invoice_no"]["origin"])
+      and doctypes.field(doctypes.get(), "invoice_no")["source"] == "pdf")
 st = store("g4-many")
-r = job(st, invoice=None, data=pdf_of(boe_text(extra="Invoice No: A1001\n"
-                                                    "Commercial Invoice Number: B2002\n")))
+r = job(st, invoice=None, data=pdf_of(boe_text(invoice=None, extra="Invoice No: A1001\n"
+                                                                   "Commercial Invoice Number: "
+                                                                   "B2002\n")))
 check("Two different printed invoice numbers: NEEDS_REVIEW (ambiguous), none chosen",
       r["state"] == S.NEEDS_REVIEW and r["failure"]["g4_reason"] == "ambiguous"
       and r["failure"]["candidates"] == ["A1001", "B2002"] and not r.get("output"),
       (r["state"], r.get("failure")))
+_r, problems = P.resolve_review(st, r, "choose", "ada", value="Z9999", config=CONFIG)
+check("...a value that is not among the printed ones cannot be chosen", bool(problems), problems)
+r, problems = P.resolve_review(st, r, "choose", "ada", value="B2002", config=CONFIG)
+check("...a person chooses one of the PRINTED values: validated again in full, G4 = B2002, "
+      "origin 'chosen at review', EMAIL READY",
+      not problems and r["state"] == S.EMAIL_PREPARED and r["output"]["cells"]["G4"] == "B2002"
+      and r["request_fields"]["invoice_no"]["origin"] == "bill_of_entry:chosen_at_review",
+      (r["state"], problems))
 st = store("g4-clash")
-r = job(st, invoice="INV-1", data=pdf_of(boe_text(extra="Invoice No: 2600005261\n")))
+r = job(st, invoice="INV-1", data=pdf_of(boe_text(invoice="2600005261")))
 check("The job's value disagrees with the printed one: NEEDS_REVIEW (conflict), nothing generated",
       r["state"] == S.NEEDS_REVIEW and r["failure"]["g4_reason"] == "conflict"
       and not r.get("output"), (r["state"], r.get("failure")))
 st = store("g4-agree")
-r = job(st, invoice="2600005261", data=pdf_of(boe_text(extra="Invoice No: 2600005261\n")))
+r = job(st, invoice="2600005261", data=pdf_of(boe_text(invoice="2600005261")))
 check("The job's value agrees with the printed one: EMAIL READY, the agreement noted",
       r["state"] == S.EMAIL_PREPARED and "matches" in r["request_fields"]["invoice_no"]["note"],
       (r["state"], r.get("failure")))
+for printed, label in (("2600 005261", "a space inside"), ("INV#12", "a stray character"),
+                       ("N/A", "no number")):
+    st = store("g4-bad" + label[:3])
+    r = job(st, invoice=None, data=pdf_of(boe_text(invoice=printed)))
+    check("Invoice No. printed {0!r} ({1}): NEEDS_REVIEW (malformed) — never trimmed or "
+          "guessed".format(printed, label),
+          r["state"] == S.NEEDS_REVIEW and r["failure"]["g4_reason"] == "malformed"
+          and r["request_fields"]["invoice_no"]["value"] is None, (r["state"], r.get("failure")))
 check("REGRESSION — no UNA+ route to G4 exists in the pipeline",
       "una_invoice" not in (HERE / "po" / "pipeline.py").read_text(encoding="utf-8"))
 
@@ -308,8 +407,9 @@ check("The same document again → SKIPPED_DUPLICATE, naming the first job, no n
 st = store("idem-fail")
 f1 = job(st, data=pdf_of(boe_text(bl="176-11111111")))      # BL mismatch → fails validation
 f2 = job(st, data=pdf_of(boe_text(bl="176-11111111")))
-check("A holder that FAILED does not block a new attempt at the same document",
-      f1["state"] == S.VALIDATION_FAILED and f2["state"] == S.VALIDATION_FAILED, f2["state"])
+check("A holder that FAILED does not block a new attempt at the same document (a PDF "
+      "whose BL/AWB is another shipment's: IDENTITY_MISMATCH, twice)",
+      f1["state"] == S.IDENTITY_MISMATCH and f2["state"] == S.IDENTITY_MISMATCH, f2["state"])
 other = job(st, ref="176-22222222", identifier="40726534599",
             data=pdf_of(boe_text(bl="176-22222222", number="40726534599 / 00")))
 check("A different Bill of Entry is not a duplicate", other["state"] == S.EMAIL_PREPARED)
@@ -319,7 +419,7 @@ results = []
 
 
 def worker():
-    rec = st.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"})
+    rec = st.create(doctypes.DEFAULT, "176-88452310", {})
     results.append(P.process(st, rec, Source(), CONFIG, sleep=NOSLEEP)["state"])
 
 
@@ -338,7 +438,7 @@ results = []
 
 def worker_n(n):
     ref, num = "176-3000000{0}".format(n), "4072653450{0}".format(n)
-    rec = st.create(doctypes.DEFAULT, ref, {"invoice_no": str(n)})
+    rec = st.create(doctypes.DEFAULT, ref, {})
     results.append(P.process(st, rec, Source(ref=ref, identifier=num, data=pdf_of(
         boe_text(bl=ref, number=num + " / 00"))), CONFIG, sleep=NOSLEEP)["state"])
 
@@ -486,8 +586,11 @@ class Vanishing(Mailer):
     """Graph accepted it, then nothing can be seen: not in Sent Items yet, draft gone."""
 
     def send(self, mid):
-        self.drafts.pop(mid, None)
+        msg = self.drafts.pop(mid, None)
         self.sends += 1
+        # What will show in Sent Items later (Graph did send it).
+        self.vanished = dict(msg, id=mid, internetMessageId=msg["imid"],
+                             sentDateTime="2026-10-06T10:01:00Z")
         raise MailError("no answer", "unknown", None, "send")
 
 
@@ -503,12 +606,20 @@ key = st.ledger_key(r["po_key"], r["document"]["sha256"], "DUTY_REQUEST_V1",
                     "accounts.ghana@mantrac.com")
 check("...the ledger says UNKNOWN, so no other job may send it either",
       st.sent_before(key)["status"] == "UNKNOWN")
-m.sent[r["email"]["internet_message_id"]] = {"sentDateTime": "2026-10-06T10:01:00Z"}
+m.sent[r["email"]["internet_message_id"]] = m.vanished
 r3, out3 = P.reconcile(st, st.get(r["po_id"]), m)
 check("Reconciled later, found in Sent Items → CONFIRMED (no second send)",
       r3["state"] == S.EMAIL_CONFIRMED and m.sends == 1, r3["state"])
 st = store("mail-crash")
 r = job(st)
+try:
+    st.transition(dict(r), S.EMAIL_SENDING, "Submitting")
+    refused = False
+except S.InvariantViolation as error:
+    refused = "IDEMPOTENCY_CONFIRMED" in str(error)
+check("The state layer refuses EMAIL_SENDING without IDEMPOTENCY_CONFIRMED (whatever code "
+      "asks)", refused)
+st.milestone(r, "IDEMPOTENCY_CONFIRMED", ledger_key="test")
 r = st.transition(r, S.EMAIL_SENDING, "Submitting")              # the worker died here
 kill_lease(st, r["po_id"])
 P.recover(st, CONFIG, source=None, mailer=None, log=lambda *a: None)
@@ -532,7 +643,7 @@ check("The output changed after generation: refused",
 st = store("safe2")
 v = job(st, data=pdf_of(boe_text(bl="176-11111111")))
 check("Validation failed: never sendable",
-      "validation has not passed" in P.blocked_reasons(st, v))
+      any(x.startswith("validation has not passed") for x in P.blocked_reasons(st, v)))
 big = job(store("safe3"))
 Path(big["output"]["path"]).write_bytes(b"0" * (3 * 1024 * 1024 + 1))
 big["output"]["sha256"] = __import__("hashlib").sha256(Path(big["output"]["path"])
@@ -545,7 +656,7 @@ rule("8. RETRIES — bounded, exponential, recorded; never for a business failur
 # ═════════════════════════════════════════════════════════════════════════
 st = store("retry")
 waits = []
-rec = st.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"})
+rec = st.create(doctypes.DEFAULT, "176-88452310", {})
 src = Source(fail_times=2)
 r = P.process(st, rec, src, CONFIG, sleep=waits.append)
 check("Two transient eHub failures: retried with backoff 2 s then 4 s, then the job goes on",
@@ -696,7 +807,7 @@ st = store("perf")
 t0 = time.monotonic()
 for n in range(10):
     ref, num = "176-5000000{0}".format(n), "4072653460{0}".format(n)
-    rr = st.create(doctypes.DEFAULT, ref, {"invoice_no": str(n)})
+    rr = st.create(doctypes.DEFAULT, ref, {})
     P.process(st, rr, Source(ref=ref, identifier=num, data=pdf_of(boe_text(
         bl=ref, number=num + " / 00"))), CONFIG, sleep=NOSLEEP)
 total = time.monotonic() - t0

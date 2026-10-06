@@ -51,8 +51,8 @@ def _block(records, events):
                                                         S.EMAIL_SENT) and clean_run(r)]
     human = [r for r in eligible if r["state"] in (S.NEEDS_REVIEW, S.DOCUMENT_AMBIGUOUS,
                                                    S.AUTH_REQUIRED, S.EMAIL_UNKNOWN) or
-             any(e.get("event") == "RESUMED" and e.get("stage") == "review"
-                 for e in events.get(r["po_id"], []))]
+             any((e.get("event") == "RESUMED" and e.get("stage") == "review") or
+                 e.get("event") == "REVIEW_RESOLVED" for e in events.get(r["po_id"], []))]
     duplicates_blocked = sum(1 for r in attempted if r.get("skip_reason") == "SKIPPED_DUPLICATE") \
         + sum(1 for evs in events.values() for e in evs
               if e.get("event") == "EMAIL_BLOCKED" and (e.get("metadata") or {}).get("duplicate"))
@@ -71,8 +71,32 @@ def _block(records, events):
             S.NEEDS_REVIEW, S.EMAIL_UNKNOWN, S.WORKER_DISCONNECTED) else None
         if code:
             by_code[code] = by_code.get(code, 0) + 1
+    pdf_failed = [r for r in eligible if r["state"] in (S.PDF_UNREADABLE, S.PDF_DOWNLOAD_FAILED)]
+    pdf_tried = [r for r in eligible if _reached(r, S.PDF_FOUND) or r in pdf_failed]
+    email_failed = [r for r in submitted if r["state"] in (S.EMAIL_FAILED,
+                                                           S.EMAIL_RECONCILIATION_FAILED)]
+    email_unknown = [r for r in submitted if r["state"] == S.EMAIL_UNKNOWN or
+                     any(e.get("event") == "EMAIL_UNKNOWN" for e in events.get(r["po_id"], []))]
+    retried = [r for r in attempted if any(e.get("event") == "RETRY"
+                                           for e in events.get(r["po_id"], []))]
+    by_state = {}
+    for r in records:
+        by_state[r["state"]] = by_state.get(r["state"], 0) + 1
     return {
         "jobs": len(attempted), "not_eligible": len(not_eligible), "eligible": len(eligible),
+        "queue_depth": by_state.get(S.QUEUED, 0),
+        "active": {k: v for k, v in sorted(by_state.items()) if k in S.ACTIVE_STATES},
+        "by_state": dict(sorted(by_state.items())),
+        "needs_review": by_state.get(S.NEEDS_REVIEW, 0) + by_state.get(S.DOCUMENT_AMBIGUOUS, 0),
+        "pdf_failure": _rate(len(pdf_failed), len(pdf_tried)),
+        "extraction_failure": _rate(len(read) - len(extracted) +
+                                    len([r for r in extracted if r["state"] ==
+                                         S.EXTRACTION_FAILED]), len(read)),
+        "validation_failure": _rate(len([r for r in validating if r["state"] in (
+            S.VALIDATION_FAILED, S.IDENTITY_MISMATCH)]), len(validating)),
+        "email_failure": _rate(len(email_failed), len(submitted)),
+        "email_unknown": _rate(len(email_unknown), len(submitted)),
+        "retry": _rate(len(retried), len(attempted)),
         # Discovery worked when eHub was read and Manage reached the record —
         # whatever the record then held (a missing Bill Entry is not a
         # discovery failure).

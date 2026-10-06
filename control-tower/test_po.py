@@ -92,7 +92,10 @@ def rule(title):
 # A declaration in ICUMS wording. Its arithmetic is consistent: total duty
 # 653,492.35 = VAT block 407,172.30 + import duty 246,320.05.
 def boe_text(bl="176-88452310", number="40726534505 / 00", date="16/07/2026",
-             duty="653,492.35", import_duty="246,320.05", extra=""):
+             duty="653,492.35", import_duty="246,320.05", extra="", invoice="9116093"):
+    # The normal Bill of Entry prints the supplier invoice No. (G4's only
+    # source); invoice=None is a document that does not.
+    extra = ("Invoice No: {0}\n".format(invoice) if invoice else "") + extra
     return ("GHANA REVENUE AUTHORITY - CUSTOMS DIVISION\n"
             "ICUMS BILL OF ENTRY / ASSESSMENT NOTICE\n"
             "Declaration No: {number}\n"
@@ -485,23 +488,52 @@ class Graph(BaseHTTPRequestHandler):
         if not self._authed():
             self._json(401, {"error": {"message": "InvalidAuthenticationToken"}})
             return
+        def find(mid):
+            msg = GRAPH["messages"].get(mid)
+            if msg:
+                return msg, True
+            sent = next((x for x in GRAPH["sent"] if x["id"] == mid), None)
+            return sent, False
+        m = re.match(r"^/v1\.0/users/([^/]+)/messages/([^/]+)/attachments$", parsed.path)
+        if m:
+            msg, _draft = find(urllib.parse.unquote(m.group(2)))
+            if not msg:
+                self._json(404, {"error": {"message": "ErrorItemNotFound"}})
+                return
+            # Graph reports the attachment item's size (a little over the file's).
+            self._json(200, {"value": [{"name": msg["attachment"],
+                                        "size": len(msg["attachment_bytes"]) + 200,
+                                        "contentType": "application/vnd.openxmlformats"}]})
+            return
         m = re.match(r"^/v1\.0/users/([^/]+)/messages/([^/]+)$", parsed.path)
         if m:
-            # A message by id: an unsent draft is still here; a sent one has
-            # moved to Sent Items under another id (as Exchange does).
-            mid = urllib.parse.unquote(m.group(2))
-            msg = GRAPH["messages"].get(mid)
-            self._json(200, {"id": mid, "isDraft": True,
-                             "internetMessageId": msg["internetMessageId"]}) if msg else \
+            # A message by id: an unsent draft is still here; a sent one is in
+            # Sent Items under its own id (as Exchange does).
+            msg, draft = find(urllib.parse.unquote(m.group(2)))
+            if not msg:
                 self._json(404, {"error": {"message": "ErrorItemNotFound"}})
+                return
+            self._json(200, {"id": msg["id"], "isDraft": draft, "subject": msg["subject"],
+                             "internetMessageId": msg["internetMessageId"],
+                             "sentDateTime": msg.get("sentDateTime"),
+                             "toRecipients": [{"emailAddress": {"address": msg["to"]}}],
+                             "from": {"emailAddress": {"address": msg["mailbox"]}}})
             return
-        if parsed.path.endswith("/mailFolders/SentItems/messages"):
+        folder = re.search(r"/mailFolders/(SentItems|Drafts)/messages$", parsed.path)
+        if folder:
             q = urllib.parse.parse_qs(parsed.query).get("$filter", [""])[0]
             want = re.search(r"internetMessageId eq '(.+)'", q)
-            rows = [] if GRAPH["hide_sent"] else [
-                {"id": s["id"], "sentDateTime": s["sentDateTime"],
-                 "internetMessageId": s["internetMessageId"], "subject": s["subject"]}
-                for s in GRAPH["sent"] if want and s["internetMessageId"] == want.group(1)]
+            subject = re.search(r"subject eq '(.+)'", q)
+            pool = GRAPH["sent"] if folder.group(1) == "SentItems" else \
+                list(GRAPH["messages"].values())
+            if folder.group(1) == "SentItems" and GRAPH["hide_sent"]:
+                pool = []
+            rows = [{"id": x["id"], "sentDateTime": x.get("sentDateTime"),
+                     "internetMessageId": x["internetMessageId"], "subject": x["subject"],
+                     "isDraft": folder.group(1) == "Drafts"}
+                    for x in pool
+                    if (want and x["internetMessageId"] == want.group(1)) or
+                    (subject and x["subject"] == subject.group(1).replace("''", "'"))]
             self._json(200, {"value": rows})
             return
         self._json(404, {"error": {"message": "unknown"}})
@@ -582,6 +614,8 @@ ehub_row("176-77700022", docs=[("Bill Entry 40726534505.pdf", "good", "postback"
                                ("Bill Entry 40799112233.pdf", "other", "postback")])
 ehub_row("176-77700023", docs=[("Bill Entry 40726534505.pdf", "good", "postback"),
                                ("Bill Entry 40726534505 (1).pdf", "other", "postback")])
+ehub_row("176-77700024", docs=[("Bill Entry 40726534505.pdf", "good", "postback"),
+                               ("Bill Entry 40726534505 (1).pdf", "good", "postback")])
 ehub_row("176-20000001", docs=[("Bill Entry.pdf", "good", "postback")])
 ehub_row("176-10000001", section=False)
 ehub_row("176-66600033", docs=[("Bill Entry 40726534505.pdf", "flaky", "link")])
@@ -660,10 +694,15 @@ e = stopped("176-77700022")
 check("Two Bill Entry documents with different identifiers → review, none chosen",
       e is not None and e.kind == "review" and len(e.candidates) == 2
       and e.trail["bill_entry"]["selected"] is None and "a person decides" in str(e), str(e))
-r2 = hub_source().fetch("176-77700023")
-check("Copies with the same identifier → the first listed, by a recorded rule",
+e = stopped("176-77700023")
+check("Two entries with the same identifier but DIFFERENT files → review, none chosen "
+      "(list order decides nothing)",
+      e is not None and e.kind == "review" and "different files" in str(e), str(e))
+r2 = hub_source().fetch("176-77700024")
+check("Two entries with the same identifier, byte-identical → one document, by a recorded rule",
       r2["filename"] == "Bill Entry 40726534505.pdf" and r2["data"] == GOOD
-      and "first listed" in r2["trail"]["bill_entry"]["rule"], r2["trail"]["bill_entry"])
+      and "byte-identical" in r2["trail"]["bill_entry"]["rule"]
+      and len(r2["trail"]["bill_entry"]["compared"]) == 2, r2["trail"]["bill_entry"])
 e = stopped("176-20000001")
 check("'Bill Entry' with no number after it → review, nothing guessed",
       e is not None and e.kind == "review" and "no identifier" in str(e), str(e))
@@ -730,7 +769,8 @@ idc = [c for c in j["validation"]["checks"] if c["name"] == "hub:identifier"][0]
 check("...and the PDF's declaration (40726534505 / 00) is checked against it → MATCH",
       idc["status"] == "MATCH" and idc["hub"] == "40726534505" and idc["pdf"] == "40726534505 / 00",
       idc)
-ev = [e["event"] for e in st1.events(j["po_id"])]
+ev = [e["event"] for e in st1.events(j["po_id"]) if e["event"] not in ("STATE_CHANGED",
+                                                                       "MILESTONE")]
 check("Each step is an event: EHUB_RECORD_FOUND → CLEARANCE_CHECKED → MANAGE_OPENED → "
       "IDENTITY_CHECKED → "
       "DOCUMENTS_SECTION_FOUND → BILL_ENTRY_FOUND → IDENTIFIER_EXTRACTED → BILL_ENTRY_DOWNLOADED",
@@ -761,8 +801,10 @@ check("No Bill Entry document → PDF_NOT_FOUND / DOCUMENT_NOT_FOUND, no number 
       and nb["identifier"] is None and nb["number"] is None, (nb["state"], nb.get("failure")))
 mm = run_job(st1, "176-88800099")
 mmc = [c for c in mm["validation"]["checks"] if c["name"] == "hub:identifier"][0]
-check("eHub says Bill Entry 40711111111, the PDF prints 40726534505 → VALIDATION_FAILED",
-      mm["state"] == S.VALIDATION_FAILED and mmc["status"] == "MISMATCH"
+check("eHub says Bill Entry 40711111111, the PDF prints 40726534505 → IDENTITY_MISMATCH "
+      "(the document is not the one eHub lists), nothing generated",
+      mm["state"] == S.IDENTITY_MISMATCH and mmc["status"] == "MISMATCH"
+      and mm["failure"]["code"] == "IDENTITY_MISMATCH" and not mm.get("output")
       and mmc["hub"] == "40711111111", (mm["state"], mmc))
 svc1 = SV.PoService(store=st1, launcher=lambda r: None, config=CONFIG)
 nx = svc1.start("omar.ops@mantrac.com", "", {"invoice_no": "9116093"})
@@ -835,6 +877,10 @@ rule("3. EXTRACTION — typed fields; missing and ambiguous are never filled in"
 # ═════════════════════════════════════════════════════════════════════════
 doctype = doctypes.get()
 f = X.extract(read["text"], doctype)
+# Every value a complete template needs (template tests fill whole documents:
+# a required cell is never left blank).
+FULL_VALUES = {n: v["value"] for n, v in f.items() if v["status"] == X.FOUND}
+FULL_VALUES.update(invoice_no="9116093", supplier="CAT")
 expect = {"document_number": "40726534505 / 00", "bl_awb": "176-88452310",
           "document_date": "2026-07-16", "cif_usd": 169740.11, "exchange_rate": 11.2,
           "duty_amount_ghs": 653492.35, "stated_import_duty": 246320.05}
@@ -860,6 +906,8 @@ check("Not a declaration at all is recognised as such",
 rule("4. VALIDATION SUCCESS")
 # ═════════════════════════════════════════════════════════════════════════
 req = P._request_fields(doctype, {"invoice_no": "9116093"}, CONFIG)
+req["invoice_no"], _issue = P._g4_source(doctype, {"invoice_no": "9116093"},
+                                         X.printed_invoice_no(read["text"]))
 HUBREC = {"bol_awb": "176-88452310", "identifier": "40726534505"}   # what eHub discovery hands on
 ok = V.validate(doctype, f, HUBREC, req)
 check("Every check passes, so the gate opens", ok["passed"] and not ok["reasons"], ok["reasons"])
@@ -891,8 +939,10 @@ check("Duty that does not add up (variance 178.19) → FAILED, blocking",
       not off["passed"] and any(c["name"] == "arithmetic:duty" and c["status"] == "FAILED" for c in off["checks"]))
 store = new_store("s5")
 rec = run_job(store, "176-99001122")
-check("A whole job on the mismatching document stops at VALIDATION_FAILED",
-      rec["state"] == S.VALIDATION_FAILED, rec["state"])
+check("A whole job on a document whose BL/AWB is another shipment's stops at "
+      "IDENTITY_MISMATCH (the precise validation failure)",
+      rec["state"] == S.IDENTITY_MISMATCH and rec["identity"]["decision"] == "MISMATCH",
+      rec["state"])
 check("...nothing generated, nothing prepared, email BLOCKED with the reason",
       rec["output"] is None and rec["email"]["status"] == "BLOCKED"
       and "BL / AWB mismatch" in rec["email"]["reasons"][0], rec.get("email"))
@@ -945,7 +995,7 @@ backup = tpl.read_bytes()
 try:
     tpl.write_bytes(backup + b"tampered")
     try:
-        T.fill(doctype, {"document_number": "1"}, WORK / "tamper", "1", "x")
+        T.fill(doctype, dict(FULL_VALUES, document_number="1"), WORK / "tamper", "1", "x")
         refused = False
     except T.TemplateError as error:
         refused = "does not match its manifest" in str(error)
@@ -962,9 +1012,11 @@ check("The name is deterministic: type, Bill Entry identifier, BOL/AWB, timestam
                out["filename"]) and out["filename"].endswith(rec["po_id"][-6:] + ".xlsx"),
       out["filename"])
 check("It is in the configured output folder", Path(out["path"]).parent == store.output_dir)
-fixed = T.fill(doctype, {"document_number": "1 / 00"}, WORK / "ow", "1 / 00", "R1", stamp="20260101-000000")
+fixed = T.fill(doctype, dict(FULL_VALUES, document_number="1 / 00"), WORK / "ow", "1 / 00", "R1",
+               stamp="20260101-000000")
 first_bytes = Path(fixed["path"]).read_bytes()
-again = T.fill(doctype, {"document_number": "1 / 00"}, WORK / "ow", "1 / 00", "R1", stamp="20260101-000000")
+again = T.fill(doctype, dict(FULL_VALUES, document_number="1 / 00"), WORK / "ow", "1 / 00", "R1",
+               stamp="20260101-000000")
 check("An existing output is never overwritten: the same name again takes the next free "
       "name (-2), the first file is untouched",
       again["path"] != fixed["path"] and again["filename"].endswith("-2.xlsx")
@@ -987,7 +1039,7 @@ check("READY — not sent: nothing goes out until someone presses Send PO",
       email["status"] == "READY" and GRAPH["counter"] == 0)
 nocfg = dict(CONFIG, recipient=None)
 st_nr = new_store("s10nr")
-r2 = P.process(st_nr, st_nr.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"}),
+r2 = P.process(st_nr, st_nr.create(doctypes.DEFAULT, "176-88452310", {}),
                hub_source(), nocfg, sleep=NOSLEEP)
 check("With no recipient configured, the email is BLOCKED with that reason (the output is SAVED)",
       r2["state"] == S.SAVED and r2["email"]["status"] == "BLOCKED"
@@ -1010,9 +1062,11 @@ check("Sent from the ATA mailbox", sent["mailbox"] == "ata%40mantrac.com" or sen
 check("The record keeps the Graph evidence: internetMessageId, confirmation time",
       rec["email"]["internet_message_id"] == sent["internetMessageId"]
       and rec["email"]["status"] == "CONFIRMED" and rec["email"]["confirmed_at"])
-check("Events: EMAIL_SEND_STARTED → EMAIL_SENT → EMAIL_CONFIRMED → PO_COMPLETED",
-      [e["event"] for e in store.events(rec["po_id"])][-4:] ==
-      ["EMAIL_SEND_STARTED", "EMAIL_SENT", "EMAIL_CONFIRMED", "PO_COMPLETED"])
+check("Events: EMAIL_SEND_STARTED → EMAIL_SENT → EMAIL_VERIFIED → EMAIL_CONFIRMED → "
+      "PO_COMPLETED (state changes and milestones recorded alongside)",
+      [e["event"] for e in store.events(rec["po_id"])
+       if e["event"] not in ("STATE_CHANGED", "MILESTONE")][-5:] ==
+      ["EMAIL_SEND_STARTED", "EMAIL_SENT", "EMAIL_VERIFIED", "EMAIL_CONFIRMED", "PO_COMPLETED"])
 GRAPH["hide_sent"] = True
 st2 = new_store("s10b")
 r3 = run_job(st2, "176-88452310")
@@ -1151,7 +1205,7 @@ class Counting(object):
 counting = Counting(hub_source())
 r = run_job(st, "176-99001122", source=counting)
 check("A validation mismatch is NOT retried: one fetch, no RETRY event",
-      r["state"] == S.VALIDATION_FAILED and counting.calls == 1
+      r["state"] == S.IDENTITY_MISMATCH and counting.calls == 1
       and not any(e["event"] == "RETRY" for e in st.events(r["po_id"])))
 check("The policy says so: validation and template are never retried",
       P.RETRY_POLICY["validation"][0] == 1 and P.RETRY_POLICY["template"][0] == 1
@@ -1192,7 +1246,8 @@ check("Every failure state the brief names exists — precise, no generic FAILED
       set(S.FAILED_STATES) == {"PDF_NOT_FOUND", "PDF_UNREADABLE", "EXTRACTION_FAILED",
                                "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED",
                                "DISCOVERY_FAILED", "AUTH_REQUIRED", "MANAGE_NAVIGATION_FAILED",
-                               "DOCUMENT_AMBIGUOUS", "PDF_DOWNLOAD_FAILED", "SAVE_FAILED"}
+                               "DOCUMENT_AMBIGUOUS", "PDF_DOWNLOAD_FAILED", "SAVE_FAILED",
+                               "IDENTITY_MISMATCH", "EMAIL_RECONCILIATION_FAILED"}
       and "FAILED" not in S.TRANSITIONS)
 ev = new_store("s6").events()[0]
 check("Each event carries event_id, run_id, po_id, timestamp, stage, status, source, "
@@ -1320,7 +1375,10 @@ SV.register(SV.PoService(store=new_store("atlas"), launcher=lambda r: None,
                          mailer_factory=M.GraphMailer, config=CONFIG))
 ast = SV.current().store
 mis = run_job(ast, "176-99001122")
-noinv = run_job(ast, "176-88452310", {"branch": "ACCRA"})      # no invoice number
+# A Bill of Entry that prints no Invoice No. (G4 has no source).
+FILES["noinv"] = pdf_of(boe_text(bl="176-60600066", number="40726534777 / 00", invoice=None))
+ehub_row("176-60600066", docs=[("Bill Entry 40726534777.pdf", "noinv", "postback")])
+noinv = run_job(ast, "176-60600066", {"branch": "ACCRA"})      # its BOE prints no invoice No.
 FALLBACK = "I don't have that information"
 
 
@@ -1329,16 +1387,17 @@ def po_ask(q, po=None, domain="po"):
 
 
 missing_answer = po_ask("What's missing from this PO?", noinv["po_id"])
-check("No invoice No.: the job waits in NEEDS_REVIEW (G4 needs a person), nothing generated",
+check("No invoice No. printed on the Bill of Entry: the job waits in NEEDS_REVIEW, nothing "
+      "generated",
       noinv["state"] == S.NEEDS_REVIEW and noinv["failure"]["code"] == "G4_SOURCE_UNPROVEN"
       and not noinv.get("output"), noinv["state"])
 done = run_job(ast, "176-55500011")                    # no document attached
-# The same job, once a person supplies G4: validation again in full, then on.
-good, _p = P.supply(ast, ast.get(noinv["po_id"]), {"invoice_no": "9116093"}, by="omar",
-                    config=CONFIG)
-check("...a person supplies it: validated again, generated, EMAIL READY — the same job",
-      good["state"] == S.EMAIL_PREPARED and good["po_id"] == noinv["po_id"] and not _p,
-      (good["state"], _p))
+# A typed G4 is refused: G4 comes only from the Bill of Entry.
+still, _p = P.supply(ast, ast.get(noinv["po_id"]), {"invoice_no": "9116093"}, by="omar",
+                     config=CONFIG)
+check("...a person cannot type G4 in: refused (not printed on the Bill of Entry), still in review",
+      still["state"] == S.NEEDS_REVIEW and _p and "not printed" in _p[0], (still["state"], _p))
+good = run_job(ast, "176-88452310")                    # a Bill of Entry that prints it
 good, _o = P.send(ast, good, M.GraphMailer(), by="omar", confirm_wait_s=3, sleep=NOSLEEP)
 
 
@@ -1428,7 +1487,7 @@ svc.learn(ast.get(good["po_id"]))
 rows = E.all_events(["po"])
 check("Outcomes reach the learning store; only the confirmed send is verified",
       {r["state"]: r["verified"] for r in rows if r["reference"] in ("176-99001122", "176-55500011")}
-      == {"VALIDATION_FAILED": False, "PDF_NOT_FOUND": False}
+      == {"IDENTITY_MISMATCH": False, "PDF_NOT_FOUND": False}
       and any(r["verified"] and r["state"] == "EMAIL_CONFIRMED" for r in rows), rows)
 L.invalidate()
 snap = L.snapshot()
@@ -1468,8 +1527,7 @@ e2e_store = new_store("e2e")
 jobs = []
 e2e = SV.register(SV.PoService(store=e2e_store, launcher=jobs.append, mailer_factory=M.GraphMailer,
                                config=CONFIG))
-kind, status, body = W.handle(e2e, "POST", "/api/po", {"reference": "176-12121212",
-                                                       "invoice_no": "9116100"},
+kind, status, body = W.handle(e2e, "POST", "/api/po", {"reference": "176-12121212"},
                               "omar.ops@mantrac.com", lambda p: True)
 check("POST /api/po starts a job and returns at once (QUEUED)",
       status == 200 and e2e_store.get(body["po_id"])["state"] == S.QUEUED and len(jobs) == 1)
@@ -1501,7 +1559,7 @@ check("...and who it went to", "accounts.ghana@mantrac.com" in r["answer"])
 cli = subprocess.run([sys.executable, "-m", "po", "read",
                       str(e2e_store.folder / "documents" / (rec["document"]["sha256"] + ".pdf")),
                       "--hub-bol", "176-12121212", "--identifier", "40799887766",
-                      "--invoice-no", "1"],
+                      "--invoice-no", "9116093"],
                      cwd=str(HERE), capture_output=True, text=True, timeout=60)
 check("`python -m po read` shows the same extraction and validation (tuning tool)",
       cli.returncode == 0 and '"passed": true' in cli.stdout, cli.stderr[-300:])
@@ -1529,8 +1587,9 @@ check("The KPI strip shows the six counts", all(k in kpis for k in (
 heads = ui.inner_text(".po-t thead").upper()
 check("The queue has the brief's columns", all(h.upper() in heads for h in (
     "Supplier", "Document", "Status", "Validation", "Template", "Email", "Created", "Last update")))
-check("Each job is a row (the reviewed job and its send are one job)",
-      ui.locator("#poRows tr[data-po]").count() == 4, ui.locator("#poRows tr[data-po]").count())
+check("Each job is a row, one per job in the store",
+      ui.locator("#poRows tr[data-po]").count() == len(ast.all()),
+      (ui.locator("#poRows tr[data-po]").count(), len(ast.all())))
 ui.click("#poRows tr[data-po='{0}']".format(mis["po_id"]))
 ui.wait_for_selector("#poDwBody .po-vt", timeout=8000)
 drawer = ui.inner_text("#poDwBody")
@@ -1805,8 +1864,8 @@ check("The output folder cannot be written: SAVE_FAILED at the output stage, aft
       and "EMAIL_PREPARED" not in [e["event"] for e in broken.events(nosave["po_id"])],
       (nosave["state"], nosave.get("failure")))
 bad26 = run_job(st26, "176-99001122")
-check("Validation fails: no template, nothing saved, no email",
-      bad26["state"] == S.VALIDATION_FAILED and not bad26.get("template")
+check("Validation fails (identity mismatch): no template, nothing saved, no email",
+      bad26["state"] == S.IDENTITY_MISMATCH and not bad26.get("template")
       and not bad26.get("output") and not {"TEMPLATE_GENERATED", "OUTPUT_SAVED", "EMAIL_PREPARED",
                                            "EMAIL_SENT"} & {e["event"] for e in st26.events(
                                                bad26["po_id"])})
@@ -1936,8 +1995,10 @@ check("...after a real (stand-in Graph) send: Yes — accepted (HTTP 202) and fo
 
 rule("27. THE EMPLOYEE'S WAY: Shipments list → Under Clearance rows → Manage → Bill Entry")
 import update_eta as A27                                       # noqa: E402
+# be906 prints no Invoice No.; be905 does (it is redefined below without one).
 FILES.update({"be905": pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00")),
-              "be906": pdf_of(boe_text(bl="KKLUENR260175", number="40926698906 / 00")),
+              "be906": pdf_of(boe_text(bl="KKLUENR260175", number="40926698906 / 00",
+                                       invoice=None)),
               "assess": pdf_of("ASSESSMENT NOTICE\n" + "a" * 200),
               "tmag": pdf_of("TMA1-G\n" + "g" * 200), "tmap": pdf_of("TMA1-P\n" + "p" * 200),
               "inv": pdf_of("INVOICE 2600005261\n" + "i" * 200)})
@@ -2019,6 +2080,8 @@ check("A BOL/AWB the Under Clearance list does not carry: not opened, and it say
 check("...with the page kept as evidence: screenshot and text", ev_nope.get("screenshot")
       and Path(ev_nope["screenshot"]).exists() and Path(ev_nope["page_text"]).exists(), ev_nope)
 st27b = new_store("s27b")
+FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00", invoice=None))
+HITS.pop("file:be905", None)
 noinv = st27b.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
 noinv = P.process(st27b, noinv, real_nav(), CONFIG, sleep=NOSLEEP)
 check("No explicit 'Invoice No.' on the Bill of Entry and none given: NEEDS_REVIEW — the UNA+ "
@@ -2031,7 +2094,7 @@ check("No explicit 'Invoice No.' on the Bill of Entry and none given: NEEDS_REVI
 check("...and no PO_INVOICE_FROM switch exists any more",
       "invoice_from" not in P.config_from_env()
       and "PO_INVOICE_FROM" not in (HERE / "po" / "pipeline.py").read_text(encoding="utf-8"))
-FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00",
+FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00", invoice=None,
                                  extra="Invoice No: 2600005261\n"))
 HITS.pop("file:be905", None)
 st27c = new_store("s27c")
@@ -2058,9 +2121,10 @@ check("The job's invoice No. disagrees with the printed one: NEEDS_REVIEW (G4_SO
       and clash["failure"]["g4_reason"] == "conflict" and not clash.get("output"),
       (clash["state"], clash.get("failure")))
 clash, _p = P.supply(st27d, clash, {"invoice_no": "2600005261"}, by="omar", config=CONFIG)
-check("...a person settles it at review: G4 = their value, origin 'supplied … at review', EMAIL READY",
+check("...a person settles it at review by choosing the PRINTED value: G4 = 2600005261, origin "
+      "'chosen at review', EMAIL READY",
       clash["state"] == S.EMAIL_PREPARED and clash["output"]["cells"]["G4"] == 2600005261
-      and "supplied by omar at review" in clash["request_fields"]["invoice_no"]["origin"],
+      and clash["request_fields"]["invoice_no"]["origin"] == "bill_of_entry:chosen_at_review",
       (clash["state"], clash["request_fields"]["invoice_no"]))
 check("'Total Invoice Value (CIF)' and 'UNA+ Invoice Number' are never read as an invoice No.",
       X.printed_invoice_no("Total Invoice Value (CIF) USD 169,740.11\nUNA+ Invoice Number 70076")
@@ -2068,7 +2132,7 @@ check("'Total Invoice Value (CIF)' and 'UNA+ Invoice Number' are never read as a
 check("Two different printed invoice numbers: none chosen",
       X.printed_invoice_no("Invoice No: A1001\nCommercial Invoice Number: B2002")
       .get("candidates") == ["A1001", "B2002"])
-FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00"))
+FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00", invoice=None))
 
 rule("28. THE AUTOMATIC RUN: a job for every Under Clearance record that has none")
 

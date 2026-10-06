@@ -143,6 +143,13 @@ def build(doctype, values, trace=None):
         ws["I4"] = "Job {0} · shipment {1} · Bill of Entry sha256 {2}".format(
             trace.get("job"), trace.get("reference"), str(trace.get("document") or "")[:16])
 
+    # No unexpected blank: every required field's cell must have been written.
+    required = {f["name"] for f in doctype["fields"] if f.get("required")}
+    blank = [row["cell"] for row in doctype["mapping"]
+             if row["field"] in required and row["cell"] not in written]
+    if blank:
+        raise TemplateError("required cells would be blank: {0}".format(", ".join(blank)))
+
     buffer = BytesIO()
     wb.save(buffer)
     payload = buffer.getvalue()
@@ -157,11 +164,24 @@ def build(doctype, values, trace=None):
             "template_version": m["version"], "template_sha256": m["sha256"]}
 
 
+def _publish(tmp, final):
+    """Make `tmp` visible as `final` atomically, never replacing an existing file."""
+    if os.name == "nt":
+        os.rename(str(tmp), str(final))           # fails if `final` exists
+        return
+    os.link(str(tmp), str(final))                 # fails if `final` exists
+    os.unlink(str(tmp))
+
+
 def save(doctype, built, output_dir, number, reference, stamp=None, job=None):
     """
-    SAVED: the generated document written to the output folder — created
-    exclusively, never overwriting — then OPENED FROM DISK and read back.
+    OUTPUT_PERSISTED: the generated document written to the output folder
+    atomically — to a temporary file first, flushed to disk, then published
+    under its final name in one step that never replaces an existing file —
+    then OPENED FROM DISK and read back. A crash can leave a temporary file,
+    never a partial or overwritten output.
     """
+    import uuid
     from openpyxl import load_workbook
     spec, m, written = doctype["template"], built["manifest"], built["written"]
     out_dir = Path(output_dir)
@@ -169,31 +189,50 @@ def save(doctype, built, output_dir, number, reference, stamp=None, job=None):
     stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M%S")
     name = output_name(doctype, number, reference, stamp, job)
     payload = built["payload"]
-    # Exclusive create: an existing output is never overwritten. A second
-    # save of the same job in the same second (a resume) takes the next free
-    # name, "-2", "-3"…, rather than failing or replacing the first.
-    stem, suffix = os.path.splitext(name)
-    for n in range(1, 50):
-        candidate = name if n == 1 else "{0}-{1}{2}".format(stem, n, suffix)
-        path = out_dir / candidate
-        try:
-            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
-            name = candidate
-            break
-        except FileExistsError:
-            continue
-    else:
-        raise TemplateError("an output named {0} already exists; it is not overwritten".format(
-            name))
-    with os.fdopen(fd, "wb") as handle:
+    tmp = out_dir / ".{0}.{1}.partial".format(name, uuid.uuid4().hex[:8])
+    with open(tmp, "wb") as handle:
         handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    # A second save of the same job in the same second (a resume) takes the
+    # next free name, "-2", "-3"…, rather than failing or replacing the first.
+    stem, suffix = os.path.splitext(name)
+    try:
+        for n in range(1, 50):
+            candidate = name if n == 1 else "{0}-{1}{2}".format(stem, n, suffix)
+            path = out_dir / candidate
+            try:
+                _publish(tmp, path)
+                name = candidate
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise TemplateError("an output named {0} already exists; it is not overwritten"
+                                .format(name))
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    if os.name != "nt":
+        try:
+            fd = os.open(str(out_dir), os.O_RDONLY)
+            os.fsync(fd)
+            os.close(fd)
+        except OSError:
+            pass
 
     # PROOF: open what is on disk and read every mapped cell back.
     mismatched = _read_back(doctype, load_workbook(str(path))[spec["sheet"]], written)
     if mismatched:
         raise TemplateError("the saved output did not read back: " + "; ".join(mismatched[:4]))
     disk = path.read_bytes()
-    return {"path": str(path), "filename": name, "folder": str(out_dir),
+    if _sha256_bytes(disk) != built["sha256"]:
+        raise TemplateError("the saved output's bytes differ from what was generated")
+    return {"path": str(path.resolve()), "filename": name, "folder": str(out_dir.resolve()),
+            "created_epoch": round(path.stat().st_mtime, 3), "job": job,
             "saved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "sha256": _sha256_bytes(disk),
             "bytes": len(disk), "template_version": m["version"],
@@ -206,8 +245,8 @@ def save(doctype, built, output_dir, number, reference, stamp=None, job=None):
 def verify_output(record):
     """
     Before an email: the saved file re-opened from disk is THIS job's document —
-    its declaration (C13), supplier invoice No. (G4) and duty (G6) are this job's
-    own validated values, and its trace cell names this job. [] when it is.
+    every cell written from the validated values reads back the same, every
+    template formula is intact, and its trace cell names this job. [] when it is.
     """
     from openpyxl import load_workbook
     out = record.get("output") or {}
@@ -217,9 +256,7 @@ def verify_output(record):
     except Exception as error:
         return ["the output could not be re-opened: {0}".format(str(error)[:120])]
     reasons = []
-    cells = out.get("cells") or {}
-    for ref in ("C13", "G4", "G6"):
-        want = cells.get(ref)
+    for ref, want in (out.get("cells") or {}).items():
         got = sheet[ref].value
         if want is None:
             continue
@@ -228,7 +265,13 @@ def verify_output(record):
         if str(got) != str(want):
             reasons.append("the output's {0} reads {1!r}, not this job's {2!r}".format(ref, got,
                                                                                     want))
+    for ref, formula in doctype["template"]["formulas"].items():
+        if sheet[ref].value != formula:
+            reasons.append("the output's formula {0} is not the template's {1}".format(ref,
+                                                                                       formula))
     trace = str(sheet["I4"].value or "")
-    if trace and record.get("po_id") and record["po_id"] not in trace:
+    if not trace:
+        reasons.append("the output carries no job trace (I4): it cannot be tied to this job")
+    elif record.get("po_id") and record["po_id"] not in trace:
         reasons.append("the output was generated by another job ({0})".format(trace[:60]))
     return reasons

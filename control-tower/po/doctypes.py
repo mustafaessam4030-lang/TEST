@@ -60,8 +60,11 @@ DUTY_REQUEST_V1 = {
          "required": False, "kind": "amount"},
         {"name": "vat_lines", "label": "VAT / levy lines", "source": PDF, "required": True,
          "kind": "lines"},
-        # Typed by the operator for this request: the BOE does not print it.
-        {"name": "invoice_no", "label": "Supplier invoice No.", "source": REQUEST,
+        # G4. ONLY an explicit "Invoice No." printed on the Bill of Entry
+        # itself (po/extract.printed_invoice_no) — never eHub's UNA+ column,
+        # shipment metadata, a search value, a guess or a model. A value given
+        # with the job is a cross-check only; it never fills G4.
+        {"name": "invoice_no", "label": "Supplier invoice No.", "source": PDF,
          "required": True, "kind": "text"},
         {"name": "supplier", "label": "Supplier", "source": CONFIG, "required": True,
          "kind": "text", "request_overrides": True},
