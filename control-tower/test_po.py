@@ -178,6 +178,58 @@ def ehub_get(bol):
     return next((r for r in EHUB if r["bol"] == bol), None)
 
 
+# The Shipments List and a record's page as the real eHub showed them on
+# 6 Oct (screenshots: KKLUENR260174). SIMULATED: the structure, not eHub.
+SEARCHED = []
+
+
+def shipments_page(query):
+    bol = (query.get("bol") or [""])[0].strip()
+    SEARCHED.append(bol)
+    hits = [r for r in EHUB if bol and r["bol"] == bol and r.get("layout") == "screen"]
+    rows = "".join(
+        "<tr><td>{0}</td><td>{1}</td><td>GH</td><td>CAT FFW</td><td>Ocean</td><td>{2}</td>"
+        "<td>Roro</td><td>14/09/2026</td><td><span class='badge'>{3}</span></td>"
+        "<td><a class='btn' href='/ehub/bu/{0}'>Manage</a></td></tr>".format(
+            r["bol"], r.get("una", ""), r["carrier"], r["status"]) for r in hits)
+    table = ("<table class='grid'><thead><tr><th>BOL/AWB Number</th><th>UNA+ Invoice Number</th>"
+             "<th>Territory</th><th>Freight Forwarder</th><th>Shipment Mode</th><th>Carrier Name"
+             "</th><th>Shipment Type</th><th>ETA</th><th>Status</th><th></th></tr></thead>"
+             "<tbody>{0}</tbody></table>".format(rows)) if bol else ""
+    return ("<html><body><h3>Shipments <small>List</small></h3><h4>Searching Options</h4>"
+            "<form method='get' action='/ehub/shipments'>"
+            "<div class='col'><label>BOL/AWB Number</label><input type='text' name='bol'></div>"
+            "<div class='col'><label>UNA+ Invoice Number</label><input type='text' name='una' "
+            "placeholder='Enter UNA+ Invoice Number'></div>"
+            "<div class='col'><label>Status :</label><select name='status'><option>All</option>"
+            "<option>Under Clearance</option></select></div>"
+            "<button type='submit'>Search</button></form>"
+            "<h4>Searching Result</h4>{0}</body></html>").format(table)
+
+
+def bu_page(r):
+    rows = "".join(
+        "<div class='doc-row'><div class='name'>{0}</div><div class='actions'>"
+        "<button type='button' class='del' onclick=\"document.getElementById('del').submit()\">"
+        "Delete</button><button type='button' class='dl' onclick=\"location.href='/ehub/file/{1}"
+        "?name={2}'\">Download</button></div></div>".format(name, key, urllib.parse.quote(name))
+        for name, key, mode in r["docs"])
+    return ("<html><body><ul class='tabs'><li class='active'><a href='#'>BU Shipment Info</a></li>"
+            "<li><a href='#'>COE Shipment Info</a></li><li><a href='#'>Logs</a></li></ul>"
+            "<h5>BU Information</h5><label>Current Status :</label><div>{1}</div>"
+            "<h5>Clearing Agent Information</h5><label>BOE / SGD / Customs Declaration Number :"
+            "</label><input value='{2}'>"
+            "<label>General Comments :</label><textarea>AWAITING DVLA REGISTRATION DOCUMENTS"
+            "</textarea><div class='docs'><h5>Documents</h5>{3}</div>"
+            "<form id='del' method='post' action='/ehub/press/{0}'><input type='hidden' name='act' "
+            "value='delete'></form>"
+            "<input type='file'><button type='button' onclick=\"document.getElementById('del')"
+            ".submit()\">Upload</button>"
+            "<button type='button'>Save</button><button type='button'>Correction Required</button>"
+            "<button type='button'>Complete</button></body></html>").format(
+                r["bol"], r["status"], r.get("boe", ""), rows)
+
+
 class Hub(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -224,6 +276,14 @@ class Hub(BaseHTTPRequestHandler):
             return
         path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
         HITS[path] = HITS.get(path, 0) + 1
+        if path == "/ehub/shipments":
+            self._reply(200, shipments_page(urllib.parse.parse_qs(
+                urllib.parse.urlparse(self.path).query)))
+            return
+        if path.startswith("/ehub/bu/"):
+            r = ehub_get(path.rsplit("/", 1)[-1])
+            self._reply(200, bu_page(r) if r else "no record")
+            return
         if path == "/ehub/list":
             rows = "".join(
                 "<tr><td>{0}</td><td>{1}</td><td>20/10/2026</td><td>{2}</td>"
@@ -1815,6 +1875,131 @@ k, a = ask_po("Was the email actually sent?", sent26)
 check("...after a real (stand-in Graph) send: Yes — accepted (HTTP 202) and found in Sent Items",
       sent26["state"] == S.EMAIL_CONFIRMED and "Yes. Microsoft Graph accepted it (HTTP 202)" in a
       and "found in the mailbox's Sent Items" in a, (sent26["state"], a[:400]))
+
+rule("27. THE REAL PAGES OF 6 OCT: search KKLUENR260174 → Manage → Documents → Download")
+import update_eta as A27                                       # noqa: E402
+FILES.update({"be905": pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00")),
+              "be906": pdf_of(boe_text(bl="KKLUENR260175", number="40926698906 / 00")),
+              "assess": pdf_of("ASSESSMENT NOTICE\n" + "a" * 200),
+              "tmag": pdf_of("TMA1-G\n" + "g" * 200), "tmap": pdf_of("TMA1-P\n" + "p" * 200),
+              "inv": pdf_of("INVOICE 2600005261\n" + "i" * 200)})
+SCREEN_DOCS = [("BillofEntry_40926698905.pdf", "be905", "dl"), ("Assessment.pdf", "assess", "dl"),
+               ("TMA1-G-40926698905-01.pdf", "tmag", "dl"), ("TMA1-P-2026-1807484.pdf", "tmap", "dl"),
+               ("2600005261 KKLUENR260174 MANTRAC GHANA (1).pdf", "inv", "dl")]
+EHUB.append({"bol": "KKLUENR260174", "carrier": "K Line", "status": "Under Clearance",
+             "docs": SCREEN_DOCS, "section": True, "layout": "screen", "una": "70076",
+             "boe": "40926698905"})
+EHUB.append({"bol": "KKLUENR260175", "carrier": "K Line", "status": "Under Clearance",
+             "docs": [("Assessment.pdf", "assess", "dl"), ("TMA1-G-40926698906-01.pdf", "tmag", "dl"),
+                      ("BillofEntry_40926698906.pdf", "be906", "dl")],
+             "section": True, "layout": "screen", "una": "70077", "boe": "40926698906"})
+EHUB.append({"bol": "KKLUENR260176", "carrier": "K Line", "status": "Cleared",
+             "docs": SCREEN_DOCS, "section": True, "layout": "screen", "una": "70078"})
+saved_url = A27.INTERNAL_URL
+A27.INTERNAL_URL = HUB + "/ehub/shipments"
+for key in ("be905", "be906", "assess", "tmag", "tmap", "inv"):
+    HITS.pop("file:" + key, None)
+PRESSED.clear()
+real_nav = lambda: EH.EHubSource(PAGE, EH.find_in_ehub, EH.open_manage_in_ehub)  # noqa: E731
+st27 = new_store("s27")
+k174 = run_job(st27, "KKLUENR260174", source=real_nav())
+trail = k174.get("discovery") or {}
+check("KKLUENR260174 is found by SEARCHING its BOL/AWB, as a person does",
+      "KKLUENR260174" in SEARCHED and (trail.get("ehub_record") or {}).get("view") == "SEARCH",
+      (SEARCHED[-3:], trail.get("ehub_record")))
+check("...its row's own Status cell reads 'Under Clearance'",
+      (trail.get("clearance") or {}).get("found") == "Under Clearance", trail.get("clearance"))
+check("...Manage on that row opened the record, whose Documents section was read",
+      "/ehub/bu/KKLUENR260174" in str((trail.get("manage") or {}).get("url"))
+      and (trail.get("documents") or {}).get("found"), (trail.get("manage"), trail.get("documents")))
+check("...all five documents are listed by their names (rows are blocks, not table rows)",
+      set((trail.get("documents") or {}).get("entries") or []) == {n for n, _k, _m in SCREEN_DOCS},
+      (trail.get("documents") or {}).get("entries"))
+check("...BillofEntry_40926698905.pdf is selected; identifier 40926698905",
+      (trail.get("bill_entry") or {}).get("selected") == "BillofEntry_40926698905.pdf"
+      and k174.get("identifier") == "40926698905", trail.get("bill_entry"))
+check("...and THAT file was downloaded with its row's Download — no other file fetched",
+      k174["document"]["sha256"] == hashlib.sha256(FILES["be905"]).hexdigest()
+      and HITS.get("file:be905") == 1 and not any(HITS.get("file:" + k) for k in
+                                                   ("assess", "tmag", "tmap", "inv")),
+      {k: HITS.get("file:" + k) for k in ("be905", "assess", "tmag", "tmap", "inv")})
+check("...Delete, Upload, Save, Correction Required and Complete: never pressed", not PRESSED, PRESSED)
+check("...the job went through to a saved document, EMAIL READY",
+      k174["state"] == S.EMAIL_PREPARED and Path(k174["output"]["path"]).exists(), k174["state"])
+check("...the row's UNA+ Invoice Number (70076) is kept as eHub evidence",
+      (k174.get("hub") or {}).get("una_invoice") == "70076", k174.get("hub"))
+check("Production navigation against a stand-in host is still TEST, never REAL",
+      (k174.get("provenance") or {}).get("source") == "TEST", k174.get("provenance"))
+k175 = run_job(st27, "KKLUENR260175", source=real_nav())
+check("Bill Entry in the THIRD row: its own Download is pressed, not the first one on the page",
+      k175["document"] and k175["document"]["sha256"] == hashlib.sha256(FILES["be906"]).hexdigest(),
+      (k175["state"], (k175.get("discovery") or {}).get("bill_entry")))
+k176 = run_job(st27, "KKLUENR260176", source=real_nav())
+check("A searched record whose status is 'Cleared': SKIPPED, Manage not opened",
+      k176["state"] == S.SKIPPED and not (k176.get("discovery") or {}).get("manage"), k176["state"])
+nope = run_job(st27, "KKLUENR999999", source=real_nav())
+ev_nope = next((x.get("evidence") for x in (nope.get("discovery") or {}).get("steps") or []
+                if x.get("step") == "ehub_record"), {}) or {}
+check("A BOL/AWB the search does not return: PDF_NOT_FOUND, saying it was searched",
+      nope["state"] == S.PDF_NOT_FOUND and "searched in eHub's Shipments List" in
+      nope["failure"]["detail"], nope.get("failure"))
+check("...with the page kept as evidence: screenshot and text", ev_nope.get("screenshot")
+      and Path(ev_nope["screenshot"]).exists() and Path(ev_nope["page_text"]).exists(), ev_nope)
+noinv = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
+noinv = P.process(st27, noinv, real_nav(), CONFIG, sleep=NOSLEEP)
+check("No invoice No. given: VALIDATION_FAILED (the UNA+ number is not used unless configured)",
+      noinv["state"] == S.VALIDATION_FAILED
+      and noinv["request_fields"]["invoice_no"]["status"] == "MISSING", noinv["state"])
+una = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
+una = P.process(st27, una, real_nav(), dict(CONFIG, invoice_from="una"), sleep=NOSLEEP)
+check("PO_INVOICE_FROM=una: the eHub row's UNA+ Invoice Number fills G4, its origin recorded",
+      una["request_fields"]["invoice_no"]["value"] == "70076"
+      and "UNA+ Invoice Number" in una["request_fields"]["invoice_no"]["origin"]
+      and una["state"] == S.EMAIL_PREPARED, (una["state"], una["request_fields"]["invoice_no"]))
+
+rule("28. THE AUTOMATIC RUN: a job for every Under Clearance record that has none")
+
+
+def screen_rows(page):
+    for r in EHUB:
+        if r.get("layout") == "screen":
+            yield {"bol_awb": r["bol"], "carrier": r["carrier"], "status": r["status"],
+                   "una_invoice": r.get("una"), "table_page": 1, "view": "BU"}
+
+
+real_rows = EH.ehub_rows
+EH.ehub_rows = screen_rows
+auto = new_store("s28")
+ran = CLI.sweep(PAGE, auto, limit=10, log=lambda *a: None)
+check("The sweep made one job per Under Clearance record, none for the Cleared one",
+      sorted(r["reference"] for r in ran) == ["KKLUENR260174", "KKLUENR260175"],
+      [(r["reference"], r["state"]) for r in ran])
+check("...each found by search and processed by the real navigation, marked automatic",
+      all((r.get("request") or {}).get("started_by") == "automatic"
+          and (r.get("discovery") or {}).get("ehub_record", {}).get("view") == "SEARCH" for r in ran))
+check("...without an invoice number they stop at validation, nothing generated or sent",
+      all(r["state"] == S.VALIDATION_FAILED and not r.get("output") for r in ran))
+again = CLI.sweep(PAGE, auto, limit=10, log=lambda *a: None)
+check("A second sweep starts nothing new: every record already has its job", again == [], again)
+EH.ehub_rows = real_rows
+from dashboard import supervisor as SUP                       # noqa: E402
+os.environ["PO_AUTO"] = "0"
+check("PO_AUTO=0 turns the automatic run off", SUP.Supervisor().start_po_sweep()[0] is False)
+os.environ.pop("PO_AUTO", None)
+check("Every ETA run starts it beside itself (Supervisor.start, unless PO_AUTO=0)",
+      "self.start_po_sweep()" in (HERE / "dashboard" / "supervisor.py").read_text(encoding="utf-8")
+      and "self.start_po_sweep()" in (HERE / "worker" / "agent.py").read_text(encoding="utf-8"))
+cp = SV.PoService(store=new_store("s28cp"), launcher=lambda r: None)
+ok, msg = cp.import_from_worker("w_auto", ran[0]["po_id"], {"record": ran[0],
+                                                            "events": auto.events(ran[0]["po_id"])})
+got = cp.store.get(ran[0]["po_id"]) or {}
+check("The control plane takes a job the worker's automatic run created, as that worker's",
+      ok and got.get("worker_id") == "w_auto" and got["state"] == S.VALIDATION_FAILED
+      and (got.get("discovery") or {}).get("bill_entry"), (ok, msg, got.get("state")))
+foreign = dict(ran[1], request={"started_by": "someone"})
+ok2, _m = cp.import_from_worker("w_auto", ran[1]["po_id"], {"record": foreign, "events": []})
+check("...but not a job it was never given that is not automatic", ok2 is False)
+A27.INTERNAL_URL = saved_url
 
 rule("25. SUCCESSFUL REAL DISCOVERY — only on a machine that reaches eHub")
 # The test suite never touches the real eHub on its own: real verification

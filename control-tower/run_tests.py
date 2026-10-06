@@ -76,7 +76,10 @@ def main():
         # into a production store.
         env = dict(os.environ, ATLAS_INTEL_DIR=tempfile.mkdtemp(prefix="ct_atlas_intel_"),
                    ATLAS_DATA_ORIGIN="test",
-                   PO_DATA_DIR=tempfile.mkdtemp(prefix="ct_po_"))
+                   PO_DATA_DIR=tempfile.mkdtemp(prefix="ct_po_"),
+                   # A run started by a suite never starts the PO automatic
+                   # run against the real eHub; the suites that test it set it.
+                   PO_AUTO=os.environ.get("PO_AUTO_IN_TESTS", "0"))
         result = subprocess.run(
             [sys.executable, str(path)], cwd=str(HERE),
             capture_output=True, text=True, env=env)

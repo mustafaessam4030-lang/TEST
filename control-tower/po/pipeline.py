@@ -64,6 +64,10 @@ def config_from_env():
         "defaults": {k: os.environ.get("PO_DEFAULT_" + k.upper()) or None
                      for k in ("supplier", "branch", "charge_to", "priority")},
         "confirm_wait_s": float(os.environ.get("PO_CONFIRM_WAIT_S") or 45),
+        # Where the supplier invoice No. (G4) comes from when the job was not
+        # given one: "una" = the eHub row's "UNA+ Invoice Number" column. Off
+        # unless set: that column is recorded as evidence either way.
+        "invoice_from": (os.environ.get("PO_INVOICE_FROM") or "").strip().lower() or None,
     }
 
 
@@ -202,7 +206,15 @@ def process(store, record, source, config=None, sleep=time.sleep):
         store.event(record, "EXTRACTION_FAILED", "extraction", "FAILED", evidence=sha,
                     found=[n for n, f in fields.items() if f["status"] == X.FOUND])
         return record
-    request_fields = _request_fields(doctype, record.get("request"), config)
+    request = dict(record.get("request") or {})
+    una = (record.get("hub") or {}).get("una_invoice")
+    if not request.get("invoice_no") and una and config.get("invoice_from") == "una":
+        request["invoice_no"] = una
+        request["invoice_no_origin"] = "eHub UNA+ Invoice Number (PO_INVOICE_FROM=una)"
+    request_fields = _request_fields(doctype, request, config)
+    if request.get("invoice_no_origin") and "invoice_no" in request_fields:
+        request_fields["invoice_no"]["origin"] = request["invoice_no_origin"]
+        request_fields["invoice_no"]["evidence"] = request["invoice_no_origin"]
     record["fields"] = fields
     record["request_fields"] = request_fields
     record["number"] = record.get("identifier") or \

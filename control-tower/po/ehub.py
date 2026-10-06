@@ -124,28 +124,36 @@ DOCUMENTS_JS = r"""() => {
   if (!heads.length) heads = candidates('span,div,td,p');
   if (!heads.length) heads = candidates('a,li,button');
   const name = (e) => (e.innerText || e.value || e.title || e.getAttribute('download') || '').trim();
+  const FILE = /\.[a-z0-9]{2,5}\s*$/i, BILL = /^bill[\s_\-]*(of[\s_\-]*)?entry/i;
   // A clickable entry, named by its own text — or, when its own text is a
-  // "View" / "Download" button, by the document name in the same row.
-  // The document's name in the same row: a "Bill Entry …" cell first, then a
-  // cell that looks like a file name, then the row's first cell.
+  // "View" / "Download" button, by the document name in ITS OWN ROW. The
+  // row is found by its content, not its tag (eHub draws rows as blocks,
+  // not <tr>): the nearest ancestor holding exactly one file name. One that
+  // holds two has gone past the row, and names nothing.
+  const leaves = (root) => Array.from(root.querySelectorAll('*'))
+      .filter(c => !c.children.length).map(c => (c.innerText || c.value || '').trim())
+      .filter(t => t && t.length < 200);
   const rowName = (e) => {
-    const row = e.closest('tr, li');
-    if (!row) return '';
-    const texts = Array.from(row.querySelectorAll('td, span, div'))
-      .map(c => (c.innerText || '').trim()).filter(t => t && t.length < 200 && t !== (e.innerText || '').trim());
-    const bill = texts.filter(t => /^bill[\s_\-]*entry/i.test(t)).sort((a, b) => a.length - b.length);
-    if (bill.length) return bill[0];
-    const file = texts.find(t => /\.[a-z0-9]{2,5}$/i.test(t));
-    return file || texts[0] || '';
+    let box = e.parentElement;
+    for (let up = 0; up < 6 && box; up++, box = box.parentElement) {
+      const files = Array.from(new Set(leaves(box).filter(t => FILE.test(t) || BILL.test(t))));
+      if (files.length === 1) return files[0];
+      if (files.length > 1) return '';
+    }
+    return '';
   };
   const collect = (root) => Array.from(root.querySelectorAll(
       'a, button, input[type=button], input[type=submit], [onclick]'))
       .map((e, i) => {
         const own = name(e), inRow = rowName(e);
-        const named = /^bill[\s_\-]*entry/i.test(own) || /\.[a-z0-9]{2,5}$/i.test(own);
+        const named = BILL.test(own) || FILE.test(own);
+        // A mark on the element itself, so the click lands on THIS row's
+        // control — never on the first "Download" of the page.
+        e.setAttribute('data-ata-doc', String(i));
         return {name: (named || !inRow ? own : inRow).slice(0, 200),
                 text: own.slice(0, 80), href: e.getAttribute('href') || '',
-                tag: e.tagName.toLowerCase(), index: i, id: e.id || '', clickable: true};
+                tag: e.tagName.toLowerCase(), index: i, id: e.id || '', clickable: true,
+                mark: String(i)};
       })
       .filter(x => x.name);
   for (const h of heads){
@@ -153,7 +161,8 @@ DOCUMENTS_JS = r"""() => {
     for (let up = 0; up < 6 && box; up++){
       box = box.parentElement;
       if (!box) break;
-      const found = collect(box).filter(x => /bill[\s_\-]*entry|\.pdf\b/i.test(x.name + ' ' + x.href));
+      const found = collect(box).filter(x => /bill[\s_\-]*(of[\s_\-]*)?entry|\.pdf\b/i
+                                                .test(x.name + ' ' + x.href));
       if (found.length) return {found: true, label: own(h), scope: 'documents section',
                                 entries: collect(box)};
     }
@@ -223,7 +232,7 @@ def _entries(section):
             continue
         seen.add(key)
         out.append({"name": shown, "href": href, "id": e.get("id"), "tag": e.get("tag"),
-                    "index": e.get("index"), "text": e.get("text")})
+                    "index": e.get("index"), "text": e.get("text"), "mark": e.get("mark")})
     return out
 
 
@@ -247,8 +256,14 @@ def download(page, frame, entry):
     if NEVER_CLICK.search(entry.get("text") or "") or NEVER_CLICK.search(entry.get("name") or ""):
         raise SourceError("refused to click '{0}': it is a control that changes the eHub record, "
                           "not a document".format(entry.get("text") or entry["name"]), "permanent")
-    locator = frame.locator("[id='{0}']".format(entry["id"])) if entry.get("id") else \
-        frame.get_by_text(entry.get("text") or entry["name"], exact=True).first
+    # THIS row's own control: the mark set when the section was read, else
+    # its id. Never "the first element saying Download".
+    if entry.get("mark") is not None:
+        locator = frame.locator("[data-ata-doc='{0}']".format(entry["mark"]))
+    elif entry.get("id"):
+        locator = frame.locator("[id='{0}']".format(entry["id"]))
+    else:
+        locator = frame.get_by_text(entry.get("text") or entry["name"], exact=True).first
     try:
         with page.expect_download(timeout=30000) as info:
             locator.click(timeout=10000)
@@ -278,12 +293,13 @@ def download(page, frame, entry):
 # ── PROVENANCE: REAL only when the real eHub was observed ────────────────
 
 def ehub_host():
-    """The real eHub's host name — from the automation's own configuration."""
-    try:
-        import update_eta as A
-        return urlparse(A.INTERNAL_URL).hostname
-    except Exception:
-        return None
+    """
+    The real eHub's host name — fixed (intelligence.verification, EHUB_HOST),
+    not read from whatever URL the automation was pointed at: a stand-in the
+    navigation is aimed at can never become the "real" host.
+    """
+    from intelligence import verification as V
+    return V.ehub_host()
 
 
 def provenance(navigation_real, observed, complete):
@@ -364,7 +380,8 @@ class EHubSource(object):
             error.trail = trail
             raise
         except Exception as error:
-            step("ehub_record", False, error=str(error)[:200])
+            step("ehub_record", False, error=str(error)[:200],
+                 evidence=capture(self.page, "ehub_record"))
             raise stop("the eHub shipment list could not be read: {0}".format(str(error)[:200]),
                        _kind_of(error))
         trail["looked_at"] = looked
@@ -375,7 +392,12 @@ class EHubSource(object):
         except Exception:
             pass
         if row is None:
-            step("ehub_record", False, reference=reference, looked=len(looked))
+            step("ehub_record", False, reference=reference, looked=len(looked),
+                 evidence=capture(self.page, "ehub_record"))
+            if reference and looked and looked[0].get("view") == SEARCH_VIEW:
+                raise stop("{0} was searched in eHub's Shipments List (BOL/AWB Number) and no "
+                           "row came back for it. It was not opened.".format(reference),
+                           "not_found")
             if reference:
                 raise stop("{0} is not listed under eHub's 'Under Clearance' filter on view "
                            "{1} — its status is not Under Clearance, or it is not in eHub. "
@@ -400,7 +422,7 @@ class EHubSource(object):
         try:
             opened = self.open_manage(self.page, row) or {}
         except Exception as error:
-            step("manage", False, error=str(error)[:200])
+            step("manage", False, error=str(error)[:200], evidence=capture(self.page, "manage"))
             raise stop("Manage could not be opened for {0}: {1}".format(
                 row.get("bol_awb"), str(error)[:200]), _kind_of(error), row=row)
         try:
@@ -423,6 +445,7 @@ class EHubSource(object):
         step("documents_section", bool(section.get("found")), scope=section.get("scope"),
              count=len(entries))
         if not section.get("found"):
+            trail["documents"]["evidence"] = capture(self.page, "documents")
             raise stop("Manage opened for {0}, but its details have no Documents section; "
                        "nothing is guessed.".format(row.get("bol_awb")), "not_found", row=row)
 
@@ -434,7 +457,8 @@ class EHubSource(object):
                                "identifier": selected["identifier"] if selected else None,
                                "rule": rule}
         if outcome == "none":
-            step("bill_entry", False, documents=len(entries))
+            step("bill_entry", False, documents=len(entries),
+                 evidence=capture(self.page, "bill_entry"))
             raise stop("Manage → Documents for {0} lists {1} document(s), none whose name starts "
                        "with 'Bill Entry' (or 'BillofEntry'){2}. No identifier is invented.".format(
                            row.get("bol_awb"), len(entries),
@@ -517,6 +541,7 @@ def ehub_rows(page):
             return
         table = A.find_shipments_table(page)
         columns = A.build_header_map(table)
+        columns.update(_extra_columns(table))
         rows = table.locator("tbody tr")
         for index in range(rows.count()):
             cells = rows.nth(index).locator("td")
@@ -528,17 +553,226 @@ def ehub_rows(page):
                 return " ".join((cells.nth(i).inner_text() or "").split()) or None
 
             yield {"bol_awb": cell("bol_awb"), "carrier": cell("carrier"),
-                   "status": cell("status"), "table_page": number, "view": A.SOURCE_VIEW}
+                   "status": cell("status"), "una_invoice": cell("una_invoice"),
+                   "table_page": number, "view": A.SOURCE_VIEW}
 
 
 def find_in_ehub(page, reference=None, skip=()):
-    """Production: the ETA automation's own list reading, and the row rule."""
+    """
+    Production. A named record is SEARCHED for, the way a person finds it:
+    the Shipments List's own "BOL/AWB Number" box and Search. With no name,
+    the ETA automation's own list reading (the BU view, filtered to Under
+    Clearance) and the row rule.
+    """
+    if reference:
+        rows, looked = search_rows(page, reference)
+        row, _ = choose(rows, reference, skip)
+        return row, looked
     return choose(ehub_rows(page), reference, skip)
 
 
 def open_manage_in_ehub(page, row):
     import update_eta as A
-    A.click_manage_in_view(page, row.get("view") or A.SOURCE_VIEW, row["bol_awb"],
-                           row.get("table_page") or 1)
+    if row.get("view") == SEARCH_VIEW:
+        click_manage_in_search(page, row["bol_awb"])
+    else:
+        A.click_manage_in_view(page, row.get("view") or A.SOURCE_VIEW, row["bol_awb"],
+                               row.get("table_page") or 1)
     page.wait_for_timeout(800)
+    to_documents(page)
     return {"url": page.url, "title": page.title()}
+
+
+# ── THE SHIPMENTS LIST'S OWN SEARCH, AND MANAGE FROM ITS RESULT ──────────
+
+SEARCH_VIEW = "SEARCH"
+SEARCH_LABEL = r"^\s*BOL\s*/\s*AWB\s*(?:Number|No\.?)?\s*:?\s*$"
+# The search box: the text input belonging to the "BOL/AWB Number" label
+# (its `for`, its own container, or the next one after it). Marked so the
+# fill lands on exactly that box.
+SEARCH_BOX_JS = r"""(pattern) => {
+  const re = new RegExp(pattern, 'i');
+  const text = (el) => (el.innerText || '').trim();
+  const labels = Array.from(document.querySelectorAll('label, span, div, p, b, strong, td'))
+      .filter(el => re.test(text(el)) && !el.closest('table thead, th'));
+  const inputs = () => Array.from(document.querySelectorAll(
+      'input[type=text], input[type=search], input:not([type])'));
+  for (const el of labels) {
+    let target = el.htmlFor ? document.getElementById(el.htmlFor) : null;
+    for (let up = 0, box = el.parentElement; !target && up < 2 && box; up++, box = box.parentElement) {
+      const inside = Array.from(box.querySelectorAll('input[type=text], input[type=search], input:not([type])'));
+      if (inside.length === 1) target = inside[0];
+    }
+    if (!target) target = inputs().find(i => el.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (target) { target.setAttribute('data-ata-search', '1'); return true; }
+  }
+  return false;
+}"""
+MANAGE_LABEL = re.compile(r"^\s*manage\s*$", re.I)
+
+
+def _wait(page, check, seconds, every_ms=400):
+    end = time.time() + seconds
+    while True:
+        try:
+            got = check()
+        except Exception:
+            got = None
+        if got:
+            return got
+        if time.time() >= end:
+            return None
+        page.wait_for_timeout(every_ms)
+
+
+def _extra_columns(table):
+    """Columns the ETA run does not read but the PO job keeps as evidence."""
+    try:
+        heads = [" ".join((h or "").split()).casefold()
+                 for h in table.locator("thead th").all_inner_texts()]
+    except Exception:
+        return {}
+    return {"una_invoice": i for i, h in enumerate(heads) if re.search(r"una\+?\s*invoice", h)}
+
+
+def _result_rows(page, reference=None):
+    """The rows of the results table, read off its cells, or None when there is none."""
+    import update_eta as A
+    try:
+        table = A.find_shipments_table(page)
+        columns = A.build_header_map(table)
+    except Exception:
+        return None
+    from .extract import normal_reference
+    out = []
+    extra = _extra_columns(table)
+    rows = table.locator("tbody tr")
+    for index in range(rows.count()):
+        cells = rows.nth(index).locator("td")
+
+        def cell(name):
+            i = columns.get(name)
+            if not isinstance(i, int) or cells.count() <= i:
+                return None
+            return " ".join((cells.nth(i).inner_text() or "").split()) or None
+
+        row = {"bol_awb": cell("bol_awb"), "carrier": cell("carrier"), "status": cell("status"),
+               "eta": cell("eta"), "table_page": 1, "view": SEARCH_VIEW}
+        for name, i in extra.items():
+            row[name] = " ".join((cells.nth(i).inner_text() or "").split()) or None \
+                if cells.count() > i else None
+        if row["bol_awb"] and (not reference or
+                               normal_reference(row["bol_awb"]) == normal_reference(reference)):
+            out.append(row)
+    return out
+
+
+def search_rows(page, reference):
+    """
+    The Shipments List, searched for one BOL/AWB — exactly what a person does:
+    open the list, type the number in "BOL/AWB Number", press Search, read the
+    row (its own Status cell). (rows, looked).
+    """
+    import update_eta as A
+    A.invalidate_hub_state()
+    page.goto(A.INTERNAL_URL, wait_until="domcontentloaded", timeout=60000)
+    if not _wait(page, lambda: page.evaluate(SEARCH_BOX_JS, SEARCH_LABEL), 20):
+        raise RuntimeError("the Shipments List has no 'BOL/AWB Number' search box")
+    box = page.locator("[data-ata-search='1']").first
+    box.fill("")
+    box.fill(reference)
+    button = A.first_visible([
+        page.get_by_role("button", name="Search", exact=True),
+        page.locator("input[type='submit'][value='Search' i], input[type='button'][value='Search' i]"),
+        page.locator("button").filter(has_text=re.compile(r"^\s*search\s*$", re.I)),
+        page.locator("a").filter(has_text=re.compile(r"^\s*search\s*$", re.I)),
+    ], 5000)
+    if button is None:
+        raise RuntimeError("the Shipments List's Search button was not found")
+    button.click(timeout=10000)
+    rows = _wait(page, lambda: _result_rows(page, reference), 30)
+    looked = [{"view": SEARCH_VIEW, "searched": reference,
+               "result": "found" if rows else "no row for it in the search result"}]
+    return rows or [], looked
+
+
+def click_manage_in_search(page, reference):
+    """Press Manage on THAT row of the search result (searching again if needed)."""
+    import update_eta as A
+    from .extract import normal_reference
+    if not _result_rows(page, reference):
+        search_rows(page, reference)
+    table = A.find_shipments_table(page)
+    columns = A.build_header_map(table)
+    rows = table.locator("tbody tr")
+    target = None
+    for index in range(rows.count()):
+        cells = rows.nth(index).locator("td")
+        i = columns.get("bol_awb")
+        if isinstance(i, int) and cells.count() > i and normal_reference(
+                cells.nth(i).inner_text()) == normal_reference(reference):
+            target = rows.nth(index)
+            break
+    if target is None:
+        raise RuntimeError("{0} is not in the search result".format(reference))
+    control = A.first_visible([
+        target.locator("a, button").filter(has_text=MANAGE_LABEL),
+        target.locator("input[type='submit'][value='Manage' i], input[type='button'][value='Manage' i]"),
+    ], 5000)
+    if control is None:
+        raise RuntimeError("the row for {0} has no Manage button".format(reference))
+    before = page.url
+    control.click(timeout=10000)
+    if not _wait(page, lambda: page.url != before or _manage_open(page), 30):
+        raise RuntimeError("Manage was pressed for {0}, but the record did not open".format(
+            reference))
+
+
+def _manage_open(page):
+    try:
+        return page.get_by_text(re.compile(r"BU\s+Shipment\s+Info|^\s*Documents\s*$", re.I)) \
+            .first.is_visible()
+    except Exception:
+        return False
+
+
+def to_documents(page):
+    """
+    The Documents section is at the bottom of the record's BU Shipment Info
+    (its general tab): select that tab when it is not the one showing, and
+    scroll down. A tab and a scroll — nothing that changes the record.
+    """
+    try:
+        tab = page.get_by_text(re.compile(r"^\s*BU\s+Shipment\s+Info\s*$", re.I)).first
+        if tab.count() and tab.is_visible() and not NEVER_CLICK.search(tab.inner_text()):
+            tab.click(timeout=5000)
+            page.wait_for_timeout(600)
+    except Exception:
+        pass
+    try:
+        page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(400)
+    except Exception:
+        pass
+
+
+# ── EVIDENCE: the page as it stood when a step failed ────────────────────
+
+def capture(page, step):
+    """A screenshot and the page's text, kept with the PO data; paths, or {}."""
+    import os
+    from pathlib import Path
+    from . import store as S
+    try:
+        folder = Path(os.environ.get("PO_DATA_DIR") or S.DEFAULT_DIR) / "evidence"
+        folder.mkdir(parents=True, exist_ok=True)
+        stem = "{0}-{1}".format(datetime.now().strftime("%Y%m%d-%H%M%S-%f"),
+                                re.sub(r"[^a-z0-9]+", "_", step.lower()))
+        shot, text = folder / (stem + ".png"), folder / (stem + ".txt")
+        page.screenshot(path=str(shot), full_page=True)
+        text.write_text("URL: {0}\nTITLE: {1}\n\n{2}".format(
+            page.url, page.title(), page.locator("body").inner_text(timeout=5000)),
+            encoding="utf-8")
+        return {"screenshot": str(shot), "page_text": str(text), "url": page.url}
+    except Exception as error:
+        return {"capture_error": str(error)[:120]}

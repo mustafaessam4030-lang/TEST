@@ -22,6 +22,9 @@ dashboard run in the background, and the proof tools.
                                            identifier, downloads and reads the
                                            PDF — and writes a report. Nothing
                                            is written to eHub, nothing is sent.
+    python -m po sweep [--limit N]          THE AUTOMATIC RUN, started beside every ETA
+                                           run: a job for each Under Clearance record
+                                           with none yet (PO_AUTO=0 turns it off)
     python -m po read FILE.pdf [--hub-bol X] [--identifier N] [--invoice-no N]
                                            extraction and validation of a PDF
                                            on disk — nothing generated or sent
@@ -47,17 +50,26 @@ from po import doctypes, extract as X, pipeline as P, store as S, validate as V 
 
 
 def _browser(playwright):
+    """
+    eHub opened the way the ETA run opens it: the run's own browser launch
+    (headed Edge, update_eta.hub_launch_options) and sign-in. PO_HEADLESS and
+    PO_BROWSER_EXECUTABLE override it — for the test suite and diagnostics.
+    """
     import update_eta as A
     username, password = A.load_credentials()
-    headless = os.environ.get("PO_HEADLESS", "1").strip().lower() not in ("0", "false", "no")
-    launch = {"headless": headless}
+    launch = dict(A.hub_launch_options())
+    if os.environ.get("PO_HEADLESS"):
+        launch["headless"] = os.environ["PO_HEADLESS"].strip().lower() not in ("0", "false", "no")
     if os.environ.get("PO_BROWSER_EXECUTABLE"):
+        launch.pop("channel", None)
         launch["executable_path"] = os.environ["PO_BROWSER_EXECUTABLE"]
-    elif os.environ.get("PO_BROWSER_CHANNEL", "msedge"):
-        launch["channel"] = os.environ.get("PO_BROWSER_CHANNEL", "msedge")
+    elif "PO_BROWSER_CHANNEL" in os.environ:
+        launch.pop("channel", None)
+        if os.environ["PO_BROWSER_CHANNEL"]:
+            launch["channel"] = os.environ["PO_BROWSER_CHANNEL"]
     browser = playwright.chromium.launch(**launch)
-    context = browser.new_context(http_credentials={"username": username, "password": password},
-                                  accept_downloads=True)
+    context = browser.new_context(**dict(A.hub_context_options(username, password),
+                                         accept_downloads=True))
     page = context.new_page()
     A.login_internal(page, username, password)
     return browser, page
@@ -205,6 +217,76 @@ def cmd_check(args):
     return 0 if report["result"] == "REACHABLE" else 1
 
 
+def sweep(page, store, limit=20, source_factory=None, log=print):
+    """
+    THE AUTOMATIC RUN: every eHub record listed Under Clearance that has no PO
+    job yet gets one — found by its BOL/AWB, Manage, Documents, Bill Entry —
+    one after another, in this one browser. Returns the jobs it ran.
+    """
+    from po.ehub import EHubSource, ehub_rows, find_in_ehub, open_manage_in_ehub, status_ok
+    from po import service as SV
+    from po.extract import normal_reference
+    handled = {normal_reference(r) for r in SV.PoService(store=store, launcher=lambda r: None)
+               .handled_references()}
+    config = P.config_from_env()
+    picked, seen = [], set()
+    for row in ehub_rows(page):
+        ref = row.get("bol_awb")
+        if not ref or not status_ok(row.get("status")):
+            continue
+        key = normal_reference(ref)
+        if key in handled or key in seen:
+            continue
+        seen.add(key)
+        picked.append(ref)
+        if len(picked) >= limit:
+            break
+    log("[PO sweep] {0} Under Clearance record(s) without a PO job: {1}".format(
+        len(picked), ", ".join(picked) or "none"))
+    ran = []
+    for ref in picked:
+        record = store.create(doctypes.DEFAULT, ref, {"started_by": "automatic"},
+                              started_by="automatic")
+        source = (source_factory or (lambda pg: EHubSource(pg, find_in_ehub,
+                                                           open_manage_in_ehub)))(page)
+        try:
+            record = P.process(store, record, source, config)
+        except Exception as error:
+            current = store.get(record["po_id"]) or record
+            P.abandon(store, current, "the job stopped unexpectedly: {0}".format(str(error)[:200]))
+            record = store.get(record["po_id"]) or current
+        log("[PO sweep] {0}: {1}".format(ref, record["state"]))
+        if record["state"] == S.EMAIL_PREPARED and config["auto_send"]:
+            from po.mail import GraphMailer
+            record, _o = P.send(store, record, GraphMailer(), by="auto-send",
+                                confirm_wait_s=config["confirm_wait_s"])
+        ran.append(record)
+    return ran
+
+
+def cmd_sweep(args):
+    store = S.Store()
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as playwright:
+        try:
+            browser, page = _browser(playwright)
+        except Exception as error:
+            print("[PO sweep] eHub could not be opened: {0}".format(str(error)[:200]))
+            return 1
+        try:
+            ran = sweep(page, store, limit=args.limit)
+        except Exception as error:
+            from po.ehub import capture
+            print("[PO sweep] the Under Clearance list could not be read: {0} — evidence {1}"
+                  .format(str(error)[:200], capture(page, "sweep_list")))
+            return 1
+        finally:
+            browser.close()
+    print(json.dumps([{"po_id": r["po_id"], "reference": r["reference"], "state": r["state"]}
+                      for r in ran], indent=2))
+    return 0
+
+
 def cmd_send(args):
     from po.mail import GraphMailer
     store = S.Store()
@@ -257,6 +339,9 @@ def main(argv=None):
     e = sub.add_parser("ehub-probe")
     e.add_argument("--reference")
     e.add_argument("--out")
+    w = sub.add_parser("sweep", help="the automatic run: a PO job for every Under Clearance "
+                                     "record that has none yet")
+    w.add_argument("--limit", type=int, default=int(os.environ.get("PO_SWEEP_LIMIT") or 20))
     r = sub.add_parser("read")
     r.add_argument("file")
     r.add_argument("--hub-bol")
@@ -266,7 +351,7 @@ def main(argv=None):
     r.add_argument("--dump-text", action="store_true")
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
-            "ehub-check": cmd_check,
+            "ehub-check": cmd_check, "sweep": cmd_sweep,
             "read": cmd_read}[args.cmd](args)
 
 

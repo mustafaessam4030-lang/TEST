@@ -302,6 +302,15 @@ class PoService(object):
         import base64
         import hashlib
         current = self.store.get(po_id)
+        incoming_request = (payload.get("record") or {}).get("request") or {}
+        if current is None and incoming_request.get("started_by") == "automatic":
+            # A job the worker's automatic run created itself: it becomes this
+            # worker's job here. Sending stays this server's, as for any job.
+            first = dict(payload["record"], worker_id=worker_id,
+                         state=S.QUEUED, label=S.LABELS[S.QUEUED],
+                         email=None, output=None, document=None)
+            self.store.save(first)
+            current = self.store.get(po_id)
         if current is None or current.get("worker_id") != worker_id:
             return False, "not this worker's job"
         incoming = payload.get("record") or {}
@@ -335,7 +344,10 @@ class PoService(object):
             _, path = self.store.keep_document(raw)
             document = dict(document, evidence=str(path))
         for key in ("state", "label", "progress", "hub", "fields", "request_fields", "number",
-                    "validation", "email", "failure", "history", "attempts"):
+                    "validation", "email", "failure", "history", "attempts",
+                    # the worker's own discovery evidence (eHub row, Manage,
+                    # Bill Entry, provenance) and what it generated
+                    "discovery", "identifier", "provenance", "template", "reference", "po_key"):
             if key in incoming:
                 current[key] = incoming[key]
         if document:

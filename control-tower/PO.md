@@ -138,6 +138,34 @@ A record stored before the rename (state `DISCOVERED`) is read as
 flight, before Graph's answer) and SKIPPED are kept beside the brief's states:
 none of them claims a success.
 
+## Automatic, beside every ETA run (`python -m po sweep`)
+
+Every ETA run started from the dashboard or the worker starts the PO
+automatic run beside it — its own process, its own browser, never inside the
+ETA run. It reads eHub's Under Clearance list once, and for every record that
+has no PO job yet (up to `PO_SWEEP_LIMIT`, default 20) runs one job, one after
+another. A worker reports each job to the control plane as it goes.
+`PO_AUTO=0` turns it off.
+
+A named record is found the way a person finds it (6 Oct, KKLUENR260174):
+the Shipments List, its "BOL/AWB Number" box, Search, the row's own Status
+cell, that row's **Manage**; then the record's **BU Shipment Info** tab, at
+the bottom of which is **Documents**. Each document row there is a block
+(not a table row) with **Delete** and **Download**: the name is read from the
+row the button is in, and the click lands on that row's **Download** only.
+Delete, Upload, Save, Correction Required and Complete are never pressed.
+When a step on eHub fails, the page is kept — a screenshot and its text, in
+`<PO_DATA_DIR>/evidence` — and named in the job's discovery trail.
+
+The supplier invoice No. (G4) is not on the Bill Entry. A job started by a
+person is given it; an automatic job is not, and stops at VALIDATION_FAILED
+("Supplier invoice No. missing") — nothing generated, nothing sent. eHub's
+list shows a "UNA+ Invoice Number" column; it is kept with every job as
+evidence, and used for G4 only with `PO_INVOICE_FROM=una`.
+
+PO jobs open eHub with the ETA run's own browser launch (headed Edge) and
+sign-in; `PO_HEADLESS` / `PO_BROWSER_EXECUTABLE` override it.
+
 ## Your BOE logic, reused (`po/extract.py`, `po/validate.py`, `po/template.py`)
 
 From `boe_to_duty_request.py`, unchanged: the field patterns (user reference,

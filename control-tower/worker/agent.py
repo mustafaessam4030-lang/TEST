@@ -376,6 +376,48 @@ class Agent(object):
             thread.join(900)
         return True, "PO job {0} started.".format(po_id)
 
+    def po_store(self):
+        from po import store as po_store
+        return po_store.Store(folder=os.environ.get("PO_DATA_DIR") or (self.runtime / "po"))
+
+    def start_po_sweep(self):
+        """
+        The PO automatic run beside the ETA run, in its own process and
+        browser: a job for every Under Clearance record that has none. Each
+        job it creates is reported to the control plane as it goes; sending
+        stays the control plane's (PO_AUTO_SEND is off here).
+        """
+        if os.environ.get("PO_AUTO", "1").strip().lower() in ("0", "false", "no", "off"):
+            return False
+        store = self.po_store()
+        ok, message = self.sup.start_po_sweep(env={
+            "PO_DATA_DIR": str(store.folder), "PO_OUTPUT_DIR": str(store.output_dir),
+            "PO_AUTO_SEND": "0"})
+        self.log("[worker] " + message)
+        if ok:
+            threading.Thread(target=self._po_sweep_sync, args=(store, self.sup.po_sweep),
+                             daemon=True, name="po-sweep").start()
+        return ok
+
+    def _po_sweep_sync(self, store, process):
+        """Report the automatic run's jobs while it runs, and in full when it ends."""
+        seen = {}
+        while True:
+            running = process.poll() is None
+            for record in store.all(500):
+                if (record.get("request") or {}).get("started_by") != "automatic":
+                    continue
+                if seen.get(record["po_id"]) == record.get("updated") and running:
+                    continue
+                final = not running or record["state"] not in po_store_active()
+                status = self._safe(self._po_push, store, record["po_id"], final)
+                if status == 200:
+                    seen[record["po_id"]] = record.get("updated")
+            if not running:
+                break
+            time.sleep(2.0)
+        self.log("[worker] PO automatic run finished (exit code {0})".format(process.returncode))
+
     def _po_push(self, store, po_id, files=False):
         record = store.get(po_id)
         if record is None:
@@ -436,7 +478,7 @@ class Agent(object):
             env = {"CT_RUN_ID": run_id, "CT_SESSION_PORT": port, "CT_SESSION_TOKEN": token}
             if options.get("dry_run"):
                 env["CT_DRY_RUN"] = "1"
-            ok, message = self.sup.start(extra_env=env)
+            ok, message = self.sup.start(extra_env=env, po_sweep=False)
             if ok:
                 self.run_id, self.stop_requested = run_id, False
                 self.local = Local(port, token)
@@ -445,6 +487,7 @@ class Agent(object):
                                  "started_at": time.time()}
                 self._save("last_run.json", self.last_run)
                 self.log("[worker] run {0} started".format(run_id))
+                self.start_po_sweep()
                 threading.Thread(target=self._safe, args=(self.heartbeat,),
                                  daemon=True).start()
             return ok, message

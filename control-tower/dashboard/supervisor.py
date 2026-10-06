@@ -58,6 +58,7 @@ class Supervisor:
 
     def __init__(self):
         self.process = None
+        self.po_sweep = None            # the PO Automation's automatic run, beside the ETA run
         self.started_at = None
         self.last_exit = None
         self.lock = threading.RLock()
@@ -70,11 +71,16 @@ class Supervisor:
         with self.lock:
             return self.process is not None and self.process.poll() is None
 
-    def start(self, extra_env=None):
+    def start(self, extra_env=None, po_sweep=True):
         """
         Launch update_eta.py. `extra_env` is how the worker agent hands the
         run its id and its loopback session settings; the supervisor's own
         start passes nothing, exactly as before.
+
+        Beside it — never inside it — the PO Automation's automatic run
+        (`python -m po sweep`) starts in its own process and browser, unless
+        PO_AUTO=0. The worker agent starts its own (po_sweep=False), so it
+        can report the jobs to the control plane.
         """
         with self.lock:
             if self.is_running():
@@ -106,7 +112,25 @@ class Supervisor:
                 return False, "Could not start the automation: {0}".format(error)
 
             self.started_at = datetime.now()
+            if po_sweep:
+                self.start_po_sweep()
             return True, "Automation started."
+
+    def start_po_sweep(self, env=None):
+        """The PO automatic run, in its own process. (started, message)."""
+        if os.environ.get("PO_AUTO", "1").strip().lower() in ("0", "false", "no", "off"):
+            return False, "PO_AUTO=0: the PO automatic run is off."
+        with self.lock:
+            if self.po_sweep is not None and self.po_sweep.poll() is None:
+                return False, "The PO automatic run is already going."
+            try:
+                self.po_sweep = subprocess.Popen(
+                    [sys.executable, "-m", "po", "sweep"], cwd=str(ROOT),
+                    env=dict(os.environ, PYTHONUNBUFFERED="1", **(env or {})),
+                    stdin=subprocess.DEVNULL)
+            except Exception as error:
+                return False, "The PO automatic run could not start: {0}".format(error)
+            return True, "The PO automatic run started beside the ETA run."
 
     def stop(self, force=False):
         with self.lock:
