@@ -271,7 +271,7 @@ have that information" while ATLAS NOTICED said nothing needed attention.
     runner      SkipShipment(message, failure={category, stage, operation,
                 last_success, detail, cause{kind,name,value,decided_by,
                 stated_condition}, observed{...}}) where the code KNOWS why
-                it stopped (today: the OCEAN_WRITE read-only rule); the read
+                it stopped (e.g. OCEAN_WRITE=0, the ocean stop switch); the read
                 result is published to the bridge before raising; main()
                 passes `failure=` to shipment_finished on both failure paths
     bridge      record["failure"]; failure intelligence built at

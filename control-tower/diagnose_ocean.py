@@ -12,8 +12,9 @@ says, and the ETA and ATA the reader took from it, with the label each came
 from. Nothing is written anywhere. Edge opens visibly so you can watch, and
 human verification is left for you to complete.
 
-Run it once per carrier with a real reference. When a carrier's dates come
-back right, it can be trusted to write: set OCEAN_WRITE=1.
+Run it to check a carrier's page without writing anything. Normal runs
+write ocean results (OCEAN_WRITE=0 stops that) and count a write as a
+success only when the Hub reads the date back.
 """
 
 import sys

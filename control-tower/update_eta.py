@@ -5263,13 +5263,26 @@ PORTALS = {
 # shipment page is opened directly. The others are searched from the page
 # the operator gave.
 #
-# NONE OF THESE PAGES HAS BEEN SEEN BY THIS CODE YET. Until one has been
-# confirmed on a real run, each carrier is looked up and its result logged,
-# but nothing is written to the Hub: OCEAN_WRITE=1 turns writing on. A
-# wrong ETA in the Hub is worse than no ETA, and seven sites read for the
-# first time are seven chances of one.
-OCEAN_WRITE = os.environ.get("OCEAN_WRITE", "0").strip().lower() in (
-    "1", "true", "yes", "on")
+# WRITING. Until the 6th of October these carriers ran read-only — a gate
+# added with them on the 4th "until their result page has been confirmed on
+# a real run". The run of the 6th confirmed it: MSC's page for MEDUAHP69377
+# was opened, carried the bill of lading, and gave ETA 10/11/2026 from its
+# 'ETA' label. The gate is gone; what made it safe to lift stays, and is
+# what every ocean write now has to pass:
+#
+#   identity   the carrier page carries the Hub's reference letter for letter
+#              (verify_identity — a result without it is never read)
+#   dates      the ETA is a real date, an ATA a real date not in the future
+#              (validate_arrival_result — a failing date is dropped, never
+#              repaired)
+#   read-back  after Save the Manage page is reopened and the field read; the
+#              shipment is SUCCESS only when it holds the date written. A
+#              read-back that cannot be performed is NOT a success for an
+#              ocean write (WriteUnverified), and a mismatch is a failure.
+#
+# OCEAN_WRITE=0 is kept as the operator's stop switch — on by default.
+OCEAN_WRITE = os.environ.get("OCEAN_WRITE", "1").strip().lower() not in (
+    "0", "false", "no", "off")
 OCEAN_REFERENCE_BOX = (r"B\s*/\s*L|Bill\s+of\s+Lading|Container|Booking|"
                        r"Reference|Tracking|Shipment\s+number")
 OCEAN_SEARCH_BUTTON = r"^\s*(Search|Track|Find|Go|Submit)\b"
@@ -8903,6 +8916,12 @@ def get_provider_result(provider_pages, shipment):
                 .format(reference, PORTALS[provider]["label"]))
         try:
             result = get_portal_result(page, provider, reference, shipment)
+            if config.get("ocean") and result and not result.get("no_result"):
+                # The same date checks a result confirmed after a human step
+                # gets, before anything can reach the Hub; and the write that
+                # follows counts only once the Hub reads it back.
+                result = validate_arrival_result(result, config["label"], reference)
+                result["read_back_required"] = True
             if config.get("ocean") and result and not result.get("no_result") \
                     and not OCEAN_WRITE:
                 read = "; ".join(
@@ -8913,14 +8932,14 @@ def get_provider_result(provider_pages, shipment):
                 # dashboard and ATLAS as data, not only inside the sentence.
                 try:
                     tower.provider_result(result)
-                    tower.step("Hub write not performed: OCEAN_WRITE is off, so {0} "
+                    tower.step("Hub write not performed: OCEAN_WRITE=0 is set, so {0} "
                                "runs read-only".format(config["label"]))
                 except Exception as publish_error:
                     note_suppressed("publishing a read-only carrier result", publish_error)
                 raise SkipShipment(
-                    "{0} read {1} for {2}. Not written: ocean carriers run "
-                    "read-only until their result page has been confirmed on "
-                    "a real run (OCEAN_WRITE=1 writes).".format(
+                    "{0} read {1} for {2}. Not written: ocean writing is "
+                    "switched off on this machine (OCEAN_WRITE=0; remove it "
+                    "to write).".format(
                         config["label"], read or "no date", reference),
                     failure={
                         "category": "CARRIER_POLICY_BLOCK",
@@ -8932,8 +8951,8 @@ def get_provider_result(provider_pages, shipment):
                                   "this carrier is switched off by configuration.",
                         "cause": {"kind": "configuration", "name": "OCEAN_WRITE",
                                   "value": "off", "decided_by": "the run's own write check",
-                                  "stated_condition": "ocean carriers run read-only until "
-                                  "their result page has been confirmed on a real run"},
+                                  "stated_condition": "ocean writing is switched off on "
+                                  "this machine by OCEAN_WRITE=0"},
                         "observed": {k: result.get(k) for k in (
                             "tracking_status", "eta", "eta_source", "ata", "ata_source")
                             if result.get(k)},
@@ -9729,9 +9748,26 @@ def verify_saved_date(page, shipment, view_name, field_name, expected):
         return None, "verification could not be completed: {0}".format(error)
 
 
-def update_one_view(page, shipment, view_name, field_name, date_value,
-                    return_to_table=True):
+class WriteUnverified(Exception):
     """
+    A date was saved to the Hub but could not be read back, on a write that
+    counts only once it is read back (an ocean carrier's). Not a success —
+    and not a claim that the write failed either: the failure says exactly
+    what was saved and what could not be confirmed.
+    """
+
+    def __init__(self, message, failure):
+        Exception.__init__(self, message)
+        self.failure = failure
+
+
+def update_one_view(page, shipment, view_name, field_name, date_value,
+                    return_to_table=True, require_verified=False):
+    """
+    `require_verified` makes the read-back decide the outcome: it runs even
+    with VERIFY_AFTER_SAVE off, and a read-back that cannot be performed
+    raises WriteUnverified instead of being reported as saved.
+
     `return_to_table` defaults to True, which is the original behaviour: end by
     navigating back to the filtered results table.
 
@@ -9805,7 +9841,7 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
 
         save_manage_page(page)
 
-        if VERIFY_AFTER_SAVE:
+        if VERIFY_AFTER_SAVE or require_verified:
             verified, detail = verify_saved_date(
                 page, shipment, view_name, field_name, date_value)
             episode_read_back = detail if verified is True else None
@@ -9841,6 +9877,24 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
                     "{3}. Recorded as unverified — this is not evidence the "
                     "write failed, and it will not be used as a training "
                     "label.".format(view_name, field_name, bol_awb, detail))
+                if require_verified:
+                    tower.view_updated(view_name, field_name, date_value,
+                                       verified=None)
+                    raise WriteUnverified(
+                        "{0} {1} {2} was saved for {3} but the Hub could not be "
+                        "read back ({4}), so it is not reported as a success."
+                        .format(view_name, field_name, date_value, bol_awb, detail),
+                        failure={
+                            "category": "HUB_READBACK_FAILURE",
+                            "stage": "hub_read_back",
+                            "operation": "Hub read-back",
+                            "last_success": "{0} {1} {2} saved".format(
+                                view_name, field_name, date_value),
+                            "detail": "The value was saved, but reopening the "
+                                      "shipment to read it back did not "
+                                      "complete: {0}".format(detail),
+                            "observed": {"written": date_value, "read_back": None},
+                        })
         else:
             # Saved, but nobody looked. Not evidence of success.
             episode_outcome = ML_EPISODE_UNVERIFIED
@@ -9899,6 +9953,7 @@ def update_internal_shipment(internal_page, shipment, dhl_result):
             "ETA",
             dhl_result["eta"],
             return_to_table=not bu_update_follows,
+            require_verified=bool(dhl_result.get("read_back_required")),
         )
     else:
         actions["coe"] = "No provider ETA; COE ETA not updated"
@@ -9912,6 +9967,7 @@ def update_internal_shipment(internal_page, shipment, dhl_result):
                 BU_VIEW,
                 "ATA",
                 dhl_result["ata"],
+                require_verified=bool(dhl_result.get("read_back_required")),
             )
         except Exception as error:
             # The COE ETA above may already be SAVED IN THE HUB. Letting this

@@ -4,13 +4,17 @@ The ocean carriers added on the 4th of October.
     CMA CGM, MSC, Grimaldi Lines, COSCO Shipping, Maersk,
     Ocean Network Express (ONE), Hapag-Lloyd
 
-None of their pages has been seen by this code. So what is pinned here is
-the part that must hold whatever the pages turn out to look like: the Hub
-carrier name picks the carrier; the reference is typed as the Hub holds it
-and confirmed on the page letter for letter; an ETA beside the port of
-discharge beats one at a transshipment port; a page for a different bill of
-lading is never read; and, until OCEAN_WRITE=1, a result is logged and NOT
-written to the Hub.
+What is pinned here: the Hub carrier name picks the carrier; the reference
+is typed as the Hub holds it and confirmed on the page letter for letter; an
+ETA beside the port of discharge beats one at a transshipment port; a page
+for a different bill of lading is never read; a result is WRITTEN to the
+Hub (the read-only gate of the 4th was lifted on the 6th, after MSC's page
+was confirmed on a real run) and is a success only when the Hub reads the
+date back; OCEAN_WRITE=0 still stops writing.
+
+Section 5 drives the real code from the carrier page to the read-back. Its
+Hub is a dictionary at the page boundary (open Manage / fill / save / the
+field's value) — it proves the logic, NOT a write to the real eHub.
 
     python test_ocean.py
 """
@@ -90,8 +94,22 @@ check("COSCO opens the shipment straight from its own link pattern",
       "trackingType=BILLOFLADING&number={0}" in A.PORTALS["COSCO"]["deep_link"])
 check("Maersk takes the reference as a path",
       A.PORTALS["MAERSK"]["deep_link"].endswith("/tracking/{0}"))
-check("Writing to the Hub is OFF for ocean carriers by default",
-      A.OCEAN_WRITE is False)
+check("Writing to the Hub is ON for ocean carriers by default",
+      A.OCEAN_WRITE is True)
+_saved_env = os.environ.get("OCEAN_WRITE")
+for _value, _want in (("0", False), ("off", False), ("1", True), ("", True)):
+    os.environ["OCEAN_WRITE"] = _value
+    _flag = os.environ.get("OCEAN_WRITE", "1").strip().lower() not in (
+        "0", "false", "no", "off")
+    check("OCEAN_WRITE={0!r} -> writing {1}".format(_value, "on" if _want else "off"),
+          _flag is _want)
+if _saved_env is None:
+    os.environ.pop("OCEAN_WRITE", None)
+else:
+    os.environ["OCEAN_WRITE"] = _saved_env
+SRC = (HERE / "update_eta.py").read_text(encoding="utf-8")
+check("The flag in update_eta.py is the one tested above (default on)",
+      'OCEAN_WRITE = os.environ.get("OCEAN_WRITE", "1").strip().lower() not in (' in SRC)
 
 print()
 print("=" * 74)
@@ -188,6 +206,19 @@ def voyage_page(reference):
             "<p>" + "x" * 200 + "</p></body></html>")
 
 
+# The run of the 6th: MSC, MEDUAHP69377, "Estimated arrival - ETA 10/11/2026"
+# read from the 'ETA' label. The layout below is NOT MSC's page — only the
+# words the run's log recorded.
+MSC_REF, MSC_ETA, STALE_REF = "MEDUAHP69377", "10/11/2026", "MEDUAHP00000"
+
+
+def msc_page(reference):
+    return ("<!doctype html><html><body><h1>Track a shipment</h1>"
+            "<p>Bill of Lading: " + reference + "</p>"
+            "<p>Port of Discharge TEMA</p><p>ETA " + MSC_ETA + "</p>"
+            "<p>" + "x" * 200 + "</p></body></html>")
+
+
 SEARCH = ("<!doctype html><html><body><h1>Track a shipment</h1>"
           "<form onsubmit=\"event.preventDefault();location.href='/result?ref='"
           "+encodeURIComponent(document.getElementById('r').value)\">"
@@ -248,7 +279,12 @@ class Carrier(BaseHTTPRequestHandler):
             body = voyage_page(query.get("ship") or query.get("equip"))
         elif parsed.path.startswith("/result"):
             reference = parse_qs(parsed.query).get("ref", [""])[0]
-            body = voyage_page(reference)
+            if reference == MSC_REF:
+                body = msc_page(MSC_REF)
+            elif reference == STALE_REF:
+                body = msc_page(MSC_REF)       # another shipment's result
+            else:
+                body = voyage_page(reference)
         else:
             body = SEARCH
         data = body.encode("utf-8")
@@ -278,6 +314,172 @@ def launch(playwright):
     return None, last
 
 
+class HubBoundary(object):
+    """
+    The Hub at the page boundary, for section 5: which Manage page is open,
+    the value a date field holds, and Save. Everything above it —
+    update_internal_shipment, update_one_view, verify_saved_date and the
+    outcome rules — is the production code.
+    """
+
+    def __init__(self):
+        self.held, self.pending, self.opened, self.saves = {}, {}, [], 0
+        self.mode = "persist"            # persist | drop | unreadable
+        self.current = None
+
+    def install(self):
+        hub = self
+
+        class Field(object):
+            def __init__(self, name):
+                self.name = name
+
+            @property
+            def first(self):
+                return self
+
+            def wait_for(self, **kw):
+                pass
+
+            def input_value(self):
+                return hub.held.get((hub.current, self.name), "")
+
+        def open_manage(page, view, bol, table_page):
+            hub.current = bol
+            hub.opened.append((view, bol))
+            return table_page
+
+        def fill(page, field, value):
+            hub.pending[(hub.current, field)] = value
+
+        def save(page):
+            hub.saves += 1
+            if hub.mode != "drop":
+                hub.held.update(hub.pending)
+            hub.pending.clear()
+
+        A.click_manage_in_view = open_manage
+        A.select_shipment_info_tab = lambda page, view, field=None: True
+        A.fill_date_field = fill
+        A.save_manage_page = save
+        A.ensure_filtered_page = lambda *args, **kwargs: None
+        A.field_candidates = lambda page, name: (
+            [] if hub.mode == "unreadable" else [(name, Field(name))])
+        A.find_field_ignoring_visibility = lambda page, name: None
+        A.page_is_settled = lambda page: True
+        A.all_scopes = lambda page: [page]
+        A.ml_episode_begin = lambda *args, **kwargs: None
+        A.ml_episode_end = lambda *args, **kwargs: None
+        A.ml_record = lambda *args, **kwargs: None
+
+
+def ocean_write_chain(pages):
+    """
+    MSC carrier result -> ETA extracted -> identity -> write -> read-back ->
+    SUCCESS only when the read-back matches. main()'s rule is: a shipment is
+    SUCCESS when update_internal_shipment returns; any exception is not.
+    """
+    print()
+    print("=" * 74)
+    print("5. OCEAN WRITE CHAIN: CARRIER PAGE -> HUB WRITE -> READ-BACK")
+    print("=" * 74)
+    hub = HubBoundary()
+    hub.install()
+    A.DRY_RUN = False
+    A.VERIFY_AFTER_SAVE = True
+    A.OCEAN_WRITE = True
+    msc = {"bol_awb": MSC_REF, "carrier": "MSC", "provider": "MSC",
+           "current_eta": "05/11/2026", "table_page": 1}
+
+    result = A.get_provider_result(pages, msc)
+    check("MSC MEDUAHP69377: ETA extracted = 10/11/2026 from the 'ETA' label",
+          result.get("eta") == MSC_ETA and result.get("eta_source") == "ETA", str(result))
+    check("...the result is marked: success only on a matching read-back",
+          result.get("read_back_required") is True)
+    action = A.update_internal_shipment(object(), msc, result)
+    check("The ETA is written to the COE view of THAT shipment",
+          ("COE", MSC_REF) in hub.opened and hub.saves == 1, str(hub.opened))
+    check("Read back from the Hub after Save: 10/11/2026",
+          hub.held.get((MSC_REF, "ETA")) == MSC_ETA and hub.opened.count(("COE", MSC_REF)) == 2,
+          "{0} {1}".format(hub.held, hub.opened))
+    check("Read-back matches -> update_internal_shipment returns (main(): SUCCESS)",
+          "COE ETA updated with 10/11/2026 and saved" in (action or {}).get("coe", ""),
+          str(action))
+    check("No ATA was written: none was published", (MSC_REF, "ATA") not in hub.held)
+
+    # The Hub drops the value: a mismatch is a failure, never a success.
+    hub2 = HubBoundary()
+    hub2.install()
+    hub2.mode = "drop"
+    dropped = None
+    try:
+        A.update_internal_shipment(object(), msc, dict(result))
+    except Exception as error:
+        dropped = error
+    check("Saved but the Hub reads back something else -> NOT a success",
+          dropped is not None and "not verified" in str(dropped), repr(dropped))
+
+    # The read-back cannot be performed: for an ocean write, NOT a success.
+    hub3 = HubBoundary()
+    hub3.install()
+    hub3.mode = "unreadable"
+    unread = None
+    try:
+        A.update_internal_shipment(object(), msc, dict(result))
+    except Exception as error:
+        unread = error
+    check("Saved but the read-back could not be performed -> WriteUnverified, "
+          "not a success", isinstance(unread, A.WriteUnverified), repr(unread))
+    check("...declaring the stage and what was and was not confirmed",
+          isinstance(unread, A.WriteUnverified)
+          and unread.failure["stage"] == "hub_read_back"
+          and unread.failure["observed"] == {"written": MSC_ETA, "read_back": None},
+          str(getattr(unread, "failure", None)))
+    check("...and classified as a read-back failure",
+          A.classify_failure(unread) != A.SUCCESS if unread else False)
+
+    # VERIFY_AFTER_SAVE=0 does not let an ocean write skip its read-back.
+    hub4 = HubBoundary()
+    hub4.install()
+    A.VERIFY_AFTER_SAVE = False
+    try:
+        A.update_internal_shipment(object(), msc, dict(result))
+    finally:
+        A.VERIFY_AFTER_SAVE = True
+    check("VERIFY_AFTER_SAVE=0: an ocean write is still read back",
+          hub4.opened.count(("COE", MSC_REF)) == 2, str(hub4.opened))
+
+    # An air result (no read_back_required) keeps its existing behaviour.
+    hub5 = HubBoundary()
+    hub5.install()
+    hub5.mode = "unreadable"
+    air = A.update_internal_shipment(object(), dict(msc, bol_awb="074-46285514"),
+                                     {"eta": MSC_ETA, "ata": None})
+    check("An air carrier's unreadable read-back is unchanged (saved, unverified)",
+          "updated with" in (air or {}).get("coe", ""), str(air))
+
+    # WRONG SHIPMENT. The carrier shows MEDUAHP69377's result for a request
+    # about MEDUAHP00000: nothing is read, nothing is written.
+    hub6 = HubBoundary()
+    hub6.install()
+    stale = None
+    try:
+        r = A.get_provider_result(pages, dict(msc, bol_awb=STALE_REF))
+        A.update_internal_shipment(object(), dict(msc, bol_awb=STALE_REF), r)
+    except Exception as error:
+        stale = error
+    check("A result page for another bill of lading is never written",
+          isinstance(stale, A.SkipShipment) and not hub6.held and hub6.saves == 0,
+          "{0!r} {1}".format(stale, hub6.held))
+
+    # A date that is not a date never reaches the Hub.
+    checked = A.validate_arrival_result(
+        {"provider": "MSC", "tracking_status": "Arrived", "eta": MSC_ETA,
+         "ata": "31/12/2099"}, "MSC", MSC_REF)
+    check("An 'actual arrival' in the future is dropped before the write",
+          checked.get("ata") is None and checked.get("eta") == MSC_ETA, str(checked))
+
+
 print()
 print("=" * 74)
 print("4. END TO END, THROUGH get_provider_result()")
@@ -300,10 +502,10 @@ except Exception as error:
     sync_playwright = None
     WHY = str(error)[:80]
 
-NAMES = ("read-only by default", "written when enabled", "searched carrier",
+NAMES = ("written by default", "stop switch", "searched carrier",
          "wrong bill of lading", "grimaldi shipment", "grimaldi container",
          "grimaldi code untouched", "grimaldi nobody", "grimaldi unattended",
-         "lazy tab")
+         "lazy tab", "ocean write chain")
 if sync_playwright is None:
     for name in NAMES:
         skip(name, WHY)
@@ -319,22 +521,26 @@ else:
             ship = {"bol_awb": GOOD, "carrier": "Maersk Line",
                     "provider": "MAERSK", "current_eta": "10/10/2026"}
 
+            result = A.get_provider_result(pages, ship)
+            check("By default a Maersk result is handed on to be written",
+                  (result or {}).get("eta") == "12/10/2026", str(result))
+            check("...marked so the write counts only once it is read back",
+                  (result or {}).get("read_back_required") is True, str(result))
+            check("A carrier's tab is opened the first time it is needed",
+                  "MAERSK" in pages)
+
+            A.OCEAN_WRITE = False
             held = None
             try:
                 A.get_provider_result(pages, ship)
             except A.SkipShipment as error:
                 held = str(error)
-            check("By default a Maersk result is read and NOT written",
-                  held is not None and "Not written" in (held or ""), held)
-            check("...and the message says what was read, and from which label",
-                  "eta 12/10/2026 (from 'ETA')" in (held or ""), held)
-            check("A carrier's tab is opened the first time it is needed",
-                  "MAERSK" in pages)
-
+            check("With OCEAN_WRITE=0 (the operator's stop switch) it is read and "
+                  "NOT written", held is not None and "Not written" in (held or ""), held)
+            check("...and the message says what was read, from which label, and "
+                  "which setting stopped it", "eta 12/10/2026 (from 'ETA')" in (held or "")
+                  and "OCEAN_WRITE=0" in (held or ""), held)
             A.OCEAN_WRITE = True
-            result = A.get_provider_result(pages, ship)
-            check("With OCEAN_WRITE on, the result is handed on to be written",
-                  (result or {}).get("eta") == "12/10/2026", str(result))
 
             searched = A.get_provider_result(
                 pages, {"bol_awb": GOOD, "carrier": "MSC", "provider": "MSC",
@@ -406,7 +612,7 @@ else:
                   and pages["GRIMALDI"].url == "about:blank",
                   "{0} {1}".format(unattended, before))
             os.environ.pop("CAPTCHA_WAIT_MS", None)
-            A.OCEAN_WRITE = False
+            ocean_write_chain(pages)
             browser.close()
 
 server.shutdown()

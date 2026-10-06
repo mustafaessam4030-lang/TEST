@@ -179,9 +179,16 @@ same run and keeps the browser tab open where it stopped:
 K179801 goes to DHL. CMA CGM, MSC, Grimaldi, COSCO, Maersk, ONE and
 Hapag-Lloyd are picked by the Hub's Carrier Name column.
 
-- **Ocean results are read and logged, but not written to the Hub yet.**
-  First run `diagnose_ocean.bat <CARRIER> <reference>` with a real reference
-  and check the result. Then set `OCEAN_WRITE=1` to turn writing on.
+- **Ocean results are written to the Hub (since 6 Oct).** The carrier page
+  must carry the shipment's reference letter for letter, the dates must be
+  real dates, and after Save the shipment is reopened and the field read
+  back: it is **Success only when the Hub reads back the date written**. A
+  read-back that cannot be done is *not* a success. To stop ocean writing on
+  a machine, set `OCEAN_WRITE=0`.
+- **Prove one shipment against the real eHub:** `python prove_ocean_write.py
+  MEDUAHP69377` runs the normal automation for that one shipment and prints
+  the ETA read, the value written, the value read back and the verdict
+  (VERIFIED SUCCESS or why not). It writes to eHub like a normal run.
 - **Hapag-Lloyd:** a container number (HLCU1234567) uses *Tracing by
   Container*. A bill of lading (HLCUTA12609EPQF2) uses tracing by booking.
 - **Grimaldi (GNET) needs a person for every search.** The run fills in

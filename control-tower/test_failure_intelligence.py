@@ -165,7 +165,7 @@ A.save_page_text = lambda *args, **kwargs: None
 A.take_screenshot = lambda *args, **kwargs: None
 A.PAGE_SETTLE_MAX_SECONDS = 1           # the stub pages render at once
 A.PORTALS["MSC"] = dict(A.PORTALS["MSC"], urls=[BASE + "/search"], wait=6)
-A.OCEAN_WRITE = False                   # the shipped default
+A.OCEAN_WRITE = False                   # the operator's stop switch (OCEAN_WRITE=0)
 
 
 def main_mapping(tower, shipment, error):
