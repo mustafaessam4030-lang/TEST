@@ -98,6 +98,10 @@ def _request_fields(doctype, request, config):
             value, origin = str(given).strip(), "request"
         elif spec["source"] == doctypes.CONFIG and (config.get("defaults") or {}).get(spec["name"]):
             value, origin = config["defaults"][spec["name"]], "configuration"
+        elif spec["source"] == doctypes.CONFIG and \
+                (doctype.get("config_defaults") or {}).get(spec["name"]):
+            value, origin = doctype["config_defaults"][spec["name"]], \
+                "configuration (the Duty Template's default)"
         out[spec["name"]] = {"name": spec["name"], "label": spec["label"], "kind": spec["kind"],
                              "status": X.FOUND if value else X.MISSING, "value": value,
                              "evidence": origin, "candidates": [], "origin": origin}
@@ -108,17 +112,24 @@ def _g4_norm(value):
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper()).lstrip("0")
 
 
-def _g4_source(doctype, request, printed):
+USER_REFERENCE_G4 = re.compile(r"[A-Z]{0,6}(\d{5,12})")
+
+
+def _g4_source(doctype, request, printed, user_reference=None):
     """
     The supplier invoice No. (G4) and, when it is not proven, why.
     -> (field, issue | None)
 
     G4 comes ONLY from the Bill of Entry: the value printed under an explicit
-    "Invoice No." / "Invoice Number" label (extract.printed_invoice_no). Never
-    eHub's UNA+ column, shipment metadata, a search value, an operator's typed
-    value, a file name or a model.
+    "Invoice No." / "Invoice Number" label (extract.printed_invoice_no); when
+    it prints none, the number in its own "User Reference" (DDAO9116093 →
+    9116093), as the business's completed Duty Template does — only for a
+    reference of letters then digits, and only when the document type says so
+    (g4_from_user_reference). Never eHub's UNA+ column, shipment metadata, a
+    search value, an operator's typed value, a file name or a model.
 
       one well-formed printed value      → G4 (origin bill_of_entry)
+      no Invoice No., a User Reference   → G4 (origin bill_of_entry:user_reference)
       the job's own value disagrees      → issue "conflict" (review)
       several different printed values   → issue "ambiguous" (review)
       the label printed, value malformed → issue "malformed" (review)
@@ -169,6 +180,25 @@ def _g4_source(doctype, request, printed):
             "reason": "ambiguous", "candidates": many,
             "detail": "The Bill of Entry prints several different invoice numbers ({0}); G4 is "
                       "not chosen from them automatically.".format(" / ".join(many))}
+    ref = user_reference or {}
+    digits = USER_REFERENCE_G4.fullmatch(str(ref.get("value") or "").strip().upper()) \
+        if ref.get("status") == X.FOUND and doctype.get("g4_from_user_reference") else None
+    if digits:
+        value = digits.group(1)
+        field = dict(base, status=X.FOUND, value=value, raw=ref["value"],
+                     origin="bill_of_entry:user_reference", page=ref.get("page"),
+                     evidence="the Bill of Entry's User Reference {0}: {1}".format(
+                         ref["value"], ref.get("evidence")),
+                     note="no explicit 'Invoice No.' printed; the number in the Bill of "
+                          "Entry's own User Reference, as in the business's Duty Template")
+        if expected and _g4_norm(expected) != _g4_norm(value):
+            field["note"] = "the job gives {0}; the Bill of Entry's User Reference gives " \
+                            "{1}".format(expected, value)
+            return field, {"reason": "conflict", "candidates": [value],
+                           "detail": "Supplier invoice No. (G4) disagrees: the job gives {0}, "
+                                     "the Bill of Entry's User Reference {1} gives {2}.".format(
+                                         expected, ref["value"], value)}
+        return field, None
     return dict(base, note="the Bill of Entry prints no explicit 'Invoice No.'"), {
         "reason": "absent", "candidates": [],
         "detail": "The Bill of Entry prints no explicit 'Invoice No.'. G4 is not filled from "
@@ -558,7 +588,7 @@ def from_document(store, record, data, config=None):
 
     # ── EXTRACT ───────────────────────────────────────────────────────────
     t0 = time.monotonic()
-    fields = X.extract(read["text"], doctype, read.get("spans"))
+    fields = X.extract(read["text"], doctype, read.get("spans"), read.get("words"))
     _timed(record, "extraction", t0)
     if not X.looks_like(fields):
         record["fields"] = fields
@@ -620,7 +650,8 @@ def validate_onward(store, record, config=None):
     # A validation proves everything after it again.
     S.Store.reset_milestones(record, "revalidate")
     request_fields = _request_fields(doctype, request, config)
-    g4, g4_issue = _g4_source(doctype, request, record.get("invoice_candidate") or {})
+    g4, g4_issue = _g4_source(doctype, request, record.get("invoice_candidate") or {},
+                              fields.get("user_reference"))
     request_fields["invoice_no"] = g4
     record["request_fields"] = request_fields
     record["provenance_map"] = provenance_map(doctype, fields, request_fields)
@@ -765,6 +796,8 @@ def provenance_map(doctype, fields, request_fields):
     for name in ("cif_usd", "exchange_rate", "duty_amount_ghs"):
         rules.setdefault(name, []).append("> 0")
     rules.setdefault("duty_amount_ghs", []).append(
+        "Σ B accounting lines = Total (±{0:.2f})".format(doctype.get("duty_tolerance", 1.0))
+        if (fields.get("tax_lines") or {}).get("status") == X.FOUND else
         "total duty − VAT block = import duty line (±{0:.2f})".format(
             doctype.get("duty_tolerance", 1.0)))
     out = []

@@ -104,6 +104,11 @@ def invariants(st, record):
         printed = record.get("invoice_candidate") or {}
         allowed = set(([printed.get("value")] if printed.get("value") else []) +
                       list(printed.get("candidates") or []))
+        # ...or, with no Invoice No. printed, the digits of the Bill of
+        # Entry's own User Reference (the business's Duty Template rule).
+        ref = ((record.get("fields") or {}).get("user_reference") or {}).get("value") or ""
+        if g4.get("origin") == "bill_of_entry:user_reference" and not allowed:
+            allowed = {"".join(c for c in ref if c.isdigit())}
         if not str(g4.get("origin") or "").startswith("bill_of_entry") or \
                 g4.get("value") not in allowed:
             bad.append("G4 {0!r} is not an explicit printed Invoice No. ({1})".format(

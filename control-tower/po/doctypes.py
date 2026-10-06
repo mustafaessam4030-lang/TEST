@@ -60,10 +60,28 @@ DUTY_REQUEST_V1 = {
          "required": False, "kind": "amount"},
         {"name": "vat_lines", "label": "VAT / levy lines", "source": PDF, "required": True,
          "kind": "lines"},
-        # G4. ONLY an explicit "Invoice No." printed on the Bill of Entry
-        # itself (po/extract.printed_invoice_no) — never eHub's UNA+ column,
-        # shipment metadata, a search value, a guess or a model. A value given
-        # with the job is a cross-check only; it never fills G4.
+        # Read from the ICUMS form as evidence and for its own checks: every
+        # line of B ACCOUNTING DETAILS (they must add up to its Total), the
+        # invoice and exchange-rate currencies (C19 is in USD), and the
+        # remaining highlighted boxes of the business's example.
+        {"name": "tax_lines", "label": "B accounting details (tax lines)", "source": PDF,
+         "required": False, "kind": "lines"},
+        {"name": "invoice_currency", "label": "Invoice currency", "source": PDF,
+         "required": False, "kind": "text"},
+        {"name": "rate_currency", "label": "Exchange-rate currency", "source": PDF,
+         "required": False, "kind": "text"},
+        {"name": "delivery_terms", "label": "Delivery terms & place", "source": PDF,
+         "required": False, "kind": "text"},
+        {"name": "fob_ncy", "label": "FOB Ncy (import/export)", "source": PDF,
+         "required": False, "kind": "amount"},
+        {"name": "doc_status", "label": "Document status", "source": PDF, "required": False,
+         "kind": "text"},
+        # G4. Only from the Bill of Entry itself: an explicit "Invoice No."
+        # printed on it (po/extract.printed_invoice_no); when it prints none,
+        # the number in its own "User Reference" (DDAO9116093 → 9116093), as
+        # the business's completed Duty Template does (g4_from_user_reference).
+        # Never eHub's UNA+ column, shipment metadata, a search value, a guess
+        # or a model. A value given with the job is a cross-check only.
         {"name": "invoice_no", "label": "Supplier invoice No.", "source": PDF,
          "required": True, "kind": "text"},
         {"name": "supplier", "label": "Supplier", "source": CONFIG, "required": True,
@@ -90,9 +108,18 @@ DUTY_REQUEST_V1 = {
          "pdf": "document_number", "hub": "manage_declaration", "compare": "declaration",
          "optional": True},
     ],
-    # The document's own arithmetic: total duty less the VAT block must equal
-    # the import-duty line it prints, within this tolerance (GHS).
+    # The document's own arithmetic, within this tolerance (GHS): on the ICUMS
+    # form, the lines of B ACCOUNTING DETAILS add up to its Total; on a
+    # document without that table, total duty less the VAT block equals the
+    # import-duty line it prints.
     "duty_tolerance": 1.00,
+    # G4 from the Bill of Entry's User Reference when it prints no explicit
+    # Invoice No.: a reference of letters then digits only, G4 = the digits.
+    "g4_from_user_reference": True,
+    # The configuration values of the business's completed Duty Template
+    # (G10 SUPPLIER, G13 CHARGE TO), used when PO_DEFAULT_SUPPLIER /
+    # PO_DEFAULT_CHARGE_TO are not set. A job's own value overrides both.
+    "config_defaults": {"supplier": "CAT", "charge_to": "32600.CPA.G005"},
     "template": {
         "version": "DUTY_REQUEST_V1",
         "file": "DUTY_REQUEST_V1.xlsx",

@@ -79,6 +79,35 @@ def _ocr_page(page):
     return out.stdout if out.returncode == 0 else None
 
 
+def _page_words(page):
+    """The page's words with their boxes: (x0, y0, x1, y1, text). A word never
+    spans two text runs (spans), so a value printed right against a label
+    ("Import" | "88") stays two words."""
+    out = []
+    try:
+        blocks = page.get_text("rawdict")["blocks"]
+    except Exception:                                 # pragma: no cover
+        return [tuple(w[:5]) for w in page.get_text("words") if str(w[4]).strip()]
+    for block in blocks:
+        for line in block.get("lines") or []:
+            for span in line.get("spans") or []:
+                token, box = "", None
+                for ch in span.get("chars") or []:
+                    c = ch.get("c") or ""
+                    if c.isspace():
+                        if token:
+                            out.append(tuple(box) + (token,))
+                        token, box = "", None
+                        continue
+                    b = ch["bbox"]
+                    box = list(b) if box is None else [min(box[0], b[0]), min(box[1], b[1]),
+                                                       max(box[2], b[2]), max(box[3], b[3])]
+                    token += c
+                if token:
+                    out.append(tuple(box) + (token,))
+    return out
+
+
 def read_pdf(data):
     """
     {"text", "pages", "methods": ["text"|"ocr"|"unreadable", ...], "chars"}.
@@ -111,7 +140,7 @@ def read_pdf(data):
         doc.close()
         raise Unreadable("the PDF is damaged: it only opens after repair, so its content "
                          "cannot be trusted")
-    texts, methods, spans, offset = [], [], [], 0
+    texts, methods, spans, offset, words = [], [], [], 0, []
     with doc:
         if doc.needs_pass:
             raise Unreadable("the PDF is password-protected")
@@ -130,6 +159,10 @@ def read_pdf(data):
                     continue
             texts.append(chosen)
             methods.append(method)
+            if method == "text":
+                # Every word with its position: the ICUMS form is boxed, and
+                # its text layer is not in reading order (see read_layout).
+                words += [(number,) + w for w in _page_words(page)]
             # Where each page's text sits in the joined text: every value can
             # name the page it was read on, and how that page was read.
             spans.append({"start": offset, "end": offset + len(chosen), "page": number,
@@ -142,7 +175,7 @@ def read_pdf(data):
             pages, "" if _tesseract() else "; OCR is not installed"))
     import hashlib
     return {"text": joined, "pages": pages, "methods": methods, "chars": len(joined),
-            "spans": spans,
+            "spans": spans, "words": words,
             "integrity": {"bytes": len(data), "header": "%PDF", "eof_marker": True,
                           "repaired": False, "encrypted": False, "within_size_limit": True,
                           "opened": True, "readable_pages": len(spans),
@@ -193,13 +226,21 @@ AMOUNT_RULES = {
     ],
 }
 
+# The VAT / levy block (G20): the six lines the Duty Template adds up —
+# =Import VAT + Network Charge VAT + Import NHIL + GETFund Import + Network
+# Charge NHIL + Network Charge GET Fund Levy. Most specific first: a line is
+# given the first label it matches.
 VAT_LABELS = [
-    ("Import VAT", r"import\s+v\.?a\.?t"),
+    ("Network Charge GET Fund Levy",
+     r"net\s*w?o?r?k\s+charge\s+(?:get\s*fund|v\.?a\.?t\s+fund)\s+levy"),
+    ("Network Charge NHIL", r"net\s*w?o?r?k\s+charge\s+n\.?h\.?i\.?l"),
     ("Network Charge VAT", r"net\s*w?o?r?k\s+charge\s+v\.?a\.?t(?!\s+fund)"),
+    ("Import VAT", r"import\s+v\.?a\.?t"),
     ("Import NHIL", r"(?:import\s+)?n\.?h\.?i\.?l"),
     ("GETFund Import", r"(?:ghana\s+education(?:al)?\s+trust|get\s*fund|getfund)"),
-    ("Network Charge VAT Levy", r"net\s*w?o?r?k\s+charge\s+v\.?a\.?t\s+fund\s+levy"),
 ]
+VAT_ORDER = ["Import VAT", "Network Charge VAT", "Import NHIL", "GETFund Import",
+             "Network Charge NHIL", "Network Charge GET Fund Levy"]
 
 DATE_FORMATS = ["%d/%m/%Y", "%d/%m/%y", "%Y/%m/%d", "%d/%b/%Y", "%d/%B/%Y"]
 
@@ -460,8 +501,463 @@ def printed_invoice_no(text, spans=None):
     return {}
 
 
-def extract(text, doctype, spans=None):
-    """Every PDF field of the document type, typed, with its evidence. {name: field}."""
+# ── THE ICUMS FORM, READ BY POSITION ─────────────────────────────────────
+#
+# A real ICUMS Bill of Entry is a boxed form. A box's label sits at its
+# top-left; its value is beside the label (the header block: "BL/AWB :
+# J552493") or on the row below it, inside the box ("13 Total Invoice Fcy" /
+# "174,071.09"). The PDF's text layer is NOT in reading order — labels come
+# first, values after — so the line rules above, which take what follows a
+# label in the text, read the wrong value or none (the real failure: only the
+# user reference was found, and "BL/AWB" took box 6's reference number).
+#
+# Here every word keeps its position, and each value is read where the form
+# prints it:
+#
+#   beside  the first group of words to the right of the label on its row
+#   below   the next row down, within the label's column — from the label's
+#           box number to the next label on its row
+#   table   B ACCOUNTING DETAILS: one row per tax — name, code, exempted,
+#           amount payable — down to its "Total" row. The per-item table
+#           (box 40) on the left is never read.
+#
+# A value is accepted only when it has the field's form (a date, a number
+# under NUMBER GRAMMAR, a reference); a number that is printed but not
+# well-formed is MALFORMED, never coerced. Nothing is read from the text
+# order, and nothing from the line rules is mixed in.
+
+ICUMS_LABELS = {
+    "document_number": r"bill\s+of\s+entry\s*\(\s*boe\s*\)\s*no\b\.?\s*:?",
+    "bl_awb": r"\bbl\s*/\s*awb\b\s*(?:no\b\.?)?\s*:?",
+    "date": r"\bdate\b\s*:?",
+    "user_reference": r"\buser\s+ref(?:erence)?\b\.?\s*:?",
+    "doc_status": r"\bdoc(?:ument)?\s+status\s*:?",
+    "delivery_terms": r"\bdelivery\s+terms\s*(?:&|and)\s*place\b",
+    "invoice_fcy": r"\btotal\s+invoice\s+fcy\b",
+    "curr_code": r"\bcurr(?:ency)?\s+code\b",
+    "rate": r"\brate\s+of\s+x?\s*change\b",
+    "fob_ncy": r"\bfob\s+ncy\s*\(\s*import\s*/\s*export\s*\)",
+}
+# The six VAT / levy lines of the Duty Template's G20, as ICUMS names them in
+# B ACCOUNTING DETAILS (the whole name, nothing more), and the ICUMS tax code
+# each is printed with: a name and its code must agree, or the block stops.
+ICUMS_VAT_CODES = {"Import VAT": "02", "Network Charge VAT": "33", "Import NHIL": "47",
+                   "GETFund Import": "88", "Network Charge NHIL": "48",
+                   "Network Charge GET Fund Levy": "89"}
+ICUMS_VAT = [
+    ("Import VAT", r"import\s+vat"),
+    ("Network Charge VAT", r"network\s+charge\s+vat"),
+    ("Import NHIL", r"import\s+nhil"),
+    ("GETFund Import", r"ghana\s+education\s+trust\s*\(\s*get\s*\)\s*fund\s+import|"
+                       r"get\s*fund\s+import"),
+    ("Network Charge NHIL", r"network\s+charge\s+nhil"),
+    ("Network Charge GET Fund Levy", r"network\s+charge\s+get\s*fund\s+levy"),
+]
+REFERENCE_FORM = re.compile(r"[A-Z0-9][A-Z0-9\-/_]{3,30}", re.I)
+DECLARATION_FORM = re.compile(r"(\d{6,})(?:\s*/\s*(\d{1,4}))?")
+
+
+def _rows(words):
+    """The words of each page as printed rows, top to bottom, each left to right.
+    -> [{"page", "words": [(x0, y0, x1, y1, text)], "y", "h"}]"""
+    rows = []
+    for page in sorted({w[0] for w in words}):
+        on_page = sorted((w[1:] for w in words if w[0] == page),
+                         key=lambda w: ((w[1] + w[3]) / 2, w[0]))
+        current, centre = [], None
+        for w in on_page:
+            mid, h = (w[1] + w[3]) / 2, max(w[3] - w[1], 1.0)
+            if current and abs(mid - centre) > 0.4 * h:
+                rows.append(current)
+                current = []
+            if not current:
+                centre = mid
+            current.append(w)
+        if current:
+            rows.append(current)
+        for i in range(len(rows)):
+            if isinstance(rows[i], list):
+                ws = sorted(rows[i], key=lambda w: w[0])
+                heights = sorted(w[3] - w[1] for w in ws)
+                rows[i] = {"page": page, "words": ws,
+                           "y": sum((w[1] + w[3]) / 2 for w in ws) / len(ws),
+                           "top": min(w[1] for w in ws), "bottom": max(w[3] for w in ws),
+                           "h": max(heights[len(heights) // 2], 1.0)}
+    return rows
+
+
+def _row_text(row, start=0, end=None):
+    return " ".join(w[4] for w in row["words"][start:end])
+
+
+def _clusters(row, start=0):
+    """Groups of words on a row, split where the gap is wider than a word space."""
+    out, current = [], []
+    for i in range(start, len(row["words"])):
+        w = row["words"][i]
+        if current and w[0] - row["words"][i - 1][2] > 1.2 * row["h"]:
+            out.append(current)
+            current = []
+        current.append(i)
+    if current:
+        out.append(current)
+    return out
+
+
+def _find(rows, pattern):
+    """Every place a label is printed: {"row", "first", "last", "x0", "x1", "box_x0"}."""
+    hits = []
+    for r, row in enumerate(rows):
+        text, bounds, at = "", [], 0
+        for w in row["words"]:
+            bounds.append((at, at + len(w[4])))
+            text += w[4] + " "
+            at += len(w[4]) + 1
+        for m in re.finditer(pattern, text, re.I):
+            covered = [i for i, (a, b) in enumerate(bounds) if a < m.end() and b > m.start()]
+            if not covered:
+                continue
+            first, last = covered[0], covered[-1]
+            words = row["words"]
+            box_x0 = words[first][0]
+            # The box number printed before the label ("13  Total Invoice Fcy").
+            if first > 0 and re.fullmatch(r"\d{1,2}", words[first - 1][4]) and \
+                    words[first][0] - words[first - 1][2] <= 2.5 * row["h"]:
+                box_x0 = words[first - 1][0]
+            hits.append({"row": r, "first": first, "last": last, "x0": words[first][0],
+                         "x1": words[last][2], "box_x0": box_x0, "page": row["page"],
+                         "label": _row_text(row, first, last + 1)})
+    return hits
+
+
+def _beside(rows, hit):
+    """The first group of words right of the label on its row (':' skipped)."""
+    row = rows[hit["row"]]
+    start = hit["last"] + 1
+    while start < len(row["words"]) and re.fullmatch(r"[:.\-]+", row["words"][start][4]):
+        start += 1
+    if start >= len(row["words"]):
+        return None
+    group = _clusters(row, start)[0]
+    return _row_text(row, group[0], group[-1] + 1)
+
+
+def _below(rows, hit):
+    """The value printed under the label, inside its column: from the label's box
+    number to the next label on the label's row."""
+    row = rows[hit["row"]]
+    tol = 0.5 * row["h"]
+    left = hit["box_x0"] - tol
+    right = float("inf")
+    after = [i for i in range(hit["last"] + 1, len(row["words"]))
+             if row["words"][i][0] - row["words"][i - 1][2] > 1.2 * row["h"]]
+    if after:
+        right = row["words"][after[0]][0] - tol
+    for nxt in rows[hit["row"] + 1:]:
+        if nxt["page"] != row["page"] or nxt["top"] > row["bottom"] + 2.5 * row["h"]:
+            break
+        inside = [w for w in nxt["words"] if left <= (w[0] + w[2]) / 2 < right]
+        if inside:
+            return " ".join(w[4] for w in inside)
+    return None
+
+
+def _candidate(raw, hit, how, rows):
+    row = rows[hit["row"]]
+    line = "{0} → {1}  ({2} the label)".format(hit["label"], raw, how)
+    return raw, line[:160], row["page"], "text"
+
+
+def _layout_value(rows, hits, form, ways=("beside", "below")):
+    """Candidates [(raw, line, page, method, malformed)] for one field: the first
+    way that yields a value of the field's form, per printed label."""
+    out = []
+    for hit in hits:
+        for how in ways:
+            raw = _beside(rows, hit) if how == "beside" else _below(rows, hit)
+            if not raw:
+                continue
+            verdict = form(raw)
+            if verdict == "skip":
+                continue
+            out.append(_candidate(raw, hit, how, rows) + (verdict == "malformed",))
+            break
+    return out
+
+
+def _amount_form(raw):
+    """'ok' for a well-formed number, 'malformed' for digits that are not one,
+    'skip' for no digits at all (the box is empty: a label was read)."""
+    token = raw.strip()
+    if not re.search(r"\d", token):
+        return "skip"
+    if " " in token or to_float(token) is None:
+        return "malformed"
+    return "ok"
+
+
+def _date_form(raw):
+    return "ok" if parse_date(raw) else "skip"
+
+
+def _declaration_form(raw):
+    return "ok" if DECLARATION_FORM.fullmatch(raw.strip()) else "skip"
+
+
+def _reference_form(raw):
+    token = raw.strip()
+    return "ok" if REFERENCE_FORM.fullmatch(token) and re.search(r"\d", token) else "skip"
+
+
+def _text_form(raw):
+    return "ok" if re.search(r"[A-Za-z]", raw) else "skip"
+
+
+def _currency_form(raw):
+    return "ok" if re.fullmatch(r"[A-Z]{3}", raw.strip()) else "skip"
+
+
+def _tax_tables(rows):
+    """B ACCOUNTING DETAILS, per page: {"lines": [...], "total": {...} | None,
+    "malformed": [...]} — read from its "Taxes  Code  Exempted/Suspended"
+    heading to its Total row, column by column: the name left of the Code
+    column, the tax code in it, the amounts right of it (the last is Amount
+    Payable). A row that does not fit the columns is MALFORMED — the table is
+    never cut short or read around it."""
+    tables = []
+    for hit in _find(rows, r"\btaxes\b"):
+        head = rows[hit["row"]]
+        code_word = next((w for w in head["words"] if w[4].lower() == "code" and
+                          w[0] > hit["x1"]), None)
+        if code_word is None:
+            continue
+        tol = 0.5 * head["h"]
+        left = hit["x0"] - head["h"]
+        code_x = []
+        amounts_left = next((w[0] - tol for w in head["words"] if w[0] > code_word[2] and
+                             re.search(r"exempt|amount", w[4], re.I)), code_word[2] + tol)
+        lines, total, malformed = [], None, []
+        for row in rows[hit["row"] + 1:]:
+            if row["page"] != head["page"]:
+                break
+            words = [w for w in row["words"] if w[0] >= left]
+            if not words:
+                continue
+            mid = lambda w: (w[0] + w[2]) / 2                       # noqa: E731
+            amounts = [w[4] for w in words if mid(w) >= amounts_left]
+            rest = [w for w in words if mid(w) < amounts_left]
+            line = " ".join(w[4] for w in words)[:160]
+            if [w[4].lower() for w in rest] == ["total"]:
+                value = to_float(amounts[-1]) if amounts else None
+                total = {"raw": amounts[-1] if amounts else None, "amount": value,
+                         "line": line, "page": row["page"]}
+                if amounts and value is None:
+                    malformed.append({"raw": amounts[-1], "line": line, "page": row["page"]})
+                break
+            if rest and not amounts and lines and not re.search(r"\d", line):
+                lines[-1]["label"] += " " + line                  # a name printed on two rows
+                continue
+            if not amounts and not any(re.fullmatch(r"\d{2,3}", w[4]) for w in rest):
+                if lines:
+                    break                                         # past the table
+                continue
+            # The code: the last word before the amounts, 2–3 digits, clear of
+            # the name (not printed over it).
+            fits = len(rest) >= 2 and re.fullmatch(r"\d{2,3}", rest[-1][4]) and \
+                rest[-2][2] <= rest[-1][0] + 0.5 and 1 <= len(amounts) <= 2
+            if not fits:
+                malformed.append({"raw": line, "line": line, "page": row["page"],
+                                  "why": "the row does not fit the columns name / code / "
+                                         "amounts"})
+                lines.append({"label": " ".join(w[4] for w in rest), "code": None,
+                              "amount": None, "malformed": line, "line": line,
+                              "page": row["page"], "method": "text"})
+                continue
+            name, code = [w[4] for w in rest[:-1]], [rest[-1][4]]
+            code_x.append(rest[-1][0])
+            value = to_float(amounts[-1])
+            entry = {"label": " ".join(name), "code": code[0],
+                     "exempted": to_float(amounts[0]) if len(amounts) > 1 else None,
+                     "amount": value, "line": line, "page": row["page"], "method": "text"}
+            if value is None:
+                entry["malformed"] = amounts[-1]
+                malformed.append({"raw": amounts[-1], "line": line, "page": row["page"]})
+            lines.append(entry)
+        # Every tax code stands in one column.
+        if code_x:
+            centre = sorted(code_x)[len(code_x) // 2]
+            for l in lines:
+                if l.get("code") and not l.get("malformed"):
+                    x = code_x.pop(0)
+                    if abs(x - centre) > 1.5 * head["h"]:
+                        l["malformed"] = l["line"]
+                        malformed.append({"raw": l["line"], "line": l["line"],
+                                          "page": l["page"], "why": "the code is out of "
+                                                                    "the Code column"})
+        if lines or total:
+            tables.append({"lines": lines, "total": total, "malformed": malformed,
+                           "page": head["page"]})
+    return tables
+
+
+def is_icums_form(words):
+    """True when the positioned words are an ICUMS Bill of Entry (the boxed form)."""
+    if not words:
+        return False
+    rows = _rows(words)
+    return bool(_find(rows, ICUMS_LABELS["document_number"]) or
+                any(re.search(r"\bcode\b", _row_text(rows[h["row"]]), re.I)
+                    for h in _find(rows, r"\btaxes\b")))
+
+
+def read_layout(words, doctype):
+    """The ICUMS form's fields, read by position. {name: field} like extract()."""
+    labels = {f["name"]: f["label"] for f in doctype["fields"]}
+    label = lambda name, default: labels.get(name, default)          # noqa: E731
+    rows = _rows(words)
+    hits = {k: _find(rows, p) for k, p in ICUMS_LABELS.items()}
+    fields = {}
+
+    def put(name, default, candidates, normaliser, kind, note=None):
+        fields[name] = _field(name, label(name, default), candidates, normaliser, kind)
+        if note and fields[name]["status"] == MISSING:
+            fields[name]["note"] = note
+
+    put("document_number", "Declaration (BOE) No.",
+        _layout_value(rows, hits["document_number"], _declaration_form),
+        lambda raw: re.sub(r"\s*/\s*", " / ", raw.strip()), "text")
+    put("bl_awb", "BL / AWB No.", _layout_value(rows, hits["bl_awb"], _reference_form),
+        lambda raw: raw.strip().upper(), "text")
+    # The declaration date: the "Date :" of the header block — stacked under
+    # "Bill of Entry(BOE) No", not the receipt or bank-guarantee dates.
+    header = []
+    for boe in hits["document_number"]:
+        top = rows[boe["row"]]
+        for d in hits["date"]:
+            row = rows[d["row"]]
+            if row["page"] == top["page"] and abs(d["x0"] - boe["x0"]) <= 2 * top["h"] and \
+                    0 < row["y"] - top["y"] <= 4 * top["h"] and d not in header:
+                header.append(d)
+    put("document_date", "Declaration date", _layout_value(rows, header, _date_form),
+        parse_date, "date")
+    put("user_reference", "User reference",
+        _layout_value(rows, hits["user_reference"], _reference_form, ways=("beside",)),
+        lambda raw: raw.strip(), "text")
+    put("doc_status", "Document status",
+        _layout_value(rows, hits["doc_status"], _text_form, ways=("beside",)),
+        lambda raw: raw.strip(), "text")
+    put("delivery_terms", "Delivery terms & place",
+        _layout_value(rows, hits["delivery_terms"], _text_form, ways=("below",)),
+        lambda raw: " ".join(raw.split()), "text")
+    put("cif_usd", "Total invoice value CFR/CIF (USD)",
+        _layout_value(rows, hits["invoice_fcy"], _amount_form, ways=("below",)),
+        to_float, "amount")
+    # The invoice currency: box 13's "CC", the label after Total Invoice Fcy.
+    cc = []
+    for hit in hits["invoice_fcy"]:
+        row = rows[hit["row"]]
+        groups = _clusters(row, hit["last"] + 1)
+        if groups and _row_text(row, groups[0][0], groups[0][-1] + 1).upper() == "CC":
+            cc.append(dict(hit, first=groups[0][0], last=groups[0][-1],
+                           x0=row["words"][groups[0][0]][0], box_x0=row["words"][groups[0][0]][0],
+                           label="Total Invoice Fcy CC"))
+    put("invoice_currency", "Invoice currency",
+        _layout_value(rows, cc, _currency_form, ways=("below",)), lambda raw: raw.strip(),
+        "text")
+    put("exchange_rate", "Exchange rate",
+        _layout_value(rows, hits["rate"], _amount_form, ways=("below", "beside")),
+        to_float, "amount")
+    put("rate_currency", "Exchange-rate currency",
+        _layout_value(rows, hits["curr_code"], _currency_form, ways=("below",)),
+        lambda raw: raw.strip(), "text")
+    put("fob_ncy", "FOB Ncy (import/export)",
+        _layout_value(rows, hits["fob_ncy"], _amount_form, ways=("below", "beside")),
+        to_float, "amount")
+
+    # B ACCOUNTING DETAILS: the tax lines, the Total, the import duty line, the
+    # six VAT / levy lines.
+    tables = _tax_tables(rows)
+    distinct = []
+    for t in tables:
+        key = ([(l["code"], l["amount"]) for l in t["lines"]],
+               (t["total"] or {}).get("amount"))
+        if key not in [k for k, _t in distinct]:
+            distinct.append((key, t))
+    total_name = "duty_amount_ghs"
+    if len(distinct) > 1:
+        for name in (total_name, "stated_import_duty", "vat_lines", "tax_lines"):
+            fields[name] = {"name": name, "label": label(name, name), "kind": "lines"
+                            if name.endswith("lines") else "amount", "status": AMBIGUOUS,
+                            "value": None, "evidence": None, "confidence": "NONE",
+                            "note": "the document prints {0} different B ACCOUNTING DETAILS "
+                                    "tables".format(len(distinct)),
+                            "candidates": [{"value": (t["total"] or {}).get("amount"),
+                                            "page": t["page"]} for _k, t in distinct]}
+        return fields
+    table = distinct[0][1] if distinct else {"lines": [], "total": None, "malformed": []}
+    total = table["total"]
+    put(total_name, "Total duty (GHS)",
+        [(total["raw"], total["line"], total["page"], "text", total["amount"] is None)]
+        if total and total["raw"] else [], to_float, "amount",
+        note="B ACCOUNTING DETAILS prints no Total" if table["lines"] else None)
+    duty_lines = [l for l in table["lines"] if re.fullmatch(r"import\s+duty", l["label"], re.I)]
+    put("stated_import_duty", "Import duty line (GHS)",
+        [(l.get("malformed") or str(l["amount"]), l["line"], l["page"], "text",
+          bool(l.get("malformed"))) for l in duty_lines], to_float, "amount")
+    vat = []
+    for l in table["lines"]:
+        for name, pattern in ICUMS_VAT:
+            if re.fullmatch(pattern, " ".join(l["label"].split()), re.I):
+                vat.append(dict(l, label=name, printed=l["label"]))
+                break
+    vat.sort(key=lambda l: VAT_ORDER.index(l["label"]))
+    fields["vat_lines"] = _vat_field(label("vat_lines", "VAT / levy lines"), vat)
+    # A VAT line's name and its tax code must agree, both ways: a code of the
+    # block printed under another name (or a name under another code) means the
+    # row was not read as printed — the block is not trusted.
+    by_code = {c: n for n, c in ICUMS_VAT_CODES.items()}
+    disagree = ["{0} printed with code {1}".format(l["printed"], l["code"]) for l in vat
+                if ICUMS_VAT_CODES[l["label"]] != l["code"]]
+    named = {l["code"] for l in vat}
+    disagree += ["code {0} ({1}) printed as '{2}'".format(l["code"], by_code[l["code"]],
+                                                         l["label"])
+                 for l in table["lines"] if l.get("code") in by_code and l["code"] not in named]
+    if disagree and fields["vat_lines"]["status"] != MALFORMED:
+        fields["vat_lines"] = dict(fields["vat_lines"], status=AMBIGUOUS, value=None,
+                                   note="the VAT / levy names and their tax codes disagree: " +
+                                        "; ".join(disagree), confidence="NONE")
+    tax = {"name": "tax_lines", "label": label("tax_lines", "B accounting details (tax lines)"),
+           "kind": "lines", "candidates": [], "pages": [table.get("page")] if
+           table.get("page") else []}
+    if table["malformed"]:
+        fields["tax_lines"] = dict(tax, status=MALFORMED, value=None,
+                                   evidence=table["malformed"][0]["line"], confidence="NONE",
+                                   note="; ".join(
+                                       "a row that does not fit the columns: '{0}'".format(
+                                           m["raw"]) if m.get("why") else
+                                       "printed but not a well-formed number: '{0}'".format(
+                                           m["raw"]) for m in table["malformed"][:4]))
+    else:
+        fields["tax_lines"] = dict(tax, status=FOUND if table["lines"] else MISSING,
+                                   value=table["lines"] or None, method="text" if
+                                   table["lines"] else None,
+                                   evidence="{0} lines, Total {1}".format(
+                                       len(table["lines"]), (total or {}).get("raw"))
+                                   if table["lines"] else None,
+                                   confidence="HIGH" if table["lines"] else "NONE")
+    return fields
+
+
+def extract(text, doctype, spans=None, words=None):
+    """
+    Every PDF field of the document type, typed, with its evidence. {name: field}.
+
+    An ICUMS Bill of Entry (the boxed form, recognised from its positioned
+    words) is read by position only (read_layout); any other text by the
+    line rules.
+    """
+    if words and is_icums_form(words):
+        return read_layout(words, doctype)
     labels = {f["name"]: f["label"] for f in doctype["fields"]}
     fields = {}
     for name, patterns in TEXT_RULES.items():

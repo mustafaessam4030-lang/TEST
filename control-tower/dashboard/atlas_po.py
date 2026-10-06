@@ -541,7 +541,14 @@ def _calculation_text(record):
             " + ".join(_money(l["amount"]) for l in vat), _money(vat_sum)))
         lines.append("2. Import duty (G19 = G6 − G20) = {0} − {1} = {2}".format(
             _money(duty), _money(vat_sum), _money(derived)))
-        if stated is not None:
+        taxes = val("tax_lines")
+        if taxes:
+            summed = round(sum(l["amount"] for l in taxes), 2)
+            lines.append("3. The {0} lines of B ACCOUNTING DETAILS add up to {1}; the document's "
+                         "Total is {2}: variance {3} (tolerance ±1.00)".format(
+                             len(taxes), _money(summed), _money(duty),
+                             _money(round(summed - duty, 2))))
+        elif stated is not None:
             lines.append("3. The document prints import duty {0}: variance {1} (tolerance "
                          "±1.00)".format(_money(stated), _money(round(derived - stated, 2))))
         if rate:

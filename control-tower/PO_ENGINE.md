@@ -228,15 +228,20 @@ FOUND / MISSING / AMBIGUOUS / MALFORMED.
 
 ## F. G4 implementation
 
-G4 comes **only** from the Bill of Entry's explicit "Invoice No." / "Invoice
-Number" (`extract.printed_invoice_no`, `pipeline._g4_source`).
+G4 comes **only** from the Bill of Entry: its explicit "Invoice No." /
+"Invoice Number" (`extract.printed_invoice_no`, `pipeline._g4_source`); when it
+prints none, the digits of its own "User Reference" (letters then digits:
+DDAO9116093 → 9116093), as the business's completed Duty Template does —
+origin `bill_of_entry:user_reference`, and the store's invariant accepts exactly
+those digits and nothing else.
 
 | What the Bill of Entry prints | Result |
 |---|---|
 | One well-formed value | G4 (origin `bill_of_entry`, page and line recorded) |
 | Several different values | NEEDS_REVIEW `ambiguous` |
 | The label with a malformed value (`2600 005261`, `INV#12`, `N/A`, over 30 characters) | NEEDS_REVIEW `malformed`. Never trimmed. |
-| No label | NEEDS_REVIEW `absent` |
+| No label, a User Reference of letters then digits | G4 = its digits (origin `bill_of_entry:user_reference`) |
+| No label and no such User Reference | NEEDS_REVIEW `absent` |
 | A value that disagrees with the one given with the job | NEEDS_REVIEW `conflict` |
 
 **Never a source:**

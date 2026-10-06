@@ -45,6 +45,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import socket
 import sys
 import threading
@@ -530,9 +531,18 @@ class Store(object):
             g4 = (record.get("request_fields") or {}).get("invoice_no") or {}
             printed = record.get("invoice_candidate") or {}
             allowed = set([printed.get("value")] + list(printed.get("candidates") or []))
-            if g4.get("origin") not in ("bill_of_entry", "bill_of_entry:chosen_at_review") or \
-                    g4.get("value") not in allowed - {None}:
-                problems.append("G4 is not an explicit Invoice No. printed on the Bill of Entry")
+            origins = ("bill_of_entry", "bill_of_entry:chosen_at_review")
+            if g4.get("origin") == "bill_of_entry:user_reference" and not (allowed - {None}) \
+                    and not printed.get("malformed"):
+                # No Invoice No. printed: the digits of the Bill of Entry's own
+                # User Reference — exactly those, nothing else.
+                ref = ((record.get("fields") or {}).get("user_reference") or {})
+                if ref.get("status") == "FOUND":
+                    allowed = {re.sub(r"[^0-9]", "", str(ref.get("value") or ""))}
+                    origins = ("bill_of_entry:user_reference",)
+            if g4.get("origin") not in origins or g4.get("value") not in allowed - {None, ""}:
+                problems.append("G4 is not an explicit Invoice No. or the User Reference "
+                                "printed on the Bill of Entry")
         if to in (FIELDS_EXTRACTED, VALIDATING) and \
                 not ((record.get("document") or {}).get("integrity") or {}).get("verified"):
             problems.append("the PDF's integrity is not verified")

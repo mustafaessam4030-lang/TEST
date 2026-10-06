@@ -176,7 +176,7 @@ def probe(page, reference=None, out_dir=None, source=None):
         doctype = doctypes.get()
         try:
             read = X.read_pdf(data)
-            fields = X.extract(read["text"], doctype)
+            fields = X.extract(read["text"], doctype, read.get("spans"), read.get("words"))
             report["pdf"] = {"pages": read["pages"], "methods": read["methods"],
                              "fields": {n: {k: f.get(k) for k in ("status", "value", "evidence",
                                                                   "candidates")}
@@ -492,22 +492,48 @@ def cmd_read(args):
     except X.Unreadable as error:
         print("UNREADABLE:", error)
         return 1
-    fields = X.extract(read["text"], doctype, read.get("spans"))
+    fields = X.extract(read["text"], doctype, read.get("spans"), read.get("words"))
     request = P._request_fields(doctype, {}, P.config_from_env())
     printed = X.printed_invoice_no(read["text"], read.get("spans"))
     request["invoice_no"], g4_issue = P._g4_source(
-        doctype, {"invoice_no": args.invoice_no} if args.invoice_no else {}, printed)
+        doctype, {"invoice_no": args.invoice_no} if args.invoice_no else {}, printed,
+        fields.get("user_reference"))
     hub = {"bol_awb": args.hub_bol, "identifier": args.identifier}
     result = V.validate(doctype, fields, hub, request,
                         identity=P.identity_decision(hub, fields), g4_issue=g4_issue)
+    calc = {c["cell"]: c["result"] for c in result["calculations"] if c.get("cell")}
+
+    def value(name):
+        f = fields.get(name) or request.get(name) or {}
+        return f.get("value") if f.get("status") == X.FOUND else None
+    vat = value("vat_lines")
+    # What the Duty Template's cells would hold (nothing is written here).
+    cells = {"G4 invoice no": value("invoice_no"), "G6 duty amount": value("duty_amount_ghs"),
+             "G8 date": value("document_date"), "C13 declaration no": value("document_number"),
+             "C19 invoice value (USD)": value("cif_usd"), "C21 exchange rate":
+             value("exchange_rate"), "G20 VAT block": "=" + "+".join(
+                 "{0:.2f}".format(l["amount"]) for l in vat) if vat else None,
+             "G19 import duty and levies (=G6-G20)": calc.get("G19"),
+             "C24 total duty USD (=G6/C21)": calc.get("C24"),
+             "C26 % of duty on invoice (=C24/C19)": calc.get("C26")}
     print(json.dumps({"pages": read["pages"], "methods": read["methods"],
                       "sha256": hashlib.sha256(data).hexdigest(),
+                      "read_as": "ICUMS form, by position" if X.is_icums_form(read.get("words"))
+                      else "text lines",
+                      "duty_template": cells,
                       "fields": {n: {k: f.get(k) for k in ("status", "value", "evidence",
                                                            "candidates")}
                                  for n, f in fields.items()},
                       "validation": result}, indent=2, default=str))
     if args.dump_text:
         print("\n----- TEXT -----\n" + read["text"])
+    if args.dump_layout:
+        # Every printed row with its words' positions — what the ICUMS reader
+        # sees (no values are hidden: it is the document's own text).
+        print("\n----- LAYOUT (page, y, [x0 word]) -----")
+        for row in X._rows(read.get("words") or []):
+            print("p{0} y={1:6.1f}  {2}".format(row["page"], row["y"], "  ".join(
+                "[{0:.0f}]{1}".format(w[0], w[4]) for w in row["words"])))
     return 0 if result["passed"] else 1
 
 
@@ -557,6 +583,8 @@ def main(argv=None):
     r.add_argument("--invoice-no")
     r.add_argument("--doctype")
     r.add_argument("--dump-text", action="store_true")
+    r.add_argument("--dump-layout", action="store_true",
+                   help="print every row of the PDF with its words' positions")
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
             "ehub-check": cmd_check, "sweep": cmd_sweep,

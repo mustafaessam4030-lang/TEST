@@ -973,8 +973,10 @@ check("G20 is written in the template's own style",
       ws["G20"].value == "=304446.44+1066.03+50741.08+50741.08+177.67", ws["G20"].value)
 check("Every template formula is still there",
       all(ws[c].value == fm for c, fm in doctype["template"]["formulas"].items()))
-check("Cells with no value stay empty — nothing invented (branch, charge-to)",
-      ws["G11"].value is None and ws["G13"].value is None)
+check("Cells with no value stay empty — nothing invented (branch); charge-to is the Duty "
+      "Template's own default (32600.CPA.G005)",
+      ws["G11"].value is None and ws["G13"].value == "32600.CPA.G005",
+      (ws["G11"].value, ws["G13"].value))
 check("The logo and the layout survive (image, merged cells, both sheets)",
       len(ws._images) == 1 and len(ws.merged_cells.ranges) == 6
       and wb.sheetnames == ["Duty Template", "BOE Template Capture"])
@@ -1412,7 +1414,7 @@ check("...typed: Fact lines, a Recommendation, and the honest recovery line",
 r = missing_answer
 check("'What's missing?' — the supplier invoice number, required, and nothing invented",
       "Supplier invoice No.: missing — required" in r["answer"]
-      and "Left empty (optional): Charge to, Priority" in r["answer"], r["answer"])
+      and "Left empty (optional): Priority" in r["answer"], r["answer"])
 r = po_ask("Did the PDF match the Hub?", mis["po_id"])
 check("'Did the PDF match the Hub?' — PDF vs Hub → MISMATCH",
       "PDF 176-88452310 · Hub 176-99001122 → MISMATCH" in r["answer"], r["answer"])

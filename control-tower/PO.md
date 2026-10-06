@@ -84,10 +84,26 @@ handled except one whose last job failed for a transient reason.
 | Total duty (GHS) | PDF | yes | G6 |
 | VAT / levy lines | PDF | yes | G20 (`=a+b+…`, the template's own style) |
 | Import duty line, User reference | PDF | no | — (cross-check / shown) |
-| Supplier invoice No. | ONLY the Bill of Entry's explicit "Invoice No." (a reviewer may choose among printed values, never type one) | yes | G4 |
-| Supplier, Branch, Charge to, Priority | configuration or operator | supplier only | G10, G11, G13, C9 |
+| Supplier invoice No. | ONLY the Bill of Entry: its explicit "Invoice No."; when it prints none, the digits of its own User Reference (DDAO9116093 → 9116093), as the business's Duty Template does (a reviewer may choose among printed values, never type one) | yes | G4 |
+| Supplier, Branch, Charge to, Priority | configuration or operator; supplier CAT and charge-to 32600.CPA.G005 by default (the Duty Template's values) | supplier only | G10, G11, G13, C9 |
+| Tax lines (B ACCOUNTING DETAILS), invoice and rate currency, delivery terms, FOB Ncy, doc status | PDF (ICUMS form) | no | — (checks / evidence) |
 
 G19, C24, C26, G41 and F16 are the template's formulas and are never written.
+
+**The real ICUMS form is read by position.** A real Bill of Entry is a boxed
+form whose text layer is not in reading order, so a label is not followed by
+its value in the text. When the PDF is that form (`extract.is_icums_form`),
+every value is read where the form prints it (`extract.read_layout`): beside
+its label (BL/AWB, Bill of Entry(BOE) No, Date, User Reference), under it in its
+box (12 Delivery Terms & Place, 13 Total Invoice Fcy + CC, 16 Curr Code / Rate
+of Xchange, 19 FOB Ncy), and B ACCOUNTING DETAILS row by row — name, code,
+amount payable — down to its Total (never box 40's per-item figures). G20 is
+the six lines the business's Duty Template adds: Import VAT, Network Charge
+VAT, Import NHIL, GETFund Import, Network Charge NHIL, Network Charge GET Fund
+Levy — each checked against its ICUMS tax code (02 33 47 88 48 89).
+`python -m po read <pdf>` prints what each Duty Template cell would hold;
+`--dump-layout` prints every row with its positions. `test_po_icums.py` runs
+the business's example BOE (a replica) through to the saved template.
 
 Each extracted field is **FOUND**, **MISSING** or **AMBIGUOUS** (two different
 values printed). Missing and ambiguous values never reach the template; an
@@ -101,7 +117,12 @@ Blocking, any one stops the job at `VALIDATION_FAILED`:
 * a required field missing or ambiguous;
 * BL/AWB: PDF ≠ Hub (compared letters-and-digits only, both values shown, neither chosen);
 * identifier: eHub's "Bill Entry <n>" ≠ the declaration number the PDF prints;
-* the document's own arithmetic: total duty − VAT block ≠ import duty line (± GHS 1.00);
+* the document's own arithmetic (± GHS 1.00): on the ICUMS form, the lines of B
+  ACCOUNTING DETAILS must add up to its Total (its "Import Duty" line is one tax
+  among many, so total − VAT block is not that line); on a document without
+  that table, total duty − VAT block = the import duty line;
+* on the ICUMS form, the invoice currency must be USD (C19 is "Amount (USD)")
+  and the rate of exchange must be for that currency;
 * an amount that is not positive.
 
 ## States and events (`po/store.py`)
@@ -162,10 +183,14 @@ When a step on eHub fails, the page is kept — a screenshot and its text, in
 
 The supplier invoice No. (G4) comes from the Bill of Entry itself: the value
 printed under an explicit "Invoice No." / "Invoice Number" label (one distinct
-value). A value given with the job must agree with it. Otherwise the job stops
+value); when the Bill of Entry prints no Invoice No., the number in its own
+"User Reference" — letters then digits only, G4 = the digits (DDAO9116093 →
+9116093), exactly as the business's completed Duty Template does
+(`g4_from_user_reference` in `po/doctypes.py`). A value given with the job must
+agree with it. Otherwise the job stops
 at NEEDS_REVIEW (`G4_SOURCE_UNPROVEN`), with nothing generated or sent:
 
-- nothing printed (`absent`);
+- nothing printed — no Invoice No. and no usable User Reference (`absent`);
 - two different printed values (`ambiguous`, none chosen);
 - a disagreement between the job and the document (`conflict`).
 

@@ -118,6 +118,22 @@ def calculations(doctype, fields):
                 "result": str(c26.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
                 if c26 is not None else None})
     tolerance = D(doctype.get("duty_tolerance", 1.0))
+    tax = f.get("tax_lines") or {}
+    taxes = tax.get("value") if tax.get("status") == X.FOUND else None
+    if taxes:
+        # The ICUMS form: every line of B ACCOUNTING DETAILS adds up to its
+        # Total (G6). G19 = G6 − G20 is then the sum of the non-VAT lines.
+        summed = sum((D(l["amount"]) for l in taxes), Decimal("0"))
+        variance = (summed - g6) if g6 is not None else None
+        out.append({"rule": "XCHECK_TAX_TOTAL", "cell": "G6",
+                    "formula": "|Σ B accounting lines − Total (G6)| ≤ {0}".format(tolerance),
+                    "inputs": {"lines": str(len(taxes)), "sum_of_lines": str(summed),
+                               "G6": str(g6) if g6 is not None else None},
+                    "intermediate": str(variance) if variance is not None else None,
+                    "rounding": "none (exact)",
+                    "result": None if variance is None else
+                    ("OK" if abs(variance) <= tolerance else "FAILED")})
+        return out
     variance = (g19 - stated) if g19 is not None and stated is not None else None
     out.append({"rule": "XCHECK_IMPORT_DUTY", "cell": None,
                 "formula": "|(G6 − G20) − printed import duty| ≤ {0}".format(tolerance),
@@ -220,16 +236,33 @@ def validate(doctype, fields, hub, request_fields, identity=None, g4_issue=None,
                        "the record is tied to this row by the BL/AWB the PDF prints",
                        "source": "hub"})
 
-    # 3. The document's own arithmetic: total duty − VAT block = import duty line.
+    # 3. The document's own arithmetic. On the ICUMS form: the lines of B
+    # ACCOUNTING DETAILS add up to its Total. (Its "Import Duty" line is one
+    # tax among many — total duty − VAT block is NOT that line.) Without the
+    # table: total duty − VAT block = the import duty line printed.
     duty = fields.get("duty_amount_ghs") or {}
     vat = fields.get("vat_lines") or {}
     stated = fields.get("stated_import_duty") or {}
-    if duty.get("status") == X.FOUND and vat.get("status") == X.FOUND:
+    taxes = fields.get("tax_lines") or {}
+    tolerance = D(doctype.get("duty_tolerance", 1.0))
+    if taxes.get("status") == X.FOUND and duty.get("status") == X.FOUND:
+        summed = sum((D(l["amount"]) for l in taxes["value"]), Decimal("0"))
+        variance = summed - D(duty["value"])
+        ok = abs(variance) <= tolerance
+        checks.append({"name": "arithmetic:taxes", "label": "Tax lines add up to the Total",
+                       "pdf": float(summed), "hub": None,
+                       "status": "OK" if ok else "FAILED", "blocking": not ok,
+                       "detail": "the {0} lines of B ACCOUNTING DETAILS add up to {1:,.2f}; the "
+                                 "document's Total is {2:,.2f} (variance {3:,.2f})".format(
+                                     len(taxes["value"]), float(summed), duty["value"],
+                                     float(variance)),
+                       "source": "pdf"})
+    elif duty.get("status") == X.FOUND and vat.get("status") == X.FOUND:
         exact = D(duty["value"]) - sum((D(l["amount"]) for l in vat["value"]), Decimal("0"))
         derived = float(exact)
         if stated.get("status") == X.FOUND:
             variance = float(exact - D(stated["value"]))
-            ok = abs(exact - D(stated["value"])) <= D(doctype.get("duty_tolerance", 1.0))
+            ok = abs(exact - D(stated["value"])) <= tolerance
             checks.append({"name": "arithmetic:duty", "label": "Duty and levies cross-check",
                            "pdf": derived, "hub": None,
                            "status": "OK" if ok else "FAILED", "blocking": not ok,
@@ -244,6 +277,28 @@ def validate(doctype, fields, hub, request_fields, identity=None, g4_issue=None,
                            "blocking": False,
                            "detail": "the document prints no separate import duty line",
                            "source": "pdf"})
+
+    # 3b. Currencies (the ICUMS form prints them): C19 is "Amount (USD)", so
+    # the invoice must be in USD, and the exchange rate must be for it.
+    currency = fields.get("invoice_currency")
+    if currency is not None:
+        value = currency.get("value") if currency.get("status") == X.FOUND else None
+        ok = value == "USD"
+        checks.append({"name": "currency:invoice", "label": "Invoice currency (C19 is USD)",
+                       "pdf": value, "hub": None, "status": "OK" if ok else "FAILED",
+                       "blocking": not ok,
+                       "detail": None if ok else (
+                           "the invoice currency (box 13, CC) is not printed" if value is None
+                           else "the invoice is in {0}; the Duty Template's C19 is in USD"
+                           .format(value)),
+                       "source": "pdf"})
+        rate = fields.get("rate_currency") or {}
+        if value and rate.get("status") == X.FOUND and rate["value"] != value:
+            checks.append({"name": "currency:rate", "label": "Exchange-rate currency",
+                           "pdf": rate["value"], "hub": None, "status": "FAILED",
+                           "blocking": True,
+                           "detail": "the rate of exchange is for {0}, the invoice is in {1}"
+                           .format(rate["value"], value), "source": "pdf"})
 
     # 4. Amounts must be positive.
     for name in ("cif_usd", "exchange_rate", "duty_amount_ghs"):
