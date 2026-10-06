@@ -1,15 +1,17 @@
 """
 ATLAS as a colleague — shipment intelligence, error investigation, general
-questions, and web research — end to end through assistant.answer() and the
-real dashboard server.
+questions — and its two OPTIONAL, LOCAL, FREE additions: a self-hosted
+SearXNG search and a local Ollama model that only re-phrases.
 
-SIMULATED: the research service. A local stand-in plays the Claude Messages
-API: it streams the same event types the real API streams (message_start,
-content_block_start/delta/stop for server_tool_use, web_search_tool_result,
-web_fetch_tool_result and cited text, message_delta, message_stop). It
-proves the plumbing — what is sent, what is shown, what is refused — never
-the quality of a real search. Everything else (the run, the bridge, ATLAS's
-routing, the knowledge, the server, the progress endpoint) is the real code.
+SIMULATED: SearXNG, an "official" web page server and Ollama are played by
+local HTTP stand-ins with the same endpoints (/search?format=json,
+/robots.txt + a page, /api/tags + /api/chat). They prove the plumbing — what
+is sent, what is shown, what is refused, what happens when they fail — never
+the quality of a real search or a real model. Everything else (the run, the
+bridge, ATLAS's rules and routing, the knowledge, the fact guard, the server,
+the progress endpoint) is the real code.
+
+There is no paid AI API anywhere: §8 checks the code for one.
 
     python test_atlas_research.py
 """
@@ -22,6 +24,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -31,6 +34,8 @@ sys.path.insert(0, str(HERE))
 os.environ.setdefault("ATLAS_INTEL_DIR", tempfile.mkdtemp(prefix="ct_research_intel_"))
 os.environ.setdefault("ATLAS_DATA_ORIGIN", "test")
 os.environ.setdefault("PO_DATA_DIR", tempfile.mkdtemp(prefix="ct_research_po_"))
+for k in ("ATLAS_SEARCH_URL", "ATLAS_LLM_PROVIDER", "ATLAS_LLM_MODEL", "ATLAS_LLM_URL"):
+    os.environ.pop(k, None)
 
 PASS, FAIL = [], []
 
@@ -49,170 +54,120 @@ def rule(title):
     print("=" * 74)
 
 
-# ── the stand-in Messages API (SIMULATED) ───────────────────────────────
-CALLS = []                 # every request body received
-SCENARIO = {"name": "where", "status": 200, "delay": 0.0}
+# ── stand-ins (SIMULATED) ────────────────────────────────────────────────
+SEARCHES, FETCHES, CHATS = [], [], []
+STAND = {"results": "msc", "chat": "good", "search_down": False, "delay": 0.0}
+PAGE_PORT = None
 
 
-def sse(blocks, stop="end_turn"):
-    out = [("message_start", {"type": "message_start", "message": {
-        "id": "msg_stub", "type": "message", "role": "assistant", "content": [],
-        "usage": {"input_tokens": 10, "output_tokens": 0}}})]
-    for i, b in enumerate(blocks):
-        if b["type"] == "server_tool_use":
-            out.append(("content_block_start", {"type": "content_block_start", "index": i,
-                        "content_block": {"type": "server_tool_use", "id": b["id"],
-                                          "name": b["name"], "input": {}}}))
-            out.append(("content_block_delta", {"type": "content_block_delta", "index": i,
-                        "delta": {"type": "input_json_delta",
-                                  "partial_json": json.dumps(b["input"])}}))
-            out.append(("content_block_stop", {"type": "content_block_stop", "index": i}))
-        elif b["type"] == "text":
-            out.append(("content_block_start", {"type": "content_block_start", "index": i,
-                        "content_block": {"type": "text", "text": ""}}))
-            for chunk in re.findall(r".{1,40}", b["text"], re.S):
-                out.append(("content_block_delta", {"type": "content_block_delta", "index": i,
-                            "delta": {"type": "text_delta", "text": chunk}}))
-            for c in b.get("citations") or []:
-                out.append(("content_block_delta", {"type": "content_block_delta", "index": i,
-                            "delta": {"type": "citations_delta", "citation": c}}))
-            out.append(("content_block_stop", {"type": "content_block_stop", "index": i}))
-        else:
-            out.append(("content_block_start", {"type": "content_block_start", "index": i,
-                        "content_block": b}))
-            out.append(("content_block_stop", {"type": "content_block_stop", "index": i}))
-    out.append(("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop},
-                                  "usage": {"output_tokens": 50}}))
-    out.append(("message_stop", {"type": "message_stop"}))
-    return out
+def page_url(path):
+    return "http://127.0.0.1:{0}{1}".format(PAGE_PORT, path)
 
 
-def search(sid, query):
-    return {"type": "server_tool_use", "id": sid, "name": "web_search", "input": {"query": query}}
-
-
-def results(sid, items):
-    return {"type": "web_search_tool_result", "tool_use_id": sid,
-            "content": [dict({"type": "web_search_result", "encrypted_content": "ENC"}, **x)
-                        for x in items]}
-
-
-def cite(url, title, text="..."):
-    return {"type": "web_search_result_location", "url": url, "title": title,
-            "encrypted_index": "IDX", "cited_text": text}
-
-
-MSC_URL = "https://www.msc.com/en/track-a-shipment?agencyPath=msc"
-MSC_NOTICE = "https://www.msc.com/en/newsroom/customer-advisories/2026/october/schedule-update"
-PORT_URL = "https://www.ghanaports.gov.gh/page/operational-notices"
-FAKE_URL = "https://made-up-tracker.example/MEDUAHP69377"
-CMA_URL = "https://www.cma-cgm.com/news/customer-advisory-tracking"
-
-
-def scenario(name):
-    if name == "where":
-        return sse([
-            search("s1", "MEDUAHP69377 MSC tracking"),
-            results("s1", [{"url": MSC_URL, "title": "Track a shipment | MSC", "page_age": "Oct 6, 2026"}]),
-            search("s2", "MSC vessel voyage MEDUAHP69377 sailing"),
-            results("s2", [{"url": MSC_NOTICE, "title": "Schedule update | MSC"}]),
-            {"type": "text", "text": "I checked the run first: MEDUAHP69377 is with MSC and the "
-             "run read an ETA of 10 Nov 2026. MSC's public schedule notice says the service is "
-             "running about two days late this week. I couldn't verify the vessel's live "
-             "position from a reliable source. See " + FAKE_URL + " for details.",
-             "citations": [cite(MSC_NOTICE, "Schedule update | MSC"),
-                           cite(FAKE_URL, "Made-up tracker")]},
-        ])
-    if name == "port":
-        return sse([
-            search("p1", "Tema port congestion operational notice October 2026"),
-            results("p1", [{"url": PORT_URL, "title": "Operational notices | GPHA"}]),
-            {"type": "text", "text": "I checked the port authority's notices: no congestion "
-             "notice for Tema this week.", "citations": [cite(PORT_URL, "Operational notices")]},
-        ])
-    if name == "carrier":
-        return sse([
-            search("c1", "CMA CGM customer advisory tracking access restricted"),
-            results("c1", [{"url": CMA_URL, "title": "Customer advisory | CMA CGM"}]),
-            {"type": "server_tool_use", "id": "f1", "name": "web_fetch", "input": {"url": CMA_URL}},
-            {"type": "web_fetch_tool_result", "tool_use_id": "f1", "content": {
-                "type": "web_fetch_tool_result_error", "error_code": "url_not_accessible"}},
-            {"type": "text", "text": "From our run: CMA CGM showed its restriction page after "
-             "the verification, so nothing was extracted or written. From public information: "
-             "CMA CGM lists a tracking advisory, but I couldn't open the page itself. I can't "
-             "connect the two: nothing shows the advisory caused our restriction.",
-             "citations": [cite(CMA_URL, "Customer advisory | CMA CGM")]},
-        ])
-    if name == "nothing":
-        return sse([
-            search("n1", "MEDUAHP69377 vessel position"),
-            {"type": "web_search_tool_result", "tool_use_id": "n1", "content": []},
-            {"type": "text", "text": "I couldn't verify the vessel's position from a reliable "
-             "source. What I can confirm is what the run holds: MSC, ETA 10 Nov 2026."},
-        ])
-    if name == "general":
-        return sse([{"type": "text", "text": "A blank sailing is a cancelled voyage; this week "
-                     "I found no MSC blank sailings announced."}])
-    if name == "pause":
-        return None
-    return sse([{"type": "text", "text": "ok"}])
-
-
-class Api(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
+class Searx(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(length) or b"{}")
-        CALLS.append({"path": self.path, "body": body,
-                      "headers": {k.lower(): v for k, v in self.headers.items()}})
-        if SCENARIO.get("status", 200) != 200:
-            data = json.dumps({"type": "error", "error": {
-                "type": "authentication_error", "message": "invalid x-api-key"}}).encode()
-            self.send_response(SCENARIO["status"])
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
+    def do_GET(self):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        SEARCHES.append({"q": q.get("q", [""])[0], "format": q.get("format", [""])[0]})
+        if STAND["delay"]:
+            time.sleep(STAND["delay"])
+        if STAND["search_down"]:
+            self.send_response(503)
             self.end_headers()
-            self.wfile.write(data)
             return
-        name = SCENARIO["name"]
-        if name == "pause":
-            # First call pauses after a search; the continuation finishes it.
-            first = len([c for c in CALLS if c["body"].get("messages") and
-                         len(c["body"]["messages"]) == 1]) and len(
-                             CALLS[-1]["body"]["messages"]) == 1
-            events = sse([search("q1", "MSC schedule"),
-                          results("q1", [{"url": MSC_NOTICE, "title": "Schedule update"}])],
-                         stop="pause_turn") if first else sse([
-                              {"type": "text", "text": "Continued after the pause.",
-                               "citations": [cite(MSC_NOTICE, "Schedule update")]}])
-        else:
-            events = scenario(name)
+        results = []
+        if STAND["results"] == "msc":
+            results = [
+                {"url": page_url("/en/newsroom/customer-advisories/schedule-update"),
+                 "title": "Customer advisory: schedule update",
+                 "content": "Service AE7 vessels are running about two days late this week."},
+                {"url": page_url("/en/track-a-shipment"), "title": "Track a shipment",
+                 "content": "Track your shipment."},
+                {"url": "https://blog.example.net/msc-news", "title": "MSC news roundup",
+                 "content": "Industry commentary."}]
+        body = json.dumps({"results": results}).encode()
         self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Connection", "close")
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        for event, payload in events:
-            self.wfile.write("event: {0}\ndata: {1}\n\n".format(event, json.dumps(payload))
-                             .encode("utf-8"))
-            self.wfile.flush()
-            if SCENARIO.get("delay"):
-                time.sleep(SCENARIO["delay"])
-        self.close_connection = True
+        self.wfile.write(body)
 
 
-api = ThreadingHTTPServer(("127.0.0.1", 0), Api)
-api.daemon_threads = True
-threading.Thread(target=api.serve_forever, daemon=True).start()
-API = "http://127.0.0.1:{0}".format(api.server_address[1])
+class Pages(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
 
-from dashboard import assistant                       # noqa: E402
-from dashboard import server as tower_server          # noqa: E402
-from dashboard.bridge import ControlTowerState        # noqa: E402
-from intelligence import knowledge as K, research as R  # noqa: E402
+    def do_GET(self):
+        FETCHES.append(self.path)
+        if self.path == "/robots.txt":
+            body = b"User-agent: *\nDisallow: /private/\n"
+            ctype = "text/plain"
+        else:
+            body = ("<html><head><script>var x=1;</script></head><body><h1>Schedule update"
+                    "</h1><p>Service AE7 vessels are running about two days late this week."
+                    "</p></body></html>").encode()
+            ctype = "text/html; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class Ollama(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _json(self, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/api/tags":
+            self._json({"models": [{"name": "qwen2.5:7b-instruct", "model": "qwen2.5:7b-instruct"}]})
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        CHATS.append(body)
+        if STAND["chat"] == "slow":
+            time.sleep(3)
+        mode = STAND["chat"]
+        if mode == "good":
+            text = ("I checked the run first. MEDUAHP69377 is with MSC; the carrier's ETA was "
+                    "10/11/2026 and the run wrote it to the Hub and read it back.")
+        elif mode == "invent":
+            text = ("MEDUAHP69377 is on the vessel MSC AURORA, IMO 9812345, arriving 14/11/2026 "
+                    "at Tema. Delivery was confirmed.")
+        else:
+            text = "x"
+        self._json({"message": {"role": "assistant", "content": text}, "done": True})
+
+
+def serve(handler):
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, "http://127.0.0.1:{0}".format(srv.server_address[1])
+
+
+searx, SEARX = serve(Searx)
+pages, PAGES = serve(Pages)
+PAGE_PORT = pages.server_address[1]
+ollama, OLLAMA = serve(Ollama)
+
+from dashboard import assistant                         # noqa: E402
+from dashboard import server as tower_server            # noqa: E402
+from dashboard.bridge import ControlTowerState          # noqa: E402
+from intelligence import factguard as FG, knowledge as K, llm as L, research as R  # noqa: E402
 
 # ── a run, as the bridge records it ─────────────────────────────────────
 T = ControlTowerState()
@@ -250,25 +205,36 @@ def ask(question, context=None):
     return assistant.answer(question, STATE, dict(context or {}))
 
 
-def research_on():
-    os.environ.update({"ATLAS_RESEARCH": "1", "ATLAS_RESEARCH_API_KEY": "test-key-not-real",
-                       "ATLAS_RESEARCH_BASE_URL": API, "ATLAS_RESEARCH_CACHE_S": "1800"})
-    os.environ.pop("ANTHROPIC_API_KEY", None)
+def search_on():
+    os.environ.update({"ATLAS_SEARCH_URL": SEARX, "ATLAS_FETCH_ALLOW": "127.0.0.1"})
+    os.environ.pop("ATLAS_SEARCH", None)
     R.clear_cache()
 
 
-def research_off():
-    os.environ["ATLAS_RESEARCH"] = "0"
+def search_off():
+    os.environ["ATLAS_SEARCH"] = "0"
+
+
+def llm_on(mode="good"):
+    STAND["chat"] = mode
+    os.environ.update({"ATLAS_LLM_PROVIDER": "ollama", "ATLAS_LLM_URL": OLLAMA,
+                       "ATLAS_LLM_MODEL": "qwen2.5:7b-instruct", "ATLAS_LLM_TIMEOUT_S": "2",
+                       "ATLAS_LLM_RETRIES": "0"})
+
+
+def llm_off():
+    os.environ["ATLAS_LLM_PROVIDER"] = "none"
 
 
 ROBOTIC = re.compile(r"based on the available information|i am unable to provide|"
                      r"i don't have that information", re.I)
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("1. RESEARCH OFF — THE RUN'S OWN PICTURE, SAID LIKE A PERSON, HONESTLY BOUNDED")
+rule("1. NOTHING SET UP — THE DETERMINISTIC ATLAS, SAID LIKE A PERSON, HONESTLY BOUNDED")
 # ═════════════════════════════════════════════════════════════════════════
-research_off()
-before = len(CALLS)
+search_off()
+llm_off()
+before = (len(SEARCHES), len(CHATS))
 r = ask("Where is MEDUAHP69377?")
 a = r["answer"]
 check("Shipment question from run data: a colleague's opening",
@@ -279,7 +245,8 @@ check("...and says what it would have to look up, and why it can't",
       "I'd have to look up" in a and "switched off" in a, a[-220:])
 check("...no vessel, position or port invented", not re.search(
     r"\b(IMO \d|latitude|longitude|berth \d|vessel [A-Z]{3,})\b", a), a)
-check("No research call was made while research is off", len(CALLS) == before)
+check("No search and no model call while neither is set up",
+      (len(SEARCHES), len(CHATS)) == before)
 check("No robotic phrasing", not ROBOTIC.search(a), a[:200])
 
 r = ask("Why did CMAU7700001 fail?")
@@ -301,7 +268,6 @@ check("...and what it will not do: no retrying against it, no IP rotation, no ev
       "rotating IPs" in a and "retrying the lookup against the restriction" in a)
 check("...says outside sources were not checked, and why",
       "I haven't checked outside sources for this" in a)
-
 r = ask("What is transshipment?")
 check("General question: answered from knowledge, not refused",
       r["answer"].startswith("Transshipment is when cargo is unloaded") and
@@ -316,139 +282,143 @@ r = ask("What is the weather in Cairo?")
 check("Something the run doesn't hold: said plainly, never the generic escape",
       r["answer"].startswith("That isn't something this run records") and not
       ROBOTIC.search(r["answer"]) and r.get("fallback") is True, r["answer"][:120])
+os.environ.pop("ATLAS_SEARCH", None)
+check("Nothing configured: research off, and ATLAS says how to set it up (self-hosted SearXNG)",
+      not R.enabled() and "SearXNG" in R.why_off() and "ATLAS_SEARCH_URL" in R.why_off())
+check("No model configured: the provider is 'none' and says so",
+      L.provider().name == "none" and L.provider().health()["ok"] is False)
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("2. PROACTIVE SHIPMENT RESEARCH — RUN FIRST, THEN THE WEB, SOURCES THAT WERE CHECKED")
+rule("2. SELF-HOSTED SEARCH (SearXNG) — targeted queries, official pages only, labelled WEB")
 # ═════════════════════════════════════════════════════════════════════════
-research_on()
-SCENARIO.update(name="where", status=200, delay=0)
-before = len(CALLS)
+search_on()
+llm_off()
+STAND["results"] = "msc"
+s0, f0 = len(SEARCHES), len(FETCHES)
 r = ask("Where is MEDUAHP69377?", {"progress_id": "test-progress-001"})
-check("Researched without being told to search (proactive)", len(CALLS) == before + 1)
-call = CALLS[-1]
-body = call["body"]
-check("The real API shape: /v1/messages, version header, key header, streamed",
-      call["path"] == "/v1/messages" and call["headers"].get("anthropic-version") == "2023-06-01"
-      and call["headers"].get("x-api-key") == "test-key-not-real" and body.get("stream") is True)
-check("...with the web search and web fetch server tools",
-      {t["type"] for t in body["tools"]} == {"web_search_20250305", "web_fetch_20250910"})
-prompt = body["messages"][0]["content"]
-check("The run's facts are sent as authoritative: MSC, ETA 10/11/2026",
-      "CONTROL TOWER RUN" in prompt and "10/11/2026" in prompt and "MSC" in prompt, prompt[:400])
-check("The rules travel with it: run facts win, disagreements stated, never invent",
-      "Never silently replace them" in body["system"] and "do not pick one silently" in
-      body["system"] and "Never invent anything" in body["system"])
-check("The answer is the researched, conversational one",
-      r["answer"].startswith("I checked the run first: MEDUAHP69377 is with MSC"), r["answer"][:120])
-check("A URL that no search or fetch returned is removed from the answer (no fabricated source)",
-      FAKE_URL not in r["answer"] and "link removed" in r["answer"], r["answer"][-160:])
-srcs = r.get("web_sources") or []
-check("Sources: only cited pages that came back from a real search",
-      [s["url"] for s in srcs] == [MSC_NOTICE], srcs)
-check("...labelled by who publishes them (carrier, official)",
-      srcs and srcs[0]["kind"] == "Carrier (official)" and srcs[0]["publisher"] == "msc.com", srcs)
-check("The searches that ran are reported", (r.get("research") or {}).get("searches") ==
-      ["MEDUAHP69377 MSC tracking", "MSC vessel voyage MEDUAHP69377 sailing"], r.get("research"))
-check("The run's own grounded reply is kept as the answer's details",
-      "MEDUAHP69377" in (r.get("details") or ""), (r.get("details") or "")[:120])
-check("'I couldn't verify' — uncertainty said, not hidden", "I couldn't verify" in r["answer"])
-
-# ═════════════════════════════════════════════════════════════════════════
-rule("3. VESSEL, PORT, DELAY, CARRIER, MIXED — TARGETED, AND THE PROGRESS IS REAL")
-# ═════════════════════════════════════════════════════════════════════════
+qs = [x["q"] for x in SEARCHES[s0:]]
+check("Targeted searches, built from the run (carrier + reference, carrier advisories)",
+      qs[:2] == ["MSC MEDUAHP69377", "MSC customer advisory schedule update"]
+      and all(x["format"] == "json" for x in SEARCHES[s0:]), qs)
+check("The run's answer comes first, unchanged; outside information is a labelled section",
+      r["answer"].startswith("I checked what we have in the run first.")
+      and "**From public sources (not run data)**" in r["answer"]
+      and "two days late" in r["answer"], r["answer"][-300:])
+check("Sources listed with who publishes them",
+      any(s["url"].endswith("/schedule-update") for s in r.get("web_sources") or []),
+      r.get("web_sources"))
+paths = FETCHES[f0:]
+check("Only an allowed official page was read — robots.txt first; never a tracking page",
+      "/robots.txt" in paths and "/en/newsroom/customer-advisories/schedule-update" in paths
+      and "/en/track-a-shipment" not in paths, paths)
+check("A blog result is listed but never fetched",
+      not R.fetch_allowed("https://blog.example.net/msc-news"))
+check("Fetch rules: carrier tracking and sign-in pages are never fetched",
+      not R.fetch_allowed("https://www.msc.com/en/track-a-shipment")
+      and not R.fetch_allowed("https://www.cma-cgm.com/login")
+      and R.fetch_allowed("https://www.msc.com/en/newsroom/customer-advisories"))
+p = R.progress("test-progress-001")
+check("Real progress stages were recorded (the searches and the page read)", p["steps"] >= 3, p)
+s1 = len(SEARCHES)
+ask("Where is MEDUAHP69377?")
+check("The same question again within 30 min: from the cache, no new search",
+      len(SEARCHES) == s1)
+ask("Where is MEDUAHP69377 right now? latest please")
+check("'latest' searches again", len(SEARCHES) > s1)
 R.clear_cache()
-SCENARIO.update(name="port")
-r = ask("Can you check the port for MEDUAHP69377 — any congestion?", {"progress_id": "test-port-0001"})
-p = R.progress("test-port-0001")
-check("Port research: the stage shown is the real one, with its query",
-      p["stage"] in ("Checking the port…", "Putting it together…") and p["steps"] >= 2, p)
-check("...port authority classified as Port / terminal",
-      (r.get("web_sources") or [{}])[0].get("kind") == "Port / terminal", r.get("web_sources"))
+r = ask("Why did CMAU7700001 fail?")
+q_err = [x["q"] for x in SEARCHES][-2:]
+check("Error question: the exact error text searched (no URL, no session values sent)",
+      any("CMA CGM CMA CGM restricted access" in q or "restricted access after the human" in q
+          for q in q_err) and not any("session=abc123" in q or "4417" in q for q in q_err),
+      q_err)
+check("...the ranked causes stay; WEB is added after them",
+      r["answer"].index("What I think is going on") < r["answer"].index("From public sources"))
+STAND["results"] = "none"
 R.clear_cache()
-SCENARIO.update(name="where")
-r = ask("Why is MEDUAHP69377 late?")
-check("Delayed-shipment question goes to shipment research",
-      "MSC vessel voyage" in " ".join((r.get("research") or {}).get("searches") or []))
-check("...vessel query recognised as vessel research",
-      R._friendly("MSC vessel voyage MEDUAHP69377 sailing") == "Checking the vessel…")
-R.clear_cache()
-SCENARIO.update(name="carrier")
-r = ask("Why is CMAU7700001 restricted and is CMA CGM having issues today?")
-body = CALLS[-1]["body"]
-check("Mixed question: run first, then outside, then the careful connection",
-      "FROM OUR RUN" in body["messages"][0]["content"] and r["answer"].startswith("From our run"))
-check("...the ranked causes from the run's evidence go with it",
-      "ranked_causes_from_run_evidence" in body["messages"][0]["content"])
-check("...a page that could not be opened is reported as such: the fetch error is kept",
-      (r.get("research") or {}).get("errors") == ["url_not_accessible"] and
-      (r.get("research") or {}).get("fetched") == [CMA_URL], r.get("research"))
-check("...and only the search result it cites is offered as a source",
-      [x["url"] for x in r.get("web_sources") or []] == [CMA_URL], r.get("web_sources"))
-check("...and it does not claim the advisory caused the failure",
-      "I can't connect the two" in r["answer"])
-check("Carrier advisory search shown as checking public updates",
-      R._friendly("CMA CGM customer advisory tracking access restricted") in
-      ("Checking the latest public updates…", "Looking up this error…"))
-sent = json.dumps(CALLS[-1]["body"])
-check("Security: the restriction URL is sent without its query (no session, no code)",
-      "session=abc123" not in sent and "code=4417" not in sent)
-check("Security: nothing named like a credential is sent",
-      not re.search(r'"(password|token|cookie|secret|api_key)"', sent, re.I))
-check("Security: the rules forbid bypassing CAPTCHA, restrictions, IP rotation",
-      "never suggest or attempt to bypass CAPTCHA" in CALLS[-1]["body"]["system"]
-      and "rotating IPs" in CALLS[-1]["body"]["system"])
-
-# ═════════════════════════════════════════════════════════════════════════
-rule("4. NO RELIABLE RESULT, EXPLICIT SEARCH, GENERAL QUESTIONS, CACHE, PAUSE, ERRORS")
-# ═════════════════════════════════════════════════════════════════════════
-R.clear_cache()
-SCENARIO.update(name="nothing")
-r = ask("Where is the vessel carrying MEDUAHP69377 right now?")
-check("No reliable result: says so, keeps what it did confirm, shows no sources",
-      r["answer"].startswith("I couldn't verify the vessel's position") and
-      not r.get("web_sources"), (r["answer"][:100], r.get("web_sources")))
-SCENARIO.update(name="general")
-before = len(CALLS)
-r = ask("Search the web: any MSC blank sailings announced this week?")
-check("Explicit search request: researched", len(CALLS) == before + 1 and
-      "blank sailing" in r["answer"].lower())
-before = len(CALLS)
-r = ask("What is demurrage?")
-check("Plain general knowledge: answered without a search", len(CALLS) == before and
-      r["answer"].startswith("Demurrage is the charge"))
-R.clear_cache()
-SCENARIO.update(name="where")
-before = len(CALLS)
-ask("Tell me everything about MEDUAHP69377")
-ask("Tell me everything about MEDUAHP69377")
-check("The same question twice: researched once (cache)", len(CALLS) == before + 1)
-ask("Tell me everything about MEDUAHP69377 — the latest, please")
-check("'latest' asks again (fresh)", len(CALLS) == before + 2)
-R.clear_cache()
-SCENARIO.update(name="pause")
-before = len(CALLS)
-r = ask("Where is MEDUAHP69377?")
-check("A paused turn (pause_turn) is continued by sending it back unchanged",
-      len(CALLS) == before + 2 and CALLS[-1]["body"]["messages"][-1]["role"] == "assistant"
-      and r["answer"] == "Continued after the pause.", (len(CALLS) - before, r["answer"][:80]))
-check("...the paused search's results travel back with their encrypted content",
-      "ENC" in json.dumps(CALLS[-1]["body"]["messages"][-1]))
-R.clear_cache()
-SCENARIO.update(name="where", status=401)
-r = ask("Where is MEDUAHP69377?")
-check("Research service refuses (401): said plainly, the run's answer still stands",
-      "I tried to look this up but couldn't: the research service answered HTTP 401" in
-      r["answer"] and "MEDUAHP69377" in r["answer"], r["answer"][-200:])
-SCENARIO.update(status=200)
-os.environ["ATLAS_RESEARCH_BASE_URL"] = "http://127.0.0.1:9"
+r = ask("Is MSC having problems today with MEDUAHP69377?")
+check("Nothing reliable found: said so, nothing invented, no sources",
+      "found nothing reliable" in r["answer"] and not r.get("web_sources"), r["answer"][-160:])
+STAND["results"], STAND["search_down"] = "msc", True
 R.clear_cache()
 r = ask("Where is MEDUAHP69377?")
-check("Research service unreachable: said plainly", "could not be reached" in r["answer"],
+check("Search service down: ATLAS still answers from the run and says it couldn't check",
+      r["answer"].startswith("I checked what we have in the run first.")
+      and "couldn't" in r["answer"] and "search service could not be used" in r["answer"],
       r["answer"][-200:])
-os.environ["ATLAS_RESEARCH_BASE_URL"] = API
+STAND["search_down"] = False
+os.environ["ATLAS_SEARCH_URL"] = "https://searx.example.com"
+check("A non-local search host is refused unless explicitly allowed",
+      not R.enabled() and "not on this machine" in R.why_off())
+os.environ["ATLAS_SEARCH_URL"] = SEARX
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("5. THE SERVER: progress_id IN, REAL STAGES OUT, WHILE IT RESEARCHES")
+rule("3. LOCAL MODEL (Ollama) — phrasing only, behind the fact guard, always a fallback")
+# ═════════════════════════════════════════════════════════════════════════
+search_off()
+llm_on("good")
+c0 = len(CHATS)
+r = ask("Where is MEDUAHP69377?")
+check("A healthy local model re-phrases ATLAS's answer (the original kept as details)",
+      (r.get("llm") or {}).get("used") is True and r["answer"].startswith("I checked the run first")
+      and r.get("details", "").startswith("I checked what we have in the run first."),
+      (r.get("llm"), r["answer"][:80]))
+body = CHATS[-1]
+check("The request is Ollama's /api/chat, local, with ATLAS's answer and the run evidence",
+      body["model"] == "qwen2.5:7b-instruct" and body["stream"] is False
+      and "ANSWER (authoritative)" in body["messages"][1]["content"]
+      and "10/11/2026" in body["messages"][1]["content"])
+check("...and its rules: only the given facts, no invented success, no security bypass",
+      "Use ONLY facts present" in body["messages"][0]["content"]
+      and "Never suggest bypassing CAPTCHA" in body["messages"][0]["content"])
+check("No credential or session value is sent to the model",
+      "session=abc123" not in json.dumps(CHATS) and "4417" not in json.dumps(CHATS))
+llm_on("invent")
+r = ask("Where is MEDUAHP69377?")
+check("A phrasing that INVENTS a vessel, IMO, date and 'confirmed': rejected, ATLAS's own answer "
+      "shown", (r.get("llm") or {}).get("used") is False
+      and "added things ATLAS does not hold" in r["llm"]["reason"]
+      and r["answer"].startswith("I checked what we have in the run first."),
+      (r.get("llm"), r["answer"][:80]))
+llm_on("slow")
+t0 = time.monotonic()
+r = ask("Where is MEDUAHP69377?")
+check("A model that does not answer within the timeout: ATLAS's own answer, bounded wait",
+      (r.get("llm") or {}).get("used") is False and time.monotonic() - t0 < 6
+      and r["answer"].startswith("I checked what we have in the run first."),
+      (r.get("llm"), round(time.monotonic() - t0, 1)))
+os.environ["ATLAS_LLM_MODEL"] = "not-pulled:1b"
+r = ask("Where is MEDUAHP69377?")
+check("A model that is not pulled: health says so, ATLAS answers without it",
+      (r.get("llm") or {}).get("used") is False and "not pulled" in r["llm"]["reason"])
+os.environ.update({"ATLAS_LLM_MODEL": "qwen2.5:7b-instruct", "ATLAS_LLM_URL":
+                   "https://llm.example.com"})
+check("A non-local model host is refused unless explicitly allowed (no hosted endpoint by "
+      "accident)", L.provider().health()["ok"] is False and "not on this machine" in
+      L.provider().health()["detail"])
+os.environ["ATLAS_LLM_URL"] = OLLAMA
+llm_off()
+check("PO answers never go through the model (they are records, not prose to improve)",
+      ask("What happened with this PO?", {"domain": "po"}).get("llm") is None)
+
+# ═════════════════════════════════════════════════════════════════════════
+rule("4. THE FACT GUARD — deterministic")
+# ═════════════════════════════════════════════════════════════════════════
+src = ["MEDUAHP69377 is with MSC. ETA 10/11/2026. 653,492.35 GHS.", {"carrier": "MSC"}]
+check("Same facts re-worded: accepted",
+      FG.check("MSC has MEDUAHP69377; its ETA is 10/11/2026 and duty 653492.35 GHS.", src)[0])
+ok, v = FG.check("MEDUAHP69377 arrives 14/11/2026 on IMO 9812345.", src)
+check("A new date and a new number: rejected, each named", not ok and len(v) >= 2, v)
+ok, v = FG.check("The shipment MSKU1234567 is also affected.", src)
+check("A reference not in the inputs: rejected", not ok, v)
+ok, v = FG.check("The ETA was confirmed and written to the Hub.", src)
+check("A success claim the inputs do not make: rejected", not ok and any("claim" in x for x in v),
+      v)
+ok, v = FG.check("See https://made-up.example/x for details.", src)
+check("A link not in the inputs: rejected", not ok, v)
+
+# ═════════════════════════════════════════════════════════════════════════
+rule("5. THE SERVER — progress and the local health endpoint")
 # ═════════════════════════════════════════════════════════════════════════
 from dashboard.bridge import bridge as B                               # noqa: E402
 B.run_started(run_id="20261006-090000-r1", dry_run=False, target_status="Under Clearance",
@@ -463,8 +433,9 @@ PORT = s.getsockname()[1]
 s.close()
 tower_server.start(port=PORT, open_browser=False, host="127.0.0.1")
 time.sleep(0.6)
-R.clear_cache()
-SCENARIO.update(name="where", delay=0.08)
+search_on()
+llm_off()
+STAND["delay"] = 0.3
 got = {}
 
 
@@ -478,7 +449,7 @@ def post():
 worker = threading.Thread(target=post)
 worker.start()
 seen = []
-for _ in range(80):
+for _ in range(120):
     pr = json.load(urllib.request.urlopen(
         "http://127.0.0.1:%d/api/ask/progress?id=srv-progress-0001" % PORT, timeout=5))
     if pr.get("stage") and (not seen or seen[-1] != (pr["stage"], pr.get("detail"))):
@@ -487,13 +458,16 @@ for _ in range(80):
         break
     time.sleep(0.05)
 worker.join(30)
-check("While ATLAS researched, the page could read what it was doing — real stages",
-      any(st == "Looking at the carrier information…" and d == "MEDUAHP69377 MSC tracking"
-          for st, d in seen) and any(st == "Checking the vessel…" for st, _d in seen), seen)
+check("While ATLAS searched, the page could read what it was doing — the real queries",
+      any(d == "MSC MEDUAHP69377" for _s, d in seen), seen)
 check("...and the reply came back with its sources",
-      (got.get("reply") or {}).get("web_sources", [{}])[0].get("url") == MSC_NOTICE)
+      bool((got.get("reply") or {}).get("web_sources")))
+health = json.load(urllib.request.urlopen("http://127.0.0.1:%d/api/atlas/llm" % PORT, timeout=5))
+check("/api/atlas/llm: status only (provider, model, configured) — no prompt, no data",
+      health["llm"]["provider"] == "none" and health["search"]["configured"] is True
+      and set(health) == {"llm", "search"}, health)
 check("A malformed progress id is ignored", R.clean_progress_id("../../etc") == "")
-SCENARIO.update(delay=0)
+STAND["delay"] = 0.0
 
 # ═════════════════════════════════════════════════════════════════════════
 rule("6. ERROR KNOWLEDGE — RANKED, SAFE, NEVER A GUESSED ROOT CAUSE")
@@ -527,22 +501,39 @@ check("No cause recommends evading security",
                         c["fix"], re.I) for c in every))
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("7. NOTHING RESEARCHED IS LEARNED, NOTHING LEAVES WHEN IT IS OFF")
+rule("7. NOTHING RESEARCHED IS LEARNED; NOTHING LEAVES WHEN IT IS OFF")
 # ═════════════════════════════════════════════════════════════════════════
 src = (HERE / "intelligence" / "research.py").read_text(encoding="utf-8")
 check("Research never writes to the learning store",
       "learning" not in re.sub(r'""".*?"""', "", src, flags=re.S).replace("learned", ""))
-research_off()
-before = len(CALLS)
+search_off()
+llm_off()
+before = (len(SEARCHES), len(FETCHES), len(CHATS))
 ask("Where is MEDUAHP69377?")
 ask("Search the web for MSC news")
-check("ATLAS_RESEARCH=0: no request leaves the building", len(CALLS) == before)
-os.environ.pop("ATLAS_RESEARCH_API_KEY", None)
-os.environ.pop("ATLAS_RESEARCH", None)
-check("No key configured: research is off, and ATLAS says how to switch it on",
-      not R.enabled() and "ATLAS_RESEARCH_API_KEY" in R.why_off())
+check("ATLAS_SEARCH=0 and no model: no request leaves the building",
+      (len(SEARCHES), len(FETCHES), len(CHATS)) == before)
 
-api.shutdown()
+# ═════════════════════════════════════════════════════════════════════════
+rule("8. NO PAID AI API ANYWHERE")
+# ═════════════════════════════════════════════════════════════════════════
+code = ""
+for path in HERE.rglob("*"):
+    rel = path.relative_to(HERE).parts
+    if not path.is_file() or rel[0].startswith((".", "C:")) or path.name.startswith("test_") \
+            or path.suffix not in (".py", ".js", ".html", ".txt", ".json", ".yml", ".yaml",
+                                   ".bicep", ".ps1", ".bat", ".cfg", ".toml", ".env"):
+        continue
+    code += path.read_text(encoding="utf-8", errors="replace")
+paid = re.findall(r"api\.anthropic\.com|anthropic-version|x-api-key|ANTHROPIC_API_KEY|"
+                  r"api\.openai\.com|OPENAI_API_KEY|generativelanguage\.googleapis|"
+                  r"import anthropic|import openai|ATLAS_RESEARCH_API_KEY", code)
+check("No Anthropic, OpenAI or Gemini endpoint, key, header or SDK in the product code, "
+      "static pages, requirements or deployment files",
+      not paid, sorted(set(paid)))
+
+for srv in (searx, pages, ollama):
+    srv.shutdown()
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -163,8 +163,8 @@ NEXT_ACTION = {
     EXTRACTION_FAILED: "Read the kept PDF: it does not read as a Bill of Entry.",
     VALIDATION_FAILED: "Compare the mismatched values in the drawer with eHub and the PDF; "
                        "nothing was generated or sent.",
-    NEEDS_REVIEW: "Supply the missing value (Supplier invoice No. for G4) in the drawer; "
-                  "validation then runs again in full.",
+    NEEDS_REVIEW: "Check the Bill of Entry and supply the Supplier invoice No. (G4) in the "
+                  "drawer; validation then runs again in full.",
     TEMPLATE_FAILED: "The approved template or a value did not read back; nothing was sent.",
     SAVE_FAILED: "Check the output folder is reachable and writable, then `python -m po "
                  "recover`.",

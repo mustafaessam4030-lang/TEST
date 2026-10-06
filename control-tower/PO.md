@@ -84,7 +84,7 @@ handled except one whose last job failed for a transient reason.
 | Total duty (GHS) | PDF | yes | G6 |
 | VAT / levy lines | PDF | yes | G20 (`=a+b+…`, the template's own style) |
 | Import duty line, User reference | PDF | no | — (cross-check / shown) |
-| Supplier invoice No. | operator, per job | yes | G4 |
+| Supplier invoice No. | the Bill of Entry's explicit "Invoice No.", else a person at review | yes | G4 |
 | Supplier, Branch, Charge to, Priority | configuration or operator | supplier only | G10, G11, G13, C9 |
 
 G19, C24, C26, G41 and F16 are the template's formulas and are never written.
@@ -160,12 +160,19 @@ Delete, Upload, Save, Correction Required and Complete are never pressed.
 When a step on eHub fails, the page is kept — a screenshot and its text, in
 `<PO_DATA_DIR>/evidence` — and named in the job's discovery trail.
 
-The supplier invoice No. (G4): the one a person gave the job, else the one
-the Bill of Entry itself prints under an "Invoice No." / "Invoice Number"
-label (one value; two different ones → none chosen). eHub's "UNA+ Invoice
-Number" column is kept as evidence only and is never used for G4. With
-neither, the job stops at VALIDATION_FAILED ("Supplier invoice No. missing")
-— nothing generated, nothing sent.
+The supplier invoice No. (G4) comes from the Bill of Entry itself: the value
+printed under an explicit "Invoice No." / "Invoice Number" label (one distinct
+value). A value given with the job must agree with it. Otherwise the job stops
+at NEEDS_REVIEW (`G4_SOURCE_UNPROVEN`), with nothing generated or sent:
+
+- nothing printed (`absent`);
+- two different printed values (`ambiguous`, none chosen);
+- a disagreement between the job and the document (`conflict`).
+
+A person then supplies G4 in the drawer (`/api/po/<id>/supply`, `python -m po
+supply`), and validation runs again in full. eHub's "UNA+ Invoice Number" column
+is kept as evidence only. It is never a G4 source or fallback, and neither is
+"Invoice Value".
 
 PO jobs open eHub with the ETA run's own browser launch (headed Edge) and
 sign-in; `PO_HEADLESS` / `PO_BROWSER_EXECUTABLE` override it.

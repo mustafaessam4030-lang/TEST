@@ -24,6 +24,7 @@ Nothing here claims a success it has not observed:
 """
 
 import os
+import re
 import time
 from pathlib import Path
 
@@ -83,6 +84,52 @@ def _request_fields(doctype, request, config):
                              "status": X.FOUND if value else X.MISSING, "value": value,
                              "evidence": origin, "candidates": [], "origin": origin}
     return out
+
+
+def _g4_norm(value):
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper()).lstrip("0")
+
+
+def _g4_source(request, g4, printed):
+    """Settle the supplier invoice No. (G4) in place; None, or the issue that
+    sends the job to review.
+
+    1. A person's value given AT REVIEW wins (they saw what the document prints).
+    2. The Bill of Entry's own explicit "Invoice No." / "Invoice Number" (one
+       distinct value) is the source; a value given with the job must agree.
+    3. Otherwise there is no source: several printed values, or none — never
+       eHub's "UNA+ Invoice Number", never a guess.
+    """
+    if g4 is None:
+        return None
+    if str(request.get("invoice_no_origin") or "").startswith("supplied"):
+        g4["origin"] = g4["evidence"] = request["invoice_no_origin"]
+        return None
+    value, many = printed.get("value"), printed.get("candidates") or []
+    if g4["status"] == X.FOUND:
+        if value and _g4_norm(value) != _g4_norm(g4["value"]):
+            g4["note"] = "the job gives {0}; the Bill of Entry prints {1}".format(g4["value"], value)
+            return {"reason": "conflict", "candidates": [g4["value"], value],
+                    "detail": "Supplier invoice No. (G4) disagrees: the job gives {0}, the Bill "
+                              "of Entry prints Invoice No. {1}.".format(g4["value"], value)}
+        if value:
+            g4["note"] = "matches the Bill of Entry's printed Invoice No."
+        return None
+    if value:
+        g4.update(value=value, raw=value, status=X.FOUND, origin="bill_of_entry",
+                  evidence="printed on the Bill of Entry: {0}".format(printed.get("evidence")),
+                  note="explicit 'Invoice No.' on the Bill of Entry")
+        return None
+    if many:
+        g4["note"] = "the Bill of Entry prints several invoice numbers ({0}) — none chosen".format(
+            " / ".join(many))
+        return {"reason": "ambiguous", "candidates": many,
+                "detail": "The Bill of Entry prints several different invoice numbers ({0}); "
+                          "G4 is not chosen from them.".format(" / ".join(many))}
+    g4["note"] = "the Bill of Entry prints no explicit 'Invoice No.', and none was given"
+    return {"reason": "absent", "candidates": [],
+            "detail": "The Bill of Entry prints no explicit 'Invoice No.' and none was given for "
+                      "this job (eHub's UNA+ column is never used)."}
 
 
 def _retry(stage, fn, store, record, sleep=time.sleep):
@@ -295,10 +342,9 @@ def from_document(store, record, data, config=None):
         store.event(record, "EXTRACTION_FAILED", "extraction", "FAILED", evidence=sha,
                     found=[n for n, f in fields.items() if f["status"] == X.FOUND])
         return record
-    # The supplier invoice No. (G4) comes from the person who gave the job.
-    # An "Invoice No." printed on the Bill of Entry is shown as a CANDIDATE
-    # only — the existing business logic does not say it is G4 — and eHub's
-    # "UNA+ Invoice Number" column is never used.
+    # The supplier invoice No. (G4): an explicit "Invoice No." / "Invoice
+    # Number" printed on the Bill of Entry (one distinct value), or a
+    # person's value. eHub's "UNA+ Invoice Number" column is never used.
     record["invoice_candidate"] = X.printed_invoice_no(read["text"]) or None
     record["fields"] = fields
     record["number"] = record.get("identifier") or \
@@ -324,11 +370,7 @@ def validate_onward(store, record, config=None):
         request_fields["invoice_no"]["origin"] = request["invoice_no_origin"]
         request_fields["invoice_no"]["evidence"] = request["invoice_no_origin"]
     cand = record.get("invoice_candidate") or {}
-    if "invoice_no" in request_fields and request_fields["invoice_no"]["status"] == X.MISSING:
-        request_fields["invoice_no"]["note"] = (
-            "not provided for this job; the Bill of Entry prints {0} — shown as a candidate "
-            "only".format(cand.get("value") or " / ".join(cand.get("candidates") or []))
-            if cand else "not provided for this job, and not printed on the Bill of Entry")
+    g4_issue = _g4_source(request, request_fields.get("invoice_no"), cand)
     record["request_fields"] = request_fields
     record["provenance_map"] = provenance_map(doctype, fields, request_fields)
 
@@ -338,24 +380,33 @@ def validate_onward(store, record, config=None):
     result = V.validate(doctype, fields, record["hub"], request_fields)
     _timed(record, "validation", t0)
     record["validation"] = result
+    blocking = [c for c in result["checks"] if c["blocking"]]
+    only_g4 = all(c["name"] == "required:invoice_no" and c["status"] == "MISSING"
+                  for c in blocking)
+    if (not result["passed"] and blocking and only_g4) or \
+            (g4_issue and g4_issue["reason"] == "conflict" and (result["passed"] or only_g4)):
+        # G4 has no proven source (none printed, several printed, or the job's
+        # value disagrees with the printed one) and every other check passed:
+        # NEEDS_REVIEW — a person supplies it; nothing is generated or sent.
+        reasons = result["reasons"] or [g4_issue["detail"]]
+        record["email"] = {"status": "BLOCKED", "reasons": reasons,
+                           "recipient": config.get("recipient")}
+        detail = (g4_issue or {}).get("detail") or "Supplier invoice No. (G4) has no source."
+        record = store.transition(record, S.NEEDS_REVIEW, "Supplier invoice No. needed",
+                                  failure("G4_SOURCE_UNPROVEN", "validation",
+                                          detail + " Every other check passed.",
+                                          code="G4_SOURCE_UNPROVEN",
+                                          g4_reason=(g4_issue or {}).get("reason"),
+                                          candidates=(g4_issue or {}).get("candidates"),
+                                          next_action=S.NEXT_ACTION[S.NEEDS_REVIEW]))
+        store.event(record, "NEEDS_REVIEW", "validation", "BLOCKED",
+                    reason="supplier invoice No. (G4) needed",
+                    g4_reason=(g4_issue or {}).get("reason"))
+        store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons)
+        return record
     if not result["passed"]:
         record["email"] = {"status": "BLOCKED", "reasons": result["reasons"],
                            "recipient": config.get("recipient")}
-        blocking = [c for c in result["checks"] if c["blocking"]]
-        # Only G4 is missing: its source is a person — NEEDS_REVIEW, not a failure.
-        if blocking and all(c["name"] == "required:invoice_no" and c["status"] == "MISSING"
-                            for c in blocking):
-            record = store.transition(record, S.NEEDS_REVIEW, "Supplier invoice No. needed",
-                                      failure("G4_SOURCE_UNPROVEN", "validation",
-                                              "Supplier invoice No. (G4) is not provided for "
-                                              "this job. Every other check passed.",
-                                              code="G4_SOURCE_UNPROVEN",
-                                              candidate=cand.get("value"),
-                                              next_action=S.NEXT_ACTION[S.NEEDS_REVIEW]))
-            store.event(record, "NEEDS_REVIEW", "validation", "BLOCKED",
-                        reason="supplier invoice No. (G4) needed", candidate=cand.get("value"))
-            store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=result["reasons"])
-            return record
         mismatch = next((c for c in result["checks"] if c["status"] == "MISMATCH"), None)
         record = store.transition(record, S.VALIDATION_FAILED, "Validation failed", failure(
             "VALIDATION_FAILURE", "validation", "; ".join(result["reasons"]),

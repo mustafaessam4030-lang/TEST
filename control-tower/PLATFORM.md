@@ -395,10 +395,13 @@ Control plane:
 | `ATA_ALLOW_CONCURRENT_RUNS` | 0 | |
 | `ATA_SESSION_LEASE_S` | 45 | Human Action claim lease |
 | `ATLAS_INTEL_DIR`, `ATLAS_DATA_ORIGIN` | —, production | |
-| `ATLAS_RESEARCH_API_KEY` (or `ANTHROPIC_API_KEY`) | — | turns on ATLAS's web research (Claude Messages API with web search + web fetch). Unset = off |
-| `ATLAS_RESEARCH` | on when a key is set | `0` turns research off regardless |
-| `ATLAS_RESEARCH_MODEL` / `ATLAS_RESEARCH_BASE_URL` | `claude-opus-5-5` / `https://api.anthropic.com` | |
-| `ATLAS_RESEARCH_MAX_SEARCHES` / `ATLAS_RESEARCH_CACHE_S` / `ATLAS_RESEARCH_TIMEOUT_S` | 6 / 1800 / 120 | per question; repeat questions reuse the answer for 30 min unless "latest" is asked |
+| `ATLAS_SEARCH_URL` | — | optional self-hosted SearXNG for ATLAS web research. Unset = no research (see START_HERE §10b) |
+| `ATLAS_SEARCH` | on when a URL is set | `0` turns research off regardless |
+| `ATLAS_SEARCH_ALLOW_REMOTE` | 0 | `1` allows a non-local SearXNG host (default: localhost / private network only) |
+| `ATLAS_SEARCH_TIMEOUT_S` / `ATLAS_SEARCH_CACHE_S` / `ATLAS_FETCH_ALLOW` | 10 / 1800 / — | repeat questions reuse results for 30 min unless "latest" is asked; extra fetchable domains |
+| `ATLAS_LLM_PROVIDER` | none | `ollama` = optional local model that only re-phrases ATLAS's answer, behind the fact guard |
+| `ATLAS_LLM_URL` / `ATLAS_LLM_MODEL` | `http://127.0.0.1:11434` / — | the model must be named and pulled (`ollama pull <model>`) |
+| `ATLAS_LLM_TIMEOUT_S` / `ATLAS_LLM_RETRIES` / `ATLAS_LLM_ALLOW_REMOTE` | 20 / 1 / 0 | a non-local model host is refused unless `ALLOW_REMOTE=1` |
 
 Worker: `ATA_CONTROL_PLANE_URL` (https), `ATA_WORKER_TOKEN`, `ATA_CA_FILE`
 (optional private CA), `ATA_HEARTBEAT_S` (10), `ATLAS_DATA_ORIGIN`

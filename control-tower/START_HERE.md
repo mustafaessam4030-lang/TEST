@@ -524,35 +524,57 @@ the existing automation works is in `ARCHITECTURE.md`.
 
 ---
 
-## 10b. ATLAS research — shipments, vessels, ports, errors
+## 10b. ATLAS research and the local model — optional, free, nothing installed for you
 
-ATLAS always answers run facts from the run. When a question needs more —
-"where is it?", "why is it late?", "check the vessel / the port", "is CMA CGM
-having issues today?", "why did this fail and how do I fix it?" — it can
-research the public web itself (Claude, with web search and web fetch), and
-answer like a colleague: what the run says, what it found, what it could not
-verify, and what it recommends, with the sources it actually checked.
+ATLAS always answers run facts from the run; that deterministic answer is the
+authority. Two optional, self-hosted layers can sit on top of it. Neither is
+installed, started or required by the Control Tower, and neither uses a paid
+API: with nothing set up, ATLAS behaves exactly as it does today and says
+plainly when it has not checked outside sources.
 
-Off until you give it a key (on the control plane, and on the local dashboard
-PC if you use that):
+**Web research — self-hosted SearXNG (open source).** Run your own SearXNG on
+the control-plane machine or a box on the same network, with the JSON output
+format enabled (`search: formats: [html, json]` in its `settings.yml`), then:
 
 ```bat
-set ATLAS_RESEARCH_API_KEY=sk-ant-...
+set ATLAS_SEARCH_URL=http://127.0.0.1:8888
 ```
 
-What leaves the building: the question, and a short brief of what the run
-holds about that shipment or failure (reference, carrier, dates, the recorded
-error) — URLs without their query strings, nothing named like a secret. No
-credentials, security codes or CAPTCHA values are ever in that brief.
-`ATLAS_RESEARCH=0` turns it off again.
+ATLAS then searches with queries it builds itself (carrier, reference, the
+recorded error text — never credentials, never a URL's query string), reads at
+most two result pages and only on official domains (carrier notices, port
+authorities, vendor docs), honours robots.txt, and never opens a carrier
+tracking or sign-in page. What it finds is shown under **From public sources
+(not run data)** and is never learned as fact. A non-local search host is
+refused unless `ATLAS_SEARCH_ALLOW_REMOTE=1`. `ATLAS_SEARCH=0` turns it off.
 
-Rules it works under: run facts win over the web (a disagreement is stated,
-never silently replaced); a source is shown only if a real search or fetch
-returned it in that request; it never suggests bypassing CAPTCHA, carrier
-restrictions or authentication; and nothing it researches is learned as fact —
+**Natural-language phrasing — local Ollama (open source).** Install Ollama on
+the control-plane machine (or a GPU box on the same network), pull an
+open-weight model, and point ATLAS at it:
+
+```bat
+ollama pull qwen2.5:7b-instruct
+set ATLAS_LLM_PROVIDER=ollama
+set ATLAS_LLM_MODEL=qwen2.5:7b-instruct
+rem optional: set ATLAS_LLM_URL=http://127.0.0.1:11434
+```
+
+The model only re-phrases the answer ATLAS already built, from the evidence
+ATLAS hands it. A deterministic fact guard rejects any phrasing that adds a
+number, reference, link or success claim the inputs do not hold; then, and
+whenever the model is down, slow (20 s) or not pulled, ATLAS shows its own
+answer. The model never decides a run fact, a success or an action. Check its
+state at `GET /api/atlas/llm`. A 7–8B model on CPU takes roughly 10–40 s per
+answer; a GPU or a smaller model is needed for conversational speed. Review
+the model's licence before use (Qwen2.5: Apache-2.0).
+
+Rules both layers work under: run facts win over the web (a disagreement is
+stated, never silently replaced); a source is shown only if a real search or
+fetch returned it in that request; nothing suggests bypassing CAPTCHA, carrier
+restrictions or authentication; and nothing researched is learned as fact —
 only a recovery that was applied and then verified by the run is.
 
-Without a key, ATLAS still explains failures (causes ranked CONFIRMED / LIKELY /
+Without either, ATLAS still explains failures (causes ranked CONFIRMED / LIKELY /
 POSSIBLE / UNKNOWN against the run's evidence), answers general logistics
 questions, and says plainly when something would need research.
 

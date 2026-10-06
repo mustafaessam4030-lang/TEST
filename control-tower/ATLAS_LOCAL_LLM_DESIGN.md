@@ -1,16 +1,18 @@
-# ATLAS — local LLM and free web research: design proposal (NOT implemented)
+# ATLAS — local LLM and free web research
 
-Status: **proposal for approval.** No code for this design has been written.
+Status: **implemented, optional, off by default.** Nothing is installed or
+required; with no settings, ATLAS is the deterministic ATLAS. Not yet run
+against a real Ollama or SearXNG install — only against stand-in servers in
+`test_atlas_research.py`.
 
-## 0. One thing to know first
+## 0. The paid integration was deleted
 
-The previous round added **`intelligence/research.py`, which calls the paid
-Anthropic Messages API** (web search + web fetch), wired in through
-`dashboard/atlas_intel.py`. It is committed and pushed on this branch. It is
-**inert unless** `ATLAS_RESEARCH_API_KEY` or `ANTHROPIC_API_KEY` is set (and
-`ATLAS_RESEARCH` ≠ 0), so nothing is billed today. It contradicts the
-zero-paid-API rule anyway. Step 1 of this design deletes that transport. Until
-the design is approved, leave those variables unset.
+The earlier `intelligence/research.py` called the paid Anthropic Messages API
+(web search + web fetch) when `ATLAS_RESEARCH_API_KEY` / `ANTHROPIC_API_KEY`
+was set. That transport, its settings (`ATLAS_RESEARCH*`) and its docs are
+removed — not disabled. `test_atlas_research.py` §8 fails the build if an
+Anthropic, OpenAI or Gemini endpoint, key name, header or SDK reappears in the
+product code or requirements.
 
 ## 1. What ATLAS is today (inspected)
 
@@ -22,7 +24,8 @@ the design is approved, leave those variables unset.
 | Learned strategies, evidence images | `dashboard/atlas_learning.py`, `intelligence/evidence.py` | **authoritative** |
 | Glossary, ranked causes (CONFIRMED/LIKELY/POSSIBLE/UNKNOWN) | `intelligence/knowledge.py` (deterministic) | deterministic knowledge |
 | Shipment/error/general routing, conversational leads | `dashboard/atlas_intel.py` | deterministic |
-| Web research | `intelligence/research.py` → **Anthropic (paid)** | to be removed |
+| Web research (optional) | `intelligence/research.py` → self-hosted SearXNG + allow-listed fetch | labelled WEB, never a run fact |
+| Phrasing (optional) | `intelligence/llm.py` (Ollama) behind `intelligence/factguard.py` | none — re-phrases only |
 
 Contract: `POST /api/ask {question, context}` → `{answer, card, buttons,
 actions, downloads, reference, evidence, suggestions, intent, sources,
@@ -73,7 +76,6 @@ rejects the output unless each one occurs in the deterministic reply, the
 evidence brief or the labelled web snippets. This is a deterministic test, not a model judgement.
 
 **`intelligence/research.py` (rewritten), web research that is free and optional.**
-- The Anthropic transport is removed.
 - Search goes through a **self-hosted SearXNG** instance (open source, JSON API) at
   `ATLAS_SEARCH_URL`. If that is unset, there is no search.
 - Fetching only covers pages on an allow-list of official domains: carrier advisories,
@@ -85,15 +87,16 @@ evidence brief or the labelled web snippets. This is a deterministic test, not a
 - Snippets reach the LLM labelled WEB with their URL. Without an LLM, ATLAS lists
   them as "Sources found" under the deterministic answer.
 
-**`dashboard/atlas_intel.py` (changed).** `_researched()` becomes `_compose()`:
-deterministic reply + brief (+ web) → provider → fact guard → reply. The
+**`dashboard/atlas_intel.py` (changed).** `_enrich()` builds the deterministic
+reply, appends labelled web results when SearXNG is set up, then `_phrased()`:
+reply + brief (+ web) → provider → fact guard → reply. The
 labels FACT / CURRENT_RUN / WEB_RESEARCH / LEARNED_PATTERN / INFERENCE /
 RECOMMENDATION / UNVERIFIED stay in the brief and survive the guard.
 
 **Servers.** `GET /api/atlas/llm` reports the local health status (provider, model,
 ok). It never returns a prompt or any data.
 
-## 4. Files that would change
+## 4. Files changed
 
 | File | Change | Why |
 |---|---|---|
@@ -129,8 +132,10 @@ today's deterministic ATLAS.
 - **Hardware note**: a 7–8B model on CPU answers in roughly 10–40 s. A GPU, or a 3B model, is needed for
   conversational speed. Answers stay deterministic until the model is healthy.
 
-## 7. Decision needed
+## 7. Still open
 
-Approve: (a) remove the Anthropic transport now; (b) build the provider
-abstraction with Ollama; (c) optional SearXNG research. Name the model and
-host (worker PC or a separate box).
+- Choose the model and the host (control-plane box, or a GPU box on the same
+  network) and review its licence.
+- Install and run SearXNG and Ollama there; check `GET /api/atlas/llm`.
+- Try both against real questions before relying on the phrasing; until then
+  ATLAS's deterministic answers are what operators see.

@@ -14,10 +14,15 @@ module then looks at the question and that reply and decides:
   search       the operator asked to look something up
   fallback     the run has nothing on it — research, or say so plainly
 
-Research (intelligence/research) runs only when it is configured and only
-when the question needs it. Run facts stay authoritative: the research is
-given them and told so, and the run's own grounded reply is kept with the
-answer (as its details) whatever the research says.
+ATLAS's own answer is always built first and is authoritative. Two optional,
+local, free additions — both off unless set up, neither ever required:
+  intelligence/research  a self-hosted SearXNG search (+ allow-listed official
+                         pages); results are added as a labelled "From public
+                         sources" section, never as run facts
+  intelligence/llm       a local Ollama model that only re-phrases the answer;
+                         intelligence/factguard rejects any phrasing that adds
+                         a number, reference, link or success claim
+No paid AI API is used anywhere.
 """
 
 import re
@@ -35,11 +40,11 @@ SHIPMENT_ASK = re.compile(
     r"delay|delayed|late|behind schedule|latest event|last event|tracking event|route|"
     r"transship|everything|all you (know|can)|tell me (about|more)|what('?s| is) (going on|"
     r"happening)|anything unusual|investigate|find more|more information|check the|"
-    r"what happened to)\b", re.I)
+    r"what happened to|having (problems|issues|trouble)|disruption|outage|advisory)\b", re.I)
 ERROR_ASK = re.compile(r"\b(why|cause|caused|root cause|reason|what went wrong|fix|investigate|"
                        r"how (do|can) (i|we) (fix|solve|resolve)|what does (this|that|the) "
                        r"error mean)\b", re.I)
-EXTERNAL_HINT = re.compile(r"\b(today|this week|having issues|outage|down|news|announce|"
+EXTERNAL_HINT = re.compile(r"\b(today|this week|having (issues|problems|trouble)|outage|down|news|announce|"
                            r"advisory|strike|weather|congestion|public)\b", re.I)
 
 
@@ -207,69 +212,110 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
         return reply
     pid = R.clean_progress_id(context.get("progress_id"))
     run_text = reply.get("answer") or ""
+    fresh = bool(FRESH_ASK.search(question or ""))
 
+    # 1. ATLAS's own answer — always built, always authoritative.
+    ranking = None
     if mode == "general":
         title, text = K.glossary(question)
-        if R.enabled() and FRESH_ASK.search(question):
-            return _researched(reply, question, "general", brief(data), pid, None, title)
         out = dict(reply, answer=text, intent="general_knowledge", understood=True,
                    knowledge="general", grounded=True)
         out.pop("fallback", None)
-        return out
-
-    ranking = None
-    if failure is not None and mode in ("error", "mixed"):
+        if not (fresh and R.enabled()):
+            return _phrased(out, question, brief(data), [], pid)
+    elif mode in ("error", "mixed") and failure is not None:
         R.stage(pid, "Reading the failure evidence…")
         ranking = K.investigate_failure(failure, data.shipments)
-    elif record is not None:
+        out = dict(reply, investigation=ranking,
+                   answer=failure_lead(failure) + "\n\n" + run_text +
+                   "\n\n**What I think is going on**\n" + K.investigation_text(ranking))
+    elif mode == "shipment" and record is not None:
         R.stage(pid, "Checking the shipment…")
+        out = dict(reply, answer=shipment_picture(record) + "\n\n" + run_text)
+    else:
+        out = dict(reply)
 
+    # 2. Outside sources — only when a self-hosted search service is set up.
+    run_brief = brief(data, record, failure, run_text, ranking)
+    web = []
     if R.enabled():
         subject = (record or {}).get("reference") or (failure or {}).get("failure_id")
-        research_mode = {"search": "mixed" if record else "general", "fallback": "general"}.get(
-            mode, mode)
-        return _researched(reply, question, research_mode,
-                           brief(data, record, failure, run_text, ranking), pid, subject,
-                           None, details=run_text if mode != "fallback" else None,
-                           fresh=bool(FRESH_ASK.search(question)))
+        research_mode = {"search": "mixed" if record else "general",
+                         "fallback": "general"}.get(mode, mode)
+        result = R.investigate(question, research_mode, run_brief, subject=subject,
+                               fresh=fresh, pid=pid)
+        out["research"] = {"ok": result.get("ok"), "searches": result.get("searches") or [],
+                           "fetched": result.get("fetched") or [],
+                           "cached": bool(result.get("cached")),
+                           "errors": result.get("errors") or [], "reason": result.get("reason")}
+        if result.get("ok") and result.get("results"):
+            web = result["results"]
+            out["web_sources"] = [{k: w.get(k) for k in ("url", "title", "publisher", "kind")}
+                                  for w in web[:6]]
+            out["answer"] = (out.get("answer") or "").rstrip() + "\n\n" + _web_section(web)
+            out["sources"] = list(reply.get("sources") or []) + ["web search (self-hosted)"]
+            if out.get("fallback"):
+                out.pop("fallback", None)
+                out["understood"] = True
+        elif result.get("ok"):
+            out["answer"] = (out.get("answer") or "").rstrip() + \
+                "\n\nI searched public sources and found nothing reliable on this."
+        else:
+            out["answer"] = (out.get("answer") or "").rstrip() + \
+                "\n\nI tried to check public sources but couldn't: {0}.".format(
+                    result.get("reason"))
+    elif mode in ("error", "mixed", "shipment", "search"):
+        off = R.why_off()
+        tail = {"shipment": _not_in_run() + ", and {0}.".format(off),
+                "search": "I can't look that up from here: {0}.".format(off)}.get(
+            mode, "I haven't checked outside sources for this: {0}.".format(off))
+        out["answer"] = (out.get("answer") or "").rstrip() + "\n\n" + tail
+        out["research"] = {"ok": False, "reason": off}
 
-    # Research is not configured: the run's own picture, honestly bounded.
-    off = R.why_off()
-    if mode in ("error", "mixed") and failure is not None:
-        text = failure_lead(failure) + "\n\n" + run_text + \
-            "\n\n**What I think is going on**\n" + K.investigation_text(ranking) + \
-            "\n\nI haven't checked outside sources for this: {0}.".format(off)
-        return dict(reply, answer=text, investigation=ranking, research={"ok": False,
-                                                                         "reason": off})
-    if mode == "shipment" and record is not None:
-        text = shipment_picture(record) + "\n\n" + run_text + "\n\n" + _not_in_run() + \
-            ", and {0}.".format(off)
-        return dict(reply, answer=text, research={"ok": False, "reason": off})
-    if mode == "search":
-        return dict(reply, answer=run_text + ("\n\n" if run_text else "") +
-                    "I can't look that up from here: {0}.".format(off),
-                    research={"ok": False, "reason": off})
-    return reply
+    # 3. Optional local model: phrasing only, behind the fact guard.
+    return _phrased(out, question, run_brief, web, pid)
 
 
-def _researched(reply, question, mode, run_brief, pid, subject, title, details=None,
-                fresh=False):
-    result = R.investigate(question, mode, run_brief, subject=subject, fresh=fresh, pid=pid)
-    meta = {"ok": result.get("ok"), "searches": result.get("searches") or [],
-            "fetched": result.get("fetched") or [], "cached": bool(result.get("cached")),
-            "errors": result.get("errors") or [],
-            "reason": result.get("reason")}
-    if not result.get("ok"):
-        # Research failed: the run's answer stands, and the failure is said.
-        note = "I tried to look this up but couldn't: {0}.".format(result.get("reason"))
-        base = reply.get("answer") or ""
-        if reply.get("understood") is False:
-            base = ""
-        return dict(reply, answer=(base + "\n\n" if base else "") + note, research=meta)
-    out = dict(reply, answer=result["answer"], web_sources=result["sources"], research=meta,
-               intent=reply.get("intent") or "research", understood=True, grounded=False)
-    out.pop("fallback", None)
-    if details and details.strip() and details.strip() != result["answer"].strip():
-        out["details"] = details
-    out["sources"] = list(reply.get("sources") or []) + ["web research"]
-    return out
+def _web_section(web):
+    """Outside information, labelled as such — never mixed into run facts."""
+    lines = ["**From public sources (not run data)**"]
+    for w in web[:4]:
+        text = w.get("snippet") or (w.get("text") or "")[:240]
+        if text:
+            lines.append("- {0} ({1}): {2}".format(w.get("publisher"), w.get("kind"), text))
+    if len(lines) == 1:
+        lines.append("- Results were found but none carried readable text; see the sources.")
+    return "\n".join(lines)
+
+
+def _phrased(out, question, run_brief, web, pid):
+    """
+    The local model's phrasing of ATLAS's answer — used only when a local
+    model is configured and healthy AND the fact guard accepts it. Otherwise
+    ATLAS's own answer, unchanged.
+    """
+    from intelligence import factguard, llm
+    p = llm.provider()
+    if p.name == "none":
+        return out
+    health = p.health()
+    if not health.get("ok"):
+        out["llm"] = {"used": False, "reason": health.get("detail")}
+        return out
+    R.stage(pid, "Putting it together…")
+    answer = out.get("answer") or ""
+    try:
+        text = llm.phrase(answer, run_brief, web)
+    except llm.LLMError as error:
+        out["llm"] = {"used": False, "reason": str(error)}
+        return out
+    inputs = [answer, run_brief] + [w.get("snippet") for w in web] + \
+        [w.get("text") for w in web] + [w.get("publisher") for w in web]
+    ok, violations = factguard.check(text, inputs)
+    if not ok:
+        out["llm"] = {"used": False, "reason": "the local model's phrasing added things ATLAS "
+                                              "does not hold: " + "; ".join(violations)}
+        return out
+    phrased = dict(out, answer=text, details=answer)
+    phrased["llm"] = {"used": True, "model": health.get("model")}
+    return phrased

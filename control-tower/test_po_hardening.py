@@ -251,20 +251,48 @@ check("A sound PDF: integrity recorded (bytes, %PDF header, %%EOF, not repaired)
       r["document"]["integrity"]["eof_marker"] and r["document"]["integrity"]["repaired"] is False)
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("3. G4 — SUPPLIER INVOICE No.: a person's value, never UNA+, never a guess")
+rule("3. G4 — SUPPLIER INVOICE No.: the Bill of Entry's explicit Invoice No., never UNA+, never a guess")
 # ═════════════════════════════════════════════════════════════════════════
 st = store("g4")
 r = job(st, invoice=None, data=pdf_of(boe_text(extra="Invoice No: 2600005261\n")))
-check("Not given: NEEDS_REVIEW (G4_SOURCE_UNPROVEN); the printed number is a candidate only",
-      r["state"] == S.NEEDS_REVIEW and r["failure"]["candidate"] == "2600005261"
-      and not r.get("output"), (r["state"], r.get("failure")))
+check("Printed explicitly ('Invoice No: 2600005261'), none given: G4 from the Bill of Entry, "
+      "origin and evidence recorded, EMAIL READY",
+      r["state"] == S.EMAIL_PREPARED and r["output"]["cells"]["G4"] == 2600005261
+      and r["request_fields"]["invoice_no"]["origin"] == "bill_of_entry"
+      and "Invoice No: 2600005261" in r["request_fields"]["invoice_no"]["evidence"],
+      (r["state"], r.get("failure"), r.get("request_fields", {}).get("invoice_no")))
+st = store("g4-none")
+r = job(st, invoice=None, data=pdf_of(boe_text(extra="UNA+ Invoice Number 70076\n"
+                                                    "Total Invoice Value (CIF) 169,740.11\n")))
+check("No explicit Invoice No. (only UNA+ and 'Invoice Value'): NEEDS_REVIEW (absent) — "
+      "no UNA+ fallback, nothing generated",
+      r["state"] == S.NEEDS_REVIEW and r["failure"]["code"] == "G4_SOURCE_UNPROVEN"
+      and r["failure"]["g4_reason"] == "absent" and not r.get("output")
+      and r["request_fields"]["invoice_no"]["value"] is None
+      and "70076" not in json.dumps(r["request_fields"]), (r["state"], r.get("failure")))
 r, problems = P.supply(st, r, {"invoice_no": "INV-77"}, by="ada", config=CONFIG)
-check("Supplied: validated again in full, G4 = the supplied value, EMAIL READY",
+check("Supplied at review: validated again in full, G4 = the supplied value, EMAIL READY",
       r["state"] == S.EMAIL_PREPARED and r["output"]["cells"]["G4"] == "INV-77" and not problems)
-check("REGRESSION — G4's source → field → cell: request invoice_no → G4, origin recorded",
+check("REGRESSION — G4's source → field → cell: invoice_no → G4, origin recorded",
       [m for m in doctypes.get()["mapping"] if m["cell"] == "G4"][0]["field"] == "invoice_no"
-      and doctypes.field(doctypes.get(), "invoice_no")["source"] == "request"
       and "supplied by ada at review" in r["request_fields"]["invoice_no"]["origin"])
+st = store("g4-many")
+r = job(st, invoice=None, data=pdf_of(boe_text(extra="Invoice No: A1001\n"
+                                                    "Commercial Invoice Number: B2002\n")))
+check("Two different printed invoice numbers: NEEDS_REVIEW (ambiguous), none chosen",
+      r["state"] == S.NEEDS_REVIEW and r["failure"]["g4_reason"] == "ambiguous"
+      and r["failure"]["candidates"] == ["A1001", "B2002"] and not r.get("output"),
+      (r["state"], r.get("failure")))
+st = store("g4-clash")
+r = job(st, invoice="INV-1", data=pdf_of(boe_text(extra="Invoice No: 2600005261\n")))
+check("The job's value disagrees with the printed one: NEEDS_REVIEW (conflict), nothing generated",
+      r["state"] == S.NEEDS_REVIEW and r["failure"]["g4_reason"] == "conflict"
+      and not r.get("output"), (r["state"], r.get("failure")))
+st = store("g4-agree")
+r = job(st, invoice="2600005261", data=pdf_of(boe_text(extra="Invoice No: 2600005261\n")))
+check("The job's value agrees with the printed one: EMAIL READY, the agreement noted",
+      r["state"] == S.EMAIL_PREPARED and "matches" in r["request_fields"]["invoice_no"]["note"],
+      (r["state"], r.get("failure")))
 check("REGRESSION — no UNA+ route to G4 exists in the pipeline",
       "una_invoice" not in (HERE / "po" / "pipeline.py").read_text(encoding="utf-8"))
 

@@ -379,6 +379,16 @@ class Handler(BaseHTTPRequestHandler):
             }))
             return
 
+        if route == "/api/atlas/llm":
+            # Whether ATLAS's optional local model and self-hosted search are
+            # set up and answering. Status only — never a prompt or data.
+            from intelligence import llm as _llm, research as _research
+            self._send(200, json.dumps({"llm": _llm.provider().health(),
+                                        "search": {"configured": _research.enabled(),
+                                                   "detail": None if _research.enabled()
+                                                   else _research.why_off()}}))
+            return
+
         if route.startswith("/api/atlas/") or route.startswith("/api/evidence"):
             self._intel_get(route)
             return

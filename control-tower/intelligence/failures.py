@@ -818,7 +818,7 @@ PO_LABELS = {
     "SAVE_FAILED": "the generated document could not be saved and read back",
     "EMAIL_UNKNOWN": "the email may or may not have gone out — the mailbox must be checked",
     "WORKER_DISCONNECTED": "the worker stopped mid-job (resumable)",
-    "G4_SOURCE_UNPROVEN": "the supplier invoice No. (G4) is needed from a person",
+    "G4_SOURCE_UNPROVEN": "the Bill of Entry gives no single explicit Invoice No. (G4) — a person must supply it",
     "SKIPPED_DUPLICATE": "the same Bill of Entry is already handled by another job",
 }
 PO_STAGES = {"ehub_record": "checking the eHub record's clearance status",

@@ -83,9 +83,11 @@ def main():
                    # A run started by a suite never starts the PO automatic
                    # run against the real eHub; the suites that test it set it.
                    PO_AUTO=os.environ.get("PO_AUTO_IN_TESTS", "0"),
-                   # No suite reaches a real research service: the research
-                   # suite points ATLAS at its own stand-in.
-                   ATLAS_RESEARCH="0")
+                   # No suite reaches a real search service or a real local
+                   # model: the research suite points ATLAS at its own
+                   # stand-ins (SearXNG, Ollama).
+                   ATLAS_SEARCH="0", ATLAS_SEARCH_URL="",
+                   ATLAS_LLM_PROVIDER="none")
         result = subprocess.run(
             [sys.executable, str(path)], cwd=str(HERE),
             capture_output=True, text=True, env=env)

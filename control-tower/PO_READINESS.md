@@ -89,6 +89,9 @@ particular) · a real template output checked by Accounts · real Graph
    **sign-in page** was never detected.
 9. G4 was filled from an "Invoice No." printed on the Bill of Entry (added in
    the previous round). That was **an inference, not existing business logic**.
+   It has since been decided by the business (see §9): an explicit printed
+   "Invoice No." is the source. Absent, ambiguous or conflicting values go to
+   review, and there is never a UNA+ fallback.
 10. Coarse failure states (download, sign-in, navigation and save failures
     became PDF_NOT_FOUND / TEMPLATE_FAILED); no recovery; no stage timings; no
     reliability metrics; evidence screenshots could include a sign-in page and
@@ -122,8 +125,11 @@ or `test_po.py`.
   (SKIPPED_STATUS_CHANGED), no sign-in screenshots, URLs without queries.
 - Extraction: exact precision, signs, strict number grammar, duplicate VAT →
   AMBIGUOUS, PDF integrity (empty, HTML, truncated, repaired, oversize).
-- G4: never auto-filled; NEEDS_REVIEW with the printed value as a candidate;
-  a person supplies it (drawer / API / CLI), validation then runs in full.
+- G4 (decided by the business, this round): the Bill of Entry's explicit
+  "Invoice No." (one distinct value) is the source. If it is absent, ambiguous
+  or in conflict, the job goes to NEEDS_REVIEW, and a person supplies the value
+  (drawer / API / CLI) before validation runs again in full. There is never a
+  UNA+ fallback.
 - Observability: stage timings, provenance map, `python -m po explain`,
   `quality`, `readiness`, `/api/po/quality`, ATLAS "Show me the calculation" and
   "How reliable is PO automation?".
@@ -140,7 +146,7 @@ or `test_po.py`.
 | Total duty (GHS) | PDF, "Total Duty and Levies" | exact, sign kept | required, > 0, arithmetic | G6 |
 | Import duty line | PDF, "Import Duty" | exact | arithmetic only | — |
 | VAT/levy lines (5 labels) | PDF, rightmost figure per labelled line | one per label; repeat → AMBIGUOUS | required | G20 (`=a+b+…`) |
-| Supplier invoice No. | **a person** (request / review) | text; digits → int | required → NEEDS_REVIEW if missing | G4 |
+| Supplier invoice No. | PDF, explicit "Invoice No." / "Invoice Number" (one value); else a person at review | text; digits → int | required; job value must agree → NEEDS_REVIEW if absent / ambiguous / conflict | G4 |
 | Supplier, branch, charge to, priority | configuration / request | text | supplier required | G10, G11, G13, C9 |
 
 Calculations (written as formulas by the approved template, never by the job):
@@ -151,13 +157,25 @@ zero.
 
 ## 9. G4 source and mapping
 
-SOURCE: the operator (job request, or review in the drawer) → FIELD
-`invoice_no` (doctype source `request`, required) → TRANSFORMATION: trimmed; an
-all-digit value is written as a number → CELL **G4** (and F16 = G4 by template
-formula). Not from eHub's "UNA+ Invoice Number" (kept as evidence only) and not
-from an "Invoice No." printed on the Bill of Entry (shown as a candidate). The existing
-business logic does not establish either mapping. Regression tests:
-`test_po_hardening.py` §3 and `test_po.py` §27.
+SOURCE: the Bill of Entry's own text, the value under an explicit "Invoice
+No." / "Invoice Number" label (`po/extract.printed_invoice_no`). Lines carrying
+"UNA+" are skipped, "Invoice Value" does not match, and only one distinct value
+is accepted. It goes to FIELD `invoice_no` (origin `bill_of_entry`, with the
+printed line as evidence in the provenance map). TRANSFORMATION: trimmed, and
+an all-digit value is written as a number. CELL: **G4** (F16 = G4 by template
+formula).
+
+- A value given with the job must agree with the printed one.
+- If nothing is printed, several values are printed, or the job's value
+  disagrees, the job goes to NEEDS_REVIEW (`G4_SOURCE_UNPROVEN`, `g4_reason`
+  absent / ambiguous / conflict). Nothing is generated or sent.
+- A person then supplies the value at review (origin "supplied by X at
+  review"). That value wins, and validation runs again in full.
+- eHub's "UNA+ Invoice Number" is never a source or a fallback.
+
+Regression tests: `test_po_hardening.py` §3 and `test_po.py` §27. This rule
+has been exercised only on synthetic PDFs. Real ICUMS Bills of Entry are needed
+to confirm where (and whether) they print an explicit "Invoice No.".
 
 ## 10. Validation rules
 
@@ -275,7 +293,8 @@ sends to one named address only, and records the Graph answer on the job.
 3. Real ICUMS PDFs through the rules, compared by Accounts against a
    hand-made request, including a multi-item Bill of Entry (duplicate VAT
    labels now stop as AMBIGUOUS — that may be too strict for multi-item BOEs).
-4. The business decision on G4 (stays a person's value until decided).
+4. G4 on real Bills of Entry: confirm real ICUMS PDFs print an explicit
+   "Invoice No." where the reader looks (else every job will wait in review).
 5. Graph: Mail.Send application permission, admin consent, application access
    policy, sender mailbox.
 6. Security review and sign-off (`<PO_DATA_DIR>/readiness/signoff.json`).

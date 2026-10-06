@@ -5010,13 +5010,14 @@ function paintPODrawer(){
   const fl = d.failure || {};
   if (fl.next_action && d.state !== 'EMAIL_CONFIRMED')
     html += '<div class="po-sec"><h4>' + esc(fl.code || d.label || 'Next') + '</h4><div>' + esc(fl.next_action) + '</div></div>';
-  // Review: the supplier invoice No. (G4) is a person's value; validation then runs again in full.
+  // Review: G4 has no proven source (none printed, several printed, or a disagreement);
+  // a person supplies it and validation then runs again in full.
   if (d.state === 'NEEDS_REVIEW' && fl.code === 'G4_SOURCE_UNPROVEN' && PF.can('po.process'))
     acts.push('<input class="in" id="poInv" placeholder="Supplier invoice No. (G4)" style="max-width:220px"' +
-              (fl.candidate ? ' value="" aria-describedby="poInvHint"' : '') + '>' +
+              ' aria-describedby="poInvHint">' +
               '<button class="btn" type="button" id="poSupply">Validate again</button>' +
-              (fl.candidate ? '<span class="po-msg" id="poInvHint">The Bill of Entry prints ' + esc(fl.candidate) +
-               ' — confirm it is the supplier invoice No. before using it.</span>' : ''));
+              '<span class="po-msg" id="poInvHint">' + esc(fl.detail || 'Supplier invoice No. (G4) has no source.') +
+              ((fl.candidates || []).length ? ' Check the document before using either value.' : '') + '</span>');
   if (canSend && email.status !== 'BLOCKED') acts.push('<button class="btn" type="button" id="poSend">Send PO</button>');
   if ((email.duplicate_of || d.state === 'EMAIL_CONFIRMED' || d.state === 'EMAIL_SENT') && PF.can('po.resend'))
     acts.push('<input class="in" id="poWhy" placeholder="Why send it again? (audited)" style="max-width:240px">' +

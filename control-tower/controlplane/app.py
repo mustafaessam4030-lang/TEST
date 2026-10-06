@@ -76,6 +76,7 @@ ROUTE_PERMISSIONS = {
     ("POST", "/api/evidence/upload"): "evidence.upload",
     ("POST", "/api/ask"): "atlas.chat",
     ("GET", "/api/ask/progress"): "atlas.chat",
+    ("GET", "/api/atlas/llm"): "dashboard.view",
     ("POST", "/api/feedback"): "atlas.chat",
     ("POST", "/api/runs"): "runs.start",
     ("POST", "/api/human"): "human.act",
@@ -793,6 +794,12 @@ class Handler(tower_server.Handler):
             self._human()
         elif route == "/api/ask":
             self._ask()
+        elif route == "/api/atlas/llm":
+            from intelligence import llm as _llm, research as _research
+            self._send(200, {"llm": _llm.provider().health(),
+                             "search": {"configured": _research.enabled(),
+                                        "detail": None if _research.enabled()
+                                        else _research.why_off()}})
         elif route == "/api/ask/progress":
             from intelligence import research as _research
             self._send(200, _research.progress(_research.clean_progress_id(
