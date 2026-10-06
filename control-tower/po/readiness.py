@@ -113,9 +113,10 @@ def evaluate(store=None):
                        "PASS" if whole else "UNVERIFIED",
                        "{0} real job(s) with every event of the chain".format(len(whole))))
     audit = store.verify_audit()
+    # A real-world gate: it can only PASS once real-eHub jobs are on the chain.
     gates.append(_gate("Audit trail hash chain intact (nothing altered, removed or reordered)",
-                       "PASS" if audit["ok"] and audit["chained"] else
-                       "FAIL" if not audit["ok"] else "UNVERIFIED",
+                       "FAIL" if not audit["ok"] else
+                       "PASS" if audit["chained"] and real else "UNVERIFIED",
                        "{0} chained event(s){1}".format(audit["chained"], "" if audit["ok"] else
                                                        "; " + str(audit["problem"]))))
     pilot = all(g["status"] == "PASS" for g in gates)
