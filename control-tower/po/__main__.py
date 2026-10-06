@@ -7,6 +7,12 @@ dashboard run in the background, and the proof tools.
                                            Documents → Bill Entry → identifier →
                                            PDF → … → EMAIL READY
     python -m po send --po-id ID           send a prepared job through Graph
+    python -m po ehub-check                REAL eHub connectivity, stage by stage:
+                                           DNS, TCP, HTTPS, credentials (present?
+                                           — never shown), browser, sign-in, the
+                                           shipment list. Classifies a failure
+                                           as NETWORK / AUTHENTICATION / BROWSER /
+                                           APPLICATION. Changes nothing.
     python -m po ehub-probe [--reference BOL/AWB]
                                            THE PROOF, on the real eHub, read-only:
                                            finds an Under Clearance record (or
@@ -45,7 +51,9 @@ def _browser(playwright):
     username, password = A.load_credentials()
     headless = os.environ.get("PO_HEADLESS", "1").strip().lower() not in ("0", "false", "no")
     launch = {"headless": headless}
-    if os.environ.get("PO_BROWSER_CHANNEL", "msedge"):
+    if os.environ.get("PO_BROWSER_EXECUTABLE"):
+        launch["executable_path"] = os.environ["PO_BROWSER_EXECUTABLE"]
+    elif os.environ.get("PO_BROWSER_CHANNEL", "msedge"):
         launch["channel"] = os.environ.get("PO_BROWSER_CHANNEL", "msedge")
     browser = playwright.chromium.launch(**launch)
     context = browser.new_context(http_credentials={"username": username, "password": password},
@@ -106,15 +114,20 @@ def probe(page, reference=None, out_dir=None, source=None):
     """
     from po.ehub import EHubSource, find_in_ehub, open_manage_in_ehub
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    from po.ehub import ehub_host
     report = {"probe": "ehub", "started": datetime.now().astimezone().isoformat(timespec="seconds"),
-              "reference_asked": reference or None, "writes_to_ehub": False,
-              "sends_email": False}
+              "ehub_domain": ehub_host(), "reference_asked": reference or None,
+              "writes_to_ehub": False, "sends_email": False}
     source = source or EHubSource(page, find_in_ehub, open_manage_in_ehub)
     try:
         found = source.fetch(reference)
     except P.SourceError as error:
-        report.update(result="STOPPED", kind=error.kind, reason=str(error),
-                      trail=getattr(error, "trail", None))
+        trail = getattr(error, "trail", None) or {}
+        report.update(result="STOPPED", kind=error.kind, reason=str(error), trail=trail,
+                      source=(trail.get("provenance") or {}).get("source", "UNKNOWN"),
+                      verification=(trail.get("provenance") or {}).get("verification",
+                                                                        "UNVERIFIED"),
+                      navigation_path=trail.get("navigation_path"))
         found = None
     if found is not None:
         data = found["data"]
@@ -129,7 +142,20 @@ def probe(page, reference=None, out_dir=None, source=None):
                                 "saved_as": str(pdf_path),
                                 "retrieved_at": datetime.now().astimezone().isoformat(
                                     timespec="seconds")},
-                      identifier=found["identifier"])
+                      identifier=found["identifier"],
+                      source=found["trail"]["provenance"]["source"],
+                      verification=found["trail"]["provenance"]["verification"],
+                      provenance=found["trail"]["provenance"],
+                      navigation_path=found["trail"]["navigation_path"],
+                      selected_row={"bol_awb": found["hub"].get("bol_awb"),
+                                    "status": found["hub"].get("status"),
+                                    "carrier": found["hub"].get("carrier"),
+                                    "table_page": found["hub"].get("table_page")},
+                      bill_entry_filename=found["filename"],
+                      po_identifier=found["identifier"],
+                      document_reference={k: found["trail"]["download"].get(k) for k in
+                                          ("url", "link", "element_id", "method",
+                                           "served_filename")})
         doctype = doctypes.get()
         try:
             read = X.read_pdf(data)
@@ -166,6 +192,17 @@ def cmd_probe(args):
             browser.close()
     print(json.dumps(report, indent=2, default=str))
     return 0 if report.get("result") == "FOUND" else 1
+
+
+def cmd_check(args):
+    from po import diagnose
+    report = diagnose.check(launch_browser=not args.no_browser)
+    print(json.dumps(report, indent=2, default=str))
+    out = Path(args.out or (S.Store().folder / "probes"))
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "ehub-check-{0}.json".format(datetime.now().strftime("%Y%m%d-%H%M%S"))).write_text(
+        json.dumps(report, indent=2, default=str), encoding="utf-8")
+    return 0 if report["result"] == "REACHABLE" else 1
 
 
 def cmd_send(args):
@@ -214,6 +251,9 @@ def main(argv=None):
     s.add_argument("--by")
     s.add_argument("--authorize-resend", action="store_true")
     s.add_argument("--reason")
+    c = sub.add_parser("ehub-check")
+    c.add_argument("--no-browser", action="store_true")
+    c.add_argument("--out")
     e = sub.add_parser("ehub-probe")
     e.add_argument("--reference")
     e.add_argument("--out")
@@ -226,6 +266,7 @@ def main(argv=None):
     r.add_argument("--dump-text", action="store_true")
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
+            "ehub-check": cmd_check,
             "read": cmd_read}[args.cmd](args)
 
 

@@ -167,7 +167,11 @@ def answer(kind, question, context=None):
     validation = record.get("validation") or {}
 
     if kind == "discovery":
-        lines = ["**Fact** — " + t for t in F.discovery_lines(record)]
+        prov = record.get("provenance") or {}
+        lines = ["**Fact** — Source: {0} / {1} — {2}.".format(
+            prov.get("source", "UNKNOWN"), prov.get("verification", "UNVERIFIED"),
+            prov.get("why", "no discovery trail"))] if prov else []
+        lines += ["**Fact** — " + t for t in F.discovery_lines(record)]
         if not lines:
             lines = ["**Fact** — No eHub step is recorded for this job yet (it is {0}).".format(
                 record.get("label", "").lower())]

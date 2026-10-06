@@ -157,6 +157,8 @@ def card(record):
         "po_id": record["po_id"], "reference": record["reference"],
         "number": record.get("number"), "doctype": record["doctype"],
         "identifier": record.get("identifier"),
+        "source": (record.get("provenance") or {}).get("source"),
+        "verification": (record.get("provenance") or {}).get("verification"),
         "bill_entry": ((record.get("discovery") or {}).get("bill_entry") or {}).get("selected"),
         "clearance": ((record.get("discovery") or {}).get("clearance") or {}).get("found"),
         "supplier": ((record.get("request_fields") or {}).get("supplier") or {}).get("value")
@@ -379,6 +381,8 @@ class PoService(object):
         out = dict(record)
         out["events"] = self.store.events(po_id)
         out["card"] = card(record)
+        from .evidence import stages
+        out["stages"] = stages(record)
         out["blocked"] = P.blocked_reasons(self.store, record) \
             if record["state"] in (S.EMAIL_PREPARED, S.EMAIL_FAILED) else None
         doc = record.get("document") or {}

@@ -116,6 +116,8 @@ def process(store, record, source, config=None, sleep=time.sleep):
     except SourceError as error:
         trail = getattr(error, "trail", None)
         record["discovery"] = trail
+        record["provenance"] = (trail or {}).get("provenance") or \
+            {"source": "UNKNOWN", "verification": "UNVERIFIED", "why": "no discovery trail"}
         _trail_events(store, record, trail)
         row = getattr(error, "row", None) or (trail or {}).get("ehub_record")
         if row and not record.get("reference"):
@@ -147,6 +149,10 @@ def process(store, record, source, config=None, sleep=time.sleep):
     sha, path = store.keep_document(data)
     record["hub"] = found.get("hub") or {}
     record["discovery"] = found.get("trail")
+    # Where this document came from, decided by what the browser observed:
+    # REAL / VERIFIED only from the real eHub session.
+    record["provenance"] = (found.get("trail") or {}).get("provenance") or \
+        {"source": "UNKNOWN", "verification": "UNVERIFIED", "why": "no discovery trail"}
     if not record.get("reference"):
         _adopt_reference(record, record["hub"])
     # The identifier eHub's own document name carries is this job's number
@@ -299,6 +305,15 @@ def _adopt_reference(record, row):
 def blocked_reasons(store, record):
     """Why this record may not be sent now — the gate before any Graph call."""
     reasons = []
+    prov = record.get("provenance") or {}
+    if prov.get("verification") != "VERIFIED" and \
+            os.environ.get("PO_ALLOW_TEST_SEND") != "1":
+        # A document that was not observed in the real eHub session is never
+        # emailed for real. PO_ALLOW_TEST_SEND=1 exists for the test suite's
+        # stand-in mailbox only.
+        reasons.append("the document's source is {0} / {1} — only a document observed in the "
+                       "real eHub session is sent".format(prov.get("source", "UNKNOWN"),
+                                                          prov.get("verification", "UNVERIFIED")))
     if not (record.get("validation") or {}).get("passed"):
         reasons.append("validation has not passed")
     out = record.get("output") or {}

@@ -504,6 +504,10 @@ input,textarea,select{font-family:inherit}
 .pt.k-sent{background:var(--grn-wash);color:var(--grn)}
 .pt.k-failed{background:var(--red-wash);color:var(--red)}
 .pv{font-size:11.5px;font-weight:600}
+.po-src{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:700;letter-spacing:.04em;
+  padding:2px 7px;border-radius:6px;border:1px solid var(--line);color:var(--mid);white-space:nowrap}
+.po-src.test{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
+.po-src.real{border-color:var(--grn-line,var(--line));color:var(--grn);background:var(--grn-wash)}
 .pv.ok{color:var(--grn)} .pv.bad{color:var(--red)} .pv.none{color:var(--faint);font-weight:400}
 .po-ax{display:flex;align-items:center;gap:14px;padding:14px 20px;margin-bottom:18px;flex-wrap:wrap}
 .po-ax-f{width:44px;height:44px;flex:none}
@@ -4279,6 +4283,13 @@ function loadPO(force){
     PO.list = d; PO.at = Date.now(); paintPO();
   }).catch(() => {}).finally(() => { PO.busy = false; });
 }
+/* Where the job's document came from — decided by the server from what the
+   browser observed. TEST is never shown as REAL. */
+function poSource(j){
+  const src = j.source || 'UNKNOWN', ver = j.verification || 'UNVERIFIED';
+  if (src === 'REAL' && ver === 'VERIFIED') return ' <span class="po-src real">REAL · VERIFIED</span>';
+  return ' <span class="po-src test">' + esc(src === 'REAL' ? 'REAL · UNVERIFIED' : src + ' · UNVERIFIED') + '</span>';
+}
 function poPill(j){ return '<span class="pt k-' + esc(j.kpi || 'none') + '">' + esc(j.label || j.state) + '</span>'; }
 function paintPO(){
   const d = PO.list; if (!d) return;
@@ -4300,7 +4311,7 @@ function paintPO(){
     (PO.open === j.po_id ? ' class="sel"' : '') + '>' +
     '<td class="mono">' + esc(j.number || '—') + '</td><td class="mono">' + esc(j.reference) + '</td>' +
     '<td>' + esc(j.supplier || '—') + '</td><td class="wrap">' + esc(j.document || '—') + '</td>' +
-    '<td>' + poPill(j) + '</td>' +
+    '<td>' + poPill(j) + poSource(j) + '</td>' +
     '<td><span class="pv ' + (j.validation === 'PASSED' ? 'ok' : j.validation === 'FAILED' ? 'bad' : 'none') + '">' +
       esc(j.validation || '—') + '</span></td>' +
     '<td>' + esc(j.template || '—') + '</td><td>' + esc(j.email || '—') + '</td>' +
@@ -4383,7 +4394,7 @@ function paintPODrawer(){
   const card = d.card || {}, doc = d.document || {}, email = d.email || {}, out = d.output || {},
         val = d.validation || null, hub = d.hub || {};
   put($('poDwRef'), (d.number ? d.number + ' · ' : '') + d.reference);
-  putHTML($('poDwTag'), poPill(card));
+  putHTML($('poDwTag'), poPill(card) + poSource(card));
   const steps = poSteps(d).map((x) => '<span class="' + x[1] + '">' + x[0] + '</span>').join('');
   const kv = (rows) => '<dl class="po-kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && r[1] !== '')
     .map((r) => '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>').join('') + '</dl>';
@@ -4406,6 +4417,18 @@ function paintPODrawer(){
     const cands = (tr.bill_entry || {}).candidates || [];
     if (cands.length > 1) html += '<div class="po-sec"><h4>Bill Entry candidates</h4><div class="hint">' +
       cands.map((c) => esc(c.name) + ' → ' + esc(c.identifier || 'no identifier')).join('<br>') + '</div></div>';
+  }
+  const stg = d.stages || [];
+  if (stg.length){
+    const prov = d.provenance || {};
+    html += '<div class="po-sec"><h4>Stages &amp; evidence · ' + esc((prov.source || 'UNKNOWN') + ' / ' + (prov.verification || 'UNVERIFIED')) +
+      '</h4>' + (prov.why ? '<div class="hint" style="margin-bottom:6px">' + esc(prov.why) + '</div>' : '') +
+      '<table class="po-vt"><thead><tr><th>Stage</th><th>Status</th><th>Evidence</th></tr></thead><tbody>' +
+      stg.map((x) => '<tr><td>' + esc(x.label) + '</td><td class="s-' + esc(x.status === 'OK' ? 'OK' : x.status === 'NOT_RUN' ? 'NOT_CHECKED' : 'FAILED') + '">' +
+        esc(x.status.replace('_', ' ')) + '</td><td class="mono" style="font-size:11px">' +
+        (x.evidence ? esc(Object.entries(x.evidence).filter((e) => e[1] !== null && e[1] !== undefined && e[1] !== '')
+          .map((e) => e[0] + ': ' + (typeof e[1] === 'object' ? JSON.stringify(e[1]) : e[1])).join(' · ').slice(0, 300)) : '—') +
+        '</td></tr>').join('') + '</tbody></table></div>';
   }
   html += '<div class="po-sec"><h4>Job</h4>' + kv([
     ['Bill Entry No.', d.identifier ? '<span class="mono">' + esc(d.identifier) + '</span>' : null],

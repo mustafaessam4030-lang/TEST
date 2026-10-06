@@ -275,6 +275,51 @@ def download(page, frame, entry):
                 str(first_error)[:200]), _kind_of(first_error))
 
 
+# ── PROVENANCE: REAL only when the real eHub was observed ────────────────
+
+def ehub_host():
+    """The real eHub's host name — from the automation's own configuration."""
+    try:
+        import update_eta as A
+        return urlparse(A.INTERNAL_URL).hostname
+    except Exception:
+        return None
+
+
+def provenance(navigation_real, observed, complete):
+    """
+    REAL / VERIFIED only when ALL of these hold:
+      * the production navigation ran (find_in_ehub + open_manage_in_ehub),
+      * every page and the document were served by the real eHub host,
+      * the discovery reached the downloaded Bill Entry document.
+    Anything else is TEST or UNVERIFIED. Nothing a caller passes can make a
+    stand-in REAL: it is decided from the hosts the browser actually saw.
+    """
+    real_host = ehub_host()
+    seen = {k: v for k, v in observed.items() if v}
+    on_ehub = bool(seen) and bool(real_host) and all(h == real_host for h in seen.values())
+    source = "REAL" if (navigation_real and on_ehub) else "TEST"
+    if source != "REAL":
+        why = ("stand-in navigation, not the eHub list" if not navigation_real else
+               "pages were served by {0}, not {1}".format(
+                   ", ".join(sorted(set(seen.values()))) or "nothing", real_host))
+    elif not complete:
+        why = "observed on the real eHub, but the discovery did not reach the Bill Entry document"
+    else:
+        why = "observed in the real eHub browser session, list to download"
+    return {"source": source,
+            "verification": "VERIFIED" if source == "REAL" and complete else "UNVERIFIED",
+            "ehub_host": real_host, "observed_hosts": seen,
+            "navigation": "production" if navigation_real else "stand-in", "why": why}
+
+
+def _host_of(url):
+    try:
+        return urlparse(url or "").hostname
+    except Exception:
+        return None
+
+
 # ── THE SOURCE ───────────────────────────────────────────────────────────
 
 class EHubSource(object):
@@ -291,13 +336,21 @@ class EHubSource(object):
         self.skip = set(skip or ())
 
     def fetch(self, reference):
-        trail = {"started": now(), "steps": [], "required_status": REQUIRED_STATUS}
+        trail = {"started": now(), "steps": [], "required_status": REQUIRED_STATUS,
+                 "navigation_path": []}
+        navigation_real = self.find_record is find_in_ehub and \
+            self.open_manage is open_manage_in_ehub
+        observed = {}
+
+        def seal(complete):
+            trail["provenance"] = provenance(navigation_real, observed, complete)
 
         def step(name, ok, **detail):
             trail["steps"].append(dict({"step": name, "ok": ok, "at": now()}, **detail))
 
         def stop(message, kind, **extra):
             error = SourceError(message, kind, extra.pop("candidates", None))
+            seal(False)
             error.trail = trail
             for k, v in extra.items():
                 setattr(error, k, v)
@@ -307,6 +360,7 @@ class EHubSource(object):
         try:
             row, looked = self.find_record(self.page, reference, self.skip)
         except SourceError as error:
+            seal(False)
             error.trail = trail
             raise
         except Exception as error:
@@ -314,6 +368,12 @@ class EHubSource(object):
             raise stop("the eHub shipment list could not be read: {0}".format(str(error)[:200]),
                        _kind_of(error))
         trail["looked_at"] = looked
+        try:
+            trail["list_url"] = self.page.url
+            observed["list"] = _host_of(self.page.url)
+            trail["navigation_path"].append({"page": "shipment list", "url": self.page.url})
+        except Exception:
+            pass
         if row is None:
             step("ehub_record", False, reference=reference, looked=len(looked))
             if reference:
@@ -348,11 +408,15 @@ class EHubSource(object):
         except Exception:
             pass
         trail["manage"] = opened
+        observed["manage"] = _host_of(opened.get("url"))
+        trail["navigation_path"].append({"page": "Manage", "url": opened.get("url"),
+                                         "row": row.get("bol_awb")})
         step("manage", True, url=opened.get("url"))
 
         # 4. the Documents section
         section = open_documents(self.page)
         entries = _entries(section)
+        trail["navigation_path"].append({"page": "Documents", "scope": section.get("scope")})
         trail["documents"] = {"found": bool(section.get("found")), "label": section.get("label"),
                               "scope": section.get("scope"),
                               "entries": [e["name"] for e in entries][:30]}
@@ -389,6 +453,7 @@ class EHubSource(object):
             data, url, method, disposition = download(self.page, section["frame"], selected)
         except SourceError as error:
             step("download", False, error=str(error)[:200])
+            seal(False)
             error.trail = trail
             raise
         if not data.startswith(b"%PDF"):
@@ -398,8 +463,13 @@ class EHubSource(object):
         m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)', disposition or "", re.I)
         served = unquote(m.group(1)) if m else None
         trail["download"] = {"method": method, "url": url, "served_filename": served,
-                             "bytes": len(data)}
+                             "bytes": len(data), "link": selected.get("href") or None,
+                             "element_id": selected.get("id") or None}
+        observed["download"] = _host_of(url)
+        trail["navigation_path"].append({"page": "Bill Entry document", "url": url,
+                                         "filename": filename})
         step("download", True, method=method, bytes=len(data), served_filename=served)
+        seal(True)
         hub = dict(row, identifier=selected["identifier"], bill_entry=filename)
         return {"data": data, "filename": filename, "url": url, "origin": "ehub", "hub": hub,
                 "identifier": selected["identifier"], "trail": trail}

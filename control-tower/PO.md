@@ -203,6 +203,26 @@ are failure-intelligence records (`intelligence/failures.from_po`); outcomes go
 to the learning store as kind `po`, **verified only for a send confirmed in
 Sent Items**, and never count as shipments or runs.
 
+## The verification gate (`po/ehub.py` provenance, `po/evidence.py`)
+
+Every job and every probe carries a **source** and a **verification**:
+
+| | Meaning |
+|---|---|
+| **REAL · VERIFIED** | The production navigation (`find_in_ehub` / `open_manage_in_ehub`) ran, every page and download observed was on the eHub host (`logisticshub.mantracgroup.com`), and discovery finished: row, Under Clearance, Manage, Documents, Bill Entry, identifier, download |
+| **TEST · UNVERIFIED** | Anything else — the stand-in pages the tests use, another host, or a discovery that stopped part-way |
+
+The label is computed from what was observed, never set by hand. A TEST /
+UNVERIFIED job can be read, validated and shown, but **Send PO is blocked**
+for it ("the document was not observed in the real eHub"); only the test
+suite lifts that with `PO_ALLOW_TEST_SEND=1`.
+
+The job drawer's *Stages & evidence* table lists the 13 stages — eHub record,
+clearance, Manage, Documents, Bill Entry, identifier, PDF, fields,
+validation, template, output, email, Sent Items — each OK / FAILED / STOPPED /
+BLOCKED / WAITING / NOT_RUN with the evidence that makes it so, and the
+job's source on every row. A stage is OK only with its evidence present.
+
 ## Configuration
 
 | Variable | Meaning |
@@ -214,10 +234,19 @@ Sent Items**, and never count as shipments or runs.
 | `PO_DEFAULT_SUPPLIER`, `…_BRANCH`, `…_CHARGE_TO`, `…_PRIORITY` | Template defaults |
 | `PO_AUTO_SEND` | `1` sends as soon as a job is ready (default off: a person presses Send PO) |
 | `PO_HEADLESS`, `PO_BROWSER_CHANNEL` | The job's browser (default headless Edge) |
+| `PO_BROWSER_EXECUTABLE` | A browser binary to launch instead of the channel (e.g. a Chromium path) |
+| `PO_ALLOW_TEST_SEND` | **Tests only.** Lets a TEST / UNVERIFIED job be sent; never set on the worker |
 
 ## Tools
 
 ```
+python -m po ehub-check [--no-browser]
+    REAL eHub connectivity, stage by stage, on the machine that runs it:
+    config → DNS → TCP 443 → HTTPS → credentials file (present? — values never
+    shown) → browser → sign-in → shipment list. The first failure is classified
+    NETWORK / AUTHENTICATION / BROWSER / APPLICATION; later stages are listed as
+    not reached. Writes ehub-check-<time>.json to <PO_DATA_DIR>/probes.
+    Clicks nothing, changes nothing.
 python -m po ehub-probe [--reference 176-88452310]
     THE PROOF, on the real eHub, read-only: an Under Clearance record (or the
     one named) → Manage → Documents → Bill Entry → identifier → download → the
@@ -229,12 +258,15 @@ python -m po read BOE.pdf --hub-bol 176-88452310 --identifier 40726534505 --invo
 
 ## Known limits (version 1)
 
-* **eHub discovery has not been run against the real eHub yet.** The list
-  navigation it reuses runs on the real eHub every ETA run; the Manage page's
-  Documents section, the Bill Entry entry and its download have only been
-  exercised against a stand-in page shaped like a WebForms site. Run
-  `python -m po ehub-probe` on the worker PC: its report shows each step with
-  the real filename, identifier, size and SHA-256 — or exactly where it stopped.
+* **eHub discovery has not been run against the real eHub yet.** From the
+  development container eHub does not resolve (`ehub-check`: NETWORK at dns),
+  so every job there is TEST · UNVERIFIED. Run `python -m po ehub-check`, then
+  `python -m po ehub-probe`, on the worker PC. The list navigation it reuses
+  runs on the real eHub every ETA run; the Manage page's Documents section, the
+  Bill Entry entry and its download have only been exercised against a stand-in
+  page shaped like the real one (from a screenshot). The probe's report shows
+  each step with the real filename, identifier, size and SHA-256 — or exactly
+  where it stopped.
 * **The field rules are the earlier BOE automation's**, written against
   standard ICUMS wording and tested here on generated declarations. Check them
   on real Bill Entry PDFs with `python -m po read … --dump-text`.

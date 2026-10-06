@@ -56,6 +56,9 @@ os.environ["ATLAS_INTEL_DIR"] = str(WORK / "intel")
 os.environ["ATLAS_DATA_ORIGIN"] = "test"
 os.environ["PO_DATA_DIR"] = str(WORK / "po")
 os.environ.pop("PO_OUTPUT_DIR", None)
+# The stand-in mailbox below receives the "sends" of stand-in (TEST) jobs.
+# Without this switch a document not observed in the real eHub is never sent.
+os.environ["PO_ALLOW_TEST_SEND"] = "1"
 
 import fitz                                                    # noqa: E402
 from openpyxl import load_workbook                             # noqa: E402
@@ -65,7 +68,7 @@ from po import validate as V, service as SV, web as W, mail as M                
 from po import ehub as EH                                                          # noqa: E402
 from intelligence import failures as F, events as E, learning as L                 # noqa: E402
 
-PASS, FAIL = [], []
+PASS, FAIL, SKIP = [], [], []
 SECRET = "graph-secret-" + hashlib.sha1(os.urandom(8)).hexdigest()
 
 
@@ -1463,6 +1466,189 @@ if SHOTS:
         pg.close()
 ui.close()
 
+# ═════════════════════════════════════════════════════════════════════════
+rule("21. THE VERIFICATION GATE — REAL only from the real eHub; TEST never passes as REAL")
+# ═════════════════════════════════════════════════════════════════════════
+every = [r for store_dir in WORK.iterdir() if (store_dir / "jobs").is_dir()
+         for r in S.Store(folder=store_dir).all(500)]
+with_trail = [r for r in every if r.get("discovery")]
+check("Every stand-in job in this suite ({0}) is TEST / UNVERIFIED — not one REAL".format(
+      len(with_trail)), with_trail and all(
+          (r.get("provenance") or {}).get("source") == "TEST" and
+          (r.get("provenance") or {}).get("verification") == "UNVERIFIED" for r in with_trail),
+      [(r["po_id"], r.get("provenance")) for r in with_trail
+       if (r.get("provenance") or {}).get("source") != "TEST"][:3])
+host = EH.ehub_host()
+check("The rule: production navigation + every page on {0} + complete → REAL / VERIFIED".format(
+      host), EH.provenance(True, {"list": host, "manage": host, "download": host}, True)
+      ["verification"] == "VERIFIED")
+check("...production navigation but pages from 127.0.0.1 → TEST",
+      EH.provenance(True, {"list": "127.0.0.1", "manage": "127.0.0.1"}, True)["source"] == "TEST")
+check("...stand-in navigation, even showing the real host → TEST",
+      EH.provenance(False, {"list": host, "manage": host, "download": host}, True)["source"]
+      == "TEST")
+check("...one page off the real host → TEST",
+      EH.provenance(True, {"list": host, "manage": host, "download": "files.example.com"},
+                    True)["source"] == "TEST")
+check("...real but stopped before the document → REAL / UNVERIFIED",
+      EH.provenance(True, {"list": host}, False) ==
+      dict(EH.provenance(True, {"list": host}, False), source="REAL", verification="UNVERIFIED"))
+check("...and nothing observed → TEST", EH.provenance(True, {}, True)["source"] == "TEST")
+os.environ.pop("PO_ALLOW_TEST_SEND")
+gst = new_store("gate")
+gj = run_job(gst, "176-88452310")
+before = GRAPH["counter"]
+gj2, gout = P.send(gst, gj, M.GraphMailer(), by="omar", sleep=NOSLEEP)
+check("A TEST document is never emailed for real: BLOCKED, no Graph call",
+      gout == "BLOCKED" and GRAPH["counter"] == before
+      and any("TEST / UNVERIFIED" in r for r in P.blocked_reasons(gst, gj2)),
+      P.blocked_reasons(gst, gj2))
+os.environ["PO_ALLOW_TEST_SEND"] = "1"
+from po.evidence import stages as STAGES                       # noqa: E402
+sg = STAGES(gst.get(gj["po_id"]))
+check("Every stage carries its status, evidence and source (TEST here)",
+      [x["stage"] for x in sg] == ["ehub_record", "clearance", "manage", "documents", "bill_entry",
+                                   "identifier", "pdf", "fields", "validation", "template",
+                                   "output", "email", "verified"]
+      and all(x["source"] == "TEST" for x in sg)
+      and [x["status"] for x in sg][:11] == ["OK"] * 11, [(x["stage"], x["status"]) for x in sg])
+check("...OK only with its evidence: the file name, the identifier, the SHA-256",
+      sg[4]["evidence"]["filename"] == "Bill Entry 40726534505.pdf"
+      and sg[5]["evidence"]["identifier"] == "40726534505" and len(sg[6]["evidence"]["sha256"]) == 64)
+pr = CLI.probe(PAGE, "176-88452310", WORK / "probe2", source=hub_source())
+check("A probe on the stand-in reports source TEST / UNVERIFIED",
+      pr["source"] == "TEST" and pr["verification"] == "UNVERIFIED", pr.get("provenance"))
+check("...with everything the real proof needs: domain, path, row and status, file name, "
+      "identifier, link, time",
+      pr["ehub_domain"] == host and [p["page"] for p in pr["navigation_path"]] ==
+      ["shipment list", "Manage", "Documents", "Bill Entry document"]
+      and pr["selected_row"]["bol_awb"] == "176-88452310"
+      and pr["selected_row"]["status"] == "Under Clearance"
+      and pr["bill_entry_filename"] == "Bill Entry 40726534505.pdf"
+      and pr["po_identifier"] == "40726534505" and pr["document_reference"]["method"]
+      and pr["started"] and pr["document"]["retrieved_at"], {k: pr.get(k) for k in (
+          "selected_row", "bill_entry_filename", "po_identifier")})
+
+rule("22. eHUB CONNECTIVITY — the diagnostic, and every way it can fail")
+from po import diagnose as DG                                  # noqa: E402
+
+
+CHROMIUM = next(iter(sorted(Path("/opt/pw-browsers").glob("chromium-*/chrome-linux/chrome"))), None)
+
+
+def diag(url, creds=None, browser=False, executable=None):
+    """The diagnostic in its own process (it runs its own browser)."""
+    code = ("import json,sys; sys.path.insert(0,'.'); from po import diagnose as D; "
+            "print(json.dumps(D.check(url={0!r}, launch_browser={1}, credentials={2!r}, "
+            "timeout=5)))").format(url, browser, creds)
+    out = subprocess.run([sys.executable, "-c", code], cwd=str(HERE), capture_output=True,
+                         text=True, timeout=180,
+                         env=dict(os.environ, PO_BROWSER_CHANNEL="",
+                                  PO_BROWSER_EXECUTABLE=str(executable or CHROMIUM or "")))
+    try:
+        return json.loads(out.stdout.strip().splitlines()[-1])
+    except Exception:
+        return {"result": "CRASH", "stderr": out.stderr[-400:]}
+
+
+d = diag("https://ehub.invalid/WorkFlow/ShipmentTracking/ShipmentList.aspx")
+check("No connectivity (DNS): NETWORK at dns, nothing later attempted",
+      d["result"] == "FAILED" and d["category"] == "NETWORK" and d["failed_stage"] == "dns"
+      and "credentials" in d["not_reached"], d)
+d = diag("https://127.0.0.1:1/x")
+check("No connectivity (port closed): NETWORK at tcp", d.get("category") == "NETWORK"
+      and d.get("failed_stage") == "tcp", d)
+d = diag(HUB + "/ehub/list")
+check("Reachable, but no credentials file: AUTHENTICATION at credentials (nothing shown)",
+      d.get("category") == "AUTHENTICATION" and d.get("failed_stage") == "credentials"
+      and HUB_PASS not in json.dumps(d), d)
+d = diag(HUB + "/ehub/list", (HUB_USER, HUB_PASS), browser=True,
+         executable="/nonexistent/browser")
+check("A browser that cannot start: BROWSER at browser", d.get("category") == "BROWSER"
+      and d.get("failed_stage") == "browser", d)
+d = diag(HUB + "/ehub/list", ("hub.reader", "wrong-password"), browser=True)
+check("Wrong credentials: AUTHENTICATION at sign_in", d.get("category") == "AUTHENTICATION"
+      and d.get("failed_stage") == "sign_in" and "wrong-password" not in json.dumps(d), d)
+d = diag(HUB + "/ehub/manage/176-88452310", (HUB_USER, HUB_PASS), browser=True)
+check("Signed in, but no shipment list there: APPLICATION at shipment_list",
+      d.get("category") == "APPLICATION" and d.get("failed_stage") == "shipment_list", d)
+d = diag(HUB + "/ehub/list", (HUB_USER, HUB_PASS), browser=True)
+check("The stand-in list passes every stage — and is reported as source TEST, not REAL",
+      d.get("result") == "REACHABLE" and d.get("source") == "TEST" and HUB_PASS not in json.dumps(d), d)
+check("Credentials are never in a report", all(HUB_PASS not in json.dumps(x) for x in (d,)))
+
+rule("23. DISCOVERY FAILURE MODES, at the boundary")
+cleared_only = [{"bol_awb": "176-1", "status": "Cleared", "view": "BU", "table_page": 1},
+                {"bol_awb": "176-2", "status": "Released", "view": "BU", "table_page": 1}]
+src = EH.EHubSource(PAGE, lambda page, ref, skip: EH.choose(cleared_only, ref, skip), manage_stub)
+try:
+    src.fetch(None)
+    e = None
+except P.SourceError as error:
+    e = error
+check("eHub reachable but no Under Clearance row: stops, nothing opened, rows recorded",
+      e is not None and e.kind == "not_found" and len(e.trail["looked_at"]) == 2
+      and "Manage" not in [p["page"] for p in e.trail["navigation_path"]], str(e))
+
+
+def manage_down(page, row):
+    raise RuntimeError("the Manage button for {0} was not found".format(row["bol_awb"]))
+
+
+try:
+    EH.EHubSource(PAGE, find_stub, manage_down).fetch("176-88452310")
+    e = None
+except P.SourceError as error:
+    e = error
+check("Manage page unavailable: stops at Manage with the reason, nothing else read",
+      e is not None and [x["step"] for x in e.trail["steps"]][-1] == "manage"
+      and not e.trail["steps"][-1]["ok"] and "documents" not in e.trail, str(e))
+for name in ("BillofEntry_.pdf", "Bill Entry ABC.pdf", "Bill Entry - .pdf"):
+    picked = EH.select([{"name": name}])
+    check("Malformed {0!r}: needs review, no identifier invented".format(name),
+          picked[0] is None and picked[3] == "review", picked)
+
+rule("24. THE PO WORKFLOW CANNOT AFFECT THE SHIPMENT WORKFLOW")
+ETA_SRC = (HERE / "update_eta.py").read_text(encoding="utf-8")
+check("update_eta.py does not import the PO module",
+      not re.search(r"^\s*(from|import)\s+po\b", ETA_SRC, re.M))
+indep = S.Store(folder=WORK / "indep")
+fail_job = indep.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"})
+po_proc = subprocess.Popen([sys.executable, "-m", "po", "process", "--po-id", fail_job["po_id"]],
+                           cwd=str(HERE), env=dict(os.environ, PO_DATA_DIR=str(indep.folder)),
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+eta = subprocess.run([sys.executable, "fixtures/eta_fake_run.py"], cwd=str(HERE),
+                     capture_output=True, text=True, timeout=300)
+po_proc.wait(120)
+eta_out = json.loads(eta.stdout.strip().splitlines()[-1])
+check("A PO job failing alongside: the ETA run still finishes, 3 written, 0 failed",
+      eta_out["status"] == "finished" and eta_out["counters"]["successful"] == 3
+      and eta_out["counters"]["failed"] == 0 and eta_out["writes"] == ["E1", "E2", "E3"], eta_out)
+check("...nothing of the PO job in the ETA run's state", eta_out["po_in_eta_state"] is False)
+pf = indep.get(fail_job["po_id"])
+check("...and the PO job ended visibly, on its own job ID: {0}".format(fail_job["po_id"]),
+      po_proc.returncode != 0 and pf["state"] == S.PDF_NOT_FOUND
+      and pf["failure"]["category"] == "NAVIGATION_FAILURE", pf.get("failure"))
+
+rule("25. SUCCESSFUL REAL DISCOVERY — only on a machine that reaches eHub")
+real = DG.check(launch_browser=False, timeout=8)
+if real["result"] == "REACHABLE" and real["source"] == "REAL":
+    code = "import json,sys;sys.path.insert(0,'.');from po.__main__ import main;sys.exit(main(['ehub-probe']))"
+    run = subprocess.run([sys.executable, "-c", code], cwd=str(HERE), capture_output=True,
+                         text=True, timeout=600)
+    try:
+        rep_ = json.loads(run.stdout[run.stdout.index("{"):])
+    except Exception:
+        rep_ = {}
+    check("REAL eHub: an Under Clearance record → Manage → Documents → Bill Entry → identifier, "
+          "observed in the real session",
+          rep_.get("result") == "FOUND" and rep_.get("source") == "REAL"
+          and rep_.get("verification") == "VERIFIED" and rep_.get("po_identifier"), rep_)
+else:
+    SKIP.append("successful real discovery")
+    print("  SKIP  successful real discovery — the real eHub is not reachable here: {0} at {1}: "
+          "{2}".format(real.get("category"), real.get("failed_stage"), real.get("reason")))
+
 BROWSER.close()
 PW.stop()
 for srv_ in (hub_srv, graph_srv, httpd, srv):
@@ -1471,5 +1657,6 @@ for srv_ in (hub_srv, graph_srv, httpd, srv):
     except Exception:
         pass
 print()
-print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
+print("{0} passed, {1} failed, {2} skipped{3}".format(
+    len(PASS), len(FAIL), len(SKIP), " (" + ", ".join(SKIP) + ")" if SKIP else ""))
 sys.exit(1 if FAIL else 0)
