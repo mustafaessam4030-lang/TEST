@@ -1555,6 +1555,284 @@ td.car{color:var(--ink);font-weight:500}
 .wl-i{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
 .wl-i:first-child{border-top:0}
 .wl-w{margin-left:auto;color:var(--faint)}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ATLAS — THE CONVERSATION
+   Opened, ATLAS is a workspace of its own: a large surface above the
+   console (full screen on a phone), one readable column for the
+   conversation, the composer held at the bottom. The theme's own tokens
+   throughout; two of the chat's own (the operator's bubble) per theme.
+   Motion is transform and opacity only, with a spring for things that
+   arrive; prefers-reduced-motion turns it off.
+   ═══════════════════════════════════════════════════════════════════ */
+:root{--ch-me:#0B1F33;--ch-me-ink:#FFFFFF;--ch-col:760px;--ch-spring:cubic-bezier(.2,.9,.24,1.04);
+  --ch-x:translateX(-50%)}
+:root[data-theme="dark"]{--ch-me:#26394F;--ch-me-ink:#EEF3FA}
+.ch-scrim{position:fixed;inset:0;z-index:70;background:rgba(10,19,32,.30);
+  -webkit-backdrop-filter:blur(6px) saturate(1.05);backdrop-filter:blur(6px) saturate(1.05);
+  opacity:0;transition:opacity .3s var(--e)}
+:root[data-theme="dark"] .ch-scrim{background:rgba(3,8,15,.55)}
+.ch-scrim.on{opacity:1}
+.ch-scrim[hidden]{display:none}
+#chat{position:fixed;z-index:71;top:28px;bottom:28px;left:50%;right:auto;
+  width:min(1040px,calc(100vw - 56px));height:auto;max-width:none;max-height:none;
+  transform:var(--ch-x);display:none;flex-direction:column;overflow:hidden;
+  background:var(--card);border:1px solid var(--line);border-radius:22px;
+  box-shadow:0 1px 2px rgba(11,31,51,.06),0 28px 70px rgba(11,31,51,.20)}
+:root[data-theme="dark"] #chat{box-shadow:0 1px 2px rgba(0,0,0,.45),0 30px 80px rgba(0,0,0,.55)}
+#chat.on{display:flex;animation:chIn .5s var(--ch-spring) both}
+#chat.on.closing{animation:chOut .19s var(--e) both}
+@keyframes chIn{from{opacity:0;transform:var(--ch-x) translateY(16px) scale(.982)}
+  to{opacity:1;transform:var(--ch-x)}}
+@keyframes chOut{from{opacity:1;transform:var(--ch-x)}
+  to{opacity:0;transform:var(--ch-x) translateY(10px) scale(.99)}}
+
+/* header */
+#chat .ch-h{flex:none;display:flex;align-items:center;gap:12px;min-height:66px;
+  padding:12px 14px 12px 18px;background:transparent;border-bottom:1px solid var(--line-2)}
+#chat .ch-av{width:40px;height:40px;flex:none;background:transparent}
+.ch-id{min-width:0}
+#chat .ch-nm{font-size:15px;font-weight:700;letter-spacing:.07em;line-height:1.25;color:var(--ink)}
+#chat .ch-nm span{font-size:12.5px;font-weight:500;letter-spacing:0;color:var(--mid);margin-left:7px}
+#chat .ch-rl{display:inline-flex;align-items:center;gap:7px;margin-top:3px;font-size:12px;
+  color:var(--mid);transition:color .3s var(--e)}
+#chat .ch-rl i{position:relative;width:7px;height:7px;flex:none;border-radius:50%;
+  background:var(--faint);transition:background-color .45s var(--e)}
+#chat .ch-rl[data-s="live"] i{background:var(--grn-dot)}
+#chat .ch-rl[data-s="wait"] i{background:var(--y-dot)}
+#chat .ch-rl[data-s="bad"] i{background:var(--red)}
+#chat .ch-rl[data-s="bad"]{color:var(--red)}
+#chat .ch-rl[data-s="live"] i::after{content:"";position:absolute;inset:-3px;border-radius:50%;
+  border:1.5px solid var(--grn-dot);opacity:0;animation:chPulse 2.8s var(--e) infinite}
+@keyframes chPulse{0%{transform:scale(.6);opacity:.55}70%,100%{transform:scale(1.8);opacity:0}}
+.ch-ctx{margin-left:auto;display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:40%;
+  padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--ink);font-size:12px;line-height:1.2;
+  transition:background .18s var(--e),border-color .18s var(--e),transform .25s var(--ch-spring)}
+.ch-ctx:hover{background:var(--surface-3);border-color:var(--line-hi)}
+.ch-ctx:active{transform:scale(.97)}
+.ch-ctx[hidden]{display:none}
+.ch-ctx-k{flex:none;font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+.ch-ctx-v{min-width:0;font-family:var(--mono);font-size:12px;font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.ch-ctx svg{flex:none;width:12px;height:12px;color:var(--faint)}
+#chat .ch-x{margin-left:4px;width:36px;height:36px;flex:none;display:grid;place-items:center;
+  border-radius:50%;color:var(--mid);transition:background .18s var(--e),color .18s,transform .25s var(--ch-spring)}
+#chat .ch-ctx[hidden] + .ch-x{margin-left:auto}
+#chat .ch-x:hover{background:var(--surface-3);color:var(--ink)}
+#chat .ch-x:active{transform:scale(.92)}
+
+/* what ATLAS noticed: one quiet strip */
+#chat .ch-n{flex:none;max-height:190px;overflow:auto;background:var(--surface-2);
+  border-bottom:1px solid var(--line-2);padding:9px max(20px,calc((100% - var(--ch-col)) / 2)) 10px;gap:4px}
+#chat .ch-n[hidden]{display:none}
+
+/* the conversation */
+.ch-main{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+#chat .ch-b{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:transparent;
+  display:flex;flex-direction:column;gap:22px;
+  padding:30px max(20px,calc((100% - var(--ch-col)) / 2)) 22px;-webkit-overflow-scrolling:touch}
+#chat.is-empty .ch-b{display:none}
+.ch-empty{display:none;flex:1;min-height:0;overflow:auto;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;padding:28px 24px}
+#chat.is-empty .ch-empty{display:flex}
+.ch-e-av{margin-bottom:6px}
+.ch-e-t{font-size:22px;font-weight:700;letter-spacing:.1em;color:var(--ink);margin-top:8px}
+.ch-e-s{font-size:13px;color:var(--mid);margin-top:2px}
+.ch-e-p{font-size:15.5px;line-height:1.6;color:var(--ink);max-width:470px;margin:18px 0 22px}
+.ch-e-sug{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:600px}
+.ch-e-n{margin-top:18px;font-size:12.5px;color:var(--mid);max-width:520px}
+#chat .msg{max-width:100%;gap:12px;animation:chMsg .44s var(--ch-spring) both}
+#chat .msg.me{align-self:flex-end;max-width:min(78%,560px);transform-origin:100% 100%;
+  animation-name:chMe;flex-direction:row-reverse}
+#chat .msg.me .m-av{display:none}
+#chat .msg.me .bub{background:var(--ch-me);color:var(--ch-me-ink);border:0;
+  border-radius:20px 20px 6px 20px;padding:10px 16px;font-size:15px;line-height:1.5;font-weight:400;
+  white-space:pre-wrap;box-shadow:0 1px 1px rgba(11,31,51,.07)}
+#chat .msg.bot .bub{flex:1;min-width:0;background:transparent;border:0;border-radius:0;
+  padding:4px 0 0;font-size:15px;line-height:1.7;color:var(--ink);white-space:normal;overflow-wrap:anywhere}
+#chat .m-av.ax-av{width:28px;height:28px;flex:none;margin-top:1px}
+#chat .bub.stern{background:var(--y-wash);border-radius:14px;padding:10px 14px}
+#chat .bub.err{padding-left:12px;box-shadow:inset 2px 0 0 var(--red)}
+@keyframes chMsg{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes chMe{from{opacity:0;transform:translateY(12px) scale(.94)}to{opacity:1;transform:none}}
+
+/* an answer's own structure */
+#chat .bub p{margin:0 0 10px} #chat .bub p:last-child{margin-bottom:0}
+#chat .bub ul,#chat .bub ol{margin:2px 0 12px;padding-left:22px}
+#chat .bub li{margin:4px 0;padding-left:2px}
+#chat .bub li::marker{color:var(--faint)}
+#chat .bub .ah{font-size:15.5px;font-weight:650;line-height:1.45;margin:0 0 10px;color:var(--ink)}
+#chat .bub .ah:not(:first-child){margin-top:14px}
+#chat .bub strong{font-weight:650}
+#chat .bub code{font-family:var(--mono);font-size:12.5px;background:var(--surface-3);padding:1px 6px;border-radius:5px}
+.cl{display:flex;align-items:baseline;gap:10px;margin:0 0 9px}
+.cl-k{flex:none;width:136px;font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  line-height:1.4;padding:2px 8px;border-radius:6px;text-align:center;background:var(--surface-3);color:var(--mid);
+  position:relative;top:-1px}
+.cl-t{min-width:0}
+.cl-k.k-fact{background:var(--surface-3);color:var(--ink)}
+.cl-k.k-learned{background:var(--blu-wash,rgba(37,99,235,.10));color:var(--blu)}
+.cl-k.k-inference{background:var(--vio-wash);color:var(--vio)}
+.cl-k.k-rec{background:var(--brand-wash);color:var(--brand-hi)}
+.cl-k.k-unv{background:var(--y-wash);color:var(--y)}
+.cl-k.k-root{background:var(--red-wash,rgba(220,38,38,.08));color:var(--red)}
+.cl-k.k-recovery{background:var(--grn-wash,rgba(22,163,74,.10));color:var(--grn)}
+
+/* under an answer: time, and whether it helped — quiet until wanted */
+#chat .fb{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;opacity:0;
+  transition:opacity .2s var(--e)}
+#chat .msg:hover .fb,#chat .msg:focus-within .fb,#chat .fb:has(.fb-done),#chat .fb:has(.picked){opacity:1}
+@media(hover:none){#chat .fb{opacity:1}}
+#chat .fb time{font-family:var(--mono);font-size:11px;color:var(--faint);margin-right:4px}
+#chat .fb .fb-t{font-family:inherit;font-size:11.5px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--faint)}
+#chat .fb button{border-radius:999px;padding:4px 9px;font-size:11.5px;background:transparent;
+  transition:background .15s,transform .2s var(--ch-spring)}
+#chat .fb button:active{transform:scale(.92)}
+
+/* evidence and actions sit under the answer, aligned with its text */
+#chat .ax-indent{margin-left:40px;max-width:calc(100% - 40px)}
+#chat .dl-row{gap:8px;max-width:calc(100% - 40px)}
+#chat .dl{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;
+  border:1px solid var(--line-hi);background:var(--card);color:var(--ink);font-size:13px;font-weight:600;
+  transition:background .18s var(--e),border-color .18s,transform .22s var(--ch-spring);
+  animation:chMsg .4s var(--ch-spring) both}
+#chat .dl:hover{background:var(--surface-2)}
+#chat .dl:active{transform:scale(.95)}
+#chat .dl.pri{background:var(--solid);color:var(--on-solid);border-color:transparent}
+#chat .dl.pri:hover{filter:brightness(1.05)}
+#chat .dl:disabled{opacity:.55;cursor:default}
+.evx{border:1px solid var(--line);border-radius:14px;background:var(--surface-2);overflow:hidden;
+  animation:chMsg .4s var(--ch-spring) both}
+.evx > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 14px;
+  font-size:13px;font-weight:600;color:var(--ink);user-select:none}
+.evx > summary::-webkit-details-marker{display:none}
+.evx > summary svg{width:12px;height:12px;flex:none;color:var(--faint);transition:transform .25s var(--e)}
+.evx[open] > summary svg{transform:rotate(90deg)}
+.evx > summary em{font-style:normal;font-weight:500;color:var(--mid);margin-left:auto;font-size:12px}
+.evx-b{padding:0 14px 12px;animation:chMsg .3s var(--e) both}
+#chat .evx .mini{margin-top:2px;border-radius:10px}
+#chat .evx .evd{margin:10px 0 0;max-width:100%}
+#chat .evd{border-radius:14px}
+#chat .msg.me .evd{max-width:240px;margin:0}
+#chat .ch-done{align-self:center;font-size:12px;color:var(--mid);padding:5px 12px;border-radius:999px;
+  background:var(--surface-2);animation:chMsg .3s var(--e) both}
+.ch-older{align-self:center;font-size:12px;color:var(--faint)}
+
+/* ATLAS at work: the character, what it is actually doing, and three dots */
+#chat .msg.think{align-items:center}
+.th{display:flex;align-items:center;gap:10px;padding:2px 0;font-size:14.5px}
+.th-label{color:var(--mid);background:linear-gradient(100deg,var(--mid) 30%,var(--ink) 50%,var(--mid) 70%);
+  background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  animation:chShine 2.2s linear infinite}
+@keyframes chShine{from{background-position:110% 0}to{background-position:-110% 0}}
+.th-dots{display:inline-flex;gap:4px}
+.th-dots span{width:6px;height:6px;border-radius:50%;background:var(--brand);opacity:.3;
+  animation:chDot 1.2s var(--e) infinite}
+.th-dots span:nth-child(2){animation-delay:.16s} .th-dots span:nth-child(3){animation-delay:.32s}
+@keyframes chDot{0%,80%,100%{opacity:.25;transform:none}40%{opacity:1;transform:translateY(-3px)}}
+
+/* suggestions: a quiet row that steps back while ATLAS answers */
+#chat .ch-s{flex:none;display:flex;flex-wrap:nowrap;gap:8px;overflow-x:auto;scrollbar-width:none;
+  background:transparent;padding:2px max(20px,calc((100% - var(--ch-col)) / 2)) 10px;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent);
+  mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent);
+  transition:opacity .2s var(--e)}
+#chat .ch-s::-webkit-scrollbar{display:none}
+#chat .ch-s:empty,#chat.is-empty .ch-s{display:none}
+#chat.busy .ch-s{opacity:0;pointer-events:none}
+#chat .ch-chip{flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line);background:var(--card);
+  color:var(--ink);font-size:13px;font-weight:500;white-space:nowrap;
+  animation:chMsg .38s var(--ch-spring) both;animation-delay:calc(var(--i,0) * 50ms);
+  transition:background .18s var(--e),border-color .18s,transform .22s var(--ch-spring)}
+#chat .ch-chip:hover{background:var(--surface-2);border-color:var(--line-hi)}
+#chat .ch-chip:active{transform:scale(.95)}
+
+/* the composer */
+#chat .ch-f{flex:none;display:block;border-top:0;background:transparent;
+  padding:4px max(16px,calc((100% - var(--ch-col)) / 2)) calc(14px + env(safe-area-inset-bottom))}
+.ch-box{display:flex;align-items:flex-end;gap:4px;padding:6px;border:1px solid var(--line-hi);border-radius:26px;
+  background:var(--card);box-shadow:0 1px 2px rgba(11,31,51,.04),0 10px 28px rgba(11,31,51,.07);
+  transition:border-color .2s var(--e),box-shadow .2s var(--e)}
+:root[data-theme="dark"] .ch-box{background:var(--surface-3);box-shadow:none}
+.ch-box:focus-within{border-color:var(--faint);box-shadow:0 0 0 4px var(--brand-wash),0 10px 28px rgba(11,31,51,.07)}
+#chat .ch-ta{flex:1;min-width:0;border:0;border-radius:0;background:transparent;padding:9px 6px;
+  min-height:40px;max-height:200px;font-size:15px;line-height:1.5;color:var(--ink);resize:none;outline:none}
+#chat .ch-ta::placeholder{color:var(--faint)}
+#chat .ch-ta:focus{border:0}
+#chat .attach{width:40px;height:40px;flex:none;border:0;background:transparent;color:var(--mid);border-radius:50%;
+  transition:background .18s var(--e),color .18s,transform .22s var(--ch-spring)}
+#chat .attach:hover{background:var(--surface-2);color:var(--ink)}
+#chat .attach:active{transform:scale(.92)}
+#chat .send{position:relative;width:40px;height:40px;flex:none;border-radius:50%;background:var(--solid);
+  color:var(--on-solid);transition:transform .22s var(--ch-spring),opacity .2s var(--e),background .2s}
+#chat .send:hover{transform:none}
+#chat .send:disabled{background:var(--surface-3);color:var(--faint);cursor:default}
+#chat .send:not(:disabled):active{transform:scale(.9)}
+#chat .send svg{width:18px;height:18px}
+#chat .send.sent svg{animation:chSend .42s var(--e)}
+@keyframes chSend{45%{transform:translateY(-10px);opacity:0}46%{transform:translateY(10px);opacity:0}
+  100%{transform:none;opacity:1}}
+#chat .send.busy svg{opacity:0}
+#chat .send.busy::after{content:"";position:absolute;inset:11px;border-radius:50%;
+  border:2px solid currentColor;border-right-color:transparent;animation:chSpin .8s linear infinite}
+@keyframes chSpin{to{transform:rotate(360deg)}}
+.ch-hint{margin-top:8px;text-align:center;font-size:11.5px;color:var(--faint)}
+.ch-hint kbd{font-family:var(--mono);font-size:10.5px;padding:1px 5px;border:1px solid var(--line);
+  border-radius:4px;background:var(--surface-2)}
+.ch-jump{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;display:inline-flex;
+  align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1px solid var(--line-hi);
+  background:var(--card);color:var(--ink);font-size:12.5px;font-weight:550;box-shadow:var(--shadow);
+  animation:chMsg .3s var(--ch-spring) both}
+.ch-jump[hidden]{display:none}
+.ch-jump svg{width:13px;height:13px}
+
+/* the launcher */
+.fab{gap:8px;height:42px;padding:0 17px 0 12px;font-weight:600;
+  transition:transform .3s var(--ch-spring),box-shadow .3s var(--e)}
+.fab:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.14)}
+.fab:active{transform:scale(.97)}
+
+@media(max-width:1024px){
+  #chat{top:16px;bottom:16px;width:calc(100vw - 32px);border-radius:20px}
+}
+@media(max-width:640px){
+  :root{--ch-x:none}
+  #chat{top:var(--ch-top,0px);bottom:auto;left:0;right:0;width:100%;height:var(--ch-vh,100dvh);
+    border:0;border-radius:0;transform:none;padding-top:env(safe-area-inset-top);box-shadow:none}
+  .ch-scrim{display:none}
+  #chat .ch-h{min-height:58px;padding:10px 8px 10px 14px;gap:10px}
+  #chat .ch-av,#chat .ch-av.atlas{--ax:38px;width:38px;height:38px;margin:0}
+  #chat .ch-nm span{display:none}
+  .ch-id{flex:1;min-width:0}
+  #chat .ch-rl{display:flex;white-space:nowrap;min-width:0}
+  #chat .ch-rl span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  #chat .ch-rl{margin-top:2px}
+  .ch-ctx{flex:none;max-width:40%;padding:6px 10px;margin-left:0}
+  .ch-ctx-k{display:none}
+  #chat .ch-b{padding:20px 14px 16px;gap:18px}
+  #chat .msg.me{max-width:86%}
+  #chat .ch-s{padding:2px 14px 8px}
+  #chat .ch-f{padding:4px 10px calc(10px + env(safe-area-inset-bottom))}
+  .ch-hint{display:none}
+  #chat .ax-indent,#chat .dl-row{margin-left:0;max-width:100%}
+  .cl{flex-direction:column;gap:4px}
+  .cl-k{width:auto;align-self:flex-start}
+  .ch-e-p{font-size:15px}
+}
+#chat .ch-ty.sr{display:block}
+#chat .ch-av{width:46px;height:46px;margin:-4px -2px -4px -4px}
+#chat .ch-av.atlas{--ax:46px}
+/* the character fills its own box (older .ch-av/.m-av svg sizes were for icons) */
+#chat .ch-av .atlas-float svg,#chat .m-av .atlas-float svg,#chat .ch-av .atlas-float img,#chat .m-av .atlas-float img{width:100%;height:100%}
+#chat .m-av.ax-av,#chat .m-av.ax-av.atlas{--ax:30px;width:30px;height:30px;margin:-2px -1px 0 -1px}
+html.ch-open,html.ch-open body{overscroll-behavior:none}
+@media(max-width:640px){html.ch-open body{overflow:hidden}}
+@media(prefers-reduced-motion:reduce){
+  #chat,#chat *,.ch-scrim,.fab{animation:none!important;transition:none!important}
+  .th-label{background:none;-webkit-text-fill-color:currentColor;color:var(--mid)}
+  .th-dots span{opacity:.6}
+}
 </style>
 </head>
 <body>
@@ -2225,24 +2503,42 @@ td.car{color:var(--ink);font-weight:500}
        a silent cinematic: no <audio> element, no /api/music fetch, no codec
        negotiation, no mute state, and no soundtrack asset in the build. -->
 
-  <button class="fab" id="fab" aria-label="Ask ATLAS"><span id="fabAtlas"></span>Ask ATLAS</button>
-  <div class="chat" id="chat" role="dialog" aria-label="ATLAS">
+  <button class="fab" id="fab" aria-label="Ask ATLAS" aria-haspopup="dialog" aria-controls="chat"><span id="fabAtlas"></span>Ask ATLAS</button>
+  <div class="ch-scrim" id="chScrim" hidden></div>
+  <div class="chat" id="chat" role="dialog" aria-modal="true" aria-labelledby="chTitle" aria-hidden="true">
     <div class="ch-h">
-      <div class="ch-av" id="chAtlas"></div>
-      <div><div class="ch-nm">ATLAS <span>Operational Intelligence</span></div>
-        <div class="ch-rl" id="chRole"><i></i><span id="chStatus">Watching this run</span></div>
-        <div class="ch-ty" id="chTy">ATLAS is looking at the run…</div></div>
-      <button class="ch-x" id="chatX" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <div class="ch-av" id="chAtlas" aria-hidden="true"></div>
+      <div class="ch-id"><div class="ch-nm" id="chTitle">ATLAS <span>Operational Intelligence</span></div>
+        <div class="ch-rl" id="chRole" role="status" aria-live="polite"><i aria-hidden="true"></i><span id="chStatus">Watching this run</span></div>
+        <div class="ch-ty sr" id="chTy" aria-live="polite"></div></div>
+      <!-- Which run (or shipment) the conversation is about. Opens it. -->
+      <button class="ch-ctx" id="chCtx" type="button" hidden><span class="ch-ctx-k" id="chCtxK">Run</span><span class="ch-ctx-v" id="chCtxV"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+      <button class="ch-x" id="chatX" type="button" aria-label="Close ATLAS"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <!-- What ATLAS noticed, from the run state. Each line takes you to it. -->
     <div class="ch-n" id="chNotice" hidden></div>
-    <div class="ch-b" id="chatBody"></div>
-    <div class="ch-s" id="chatSug"></div>
+    <div class="ch-main">
+      <div class="ch-empty" id="chEmpty">
+        <div class="ch-e-av" id="chEmptyAv" aria-hidden="true"></div>
+        <div class="ch-e-t">ATLAS</div>
+        <div class="ch-e-s">Operational Intelligence</div>
+        <p class="ch-e-p">Ask me about the current run, shipment status, failures, human actions, or PO automation.</p>
+        <div class="ch-e-sug" id="chEmptySug" aria-label="Suggested questions"></div>
+        <p class="ch-e-n">I answer from this run's data only. If it isn't in the run, I'll say so rather than guess.</p>
+      </div>
+      <div class="ch-b" id="chatBody" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with ATLAS" tabindex="-1"></div>
+      <button class="ch-jump" id="chJump" type="button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>Latest</button>
+    </div>
+    <div class="ch-s" id="chatSug" aria-label="Suggested questions"></div>
     <div class="ch-f">
-      <button class="attach" id="chatAttach" type="button" aria-label="Attach a screenshot" title="Attach a screenshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
-      <input type="file" id="chatFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
-      <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask ATLAS about this run…"></textarea>
-      <button class="send" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+      <div class="ch-box">
+        <button class="attach" id="chatAttach" type="button" aria-label="Attach a screenshot" title="Attach a screenshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+        <input type="file" id="chatFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+        <label class="sr" for="chatIn">Message ATLAS</label>
+        <textarea class="ch-ta" id="chatIn" rows="1" placeholder="Ask ATLAS about this run…" enterkeyhint="send" autocomplete="off"></textarea>
+        <button class="send" id="chatSend" type="button" aria-label="Send message" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+      <div class="ch-hint" aria-hidden="true"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</div>
     </div>
   </div>
 </div>
@@ -5622,9 +5918,10 @@ document.addEventListener('click', (e) => {
    blinking cursor. Suggestions come from the backend and are grounded in the
    run's own data, so a chip can never lead somewhere the assistant refuses. */
 (function chat(){
-  const body = $('chatBody'), input = $('chatIn');
+  const body = $('chatBody'), input = $('chatIn'), panel = $('chat'), sendBtn = $('chatSend');
   let busy = false, lastReference = null, lastFocus = '', lastEvidence = '';
-  let askCtx = null;
+  let askCtx = null, lastAsked = '', opener = null;
+  const reduced = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Asked on the PO page (or about one PO job): ATLAS is told which job.
   function withPoContext(body){
     if (activePage === 'po' || askCtx)
@@ -5633,10 +5930,48 @@ document.addEventListener('click', (e) => {
   }
   // Rude messages this tab has sent — a count, for a firmer reply each time.
   let conductCount = 0;
+
+  /* ── scrolling: follow the conversation unless the operator scrolled up
+     to read; then a "Latest" button brings them back. ── */
+  const nearEnd = () => body.scrollHeight - body.scrollTop - body.clientHeight < 90;
+  let follow = true;
+  function toEnd(force){
+    if (!force && !follow){ $('chJump').hidden = false; return; }
+    body.scrollTo({top: body.scrollHeight, behavior: force === true && !reduced() ? 'smooth' : 'auto'});
+  }
+  // A long answer is read from its start: the question goes to the top.
+  function showFrom(el){
+    if (!el || !follow) return toEnd();
+    const top = el.offsetTop - body.offsetTop - 14;
+    if (body.scrollHeight - top > body.clientHeight) body.scrollTo({top: top, behavior: 'auto'});
+    else toEnd();
+  }
+  body.addEventListener('scroll', () => {
+    follow = nearEnd();
+    if (follow) $('chJump').hidden = true;
+  }, {passive: true});
+  $('chJump').addEventListener('click', () => { follow = true; $('chJump').hidden = true; toEnd(true); });
+
+  // A long session keeps the newest part of the conversation in the page.
+  const KEEP = 240;
+  function trim(){
+    if (body.children.length <= KEEP) return;
+    let older = body.firstElementChild;
+    if (!older || !older.classList.contains('ch-older')){
+      older = document.createElement('div'); older.className = 'ch-older';
+      older.textContent = 'Earlier messages in this conversation are not shown.';
+      body.insertBefore(older, body.firstChild);
+    }
+    while (body.children.length > KEEP && older.nextElementSibling) older.nextElementSibling.remove();
+  }
+  function add(el){ body.appendChild(el); setEmpty(false); trim(); toEnd(); return el; }
+
+  function setEmpty(on){ panel.classList.toggle('is-empty', !!on); }
+
   /* A real image — a capture from the automation's browser or one the
      operator uploaded — with where it came from beneath it. Nothing is ever
      drawn or generated here. */
-  function evidenceFig(e, mine){
+  function evidenceFig(e, mine, into){
     if (!e || !e.url) return;
     const fig = document.createElement('figure');
     fig.className = 'evd';
@@ -5646,54 +5981,66 @@ document.addEventListener('click', (e) => {
       (e.width ? ' · ' + e.width + '×' + e.height : '') +
       (e.has_page_text ? ' · page text captured with it' : '') +
       ' · <a href="' + esc(e.url) + '" target="_blank" rel="noopener">Open full size</a></figcaption>';
+    if (into){ into.appendChild(fig); return; }
     if (mine){
       const wrap = document.createElement('div'); wrap.className = 'msg me'; wrap.appendChild(fig);
-      body.appendChild(wrap);
-    } else body.appendChild(fig);
-    body.scrollTop = body.scrollHeight;
+      add(wrap);
+    } else add(fig);
   }
   function uploadImage(file){
     if (!file || busy) return;
     if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type || '')){
       bubble('bot').innerHTML = fmt('That is not a PNG, JPEG, WebP or GIF image.'); return;
     }
-    busy = true;
-    const note1 = document.createElement('div'); note1.className = 'ch-done';
-    note1.textContent = 'Uploading ' + (file.name || 'image') + '\u2026'; body.appendChild(note1);
+    setBusy(true);
+    const wait = thinking('Uploading screenshot…');
     fetch('/api/evidence/upload', {method:'POST', body:file,
       headers:{'Content-Type': file.type, 'X-Filename': (file.name || 'upload').slice(0, 80)}})
       .then((r) => r.json()).then((r) => {
-        note1.remove(); busy = false;
+        wait.remove(); setBusy(false);
         if (!r.accepted){ bubble('bot').innerHTML = fmt(r.message || 'The image was not accepted.'); return; }
         lastEvidence = r.evidence.id;
         evidenceFig(r.evidence, true);
         input.value = 'What does this screenshot tell us?';
         send();
-      }).catch(() => { note1.remove(); busy = false;
-        bubble('bot').innerHTML = fmt('The image could not be uploaded.'); });
+      }).catch(() => { wait.remove(); setBusy(false);
+        failed('The image could not be uploaded.', null); });
   }
   // Queue progress lands in the conversation as ATLAS's own lines.
   atlasSay = (text) => {
     if (!body.children.length) return;
-    const b = bubble('bot'); b.innerHTML = fmt(text);
-    body.scrollTop = body.scrollHeight;
+    const b = bubble('bot'); b.innerHTML = rich(text);
   };
 
-  const OPENERS = [
-    ['How is it going?', 'How is it going?'],
-    ['Which shipments failed?', 'Which shipments failed?'],
-    ['Compare the carriers', 'Compare the carriers'],
-    ['Download the data', 'Download the data']
-  ];
+  /* What to suggest before anything is asked: from the run as it stands.
+     Once ATLAS has answered, its own suggestions take over. */
+  function OPENERS(){
+    if (activePage === 'po') return ['Which PO jobs need attention?', 'What happened with the last PO?',
+                                     'Was the email sent?', 'How is PO automation going?'];
+    const all = (typeof S !== 'undefined' && S && S.shipments) || [];
+    const human = ((S && S.human_queue) || []).some((t) => !HQ_END[t.status]) ||
+                  !!(S && S.human_action && S.human_action.waiting);
+    const failed = all.some((r) => r.state === 'failed');
+    const out = [];
+    if (human) out.push('What needs me?');
+    if (failed) out.push('Why did this fail?', 'What should I do next?', 'Which shipments failed?');
+    out.push('How is the run going?', 'What did you notice?');
+    return out.filter((q, i) => out.indexOf(q) === i).slice(0, 4);
+  }
 
   function chips(list){
-    $('chatSug').innerHTML = (list || []).map((q) =>
-      '<button class="chip" data-q="' + esc(q) + '">' + esc(q) + '</button>').join('');
+    const html = (list || []).slice(0, 6).map((q, i) =>
+      '<button class="chip ch-chip" type="button" style="--i:' + i + '" data-q="' + esc(q) + '">' +
+      esc(q) + '</button>').join('');
+    $('chatSug').innerHTML = html;
+    $('chEmptySug').innerHTML = (list || []).slice(0, 4).map((q, i) =>
+      '<button class="chip ch-chip" type="button" style="--i:' + i + '" data-q="' + esc(q) + '">' +
+      esc(q) + '</button>').join('');
   }
-  $('chatSug').addEventListener('click', (e) => {
+  [$('chatSug'), $('chEmptySug')].forEach((box) => box.addEventListener('click', (e) => {
     const b = e.target.closest('[data-q]');
-    if (b){ input.value = b.dataset.q; send(); }
-  });
+    if (b && !busy){ input.value = b.dataset.q; send(); }
+  }));
 
   /* Feedback is MATERIAL for a later, deliberate training pass — never a
      live edit to a model. A thumbs-down changes nothing about the next
@@ -5707,9 +6054,12 @@ document.addEventListener('click', (e) => {
     const EXPLAINS = {why:1, latest_failure:1, learn_failure:1, stuck:1, story:1,
                       why_recovery_failed:1, image_read:1, image_compare:1};
     const ADVISES = {what_fixes:1, try_next:1, plan:1, next_step:1, why_recommend:1};
-    row.innerHTML = '<span class="fb-t">Useful?</span>'
-      + '<button data-v="helpful" title="Helpful">&#128077;</button>'
-      + '<button data-v="not_helpful" title="Not helpful">&#128078;</button>'
+    const t = new Date();
+    row.innerHTML = '<time datetime="' + t.toISOString() + '">' +
+        t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '</time>'
+      + '<span class="fb-t">Useful?</span>'
+      + '<button data-v="helpful" title="Helpful" aria-label="Helpful">&#128077;</button>'
+      + '<button data-v="not_helpful" title="Not helpful" aria-label="Not helpful">&#128078;</button>'
       + (EXPLAINS[reply.intent] ? '<span class="fb-x"><button data-v="correct">Correct</button>'
          + '<button data-v="incorrect">Incorrect</button></span>' : '')
       + (ADVISES[reply.intent] ? '<span class="fb-x"><button data-v="suggestion_useful">Useful suggestion</button>'
@@ -5749,6 +6099,7 @@ document.addEventListener('click', (e) => {
         // Ask what was wrong. A correction is worth far more than a count.
         const box = document.createElement('input');
         box.className = 'fb-in';
+        box.setAttribute('aria-label', 'What should it have said?');
         box.placeholder = 'What should it have said? (optional — press Enter)';
         bubbleEl.appendChild(box);
         box.focus();
@@ -5769,50 +6120,94 @@ document.addEventListener('click', (e) => {
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + who;
     wrap.innerHTML = who === 'me'
-      ? '<div class="m-av">You</div>'
-      : '<div class="m-av ax-av"></div>';
+      ? '<div class="m-av" aria-hidden="true">You</div><span class="sr">You said:</span>'
+      : '<div class="m-av ax-av" aria-hidden="true"></div><span class="sr">ATLAS:</span>';
     if (who !== 'me') Atlas(wrap.querySelector('.ax-av'), {size:'xs', text:false,
       state:(typeof S !== 'undefined' && S) ? atlasRun().state : 'idle'});
     const b = document.createElement('div');
     b.className = 'bub';
     wrap.appendChild(b);
-    body.appendChild(wrap);
-    body.scrollTop = body.scrollHeight;
+    add(wrap);
     return b;
   }
   const fmt = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                            .replace(/`(.+?)`/g, '<code>$1</code>');
 
-  function typeOut(el, text){
-    // ~9ms/char, capped so a long answer never feels slow.
-    return new Promise((done) => {
-      const total = Math.min(text.length * 9, 1100);
-      const step = Math.max(1, Math.ceil(text.length / (total / 16)));
-      let i = 0;
-      (function tick(){
-        i = Math.min(text.length, i + step);
-        el.innerHTML = fmt(text.slice(0, i)) + (i < text.length ? '<span class="cur"></span>' : '');
-        body.scrollTop = body.scrollHeight;
-        if (i < text.length) setTimeout(tick, 16); else done();
-      })();
+  /* An answer's own structure, drawn from its text: the grounding labels
+     ATLAS writes (**Fact** — …, **Inference** — …) become labelled rows,
+     "- " lines a list, "1. " lines numbered steps, a bold line on its own a
+     heading. Every piece is escaped; nothing is added to what was said. */
+  const KINDS = {'fact':'k-fact', 'learned':'k-learned', 'learned (past runs)':'k-learned',
+    'learned (past jobs)':'k-learned', 'inference':'k-inference', 'recommendation':'k-rec',
+    'not established':'k-unv', 'unverified':'k-unv', 'root cause':'k-root', 'recovery':'k-recovery',
+    'recovery plan':'k-recovery'};
+  function rich(text){
+    const out = [];
+    let list = null;
+    const close = () => { if (list){ out.push('</' + list + '>'); list = null; } };
+    String(text || '').split('\n').forEach((raw) => {
+      const line = raw.trim();
+      if (!line){ close(); return; }
+      let m = /^\*\*([^*]+)\*\*\s*[—–:-]\s*([\s\S]*)$/.exec(line);
+      if (m && KINDS[m[1].trim().toLowerCase()]){
+        close();
+        out.push('<div class="cl"><span class="cl-k ' + KINDS[m[1].trim().toLowerCase()] + '">' +
+          esc(m[1].trim()) + '</span><span class="cl-t">' + fmt(m[2]) + '</span></div>');
+        return;
+      }
+      m = /^[-•*]\s+(.*)$/.exec(line);
+      if (m){
+        if (list !== 'ul'){ close(); out.push('<ul>'); list = 'ul'; }
+        out.push('<li>' + fmt(m[1]) + '</li>'); return;
+      }
+      m = /^(\d{1,2})[.)]\s+(.*)$/.exec(line);
+      if (m){
+        if (list !== 'ol'){ close(); out.push('<ol>'); list = 'ol'; }
+        out.push('<li value="' + Number(m[1]) + '">' + fmt(m[2]) + '</li>'); return;
+      }
+      close();
+      m = /^\*\*([^*]+)\*\*:?$/.exec(line);
+      if (m){ out.push('<div class="ah">' + esc(m[1]) + '</div>'); return; }
+      out.push('<p>' + fmt(line) + '</p>');
     });
+    close();
+    return out.join('');
+  }
+
+  /* ATLAS at work: the character, and what it is actually doing — words
+     taken from what was asked and where. No timer pretends to type. */
+  function thinkingLabel(){
+    if (activePage === 'po' || askCtx) return 'Reading the PO job records…';
+    if (S && S.run && S.run.status === 'running') return 'Analyzing this run…';
+    return 'Checking the latest run evidence…';
+  }
+  function thinking(label){
+    const wait = document.createElement('div');
+    wait.className = 'msg bot think';
+    wait.setAttribute('role', 'status');
+    wait.innerHTML = '<div class="m-av ax-av" aria-hidden="true"></div>' +
+      '<div class="th"><span class="th-label">' + esc(label) + '</span>' +
+      '<span class="th-dots" aria-hidden="true"><span></span><span></span><span></span></span></div>';
+    Atlas(wait.querySelector('.ax-av'), {size:'xs', text:false, state:'analyzing'});
+    put($('chTy'), label);
+    return add(wait);
   }
 
   const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 
   function downloads(list){
     const row = document.createElement('div');
-    row.className = 'dl-row';
-    row.style.marginLeft = '39px';
+    row.className = 'dl-row ax-indent';
     row.innerHTML = list.map((d) =>
       '<a class="dl" href="' + esc(d.url) + '">' + DL_ICON + esc(d.label) + '</a>').join('');
-    body.appendChild(row);
-    body.scrollTop = body.scrollHeight;
+    add(row);
   }
 
-  function card(spec){
+  function card(spec, into){
     if (!spec || spec.type !== 'shipment') return;
     const el = document.createElement('div');
     el.className = 'mini';
@@ -5820,8 +6215,25 @@ document.addEventListener('click', (e) => {
       '</span>' + tag(spec.state) + '</div><div class="mini-b">' +
       spec.rows.map((r) => '<div class="mini-row"><span class="mini-k">' + esc(r[0]) +
         '</span><span class="mini-v">' + esc(r[1]) + '</span></div>').join('') + '</div>';
-    body.appendChild(el);
-    body.scrollTop = body.scrollHeight;
+    into.appendChild(el);
+  }
+  /* The run's own evidence behind an answer — the shipment's record and any
+     captures — folded under the answer until asked for. Only what the
+     backend returned; never a security code (the backend never sends one). */
+  function evidenceBox(d){
+    const ev = (d.evidence || []).filter((e) => e && e.url);
+    const hasCard = d.card && d.card.type === 'shipment';
+    if (!hasCard && !ev.length) return;
+    const box = document.createElement('details');
+    box.className = 'evx ax-indent';
+    const what = [hasCard ? d.card.reference : '', ev.length ? ev.length + ' capture' +
+                  (ev.length === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    box.innerHTML = '<summary>' + CHEV + 'Evidence from this run<em>' + esc(what) + '</em></summary>' +
+      '<div class="evx-b"></div>';
+    const inner = box.querySelector('.evx-b');
+    if (hasCard) card(d.card, inner);
+    ev.forEach((e) => evidenceFig(e, false, inner));
+    add(box);
   }
 
   /* Dashboard actions ATLAS may take: filter Live operations, open a
@@ -5839,9 +6251,10 @@ document.addEventListener('click', (e) => {
         (S.shipments || []).some((r) => r.reference === a.reference)){
       if (activePage !== 'overview') go('overview');
       openDrawer(a.reference);
-      // The drawer and this panel share the right edge: step aside so the
+      // The drawer and this panel share the screen: step aside so the
       // shipment is visible. The conversation is kept; Ask ATLAS reopens it.
       $('chat').classList.remove('on'); $('fab').classList.remove('hide');
+      hideChrome();
       return 'Opened ' + a.reference + '.';
     }
     if (a.type === 'page' && UI_PAGES[a.page]){
@@ -5851,45 +6264,102 @@ document.addEventListener('click', (e) => {
     }
     return '';
   }
+  // Buttons come only from the answer's own list — never made up here —
+  // and only of the kinds the server allows (it filters them too).
+  const BUTTON_KINDS = {filter:1, open:1, page:1, human_open:1};
   function actionsRow(list){
+    list = (list || []).filter((b) => b && b.label && b.action && BUTTON_KINDS[b.action.type]);
+    if (!list.length) return;
     const row = document.createElement('div');
-    row.className = 'dl-row';
-    row.style.marginLeft = '39px';
-    list.forEach((b) => {
+    row.className = 'dl-row ax-indent';
+    list.forEach((b, i) => {
       const el = document.createElement('button');
-      el.className = 'dl act'; el.type = 'button'; el.textContent = b.label;
+      el.className = 'dl act' + (i === 0 && b.action && b.action.type === 'human_open' ? ' pri' : '');
+      el.type = 'button'; el.textContent = b.label;
       el.addEventListener('click', () => {
         if (b.action && b.action.type === 'human_open'){
           // An operation, and only on this click: the same request the queue
           // button sends. What the run answered is what is shown.
           el.disabled = true;
-          hqOpen(b.action.action_id).then((r) => note(r.message || ''));
+          const wait = thinking('Opening the browser session for verification…');
+          hqOpen(b.action.action_id).then((r) => { wait.remove(); note(r.message || ''); },
+                                          () => { wait.remove(); el.disabled = false; });
           return;
         }
         const done = runUi(b.action); if (done) note(done);
       });
       row.appendChild(el);
     });
-    body.appendChild(row);
-    body.scrollTop = body.scrollHeight;
+    add(row);
   }
   function note(text){
+    if (!text) return;
     const el = document.createElement('div');
     el.className = 'ch-done'; el.textContent = text;
-    body.appendChild(el); body.scrollTop = body.scrollHeight;
+    add(el);
   }
+  // An answer that did not come: said plainly, with the way to try again.
+  function failed(text, retry){
+    const b = bubble('bot');
+    b.classList.add('err');
+    b.innerHTML = '<p>' + fmt(text) + '</p>';
+    if (retry){
+      const again = document.createElement('button');
+      again.type = 'button'; again.className = 'dl act';
+      again.textContent = 'Try again';
+      again.addEventListener('click', () => {
+        if (busy) return;
+        again.disabled = true; input.value = retry; send();
+      });
+      const row = document.createElement('div'); row.className = 'dl-row';
+      row.style.marginTop = '10px'; row.appendChild(again); b.appendChild(row);
+    }
+    toEnd();
+  }
+
+  /* Which run the conversation is about — the shipment last discussed, the
+     one in progress, or the run itself — shown in the header. */
+  function paintCtx(){
+    const btn = $('chCtx');
+    let k = '', v = '', open = null;
+    const cur = S && S.current && S.current.shipment;
+    if (activePage === 'po'){ k = 'PO'; v = PO.open || 'PO Automation'; open = () => go('po'); }
+    else if (lastReference && (S && S.shipments || []).some((r) => r.reference === lastReference)){
+      k = 'Shipment'; v = lastReference; open = () => runUi({type:'open', reference:lastReference});
+    } else if (cur && cur.reference){
+      k = 'Current shipment'; v = cur.reference; open = () => runUi({type:'open', reference:cur.reference});
+    } else if (S && S.run && S.run.run_id){
+      k = 'Run'; v = S.run.run_id; open = () => { go('overview'); closeChat(); };
+    }
+    btn.hidden = !v;
+    if (!v) return;
+    put($('chCtxK'), k); put($('chCtxV'), v);
+    btn.setAttribute('aria-label', k + ' ' + v + ' — open it');
+    btn.title = 'Open ' + v;
+    btn._open = open;
+  }
+  $('chCtx').addEventListener('click', () => {
+    const f = $('chCtx')._open; if (!f) return;
+    f();
+  });
+
   /* What ATLAS noticed, the counts that matter, and run-aware suggestions —
      from /api/atlas, which reads the same state as the dashboard. Loaded
      when the panel opens and refreshed only while it is open. */
-  let briefAt = 0, briefCold = -1, briefBusy = false;
+  let briefAt = 0, briefCold = -1, briefBusy = false, offline = false;
+  function setStatus(text, s){
+    put($('chStatus'), text);
+    $('chRole').dataset.s = s;
+  }
   function loadBrief(){
     if (briefBusy) return;
     briefBusy = true;
     fetch('/api/atlas').then((r) => r.json()).then((d) => {
+      offline = false;
       briefAt = Date.now(); briefCold = (S && S.cold_version) || 0;
-      put($('chStatus'), d.status || 'Watching this run');
-      $('chRole').dataset.s = /action/i.test(d.status || '') ? 'wait'
-        : /error/i.test(d.status || '') ? 'bad' : /watching/i.test(d.status || '') ? 'live' : 'idle';
+      setStatus(d.status || 'Watching this run',
+        /action/i.test(d.status || '') ? 'wait'
+        : /error/i.test(d.status || '') ? 'bad' : /watching/i.test(d.status || '') ? 'live' : 'idle');
       const sm = d.summary || {}, all = d.notices || [];
       // "ATLAS noticed N" counts what needs someone — the same list the chat
       // gives for "what did you notice?". Calm lines are shown, not counted.
@@ -5907,8 +6377,11 @@ document.addEventListener('click', (e) => {
         (!ns.length && calm.length ? calm.map((n) => '<div class="ch-calm">' + esc(n.text) + '</div>').join('') : '');
       box.hidden = box.hidden && !calm.length;
       box._notices = ns;
-      if (!busy && (d.suggestions || []).length) chips(d.suggestions);
-    }).catch(() => {}).finally(() => { briefBusy = false; });
+      if (!busy && (d.suggestions || []).length && !body.children.length) chips(d.suggestions);
+    }).catch(() => {
+      offline = true;
+      setStatus('Not connected to the Control Tower', 'bad');
+    }).finally(() => { briefBusy = false; });
   }
   $('chNotice').addEventListener('click', (e) => {
     const f = e.target.closest('[data-fold]');
@@ -5921,35 +6394,48 @@ document.addEventListener('click', (e) => {
   // at most every few seconds.
   setInterval(() => {
     if (!$('chat').classList.contains('on') || document.hidden || !S) return;
+    paintCtx();
     if (S.cold_version !== briefCold && Date.now() - briefAt > 3000) loadBrief();
     else if (Date.now() - briefAt > 15000) loadBrief();
   }, 1500);
 
+  /* ── the composer ── */
+  function grow(){
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+  }
+  function syncSend(){ sendBtn.disabled = busy || !input.value.trim(); }
+  function setBusy(on){
+    busy = on;
+    panel.classList.toggle('busy', on);
+    sendBtn.classList.toggle('busy', on);
+    sendBtn.setAttribute('aria-label', on ? 'ATLAS is answering' : 'Send message');
+    input.setAttribute('aria-busy', String(on));
+    syncSend();
+  }
+
   function send(){
     const q = input.value.trim();
     if (!q || busy) return;
-    input.value = ''; input.style.height = 'auto';
-    busy = true;
+    input.value = ''; grow();
+    lastAsked = q;
+    sendBtn.classList.remove('sent'); void sendBtn.offsetWidth; sendBtn.classList.add('sent');
+    setBusy(true);
     const nb = $('chNotice'); nb.classList.add('fold');
     const nf = nb.querySelector('[data-fold]'); if (nf) nf.setAttribute('aria-expanded', 'false');
+    follow = true;
     const mine = bubble('me'); mine.innerHTML = fmt(q);
-
-    const wait = document.createElement('div');
-    wait.className = 'msg';
-    wait.innerHTML = '<div class="m-av ax-av"></div>' +
-      '<div class="td-b"><span></span><span></span><span></span></div>';
-    body.appendChild(wait);
-    body.scrollTop = body.scrollHeight;
-    $('chTy').classList.add('show');
+    const wait = thinking(thinkingLabel());
 
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(withPoContext({question: q, context: {reference: lastReference, action_id: lastFocus,
                                                    evidence_id: lastEvidence, conduct: conductCount}}))
     })
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then((d) => {
-        wait.remove(); $('chTy').classList.remove('show');
+        wait.remove(); put($('chTy'), '');
+        if (offline) loadBrief();
         const b = bubble('bot');
         if (d.conduct){
           // ATLAS noticed the language: an amber bubble and a short shake.
@@ -5958,44 +6444,45 @@ document.addEventListener('click', (e) => {
           const av = b.parentNode.querySelector('.ax-av');
           if (av) av.classList.add('stern');
         }
-        return typeOut(b, d.answer || 'No answer came back.').then(() => {
-          if (d.card) card(d.card);
-          if (d.buttons && d.buttons.length) actionsRow(d.buttons);
-          if (d.actions && d.actions.length){
-            const done = runUi(d.actions[0]);
-            if (done) note(done);
-          }
-          if (d.downloads && d.downloads.length) downloads(d.downloads);
-          if (d.reference) lastReference = d.reference;
-          lastFocus = d.focus || '';
-          if (d.evidence_id) lastEvidence = d.evidence_id;
-          (d.evidence || []).forEach((e) => evidenceFig(e, false));
-          if (d.operation && d.operation.type === 'human_open' && d.operation.op === 'open'){
-            // The operator asked for it in so many words, and named which.
-            // Sent through the queue's own request; the reply is the run's.
-            hqOpen(d.operation.action_id).then((r) => note(r.message || ''));
-          }
-          feedbackRow(b, q, d);
-          chips(d.suggestions && d.suggestions.length
-            ? d.suggestions : OPENERS.map((o) => o[1]));
-        });
+        // The whole answer arrives at once (the backend answers in one
+        // piece); the bubble's entrance is the only motion.
+        b.innerHTML = rich(d.answer || 'No answer came back.');
+        evidenceBox(d);
+        if (d.buttons && d.buttons.length) actionsRow(d.buttons);
+        if (d.actions && d.actions.length){
+          const done = runUi(d.actions[0]);
+          if (done) note(done);
+        }
+        if (d.downloads && d.downloads.length) downloads(d.downloads);
+        if (d.reference) lastReference = d.reference;
+        lastFocus = d.focus || '';
+        if (d.evidence_id) lastEvidence = d.evidence_id;
+        if (d.operation && d.operation.type === 'human_open' && d.operation.op === 'open'){
+          // The operator asked for it in so many words, and named which.
+          // Sent through the queue's own request; the reply is the run's.
+          hqOpen(d.operation.action_id).then((r) => note(r.message || ''));
+        }
+        feedbackRow(b, q, d);
+        chips(d.suggestions && d.suggestions.length ? d.suggestions.slice(0, 3) : OPENERS().slice(0, 2));
+        paintCtx();
       })
       .catch(() => {
-        wait.remove(); $('chTy').classList.remove('show');
-        bubble('bot').innerHTML = fmt(
-          'I could not reach the Control Tower backend, so I have no data to answer from.');
+        wait.remove(); put($('chTy'), '');
+        setStatus('Not connected to the Control Tower', 'bad'); offline = true;
+        failed('I could not reach the Control Tower backend, so I have no data to answer from.', q);
       })
-      .finally(() => { busy = false; body.scrollTop = body.scrollHeight; });
+      .finally(() => { setBusy(false); showFrom(mine.parentNode); });
   }
 
-  input.addEventListener('input', () => {
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 110) + 'px';
-  });
+  input.addEventListener('input', () => { grow(); syncSend(); });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); send(); return; }
+    if (e.key === 'ArrowUp' && !input.value && lastAsked){
+      e.preventDefault(); input.value = lastAsked; grow(); syncSend();
+    }
   });
-  $('chatSend').addEventListener('click', send);
+  sendBtn.addEventListener('click', send);
+  sendBtn.addEventListener('animationend', () => sendBtn.classList.remove('sent'));
   $('chatAttach').addEventListener('click', () => $('chatFile').click());
   $('chatFile').addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = ''; uploadImage(f);
@@ -6005,21 +6492,74 @@ document.addEventListener('click', (e) => {
     if (item){ e.preventDefault(); uploadImage(item.getAsFile()); }
   });
 
-  $('fab').addEventListener('click', () => {
-    $('chat').classList.add('on'); $('fab').classList.add('hide');
+  /* ── opening and closing ── */
+  // On a phone the panel is the visible viewport: the composer stays above
+  // the keyboard and nothing scrolls behind it.
+  const vv = window.visualViewport;
+  function fitViewport(){
+    if (!vv || !panel.classList.contains('on')) return;
+    document.documentElement.style.setProperty('--ch-vh', vv.height + 'px');
+    document.documentElement.style.setProperty('--ch-top', vv.offsetTop + 'px');
+  }
+  if (vv){ vv.addEventListener('resize', fitViewport); vv.addEventListener('scroll', fitViewport); }
+
+  function hideChrome(){
+    const sc = $('chScrim'); sc.classList.remove('on'); sc.hidden = true;
+    panel.classList.remove('closing');
+    panel.setAttribute('aria-hidden', 'true');
+    document.documentElement.classList.remove('ch-open');
+  }
+  function openChat(){
+    if (panel.classList.contains('on') && !panel.classList.contains('closing')) return;
+    opener = document.activeElement;
+    panel.classList.remove('closing');
+    $('chScrim').hidden = false;
+    requestAnimationFrame(() => $('chScrim').classList.add('on'));
+    panel.classList.add('on'); $('fab').classList.add('hide');
+    panel.setAttribute('aria-hidden', 'false');
+    document.documentElement.classList.add('ch-open');
+    fitViewport();
     if (!body.children.length){
-      const b = bubble('bot');
-      typeOut(b, "I'm ATLAS. I watch this run and answer from its data only.\n\n"
-                 + "Ask what needs your attention, why something failed, or say "
-                 + "\u201cshow DHL\u201d and I'll take you there. If it isn't in the run, "
-                 + "I'll say so rather than guess.");
-      chips(OPENERS.map((o) => o[1]));
+      setEmpty(true);
+      Atlas($('chEmptyAv'), {size:'md', text:false, state:(S ? atlasRun().state : 'idle')});
+      chips(OPENERS());
     }
+    paintCtx();
     loadBrief();
-    input.focus();
-  });
-  $('chatX').addEventListener('click', () => {
-    $('chat').classList.remove('on'); $('fab').classList.remove('hide');
+    syncSend();
+    // A phone keeps its keyboard down until the operator taps the composer.
+    if (window.matchMedia && matchMedia('(pointer: coarse)').matches) $('chatX').focus({preventScroll: true});
+    else input.focus({preventScroll: true});
+  }
+  function closeChat(){
+    if (!panel.classList.contains('on')) return;
+    const done = () => {
+      $('chat').classList.remove('on'); $('fab').classList.remove('hide');
+      hideChrome();
+      const back = opener && document.contains(opener) && opener !== document.body ? opener : $('fab');
+      if (back && back.focus) back.focus({preventScroll: true});
+    };
+    if (reduced()){ done(); return; }
+    panel.classList.add('closing');
+    $('chScrim').classList.remove('on');
+    setTimeout(done, 190);
+  }
+  $('fab').addEventListener('click', openChat);
+  $('chatX').addEventListener('click', closeChat);
+  $('chScrim').addEventListener('click', closeChat);
+  // Esc closes; Tab stays inside the panel while it is open.
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape'){
+      if (e.target.classList && e.target.classList.contains('fb-in')) return;
+      e.preventDefault(); closeChat(); return;
+    }
+    if (e.key !== 'Tab') return;
+    const items = [...panel.querySelectorAll('button:not([disabled]),a[href],textarea,input:not([type=file]),summary,[tabindex]:not([tabindex="-1"])')]
+      .filter((el) => el.offsetParent !== null || el === input);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
   });
   // The PO page asks ATLAS about one job: the same ATLAS, given that job.
   window.ctAskAtlas = (question, ctx) => {
