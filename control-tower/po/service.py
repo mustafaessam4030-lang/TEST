@@ -33,6 +33,7 @@ KPI_OF = {
     S.VALIDATION_FAILED: "validation_required",
     S.TEMPLATE_GENERATED: "generated", S.EMAIL_PREPARED: "generated",
     S.EMAIL_SENT: "sent", S.EMAIL_CONFIRMED: "sent",
+    S.NEEDS_REVIEW: "validation_required",
     S.PDF_NOT_FOUND: "failed", S.PDF_UNREADABLE: "failed", S.EXTRACTION_FAILED: "failed",
     S.TEMPLATE_FAILED: "failed", S.EMAIL_FAILED: "failed",
 }
@@ -155,6 +156,9 @@ def card(record):
     return {
         "po_id": record["po_id"], "reference": record["reference"],
         "number": record.get("number"), "doctype": record["doctype"],
+        "identifier": record.get("identifier"),
+        "bill_entry": ((record.get("discovery") or {}).get("bill_entry") or {}).get("selected"),
+        "clearance": ((record.get("discovery") or {}).get("clearance") or {}).get("found"),
         "supplier": ((record.get("request_fields") or {}).get("supplier") or {}).get("value")
         or (record.get("request") or {}).get("supplier"),
         "document": (record.get("document") or {}).get("filename"),
@@ -219,8 +223,8 @@ class PoService(object):
         except Exception:
             return False
         state = record["state"]
-        if state in S.ACTIVE_STATES or state in (S.VALIDATED, S.TEMPLATE_GENERATED):
-            return False
+        if state in S.ACTIVE_STATES or state in (S.VALIDATED, S.TEMPLATE_GENERATED, S.SKIPPED):
+            return False                # a skip is not an outcome to learn from
         key = "_learned_" + state
         if record.get(key):
             return False
@@ -386,18 +390,39 @@ class PoService(object):
         return out
 
     # -- acting ----------------------------------------------------------------
+    # A record whose latest job ended here is not picked again by "next Under
+    # Clearance record": it is done, waiting for someone, or needs a person.
+    # A transient failure (eHub or the worker unreachable) may be picked again.
+    RETRYABLE = ("NETWORK_FAILURE", "NAVIGATION_FAILURE", "WORKER_UNAVAILABLE", "UNKNOWN_FAILURE")
+
+    def handled_references(self):
+        latest = {}
+        for r in self.store.all(500):
+            if r.get("reference"):
+                latest.setdefault(r["reference"], r)
+        return sorted(ref for ref, r in latest.items()
+                      if not (r["state"] == S.PDF_NOT_FOUND and
+                              (r.get("failure") or {}).get("category") in self.RETRYABLE))
+
     def start(self, actor, reference, request=None, doctype=None, run_id=None):
+        """
+        One job: for the eHub record `reference` (its BOL/AWB), or — with no
+        reference — for the next record eHub lists as Under Clearance that
+        has not been handled yet.
+        """
         reference = str(reference or "").strip()
-        if not reference:
-            raise ValueError("a BOL/AWB reference is needed")
         clean = {k: str(v).strip()[:120] for k, v in (request or {}).items()
                  if k in ("invoice_no", "supplier", "branch", "charge_to", "priority",
-                          "reference_note", "document_name") and v not in (None, "")}
+                          "reference_note") and v not in (None, "")}
+        if not reference:
+            clean["skip_references"] = self.handled_references()
         who = actor.get("work_email") if isinstance(actor, dict) else actor
         record = self.store.create(doctypes.get(doctype)["id"], reference[:60], clean,
                                    run_id=run_id, started_by=who)
         self.audit("PO_PROCESS_STARTED", actor=actor, target=record["po_id"],
-                   metadata={"reference": reference, "doctype": record["doctype"],
+                   metadata={"reference": reference or None,
+                             "mode": "reference" if reference else "next Under Clearance record",
+                             "doctype": record["doctype"],
                              "invoice_no": clean.get("invoice_no")})
         self.launcher(record)
         return record

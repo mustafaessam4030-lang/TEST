@@ -49,6 +49,10 @@ EXTRACTION_FAILED = "EXTRACTION_FAILED"
 VALIDATION_FAILED = "VALIDATION_FAILED"
 TEMPLATE_FAILED = "TEMPLATE_FAILED"
 EMAIL_FAILED = "EMAIL_FAILED"
+# Not failures of the pipeline: the eHub record is not one to process
+# (SKIPPED), or a person must choose the document (NEEDS_REVIEW).
+SKIPPED = "SKIPPED"
+NEEDS_REVIEW = "NEEDS_REVIEW"
 
 FAILED_STATES = (PDF_NOT_FOUND, PDF_UNREADABLE, EXTRACTION_FAILED, VALIDATION_FAILED,
                  TEMPLATE_FAILED, EMAIL_FAILED)
@@ -57,7 +61,7 @@ ACTIVE_STATES = (QUEUED, DISCOVERED, PDF_FOUND, PDF_READ, FIELDS_EXTRACTED, VALI
 
 TRANSITIONS = {
     QUEUED: (DISCOVERED, PDF_NOT_FOUND),
-    DISCOVERED: (PDF_FOUND, PDF_NOT_FOUND),
+    DISCOVERED: (PDF_FOUND, PDF_NOT_FOUND, SKIPPED, NEEDS_REVIEW),
     PDF_FOUND: (PDF_READ, PDF_UNREADABLE),
     PDF_READ: (FIELDS_EXTRACTED, EXTRACTION_FAILED),
     FIELDS_EXTRACTED: (VALIDATING,),
@@ -81,9 +85,12 @@ LABELS = {
     PDF_NOT_FOUND: "PDF NOT FOUND", PDF_UNREADABLE: "PDF UNREADABLE",
     EXTRACTION_FAILED: "EXTRACTION FAILED", VALIDATION_FAILED: "VALIDATION FAILED",
     TEMPLATE_FAILED: "TEMPLATE FAILED", EMAIL_FAILED: "EMAIL FAILED",
+    SKIPPED: "SKIPPED — NOT UNDER CLEARANCE", NEEDS_REVIEW: "NEEDS REVIEW",
 }
 
-EVENTS = ("PO_DISCOVERED", "PDF_FOUND", "PDF_NOT_FOUND", "PDF_READ", "PDF_UNREADABLE",
+EVENTS = ("PO_DISCOVERED", "EHUB_RECORD_FOUND", "CLEARANCE_CHECKED", "RECORD_SKIPPED",
+          "MANAGE_OPENED", "DOCUMENTS_SECTION_FOUND", "BILL_ENTRY_FOUND", "IDENTIFIER_EXTRACTED",
+          "BILL_ENTRY_DOWNLOADED", "DOCUMENT_REVIEW_REQUIRED", "PDF_FOUND", "PDF_NOT_FOUND", "PDF_READ", "PDF_UNREADABLE",
           "FIELDS_EXTRACTED", "EXTRACTION_FAILED", "VALIDATION_STARTED", "VALIDATION_PASSED",
           "VALIDATION_FAILED", "TEMPLATE_GENERATION_STARTED", "TEMPLATE_GENERATED",
           "TEMPLATE_FAILED", "EMAIL_PREPARED", "EMAIL_BLOCKED", "EMAIL_SEND_STARTED",
@@ -176,7 +183,8 @@ class Store(object):
         po_id = new_po_id()
         record = {
             "po_id": po_id, "run_id": run_id or po_id, "doctype": doctype_id,
-            "po_key": po_key(doctype_id, reference), "reference": reference,
+            "po_key": po_key(doctype_id, reference) if reference else None,
+            "reference": reference or "", "discovery": None, "identifier": None, "number": None,
             "request": request, "state": QUEUED, "label": LABELS[QUEUED],
             "started_by": started_by, "created": now_iso(), "created_epoch": time.time(),
             "progress": "Queued", "document": None, "hub": None, "fields": None,
@@ -203,9 +211,10 @@ class Store(object):
     def event(self, record, name, stage, status, source="po", evidence=None, **metadata):
         if name not in EVENTS:
             raise ValueError("unknown PO event {0}".format(name))
+        at = metadata.pop("at", None)
         entry = {"event_id": uuid.uuid4().hex[:16], "event": name,
                  "run_id": record.get("run_id"), "po_id": record["po_id"],
-                 "timestamp": now_iso(), "stage": stage, "status": status, "source": source,
+                 "timestamp": at or now_iso(), "stage": stage, "status": status, "source": source,
                  "evidence_reference": evidence, "metadata": _clean(metadata)}
         with self._lock:
             with open(self.folder / "events.jsonl", "a", encoding="utf-8") as handle:

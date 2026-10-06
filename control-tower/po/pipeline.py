@@ -106,14 +106,36 @@ def process(store, record, source, config=None, sleep=time.sleep):
     doctype = doctypes.get(record["doctype"])
     reference = record["reference"]
 
-    # ── HUB: find the shipment and its document ───────────────────────────
-    record = store.transition(record, S.DISCOVERED, "Finding the document in the Hub…")
-    store.event(record, "PO_DISCOVERED", "discovery", "OK", reference=reference,
+    # ── eHUB: the record, its clearance status, Manage, Documents, Bill Entry
+    record = store.transition(record, S.DISCOVERED, "Finding the record in eHub…")
+    store.event(record, "PO_DISCOVERED", "discovery", "OK", reference=reference or None,
+                mode="reference" if reference else "next Under Clearance record",
                 doctype=doctype["id"])
     try:
         found = _retry("pdf_retrieval", lambda: source.fetch(reference), store, record, sleep)
     except SourceError as error:
-        category = {"not_found": "DOCUMENT_NOT_FOUND", "ambiguous": "DOCUMENT_AMBIGUOUS",
+        trail = getattr(error, "trail", None)
+        record["discovery"] = trail
+        _trail_events(store, record, trail)
+        row = getattr(error, "row", None) or (trail or {}).get("ehub_record")
+        if row and not record.get("reference"):
+            _adopt_reference(record, row)
+        if error.kind == "skipped":
+            record = store.transition(record, S.SKIPPED, "Skipped — not Under Clearance", failure(
+                "NOT_UNDER_CLEARANCE", "ehub_record", str(error),
+                status=(row or {}).get("status")))
+            store.event(record, "RECORD_SKIPPED", "ehub_record", "SKIPPED",
+                        reason=str(error)[:300], ehub_status=(row or {}).get("status"))
+            return record
+        if error.kind == "review":
+            record = store.transition(record, S.NEEDS_REVIEW, "Needs review", failure(
+                "DOCUMENT_REVIEW_REQUIRED", "bill_entry", str(error),
+                candidates=error.candidates[:10]))
+            store.event(record, "DOCUMENT_REVIEW_REQUIRED", "bill_entry", "BLOCKED",
+                        reason=str(error)[:300], candidates=error.candidates[:10])
+            return record
+        category = {"not_found": "DOCUMENT_NOT_FOUND", "no_bill_entry": "DOCUMENT_NOT_FOUND",
+                    "ambiguous": "DOCUMENT_AMBIGUOUS",
                     "transient": "NETWORK_FAILURE"}.get(error.kind, "NAVIGATION_FAILURE")
         record = store.transition(record, S.PDF_NOT_FOUND, "Document not found",
                                   failure(category, "pdf_retrieval", str(error),
@@ -124,12 +146,26 @@ def process(store, record, source, config=None, sleep=time.sleep):
     data = found["data"]
     sha, path = store.keep_document(data)
     record["hub"] = found.get("hub") or {}
+    record["discovery"] = found.get("trail")
+    if not record.get("reference"):
+        _adopt_reference(record, record["hub"])
+    # The identifier eHub's own document name carries is this job's number
+    # from here on; the PDF's declaration number is checked against it.
+    record["identifier"] = found.get("identifier")
+    record["number"] = found.get("identifier") or record.get("number")
+    _trail_events(store, record, found.get("trail"))
     record["document"] = {"filename": found.get("filename"), "source": found.get("origin"),
                           "url": found.get("url"), "sha256": sha, "bytes": len(data),
-                          "evidence": str(path)}
+                          "evidence": str(path),
+                          "retrieved_at": S.now_iso(),
+                          "method": ((found.get("trail") or {}).get("download") or {}).get(
+                              "method"),
+                          "served_filename": ((found.get("trail") or {}).get("download") or {})
+                          .get("served_filename")}
     record = store.transition(record, S.PDF_FOUND, "Reading the PDF…")
     store.event(record, "PDF_FOUND", "pdf_retrieval", "OK", evidence=sha,
-                filename=found.get("filename"), bytes=len(data), origin=found.get("origin"))
+                filename=found.get("filename"), bytes=len(data), origin=found.get("origin"),
+                identifier=found.get("identifier"))
 
     # ── READ ──────────────────────────────────────────────────────────────
     try:
@@ -161,7 +197,8 @@ def process(store, record, source, config=None, sleep=time.sleep):
     request_fields = _request_fields(doctype, record.get("request"), config)
     record["fields"] = fields
     record["request_fields"] = request_fields
-    record["number"] = fields.get(doctype["number_field"], {}).get("value")
+    record["number"] = record.get("identifier") or \
+        fields.get(doctype["number_field"], {}).get("value")
     record = store.transition(record, S.FIELDS_EXTRACTED, "Validating against the Hub…")
     store.event(record, "FIELDS_EXTRACTED", "extraction", "OK", evidence=sha,
                 found=[n for n, f in fields.items() if f["status"] == X.FOUND],
@@ -234,6 +271,29 @@ def prepare(store, record, config):
     store.event(record, "EMAIL_PREPARED", "email", "OK", recipient=recipient, subject=subject,
                 attachment=email["attachment"])
     return record
+
+
+TRAIL_EVENTS = {"ehub_record": "EHUB_RECORD_FOUND", "clearance_status": "CLEARANCE_CHECKED",
+                "manage": "MANAGE_OPENED", "documents_section": "DOCUMENTS_SECTION_FOUND",
+                "bill_entry": "BILL_ENTRY_FOUND", "identifier": "IDENTIFIER_EXTRACTED",
+                "download": "BILL_ENTRY_DOWNLOADED"}
+
+
+def _trail_events(store, record, trail):
+    """One event per discovery step, as the trail recorded it."""
+    for step in (trail or {}).get("steps") or []:
+        name = TRAIL_EVENTS.get(step.get("step"))
+        if not name:
+            continue
+        detail = {k: v for k, v in step.items() if k not in ("step", "ok", "at")}
+        store.event(record, name, "discovery", "OK" if step.get("ok") else "FAILED",
+                    at=step.get("at"), **detail)
+
+
+def _adopt_reference(record, row):
+    """A job started as 'the next Under Clearance record' takes that record's BOL/AWB."""
+    record["reference"] = row.get("bol_awb") or record.get("reference")
+    record["po_key"] = S.po_key(record["doctype"], record["reference"])
 
 
 def blocked_reasons(store, record):

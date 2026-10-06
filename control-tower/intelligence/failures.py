@@ -641,7 +641,9 @@ def context():
 # pipeline.failure); its facts come from the job record and its events.
 
 PO_LABELS = {
-    "DOCUMENT_NOT_FOUND": "no document was found on the Hub shipment",
+    "NOT_UNDER_CLEARANCE": "the eHub record is not Under Clearance, so it was not processed",
+    "DOCUMENT_REVIEW_REQUIRED": "a person must choose the Bill Entry document",
+    "DOCUMENT_NOT_FOUND": "no Bill Entry document was found on the eHub record",
     "DOCUMENT_AMBIGUOUS": "more than one document could be the one",
     "NAVIGATION_FAILURE": "the Hub shipment page could not be opened",
     "NETWORK_FAILURE": "the Hub did not respond normally",
@@ -653,13 +655,19 @@ PO_LABELS = {
     "EMAIL_FAILURE": "the email was not sent",
     "UNKNOWN_FAILURE": "the job stopped without a recorded cause",
 }
-PO_STAGES = {"pdf_retrieval": "finding the document in the Hub", "pdf_read": "reading the PDF",
+PO_STAGES = {"ehub_record": "checking the eHub record's clearance status",
+             "bill_entry": "choosing the Bill Entry document",
+             "pdf_retrieval": "finding the document in the Hub", "pdf_read": "reading the PDF",
              "extraction": "extracting the fields", "validation": "validating against the Hub",
              "template": "filling the template", "email": "sending the email"}
 # What a person can do, by category — a recommendation, never an action.
 PO_ADVICE = {
-    "DOCUMENT_NOT_FOUND": "Attach the declaration to the shipment in the Hub, then process it "
-                          "again.",
+    "NOT_UNDER_CLEARANCE": "Nothing to do now: the record is processed once eHub lists it as "
+                           "Under Clearance.",
+    "DOCUMENT_REVIEW_REQUIRED": "Open the record in eHub, decide which Bill Entry document is the "
+                                "right one (remove or rename the others), then process it again.",
+    "DOCUMENT_NOT_FOUND": "Attach the Bill Entry document to the record in eHub (its name must "
+                          "start with 'Bill Entry'), then process it again.",
     "DOCUMENT_AMBIGUOUS": "Name the document when you process it again (Document name), so one "
                           "is chosen by a person, not by ATA.",
     "NAVIGATION_FAILURE": "Process it again; if it repeats, check the shipment opens in the Hub.",
@@ -697,6 +705,45 @@ def _po_validation_advice(record):
     return advice
 
 
+def discovery_lines(record):
+    """The eHub steps the job's trail recorded, one sentence each — facts only."""
+    trail = record.get("discovery") or {}
+    out = []
+    row = trail.get("ehub_record")
+    if row:
+        out.append("eHub record {0} ({1}) found on view {2}, page {3}.".format(
+            row.get("bol_awb"), row.get("carrier") or "carrier not shown", row.get("view"),
+            row.get("table_page")))
+    clearance = trail.get("clearance")
+    if clearance:
+        out.append("Status in eHub: '{0}' — {1}.".format(
+            clearance.get("found"), "exactly Under Clearance" if clearance.get("ok") else
+            "not exactly Under Clearance, so Manage was not opened"))
+    if trail.get("manage"):
+        out.append("Manage opened ({0}).".format(trail["manage"].get("url") or "details page"))
+    docs = trail.get("documents")
+    if docs:
+        out.append("Documents section {0}: {1}.".format(
+            "found" if docs.get("found") else "NOT found",
+            ", ".join(docs.get("entries") or []) or "no document listed"))
+    bill = trail.get("bill_entry")
+    if bill:
+        if bill.get("selected"):
+            out.append("Bill Entry document: {0} → identifier {1} ({2}).".format(
+                bill["selected"], bill.get("identifier"), bill.get("rule")))
+        elif bill.get("candidates"):
+            out.append("Bill Entry documents: {0} — {1}.".format(
+                ", ".join(c["name"] for c in bill["candidates"]), bill.get("rule")))
+        else:
+            out.append("No document whose name starts with 'Bill Entry'.")
+    dl = trail.get("download")
+    if dl:
+        out.append("Downloaded from eHub ({0}, {1} bytes{2}).".format(
+            dl.get("method"), dl.get("bytes"),
+            ", served as " + dl["served_filename"] if dl.get("served_filename") else ""))
+    return out
+
+
 def from_po(record, events=None, learning=None, history=None):
     """The failure record for a PO job that did not complete, or None."""
     if not isinstance(record, dict):
@@ -704,7 +751,8 @@ def from_po(record, events=None, learning=None, history=None):
     state = record.get("state")
     email = record.get("email") or {}
     failed = state in ("PDF_NOT_FOUND", "PDF_UNREADABLE", "EXTRACTION_FAILED",
-                       "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED")
+                       "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED", "NEEDS_REVIEW",
+                       "SKIPPED")
     blocked = email.get("status") == "BLOCKED" and not failed
     if not failed and not blocked:
         return None
@@ -723,6 +771,7 @@ def from_po(record, events=None, learning=None, history=None):
     facts = [_fact("PO job {0} for {1} ({2}) stopped at {3}: {4}.".format(
         record.get("po_id"), ref, record.get("doctype"), PO_STAGES.get(stage, stage), state if
         failed else "email blocked"), "PO job record")]
+    facts += [_fact(t, "eHub discovery trail") for t in discovery_lines(record)]
     if doc.get("filename"):
         facts.append(_fact("The document {0} was retrieved from the {1} ({2} bytes, SHA-256 "
                            "{3}…).".format(doc["filename"], doc.get("source") or "Hub",
@@ -773,6 +822,9 @@ def from_po(record, events=None, learning=None, history=None):
         else:
             advice.append("Check the Microsoft 365 mail settings (Mail.Send permission, the "
                           "sender mailbox) with the platform owner, then send again.")
+    if category in ("NOT_UNDER_CLEARANCE", "DOCUMENT_REVIEW_REQUIRED", "DOCUMENT_NOT_FOUND") \
+            and not advice:
+        advice = [PO_ADVICE[category]]
     recs = [_item("RECOMMENDATION", a, "PO advice") for a in advice]
     retryable = category in ("NETWORK_FAILURE", "NAVIGATION_FAILURE", "WORKER_UNAVAILABLE") or \
         (category == "EMAIL_FAILURE" and declared.get("kind") in ("transient", "unknown"))

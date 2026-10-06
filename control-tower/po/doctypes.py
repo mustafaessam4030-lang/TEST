@@ -76,6 +76,10 @@ DUTY_REQUEST_V1 = {
     "hub_checks": [
         {"name": "bl_awb", "label": "BL / AWB", "pdf": "bl_awb", "hub": "bol_awb",
          "compare": "reference"},
+        # The identifier eHub's own document name carries ("Bill Entry
+        # 40726534505.pdf") must be the declaration the PDF itself prints.
+        {"name": "identifier", "label": "Bill Entry No. (eHub) vs Declaration No. (PDF)",
+         "pdf": "document_number", "hub": "identifier", "compare": "declaration"},
     ],
     # The document's own arithmetic: total duty less the VAT block must equal
     # the import-duty line it prints, within this tolerance (GHS).

@@ -5,7 +5,10 @@ shipment into a filled, approved template and sends it through Microsoft 365 —
 only after it has been validated against the Hub.
 
 ```
-HUB → FIND PDF → RETRIEVE → READ → EXTRACT → VALIDATE ─┬─ passed → TEMPLATE → SAVE (read back)
+eHUB → record exactly "Under Clearance" (else SKIPPED, not opened) → Manage → Documents
+     → the document whose name starts with "Bill Entry" (none: DOCUMENT_NOT_FOUND; several
+       identifiers: NEEDS_REVIEW) → the identifier after "Bill Entry" → download
+     → READ → EXTRACT → VALIDATE ─┬─ passed → TEMPLATE → SAVE (read back)
                                                         │          → EMAIL READY → Send PO
                                                         │          → GRAPH → SENT → VERIFIED (Sent Items)
                                                         └─ failed → STOP. Nothing generated, nothing sent.
@@ -21,9 +24,10 @@ learning store, and the dashboard's design system.
 
 | | |
 |---|---|
-| Source document | The Bill of Entry (customs declaration) attached to the Hub shipment |
+| Source document | The eHub record's **Bill Entry** document (Manage → Documents) |
+| Identifier | The number after "Bill Entry" in that document's name, e.g. `Bill Entry 40726534505.pdf` → `40726534505` |
 | Approved template | Mantrac Ghana **Duty Payment Request** (cheque request) — `po/templates/DUTY_REQUEST_V1.xlsx` |
-| Hub check | The BL/AWB printed on the document must match the shipment's BOL/AWB in the Hub |
+| eHub checks | Status exactly "Under Clearance"; the BL/AWB printed on the document = the record's BOL/AWB in eHub; the declaration number the PDF prints = the identifier from the Bill Entry name |
 | Output | Excel (.xlsx), the approved template's own layout, formulas and logo |
 | Email | One configured recipient, from one ATA mailbox, through Microsoft Graph |
 
@@ -38,6 +42,30 @@ Template Capture* sheets (the other sheets are empty working copies, one of
 automation dropped the same sheets) and clears the input cells. The manifest
 records the SHA-256 of both files; a template changed outside that step is
 refused at fill time.
+
+## eHub discovery (`po/ehub.py`)
+
+The PO workflow runs beside the ETA workflow, never inside it: its own
+process, its own browser and eHub session. It reuses the ETA automation's
+existing eHub list navigation, read-only; `update_eta.py` is not changed.
+
+| Step | How | When it stops |
+|---|---|---|
+| eHub record | the BU Shipments View under eHub's own "Under Clearance" filter (`update_eta.ensure_filtered_page`), every page; a named BOL/AWB, or the first record not yet handled (`choose`) | not listed → **SKIPPED** (not opened) |
+| Clearance status | the row's Status cell must be exactly `Under Clearance` (spacing normalised; nothing else forgiven) | anything else → **SKIPPED**, the status recorded, Manage never opened |
+| Manage | `update_eta.click_manage_in_view` on that row | cannot open → failed, retried if transient |
+| Documents | a "Documents" tab is clicked if there is one; the section under the "Documents" heading is read | no section → DOCUMENT_NOT_FOUND |
+| Bill Entry | a document whose name starts with `Bill Entry` (a "View" link in the same row is paired with the name in that row) | none → **DOCUMENT_NOT_FOUND**; different identifiers → **NEEDS_REVIEW** (no rule is safe); the same identifier on copies → the first listed, the rule recorded |
+| Identifier | the token after "Bill Entry" (an optional "No." skipped; `.pdf` and ` (1)` not part of it) | none → **NEEDS_REVIEW** |
+| Download | a link is fetched, a WebForms postback / button is clicked and its download (or popup) captured, through the same eHub session | not a PDF → failed |
+
+Every step is written to the job's **discovery trail** and as an event
+(EHUB_RECORD_FOUND, CLEARANCE_CHECKED, RECORD_SKIPPED, MANAGE_OPENED,
+DOCUMENTS_SECTION_FOUND, BILL_ENTRY_FOUND, IDENTIFIER_EXTRACTED,
+BILL_ENTRY_DOWNLOADED, DOCUMENT_REVIEW_REQUIRED). The identifier becomes the
+job's number, names its output and email, and must equal the declaration the
+PDF prints. "Process next Under Clearance record" skips every record already
+handled except one whose last job failed for a transient reason.
 
 ## The fields (`po/doctypes.py`)
 
@@ -67,16 +95,18 @@ Blocking, any one stops the job at `VALIDATION_FAILED`:
 
 * a required field missing or ambiguous;
 * BL/AWB: PDF ≠ Hub (compared letters-and-digits only, both values shown, neither chosen);
+* identifier: eHub's "Bill Entry <n>" ≠ the declaration number the PDF prints;
 * the document's own arithmetic: total duty − VAT block ≠ import duty line (± GHS 1.00);
 * an amount that is not positive.
 
 ## States and events (`po/store.py`)
 
 ```
-QUEUED → DISCOVERED → PDF_FOUND → PDF_READ → FIELDS_EXTRACTED → VALIDATING → VALIDATED
+QUEUED → DISCOVERED (eHub) → PDF_FOUND → PDF_READ → FIELDS_EXTRACTED → VALIDATING → VALIDATED
        → TEMPLATE_GENERATED → EMAIL_PREPARED → EMAIL_SENDING → EMAIL_SENT → EMAIL_CONFIRMED
 failures: PDF_NOT_FOUND · PDF_UNREADABLE · EXTRACTION_FAILED · VALIDATION_FAILED
           TEMPLATE_FAILED · EMAIL_FAILED
+not processed: SKIPPED (not Under Clearance) · NEEDS_REVIEW (a person chooses the document)
 ```
 
 `store.transition()` refuses any step the table does not allow; no path reaches
@@ -178,30 +208,34 @@ Sent Items**, and never count as shipments or runs.
 | `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET` | Graph app (default to the Entra sign-in values) |
 | `PO_DEFAULT_SUPPLIER`, `…_BRANCH`, `…_CHARGE_TO`, `…_PRIORITY` | Template defaults |
 | `PO_AUTO_SEND` | `1` sends as soon as a job is ready (default off: a person presses Send PO) |
-| `PO_DOC_LINK_TEXT` | Regex for the document link's text on the Hub shipment page |
 | `PO_HEADLESS`, `PO_BROWSER_CHANNEL` | The job's browser (default headless Edge) |
 
 ## Tools
 
 ```
-python -m po read BOE.pdf --hub-bol 176-88452310 --invoice-no 9116093 [--dump-text]
+python -m po ehub-probe [--reference 176-88452310]
+    THE PROOF, on the real eHub, read-only: an Under Clearance record (or the
+    one named) → Manage → Documents → Bill Entry → identifier → download → the
+    PDF's fields; writes probe-<time>.json and the PDF to <PO_DATA_DIR>/probes.
+    Nothing is written to eHub, nothing is sent.
+python -m po read BOE.pdf --hub-bol 176-88452310 --identifier 40726534505 --invoice-no 9116093 [--dump-text]
     what would be extracted and validated — nothing generated or sent
-python -m po hub-links 176-88452310
-    opens the shipment in the real Hub and lists the document links found
 ```
 
 ## Known limits (version 1)
 
-* **The real Hub's document link is not yet confirmed.** Retrieval is tested
-  against a stand-in shipment page in a real browser; on the real Hub run
-  `python -m po hub-links <BOL/AWB>` once and, if needed, set
-  `PO_DOC_LINK_TEXT` to the link's wording.
+* **eHub discovery has not been run against the real eHub yet.** The list
+  navigation it reuses runs on the real eHub every ETA run; the Manage page's
+  Documents section, the Bill Entry entry and its download have only been
+  exercised against a stand-in page shaped like a WebForms site. Run
+  `python -m po ehub-probe` on the worker PC: its report shows each step with
+  the real filename, identifier, size and SHA-256 — or exactly where it stopped.
 * **The field rules are the earlier BOE automation's**, written against
   standard ICUMS wording and tested here on generated declarations. Check them
-  on real BOEs with `python -m po read … --dump-text`.
+  on real Bill Entry PDFs with `python -m po read … --dump-text`.
 * **Graph is tested against a local stand-in** of the three calls. The first
-  real send needs the setup above; until then the page says Microsoft 365 is
-  not configured and Send PO answers with that reason.
+  real send needs the setup above; until then Send PO is blocked with the
+  missing settings named and the job stays ready.
 * One document type, one template, one recipient, Excel output (a PDF copy
   needs Excel or LibreOffice on the worker). Jobs run one at a time; a PO job
-  signs in to the Hub alongside a running ETA run.
+  signs in to eHub alongside a running ETA run.

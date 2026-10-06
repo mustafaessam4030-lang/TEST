@@ -2079,18 +2079,18 @@ td.car{color:var(--ink);font-weight:500}
       </div>
       <form class="card po-form" id="poForm" hidden autocomplete="off">
         <div class="card-h"><div><div class="card-t">Process a document</div>
-          <div class="card-s" id="poFormS">ATA opens the shipment in the Hub, takes the attached declaration, validates it against the Hub and fills the approved template. Nothing is sent until you press Send PO.</div></div></div>
+          <div class="card-s" id="poFormS">ATA finds the record in eHub, checks it is Under Clearance, opens Manage, takes the document whose name starts with “Bill Entry” from its Documents section, validates it and fills the approved template. Nothing is sent until you press Send PO.</div></div></div>
         <div class="po-fg">
-          <label><span>BOL / AWB in the Hub <b>*</b></span><input class="in" name="reference" required maxlength="60" placeholder="e.g. 176-88452310"></label>
+          <label><span>BOL / AWB in eHub <i>— or leave empty for the next Under Clearance record</i></span><input class="in" name="reference" maxlength="60" placeholder="e.g. 176-88452310"></label>
           <label><span>Supplier invoice No. <b>*</b></span><input class="in" name="invoice_no" maxlength="60" placeholder="Not printed on the declaration"></label>
           <label><span>Supplier</span><input class="in" name="supplier" maxlength="60" id="poSupplier"></label>
           <label><span>Receiving branch</span><input class="in" name="branch" maxlength="60"></label>
           <label><span>Charge to</span><input class="in" name="charge_to" maxlength="60"></label>
           <label><span>Priority</span><input class="in" name="priority" maxlength="60"></label>
           <label><span>Reference note (D2)</span><input class="in" name="reference_note" maxlength="60"></label>
-          <label><span>Document name <i>only if the shipment has several</i></span><input class="in" name="document_name" maxlength="80"></label>
         </div>
         <div class="po-fa"><button class="btn" type="submit" id="poGo">Process</button>
+          <button class="btn ghost" type="button" id="poNext">Process next Under Clearance record</button>
           <button class="btn ghost" type="button" id="poCancel">Cancel</button>
           <span class="po-msg" id="poMsg" aria-live="polite"></span></div>
       </form>
@@ -2108,7 +2108,7 @@ td.car{color:var(--ink);font-weight:500}
           <div class="card-s" id="poQs">Newest first · open a job for its extracted data, validation and email</div></div>
           <div class="sp"></div><div class="kick" id="poN"></div></div>
         <div class="tw"><table class="po-t">
-          <thead><tr><th>Declaration No.</th><th>BOL / AWB</th><th>Supplier</th><th>Document</th><th>Status</th>
+          <thead><tr><th>Bill Entry No.</th><th>BOL / AWB</th><th>Supplier</th><th>Document</th><th>Status</th>
             <th>Validation</th><th>Template</th><th>Email</th><th>Created</th><th>Last update</th><th><span class="sr">Actions</span></th></tr></thead>
           <tbody id="poRows"></tbody></table></div>
         <div id="poEmpty"></div>
@@ -2116,7 +2116,7 @@ td.car{color:var(--ink);font-weight:500}
       <div class="card po-how-c">
         <div class="card-h"><div class="card-t">How a job runs</div></div>
         <ol class="po-how" id="poHow">
-          <li><b>Find the document in the Hub</b><span>The shipment is opened by its BOL/AWB and the declaration attached to it is downloaded with the Hub's own sign-in.</span></li>
+          <li><b>eHub: Under Clearance → Manage → Documents</b><span>Only a record whose status is exactly Under Clearance is opened. In its Documents section, the document whose name starts with “Bill Entry” is taken, and the number after it becomes the job's identifier.</span></li>
           <li><b>Read and extract</b><span>Each field is found, missing or ambiguous. A missing value is never filled in; two different values are never chosen between.</span></li>
           <li><b>Validate — the gate</b><span>The BL/AWB must match the Hub, every required field must be present and the duty must add up. Anything else stops the job.</span></li>
           <li><b>Fill the approved template</b><span>Only its input cells are written; its formulas compute. The saved file is opened again and read back before it counts.</span></li>
@@ -4237,11 +4237,34 @@ const PO_KPIS = [['pending','Pending','var(--blu)'], ['processing','Processing',
   ['sent','Sent','var(--grn)'], ['failed','Failed','var(--red)']];
 const PO_STATUS_CLASS = {Processing:'s-processing', 'Validation Required':'s-validation',
   Generated:'s-generated', Sent:'s-sent', Failed:'s-failed'};
-const PO_STAGES = [['DISCOVERED','Hub'], ['PDF_FOUND','PDF'], ['PDF_READ','Read'],
-  ['FIELDS_EXTRACTED','Extract'], ['VALIDATED','Validate'], ['TEMPLATE_GENERATED','Template'],
-  ['EMAIL_PREPARED','Email ready'], ['EMAIL_SENT','Sent'], ['EMAIL_CONFIRMED','Verified']];
-const PO_FAIL_AT = {PDF_NOT_FOUND:0, PDF_UNREADABLE:2, EXTRACTION_FAILED:3, VALIDATION_FAILED:4,
-  TEMPLATE_FAILED:5, EMAIL_FAILED:7};
+/* The job's steps, in the business process's order, each from the job's own
+   record: the eHub discovery trail, then the pipeline's states. */
+const PO_TRAIL = [['ehub_record','eHub record'], ['clearance_status','Clearance'], ['manage','Manage'],
+  ['bill_entry','Bill Entry'], ['identifier','Identifier'], ['download','PDF retrieved']];
+const PO_TRAIL_NAMES = {ehub_record:'eHub record', clearance_status:'Clearance status', manage:'Manage opened',
+  documents_section:'Documents section', bill_entry:'Bill Entry document', identifier:'Identifier extracted',
+  download:'PDF retrieved'};
+function poSteps(d){
+  const steps = ((d.discovery || {}).steps) || [], st = d.state, out = [];
+  const byName = {}; steps.forEach((x) => { byName[x.step] = x; });
+  let stopped = false;
+  PO_TRAIL.forEach(([k, label]) => {
+    const x = byName[k];
+    const cls = x ? (x.ok ? 'done' : 'bad') : (stopped ? '' : (st === 'DISCOVERED' || st === 'QUEUED' ? '' : ''));
+    if (x && !x.ok) stopped = true;
+    out.push([label, cls]);
+  });
+  const after = ['FIELDS_EXTRACTED','VALIDATING','VALIDATED','TEMPLATE_GENERATED','EMAIL_PREPARED','EMAIL_SENDING','EMAIL_SENT','EMAIL_CONFIRMED'];
+  const at = (s0) => after.indexOf(s0);
+  const v = d.validation;
+  out.push(['Fields extracted', d.fields ? 'done' : (st === 'EXTRACTION_FAILED' || st === 'PDF_UNREADABLE' ? 'bad' : '')]);
+  out.push(['Validation', v ? (v.passed ? 'done' : 'bad') : (st === 'VALIDATING' ? 'now' : '')]);
+  out.push(['Template', (d.output || {}).verified ? 'done' : (st === 'TEMPLATE_FAILED' ? 'bad' : '')]);
+  const em = (d.email || {}).status;
+  out.push(['Email', st === 'EMAIL_CONFIRMED' ? 'done' : st === 'EMAIL_SENT' ? 'now' :
+    (st === 'EMAIL_FAILED' || em === 'BLOCKED') ? 'bad' : (st === 'EMAIL_PREPARED' ? 'now' : '')]);
+  return out;
+}
 const poWhen = (iso) => { if (!iso) return '—'; const d = new Date(iso);
   return isNaN(d) ? esc(iso) : d.toLocaleString([], {day:'2-digit', month:'short'}) + ' ' +
     d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false}); };
@@ -4361,27 +4384,40 @@ function paintPODrawer(){
         val = d.validation || null, hub = d.hub || {};
   put($('poDwRef'), (d.number ? d.number + ' · ' : '') + d.reference);
   putHTML($('poDwTag'), poPill(card));
-  const reached = PO_STAGES.findIndex((x) => x[0] === d.state);
-  const failAt = PO_FAIL_AT[d.state];
-  const steps = PO_STAGES.map((x, i) => {
-    let cls = '';
-    if (failAt !== undefined){ cls = i < failAt ? 'done' : (i === failAt ? 'bad' : ''); }
-    else if (reached >= 0){ cls = i < reached ? 'done' : (i === reached ? (d.state === 'EMAIL_CONFIRMED' ? 'done' : 'now') : ''); }
-    return '<span class="' + cls + '">' + x[1] + '</span>';
-  }).join('');
+  const steps = poSteps(d).map((x) => '<span class="' + x[1] + '">' + x[0] + '</span>').join('');
   const kv = (rows) => '<dl class="po-kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && r[1] !== '')
     .map((r) => '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>').join('') + '</dl>';
   let html = '<div class="po-sec"><h4>Progress</h4><div class="po-steps">' + steps + '</div>' +
     '<div class="hint" style="margin-top:6px">' + esc(d.progress || '') + '</div></div>';
+  const tr = d.discovery || {};
+  if ((tr.steps || []).length){
+    html += '<div class="po-sec"><h4>eHub discovery</h4><table class="po-vt"><thead><tr><th>Step</th><th>Result</th><th>Detail</th></tr></thead><tbody>' +
+      tr.steps.map((x) => {
+        let det = '';
+        if (x.step === 'ehub_record') det = x.ok ? esc(x.bol_awb) + ' · ' + esc(x.carrier || '') + ' · view ' + esc(x.view || '') + ' p.' + esc(x.table_page || '') : 'not listed under Under Clearance';
+        else if (x.step === 'clearance_status') det = '“' + esc(x.found || '—') + '” (required: “' + esc(x.required) + '”)';
+        else if (x.step === 'manage') det = x.ok ? esc(x.url || 'details opened') : esc(x.error || '');
+        else if (x.step === 'documents_section') det = esc(x.scope || 'not found') + (x.count != null ? ' · ' + x.count + ' document(s)' : '');
+        else if (x.step === 'bill_entry') det = x.ok ? '<b>' + esc(x.filename) + '</b><div class="hint">' + esc(x.rule || '') + '</div>' : esc(x.rule || 'no document whose name starts with “Bill Entry”');
+        else if (x.step === 'identifier') det = '<b class="mono">' + esc(x.identifier) + '</b> — passed to the next stage';
+        else if (x.step === 'download') det = x.ok ? esc(x.method) + ' · ' + esc(x.bytes) + ' bytes' + (x.served_filename ? ' · served as ' + esc(x.served_filename) : '') : esc(x.error || '');
+        return '<tr><td>' + esc(PO_TRAIL_NAMES[x.step] || x.step) + '</td><td class="s-' + (x.ok ? 'OK' : 'FAILED') + '">' + (x.ok ? 'OK' : 'STOPPED') + '</td><td>' + det + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    const cands = (tr.bill_entry || {}).candidates || [];
+    if (cands.length > 1) html += '<div class="po-sec"><h4>Bill Entry candidates</h4><div class="hint">' +
+      cands.map((c) => esc(c.name) + ' → ' + esc(c.identifier || 'no identifier')).join('<br>') + '</div></div>';
+  }
   html += '<div class="po-sec"><h4>Job</h4>' + kv([
-    ['Declaration No.', d.number ? '<span class="mono">' + esc(d.number) + '</span>' : null],
+    ['Bill Entry No.', d.identifier ? '<span class="mono">' + esc(d.identifier) + '</span>' : null],
+    ['Declaration No. (PDF)', d.fields && d.fields.document_number && d.fields.document_number.value ? '<span class="mono">' + esc(d.fields.document_number.value) + '</span>' : null],
     ['BOL / AWB (Hub)', '<span class="mono">' + esc(hub.bol_awb || d.reference) + '</span>'],
     ['Supplier', esc(card.supplier || '—')],
     ['Declaration date', d.fields && d.fields.document_date && d.fields.document_date.value ? esc(d.fields.document_date.value) : null],
     ['Currency', d.fields && d.fields.cif_usd && d.fields.cif_usd.value ? 'USD (invoice value) · GHS (duty)' : null],
     ['Total duty', d.fields && d.fields.duty_amount_ghs && d.fields.duty_amount_ghs.value ? 'GHS ' + Number(d.fields.duty_amount_ghs.value).toLocaleString(undefined, {minimumFractionDigits:2}) : null],
     ['Document', doc.filename ? esc(doc.filename) + (doc.pages ? ' · ' + doc.pages + ' page' + (doc.pages === 1 ? '' : 's') : '') : null],
-    ['Source', doc.source ? esc(doc.source === 'hub' ? 'Hub shipment page' : doc.source) : null],
+    ['Source', doc.source ? esc(doc.source === 'ehub' ? 'eHub · Manage · Documents' : doc.source) : null],
+    ['Retrieved', doc.retrieved_at ? poWhen(doc.retrieved_at) + (doc.sha256 ? ' · SHA-256 ' + esc(String(doc.sha256).slice(0, 16)) + '…' : '') : null],
     ['Created', poWhen(d.created) + (d.started_by ? ' · ' + esc(d.started_by) : '')],
     ['Run ID', '<span class="mono">' + esc(d.run_id || d.po_id) + '</span>']]) + '</div>';
   const failure = d.failure;
@@ -4469,11 +4505,16 @@ $('poRows').addEventListener('keydown', (e) => {
 });
 $('poNew').addEventListener('click', () => { $('poForm').hidden = false; $('poForm').reference.focus(); });
 $('poCancel').addEventListener('click', () => { $('poForm').hidden = true; put($('poMsg'), ''); });
+$('poNext').addEventListener('click', () => {
+  const f = $('poForm'); f.reference.value = '';
+  f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', {cancelable:true}));
+});
 $('poForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const f = $('poForm'), body = {};
-  ['reference','invoice_no','supplier','branch','charge_to','priority','reference_note','document_name'].forEach((k) => {
+  ['reference','invoice_no','supplier','branch','charge_to','priority','reference_note'].forEach((k) => {
     const v = (f[k].value || '').trim(); if (v) body[k] = v; });
+  if (!body.reference) body.discover = true;
   const m = $('poMsg'); m.className = 'po-msg'; put(m, 'Starting…');
   fetch('/api/po', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
     .then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {

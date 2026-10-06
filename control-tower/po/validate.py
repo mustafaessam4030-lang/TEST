@@ -70,12 +70,22 @@ def validate(doctype, fields, hub, request_fields):
                                              "the Hub record has no value to compare")
             blocking = True
         else:
-            same = (X.normal_reference(pdf_value) == X.normal_reference(hub_value)
-                    if spec["compare"] == "reference" else str(pdf_value) == str(hub_value))
+            if spec["compare"] == "reference":
+                same = X.normal_reference(pdf_value) == X.normal_reference(hub_value)
+            elif spec["compare"] == "declaration":
+                # "40726534505" or "40726534505-00" is the declaration
+                # "40726534505 / 00": the same digits, the suffix optional.
+                whole = X.normal_reference(pdf_value)
+                base = X.normal_reference(str(pdf_value).split("/")[0])
+                same = X.normal_reference(hub_value) in (whole, base)
+            else:
+                same = str(pdf_value) == str(hub_value)
             status = "MATCH" if same else "MISMATCH"
             blocking = not same
-            detail = None if same else "the document belongs to a different {0}".format(
-                spec["label"])
+            detail = None if same else (
+                "eHub's Bill Entry document names a different declaration than the PDF prints"
+                if spec["compare"] == "declaration" else
+                "the document belongs to a different {0}".format(spec["label"]))
         checks.append({"name": "hub:" + spec["name"], "label": spec["label"],
                        "pdf": _value_text(f) if f else None, "hub": hub_value,
                        "status": status, "blocking": blocking, "detail": detail,

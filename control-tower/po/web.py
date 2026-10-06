@@ -49,14 +49,19 @@ def handle(service, method, route, body, actor, can):
         if method == "GET":
             return "json", 200, service.summary()
         if method == "POST":
+            reference = str((body or {}).get("reference") or "").strip()
+            if not reference and not (body or {}).get("discover"):
+                return "json", 400, {"accepted": False, "message":
+                                     "Give a BOL/AWB, or ask for the next Under Clearance record."}
             try:
-                record = service.start(actor, (body or {}).get("reference"),
-                                       {k: v for k, v in (body or {}).items() if k != "reference"})
+                record = service.start(actor, reference,
+                                       {k: v for k, v in (body or {}).items()
+                                        if k not in ("reference", "discover")})
             except ValueError as error:
                 return "json", 400, {"accepted": False, "message": str(error)}
             return "json", 200, {"accepted": True, "po_id": record["po_id"],
                                  "message": "Processing {0} in the background.".format(
-                                     record["reference"])}
+                                     record["reference"] or "the next Under Clearance record")}
     parts = route.split("/")
     po_id = parts[3] if len(parts) > 3 else ""
     if not ID.match(po_id):

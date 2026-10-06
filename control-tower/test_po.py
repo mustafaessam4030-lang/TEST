@@ -62,7 +62,7 @@ from openpyxl import load_workbook                             # noqa: E402
 
 from po import doctypes, extract as X, pipeline as P, store as S, template as T  # noqa: E402
 from po import validate as V, service as SV, web as W, mail as M                  # noqa: E402
-from po.hub import HubDocumentSource, candidates                                   # noqa: E402
+from po import ehub as EH                                                          # noqa: E402
 from intelligence import failures as F, events as E, learning as L                 # noqa: E402
 
 PASS, FAIL = [], []
@@ -130,12 +130,24 @@ GOOD = pdf_of(boe_text())
 OTHER_SHIPMENT = pdf_of(boe_text(bl="176-99001122"))
 
 # ─────────────────────────────────────────────────────────────────────────
-# THE HUB STAND-IN — a shipment page with its attachments, behind basic auth
+# THE eHUB STAND-IN — a list with statuses and Manage links; a details page
+# with a Documents tab; Bill Entry documents behind WebForms postbacks or
+# links; all behind basic auth like eHub. NOT the real eHub: what it proves
+# is the discovery and download code, against a page shaped like one.
 # ─────────────────────────────────────────────────────────────────────────
 HUB_USER, HUB_PASS = "hub.reader", "hub-" + hashlib.sha1(os.urandom(6)).hexdigest()
-HUB_ROWS = {}         # Hub BOL/AWB -> {"carrier": ..., "docs": [(text, filename)]}
-FILES = {}            # filename -> bytes
+EHUB = []             # [(bol, carrier, status, docs, has_docs_section)] in list order
+FILES = {}            # file key -> bytes
 HITS = {}
+
+
+def ehub_row(bol, status="Under Clearance", docs=(), carrier="DHL Express", section=True):
+    EHUB.append({"bol": bol, "carrier": carrier, "status": status, "docs": list(docs),
+                 "section": section})
+
+
+def ehub_get(bol):
+    return next((r for r in EHUB if r["bol"] == bol), None)
 
 
 class Hub(BaseHTTPRequestHandler):
@@ -160,36 +172,90 @@ class Hub(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_GET(self):
-        auth = self.headers.get("Authorization") or ""
+    def _authed(self):
         good = "Basic " + base64.b64encode("{0}:{1}".format(HUB_USER, HUB_PASS).encode()).decode()
-        if auth != good:
-            self._reply(401, "sign in", extra={"WWW-Authenticate": 'Basic realm="hub"'})
+        if (self.headers.get("Authorization") or "") != good:
+            self._reply(401, "sign in", extra={"WWW-Authenticate": 'Basic realm="ehub"'})
+            return False
+        return True
+
+    def _file(self, key, name):
+        if key.startswith("flaky") and HITS.get("file:" + key, 0) <= 2:
+            self._reply(503, "busy")
+            return
+        data = FILES.get(key)
+        if data is None:
+            self._reply(404, "missing")
+            return
+        kind = "application/pdf" if data.startswith(b"%PDF") else "text/html"
+        self._reply(200, data, kind, {"Content-Disposition":
+                                      'attachment; filename="{0}"'.format(name)})
+
+    def do_GET(self):
+        if not self._authed():
             return
         path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
         HITS[path] = HITS.get(path, 0) + 1
-        if path.startswith("/hub/manage/"):
-            ref = path.rsplit("/", 1)[-1]
-            row = HUB_ROWS.get(ref)
-            links = "".join('<li><a href="/hub/files/{1}">{0}</a></li>'.format(t, f)
-                            for t, f in (row or {}).get("docs", []))
-            self._reply(200, "<html><body><h1>Shipment {0}</h1><a href='/hub/list'>Back</a>"
-                             "<a href='#notes'>Notes</a><ul>{1}</ul></body></html>".format(ref, links))
+        if path == "/ehub/list":
+            rows = "".join(
+                "<tr><td>{0}</td><td>{1}</td><td>20/10/2026</td><td>{2}</td>"
+                "<td><a href='/ehub/manage/{0}'>Manage</a></td></tr>".format(
+                    r["bol"], r["carrier"], r["status"]) for r in EHUB)
+            self._reply(200, "<html><body><table id='grid'><thead><tr><th>BOL/AWB Number</th>"
+                             "<th>Carrier Name</th><th>ETA</th><th>Status</th><th></th></tr>"
+                             "</thead><tbody>{0}</tbody></table></body></html>".format(rows))
             return
-        if path.startswith("/hub/files/"):
-            name = path.rsplit("/", 1)[-1]
-            if name.startswith("flaky") and HITS[path] <= 2:
-                self._reply(503, "busy")
+        if path.startswith("/ehub/manage/"):
+            r = ehub_get(path.rsplit("/", 1)[-1])
+            if r is None:
+                self._reply(404, "no record")
                 return
-            if name not in FILES:
-                self._reply(404, "missing")
-                return
-            data = FILES[name]
-            kind = "application/pdf" if data.startswith(b"%PDF") else "text/html"
-            self._reply(200, data, kind,
-                        {"Content-Disposition": 'attachment; filename="{0}"'.format(name)})
+            docs = ""
+            for i, (name, key, mode) in enumerate(r["docs"]):
+                if mode == "postback":
+                    link = ("<a id='ctl00_docs_lnk{0}' href=\"javascript:__doPostBack("
+                            "'ctl00$docs$lnk{0}','')\">View</a>").format(i)
+                else:
+                    link = "<a href='/ehub/file/{0}?name={1}'>View</a>".format(
+                        key, urllib.parse.quote(name))
+                docs += "<tr><td>{0}</td><td>12/10/2026</td><td>{1}</td></tr>".format(name, link)
+            section = ("<div id='docs' style='display:none'><h3>Documents</h3><table>"
+                       "<tr><th>File</th><th>Uploaded</th><th></th></tr>{0}</table></div>"
+                       .format(docs)) if r["section"] else ""
+            tab = ("<li><a href='#' onclick=\"document.getElementById('docs').style.display="
+                   "'block';return false;\">Documents</a></li>") if r["section"] else ""
+            self._reply(200, (
+                "<html><body><form id='aspnetForm' method='post'>"
+                "<input type='hidden' name='__EVENTTARGET' id='__EVENTTARGET'>"
+                "<h2>Shipment {0}</h2><ul class='tabs'><li><a href='#'>Shipment Info</a></li>{1}"
+                "</ul><div id='info'>Status: {2}</div>{3}</form>"
+                "<script>function __doPostBack(t,a){{document.getElementById('__EVENTTARGET')"
+                ".value=t;document.getElementById('aspnetForm').submit();}}</script>"
+                "</body></html>").format(r["bol"], tab, r["status"], section))
+            return
+        if path.startswith("/ehub/file/"):
+            key = path.rsplit("/", 1)[-1]
+            HITS["file:" + key] = HITS.get("file:" + key, 0) + 1
+            name = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("name", [key])[0]
+            self._file(key, name)
             return
         self._reply(404, "no")
+
+    def do_POST(self):
+        if not self._authed():
+            return
+        path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
+        n = int(self.headers.get("Content-Length") or 0)
+        form = urllib.parse.parse_qs(self.rfile.read(n).decode())
+        r = ehub_get(path.rsplit("/", 1)[-1]) if path.startswith("/ehub/manage/") else None
+        target = (form.get("__EVENTTARGET") or [""])[0]
+        m = re.match(r"ctl00\$docs\$lnk(\d+)$", target)
+        if r is None or not m:
+            self._reply(404, "no")
+            return
+        name, key, mode = r["docs"][int(m.group(1))]
+        HITS["file:" + key] = HITS.get("file:" + key, 0) + 1
+        self._file(key, name)
 
 
 hub_srv = ThreadingHTTPServer(("127.0.0.1", 0), Hub)
@@ -198,15 +264,25 @@ threading.Thread(target=hub_srv.serve_forever, daemon=True).start()
 HUB = "http://127.0.0.1:{0}".format(hub_srv.server_address[1])
 
 
-def open_stub(page, reference):
-    """Stand-in for po.hub.open_in_hub: the shipment page, and the Hub's own values."""
-    want = X.normal_reference(reference)
-    for bol, row in HUB_ROWS.items():
-        if X.normal_reference(bol) == want:
-            page.goto(HUB + "/hub/manage/" + urllib.parse.quote(bol))
-            return {"bol_awb": bol, "carrier": row.get("carrier"), "status": "Under Clearance",
-                    "table_page": 1, "view": "BU"}
-    return None
+def stub_rows(page):
+    """The stand-in's list, read from the page — as ehub_rows reads eHub's."""
+    page.goto(HUB + "/ehub/list")
+    for cells in page.evaluate("""() => Array.from(document.querySelectorAll('#grid tbody tr'))
+        .map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()))"""):
+        yield {"bol_awb": cells[0], "carrier": cells[1], "status": cells[3], "table_page": 1,
+               "view": "BU"}
+
+
+def find_stub(page, reference, skip):
+    from po.ehub import choose
+    return choose(stub_rows(page), reference, skip)
+
+
+def manage_stub(page, row):
+    page.goto(HUB + "/ehub/list")
+    page.locator("#grid tbody tr").filter(has_text=row["bol_awb"]).get_by_text("Manage").click()
+    page.wait_for_load_state("load")
+    return {"url": page.url, "title": page.title()}
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -361,8 +437,9 @@ CTX = BROWSER.new_context(http_credentials={"username": HUB_USER, "password": HU
 PAGE = CTX.new_page()
 
 
-def hub_source(wanted=None):
-    return HubDocumentSource(PAGE, open_stub, wanted=wanted)
+def hub_source(skip=()):
+    """The eHub source the job uses, on the stand-in's navigation."""
+    return EH.EHubSource(PAGE, find_stub, manage_stub, skip=skip)
 
 
 def new_store(name):
@@ -372,65 +449,205 @@ def new_store(name):
 def run_job(store, reference, request=None, source=None):
     record = store.create(doctypes.DEFAULT, reference, request or {"invoice_no": "9116093"},
                           started_by="omar.ops@mantrac.com")
-    return P.process(store, record, source or hub_source((request or {}).get("document_name")),
-                     CONFIG, sleep=NOSLEEP)
+    return P.process(store, record, source or hub_source(), CONFIG, sleep=NOSLEEP)
 
 
 # ═════════════════════════════════════════════════════════════════════════
-rule("1. DISCOVERY AND RETRIEVAL — the Hub shipment page, in a real browser")
+rule("1. eHUB DISCOVERY — Under Clearance → Manage → Documents → Bill Entry → identifier")
 # ═════════════════════════════════════════════════════════════════════════
-FILES.update({"BOE_40726534505.pdf": GOOD, "BOE_other.pdf": OTHER_SHIPMENT,
-              "flaky_BOE.pdf": pdf_of(boe_text(bl="176-66600033")),
-              "notes.pdf": b"<html>not a pdf</html>"})
-HUB_ROWS.update({
-    "176-88452310": {"carrier": "Air France KLM Cargo",
-                     "docs": [("Bill of Entry 40726534505", "BOE_40726534505.pdf")]},
-    "176-55500011": {"carrier": "DHL Express", "docs": []},
-    "176-77700022": {"carrier": "DHL Express",
-                     "docs": [("Bill of Entry (draft)", "BOE_40726534505.pdf"),
-                              ("Bill of Entry (final)", "BOE_other.pdf")]},
-    "176-66600033": {"carrier": "DHL Express", "docs": [("Customs declaration", "flaky_BOE.pdf")]},
-    "176-44400044": {"carrier": "DHL Express", "docs": [("Bill of Entry", "notes.pdf")]},
-    "176-99001122": {"carrier": "DHL Express", "docs": [("Bill of Entry", "BOE_40726534505.pdf")]},
-})
+FILES.update({"good": GOOD, "other": OTHER_SHIPMENT, "inv": pdf_of("INVOICE 9116093\n" + "x" * 200),
+              "flaky": pdf_of(boe_text(bl="176-66600033")), "notpdf": b"<html>not a pdf</html>",
+              "e2e": pdf_of(boe_text(bl="176-12121212", number="40799887766 / 00")),
+              "idmis": pdf_of(boe_text(bl="176-88800099"))})
+ehub_row("176-30000001", status="Cleared", docs=[("Bill Entry 40711111111.pdf", "good", "postback")])
+ehub_row("176-30000002", status="Under Clearance - Hold",
+         docs=[("Bill Entry 40722222222.pdf", "good", "postback")])
+ehub_row("176-88452310", carrier="Air France KLM Cargo",
+         docs=[("Invoice 9116093.pdf", "inv", "link"),
+               ("Bill Entry 40726534505.pdf", "good", "postback"),
+               ("Packing List.pdf", "inv", "link")])
+ehub_row("176-55500011", docs=[("Invoice 9116094.pdf", "inv", "link")])
+ehub_row("176-77700022", docs=[("Bill Entry 40726534505.pdf", "good", "postback"),
+                               ("Bill Entry 40799112233.pdf", "other", "postback")])
+ehub_row("176-77700023", docs=[("Bill Entry 40726534505.pdf", "good", "postback"),
+                               ("Bill Entry 40726534505 (1).pdf", "other", "postback")])
+ehub_row("176-20000001", docs=[("Bill Entry.pdf", "good", "postback")])
+ehub_row("176-10000001", section=False)
+ehub_row("176-66600033", docs=[("Bill Entry 40726534505.pdf", "flaky", "link")])
+ehub_row("176-44400044", docs=[("Bill Entry 4072.pdf", "notpdf", "link")])
+ehub_row("176-99001122", docs=[("Bill Entry 40726534505.pdf", "good", "postback")])
+ehub_row("176-88800099", docs=[("Bill Entry 40711111111.pdf", "idmis", "postback")])
+ehub_row("176-12121212", carrier="Air France KLM Cargo",
+         docs=[("Bill Entry 40799887766.pdf", "e2e", "postback")])
+
 found = hub_source().fetch("176 88452310")
-check("The shipment is found in the Hub by its BOL/AWB (spacing ignored)",
-      found["hub"]["bol_awb"] == "176-88452310", str(found["hub"]))
-check("The attached declaration is downloaded through the Hub's own sign-in",
-      found["data"] == GOOD and found["filename"] == "BOE_40726534505.pdf"
-      and found["origin"] == "hub", found["filename"])
+tr = found["trail"]
+names = [x["step"] for x in tr["steps"]]
+check("Steps run in the business order: record → clearance → Manage → Documents → Bill Entry "
+      "→ identifier → download",
+      names == ["ehub_record", "clearance_status", "manage", "documents_section", "bill_entry",
+                "identifier", "download"] and all(x["ok"] for x in tr["steps"]), names)
+check("1. The eHub record, with eHub's own values", found["hub"]["bol_awb"] == "176-88452310"
+      and found["hub"]["carrier"] == "Air France KLM Cargo", found["hub"])
+check("   ...its Status is exactly 'Under Clearance'",
+      tr["clearance"] == {"required": "Under Clearance", "found": "Under Clearance", "ok": True})
+check("2. Manage was opened (the record's details page)",
+      tr["manage"]["url"].endswith("/ehub/manage/176-88452310"), tr["manage"])
+check("3. The Documents section was reached (its tab opened) and its documents listed",
+      tr["documents"]["found"] and tr["documents"]["entries"] ==
+      ["Invoice 9116093.pdf", "Bill Entry 40726534505.pdf", "Packing List.pdf"], tr["documents"])
+check("4. The document whose name starts with 'Bill Entry' — and only it",
+      tr["bill_entry"]["selected"] == "Bill Entry 40726534505.pdf"
+      and len(tr["bill_entry"]["candidates"]) == 1, tr["bill_entry"])
+check("5. The identifier after 'Bill Entry': 40726534505", found["identifier"] == "40726534505")
+check("6. Downloaded through the WebForms postback, with eHub's own sign-in, as served",
+      found["data"] == GOOD and tr["download"]["method"] == "download"
+      and tr["download"]["served_filename"] == "Bill Entry 40726534505.pdf", tr["download"])
+check("7. The identifier is handed on with the record", found["hub"]["identifier"] == "40726534505"
+      and found["hub"]["bill_entry"] == "Bill Entry 40726534505.pdf")
 import urllib.error                                           # noqa: E402
 import urllib.request                                         # noqa: E402
 try:
-    urllib.request.urlopen(HUB + "/hub/files/BOE_40726534505.pdf", timeout=5)
+    urllib.request.urlopen(HUB + "/ehub/manage/176-88452310", timeout=5)
     anon = 200
 except urllib.error.HTTPError as error:
     anon = error.code
-check("...the same address without that sign-in is refused (401)", anon == 401, anon)
-for ref, kind, why in (("176-00000000", "not_found", "not in the Hub"),
-                       ("176-55500011", "not_found", "no document attached"),
-                       ("176-77700022", "ambiguous", "two documents"),
-                       ("176-44400044", "permanent", "a link that is not a PDF")):
+check("eHub pages without the sign-in are refused (401)", anon == 401, anon)
+
+
+def stopped(ref, skip=()):
     try:
-        hub_source().fetch(ref)
-        got = None
+        hub_source(skip).fetch(ref)
+        return None
     except P.SourceError as error:
-        got = error
-    check("{0}: {1} → {2}".format(ref, why, kind), got is not None and got.kind == kind,
-          getattr(got, "kind", None))
-try:
-    hub_source().fetch("176-77700022")
-except P.SourceError as error:
-    check("Two documents: both are named, none is chosen",
-          len(error.candidates) == 2 and "none is chosen" in str(error), str(error.candidates))
-named = hub_source("final").fetch("176-77700022")
-check("...and naming one (Document name) picks exactly that one", named["data"] == OTHER_SHIPMENT)
-links = [{"text": "Back", "href": "/hub/list", "frame_url": HUB},
-         {"text": "Bill of Entry", "href": "/x/a.pdf", "frame_url": HUB},
-         {"text": "Customs declaration", "href": "/x/view?id=3", "frame_url": HUB}]
-_, best, distinct = candidates(links)
-check("A link ending in .pdf outranks a named one; navigation links are ignored",
-      [l["href"] for l in best] == ["/x/a.pdf"] and len(distinct) == 1)
+        return error
+
+
+for ref, status in (("176-30000001", "Cleared"), ("176-30000002", "Under Clearance - Hold")):
+    before = HITS.get("/ehub/manage/" + ref, 0)
+    e = stopped(ref)
+    check("Status '{0}' → skipped, the reason recorded".format(status),
+          e is not None and e.kind == "skipped" and status in str(e)
+          and e.trail["clearance"]["ok"] is False, getattr(e, "kind", None))
+    check("   ...and Manage was never opened", HITS.get("/ehub/manage/" + ref, 0) == before)
+e = stopped("176-00000000")
+check("A BOL/AWB eHub does not list as Under Clearance → skipped, not opened",
+      e is not None and e.kind == "skipped" and "not listed" in str(e), str(e))
+e = stopped("176-55500011")
+check("No document starting with 'Bill Entry' → DOCUMENT_NOT_FOUND, no identifier invented",
+      e is not None and e.kind == "no_bill_entry" and e.trail["bill_entry"]["identifier"] is None
+      and "Invoice 9116094.pdf" in str(e), str(e))
+e = stopped("176-77700022")
+check("Two Bill Entry documents with different identifiers → review, none chosen",
+      e is not None and e.kind == "review" and len(e.candidates) == 2
+      and e.trail["bill_entry"]["selected"] is None and "a person decides" in str(e), str(e))
+r2 = hub_source().fetch("176-77700023")
+check("Copies with the same identifier → the first listed, by a recorded rule",
+      r2["filename"] == "Bill Entry 40726534505.pdf" and r2["data"] == GOOD
+      and "first listed" in r2["trail"]["bill_entry"]["rule"], r2["trail"]["bill_entry"])
+e = stopped("176-20000001")
+check("'Bill Entry' with no number after it → review, nothing guessed",
+      e is not None and e.kind == "review" and "no identifier" in str(e), str(e))
+e = stopped("176-10000001")
+check("Manage opened but no Documents section → not found, nothing guessed",
+      e is not None and e.kind == "not_found" and e.trail["manage"]
+      and e.trail["documents"]["found"] is False, str(e))
+e = stopped("176-44400044")
+check("A Bill Entry link that is not a PDF → refused", e is not None and e.kind == "permanent")
+row, looked = find_stub(PAGE, None, ())
+check("Next Under Clearance record: the first listed one that is exactly Under Clearance",
+      row["bol_awb"] == "176-88452310", row)
+check("...the rows passed over are recorded with why",
+      [(l["bol_awb"], l["reason"]) for l in looked] ==
+      [("176-30000001", "status 'Cleared' is not exactly 'Under Clearance'"),
+       ("176-30000002", "status 'Under Clearance - Hold' is not exactly 'Under Clearance'")],
+      looked)
+row, looked = find_stub(PAGE, None, ("176-88452310",))
+check("...and one already handled is passed over too", row["bol_awb"] == "176-55500011"
+      and looked[-1]["reason"] == "already processed")
+for name, ident in (("Bill Entry 40726534505.pdf", "40726534505"),
+                    ("Bill_Entry-40726534505.PDF", "40726534505"),
+                    ("BILL ENTRY No. 40726534505", "40726534505"),
+                    ("Bill Entry 40726534505 (1).pdf", "40726534505"),
+                    ("Bill Entry.pdf", None), ("Bill of Entry 40726534505.pdf", None),
+                    ("Invoice 40726534505.pdf", None)):
+    check("identifier_of({0!r}) = {1!r}".format(name, ident), EH.identifier_of(name) == ident,
+          EH.identifier_of(name))
+check("Status rule: exact (spacing normalised), nothing else",
+      EH.status_ok("Under Clearance") and EH.status_ok(" Under  Clearance ")
+      and not EH.status_ok("under clearance") and not EH.status_ok("Under Clearance - Hold")
+      and not EH.status_ok("Cleared") and not EH.status_ok(None))
+
+
+# ═════════════════════════════════════════════════════════════════════════
+rule("1b. THE JOB — the trail on the record, the identifier passed on")
+# ═════════════════════════════════════════════════════════════════════════
+st1 = new_store("s1b")
+j = run_job(st1, "176-88452310")
+check("A full job: the discovery trail is on the record, step by step",
+      [x["step"] for x in j["discovery"]["steps"]][-1] == "download"
+      and j["discovery"]["bill_entry"]["selected"] == "Bill Entry 40726534505.pdf", j["state"])
+check("The identifier 40726534505 becomes the job's number",
+      j["identifier"] == "40726534505" and j["number"] == "40726534505")
+idc = [c for c in j["validation"]["checks"] if c["name"] == "hub:identifier"][0]
+check("...and the PDF's declaration (40726534505 / 00) is checked against it → MATCH",
+      idc["status"] == "MATCH" and idc["hub"] == "40726534505" and idc["pdf"] == "40726534505 / 00",
+      idc)
+ev = [e["event"] for e in st1.events(j["po_id"])]
+check("Each step is an event: EHUB_RECORD_FOUND → CLEARANCE_CHECKED → MANAGE_OPENED → "
+      "DOCUMENTS_SECTION_FOUND → BILL_ENTRY_FOUND → IDENTIFIER_EXTRACTED → BILL_ENTRY_DOWNLOADED",
+      ev[1:8] == ["EHUB_RECORD_FOUND", "CLEARANCE_CHECKED", "MANAGE_OPENED",
+                  "DOCUMENTS_SECTION_FOUND", "BILL_ENTRY_FOUND", "IDENTIFIER_EXTRACTED",
+                  "BILL_ENTRY_DOWNLOADED"], ev[:9])
+check("The document record says where it came from, when, and its hash",
+      j["document"]["source"] == "ehub" and j["document"]["retrieved_at"]
+      and len(j["document"]["sha256"]) == 64 and j["document"]["method"] == "download")
+sk = run_job(st1, "176-30000001")
+check("A record not Under Clearance → SKIPPED, with its status and why",
+      sk["state"] == S.SKIPPED and sk["failure"]["category"] == "NOT_UNDER_CLEARANCE"
+      and sk["failure"]["status"] == "Cleared" and sk["document"] is None, sk["state"])
+check("...nothing downloaded, nothing extracted", sk["fields"] is None and sk["output"] is None)
+rv = run_job(st1, "176-77700022")
+check("Two Bill Entry identifiers → NEEDS_REVIEW, the candidates kept",
+      rv["state"] == S.NEEDS_REVIEW and len(rv["failure"]["candidates"]) == 2, rv["state"])
+nb = run_job(st1, "176-55500011")
+check("No Bill Entry document → PDF_NOT_FOUND / DOCUMENT_NOT_FOUND, no number invented",
+      nb["state"] == S.PDF_NOT_FOUND and nb["failure"]["category"] == "DOCUMENT_NOT_FOUND"
+      and nb["identifier"] is None and nb["number"] is None, (nb["state"], nb.get("failure")))
+mm = run_job(st1, "176-88800099")
+mmc = [c for c in mm["validation"]["checks"] if c["name"] == "hub:identifier"][0]
+check("eHub says Bill Entry 40711111111, the PDF prints 40726534505 → VALIDATION_FAILED",
+      mm["state"] == S.VALIDATION_FAILED and mmc["status"] == "MISMATCH"
+      and mmc["hub"] == "40711111111", (mm["state"], mmc))
+svc1 = SV.PoService(store=st1, launcher=lambda r: None, config=CONFIG)
+nx = svc1.start("omar.ops@mantrac.com", "", {"invoice_no": "9116093"})
+check("'Next Under Clearance record' skips every record already handled",
+      set(nx["request"]["skip_references"]) >= {"176-88452310", "176-30000001", "176-77700022",
+                                                 "176-55500011", "176-88800099"},
+      nx["request"]["skip_references"])
+nx = P.process(st1, st1.get(nx["po_id"]),
+               hub_source(nx["request"]["skip_references"]), CONFIG, sleep=NOSLEEP)
+check("...takes the next one eHub lists as Under Clearance and adopts its BOL/AWB",
+      nx["reference"] == "176-77700023" and nx["po_key"].endswith("17677700023")
+      and nx["discovery"]["looked_at"][0]["reason"].startswith("status 'Cleared'"), nx["reference"])
+probe_out = WORK / "probe"
+from po import __main__ as CLI                                 # noqa: E402
+report = CLI.probe(PAGE, "176-88452310", probe_out, source=hub_source())
+check("The probe (steps 1–7, read-only) reports filename, identifier, size, SHA-256, fields "
+      "and the next stage's input",
+      report["result"] == "FOUND" and report["document"]["filename"] == "Bill Entry 40726534505.pdf"
+      and report["identifier"] == "40726534505" and report["document"]["bytes"] == len(GOOD)
+      and report["document"]["sha256"] == hashlib.sha256(GOOD).hexdigest()
+      and report["pdf"]["fields"]["document_number"]["value"] == "40726534505 / 00"
+      and report["next_stage_input"] == {"reference": "176-88452310", "identifier": "40726534505",
+                                         "document_sha256": hashlib.sha256(GOOD).hexdigest()}
+      and report["writes_to_ehub"] is False and report["sends_email"] is False,
+      {k: report.get(k) for k in ("result", "identifier")})
+check("...and writes it to a report file, with the PDF beside it",
+      Path(report["report_file"]).is_file() and Path(report["document"]["saved_as"]).read_bytes() == GOOD)
+bad_report = CLI.probe(PAGE, "176-30000001", probe_out, source=hub_source())
+check("The probe on a record that is not Under Clearance says so, and stops",
+      bad_report["result"] == "STOPPED" and bad_report["kind"] == "skipped")
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -498,7 +715,8 @@ check("Not a declaration at all is recognised as such",
 rule("4. VALIDATION SUCCESS")
 # ═════════════════════════════════════════════════════════════════════════
 req = P._request_fields(doctype, {"invoice_no": "9116093"}, CONFIG)
-ok = V.validate(doctype, f, {"bol_awb": "176-88452310"}, req)
+HUBREC = {"bol_awb": "176-88452310", "identifier": "40726534505"}   # what eHub discovery hands on
+ok = V.validate(doctype, f, HUBREC, req)
 check("Every check passes, so the gate opens", ok["passed"] and not ok["reasons"], ok["reasons"])
 hubrow = [c for c in ok["checks"] if c["name"] == "hub:bl_awb"][0]
 check("BL/AWB: PDF 176-88452310 vs Hub 176-88452310 → MATCH",
@@ -512,19 +730,18 @@ check("The supplier comes from configuration and says so",
 # ═════════════════════════════════════════════════════════════════════════
 rule("5. VALIDATION MISMATCH — the gate stops everything")
 # ═════════════════════════════════════════════════════════════════════════
-bad = V.validate(doctype, X.extract(X.read_pdf(OTHER_SHIPMENT)["text"], doctype),
-                 {"bol_awb": "176-88452310"}, req)
+bad = V.validate(doctype, X.extract(X.read_pdf(OTHER_SHIPMENT)["text"], doctype), HUBREC, req)
 row = [c for c in bad["checks"] if c["name"] == "hub:bl_awb"][0]
 check("PDF 176-99001122 vs Hub 176-88452310 → MISMATCH, blocking",
       not bad["passed"] and row["status"] == "MISMATCH" and row["blocking"]
       and row["pdf"] == "176-99001122" and row["hub"] == "176-88452310", row)
 check("The reason names both values and chooses neither",
       bad["reasons"] == ["BL / AWB mismatch — PDF: 176-99001122, Hub: 176-88452310"], bad["reasons"])
-noinv = V.validate(doctype, f, {"bol_awb": "176-88452310"}, P._request_fields(doctype, {}, CONFIG))
+noinv = V.validate(doctype, f, HUBREC, P._request_fields(doctype, {}, CONFIG))
 check("No supplier invoice number → MISSING, blocking (it is not on the BOE)",
       not noinv["passed"] and any(c["status"] == "MISSING" and c["label"] == "Supplier invoice No."
                                   for c in noinv["checks"]))
-off = V.validate(doctype, X.extract(boe_text(duty="653,670.54"), doctype), {"bol_awb": "176-88452310"}, req)
+off = V.validate(doctype, X.extract(boe_text(duty="653,670.54"), doctype), HUBREC, req)
 check("Duty that does not add up (variance 178.19) → FAILED, blocking",
       not off["passed"] and any(c["name"] == "arithmetic:duty" and c["status"] == "FAILED" for c in off["checks"]))
 store = new_store("s5")
@@ -595,8 +812,8 @@ finally:
 # ═════════════════════════════════════════════════════════════════════════
 rule("8. OUTPUT STORAGE — deterministic name, never overwritten")
 # ═════════════════════════════════════════════════════════════════════════
-check("The name is deterministic: type, declaration, BOL/AWB, timestamp, job",
-      re.match(r"^DUTY_REQUEST_40726534505-00_176-88452310_\d{8}-\d{6}_[0-9a-f]{6}\.xlsx$",
+check("The name is deterministic: type, Bill Entry identifier, BOL/AWB, timestamp, job",
+      re.match(r"^DUTY_REQUEST_40726534505_176-88452310_\d{8}-\d{6}_[0-9a-f]{6}\.xlsx$",
                out["filename"]) and out["filename"].endswith(rec["po_id"][-6:] + ".xlsx"),
       out["filename"])
 check("It is in the configured output folder", Path(out["path"]).parent == store.output_dir)
@@ -619,7 +836,7 @@ email = rec["email"]
 check("Prepared for the ONE configured recipient, from the ATA mailbox",
       email["recipient"] == "accounts.ghana@mantrac.com" and email["sender"] == "ata@mantrac.com")
 check("Subject and attachment are this document's",
-      email["subject"] == "Duty Payment Request — 40726534505 / 00 — 176-88452310"
+      email["subject"] == "Duty Payment Request — 40726534505 — 176-88452310"
       and email["attachment"] == out["filename"], email)
 check("READY — not sent: nothing goes out until someone presses Send PO",
       email["status"] == "READY" and GRAPH["counter"] == 0)
@@ -914,7 +1131,7 @@ started = [r for r in audit if r["action"] == "PO_PROCESS_STARTED" and r["target
 check("...who started it", started["user_email"] == "omar.ops@mantrac.com")
 proc = [r for r in audit if r["action"] == "PO_PROCESSED" and r["target_id"] == po_id][0]["metadata"]
 check("...the document, the validation result, the template",
-      proc["document"] == "BOE_40726534505.pdf" and proc["validation"] == "PASSED"
+      proc["document"] == "Bill Entry 40726534505.pdf" and proc["validation"] == "PASSED"
       and proc["template"] == "DUTY_REQUEST_V1", proc)
 conf = [r for r in audit if r["action"] == "PO_EMAIL_CONFIRMED" and r["target_id"] == po_id][0]
 check("...the recipient, the email result, the run ID, by whom",
@@ -971,8 +1188,9 @@ r = po_ask("What template was used?", good["po_id"])
 check("'What template was used?' — DUTY_REQUEST_V1, read back", "DUTY_REQUEST_V1" in r["answer"]
       and "read back" in r["answer"])
 r = po_ask("What failed?", done["po_id"])
-check("'What failed?' — no document attached in the Hub",
-      "no document is attached" in r["answer"] and "Attach the declaration" in r["answer"], r["answer"])
+check("'What failed?' — no Bill Entry document in the record's Documents section",
+      "none whose name starts with 'Bill Entry'" in r["answer"]
+      and "Attach the Bill Entry document" in r["answer"], r["answer"])
 r = po_ask("What should I do next?", mis["po_id"])
 check("'What should I do next?' — check the attachment, with both values",
       "Check which document is attached to 176-99001122 in the Hub: the PDF says 176-88452310, "
@@ -987,6 +1205,22 @@ for q in ("Why wasn't this PO sent?", "What failed?", "What's missing from this 
     r = po_ask(q, mis["po_id"])
     check("'{0}' never falls back to 'I don't have that information'".format(q),
           FALLBACK not in r["answer"] and r.get("grounded"))
+r = po_ask("How was the document found?", good["po_id"])
+check("'How was the document found?' — the eHub steps from the job's own trail",
+      all(x in r["answer"] for x in ("eHub record 176-88452310", "Status in eHub: 'Under Clearance'",
+                                       "Manage opened", "Documents section found",
+                                       "Bill Entry 40726534505.pdf → identifier 40726534505",
+                                       "passed to the next stage", "→ MATCH")), r["answer"])
+sk_job = run_job(ast, "176-30000002")
+r = po_ask("Why was it skipped?", sk_job["po_id"])
+check("'Why was it skipped?' — the status eHub showed, and that Manage was not opened",
+      "Under Clearance - Hold" in r["answer"] and "Manage was not opened" in r["answer"], r["answer"])
+r = po_ask("Why wasn't this PO sent?", sk_job["po_id"])
+check("...and 'why wasn't it sent' says the same, from the record",
+      "not exactly 'Under Clearance'" in r["answer"], r["answer"][:300])
+r = po_ask("What identifier was used?", good["po_id"])
+check("'What identifier was used?' — 40726534505, from the Bill Entry document's name",
+      "identifier 40726534505" in r["answer"], r["answer"])
 r = assistant.answer("How is the run going?", {"shipments": [], "counters": {}}, {})
 check("A shipment question with no PO words is still a shipment answer",
       not str(r.get("intent", "")).startswith("po_"), r.get("intent"))
@@ -1053,9 +1287,6 @@ e2e_store = new_store("e2e")
 jobs = []
 e2e = SV.register(SV.PoService(store=e2e_store, launcher=jobs.append, mailer_factory=M.GraphMailer,
                                config=CONFIG))
-FILES["BOE_E2E.pdf"] = pdf_of(boe_text(bl="176-12121212", number="40799887766 / 00"))
-HUB_ROWS["176-12121212"] = {"carrier": "Air France KLM Cargo",
-                            "docs": [("Bill of Entry 40799887766", "BOE_E2E.pdf")]}
 kind, status, body = W.handle(e2e, "POST", "/api/po", {"reference": "176-12121212",
                                                        "invoice_no": "9116100"},
                               "omar.ops@mantrac.com", lambda p: True)
@@ -1088,7 +1319,8 @@ r = assistant.answer("Who was it sent to?", {}, {"domain": "po", "po_id": pid})
 check("...and who it went to", "accounts.ghana@mantrac.com" in r["answer"])
 cli = subprocess.run([sys.executable, "-m", "po", "read",
                       str(e2e_store.folder / "documents" / (rec["document"]["sha256"] + ".pdf")),
-                      "--hub-bol", "176-12121212", "--invoice-no", "1"],
+                      "--hub-bol", "176-12121212", "--identifier", "40799887766",
+                      "--invoice-no", "1"],
                      cwd=str(HERE), capture_output=True, text=True, timeout=60)
 check("`python -m po read` shows the same extraction and validation (tuning tool)",
       cli.returncode == 0 and '"passed": true' in cli.stdout, cli.stderr[-300:])
@@ -1116,7 +1348,7 @@ check("The KPI strip shows the six counts", all(k in kpis for k in (
 heads = ui.inner_text(".po-t thead").upper()
 check("The queue has the brief's columns", all(h.upper() in heads for h in (
     "Supplier", "Document", "Status", "Validation", "Template", "Email", "Created", "Last update")))
-check("Each job is a row", ui.locator("#poRows tr[data-po]").count() == 4)
+check("Each job is a row", ui.locator("#poRows tr[data-po]").count() == 5)
 ui.click("#poRows tr[data-po='{0}']".format(mis["po_id"]))
 ui.wait_for_selector("#poDwBody .po-vt", timeout=8000)
 drawer = ui.inner_text("#poDwBody")
@@ -1126,6 +1358,20 @@ check("The drawer shows the validation: PDF 176-88452310, Hub 176-99001122, MISM
 check("...EMAIL BLOCKED with the reason, and 'No email was sent.'",
       "EMAIL BLOCKED" in drawer.upper() and "No email was sent." in drawer)
 check("...and no Send PO button for a blocked job", ui.locator("#poSend").count() == 0)
+ui.locator("#poDwX").click()
+ui.click("#poRows tr[data-po='{0}']".format(good["po_id"]))
+ui.wait_for_function("document.querySelector('#poDwBody') && document.querySelector('#poDwBody')"
+                     ".innerText.toLowerCase().indexOf('ehub discovery') >= 0", timeout=8000)
+drawer = ui.inner_text("#poDwBody")
+check("The drawer shows the eHub steps: record, clearance, Manage, Documents, Bill Entry, "
+      "identifier, PDF retrieved",
+      all(x.lower() in drawer.lower() for x in ("eHub record", "Clearance status", "Manage opened",
+                                                "Documents section", "Bill Entry 40726534505.pdf",
+                                                "40726534505", "PDF retrieved")), drawer[:600])
+steps = ui.inner_text("#poDwBody .po-steps")
+check("...and the progress strip in the business order",
+      [x.strip() for x in steps.split("\n") if x.strip()][:6] ==
+      ["eHub record", "Clearance", "Manage", "Bill Entry", "Identifier", "PDF retrieved"], steps)
 check("ATLAS appears once, as PO intelligence, not a second assistant",
       "PO intelligence" in ui.inner_text(".po-ax") and ui.locator("#poAxFig .atlas-fig").count() == 1)
 check("No page errors", not errors, errors)

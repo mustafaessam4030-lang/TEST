@@ -21,9 +21,15 @@ import re
 
 PO_WORDS = re.compile(r"\b(po|p\.o\.|pos|purchase orders?|duty (payment )?requests?|cheque requests?|"
                       r"declarations?|bill of entry|boe|po automation)\b", re.I)
-DOC_WORDS = re.compile(r"\b(pdf|template|e-?mail|recipient|sent to|attachment|document)\b", re.I)
+DOC_WORDS = re.compile(r"\b(pdf|template|e-?mail|recipient|sent to|attachment|document|"
+                       r"bill entry|ehub|e-hub)\b", re.I)
 
 KINDS = (
+    ("discovery", r"\bhow (was|did|is) (it|this|the (document|pdf|po|file)) (found|discovered|"
+                  r"picked|chosen|get found)\b|\bbill entry\b|\bidentifier\b|\bunder clearance\b|"
+                  r"\bwhy (was|is) (it|this|the \w+) skipped\b|\bwhy skipped\b|\bmanage\b|"
+                  r"\bdocuments? section\b|\bwhich (document|file|pdf)\b|\bwhere did (it|the "
+                  r"(document|pdf)) come from\b|\b(ehub|e-hub) (record|steps?)\b"),
     ("why_not_sent", r"\bwhy (wasn'?t|was not|isn'?t|is not|hasn'?t|has not|didn'?t|did not)\b.*"
                      r"\b(sent|send|go out|emailed|mailed|generated)\b|\bwhy (was|is) (it|this|the \w+) "
                      r"blocked\b|\bwhy blocked\b"),
@@ -160,7 +166,24 @@ def answer(kind, question, context=None):
     email = record.get("email") or {}
     validation = record.get("validation") or {}
 
-    if kind in ("what_failed", "why_not_sent"):
+    if kind == "discovery":
+        lines = ["**Fact** — " + t for t in F.discovery_lines(record)]
+        if not lines:
+            lines = ["**Fact** — No eHub step is recorded for this job yet (it is {0}).".format(
+                record.get("label", "").lower())]
+        if record.get("identifier"):
+            lines.append("**Fact** — The identifier {0} was passed to the next stage: it is "
+                         "this job's number, and the PDF's declaration number is checked "
+                         "against it.".format(record["identifier"]))
+            check = next((c for c in (validation.get("checks") or [])
+                          if c["name"] == "hub:identifier"), None)
+            if check:
+                lines.append("**Fact** — Identifier check: eHub {0} · PDF {1} → {2}.".format(
+                    check["hub"], check["pdf"], check["status"]))
+        if failure is not None and record["state"] in ("SKIPPED", "NEEDS_REVIEW", "PDF_NOT_FOUND"):
+            lines += _lines(failure["recommendations"])
+        text = title + "\n".join(lines)
+    elif kind in ("what_failed", "why_not_sent"):
         if failure is None:
             if record["state"] in ("EMAIL_SENT", "EMAIL_CONFIRMED"):
                 text = title + "**Fact** — Nothing failed: it was sent to {0}{1}.".format(
@@ -283,6 +306,10 @@ def answer(kind, question, context=None):
 
 
 def _because(failure, record):
+    if record.get("state") in ("SKIPPED", "NEEDS_REVIEW") or \
+            failure.get("classification") == "DOCUMENT_NOT_FOUND":
+        detail = (record.get("failure") or {}).get("detail") or failure["classification_label"]
+        return detail[0].lower() + detail[1:].rstrip(".")
     validation = record.get("validation") or {}
     mismatch = next((c for c in validation.get("checks") or [] if c["status"] == "MISMATCH"),
                     None)
