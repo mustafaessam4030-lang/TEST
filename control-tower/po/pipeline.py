@@ -78,6 +78,10 @@ def config_from_env():
         "defaults": {k: os.environ.get("PO_DEFAULT_" + k.upper()) or None
                      for k in ("supplier", "branch", "charge_to", "priority")},
         "confirm_wait_s": float(os.environ.get("PO_CONFIRM_WAIT_S") or 45),
+        # Pilot: the job stops once the output is saved and read back (SAVED);
+        # no email is prepared, so none can be sent.
+        "email_disabled": os.environ.get("PO_NO_EMAIL", "0").strip().lower() in
+        ("1", "true", "yes"),
     }
 
 
@@ -774,6 +778,16 @@ def provenance_map(doctype, fields, request_fields):
 
 
 def prepare(store, record, config):
+    if config.get("email_disabled"):
+        # Pilot / no-email run: stop at SAVED. Nothing is prepared, so the
+        # Send button and auto-send have nothing to act on.
+        record["email"] = {"status": "BLOCKED", "recipient": None,
+                           "reasons": ["Email is disabled for this run (pilot): the job stops "
+                                       "once the output is saved, for a field-by-field review."]}
+        store.save(record)
+        store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=record["email"]["reasons"],
+                    pilot=True)
+        return record
     doctype = doctypes.get(record["doctype"])
     recipient = config.get("recipient")
     subject = doctype["email_subject"].format(number=record.get("number"),

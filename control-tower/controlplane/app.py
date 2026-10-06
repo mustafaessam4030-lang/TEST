@@ -109,7 +109,8 @@ class App(object):
         # ATLAS reads the same records.
         self.po = po_service.register(po_service.PoService(
             store=po_store.Store(folder=self.s.po_dir),
-            launcher=po_service.WorkerLauncher(self._po_dispatch), audit=self._po_audit))
+            launcher=po_service.WorkerLauncher(self._po_dispatch, self._po_dispatch_run),
+            audit=self._po_audit))
         self._closed = {}
         self._synced = None
         self._index = None
@@ -123,6 +124,14 @@ class App(object):
             raise RuntimeError("no worker is online")
         self.orch.enqueue(worker["worker_id"], "po_process",
                           {"po_id": record["po_id"], "record": record})
+        return worker["worker_id"]
+
+    def _po_dispatch_run(self, no_email):
+        """Start PO Automation on the PO worker: the whole automatic run."""
+        worker = self.orch.po_worker()
+        if worker is None:
+            raise RuntimeError("no worker is online")
+        self.orch.enqueue(worker["worker_id"], "po_sweep", {"no_email": bool(no_email)})
         return worker["worker_id"]
 
     def _po_audit(self, action, result="SUCCESS", actor=None, target=None, metadata=None):

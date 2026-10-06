@@ -30,7 +30,7 @@ ACTIONS = (
     "WORKER_OBSERVATION",
     # PO Automation: who started it, what the document and validation said,
     # the template, the recipient and what Microsoft 365 answered.
-    "PO_PROCESS_STARTED", "PO_PROCESSED", "PO_EMAIL_SENT", "PO_EMAIL_CONFIRMED",
+    "PO_PROCESS_STARTED", "PO_RUN_STARTED", "PO_PROCESSED", "PO_EMAIL_SENT", "PO_EMAIL_CONFIRMED",
     "PO_EMAIL_FAILED", "PO_EMAIL_BLOCKED", "PO_RESEND_AUTHORIZED", "PO_OUTPUT_DOWNLOADED",
     "PO_REVIEW_SUPPLIED", "PO_EMAIL_UNKNOWN",
 )

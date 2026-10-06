@@ -39,6 +39,29 @@ never print a secret.
 | `PO_MAIL_SENDER` | the sender mailbox |
 | `PO_MAIL_RECIPIENT` | **left unset** for verification |
 
+## The first pilot: Start PO Automation, NO EMAIL
+
+This is the primary workflow. Nothing about a shipment is entered.
+
+```bat
+start_po_pilot.bat
+```
+
+This runs `python -m po sweep --no-email --limit 1`, which takes these steps:
+
+1. eHub → Shipments: every row is read and decided (ELIGIBLE, or skipped with a
+   reason), into `sweeps\sweep-<time>.json`.
+2. For the first eligible Under Clearance record: Manage → Documents → Bill Entry
+   → PDF → extraction → validation → template → saved output.
+3. The job stops at **SAVED**. No email is prepared or sent.
+
+From the dashboard, **Start PO Automation** on the PO page does the same, also
+with no email until `PO_RUN_EMAIL=1`.
+
+Capture the evidence for steps 1–12 below from that job (`python -m po explain
+<po_id>`). Then compare the output with the PDF field by field. `start_po_pilot.bat 5`
+processes up to five records.
+
 ## 1–12. One real job, through the real eHub
 
 ```bat

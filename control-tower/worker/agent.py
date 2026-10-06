@@ -350,6 +350,10 @@ class Agent(object):
             return self.session_detach(payload.get("action_id"))
         if kind == "po_process":
             return self.po_process(payload.get("po_id"), payload.get("record") or {})
+        if kind == "po_sweep":
+            ok = self.start_po_sweep(explicit=True, no_email=bool(payload.get("no_email", True)))
+            return ok, ("PO Automation started on this worker." if ok else
+                        "PO Automation could not start (already running?).")
         return False, "Unknown command."
 
     # -- PO Automation -----------------------------------------------------
@@ -380,19 +384,24 @@ class Agent(object):
         from po import store as po_store
         return po_store.Store(folder=os.environ.get("PO_DATA_DIR") or (self.runtime / "po"))
 
-    def start_po_sweep(self):
+    def start_po_sweep(self, explicit=False, no_email=False):
         """
-        The PO automatic run beside the ETA run, in its own process and
-        browser: a job for every Under Clearance record that has none. Each
-        job it creates is reported to the control plane as it goes; sending
-        stays the control plane's (PO_AUTO_SEND is off here).
+        The PO automatic run, in its own process and browser: a job for every
+        Under Clearance record that has none. Beside the ETA run (PO_AUTO), or
+        `explicit`ly from the PO page's Start PO Automation (a `po_sweep`
+        command). Each job is reported to the control plane as it goes;
+        sending stays the control plane's (PO_AUTO_SEND is off here), and
+        `no_email` (the pilot) stops every job at SAVED.
         """
-        if os.environ.get("PO_AUTO", "1").strip().lower() in ("0", "false", "no", "off"):
+        if not explicit and os.environ.get("PO_AUTO", "1").strip().lower() in (
+                "0", "false", "no", "off"):
             return False
         store = self.po_store()
-        ok, message = self.sup.start_po_sweep(env={
-            "PO_DATA_DIR": str(store.folder), "PO_OUTPUT_DIR": str(store.output_dir),
-            "PO_AUTO_SEND": "0"})
+        env = {"PO_DATA_DIR": str(store.folder), "PO_OUTPUT_DIR": str(store.output_dir),
+               "PO_AUTO_SEND": "0"}
+        if no_email:
+            env["PO_NO_EMAIL"] = "1"
+        ok, message = self.sup.start_po_sweep(env=env, explicit=explicit)
         self.log("[worker] " + message)
         if ok:
             threading.Thread(target=self._po_sweep_sync, args=(store, self.sup.po_sweep),

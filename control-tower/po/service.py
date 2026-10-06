@@ -78,6 +78,30 @@ class SubprocessLauncher(object):
             self._busy = True
         threading.Thread(target=self._drain, daemon=True, name="po-jobs").start()
 
+    def run_sweep(self, no_email=True):
+        """THE PRIMARY WORKFLOW, on this machine: `python -m po sweep` — eHub →
+        Shipments → every row decided → each Under Clearance record processed."""
+        with self._lock:
+            if getattr(self, "_sweep", None) is not None and self._sweep.poll() is None:
+                return False, "PO Automation is already running."
+            env = dict(os.environ, **(self.env or {}))
+            env.update(PO_DATA_DIR=str(self.store.folder), PO_OUTPUT_DIR=str(self.store.output_dir),
+                       PO_AUTO_SEND="0", PYTHONUNBUFFERED="1")
+            args = [sys.executable, "-m", "po", "sweep"]
+            if no_email:
+                args.append("--no-email")
+            try:
+                self._sweep = subprocess.Popen(args, cwd=str(Path(__file__).resolve().parent.parent),
+                                               env=env, stdin=subprocess.DEVNULL,
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as error:
+                return False, "PO Automation could not start: {0}".format(error)
+        return True, "PO Automation started: it opens eHub, reads the Shipments list and " \
+                     "processes every Under Clearance record."
+
+    def sweep_running(self):
+        return getattr(self, "_sweep", None) is not None and self._sweep.poll() is None
+
     def _drain(self):
         while True:
             with self._lock:
@@ -124,14 +148,27 @@ class InlineLauncher(object):
 
 class WorkerLauncher(object):
     """Remote: the job goes to an automation worker as a `po_process` command.
-    `dispatch(record)` enqueues it and returns the worker id, or raises."""
+    `dispatch(record)` enqueues it and returns the worker id, or raises.
+    `dispatch_run(no_email)` sends the whole automatic run (`po_sweep`)."""
 
     stale_queued_s = 180            # no worker picked it up
     stale_active_s = 900            # a worker took it and went silent
 
-    def __init__(self, dispatch):
+    def __init__(self, dispatch, dispatch_run=None):
         self.dispatch = dispatch
+        self.dispatch_run = dispatch_run
         self.service = None
+
+    def run_sweep(self, no_email=True):
+        if self.dispatch_run is None:
+            return False, "This control plane cannot start the automatic run."
+        try:
+            worker_id = self.dispatch_run(no_email)
+        except Exception as error:
+            return False, "No automation worker is online to open eHub: {0}".format(
+                str(error)[:160])
+        return True, "PO Automation sent to worker {0}: it opens eHub, reads the Shipments " \
+                     "list and processes every Under Clearance record.".format(worker_id)
 
     def __call__(self, record):
         store = self.service.store
@@ -488,6 +525,41 @@ class PoService(object):
                              "invoice_no": clean.get("invoice_no")})
         self.launcher(record)
         return record
+
+    def start_run(self, actor, no_email=None):
+        """
+        THE PRIMARY WORKFLOW: Start PO Automation. Nothing about a shipment is
+        given — the worker opens eHub, reads the Shipments list, decides every
+        row (Under Clearance or skipped, with why) and runs each eligible
+        record through Manage → Documents → Bill Entry → PDF → extraction →
+        validation → template → saved output. The pilot runs with no email
+        (every job stops at SAVED) unless PO_RUN_EMAIL=1.
+        -> (started, message)
+        """
+        if no_email is None:
+            no_email = os.environ.get("PO_RUN_EMAIL", "0").strip().lower() not in (
+                "1", "true", "yes")
+        runner = getattr(self.launcher, "run_sweep", None)
+        if runner is None:
+            return False, "This service cannot start the automatic run."
+        ok, message = runner(no_email=no_email)
+        self.audit("PO_RUN_STARTED", result="SUCCESS" if ok else "BLOCKED", actor=actor,
+                   metadata={"no_email": no_email, "message": message})
+        return ok, message
+
+    def run_status(self):
+        """Whether a run is going, and the last run's list decisions (sweeps/)."""
+        folder = self.store.folder / "sweeps"
+        last = None
+        try:
+            newest = max(folder.glob("sweep-*.json"), key=lambda p: p.stat().st_mtime)
+            data = json.loads(newest.read_text(encoding="utf-8"))
+            last = {"at": data.get("at"), "counts": data.get("counts"),
+                    "rows": len(data.get("rows") or [])}
+        except (ValueError, OSError):
+            pass
+        running = getattr(self.launcher, "sweep_running", lambda: None)()
+        return {"running": running, "last": last}
 
     def send(self, actor, po_id, authorize_resend=False, reason=None, wait=False):
         record = self.store.get(po_id)

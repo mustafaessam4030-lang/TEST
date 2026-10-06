@@ -116,9 +116,12 @@ class Supervisor:
                 self.start_po_sweep()
             return True, "Automation started."
 
-    def start_po_sweep(self, env=None):
-        """The PO automatic run, in its own process. (started, message)."""
-        if os.environ.get("PO_AUTO", "1").strip().lower() in ("0", "false", "no", "off"):
+    def start_po_sweep(self, env=None, explicit=False):
+        """The PO automatic run, in its own process. (started, message).
+        `explicit`: started from the PO page's Start PO Automation, not beside
+        an ETA run — PO_AUTO (which governs the latter) does not apply."""
+        if not explicit and os.environ.get("PO_AUTO", "1").strip().lower() in (
+                "0", "false", "no", "off"):
             return False, "PO_AUTO=0: the PO automatic run is off."
         with self.lock:
             if self.po_sweep is not None and self.po_sweep.poll() is None:
@@ -130,7 +133,8 @@ class Supervisor:
                     stdin=subprocess.DEVNULL)
             except Exception as error:
                 return False, "The PO automatic run could not start: {0}".format(error)
-            return True, "The PO automatic run started beside the ETA run."
+            return True, ("PO Automation started: reading eHub's Shipments list."
+                          if explicit else "The PO automatic run started beside the ETA run.")
 
     def stop(self, force=False):
         with self.lock:

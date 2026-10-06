@@ -3,7 +3,14 @@ The PO HTTP routes, once — served by the single-machine dashboard and the
 remote control plane alike, so the two cannot drift apart.
 
     GET  /api/po                    queue, KPIs, configuration     po.view
-    POST /api/po                    start a job                    po.process
+    POST /api/po/run                START PO AUTOMATION — the      po.process
+                                    primary workflow: eHub →
+                                    Shipments → every Under
+                                    Clearance record (no record is
+                                    given; pilot: no email)
+    GET  /api/po/run                whether it runs; last run's    po.view
+                                    list decisions
+    POST /api/po                    one record (manual fallback)   po.process
     GET  /api/po/<id>               one job, with its events       po.view
     GET  /api/po/<id>/output        the generated document         po.view
     POST /api/po/<id>/send          send it                        po.send
@@ -32,7 +39,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def permission_for(method, route, body=None):
-    if route == "/api/po":
+    if route in ("/api/po", "/api/po/run"):
         return "po.view" if method == "GET" else "po.process"
     parts = route.split("/")
     if len(parts) == 4:
@@ -72,6 +79,11 @@ def handle(service, method, route, body, actor, can):
             return "json", 200, {"accepted": True, "po_id": record["po_id"],
                                  "message": "Processing {0} in the background.".format(
                                      record["reference"] or "the next Under Clearance record")}
+    if route == "/api/po/run":
+        if method == "GET":
+            return "json", 200, service.run_status()
+        ok, message = service.start_run(actor)
+        return "json", 200 if ok else 409, {"accepted": ok, "message": message}
     if route == "/api/po/quality" and method == "GET":
         from . import quality
         return "json", 200, quality.metrics(service.store)

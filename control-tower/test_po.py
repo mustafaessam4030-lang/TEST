@@ -2135,6 +2135,7 @@ check("Two different printed invoice numbers: none chosen",
 FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00", invoice=None))
 
 rule("28. THE AUTOMATIC RUN: a job for every Under Clearance record that has none")
+UIH2 = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
 
 
 def screen_rows(page):
@@ -2176,6 +2177,97 @@ check("The control plane takes a job the worker's automatic run created, as that
 foreign = dict(ran[1], request={"started_by": "someone"})
 ok2, _m = cp.import_from_worker("w_auto", ran[1]["po_id"], {"record": foreign, "events": []})
 check("...but not a job it was never given that is not automatic", ok2 is False)
+
+rule("28b. START PO AUTOMATION — the primary workflow; nothing to enter; pilot: no email")
+# The PO page's primary action starts the automatic run itself — not one record.
+calls = []
+
+
+class RunLauncher(object):
+    def __call__(self, record):
+        calls.append(("one", record["po_id"]))
+
+    def run_sweep(self, no_email=True):
+        calls.append(("run", no_email))
+        return True, "PO Automation started"
+
+
+rs = SV.PoService(store=new_store("s28run"), launcher=RunLauncher(), config=CONFIG)
+kind, status, body = W.handle(rs, "POST", "/api/po/run", {}, "omar.ops@mantrac.com",
+                              lambda p: p == "po.process")
+check("POST /api/po/run starts the WHOLE automatic run, with no record, invoice or supplier given",
+      status == 200 and body["accepted"] and calls == [("run", True)], (status, body, calls))
+check("...the pilot default: no email (every job stops at SAVED)", calls[-1][1] is True)
+check("...it needs po.process, and is audited as PO_RUN_STARTED",
+      W.permission_for("POST", "/api/po/run") == "po.process" and
+      W.handle(rs, "POST", "/api/po/run", {}, "v", lambda p: False)[0] == "forbidden" and
+      any(json.loads(l)["action"] == "PO_RUN_STARTED" for l in
+          (rs.store.folder / "audit.jsonl").read_text().splitlines()))
+check("GET /api/po/run reports whether it runs and the last run's list decisions",
+      W.handle(rs, "GET", "/api/po/run", None, "v", lambda p: True)[1] == 200)
+remote = []
+wl = SV.WorkerLauncher(lambda r: "w1", lambda no_email: remote.append(no_email) or "w1")
+check("Remote: the control plane sends the run to the worker as one `po_sweep` command",
+      wl.run_sweep(no_email=True)[0] and remote == [True])
+check("...and says so when no worker is online (nothing pretends to run)",
+      SV.WorkerLauncher(lambda r: "w1", lambda n: (_ for _ in ()).throw(RuntimeError("none")))
+      .run_sweep()[0] is False)
+from worker import agent as AG                                   # noqa: E402
+started = []
+
+
+class FakeSup(object):
+    po_sweep = None
+
+    def start_po_sweep(self, env=None, explicit=False):
+        started.append((env, explicit))
+        return False, "test: not started"
+
+
+fake = AG.Agent.__new__(AG.Agent)
+fake.sup, fake.log = FakeSup(), (lambda *a: None)
+fake.po_store = lambda: S.Store(folder=WORK / "agentpo")
+os.environ["PO_AUTO"] = "0"
+handled = fake.execute({"kind": "po_sweep", "payload": {"no_email": True}})
+os.environ.pop("PO_AUTO", None)
+check("The worker runs a `po_sweep` command even with PO_AUTO=0 (an explicit start), with "
+      "PO_NO_EMAIL=1 and auto-send off",
+      started and started[-1][1] is True and started[-1][0].get("PO_NO_EMAIL") == "1"
+      and started[-1][0].get("PO_AUTO_SEND") == "0", (handled, started))
+# The run itself, on the stand-in eHub list: no email anywhere.
+FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00"))
+HITS.pop("file:be905", None)
+EH.ehub_rows = screen_rows
+pilot = new_store("s28pilot")
+sends0 = GRAPH["counter"]
+os.environ["PO_NO_EMAIL"] = "1"
+ran_p = CLI.sweep(PAGE, pilot, limit=10, log=lambda *a: None)
+os.environ.pop("PO_NO_EMAIL", None)
+EH.ehub_rows = real_rows
+by = {r["reference"]: r for r in ran_p}
+check("Pilot run: every Under Clearance record processed from the list itself, the Cleared one "
+      "skipped", sorted(by) == ["KKLUENR260174", "KKLUENR260175"], sorted(by))
+check("...the one whose Bill of Entry prints its invoice No. stops at SAVED: output saved and "
+      "read back, NO email prepared",
+      by["KKLUENR260174"]["state"] == S.SAVED and by["KKLUENR260174"]["output"]["verified"]
+      and by["KKLUENR260174"]["email"]["status"] == "BLOCKED"
+      and "EMAIL_PREPARED" not in S.Store.milestones(by["KKLUENR260174"]),
+      (by["KKLUENR260174"]["state"], by["KKLUENR260174"].get("email")))
+check("...the one without an invoice No. waits in review — G4 is never guessed",
+      by["KKLUENR260175"]["state"] == S.NEEDS_REVIEW, by["KKLUENR260175"]["state"])
+check("...and not a single message was created in the mailbox",
+      GRAPH["counter"] == sends0, GRAPH["counter"] - sends0)
+check("...Send is refused for a pilot job (nothing was prepared)",
+      P.send(pilot, by["KKLUENR260174"], M.GraphMailer(), by="omar")[1] == "BLOCKED")
+sweeps = list((pilot.folder / "sweeps").glob("sweep-*.json"))
+decided = json.loads(sweeps[0].read_text(encoding="utf-8")) if sweeps else {}
+check("...every row of the list is decided and kept as evidence (sweeps/)",
+      decided.get("counts", {}).get("ELIGIBLE") == 2 and
+      decided.get("counts", {}).get("SKIPPED_NOT_UNDER_CLEARANCE"), decided.get("counts"))
+check("The PO page's primary action is Start PO Automation; the one-record form is a labelled "
+      "fallback with no invoice field",
+      'id="poRun"' in UIH2 and "Start PO Automation" in UIH2 and "Manual fallback" in UIH2
+      and 'name="invoice_no"' not in UIH2 and 'id="poNext"' not in UIH2)
 A27.INTERNAL_URL = saved_url
 A27.ensure_filtered_page = saved_nav
 

@@ -2535,14 +2535,15 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
           <div class="hello-s" id="poSub">Hub → PDF → extraction → validation → template → Microsoft 365</div>
         </div>
         <div class="sp"></div>
-        <button class="btn" id="poNew" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Process PO</button>
+        <span class="po-msg" id="poRunMsg" aria-live="polite"></span>
+        <button class="btn" id="poRun" type="button" title="Opens eHub, reads the Shipments list and processes every Under Clearance record. Nothing to enter."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 5l12 7-12 7z"/></svg>Start PO Automation</button>
+        <button class="btn ghost" id="poNew" type="button" title="Fallback: process one named eHub record">Manual: one record</button>
       </div>
       <form class="card po-form" id="poForm" hidden autocomplete="off">
-        <div class="card-h"><div><div class="card-t">Process a document</div>
-          <div class="card-s" id="poFormS">ATA finds the record in eHub, checks it is Under Clearance, opens Manage, takes the document whose name starts with “Bill Entry” from its Documents section, validates it and fills the approved template. Nothing is sent until you press Send PO.</div></div></div>
+        <div class="card-h"><div><div class="card-t">Manual fallback — one named record</div>
+          <div class="card-s" id="poFormS">Not the normal workflow: Start PO Automation finds the records itself. Use this only to re-run one record you name. ATA finds it in eHub, checks it is Under Clearance, opens Manage, takes the “Bill Entry” document, validates it and fills the approved template. The supplier invoice No. (G4) is read from the Bill of Entry only.</div></div></div>
         <div class="po-fg">
-          <label><span>BOL / AWB in eHub <i>— or leave empty for the next Under Clearance record</i></span><input class="in" name="reference" maxlength="60" placeholder="e.g. 176-88452310"></label>
-          <label><span>Supplier invoice No. <b>*</b></span><input class="in" name="invoice_no" maxlength="60" placeholder="Not printed on the declaration"></label>
+          <label><span>BOL / AWB in eHub <b>*</b></span><input class="in" name="reference" maxlength="60" placeholder="e.g. 176-88452310" required></label>
           <label><span>Supplier</span><input class="in" name="supplier" maxlength="60" id="poSupplier"></label>
           <label><span>Receiving branch</span><input class="in" name="branch" maxlength="60"></label>
           <label><span>Charge to</span><input class="in" name="charge_to" maxlength="60"></label>
@@ -2550,7 +2551,6 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
           <label><span>Reference note (D2)</span><input class="in" name="reference_note" maxlength="60"></label>
         </div>
         <div class="po-fa"><button class="btn" type="submit" id="poGo">Process</button>
-          <button class="btn ghost" type="button" id="poNext">Process next Under Clearance record</button>
           <button class="btn ghost" type="button" id="poCancel">Cancel</button>
           <span class="po-msg" id="poMsg" aria-live="polite"></span></div>
       </form>
@@ -4816,6 +4816,7 @@ function paintPO(){
     (c.recipient ? 'emails to ' + c.recipient : 'no recipient configured') +
     (c.graph_configured ? '' : ' · Microsoft 365 not configured'));
   $('poNew').hidden = !PF.can('po.process');
+  $('poRun').hidden = !PF.can('po.process');
   if (c.defaults && c.defaults.supplier && !$('poSupplier').value) $('poSupplier').placeholder = c.defaults.supplier;
   const k = d.kpis || {};
   putHTML($('poKpis'), PO_KPIS.map((x) => '<div class="kpi" style="--c:' + (k[x[0]] ? x[2] : 'var(--line-hi)') +
@@ -5087,16 +5088,32 @@ $('poRows').addEventListener('keydown', (e) => {
 });
 $('poNew').addEventListener('click', () => { $('poForm').hidden = false; $('poForm').reference.focus(); });
 $('poCancel').addEventListener('click', () => { $('poForm').hidden = true; put($('poMsg'), ''); });
-$('poNext').addEventListener('click', () => {
-  const f = $('poForm'); f.reference.value = '';
-  f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', {cancelable:true}));
+// THE PRIMARY WORKFLOW: nothing to enter. The worker opens eHub, reads the
+// Shipments list, decides every row and processes each Under Clearance record.
+$('poRun').addEventListener('click', () => {
+  const m = $('poRunMsg'); m.className = 'po-msg'; put(m, 'Starting…');
+  fetch('/api/po/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
+      m.className = 'po-msg' + (st >= 400 ? ' bad' : ''); put(m, x.message || '');
+      setTimeout(() => loadPO(true), 500);
+    }).catch(() => { m.className = 'po-msg bad'; put(m, 'The request did not reach the server.'); });
 });
+function loadPORun(){
+  fetch('/api/po/run').then((r) => r.ok ? r.json() : null).then((d) => {
+    if (!d) return;
+    const m = $('poRunMsg'); if (m.classList.contains('bad')) return;
+    const c = (d.last || {}).counts || {};
+    const last = d.last ? 'Last run ' + (d.last.at || '').replace('T', ' ').slice(0, 16) + ': ' + d.last.rows + ' eHub row(s) read, ' +
+      (c.ELIGIBLE || 0) + ' Under Clearance processed' : '';
+    put(m, d.running ? 'PO Automation is running — reading eHub…' : last);
+  }).catch(() => {});
+}
 $('poForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const f = $('poForm'), body = {};
-  ['reference','invoice_no','supplier','branch','charge_to','priority','reference_note'].forEach((k) => {
+  ['reference','supplier','branch','charge_to','priority','reference_note'].forEach((k) => {
     const v = (f[k].value || '').trim(); if (v) body[k] = v; });
-  if (!body.reference) body.discover = true;
+  if (!body.reference){ const m0 = $('poMsg'); m0.className = 'po-msg bad'; put(m0, 'Name the BOL / AWB — or use Start PO Automation, which finds the records itself.'); return; }
   const m = $('poMsg'); m.className = 'po-msg'; put(m, 'Starting…');
   fetch('/api/po', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
     .then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
@@ -5105,6 +5122,7 @@ $('poForm').addEventListener('submit', (e) => {
     }).catch(() => { m.className = 'po-msg bad'; put(m, 'The request did not reach the server.'); });
 });
 setInterval(() => { if (activePage === 'po' && !document.hidden){ loadPO(false); loadPODetail(false); } }, 1200);
+setInterval(() => { if (activePage === 'po' && !document.hidden) loadPORun(); }, 4000);
 
 /* ═══ FAILURE INTELLIGENCE ═══
    From /api/atlas — the same records ATLAS's chat and "ATLAS noticed" use.

@@ -326,6 +326,9 @@ def cmd_sweep(args):
         except Exception as error:
             print("[PO sweep] eHub could not be opened: {0}".format(str(error)[:200]))
             return 1
+        if args.no_email:
+            os.environ["PO_NO_EMAIL"] = "1"
+            os.environ["PO_AUTO_SEND"] = "0"
         try:
             ran = sweep(page, store, limit=args.limit)
         except Exception as error:
@@ -545,6 +548,8 @@ def main(argv=None):
     w = sub.add_parser("sweep", help="the automatic run: a PO job for every Under Clearance "
                                      "record that has none yet")
     w.add_argument("--limit", type=int, default=int(os.environ.get("PO_SWEEP_LIMIT") or 20))
+    w.add_argument("--no-email", action="store_true",
+                   help="pilot: stop every job at SAVED; no email is prepared or sent")
     r = sub.add_parser("read")
     r.add_argument("file")
     r.add_argument("--hub-bol")
