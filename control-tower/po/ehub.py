@@ -394,10 +394,6 @@ class EHubSource(object):
         if row is None:
             step("ehub_record", False, reference=reference, looked=len(looked),
                  evidence=capture(self.page, "ehub_record"))
-            if reference and looked and looked[0].get("view") == SEARCH_VIEW:
-                raise stop("{0} was searched in eHub's Shipments List (BOL/AWB Number) and no "
-                           "row came back for it. It was not opened.".format(reference),
-                           "not_found")
             if reference:
                 raise stop("{0} is not listed under eHub's 'Under Clearance' filter on view "
                            "{1} — its status is not Under Clearance, or it is not in eHub. "
@@ -559,55 +555,59 @@ def ehub_rows(page):
 
 def find_in_ehub(page, reference=None, skip=()):
     """
-    Production. A named record is SEARCHED for, the way a person finds it:
-    the Shipments List's own "BOL/AWB Number" box and Search. With no name,
-    the ETA automation's own list reading (the BU view, filtered to Under
-    Clearance) and the row rule.
+    Production — the Shipments list, read the way an employee reads it: eHub →
+    Shipments (Centralized Shipments Tracking, BU view, Status = Under
+    Clearance) → the rows, page by page, each row's own Status cell. Nothing is
+    typed into a search box and nothing has to be given: with no reference
+    the first eligible row not yet processed is taken; a reference (a job
+    re-run from the dashboard) is looked up in the same list.
     """
-    if reference:
-        rows, looked = search_rows(page, reference)
-        row, _ = choose(rows, reference, skip)
-        return row, looked
     return choose(ehub_rows(page), reference, skip)
 
 
 def open_manage_in_ehub(page, row):
-    import update_eta as A
-    if row.get("view") == SEARCH_VIEW:
-        click_manage_in_search(page, row["bol_awb"])
-    else:
-        A.click_manage_in_view(page, row.get("view") or A.SOURCE_VIEW, row["bol_awb"],
-                               row.get("table_page") or 1)
+    click_manage_in_list(page, row)
     page.wait_for_timeout(800)
     to_documents(page)
     return {"url": page.url, "title": page.title()}
 
 
-# ── THE SHIPMENTS LIST'S OWN SEARCH, AND MANAGE FROM ITS RESULT ──────────
+def click_manage_in_list(page, row):
+    """
+    Back to the Shipments list where the row was read (its view and page,
+    then the others), and Manage on THAT row — the row's own control, matched
+    by its BOL/AWB. Only a click: nothing on the list or the record changes.
+    """
+    import update_eta as A
+    ref = row["bol_awb"]
+    view = row.get("view") or A.SOURCE_VIEW
+    first = row.get("table_page") or 1
+    for number in [first] + [n for n in range(1, A.MAX_TABLE_PAGES + 1) if n != first]:
+        try:
+            A.ensure_filtered_page(page, view, number)
+        except A.SkipShipment:
+            continue
+        target = A.find_row_by_bol(page, ref)
+        if target is None:
+            continue
+        control = A.first_visible([
+            target.locator("a, button").filter(has_text=MANAGE_LABEL),
+            target.locator("input[type='submit'][value='Manage' i], "
+                           "input[type='button'][value='Manage' i]"),
+        ], 5000)
+        if control is None:
+            raise RuntimeError("the row for {0} has no Manage button".format(ref))
+        before = page.url
+        A.click_postback(control, "Manage for {0}".format(ref))
+        A.invalidate_hub_state()
+        if not _wait(page, lambda: page.url != before or _manage_open(page), 30):
+            raise RuntimeError("Manage was pressed for {0}, but the record did not open".format(ref))
+        return
+    raise RuntimeError("{0} is no longer in eHub's Under Clearance list".format(ref))
 
-SEARCH_VIEW = "SEARCH"
-SEARCH_LABEL = r"^\s*BOL\s*/\s*AWB\s*(?:Number|No\.?)?\s*:?\s*$"
-# The search box: the text input belonging to the "BOL/AWB Number" label
-# (its `for`, its own container, or the next one after it). Marked so the
-# fill lands on exactly that box.
-SEARCH_BOX_JS = r"""(pattern) => {
-  const re = new RegExp(pattern, 'i');
-  const text = (el) => (el.innerText || '').trim();
-  const labels = Array.from(document.querySelectorAll('label, span, div, p, b, strong, td'))
-      .filter(el => re.test(text(el)) && !el.closest('table thead, th'));
-  const inputs = () => Array.from(document.querySelectorAll(
-      'input[type=text], input[type=search], input:not([type])'));
-  for (const el of labels) {
-    let target = el.htmlFor ? document.getElementById(el.htmlFor) : null;
-    for (let up = 0, box = el.parentElement; !target && up < 2 && box; up++, box = box.parentElement) {
-      const inside = Array.from(box.querySelectorAll('input[type=text], input[type=search], input:not([type])'));
-      if (inside.length === 1) target = inside[0];
-    }
-    if (!target) target = inputs().find(i => el.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING);
-    if (target) { target.setAttribute('data-ata-search', '1'); return true; }
-  }
-  return false;
-}"""
+
+# ── THE LIST'S MANAGE CONTROL, AND THE RECORD PAGE ─────────────────────
+
 MANAGE_LABEL = re.compile(r"^\s*manage\s*$", re.I)
 
 
@@ -635,102 +635,10 @@ def _extra_columns(table):
     return {"una_invoice": i for i, h in enumerate(heads) if re.search(r"una\+?\s*invoice", h)}
 
 
-def _result_rows(page, reference=None):
-    """The rows of the results table, read off its cells, or None when there is none."""
-    import update_eta as A
-    try:
-        table = A.find_shipments_table(page)
-        columns = A.build_header_map(table)
-    except Exception:
-        return None
-    from .extract import normal_reference
-    out = []
-    extra = _extra_columns(table)
-    rows = table.locator("tbody tr")
-    for index in range(rows.count()):
-        cells = rows.nth(index).locator("td")
-
-        def cell(name):
-            i = columns.get(name)
-            if not isinstance(i, int) or cells.count() <= i:
-                return None
-            return " ".join((cells.nth(i).inner_text() or "").split()) or None
-
-        row = {"bol_awb": cell("bol_awb"), "carrier": cell("carrier"), "status": cell("status"),
-               "eta": cell("eta"), "table_page": 1, "view": SEARCH_VIEW}
-        for name, i in extra.items():
-            row[name] = " ".join((cells.nth(i).inner_text() or "").split()) or None \
-                if cells.count() > i else None
-        if row["bol_awb"] and (not reference or
-                               normal_reference(row["bol_awb"]) == normal_reference(reference)):
-            out.append(row)
-    return out
-
-
-def search_rows(page, reference):
-    """
-    The Shipments List, searched for one BOL/AWB — exactly what a person does:
-    open the list, type the number in "BOL/AWB Number", press Search, read the
-    row (its own Status cell). (rows, looked).
-    """
-    import update_eta as A
-    A.invalidate_hub_state()
-    page.goto(A.INTERNAL_URL, wait_until="domcontentloaded", timeout=60000)
-    if not _wait(page, lambda: page.evaluate(SEARCH_BOX_JS, SEARCH_LABEL), 20):
-        raise RuntimeError("the Shipments List has no 'BOL/AWB Number' search box")
-    box = page.locator("[data-ata-search='1']").first
-    box.fill("")
-    box.fill(reference)
-    button = A.first_visible([
-        page.get_by_role("button", name="Search", exact=True),
-        page.locator("input[type='submit'][value='Search' i], input[type='button'][value='Search' i]"),
-        page.locator("button").filter(has_text=re.compile(r"^\s*search\s*$", re.I)),
-        page.locator("a").filter(has_text=re.compile(r"^\s*search\s*$", re.I)),
-    ], 5000)
-    if button is None:
-        raise RuntimeError("the Shipments List's Search button was not found")
-    button.click(timeout=10000)
-    rows = _wait(page, lambda: _result_rows(page, reference), 30)
-    looked = [{"view": SEARCH_VIEW, "searched": reference,
-               "result": "found" if rows else "no row for it in the search result"}]
-    return rows or [], looked
-
-
-def click_manage_in_search(page, reference):
-    """Press Manage on THAT row of the search result (searching again if needed)."""
-    import update_eta as A
-    from .extract import normal_reference
-    if not _result_rows(page, reference):
-        search_rows(page, reference)
-    table = A.find_shipments_table(page)
-    columns = A.build_header_map(table)
-    rows = table.locator("tbody tr")
-    target = None
-    for index in range(rows.count()):
-        cells = rows.nth(index).locator("td")
-        i = columns.get("bol_awb")
-        if isinstance(i, int) and cells.count() > i and normal_reference(
-                cells.nth(i).inner_text()) == normal_reference(reference):
-            target = rows.nth(index)
-            break
-    if target is None:
-        raise RuntimeError("{0} is not in the search result".format(reference))
-    control = A.first_visible([
-        target.locator("a, button").filter(has_text=MANAGE_LABEL),
-        target.locator("input[type='submit'][value='Manage' i], input[type='button'][value='Manage' i]"),
-    ], 5000)
-    if control is None:
-        raise RuntimeError("the row for {0} has no Manage button".format(reference))
-    before = page.url
-    control.click(timeout=10000)
-    if not _wait(page, lambda: page.url != before or _manage_open(page), 30):
-        raise RuntimeError("Manage was pressed for {0}, but the record did not open".format(
-            reference))
-
-
 def _manage_open(page):
     try:
-        return page.get_by_text(re.compile(r"BU\s+Shipment\s+Info|^\s*Documents\s*$", re.I)) \
+        return page.get_by_text(re.compile(r"BU\s+Shipment\s+Info|^\s*General\s*$|^\s*Documents\s*$",
+                                           re.I)) \
             .first.is_visible()
     except Exception:
         return False
@@ -743,7 +651,7 @@ def to_documents(page):
     scroll down. A tab and a scroll — nothing that changes the record.
     """
     try:
-        tab = page.get_by_text(re.compile(r"^\s*BU\s+Shipment\s+Info\s*$", re.I)).first
+        tab = page.get_by_text(re.compile(r"^\s*(?:BU\s+Shipment\s+Info|General)\s*$", re.I)).first
         if tab.count() and tab.is_visible() and not NEVER_CLICK.search(tab.inner_text()):
             tab.click(timeout=5000)
             page.wait_for_timeout(600)

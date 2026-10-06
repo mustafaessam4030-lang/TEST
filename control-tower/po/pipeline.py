@@ -64,10 +64,6 @@ def config_from_env():
         "defaults": {k: os.environ.get("PO_DEFAULT_" + k.upper()) or None
                      for k in ("supplier", "branch", "charge_to", "priority")},
         "confirm_wait_s": float(os.environ.get("PO_CONFIRM_WAIT_S") or 45),
-        # Where the supplier invoice No. (G4) comes from when the job was not
-        # given one: "una" = the eHub row's "UNA+ Invoice Number" column. Off
-        # unless set: that column is recorded as evidence either way.
-        "invoice_from": (os.environ.get("PO_INVOICE_FROM") or "").strip().lower() or None,
     }
 
 
@@ -207,14 +203,25 @@ def process(store, record, source, config=None, sleep=time.sleep):
                     found=[n for n, f in fields.items() if f["status"] == X.FOUND])
         return record
     request = dict(record.get("request") or {})
-    una = (record.get("hub") or {}).get("una_invoice")
-    if not request.get("invoice_no") and una and config.get("invoice_from") == "una":
-        request["invoice_no"] = una
-        request["invoice_no_origin"] = "eHub UNA+ Invoice Number (PO_INVOICE_FROM=una)"
+    # The supplier invoice No. (G4): the one the job was given, else the one
+    # the Bill of Entry itself prints under an "Invoice No." label — one
+    # value, or none. Never eHub's "UNA+ Invoice Number" column (kept as
+    # evidence only) and never guessed: with neither, validation stops the
+    # job before anything is generated or sent.
+    if not request.get("invoice_no"):
+        printed = X.printed_invoice_no(read["text"])
+        if printed.get("value"):
+            request["invoice_no"] = printed["value"]
+            request["invoice_no_origin"] = "printed on the Bill of Entry: " + printed["evidence"]
+        elif printed.get("candidates"):
+            request["invoice_no_note"] = "the Bill of Entry prints more than one invoice No. " \
+                "({0}); none was chosen".format(", ".join(printed["candidates"]))
     request_fields = _request_fields(doctype, request, config)
     if request.get("invoice_no_origin") and "invoice_no" in request_fields:
         request_fields["invoice_no"]["origin"] = request["invoice_no_origin"]
         request_fields["invoice_no"]["evidence"] = request["invoice_no_origin"]
+    if request.get("invoice_no_note") and "invoice_no" in request_fields:
+        request_fields["invoice_no"]["note"] = request["invoice_no_note"]
     record["fields"] = fields
     record["request_fields"] = request_fields
     record["number"] = record.get("identifier") or \

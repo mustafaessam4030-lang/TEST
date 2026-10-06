@@ -227,6 +227,33 @@ def _vat_lines(text):
     return found
 
 
+INVOICE_NO = re.compile(
+    r"(?<![a-z+])(?:commercial\s+|supplier(?:'s)?\s+)?invoice\s*(?:no\.?|number|nr\.?|#)\s*[:.\-]?\s*"
+    r"([A-Z0-9][A-Z0-9\-/]{2,29})", re.I)
+
+
+def printed_invoice_no(text):
+    """
+    The supplier invoice No. as the document prints it, under an explicit
+    "Invoice No." / "Invoice Number" label (never "invoice value", never
+    "UNA+ Invoice Number"). {"value", "evidence"} for one distinct value,
+    {"candidates": [...]} for several, {} for none.
+    """
+    found = []
+    for line in (text or "").splitlines():
+        if re.search(r"una\+", line, re.I):
+            continue
+        for m in INVOICE_NO.finditer(line):
+            value = m.group(1).strip().rstrip(".-/").upper()
+            if re.search(r"\d", value) and value not in [v for v, _e in found]:
+                found.append((value, " ".join(line.split())[:120]))
+    if len(found) == 1:
+        return {"value": found[0][0], "evidence": "'{0}'".format(found[0][1])}
+    if found:
+        return {"candidates": [v for v, _e in found][:5]}
+    return {}
+
+
 def extract(text, doctype):
     """Every PDF field of the document type, typed. {name: field}."""
     labels = {f["name"]: f["label"] for f in doctype["fields"]}

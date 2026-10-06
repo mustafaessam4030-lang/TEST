@@ -186,7 +186,12 @@ SEARCHED = []
 def shipments_page(query):
     bol = (query.get("bol") or [""])[0].strip()
     SEARCHED.append(bol)
-    hits = [r for r in EHUB if bol and r["bol"] == bol and r.get("layout") == "screen"]
+    # The list as the Hub's own "Under Clearance" filter shows it, or (only if
+    # something were typed in the box) the search result for that number.
+    wanted = (query.get("status") or [""])[0]
+    hits = [r for r in EHUB if r.get("layout") == "screen" and
+            ((bol and r["bol"] == bol) or (not bol and wanted and
+                                           r["status"].startswith(wanted)))]
     rows = "".join(
         "<tr><td>{0}</td><td>{1}</td><td>GH</td><td>CAT FFW</td><td>Ocean</td><td>{2}</td>"
         "<td>Roro</td><td>14/09/2026</td><td><span class='badge'>{3}</span></td>"
@@ -195,7 +200,7 @@ def shipments_page(query):
     table = ("<table class='grid'><thead><tr><th>BOL/AWB Number</th><th>UNA+ Invoice Number</th>"
              "<th>Territory</th><th>Freight Forwarder</th><th>Shipment Mode</th><th>Carrier Name"
              "</th><th>Shipment Type</th><th>ETA</th><th>Status</th><th></th></tr></thead>"
-             "<tbody>{0}</tbody></table>".format(rows)) if bol else ""
+             "<tbody>{0}</tbody></table>".format(rows)) if (bol or wanted) else ""
     return ("<html><body><h3>Shipments <small>List</small></h3><h4>Searching Options</h4>"
             "<form method='get' action='/ehub/shipments'>"
             "<div class='col'><label>BOL/AWB Number</label><input type='text' name='bol'></div>"
@@ -205,6 +210,7 @@ def shipments_page(query):
             "<option>Under Clearance</option></select></div>"
             "<button type='submit'>Search</button></form>"
             "<h4>Searching Result</h4>{0}</body></html>").format(table)
+
 
 
 def bu_page(r):
@@ -1876,7 +1882,7 @@ check("...after a real (stand-in Graph) send: Yes — accepted (HTTP 202) and fo
       sent26["state"] == S.EMAIL_CONFIRMED and "Yes. Microsoft Graph accepted it (HTTP 202)" in a
       and "found in the mailbox's Sent Items" in a, (sent26["state"], a[:400]))
 
-rule("27. THE REAL PAGES OF 6 OCT: search KKLUENR260174 → Manage → Documents → Download")
+rule("27. THE EMPLOYEE'S WAY: Shipments list → Under Clearance rows → Manage → Bill Entry")
 import update_eta as A27                                       # noqa: E402
 FILES.update({"be905": pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00")),
               "be906": pdf_of(boe_text(bl="KKLUENR260175", number="40926698906 / 00")),
@@ -1897,6 +1903,21 @@ EHUB.append({"bol": "KKLUENR260176", "carrier": "K Line", "status": "Cleared",
              "docs": SCREEN_DOCS, "section": True, "layout": "screen", "una": "70078"})
 saved_url = A27.INTERNAL_URL
 A27.INTERNAL_URL = HUB + "/ehub/shipments"
+# STAND-IN for the Hub's own list navigation (Centralized Shipments Tracking →
+# BU view → Status = Under Clearance → page N), which runs on the real eHub
+# every ETA run: here it opens the stand-in list with that filter applied.
+# Everything after it — reading the rows, their Status cells, Manage on the
+# row, Documents, Bill Entry, Download — is the production code.
+saved_nav = A27.ensure_filtered_page
+
+
+def list_nav(page, view, number):
+    if number > 1:
+        raise A27.SkipShipment("the list has one page")
+    page.goto(HUB + "/ehub/shipments?status=Under+Clearance", wait_until="domcontentloaded")
+
+
+A27.ensure_filtered_page = list_nav
 for key in ("be905", "be906", "assess", "tmag", "tmap", "inv"):
     HITS.pop("file:" + key, None)
 PRESSED.clear()
@@ -1904,8 +1925,8 @@ real_nav = lambda: EH.EHubSource(PAGE, EH.find_in_ehub, EH.open_manage_in_ehub) 
 st27 = new_store("s27")
 k174 = run_job(st27, "KKLUENR260174", source=real_nav())
 trail = k174.get("discovery") or {}
-check("KKLUENR260174 is found by SEARCHING its BOL/AWB, as a person does",
-      "KKLUENR260174" in SEARCHED and (trail.get("ehub_record") or {}).get("view") == "SEARCH",
+check("KKLUENR260174 is found in the Shipments list's Under Clearance rows — nothing typed",
+      not any(SEARCHED) and (trail.get("ehub_record") or {}).get("view") == "BU",
       (SEARCHED[-3:], trail.get("ehub_record")))
 check("...its row's own Status cell reads 'Under Clearance'",
       (trail.get("clearance") or {}).get("found") == "Under Clearance", trail.get("clearance"))
@@ -1935,27 +1956,42 @@ check("Bill Entry in the THIRD row: its own Download is pressed, not the first o
       k175["document"] and k175["document"]["sha256"] == hashlib.sha256(FILES["be906"]).hexdigest(),
       (k175["state"], (k175.get("discovery") or {}).get("bill_entry")))
 k176 = run_job(st27, "KKLUENR260176", source=real_nav())
-check("A searched record whose status is 'Cleared': SKIPPED, Manage not opened",
+check("A record that is not Under Clearance ('Cleared'): SKIPPED, Manage not opened",
       k176["state"] == S.SKIPPED and not (k176.get("discovery") or {}).get("manage"), k176["state"])
 nope = run_job(st27, "KKLUENR999999", source=real_nav())
 ev_nope = next((x.get("evidence") for x in (nope.get("discovery") or {}).get("steps") or []
                 if x.get("step") == "ehub_record"), {}) or {}
-check("A BOL/AWB the search does not return: PDF_NOT_FOUND, saying it was searched",
-      nope["state"] == S.PDF_NOT_FOUND and "searched in eHub's Shipments List" in
-      nope["failure"]["detail"], nope.get("failure"))
+check("A BOL/AWB the Under Clearance list does not carry: not opened, and it says why",
+      nope["state"] in (S.SKIPPED, S.PDF_NOT_FOUND) and "is not listed under eHub's 'Under "
+      "Clearance' filter" in nope["failure"]["detail"], nope.get("failure"))
 check("...with the page kept as evidence: screenshot and text", ev_nope.get("screenshot")
       and Path(ev_nope["screenshot"]).exists() and Path(ev_nope["page_text"]).exists(), ev_nope)
 noinv = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
 noinv = P.process(st27, noinv, real_nav(), CONFIG, sleep=NOSLEEP)
-check("No invoice No. given: VALIDATION_FAILED (the UNA+ number is not used unless configured)",
+check("No invoice No. given or printed: VALIDATION_FAILED — the UNA+ column (70076) is NOT used",
       noinv["state"] == S.VALIDATION_FAILED
-      and noinv["request_fields"]["invoice_no"]["status"] == "MISSING", noinv["state"])
-una = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
-una = P.process(st27, una, real_nav(), dict(CONFIG, invoice_from="una"), sleep=NOSLEEP)
-check("PO_INVOICE_FROM=una: the eHub row's UNA+ Invoice Number fills G4, its origin recorded",
-      una["request_fields"]["invoice_no"]["value"] == "70076"
-      and "UNA+ Invoice Number" in una["request_fields"]["invoice_no"]["origin"]
-      and una["state"] == S.EMAIL_PREPARED, (una["state"], una["request_fields"]["invoice_no"]))
+      and noinv["request_fields"]["invoice_no"]["status"] == "MISSING"
+      and "70076" not in json.dumps(noinv["request_fields"]), noinv["state"])
+check("...and no PO_INVOICE_FROM switch exists any more",
+      "invoice_from" not in P.config_from_env()
+      and "PO_INVOICE_FROM" not in (HERE / "po" / "pipeline.py").read_text(encoding="utf-8"))
+FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00",
+                                 extra="Invoice No: 2600005261\n"))
+HITS.pop("file:be905", None)
+printed = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
+printed = P.process(st27, printed, real_nav(), CONFIG, sleep=NOSLEEP)
+check("A Bill of Entry that PRINTS 'Invoice No: 2600005261' fills G4 from the document",
+      printed["request_fields"]["invoice_no"]["value"] == "2600005261"
+      and "printed on the Bill of Entry" in printed["request_fields"]["invoice_no"]["origin"]
+      and printed["state"] == S.EMAIL_PREPARED,
+      (printed["state"], printed["request_fields"]["invoice_no"]))
+check("'Total Invoice Value (CIF)' and 'UNA+ Invoice Number' are never read as an invoice No.",
+      X.printed_invoice_no("Total Invoice Value (CIF) USD 169,740.11\nUNA+ Invoice Number 70076")
+      == {})
+check("Two different printed invoice numbers: none chosen",
+      X.printed_invoice_no("Invoice No: A1001\nCommercial Invoice Number: B2002")
+      .get("candidates") == ["A1001", "B2002"])
+FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00"))
 
 rule("28. THE AUTOMATIC RUN: a job for every Under Clearance record that has none")
 
@@ -1974,9 +2010,9 @@ ran = CLI.sweep(PAGE, auto, limit=10, log=lambda *a: None)
 check("The sweep made one job per Under Clearance record, none for the Cleared one",
       sorted(r["reference"] for r in ran) == ["KKLUENR260174", "KKLUENR260175"],
       [(r["reference"], r["state"]) for r in ran])
-check("...each found by search and processed by the real navigation, marked automatic",
+check("...each found in the list's rows and processed by the real navigation, marked automatic",
       all((r.get("request") or {}).get("started_by") == "automatic"
-          and (r.get("discovery") or {}).get("ehub_record", {}).get("view") == "SEARCH" for r in ran))
+          and (r.get("discovery") or {}).get("ehub_record", {}).get("view") == "BU" for r in ran))
 check("...without an invoice number they stop at validation, nothing generated or sent",
       all(r["state"] == S.VALIDATION_FAILED and not r.get("output") for r in ran))
 again = CLI.sweep(PAGE, auto, limit=10, log=lambda *a: None)
@@ -2000,6 +2036,7 @@ foreign = dict(ran[1], request={"started_by": "someone"})
 ok2, _m = cp.import_from_worker("w_auto", ran[1]["po_id"], {"record": foreign, "events": []})
 check("...but not a job it was never given that is not automatic", ok2 is False)
 A27.INTERNAL_URL = saved_url
+A27.ensure_filtered_page = saved_nav
 
 rule("25. SUCCESSFUL REAL DISCOVERY — only on a machine that reaches eHub")
 # The test suite never touches the real eHub on its own: real verification

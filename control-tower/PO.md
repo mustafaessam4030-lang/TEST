@@ -147,21 +147,25 @@ has no PO job yet (up to `PO_SWEEP_LIMIT`, default 20) runs one job, one after
 another. A worker reports each job to the control plane as it goes.
 `PO_AUTO=0` turns it off.
 
-A named record is found the way a person finds it (6 Oct, KKLUENR260174):
-the Shipments List, its "BOL/AWB Number" box, Search, the row's own Status
-cell, that row's **Manage**; then the record's **BU Shipment Info** tab, at
-the bottom of which is **Documents**. Each document row there is a block
+It works the way an employee does — nothing has to be typed or given:
+eHub → **Shipments** (Centralized Shipments Tracking, BU view, Status =
+Under Clearance) → the rows, page by page, each row's own **Status** cell
+(exactly "Under Clearance", else the row is skipped) → that row's **Manage**
+→ the record's **BU Shipment Info** / General tab, at the bottom of which is
+**Documents**. No search box is used; a job re-run from the dashboard for one
+record looks it up in the same list. Each document row there is a block
 (not a table row) with **Delete** and **Download**: the name is read from the
 row the button is in, and the click lands on that row's **Download** only.
 Delete, Upload, Save, Correction Required and Complete are never pressed.
 When a step on eHub fails, the page is kept — a screenshot and its text, in
 `<PO_DATA_DIR>/evidence` — and named in the job's discovery trail.
 
-The supplier invoice No. (G4) is not on the Bill Entry. A job started by a
-person is given it; an automatic job is not, and stops at VALIDATION_FAILED
-("Supplier invoice No. missing") — nothing generated, nothing sent. eHub's
-list shows a "UNA+ Invoice Number" column; it is kept with every job as
-evidence, and used for G4 only with `PO_INVOICE_FROM=una`.
+The supplier invoice No. (G4): the one a person gave the job, else the one
+the Bill of Entry itself prints under an "Invoice No." / "Invoice Number"
+label (one value; two different ones → none chosen). eHub's "UNA+ Invoice
+Number" column is kept as evidence only and is never used for G4. With
+neither, the job stops at VALIDATION_FAILED ("Supplier invoice No. missing")
+— nothing generated, nothing sent.
 
 PO jobs open eHub with the ETA run's own browser launch (headed Edge) and
 sign-in; `PO_HEADLESS` / `PO_BROWSER_EXECUTABLE` override it.
