@@ -41,6 +41,7 @@ SUITES = [
     ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
+    ("test_atlas_research.py",  "ATLAS research: shipment intelligence, error investigation, sources"),
     ("test_chat_ui.py",         "ATLAS conversation in a real browser: open, think, answer, a11y, mobile"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
@@ -80,7 +81,10 @@ def main():
                    PO_DATA_DIR=tempfile.mkdtemp(prefix="ct_po_"),
                    # A run started by a suite never starts the PO automatic
                    # run against the real eHub; the suites that test it set it.
-                   PO_AUTO=os.environ.get("PO_AUTO_IN_TESTS", "0"))
+                   PO_AUTO=os.environ.get("PO_AUTO_IN_TESTS", "0"),
+                   # No suite reaches a real research service: the research
+                   # suite points ATLAS at its own stand-in.
+                   ATLAS_RESEARCH="0")
         result = subprocess.run(
             [sys.executable, str(path)], cwd=str(HERE),
             capture_output=True, text=True, env=env)

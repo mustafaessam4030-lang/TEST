@@ -524,6 +524,40 @@ the existing automation works is in `ARCHITECTURE.md`.
 
 ---
 
+## 10b. ATLAS research — shipments, vessels, ports, errors
+
+ATLAS always answers run facts from the run. When a question needs more —
+"where is it?", "why is it late?", "check the vessel / the port", "is CMA CGM
+having issues today?", "why did this fail and how do I fix it?" — it can
+research the public web itself (Claude, with web search and web fetch), and
+answer like a colleague: what the run says, what it found, what it could not
+verify, and what it recommends, with the sources it actually checked.
+
+Off until you give it a key (on the control plane, and on the local dashboard
+PC if you use that):
+
+```bat
+set ATLAS_RESEARCH_API_KEY=sk-ant-...
+```
+
+What leaves the building: the question, and a short brief of what the run
+holds about that shipment or failure (reference, carrier, dates, the recorded
+error) — URLs without their query strings, nothing named like a secret. No
+credentials, security codes or CAPTCHA values are ever in that brief.
+`ATLAS_RESEARCH=0` turns it off again.
+
+Rules it works under: run facts win over the web (a disagreement is stated,
+never silently replaced); a source is shown only if a real search or fetch
+returned it in that request; it never suggests bypassing CAPTCHA, carrier
+restrictions or authentication; and nothing it researches is learned as fact —
+only a recovery that was applied and then verified by the run is.
+
+Without a key, ATLAS still explains failures (causes ranked CONFIRMED / LIKELY /
+POSSIBLE / UNKNOWN against the run's evidence), answers general logistics
+questions, and says plainly when something would need research.
+
+---
+
 ## 11. Proving a write really landed
 
 `VERIFY_AFTER_SAVE` reopens each shipment after saving and reads the field back

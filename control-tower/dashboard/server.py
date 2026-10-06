@@ -383,6 +383,15 @@ class Handler(BaseHTTPRequestHandler):
             self._intel_get(route)
             return
 
+        if route == "/api/ask/progress":
+            # What ATLAS is actually doing for one in-flight question: the
+            # searches and pages of its research as they start. Nothing else.
+            from urllib.parse import parse_qs, urlparse as _up
+            from intelligence import research as _research
+            pid = (parse_qs(_up(self.path).query).get("id") or [""])[0]
+            self._send(200, json.dumps(_research.progress(_research.clean_progress_id(pid))))
+            return
+
         if route == "/api/atlas":
             # ATLAS's panel header: status, counts, what it noticed, and the
             # questions worth asking — from the same state the dashboard shows.
@@ -512,6 +521,10 @@ class Handler(BaseHTTPRequestHandler):
                        "domain": "po" if raw_context.get("domain") == "po" else "",
                        "po_id": re.sub(r"[^0-9a-z-]", "", str(
                            raw_context.get("po_id") or ""))[:40],
+                       # The tab's id for this one question, so it can ask
+                       # what ATLAS is doing while it researches.
+                       "progress_id": re.sub(r"[^A-Za-z0-9_-]", "", str(
+                           raw_context.get("progress_id") or ""))[:64],
                        # How many rude messages this tab has sent — a count only.
                        "conduct": int(raw_context.get("conduct") or 0)
                        if str(raw_context.get("conduct") or "0").isdigit() else 0}
@@ -522,12 +535,18 @@ class Handler(BaseHTTPRequestHandler):
         # The assistant only ever receives a snapshot. It has no handle on the
         # bridge, the browser or the credentials, so it cannot act on anything.
         # Untrimmed: the assistant should see the whole run, not the wire view.
-        reply = assistant.answer(question, _assistant_state(), context)
+        from intelligence import research as _research
+        _research.progress_start(context.get("progress_id"))
+        try:
+            reply = assistant.answer(question, _assistant_state(), context)
+        finally:
+            _research.progress_done(context.get("progress_id"))
         if LEARNING["on"] and INTEL_OK:
             # The intent and a reference-free pattern — never the conversation.
             # A request about a verification code keeps no pattern at all.
             intent = reply.get("intent")
-            fallback = str(reply.get("answer") or "").startswith("I don't have that information")
+            fallback = bool(reply.get("fallback")) or \
+                str(reply.get("answer") or "").startswith("I don't have that information")
             # A rude message is logged by its label alone — not its words.
             intel_events.record("question", intent=intent or "unrecognised",
                                 pattern=None if intent == "code_request" or reply.get("conduct")

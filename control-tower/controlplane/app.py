@@ -75,6 +75,7 @@ ROUTE_PERMISSIONS = {
     ("GET", "/api/evidence/file"): "evidence.view",
     ("POST", "/api/evidence/upload"): "evidence.upload",
     ("POST", "/api/ask"): "atlas.chat",
+    ("GET", "/api/ask/progress"): "atlas.chat",
     ("POST", "/api/feedback"): "atlas.chat",
     ("POST", "/api/runs"): "runs.start",
     ("POST", "/api/human"): "human.act",
@@ -792,6 +793,10 @@ class Handler(tower_server.Handler):
             self._human()
         elif route == "/api/ask":
             self._ask()
+        elif route == "/api/ask/progress":
+            from intelligence import research as _research
+            self._send(200, _research.progress(_research.clean_progress_id(
+                self._query().get("id"))))
         elif route == "/api/feedback":
             tower_server.Handler.do_POST(self)
         elif route == "/api/atlas":
@@ -1088,16 +1093,24 @@ class Handler(tower_server.Handler):
                    "evidence_id": re.sub(r"[^0-9a-f]", "", str(raw.get("evidence_id") or ""))[:16],
                    "domain": "po" if raw.get("domain") == "po" else "",
                    "po_id": re.sub(r"[^0-9a-z-]", "", str(raw.get("po_id") or ""))[:40],
+                   "progress_id": re.sub(r"[^A-Za-z0-9_-]", "", str(raw.get("progress_id")
+                                                                   or ""))[:64],
                    # ATLAS answers about PO jobs only for a role that may see them.
                    "po": "1" if rbac.allowed(self.user, "po.view") else "0",
                    "conduct": int(raw.get("conduct") or 0)
                    if str(raw.get("conduct") or "0").isdigit() else 0}
         state = self.app.payload(self.user)
-        reply = assistant.answer(question, state, context)
+        from intelligence import research as _research
+        _research.progress_start(context.get("progress_id"))
+        try:
+            reply = assistant.answer(question, state, context)
+        finally:
+            _research.progress_done(context.get("progress_id"))
         try:
             from intelligence import events as intel_events
             intent = reply.get("intent")
-            fallback = str(reply.get("answer") or "").startswith("I don't have that information")
+            fallback = bool(reply.get("fallback")) or \
+                str(reply.get("answer") or "").startswith("I don't have that information")
             intel_events.record("question", intent=intent or "unrecognised",
                                 pattern=None if intent == "code_request" or reply.get("conduct")
                                 else intel_events.question_pattern(question),

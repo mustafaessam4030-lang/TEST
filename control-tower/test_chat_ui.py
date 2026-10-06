@@ -215,21 +215,22 @@ check("A modal dialog, named by its title",
       and page.get_attribute("#chat", "aria-modal") == "true"
       and page.get_attribute("#chat", "aria-labelledby") == "chTitle"
       and page.get_attribute("#chat", "aria-hidden") == "false")
-check("Header: ATLAS / Operational Intelligence",
-      page.inner_text("#chTitle").split() == ["ATLAS", "Operational", "Intelligence"],
-      page.inner_text("#chTitle"))
+check("Header: ATLAS (Operational Intelligence for screen readers)",
+      page.inner_text("#chTitle").split()[0] == "ATLAS" and
+      "Operational Intelligence" in page.text_content("#chTitle"), page.inner_text("#chTitle"))
 check("...with the existing ATLAS character, drawn by the Atlas component",
       page.locator("#chAtlas .atlas-fig").count() == 1
       and page.locator("#chAtlas .atlas-fig").bounding_box()["width"] >= 40)
 page.wait_for_function("() => document.querySelector('#chStatus').textContent.trim().length > 0")
-check("...and a live status from /api/atlas with its dot",
-      page.inner_text("#chStatus").strip() != "" and
-      page.get_attribute("#chRole", "data-s") in ("live", "wait", "bad", "idle"),
-      page.inner_text("#chStatus"))
+check("...and one live line from the run state: watching / human action / ready",
+      page.inner_text("#chStatus").strip() in ("Watching this run", "Human action required",
+                                               "Ready") or
+      page.inner_text("#chStatus").startswith("Watching "), page.inner_text("#chStatus"))
+check("...its dot matches it", page.get_attribute("#chRole", "data-s") in ("live", "wait", "idle"))
 check("The run in context: the run id, as a button", page.is_visible("#chCtx")
       and page.inner_text("#chCtxV").strip() == RUN, page.inner_text("#chCtx"))
 check("Empty state: the welcome, centered", page.is_visible("#chEmpty") and
-      "Ask me about the current run, shipment status, failures, human actions, or PO automation."
+      "Ask me about this run, shipments, failures, human actions, or PO automation."
       in page.inner_text("#chEmpty"))
 chips = page.locator("#chEmptySug .ch-chip")
 check("...with 3–4 suggestions taken from this run", 3 <= chips.count() <= 4,
@@ -261,8 +262,7 @@ check("...on the right", me["x"] + me["width"] > body_box["x"] + body_box["width
 check("Thinking: ATLAS (analyzing) with what it is doing, as a status",
       page.is_visible("#chatBody .msg.think") and
       page.get_attribute("#chatBody .msg.think", "role") == "status" and
-      page.inner_text("#chatBody .msg.think .th-label").strip() in (
-          "Analyzing this run…", "Checking the latest run evidence…") and
+      page.inner_text("#chatBody .msg.think .th-label").strip() == "Checking the run…" and
       page.locator("#chatBody .msg.think .atlas.is-analyzing").count() == 1,
       page.inner_text("#chatBody .msg.think") if page.is_visible("#chatBody .msg.think") else "")
 check("...the same words for screen readers", page.inner_text("#chTy").strip().endswith("…"),
@@ -280,12 +280,12 @@ check("...and no typing timer exists in the page",
       "typeOut" not in INDEX and "class=\"cur\"" not in INDEX)
 page.evaluate("window.__hold = 0")
 want = api_ask("Why did this fail?")["answer"]
-shown = " ".join(bub.inner_text().split())
+shown = " ".join(bub.text_content().split())
 missing = [plain(l) for l in want.split("\n") if plain(l) and plain(l) not in shown]
 check("Every line of the server's answer is on the page — nothing dropped or added",
       not missing, missing[:3])
-kinds = page.locator("#chatBody .msg.bot .bub .cl-k").all_inner_texts()
-check("Grounding stays visible: Fact and Not established labels",
+kinds = page.locator("#chatBody .msg.bot .bub .cl-k").all_text_contents()
+check("Grounding kept: Fact and Not established labels (the record is one tap away)",
       any(k.strip().lower() == "fact" for k in kinds)
       and any(k.strip().lower() == "not established" for k in kinds), kinds)
 check("ATLAS answers on the left, no card around it, with its small avatar",
@@ -295,7 +295,7 @@ check("ATLAS answers on the left, no card around it, with its small avatar",
 check("The status returns to normal",
       not page.is_disabled("#chatSend") or page.input_value("#chatIn") == "")
 sug = page.locator("#chatSug .ch-chip")
-check("Suggestions reduce once the conversation is active (1–3)", 1 <= sug.count() <= 3,
+check("Suggestions reduce once the conversation is active (at most 2)", 1 <= sug.count() <= 2,
       sug.all_inner_texts())
 check("The welcome gives way to the conversation", not page.is_visible("#chEmpty"))
 
@@ -380,6 +380,7 @@ page.keyboard.press("Shift+Enter")
 page.keyboard.type("second line")
 page.keyboard.press("Shift+Enter")
 page.keyboard.type("third line")
+page.wait_for_timeout(250)
 check("Shift+Enter adds a line and does not send",
       page.input_value("#chatIn").count("\n") == 2)
 check("...and the composer grows with it",
@@ -439,8 +440,8 @@ ctx, page, errors = new_page()
 page.route("**/api/atlas", lambda route: route.abort())
 open_chat(page)
 page.wait_for_timeout(500)
-check("Backend unreachable: the header says so, in red",
-      "Not connected" in page.inner_text("#chStatus")
+check("Backend unreachable: the header says so",
+      "Connection unavailable" in page.inner_text("#chStatus")
       and page.get_attribute("#chRole", "data-s") == "bad", page.inner_text("#chStatus"))
 page.unroute("**/api/atlas")
 page.route("**/api/ask", lambda route: route.abort())
@@ -448,20 +449,115 @@ page.fill("#chatIn", "How is the run going?")
 page.press("#chatIn", "Enter")
 page.wait_for_selector("#chatBody .bub.err", timeout=10000)
 err = page.locator("#chatBody .bub.err").last
-check("A failed answer is said plainly — no data, no guess",
-      "could not reach the Control Tower backend" in err.inner_text())
-check("...with Try again", err.locator("button", has_text="Try again").count() == 1)
+check("A failed answer: 'Connection unavailable', and why it won't guess",
+      "Connection unavailable" in err.inner_text() and
+      "can’t reach the Control Tower backend right now, so I can’t safely answer from live run "
+      "data" in err.inner_text(), err.inner_text())
+check("...with Retry", err.locator("button", has_text="Retry").count() == 1)
 check("...and the composer usable again", not page.is_disabled("#chatIn")
       and "busy" not in (page.get_attribute("#chatSend", "class") or ""))
 page.unroute("**/api/ask")
-err.locator("button", has_text="Try again").click()
+err.locator("button", has_text="Retry").click()
 page.wait_for_function("() => [...document.querySelectorAll('#chatBody .msg.bot .bub')]"
                        ".filter(b => !b.classList.contains('err')).length > 0", timeout=20000)
-check("Try again sends the same question, and the real answer arrives",
+check("Retry sends the same question, and the real answer arrives",
       page.locator("#chatBody .msg.me .bub").last.inner_text().strip() == "How is the run going?")
 page.wait_for_timeout(800)
-check("...and the status recovers", "Not connected" not in page.inner_text("#chStatus"),
+check("...and the status recovers", "Connection unavailable" not in page.inner_text("#chStatus"),
       page.inner_text("#chStatus"))
+check("No script errors", not errors, errors[:3])
+ctx.close()
+
+# ═════════════════════════════════════════════════════════════════════════
+rule("5b. RESEARCH IN THE CHAT: REAL PROGRESS, SOURCES, DETAILS, ONE BADGE")
+# ═════════════════════════════════════════════════════════════════════════
+# The server's research is tested in test_atlas_research.py; here the page
+# is given a researched reply and a progress feed (stubs, by design) to show
+# it renders what came back and nothing else.
+ctx, page, errors = new_page()
+open_chat(page)
+stages = {"n": 0}
+
+
+def progress_feed(route):
+    stages["n"] += 1
+    stage = ("Looking at the carrier information…", "MEDUAHP69377 MSC tracking") \
+        if stages["n"] < 3 else ("Checking the vessel…", "MSC vessel voyage MEDUAHP69377")
+    route.fulfill(status=200, content_type="application/json",
+                  body=json.dumps({"stage": stage[0], "detail": stage[1], "done": False}))
+
+
+page.route("**/api/ask/progress*", progress_feed)
+page.evaluate("""() => { const f = window.fetch; window.fetch = (u, o) =>
+  String(u).indexOf('/api/ask') >= 0 && String(u).indexOf('progress') < 0
+    ? new Promise((r) => setTimeout(() => r(f(u, o)), 2600)) : f(u, o); }""")
+researched = {"answer": "I checked the run first: MEDUAHP69377 is with MSC.\n\nMSC's notice says "
+              "the service runs two days late.\n\n**Next step**\nWatch the next run's ETA.",
+              "reference": "MEDUAHP69377", "understood": True,
+              "details": "**Fact** — a\n**Fact** — b\n**Fact** — c\n**Fact** — d",
+              "web_sources": [{"url": "https://www.msc.com/en/newsroom/advisory", "title":
+                               "Schedule update", "publisher": "msc.com",
+                               "kind": "Carrier (official)"}],
+              "research": {"ok": True, "searches": ["MEDUAHP69377 MSC tracking"]},
+              "suggestions": [], "buttons": []}
+page.route("**/api/ask", lambda route: route.fulfill(status=200, content_type="application/json",
+                                                     body=json.dumps(researched)))
+page.fill("#chatIn", "Where is MEDUAHP69377?")
+page.press("#chatIn", "Enter")
+page.wait_for_function("() => (document.querySelector('#chatBody .msg.think .th-label') || {})"
+                       ".textContent === 'Checking the vessel…'", timeout=8000)
+check("While waiting, the thinking line is the server's real stage, with its query",
+      page.inner_text("#chatBody .msg.think .th-detail") == "MSC vessel voyage MEDUAHP69377")
+page.wait_for_selector("#chatBody .msg.think", state="detached", timeout=10000)
+page.wait_for_timeout(300)
+bub = page.locator("#chatBody .msg.bot .bub").last
+check("Sources: the cited page, with who publishes it, opening in a new tab",
+      bub.locator(".ch-src a").count() == 1 and
+      bub.locator(".ch-src a").get_attribute("target") == "_blank" and
+      "Carrier (official)" in bub.locator(".ch-src").inner_text() and
+      "1 search" in bub.locator(".ch-src-h").inner_text())
+check("The run's own answer is kept, folded: 'From this run'",
+      bub.locator("details.cl-group summary", has_text="From this run").count() == 1 and
+      bub.locator("details.cl-group").first.get_attribute("open") is None)
+check("A short bold line is a section label (Next step), not a card",
+      bub.locator(".ah", has_text="Next step").count() == 1)
+check("One status badge, from the run's own state: written and read back → VERIFIED",
+      bub.locator(".ch-badge").count() == 1 and
+      bub.locator(".ch-badge").inner_text().strip() == "VERIFIED",
+      bub.locator(".ch-badge").all_inner_texts())
+page.unroute("**/api/ask")
+page.unroute("**/api/ask/progress*")
+ctx.close()
+
+ctx, page, errors = new_page()
+open_chat(page)
+ask(page, "Why did this fail?")
+bub = page.locator("#chatBody .msg.bot .bub").last
+check("A long grounded record folds into one disclosure; the lead stays readable",
+      bub.locator("details.cl-group").count() >= 1 and
+      bub.locator("details.cl-group").first.get_attribute("open") is None)
+check("...the failed shipment carries its RESTRICTED badge",
+      bub.locator(".ch-badge").all_inner_texts() == ["RESTRICTED"],
+      bub.locator(".ch-badge").all_inner_texts())
+dock = page.locator("#chDock").bounding_box()
+page.evaluate("document.querySelector('#chatBody').scrollTop = 1e9")
+page.wait_for_timeout(250)
+lastb = page.locator("#chatBody > *").last.bounding_box()
+check("The floating composer never covers the last message",
+      lastb["y"] + lastb["height"] <= dock["y"] + dock["height"] -
+      page.locator("#chat .ch-f").bounding_box()["height"] + 2, (lastb, dock))
+page.evaluate("document.querySelector('#chatBody').scrollTop = 0")
+page.wait_for_timeout(200)
+page.evaluate("atlasSay && atlasSay('A new line from the run.')")
+page.wait_for_timeout(300)
+check("Reading older messages: a new line never pulls you down; '↓ New response' appears",
+      page.evaluate("document.querySelector('#chatBody').scrollTop") < 50 and
+      page.is_visible("#chJump") and "New response" in page.inner_text("#chJump"))
+page.click("#chJump")
+page.wait_for_timeout(700)
+check("...and it takes you to the latest", page.evaluate(
+    "(() => { const b = document.querySelector('#chatBody'); return b.scrollHeight - b.scrollTop "
+    "- b.clientHeight < 90; })()"))
 check("No script errors", not errors, errors[:3])
 ctx.close()
 

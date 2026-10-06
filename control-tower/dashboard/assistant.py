@@ -1127,6 +1127,14 @@ try:
     from . import atlas_po
 except Exception:                                   # pragma: no cover
     import atlas_po
+try:
+    from . import atlas_intel
+except Exception:                                   # pragma: no cover
+    import atlas_intel
+try:
+    from intelligence import research as _research
+except Exception:                                   # pragma: no cover
+    _research = None
 
 MODE_WORDS = {"air": "Air", "ocean": "Ocean", "road": "Road", "rail": "Rail",
               "unknown": "Unknown"}
@@ -2993,6 +3001,10 @@ def answer(question, state, context=None):
         reply["conduct"] = {"kind": kind, "strikes": strikes + 1}
     else:
         reply = _answer_core(question, state, context)
+        # A colleague's answer: shipment intelligence, error investigation,
+        # general knowledge, and research when the run is not enough.
+        reply = atlas_intel.enrich(question, state, context, reply, RunData(state),
+                                   run_failures, _pick_failure)
     reply.setdefault("sources", ["bridge.snapshot"])
     try:
         data = RunData(state)
@@ -3322,21 +3334,25 @@ def _answer_core(question, state, context=None):
         # Rather than shrugging, say where the run stands and point at the
         # nearest useful thing.
         counters = data.counters
+        elsewhere = ("" if _research is not None and _research.enabled() else
+                     ", and I can't check it elsewhere right now — {0}".format(
+                         _research.why_off() if _research is not None else
+                         "web research isn't available here"))
         if data.shipments:
             summary = (
-                "I don't have that information in this run — I answer only from "
-                "its data. Here is where the run stands:\n\n{0} processed — {1} written to the Hub, {2} skipped, "
-                "{3} failed. The run looks {4}.\n\nTry a shipment number, "
-                "\u201cwhich shipments failed\u201d, \u201ccompare the "
-                "carriers\u201d, or \u201cdownload the data\u201d."
+                "That isn't something this run records{5}. Here's where the run stands: "
+                "{0} processed — {1} written to the Hub, {2} skipped, {3} failed. The run "
+                "looks {4}.\n\nAsk me about a shipment number, \u201cwhich shipments "
+                "failed\u201d, \u201ccompare the carriers\u201d, or \u201cdownload the "
+                "data\u201d."
             ).format(counters.get("processed", 0), counters.get("successful", 0),
                      counters.get("skipped", 0), counters.get("failed", 0),
-                     data.health_summary())
+                     data.health_summary(), elsewhere)
         else:
-            summary = ("I don't have that information in this run, and no shipments "
-                       "have been processed yet. Once a run starts I can answer "
-                       "about any of them.")
-        return {"answer": summary, "card": None, "understood": False,
+            summary = ("That isn't something this run records{0}, and no shipments have been "
+                       "processed yet. Once a run starts I can answer about any of "
+                       "them.".format(elsewhere))
+        return {"answer": summary, "card": None, "understood": False, "fallback": True,
                 "reference": context.get("reference"), "grounded": True}
 
     except Exception as error:

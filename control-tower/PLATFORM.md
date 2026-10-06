@@ -395,6 +395,10 @@ Control plane:
 | `ATA_ALLOW_CONCURRENT_RUNS` | 0 | |
 | `ATA_SESSION_LEASE_S` | 45 | Human Action claim lease |
 | `ATLAS_INTEL_DIR`, `ATLAS_DATA_ORIGIN` | —, production | |
+| `ATLAS_RESEARCH_API_KEY` (or `ANTHROPIC_API_KEY`) | — | turns on ATLAS's web research (Claude Messages API with web search + web fetch). Unset = off |
+| `ATLAS_RESEARCH` | on when a key is set | `0` turns research off regardless |
+| `ATLAS_RESEARCH_MODEL` / `ATLAS_RESEARCH_BASE_URL` | `claude-opus-5-5` / `https://api.anthropic.com` | |
+| `ATLAS_RESEARCH_MAX_SEARCHES` / `ATLAS_RESEARCH_CACHE_S` / `ATLAS_RESEARCH_TIMEOUT_S` | 6 / 1800 / 120 | per question; repeat questions reuse the answer for 30 min unless "latest" is asked |
 
 Worker: `ATA_CONTROL_PLANE_URL` (https), `ATA_WORKER_TOKEN`, `ATA_CA_FILE`
 (optional private CA), `ATA_HEARTBEAT_S` (10), `ATLAS_DATA_ORIGIN`

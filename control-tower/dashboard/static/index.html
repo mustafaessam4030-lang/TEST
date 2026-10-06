@@ -1833,6 +1833,174 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
   .th-label{background:none;-webkit-text-fill-color:currentColor;color:var(--mid)}
   .th-dots span{opacity:.6}
 }
+/* ═══════════════════════════════════════════════════════════════════
+   ATLAS — FINAL POLISH
+   A chat surface rather than a dialog card: warm white (light) or deep
+   navy-charcoal (dark), no frame line, a soft shadow; the header quiet;
+   suggestions and the composer floating on glass over the end of the
+   conversation; Mantrac yellow kept for the few things that act.
+   ═══════════════════════════════════════════════════════════════════ */
+:root{--ch-bg:#FCFBF8;--ch-y:#FFC72C;--ch-y-deep:#D99A00;--ch-y-ink:#0B1F33;
+  --ch-glass:rgba(255,255,255,.74);--ch-hair:rgba(11,31,51,.10);--ch-soft:rgba(11,31,51,.045);
+  --ch-soft-2:rgba(11,31,51,.08);--ch-fast:cubic-bezier(.25,.9,.3,1)}
+:root[data-theme="dark"]{--ch-bg:#0E151F;--ch-glass:rgba(24,34,48,.72);--ch-hair:rgba(255,255,255,.09);
+  --ch-soft:rgba(255,255,255,.055);--ch-soft-2:rgba(255,255,255,.09);--ch-y-deep:#FFC72C}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--ch-bg:#0E151F;
+  --ch-glass:rgba(24,34,48,.72);--ch-hair:rgba(255,255,255,.09);--ch-soft:rgba(255,255,255,.055);
+  --ch-soft-2:rgba(255,255,255,.09);--ch-y-deep:#FFC72C}}
+
+#chat{top:20px;bottom:20px;width:min(1120px,calc(100vw - 48px));background:var(--ch-bg);border:0;
+  border-radius:28px;box-shadow:0 0 0 1px var(--ch-hair),0 40px 100px -24px rgba(11,31,51,.38)}
+:root[data-theme="dark"] #chat{box-shadow:0 0 0 1px var(--ch-hair),0 40px 110px -20px rgba(0,0,0,.7)}
+
+/* header: the name, a live line, the run — nothing boxed */
+#chat .ch-h{min-height:64px;padding:12px 14px 10px 20px;border-bottom:1px solid transparent;
+  transition:border-color .25s var(--e)}
+#chat.scrolled .ch-h{border-bottom-color:var(--ch-hair)}
+#chat .ch-nm{font-size:15px;letter-spacing:.09em}
+#chat .ch-nm .ch-sub{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
+  white-space:nowrap;margin:0}
+#chat .ch-rl{font-size:12.5px;margin-top:2px}
+#chat .ch-rl span{display:inline-block}
+#chat .ch-rl span.chg{animation:chStatus .32s var(--ch-fast) both}
+@keyframes chStatus{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+#chat .ch-rl[data-s="wait"] i{background:var(--ch-y-deep)}
+.ch-ctx{background:var(--ch-soft);border-color:transparent;transition:background .18s var(--e),
+  transform .22s var(--ch-spring)}
+.ch-ctx:hover{background:var(--ch-soft-2);border-color:transparent}
+.ch-ctx:active{transform:scale(.96)}
+#chat .ch-x{transition:background .18s var(--e),color .18s,transform .3s var(--ch-spring)}
+#chat .ch-x:hover{transform:rotate(90deg)}
+#chat .ch-x:active{transform:rotate(90deg) scale(.9)}
+
+/* what ATLAS noticed: a quiet line, not a panel */
+#chat .ch-n{background:transparent;border-bottom:0;padding-top:2px;padding-bottom:8px}
+#chat .ch-sum span{background:var(--ch-soft);padding:3px 10px;border-radius:999px}
+#chat .ch-nt{margin-top:8px}
+
+/* the conversation runs under the floating dock */
+#chat .ch-b{gap:26px;padding-top:24px;padding-bottom:calc(var(--ch-dock,132px) + 18px);
+  scroll-padding-bottom:calc(var(--ch-dock,132px) + 18px)}
+.ch-empty{justify-content:flex-start;padding:clamp(20px,9vh,110px) 24px calc(var(--ch-dock,132px) + 4px)}
+.ch-e-av{margin-bottom:0}
+.ch-e-t{font-size:21px;margin-top:6px}
+.ch-e-s{font-size:12.5px;margin-top:1px}
+.ch-e-p{font-size:15.5px;margin:12px 0 16px;max-width:440px;color:var(--mid)}
+.ch-e-n{margin-top:14px;font-size:12px;color:var(--faint)}
+.ch-jump{bottom:calc(var(--ch-dock,132px) + 6px);background:var(--ch-glass);
+  -webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);
+  border:1px solid var(--ch-hair)}
+
+/* the dock: suggestions + composer, on glass, over a fade */
+.ch-dock{position:absolute;left:0;right:0;bottom:0;z-index:3;pointer-events:none;
+  padding-top:22px;background:linear-gradient(to bottom,transparent 0,var(--ch-bg) 22px)}
+.ch-dock > *{pointer-events:auto}
+#chat .ch-s{padding-bottom:10px;transition:opacity .2s var(--e),transform .25s var(--ch-fast)}
+#chat.typing .ch-s,#chat.busy .ch-s{opacity:0;transform:translateY(4px);pointer-events:none}
+#chat .ch-chip{background:var(--ch-glass);border:1px solid var(--ch-hair);font-size:13px;padding:8px 14px;
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  transition:background .18s var(--e),transform .2s var(--ch-spring)}
+#chat .ch-chip:hover{background:var(--ch-soft-2)}
+#chat .ch-chip:active{transform:scale(.95)}
+.ch-e-sug .ch-chip{background:var(--ch-soft)!important;border-color:transparent!important}
+#chat .ch-f{padding-top:0}
+.ch-box{background:var(--ch-glass);border:1px solid var(--ch-hair);border-radius:24px;
+  -webkit-backdrop-filter:blur(22px) saturate(1.6);backdrop-filter:blur(22px) saturate(1.6);
+  box-shadow:0 1px 1px rgba(11,31,51,.04),0 14px 36px -10px rgba(11,31,51,.22);
+  transition:border-color .2s var(--e),box-shadow .25s var(--e),transform .3s var(--ch-spring)}
+:root[data-theme="dark"] .ch-box{background:var(--ch-glass);
+  box-shadow:0 1px 1px rgba(0,0,0,.3),0 16px 40px -12px rgba(0,0,0,.6)}
+.ch-box:focus-within{border-color:rgba(217,154,0,.55);
+  box-shadow:0 0 0 4px rgba(255,199,44,.20),0 16px 40px -12px rgba(11,31,51,.24)}
+#chat .ch-ta{transition:height .14s var(--ch-fast)}
+#chat .send{background:var(--ch-y);color:var(--ch-y-ink);transition:transform .25s var(--ch-spring),
+  background .2s var(--e),color .2s}
+#chat .send:not(:disabled):hover{filter:brightness(1.03)}
+#chat .send:not(:disabled):active{transform:scale(.86)}
+#chat .send:disabled{background:var(--ch-soft-2);color:var(--faint)}
+#chat .send.busy{background:var(--ch-soft-2);color:var(--faint)}
+#chat .send.busy::after{display:none}
+#chat .send.busy svg{opacity:.55}
+.ch-hint{margin-top:7px;opacity:.85}
+
+/* messages */
+#chat .msg.me{animation:chMe .3s var(--ch-spring) both}
+#chat .msg.me .bub{padding:9px 15px;border-radius:20px 20px 6px 20px;font-size:15px}
+#chat .msg.bot{animation:chMsg .42s var(--ch-spring) both}
+#chat .msg.bot .bub{padding-top:3px}
+#chat .msg.bot .bub > p:first-child,#chat .msg.bot .bub > .ch-meta + p{font-size:16px;line-height:1.62;
+  color:var(--ink)}
+#chat .bub p{margin:0 0 9px}
+#chat .bub .ah{font-size:11.5px;font-weight:650;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--mid);margin:18px 0 6px}
+#chat .bub .ah:first-child{margin-top:0}
+#chat .bub p.hl{font-weight:600}
+.ch-meta{display:flex;align-items:center;gap:8px;margin:0 0 8px;flex-wrap:wrap}
+.ch-meta .ref{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+.ch-badge{display:inline-flex;align-items:center;gap:6px;height:21px;padding:0 9px;border-radius:999px;
+  font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  background:var(--ch-soft);color:var(--mid)}
+.ch-badge i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.ch-badge.b-ok{background:var(--grn-wash,rgba(22,163,74,.1));color:var(--grn)}
+.ch-badge.b-proc{background:rgba(37,99,235,.1);color:var(--blu)}
+.ch-badge.b-wait{background:var(--y-wash);color:var(--y)}
+.ch-badge.b-human{background:var(--vio-wash);color:var(--vio)}
+.ch-badge.b-fail,.ch-badge.b-restr{background:var(--red-wash,rgba(220,38,38,.08));color:var(--red)}
+/* grounded rows, grouped: the record behind the answer, one tap away */
+.cl-group{margin:6px 0 10px}
+#chat .cl-group .evx-b{padding-top:4px}
+/* sources the research actually checked */
+.ch-src{margin-top:14px;padding-top:10px;border-top:1px solid var(--ch-hair)}
+.ch-src-h{font-size:11px;font-weight:650;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+  margin-bottom:6px;display:flex;gap:8px}
+.ch-src-h em{font-style:normal;font-weight:500;letter-spacing:0;text-transform:none}
+.ch-src a{display:flex;align-items:baseline;gap:8px;padding:4px 0;font-size:13px;color:var(--ink);
+  text-decoration:none;min-width:0}
+.ch-src a b{flex:none;font-weight:600;font-size:12.5px}
+.ch-src a span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mid)}
+.ch-src a small{flex:none;font-size:11px;color:var(--faint)}
+.ch-src a:hover span{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+/* evidence, details, actions */
+.evx{border:0;background:var(--ch-soft);border-radius:14px;transition:background .2s var(--e)}
+.evx:hover{background:var(--ch-soft-2)}
+.evx > summary{padding:9px 14px;font-size:13px}
+.evx > summary em{white-space:nowrap}
+.evx[open] > .evx-b{animation:chOpen .22s var(--ch-fast) both}
+@keyframes chOpen{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+#chat .dl{height:34px;padding:0 15px;border:0;background:var(--ch-soft-2);font-size:13px;font-weight:600;
+  transition:background .18s var(--e),transform .22s var(--ch-spring),box-shadow .2s}
+#chat .dl:hover{background:var(--ch-soft-2);transform:translateY(-1px);box-shadow:0 4px 12px -6px rgba(11,31,51,.3)}
+#chat .dl:active{transform:scale(.95)}
+#chat .dl.pri{background:var(--ch-me);color:var(--ch-me-ink)}
+:root[data-theme="dark"] #chat .dl.pri{background:var(--ch-y);color:var(--ch-y-ink)}
+/* thinking: the character moves a little; what it is doing, and dots */
+#chat .msg.think .atlas-float{animation:axFloat 2.6s ease-in-out infinite}
+.th{align-items:center}
+.th-txt{display:flex;flex-direction:column;min-width:0}
+.th-detail{font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:520px;margin-top:2px;animation:chStatus .3s var(--ch-fast) both}
+.th-label.chg{animation:chStatus .3s var(--ch-fast) both}
+.th-dots span{background:var(--ch-y-deep)}
+/* connection unavailable: calm, specific, one way forward */
+#chat .bub.err{box-shadow:none;padding-left:0}
+.err-t{display:flex;align-items:center;gap:8px;font-weight:650;font-size:15px;margin-bottom:4px}
+.err-t i{width:7px;height:7px;border-radius:50%;background:var(--y-dot)}
+.err-p{color:var(--mid);margin:0 0 10px}
+
+@media(max-width:640px){
+  #chat{top:var(--ch-top,0px);bottom:auto;width:100%;border-radius:0;box-shadow:none}
+  #chat .ch-av,#chat .ch-av.atlas{--ax:38px;width:38px;height:38px;margin:0}
+  #chat .ch-h{padding:10px 8px 8px 14px}
+  #chat .msg.bot .bub > p:first-child{font-size:15.5px}
+  .th-detail{max-width:230px}
+  .ch-ctx{max-width:34%}
+  .evx > summary em{display:none}
+  .ch-empty{padding-top:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  #chat .msg.think .atlas-float{animation:none!important}
+  #chat .ch-x:hover{transform:none}
+}
 </style>
 </head>
 <body>
@@ -2508,7 +2676,7 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
   <div class="chat" id="chat" role="dialog" aria-modal="true" aria-labelledby="chTitle" aria-hidden="true">
     <div class="ch-h">
       <div class="ch-av" id="chAtlas" aria-hidden="true"></div>
-      <div class="ch-id"><div class="ch-nm" id="chTitle">ATLAS <span>Operational Intelligence</span></div>
+      <div class="ch-id"><div class="ch-nm" id="chTitle">ATLAS <span class="ch-sub">Operational Intelligence</span></div>
         <div class="ch-rl" id="chRole" role="status" aria-live="polite"><i aria-hidden="true"></i><span id="chStatus">Watching this run</span></div>
         <div class="ch-ty sr" id="chTy" aria-live="polite"></div></div>
       <!-- Which run (or shipment) the conversation is about. Opens it. -->
@@ -2522,13 +2690,16 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
         <div class="ch-e-av" id="chEmptyAv" aria-hidden="true"></div>
         <div class="ch-e-t">ATLAS</div>
         <div class="ch-e-s">Operational Intelligence</div>
-        <p class="ch-e-p">Ask me about the current run, shipment status, failures, human actions, or PO automation.</p>
+        <p class="ch-e-p">Ask me about this run, shipments, failures, human actions, or PO automation.</p>
         <div class="ch-e-sug" id="chEmptySug" aria-label="Suggested questions"></div>
-        <p class="ch-e-n">I answer from this run's data only. If it isn't in the run, I'll say so rather than guess.</p>
+        <p class="ch-e-n">I start from this run's data and never guess — if I can't verify something, I'll say so.</p>
       </div>
       <div class="ch-b" id="chatBody" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with ATLAS" tabindex="-1"></div>
-      <button class="ch-jump" id="chJump" type="button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>Latest</button>
+      <button class="ch-jump" id="chJump" type="button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span id="chJumpT">New response</span></button>
     </div>
+    <!-- Suggestions and the composer float over the end of the conversation;
+         the conversation is padded by their height, so nothing is covered. -->
+    <div class="ch-dock" id="chDock">
     <div class="ch-s" id="chatSug" aria-label="Suggested questions"></div>
     <div class="ch-f">
       <div class="ch-box">
@@ -2539,6 +2710,7 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
         <button class="send" id="chatSend" type="button" aria-label="Send message" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
       </div>
       <div class="ch-hint" aria-hidden="true"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</div>
+    </div>
     </div>
   </div>
 </div>
@@ -5949,7 +6121,15 @@ document.addEventListener('click', (e) => {
   body.addEventListener('scroll', () => {
     follow = nearEnd();
     if (follow) $('chJump').hidden = true;
+    panel.classList.toggle('scrolled', body.scrollTop > 4);
   }, {passive: true});
+  // The floating dock's height pads the conversation, so it never covers
+  // the last message.
+  if (window.ResizeObserver){
+    new ResizeObserver(() => {
+      panel.style.setProperty('--ch-dock', Math.ceil($('chDock').getBoundingClientRect().height) + 'px');
+    }).observe($('chDock'));
+  }
   $('chJump').addEventListener('click', () => { follow = true; $('chJump').hidden = true; toEnd(true); });
 
   // A long session keeps the newest part of the conversation in the page.
@@ -6004,7 +6184,8 @@ document.addEventListener('click', (e) => {
         input.value = 'What does this screenshot tell us?';
         send();
       }).catch(() => { wait.remove(); setBusy(false);
-        failed('The image could not be uploaded.', null); });
+        failed('The screenshot didn\u2019t reach the Control Tower, so nothing was uploaded.', null,
+               'Upload failed'); });
   }
   // Queue progress lands in the conversation as ATLAS's own lines.
   atlasSay = (text) => {
@@ -6141,7 +6322,7 @@ document.addEventListener('click', (e) => {
     'learned (past jobs)':'k-learned', 'inference':'k-inference', 'recommendation':'k-rec',
     'not established':'k-unv', 'unverified':'k-unv', 'root cause':'k-root', 'recovery':'k-recovery',
     'recovery plan':'k-recovery'};
-  function rich(text){
+  function rich(text, openDetails, flat){
     const out = [];
     let list = null;
     const close = () => { if (list){ out.push('</' + list + '>'); list = null; } };
@@ -6167,30 +6348,67 @@ document.addEventListener('click', (e) => {
       }
       close();
       m = /^\*\*([^*]+)\*\*:?$/.exec(line);
-      if (m){ out.push('<div class="ah">' + esc(m[1]) + '</div>'); return; }
+      // A short bold line is a section label; a long one is a sentence.
+      if (m && m[1].length <= 44){ out.push('<div class="ah">' + esc(m[1]) + '</div>'); return; }
+      if (m){ out.push('<p class="hl">' + esc(m[1]) + '</p>'); return; }
       out.push('<p>' + fmt(line) + '</p>');
     });
     close();
-    return out.join('');
+    return (flat ? out : group(out, openDetails)).join('');
+  }
+  /* More than three grounded rows in a row are the record behind the
+     answer: folded under "Details from this run" (open when asked for). */
+  function group(blocks, open){
+    const res = [];
+    for (let i = 0; i < blocks.length; ){
+      if (!blocks[i].startsWith('<div class="cl">')){ res.push(blocks[i]); i++; continue; }
+      let j = i; while (j < blocks.length && blocks[j].startsWith('<div class="cl">')) j++;
+      const rows = blocks.slice(i, j);
+      if (rows.length <= 3){ res.push(...rows); i = j; continue; }
+      let title = 'Details from this run';
+      const prev = res[res.length - 1] || '';
+      const hm = /^<div class="ah">(.*)<\/div>$/.exec(prev);
+      if (hm){ res.pop(); title = hm[1]; }
+      res.push('<details class="evx cl-group"' + (open ? ' open' : '') + '><summary>' + CHEV +
+        title + '<em>' + rows.length + ' from the run</em></summary><div class="evx-b">' +
+        rows.join('') + '</div></details>');
+      i = j;
+    }
+    return res;
   }
 
   /* ATLAS at work: the character, and what it is actually doing — words
      taken from what was asked and where. No timer pretends to type. */
+  // The first thing the server does with a question: read the PO jobs, or
+  // the run. Later lines come from the server's own progress (setThinking).
   function thinkingLabel(){
-    if (activePage === 'po' || askCtx) return 'Reading the PO job records…';
-    if (S && S.run && S.run.status === 'running') return 'Analyzing this run…';
-    return 'Checking the latest run evidence…';
+    if (activePage === 'po' || askCtx) return 'Reading the PO job records\u2026';
+    return 'Checking the run\u2026';
   }
   function thinking(label){
     const wait = document.createElement('div');
     wait.className = 'msg bot think';
     wait.setAttribute('role', 'status');
     wait.innerHTML = '<div class="m-av ax-av" aria-hidden="true"></div>' +
-      '<div class="th"><span class="th-label">' + esc(label) + '</span>' +
+      '<div class="th"><span class="th-txt"><span class="th-label">' + esc(label) + '</span></span>' +
       '<span class="th-dots" aria-hidden="true"><span></span><span></span><span></span></span></div>';
     Atlas(wait.querySelector('.ax-av'), {size:'xs', text:false, state:'analyzing'});
     put($('chTy'), label);
     return add(wait);
+  }
+  function setThinking(wait, label, detail){
+    const l = wait.querySelector('.th-label');
+    if (!l || (l.textContent === label && (wait._detail || '') === (detail || ''))) return;
+    if (l.textContent !== label){
+      l.textContent = label; l.classList.remove('chg'); void l.offsetWidth; l.classList.add('chg');
+      put($('chTy'), label);
+    }
+    wait._detail = detail || '';
+    let d = wait.querySelector('.th-detail');
+    if (!detail){ if (d) d.remove(); return; }
+    if (!d){ d = document.createElement('span'); d.className = 'th-detail';
+      wait.querySelector('.th-txt').appendChild(d); }
+    d.textContent = detail;
   }
 
   const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
@@ -6217,6 +6435,51 @@ document.addEventListener('click', (e) => {
         '</span><span class="mini-v">' + esc(r[1]) + '</span></div>').join('') + '</div>';
     into.appendChild(el);
   }
+  /* One small badge, only when the answer is about one shipment and the
+     run holds its state — the run's word for it, in the app's colours. */
+  function badgeFor(ref){
+    const r = ref && ((S && S.shipments) || []).find((x) => x.reference === ref);
+    if (!r) return '';
+    const v = r.verification ? Object.keys(r.verification).map((k) => r.verification[k]) : [];
+    const restricted = /restrict/i.test(r.outcome || '') ||
+      ((r.carrier_access || {}).state === 'RESTRICTED');
+    const map = r.state === 'updated' ? (v.length && v.every((x) => x === true) ? ['VERIFIED', 'b-ok']
+                                                                               : ['SUCCESS', 'b-ok'])
+      : r.state === 'processing' ? ['PROCESSING', 'b-proc']
+      : r.state === 'waiting_for_human' ? ['HUMAN ACTION', 'b-human']
+      : r.state === 'failed' ? (restricted ? ['RESTRICTED', 'b-restr'] : ['FAILED', 'b-fail'])
+      : r.state === 'human_timeout' ? ['WAITING', 'b-wait'] : null;
+    if (!map) return '';
+    return '<span class="ch-badge ' + map[1] + '"><i aria-hidden="true"></i>' + map[0] + '</span>' +
+      '<span class="ref">' + esc(ref) + '</span>';
+  }
+  function meta(d){
+    const b = d.reference && d.understood !== false ? badgeFor(d.reference) : '';
+    return b ? '<div class="ch-meta">' + b + '</div>' : '';
+  }
+  // The run's own grounded answer, when research wrote the reply.
+  function detailsBox(into, text, open){
+    const box = document.createElement('details');
+    box.className = 'evx cl-group';
+    if (open) box.open = true;
+    box.innerHTML = '<summary>' + CHEV + 'From this run<em>what the run itself recorded</em></summary>' +
+      '<div class="evx-b"></div>';
+    box.querySelector('.evx-b').innerHTML = rich(text, true, true);
+    into.appendChild(box);
+  }
+  // The pages the research cited — only ones its searches actually returned.
+  function sourcesBox(into, list, r){
+    const box = document.createElement('div');
+    box.className = 'ch-src';
+    const n = (r.searches || []).length;
+    box.innerHTML = '<div class="ch-src-h">Sources<em>' + (r.cached ? 'from a few minutes ago' :
+      n ? n + ' search' + (n === 1 ? '' : 'es') : '') + '</em></div>' +
+      list.slice(0, 6).map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' +
+        '<b>' + esc(s.publisher || '') + '</b><span>' + esc(s.title || s.url) + '</span><small>' +
+        esc(s.kind || '') + '</small></a>').join('');
+    into.appendChild(box);
+  }
+
   /* The run's own evidence behind an answer — the shipment's record and any
      captures — folded under the answer until asked for. Only what the
      backend returned; never a security code (the backend never sends one). */
@@ -6299,20 +6562,21 @@ document.addEventListener('click', (e) => {
     add(el);
   }
   // An answer that did not come: said plainly, with the way to try again.
-  function failed(text, retry){
+  function failed(text, retry, title){
     const b = bubble('bot');
     b.classList.add('err');
-    b.innerHTML = '<p>' + fmt(text) + '</p>';
+    b.innerHTML = '<div class="err-t"><i aria-hidden="true"></i>' + esc(title || 'Connection unavailable') +
+      '</div><p class="err-p">' + fmt(text) + '</p>';
     if (retry){
       const again = document.createElement('button');
       again.type = 'button'; again.className = 'dl act';
-      again.textContent = 'Try again';
+      again.textContent = 'Retry';
       again.addEventListener('click', () => {
         if (busy) return;
         again.disabled = true; input.value = retry; send();
       });
       const row = document.createElement('div'); row.className = 'dl-row';
-      row.style.marginTop = '10px'; row.appendChild(again); b.appendChild(row);
+      row.appendChild(again); b.appendChild(row);
     }
     toEnd();
   }
@@ -6347,8 +6611,25 @@ document.addEventListener('click', (e) => {
      from /api/atlas, which reads the same state as the dashboard. Loaded
      when the panel opens and refreshed only while it is open. */
   let briefAt = 0, briefCold = -1, briefBusy = false, offline = false;
-  function setStatus(text, s){
-    put($('chStatus'), text);
+  /* The header's one live line, from the run state itself: a person
+     needed, the shipment being watched, or ready. */
+  function paintStatus(){
+    let text, s;
+    if (offline){ text = 'Connection unavailable'; s = 'bad'; }
+    else {
+      const run = (S && S.run) || {};
+      const cur = S && S.current && S.current.shipment;
+      const human = !!(S && ((S.human_action && S.human_action.waiting) ||
+        (S.human_queue || []).some((t) => !HQ_END[t.status])));
+      if (human){ text = 'Human action required'; s = 'wait'; }
+      else if (run.status === 'running'){
+        text = cur && cur.reference ? 'Watching ' + cur.reference : 'Watching this run'; s = 'live';
+      } else { text = 'Ready'; s = 'idle'; }
+    }
+    const el = $('chStatus');
+    if (el.textContent !== text){
+      el.textContent = text; el.classList.remove('chg'); void el.offsetWidth; el.classList.add('chg');
+    }
     $('chRole').dataset.s = s;
   }
   function loadBrief(){
@@ -6357,9 +6638,7 @@ document.addEventListener('click', (e) => {
     fetch('/api/atlas').then((r) => r.json()).then((d) => {
       offline = false;
       briefAt = Date.now(); briefCold = (S && S.cold_version) || 0;
-      setStatus(d.status || 'Watching this run',
-        /action/i.test(d.status || '') ? 'wait'
-        : /error/i.test(d.status || '') ? 'bad' : /watching/i.test(d.status || '') ? 'live' : 'idle');
+      paintStatus();
       const sm = d.summary || {}, all = d.notices || [];
       // "ATLAS noticed N" counts what needs someone — the same list the chat
       // gives for "what did you notice?". Calm lines are shown, not counted.
@@ -6379,8 +6658,7 @@ document.addEventListener('click', (e) => {
       box._notices = ns;
       if (!busy && (d.suggestions || []).length && !body.children.length) chips(d.suggestions);
     }).catch(() => {
-      offline = true;
-      setStatus('Not connected to the Control Tower', 'bad');
+      offline = true; paintStatus();
     }).finally(() => { briefBusy = false; });
   }
   $('chNotice').addEventListener('click', (e) => {
@@ -6394,15 +6672,22 @@ document.addEventListener('click', (e) => {
   // at most every few seconds.
   setInterval(() => {
     if (!$('chat').classList.contains('on') || document.hidden || !S) return;
-    paintCtx();
+    paintCtx(); paintStatus();
     if (S.cold_version !== briefCold && Date.now() - briefAt > 3000) loadBrief();
     else if (Date.now() - briefAt > 15000) loadBrief();
   }, 1500);
 
   /* ── the composer ── */
+  // The composer grows (and shrinks) smoothly: measured, then eased to.
   function grow(){
+    const from = input.offsetHeight;
+    input.style.transition = 'none';
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+    const to = Math.min(input.scrollHeight, 200);
+    input.style.height = from + 'px';
+    void input.offsetHeight;
+    input.style.transition = '';
+    input.style.height = to + 'px';
   }
   function syncSend(){ sendBtn.disabled = busy || !input.value.trim(); }
   function setBusy(on){
@@ -6417,7 +6702,7 @@ document.addEventListener('click', (e) => {
   function send(){
     const q = input.value.trim();
     if (!q || busy) return;
-    input.value = ''; grow();
+    input.value = ''; grow(); panel.classList.remove('typing');
     lastAsked = q;
     sendBtn.classList.remove('sent'); void sendBtn.offsetWidth; sendBtn.classList.add('sent');
     setBusy(true);
@@ -6426,16 +6711,31 @@ document.addEventListener('click', (e) => {
     follow = true;
     const mine = bubble('me'); mine.innerHTML = fmt(q);
     const wait = thinking(thinkingLabel());
+    // While this one question is in flight, ask the server what ATLAS is
+    // actually doing (the searches and pages of its research, as they
+    // start). Stops the moment the answer arrives; nothing runs otherwise.
+    const pid = 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    let polling = true;
+    const poll = () => {
+      if (!polling) return;
+      fetch('/api/ask/progress?id=' + pid).then((r) => r.ok ? r.json() : null).then((p) => {
+        if (polling && p && p.stage) setThinking(wait, p.stage, p.detail || '');
+      }).catch(() => {}).finally(() => { if (polling) setTimeout(poll, 650); });
+    };
+    setTimeout(poll, 650);
+    const ask = withPoContext({question: q, context: {reference: lastReference, action_id: lastFocus,
+                                                   evidence_id: lastEvidence, conduct: conductCount}});
+    ask.context.progress_id = pid;
 
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(withPoContext({question: q, context: {reference: lastReference, action_id: lastFocus,
-                                                   evidence_id: lastEvidence, conduct: conductCount}}))
+      body: JSON.stringify(ask)
     })
       .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then((d) => {
+        polling = false;
         wait.remove(); put($('chTy'), '');
-        if (offline) loadBrief();
+        if (offline){ offline = false; paintStatus(); loadBrief(); }
         const b = bubble('bot');
         if (d.conduct){
           // ATLAS noticed the language: an amber bubble and a short shake.
@@ -6446,7 +6746,10 @@ document.addEventListener('click', (e) => {
         }
         // The whole answer arrives at once (the backend answers in one
         // piece); the bubble's entrance is the only motion.
-        b.innerHTML = rich(d.answer || 'No answer came back.');
+        const wantsDetail = /\b(evidence|details?|facts|everything|show me)\b/i.test(q);
+        b.innerHTML = meta(d) + rich(d.answer || 'No answer came back.', wantsDetail);
+        if (d.details) detailsBox(b, d.details, wantsDetail);
+        if (d.web_sources && d.web_sources.length) sourcesBox(b, d.web_sources, d.research || {});
         evidenceBox(d);
         if (d.buttons && d.buttons.length) actionsRow(d.buttons);
         if (d.actions && d.actions.length){
@@ -6463,18 +6766,24 @@ document.addEventListener('click', (e) => {
           hqOpen(d.operation.action_id).then((r) => note(r.message || ''));
         }
         feedbackRow(b, q, d);
-        chips(d.suggestions && d.suggestions.length ? d.suggestions.slice(0, 3) : OPENERS().slice(0, 2));
+        // Once the conversation is going, at most two follow-ups, quietly.
+        chips(d.suggestions && d.suggestions.length ? d.suggestions.slice(0, 2) : OPENERS().slice(0, 2));
         paintCtx();
       })
       .catch(() => {
+        polling = false;
         wait.remove(); put($('chTy'), '');
-        setStatus('Not connected to the Control Tower', 'bad'); offline = true;
-        failed('I could not reach the Control Tower backend, so I have no data to answer from.', q);
+        offline = true; paintStatus();
+        failed('I can\u2019t reach the Control Tower backend right now, so I can\u2019t safely ' +
+               'answer from live run data.', q);
       })
-      .finally(() => { setBusy(false); showFrom(mine.parentNode); });
+      .finally(() => { polling = false; setBusy(false); showFrom(mine.parentNode); });
   }
 
-  input.addEventListener('input', () => { grow(); syncSend(); });
+  input.addEventListener('input', () => {
+    grow(); syncSend();
+    panel.classList.toggle('typing', !!input.value.trim());
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); send(); return; }
     if (e.key === 'ArrowUp' && !input.value && lastAsked){
@@ -6524,7 +6833,7 @@ document.addEventListener('click', (e) => {
       Atlas($('chEmptyAv'), {size:'md', text:false, state:(S ? atlasRun().state : 'idle')});
       chips(OPENERS());
     }
-    paintCtx();
+    paintCtx(); paintStatus();
     loadBrief();
     syncSend();
     // A phone keeps its keyboard down until the operator taps the composer.

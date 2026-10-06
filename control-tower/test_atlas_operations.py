@@ -336,8 +336,9 @@ check("Every operation is the queue's Open & Continue, for a task in the run",
       all((r.get("operation") or {}).get("action_id") in
           {t["action_id"] for t in QUEUE.snapshot()} for _, r in ALL if r.get("operation")))
 r = say("What is the weather in Cairo?")
-check("Out of scope: 'I don't have that information in this run'",
-      r["answer"].startswith("I don't have that information in this run"))
+check("Out of scope: said plainly, not the generic 'I don't have that information'",
+      r["answer"].startswith("That isn't something this run records")
+      and r.get("fallback") is True)
 
 print()
 print("=" * 72)

@@ -157,8 +157,10 @@ check("...with no card and no action", r["card"] is None and not r["actions"])
 rule("7–8. SOMETHING THE RUN DOES NOT CONTAIN")
 for q in ("What is the weather in Cairo?", "Who won the match last night?"):
     r = ask(q)
-    check("Says it has no such information: {0!r}".format(q),
-          "don't have that information in this run" in r["answer"], r["answer"][:80])
+    check("Says plainly the run doesn't record it, and why it can't look it up: {0!r}".format(q),
+          "isn't something this run records" in r["answer"]
+          and "can't check it elsewhere" in r["answer"]
+          and "I don't have that information" not in r["answer"], r["answer"][:120])
 r = ask("What is the origin of 274599284?")
 check("Origin is declared unavailable, no city named",
       "not available" in r["answer"].lower() or "never reads origin" in r["answer"].lower(), r["answer"][:90])
