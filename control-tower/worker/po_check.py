@@ -168,6 +168,15 @@ def run(reference=None, invoice_no=None, email_to=None, credentials=None, launch
     if record is not None:
         _from_record(obs, record)
         controlled_email(obs, record, email_to, mailer)
+        # The controlled send's result, kept on the job itself (the readiness
+        # gate reads it): what Graph answered and whether Sent Items had it.
+        j = obs["po_steps"].get("J") or {}
+        if j.get("status") not in (None, "NOT_RUN"):
+            current = store.get(record["po_id"]) or record
+            current["controlled_email"] = {"status": j.get("status"),
+                                           "evidence": j.get("evidence"),
+                                           "reason": j.get("reason"), "at": S.now_iso()}
+            store.save(current)
         obs["po_job"] = {"po_id": record["po_id"], "state": record["state"],
                          "reference": record.get("reference"), "number": record.get("number"),
                          "identifier": record.get("identifier"),

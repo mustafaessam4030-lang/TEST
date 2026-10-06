@@ -37,6 +37,7 @@ SUITES = [
     ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
     ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
     ("test_po.py",              "PO Automation: eHub → Bill Entry → extract → validate → template → save → Graph"),
+    ("test_po_hardening.py",    "PO hardening: idempotency, recovery, email reconciliation, numbers"),
     ("test_verification.py",    "real eHub verification: worker evidence, levels, never from the cloud"),
     ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),
@@ -135,6 +136,16 @@ def main():
     print("  {0} passed, {1} failed, {2} suite(s) with problems".format(
         total_passed, total_failed, len(broken)))
     print("=" * 74)
+    # The PO readiness gate reads this (python -m po readiness).
+    try:
+        import json
+        from datetime import datetime
+        (HERE / "test_results.json").write_text(json.dumps({
+            "passed": total_passed, "failed": total_failed, "broken": broken,
+            "at": datetime.now().astimezone().isoformat(timespec="seconds")}, indent=1),
+            encoding="utf-8")
+    except Exception:
+        pass
     return 1 if broken else 0
 
 

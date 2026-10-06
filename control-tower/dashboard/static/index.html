@@ -5006,8 +5006,19 @@ function paintPODrawer(){
   }
   const canSend = PF.can('po.send') && (d.state === 'EMAIL_PREPARED' || d.state === 'EMAIL_FAILED') && !(d.blocked || []).length;
   const acts = [];
+  // A precise stop says what to do next (from the pipeline's own record).
+  const fl = d.failure || {};
+  if (fl.next_action && d.state !== 'EMAIL_CONFIRMED')
+    html += '<div class="po-sec"><h4>' + esc(fl.code || d.label || 'Next') + '</h4><div>' + esc(fl.next_action) + '</div></div>';
+  // Review: the supplier invoice No. (G4) is a person's value; validation then runs again in full.
+  if (d.state === 'NEEDS_REVIEW' && fl.code === 'G4_SOURCE_UNPROVEN' && PF.can('po.process'))
+    acts.push('<input class="in" id="poInv" placeholder="Supplier invoice No. (G4)" style="max-width:220px"' +
+              (fl.candidate ? ' value="" aria-describedby="poInvHint"' : '') + '>' +
+              '<button class="btn" type="button" id="poSupply">Validate again</button>' +
+              (fl.candidate ? '<span class="po-msg" id="poInvHint">The Bill of Entry prints ' + esc(fl.candidate) +
+               ' — confirm it is the supplier invoice No. before using it.</span>' : ''));
   if (canSend && email.status !== 'BLOCKED') acts.push('<button class="btn" type="button" id="poSend">Send PO</button>');
-  if (email.duplicate_of && PF.can('po.resend'))
+  if ((email.duplicate_of || d.state === 'EMAIL_CONFIRMED' || d.state === 'EMAIL_SENT') && PF.can('po.resend'))
     acts.push('<input class="in" id="poWhy" placeholder="Why send it again? (audited)" style="max-width:240px">' +
               '<button class="btn ghost" type="button" id="poResend">Send again (authorized)</button>');
   if (d.state === 'EMAIL_SENT' && PF.can('po.send')) acts.push('<button class="btn ghost" type="button" id="poConfirm">Check delivery</button>');
@@ -5038,6 +5049,17 @@ document.addEventListener('click', (e) => {
     const why = ($('poWhy') || {}).value || '';
     if (!why.trim()){ const m = $('poSendMsg'); m.className = 'po-msg bad'; put(m, 'Say why it is sent again — it is recorded in the audit log.'); return; }
     poSend({authorize_resend:true, reason:why.trim()}); return;
+  }
+  if (e.target.closest('#poSupply')){
+    const v = (($('poInv') || {}).value || '').trim();
+    const m = $('poSendMsg');
+    if (!v){ m.className = 'po-msg bad'; put(m, 'Type the supplier invoice No. — nothing is guessed.'); return; }
+    fetch('/api/po/' + encodeURIComponent(PO.open) + '/supply', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({invoice_no: v})}).then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
+        m.className = 'po-msg' + (st >= 400 ? ' bad' : ''); put(m, x.message || '');
+        setTimeout(() => { loadPODetail(true); loadPO(true); }, 300);
+      }).catch(() => { m.className = 'po-msg bad'; put(m, 'The request did not reach the server.'); });
+    return;
   }
   if (e.target.closest('#poConfirm')){
     fetch('/api/po/' + encodeURIComponent(PO.open) + '/confirm', {method:'POST'}).then(() => loadPODetail(true)); return;

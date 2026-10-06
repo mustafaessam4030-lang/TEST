@@ -25,6 +25,9 @@ DOC_WORDS = re.compile(r"\b(pdf|template|e-?mail|recipient|sent to|attachment|do
                        r"bill entry|ehub|e-hub)\b", re.I)
 
 KINDS = (
+    ("calculation", r"\b(calculation|calculated|calculate|the (math|maths|sums?|formulas?))\b|"
+                    r"\bshow (me )?(the )?(working|workings)\b"),
+    ("quality", r"\b(quality|reliab(le|ility)|success rate|first[- ]pass|how (well|reliable))\b"),
     # "Who was it sent to?" is about the recipient, not whether it was sent.
     ("recipient", r"\bwho (was|is) it sent to\b|\bsent to whom\b|\bwho (did|will) (it|you) "
                   r"(send|email)\b|\bwho got it\b"),
@@ -152,6 +155,10 @@ def answer(kind, question, context=None):
                            "Start one from the PO Automation page with + Process PO.")
         return reply
     record = _pick(records, question, context)
+    if kind == "quality":
+        from po import quality
+        reply["answer"] = _quality_text(quality.metrics(service.store))
+        return reply
     if kind == "status" and record is None:
         summary = service.summary(200)
         k = summary["kpis"]
@@ -191,6 +198,9 @@ def answer(kind, question, context=None):
                       prov.get("verification") or "UNVERIFIED",
                       " — " + prov["why"] if prov.get("why") else ""))
 
+    if kind == "calculation":
+        reply["answer"] = _calculation_text(record)
+        return reply
     if kind == "document":
         doc = record.get("document") or {}
         trail = record.get("discovery") or {}
@@ -481,3 +491,82 @@ def _because(failure, record):
     if reasons:
         return reasons[0][0].lower() + reasons[0][1:]
     return failure["classification_label"]
+
+
+def _money(v, places=2):
+    return "{0:,.{1}f}".format(v, places) if isinstance(v, (int, float)) else "not read"
+
+
+def _calculation_text(record):
+    """The duty request's arithmetic, from the job's own extracted values — never recomputed
+    from anything else."""
+    f = record.get("fields") or {}
+    head = "**PO {0}{1}** — {2}.".format((record.get("number") or "") + " · " if
+                                          record.get("number") else "", record.get("reference"),
+                                          record.get("label") or record.get("state"))
+    if not f:
+        return head + "\n\nNothing was extracted for this job yet, so there is no calculation."
+
+    def val(name):
+        x = f.get(name) or {}
+        return x.get("value") if x.get("status") == "FOUND" else None
+    duty, cif, rate = val("duty_amount_ghs"), val("cif_usd"), val("exchange_rate")
+    stated, vat = val("stated_import_duty"), val("vat_lines") or []
+    lines = [head, "", "**Read from the Bill of Entry**"]
+    lines.append("- Total duty and levies (GHS): {0}".format(_money(duty)))
+    lines.append("- CIF value (USD): {0}".format(_money(cif)))
+    lines.append("- Exchange rate: {0}".format(rate if rate is not None else "not read"))
+    for l in vat:
+        lines.append("- {0}: {1}".format(l["label"], _money(l["amount"])))
+    if (f.get("vat_lines") or {}).get("status") == "AMBIGUOUS":
+        lines.append("- VAT / levy block: ambiguous — {0}".format(f["vat_lines"].get("note")))
+    lines.append("")
+    lines.append("**The calculation**")
+    if duty is not None and vat:
+        vat_sum = round(sum(l["amount"] for l in vat), 2)
+        derived = round(duty - vat_sum, 2)
+        lines.append("1. VAT / levy block (G20) = {0} = {1}".format(
+            " + ".join(_money(l["amount"]) for l in vat), _money(vat_sum)))
+        lines.append("2. Import duty (G19 = G6 − G20) = {0} − {1} = {2}".format(
+            _money(duty), _money(vat_sum), _money(derived)))
+        if stated is not None:
+            lines.append("3. The document prints import duty {0}: variance {1} (tolerance "
+                         "±1.00)".format(_money(stated), _money(round(derived - stated, 2))))
+        if rate:
+            usd = duty / rate
+            lines.append("4. Duty in USD (C24 = G6 ÷ C21) = {0} ÷ {1} = {2}".format(
+                _money(duty), rate, _money(usd)))
+            if cif:
+                lines.append("5. Duty as a share of CIF (C26 = C24 ÷ C19) = {0} ÷ {1} = "
+                             "{2:.2%}".format(_money(usd), _money(cif), usd / cif))
+    else:
+        lines.append("Not computed: total duty or the VAT / levy block was not read. Nothing "
+                     "was assumed to be zero.")
+    lines.append("")
+    lines.append("The template computes G19, C24 and C26 itself from these cells; the job only "
+                 "writes the values read above.")
+    return "\n".join(lines)
+
+
+def _quality_text(m):
+    def rate(r):
+        return "{0}% ({1}/{2})".format(r["pct"], r["n"], r["of"]) if r["pct"] is not None \
+            else "no data yet"
+    real, other = m["real"], m["not_real"]
+    lines = ["**PO Automation reliability — from recorded jobs only**", "",
+             "**Real eHub jobs** ({0} job(s), {1} eligible)".format(real["jobs"], real["eligible"])]
+    for label, key in (("Discovery", "discovery_success"),
+                       ("Bill Entry found", "document_discovery_success"),
+                       ("Extraction", "extraction_success"), ("Validation pass", "validation_pass"),
+                       ("Template saved", "template_success"), ("Email confirmed", "email_success"),
+                       ("First-pass success", "first_pass_success"),
+                       ("Needed a person", "human_intervention"),
+                       ("Recovered after interruption", "recovery_success")):
+        lines.append("- {0}: {1}".format(label, rate(real[key])))
+    lines.append("- Duplicates prevented: {0}".format(real["duplicates_prevented"]))
+    if real["failures_by_code"]:
+        lines.append("- Stops by cause: " + ", ".join("{0} × {1}".format(v, k) for k, v in
+                                                      real["failures_by_code"].items()))
+    lines += ["", "Test / stand-in / unverified jobs are counted apart ({0} job(s)) and never "
+              "improve the real figures.".format(other["jobs"])]
+    return "\n".join(lines)

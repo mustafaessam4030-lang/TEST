@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 MIN_NATIVE_CHARS = 120
+MAX_PDF_BYTES = int(os.environ.get("PO_MAX_PDF_BYTES") or 40 * 1024 * 1024)
 OCR_DPI = 300
 
 FOUND, MISSING, AMBIGUOUS = "FOUND", "MISSING", "AMBIGUOUS"
@@ -66,12 +67,29 @@ def read_pdf(data):
         import fitz                                   # PyMuPDF
     except Exception as error:                        # pragma: no cover
         raise Unreadable("PyMuPDF is not installed: {0}".format(error))
-    if not data or not bytes(data[:5]).startswith(b"%PDF"):
-        raise Unreadable("the file is not a PDF")
+    if not data:
+        raise Unreadable("the file is empty (0 bytes)")
+    head = bytes(data[:1024]).lstrip()
+    if not head.startswith(b"%PDF"):
+        kind = "an HTML page" if head[:200].lower().find(b"<html") >= 0 or \
+            head[:15].lower().startswith(b"<!doctype") else "not a PDF"
+        raise Unreadable("the file is {0}, not a PDF".format(kind))
+    if len(data) > MAX_PDF_BYTES:
+        raise Unreadable("the file is {0:,} bytes — over the {1:,}-byte limit for a Bill of "
+                         "Entry".format(len(data), MAX_PDF_BYTES))
+    # A PDF ends with %%EOF (possibly followed by a little whitespace or an
+    # incremental-update tail). Without it the download was cut short.
+    if b"%%EOF" not in bytes(data[-65536:]):
+        raise Unreadable("the PDF is truncated: it has no end-of-file marker (the download "
+                         "was cut short)")
     try:
         doc = fitz.open(stream=bytes(data), filetype="pdf")
     except Exception as error:
         raise Unreadable("the PDF could not be opened: {0}".format(str(error)[:120]))
+    if getattr(doc, "is_repaired", False):
+        doc.close()
+        raise Unreadable("the PDF is damaged: it only opens after repair, so its content "
+                         "cannot be trusted")
     texts, methods = [], []
     with doc:
         if doc.needs_pass:
@@ -96,7 +114,9 @@ def read_pdf(data):
     if not joined.strip():
         raise Unreadable("no page of the PDF holds readable text ({0} page(s){1})".format(
             pages, "" if _tesseract() else "; OCR is not installed"))
-    return {"text": joined, "pages": pages, "methods": methods, "chars": len(joined)}
+    return {"text": joined, "pages": pages, "methods": methods, "chars": len(joined),
+            "integrity": {"bytes": len(data), "header": "%PDF", "eof_marker": True,
+                          "repaired": False, "encrypted": False}}
 
 
 # ── FIELD RULES (DUTY_REQUEST_V1, from boe_to_duty_request.py) ───────────
@@ -151,19 +171,46 @@ DATE_FORMATS = ["%d/%m/%Y", "%d/%m/%y", "%Y/%m/%d", "%d/%b/%Y", "%d/%B/%Y"]
 
 
 def to_float(raw):
-    """'1,234.56' / '1.234,56' / '1 234.56' -> 1234.56; None when not a number."""
-    if not raw:
+    """
+    '1,234.56' / '1.234,56' / '1 234.56' -> 1234.56; '-12.50' / '(12.50)' -> -12.5;
+    None when not a number. NOT rounded to two places: an exchange rate printed
+    as 11.2045 stays 11.2045 (float noise only is removed at 6 places).
+    """
+    if raw is None or str(raw).strip() == "":
         return None
-    s = str(raw).replace(" ", "")
-    if "," in s and "." in s:
-        s = s.replace(",", "") if s.rfind(".") > s.rfind(",") else s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        s = s.replace(",", ".") if re.fullmatch(r"\d+,\d{2}", s) else s.replace(",", "")
-    s = re.sub(r"[^\d.]", "", s)
+    s = str(raw).strip()
+    negative = s.startswith("-") or (s.startswith("(") and s.endswith(")"))
+    s = s.strip("()").lstrip("-").strip()
+    # Only the groupings a printed amount actually uses; anything else (1,2,3 —
+    # 12.34.56 — 1 2 3) is not a number, never coerced into one.
+    if re.fullmatch(r"\d{1,3}( \d{3})+(\.\d+)?", s):
+        s = s.replace(" ", "")
+    if re.fullmatch(r"\d+(\.\d+)?", s):
+        pass
+    elif re.fullmatch(r"\d{1,3}(,\d{3})+(\.\d+)?", s):
+        s = s.replace(",", "")
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d+)?", s):
+        s = s.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d+,\d{2}", s):
+        s = s.replace(",", ".")
+    else:
+        return None
     try:
-        return round(float(s), 2)
+        value = round(float(s), 6)
     except ValueError:
         return None
+    return -value if negative else value
+
+
+def _signed(text, start, end, raw):
+    """The raw number with its sign: a minus written against it, or brackets round it."""
+    before = text[max(0, start - 1):start]
+    after = text[end:end + 1]
+    if before == "-":
+        return "-" + raw
+    if before == "(" and after == ")":
+        return "(" + raw + ")"
+    return raw
 
 
 def parse_date(raw):
@@ -182,11 +229,13 @@ def normal_reference(value):
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
 
-def _all_matches(text, patterns):
+def _all_matches(text, patterns, signed=False):
     out = []
     for pattern in patterns:
         for m in re.finditer(pattern, text, re.I | re.M):
             raw = m.group(1).strip(" .:-")
+            if signed:
+                raw = _signed(text, m.start(1), m.end(1), raw)
             line = text[text.rfind("\n", 0, m.start()) + 1:text.find("\n", m.end())
                         if text.find("\n", m.end()) >= 0 else len(text)].strip()
             out.append((raw, line[:160]))
@@ -219,12 +268,33 @@ def _vat_lines(text):
         for label, pattern in VAT_LABELS:
             if not re.search(pattern, line, re.I):
                 continue
-            amounts = re.findall(NUM, line)
-            value = to_float(amounts[-1]) if amounts else None
+            amounts = list(re.finditer(NUM, line))
+            value = to_float(_signed(line, amounts[-1].start(1), amounts[-1].end(1),
+                                     amounts[-1].group(1))) if amounts else None
             if value:
                 found.append({"label": label, "amount": value, "line": line.strip()[:160]})
             break
     return found
+
+
+def _vat_field(label, lines):
+    """
+    The VAT/levy block. One line per label; a label printed twice (the same
+    amount or not) is AMBIGUOUS — never summed twice, never one silently dropped.
+    """
+    seen = {}
+    for l in lines:
+        seen.setdefault(l["label"], []).append(l)
+    repeated = {k: v for k, v in seen.items() if len(v) > 1}
+    if repeated:
+        return {"name": "vat_lines", "label": label, "kind": "lines", "status": AMBIGUOUS,
+                "value": None, "evidence": None,
+                "note": "printed more than once: " + ", ".join(sorted(repeated)),
+                "candidates": [{"value": l["amount"], "raw": l["label"], "line": l["line"]}
+                               for v in repeated.values() for l in v]}
+    return {"name": "vat_lines", "label": label, "kind": "lines",
+            "status": FOUND if lines else MISSING, "value": lines or None,
+            "evidence": "; ".join(l["line"] for l in lines[:6]) or None, "candidates": []}
 
 
 INVOICE_NO = re.compile(
@@ -278,14 +348,10 @@ def extract(text, doctype):
                                        "sure".format(unreadable[0][0])
     for name, patterns in AMOUNT_RULES.items():
         if name in labels:
-            fields[name] = _field(name, labels[name], _all_matches(text, patterns), to_float,
-                                  "amount")
+            fields[name] = _field(name, labels[name], _all_matches(text, patterns, signed=True),
+                                  to_float, "amount")
     if "vat_lines" in labels:
-        lines = _vat_lines(text)
-        fields["vat_lines"] = {
-            "name": "vat_lines", "label": labels["vat_lines"], "kind": "lines",
-            "status": FOUND if lines else MISSING, "value": lines or None,
-            "evidence": "; ".join(l["line"] for l in lines[:6]) or None, "candidates": []}
+        fields["vat_lines"] = _vat_field(labels["vat_lines"], _vat_lines(text))
     return fields
 
 

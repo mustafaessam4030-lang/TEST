@@ -485,6 +485,16 @@ class Graph(BaseHTTPRequestHandler):
         if not self._authed():
             self._json(401, {"error": {"message": "InvalidAuthenticationToken"}})
             return
+        m = re.match(r"^/v1\.0/users/([^/]+)/messages/([^/]+)$", parsed.path)
+        if m:
+            # A message by id: an unsent draft is still here; a sent one has
+            # moved to Sent Items under another id (as Exchange does).
+            mid = urllib.parse.unquote(m.group(2))
+            msg = GRAPH["messages"].get(mid)
+            self._json(200, {"id": mid, "isDraft": True,
+                             "internetMessageId": msg["internetMessageId"]}) if msg else \
+                self._json(404, {"error": {"message": "ErrorItemNotFound"}})
+            return
         if parsed.path.endswith("/mailFolders/SentItems/messages"):
             q = urllib.parse.parse_qs(parsed.query).get("$filter", [""])[0]
             want = re.search(r"internetMessageId eq '(.+)'", q)
@@ -591,10 +601,11 @@ ehub_row("176-40926696", carrier="Kia Motors", layout="real",
 found = hub_source().fetch("176 88452310")
 tr = found["trail"]
 names = [x["step"] for x in tr["steps"]]
-check("Steps run in the business order: record → clearance → Manage → Documents → Bill Entry "
-      "→ identifier → download",
-      names == ["ehub_record", "clearance_status", "manage", "documents_section", "bill_entry",
-                "identifier", "download"] and all(x["ok"] for x in tr["steps"]), names)
+check("Steps run in the business order: record → clearance → Manage → identity → Documents → "
+      "Bill Entry → identifier → download",
+      names == ["ehub_record", "clearance_status", "manage", "identity", "documents_section",
+                "bill_entry", "identifier", "download"] and all(x["ok"] for x in tr["steps"]),
+      names)
 check("1. The eHub record, with eHub's own values", found["hub"]["bol_awb"] == "176-88452310"
       and found["hub"]["carrier"] == "Air France KLM Cargo", found["hub"])
 check("   ...its Status is exactly 'Under Clearance'",
@@ -661,7 +672,8 @@ check("Manage opened but no Documents section → not found, nothing guessed",
       e is not None and e.kind == "not_found" and e.trail["manage"]
       and e.trail["documents"]["found"] is False, str(e))
 e = stopped("176-44400044")
-check("A Bill Entry link that is not a PDF → refused", e is not None and e.kind == "permanent")
+check("A Bill Entry link that is not a PDF → refused as unreadable (never extracted)",
+      e is not None and e.kind == "unreadable")
 row, looked = find_stub(PAGE, None, ())
 check("Next Under Clearance record: the first listed one that is exactly Under Clearance",
       row["bol_awb"] == "176-88452310", row)
@@ -720,10 +732,11 @@ check("...and the PDF's declaration (40726534505 / 00) is checked against it →
       idc)
 ev = [e["event"] for e in st1.events(j["po_id"])]
 check("Each step is an event: EHUB_RECORD_FOUND → CLEARANCE_CHECKED → MANAGE_OPENED → "
+      "IDENTITY_CHECKED → "
       "DOCUMENTS_SECTION_FOUND → BILL_ENTRY_FOUND → IDENTIFIER_EXTRACTED → BILL_ENTRY_DOWNLOADED",
-      ev[1:8] == ["EHUB_RECORD_FOUND", "CLEARANCE_CHECKED", "MANAGE_OPENED",
+      ev[1:9] == ["EHUB_RECORD_FOUND", "CLEARANCE_CHECKED", "MANAGE_OPENED", "IDENTITY_CHECKED",
                   "DOCUMENTS_SECTION_FOUND", "BILL_ENTRY_FOUND", "IDENTIFIER_EXTRACTED",
-                  "BILL_ENTRY_DOWNLOADED"], ev[:9])
+                  "BILL_ENTRY_DOWNLOADED"], ev[:10])
 check("The document record says where it came from, when, and its hash",
       j["document"]["source"] == "ehub" and j["document"]["retrieved_at"]
       and len(j["document"]["sha256"]) == 64 and j["document"]["method"] == "download")
@@ -736,11 +749,12 @@ check("...still nothing pressed on the record", PRESSED == [])
 sk = run_job(st1, "176-30000001")
 check("A record not Under Clearance → SKIPPED, with its status and why",
       sk["state"] == S.SKIPPED and sk["failure"]["category"] == "NOT_UNDER_CLEARANCE"
+      and sk["skip_reason"] == "SKIPPED_NOT_UNDER_CLEARANCE"
       and sk["failure"]["status"] == "Cleared" and sk["document"] is None, sk["state"])
 check("...nothing downloaded, nothing extracted", sk["fields"] is None and sk["output"] is None)
 rv = run_job(st1, "176-77700022")
-check("Two Bill Entry identifiers → NEEDS_REVIEW, the candidates kept",
-      rv["state"] == S.NEEDS_REVIEW and len(rv["failure"]["candidates"]) == 2, rv["state"])
+check("Two Bill Entry identifiers → DOCUMENT_AMBIGUOUS, the candidates kept, nothing guessed",
+      rv["state"] == S.DOCUMENT_AMBIGUOUS and len(rv["failure"]["candidates"]) == 2, rv["state"])
 nb = run_job(st1, "176-55500011")
 check("No Bill Entry document → PDF_NOT_FOUND / DOCUMENT_NOT_FOUND, no number invented",
       nb["state"] == S.PDF_NOT_FOUND and nb["failure"]["category"] == "DOCUMENT_NOT_FOUND"
@@ -972,7 +986,8 @@ check("Subject and attachment are this document's",
 check("READY — not sent: nothing goes out until someone presses Send PO",
       email["status"] == "READY" and GRAPH["counter"] == 0)
 nocfg = dict(CONFIG, recipient=None)
-r2 = P.process(store, store.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"}),
+st_nr = new_store("s10nr")
+r2 = P.process(st_nr, st_nr.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"}),
                hub_source(), nocfg, sleep=NOSLEEP)
 check("With no recipient configured, the email is BLOCKED with that reason (the output is SAVED)",
       r2["state"] == S.SAVED and r2["email"]["status"] == "BLOCKED"
@@ -1067,22 +1082,43 @@ st = new_store("s12")
 first = run_job(st, "176-88452310")
 first, o1 = P.send(st, first, M.GraphMailer(), by="omar", confirm_wait_s=3, sleep=NOSLEEP)
 sends_before = GRAPH["sends"]
-again = run_job(st, "176-88452310")
+dup = run_job(st, "176-88452310")
+check("The same Bill of Entry processed again → SKIPPED_DUPLICATE before anything is generated",
+      dup["state"] == S.SKIPPED and dup["skip_reason"] == "SKIPPED_DUPLICATE"
+      and dup["duplicate_of"] == first["po_id"] and not dup.get("output"),
+      (dup["state"], dup.get("skip_reason")))
+# The ledger is the second, independent guard: a job that reached EMAIL READY
+# by any other route (here: a copy of the first, as a job from before the
+# idempotency claim existed would be) still cannot send the same document.
+import copy as _copy                                            # noqa: E402
+again = _copy.deepcopy(first)
+again.update(po_id=S.new_po_id(), state=S.EMAIL_PREPARED, label=S.LABELS[S.EMAIL_PREPARED])
+again["email"] = {k: v for k, v in first["email"].items() if k in (
+    "recipient", "sender", "subject", "attachment", "template_version")}
+again["email"]["status"] = "READY"
+st.save(again)
 again, o2 = P.send(st, again, M.GraphMailer(), by="omar", sleep=NOSLEEP)
-check("The same document, template and recipient a second time → BLOCKED",
-      o1 == "CONFIRMED" and o2 == "BLOCKED" and GRAPH["sends"] == sends_before,
-      (o1, o2, GRAPH["sends"] - sends_before))
-check("...with the reason and the earlier job named",
-      "already sent" in again["email"]["reasons"][0] and again["email"]["duplicate_of"] == first["po_id"])
+check("A copy of a sent job cannot send it again — its attachment is another job's document",
+      o1 == "CONFIRMED" and o2 == "BLOCKED" and GRAPH["sends"] == sends_before and
+      any("generated by another job" in r for r in st.events(again["po_id"])[-1]["metadata"]
+          ["reasons"]), (o1, o2, GRAPH["sends"] - sends_before))
 key = st.ledger_key(first["po_key"], first["document"]["sha256"], "DUTY_REQUEST_V1",
                     "accounts.ghana@mantrac.com")
 check("The ledger holds po + document hash + template + recipient → CONFIRMED",
       st.sent_before(key)["status"] == "CONFIRMED")
-again, o3 = P.send(st, again, M.GraphMailer(), by="ada.admin", authorize_resend=True,
-                   reason="Accounts lost the first one", confirm_wait_s=3, sleep=NOSLEEP)
+ok_other, holder = st.reserve(key, again["po_id"], "omar")
+check("The ledger alone refuses a second sender for the same document + recipient",
+      ok_other is False and holder["po_id"] == first["po_id"], (ok_other, holder))
+blocked = P.send(st, st.get(first["po_id"]), M.GraphMailer(), by="omar", sleep=NOSLEEP)[1]
+check("...and the job itself, once CONFIRMED, does not send again without authorization",
+      blocked == "BLOCKED" and GRAPH["sends"] == sends_before)
+again2, o3 = P.send(st, st.get(first["po_id"]), M.GraphMailer(), by="ada.admin",
+                    authorize_resend=True, reason="Accounts lost the first one", confirm_wait_s=3,
+                    sleep=NOSLEEP)
 check("An explicitly authorized resend goes, once, with who and why on the ledger",
       o3 == "CONFIRMED" and GRAPH["sends"] == sends_before + 1
-      and any(h.get("by") == "ada.admin" for h in st.sent_before(key)["history"]))
+      and any(h.get("by") == "ada.admin" for h in st.sent_before(key)["history"])
+      and len(again2["email"].get("previous_sends") or []) == 1, o3)
 GRAPH["plan"]["send"] = ["drop"]
 st12 = new_store("s12b")
 d1 = run_job(st12, "176-88452310")
@@ -1152,9 +1188,12 @@ while frontier:
     frontier += list(S.TRANSITIONS.get(s0, ()))
 check("No path reaches TEMPLATE_GENERATED or any email state without VALIDATED",
       not ({S.TEMPLATE_GENERATED, S.EMAIL_PREPARED, S.EMAIL_SENT, S.EMAIL_CONFIRMED} & seen), seen)
-check("Every failure state the brief names exists",
+check("Every failure state the brief names exists — precise, no generic FAILED",
       set(S.FAILED_STATES) == {"PDF_NOT_FOUND", "PDF_UNREADABLE", "EXTRACTION_FAILED",
-                               "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED"})
+                               "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED",
+                               "DISCOVERY_FAILED", "AUTH_REQUIRED", "MANAGE_NAVIGATION_FAILED",
+                               "DOCUMENT_AMBIGUOUS", "PDF_DOWNLOAD_FAILED", "SAVE_FAILED"}
+      and "FAILED" not in S.TRANSITIONS)
 ev = new_store("s6").events()[0]
 check("Each event carries event_id, run_id, po_id, timestamp, stage, status, source, "
       "evidence_reference, metadata",
@@ -1282,15 +1321,25 @@ SV.register(SV.PoService(store=new_store("atlas"), launcher=lambda r: None,
 ast = SV.current().store
 mis = run_job(ast, "176-99001122")
 noinv = run_job(ast, "176-88452310", {"branch": "ACCRA"})      # no invoice number
-done = run_job(ast, "176-55500011")                    # no document attached
-good = run_job(ast, "176-88452310")
-good, _o = P.send(ast, good, M.GraphMailer(), by="omar", authorize_resend=True, reason="test store",
-                  confirm_wait_s=3, sleep=NOSLEEP)
 FALLBACK = "I don't have that information"
 
 
 def po_ask(q, po=None, domain="po"):
     return assistant.answer(q, {}, {"domain": domain, "po_id": po or ""})
+
+
+missing_answer = po_ask("What's missing from this PO?", noinv["po_id"])
+check("No invoice No.: the job waits in NEEDS_REVIEW (G4 needs a person), nothing generated",
+      noinv["state"] == S.NEEDS_REVIEW and noinv["failure"]["code"] == "G4_SOURCE_UNPROVEN"
+      and not noinv.get("output"), noinv["state"])
+done = run_job(ast, "176-55500011")                    # no document attached
+# The same job, once a person supplies G4: validation again in full, then on.
+good, _p = P.supply(ast, ast.get(noinv["po_id"]), {"invoice_no": "9116093"}, by="omar",
+                    config=CONFIG)
+check("...a person supplies it: validated again, generated, EMAIL READY — the same job",
+      good["state"] == S.EMAIL_PREPARED and good["po_id"] == noinv["po_id"] and not _p,
+      (good["state"], _p))
+good, _o = P.send(ast, good, M.GraphMailer(), by="omar", confirm_wait_s=3, sleep=NOSLEEP)
 
 
 r = po_ask("Why wasn't this PO sent?", mis["po_id"])
@@ -1301,7 +1350,7 @@ check("'Why wasn't this PO sent?' — the mismatch, both values, from the record
 check("...typed: Fact lines, a Recommendation, and the honest recovery line",
       "**Fact**" in r["answer"] and "**Recommendation**" in r["answer"]
       and "No verified recovery strategy exists for this failure" in r["answer"])
-r = po_ask("What's missing from this PO?", noinv["po_id"])
+r = missing_answer
 check("'What's missing?' — the supplier invoice number, required, and nothing invented",
       "Supplier invoice No.: missing — required" in r["answer"]
       and "Left empty (optional): Charge to, Priority" in r["answer"], r["answer"])
@@ -1403,12 +1452,13 @@ status, cmds, _ = cp.request("GET", "/worker/v1/commands?wait=1")
 cmd = [c for c in cmds["commands"] if c["kind"] == "po_process"][0]
 ok, message = agent.po_process(cmd["payload"]["po_id"], cmd["payload"]["record"], wait=True)
 final = app.po.store.get(wid)
-check("Without the Hub's credentials file the job cannot sign in — and says so",
-      ok and final["state"] == S.PDF_NOT_FOUND and "could not be opened" in final["failure"]["detail"],
+check("Without the Hub's credentials file the job cannot sign in — AUTH_REQUIRED, and says so",
+      ok and final["state"] == S.AUTH_REQUIRED and "could not be opened" in final["failure"]["detail"],
       (final["state"], final.get("failure")))
-check("...as a NAVIGATION_FAILURE, which ATLAS explains with the next step",
-      final["failure"]["category"] == "NAVIGATION_FAILURE"
-      and "Process it again" in " ".join(r["text"] for r in F.from_po(final)["recommendations"]))
+check("...which ATLAS explains with the next step (sign the worker in, then recover)",
+      final["failure"]["category"] == "AUTH_REQUIRED"
+      and "Sign the worker's browser in to eHub" in " ".join(
+          r["text"] for r in F.from_po(final)["recommendations"]))
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -1479,7 +1529,8 @@ check("The KPI strip shows the six counts", all(k in kpis for k in (
 heads = ui.inner_text(".po-t thead").upper()
 check("The queue has the brief's columns", all(h.upper() in heads for h in (
     "Supplier", "Document", "Status", "Validation", "Template", "Email", "Created", "Last update")))
-check("Each job is a row", ui.locator("#poRows tr[data-po]").count() == 5)
+check("Each job is a row (the reviewed job and its send are one job)",
+      ui.locator("#poRows tr[data-po]").count() == 4, ui.locator("#poRows tr[data-po]").count())
 ui.click("#poRows tr[data-po='{0}']".format(mis["po_id"]))
 ui.wait_for_selector("#poDwBody .po-vt", timeout=8000)
 drawer = ui.inner_text("#poDwBody")
@@ -1697,8 +1748,8 @@ check("A PO job failing alongside: the ETA run still finishes, 3 written, 0 fail
 check("...nothing of the PO job in the ETA run's state", eta_out["po_in_eta_state"] is False)
 pf = indep.get(fail_job["po_id"])
 check("...and the PO job ended visibly, on its own job ID: {0}".format(fail_job["po_id"]),
-      po_proc.returncode != 0 and pf["state"] == S.PDF_NOT_FOUND
-      and pf["failure"]["category"] == "NAVIGATION_FAILURE", pf.get("failure"))
+      po_proc.returncode != 0 and pf["state"] == S.AUTH_REQUIRED
+      and pf["failure"]["category"] == "AUTH_REQUIRED", pf.get("failure"))
 
 rule("26. THE BRIEF'S STATE MACHINE, THE WORKER CHECK A-J, THE QUEUE ROW, ATLAS")
 from dashboard import atlas_po as AP                          # noqa: E402
@@ -1719,7 +1770,8 @@ check("The brief's success path is the state machine's: each step leads to the n
       and S.EMAIL_SENT in S.TRANSITIONS[S.EMAIL_SENDING])
 check("Generated is not saved: TEMPLATE_GENERATED cannot jump to EMAIL_PREPARED",
       S.EMAIL_PREPARED not in S.TRANSITIONS[S.TEMPLATE_GENERATED]
-      and S.TRANSITIONS[S.SAVED] == (S.EMAIL_PREPARED,))
+      and set(S.TRANSITIONS[S.SAVED]) == {S.EMAIL_PREPARED, S.WORKER_DISCONNECTED}
+      and S.EMAIL_PREPARED not in S.TRANSITIONS[S.WORKER_DISCONNECTED])
 st26 = new_store("s26")
 legacy = st26.create(doctypes.DEFAULT, "176-LEGACY01", {"invoice_no": "1"})
 raw = json.loads(st26._path(legacy["po_id"]).read_text(encoding="utf-8"))
@@ -1746,9 +1798,9 @@ blocker = WORK / "s26b-not-a-folder"
 blocker.write_text("x")
 broken.output_dir = blocker / "out"
 nosave = run_job(broken, "176-88452310")
-check("The output folder cannot be written: TEMPLATE_FAILED at the output stage, after "
+check("The output folder cannot be written: SAVE_FAILED at the output stage, after "
       "TEMPLATE_GENERATED — never SAVED, no email prepared",
-      nosave["state"] == S.TEMPLATE_FAILED and nosave["failure"]["stage"] == "output"
+      nosave["state"] == S.SAVE_FAILED and nosave["failure"]["stage"] == "output"
       and nosave.get("template") and not nosave.get("output")
       and "EMAIL_PREPARED" not in [e["event"] for e in broken.events(nosave["po_id"])],
       (nosave["state"], nosave.get("failure")))
@@ -1966,24 +2018,34 @@ check("A BOL/AWB the Under Clearance list does not carry: not opened, and it say
       "Clearance' filter" in nope["failure"]["detail"], nope.get("failure"))
 check("...with the page kept as evidence: screenshot and text", ev_nope.get("screenshot")
       and Path(ev_nope["screenshot"]).exists() and Path(ev_nope["page_text"]).exists(), ev_nope)
-noinv = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
-noinv = P.process(st27, noinv, real_nav(), CONFIG, sleep=NOSLEEP)
-check("No invoice No. given or printed: VALIDATION_FAILED — the UNA+ column (70076) is NOT used",
-      noinv["state"] == S.VALIDATION_FAILED
+st27b = new_store("s27b")
+noinv = st27b.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
+noinv = P.process(st27b, noinv, real_nav(), CONFIG, sleep=NOSLEEP)
+check("No invoice No. given: NEEDS_REVIEW (G4's source is a person) — the UNA+ column (70076) "
+      "is NOT used, nothing generated",
+      noinv["state"] == S.NEEDS_REVIEW and noinv["failure"]["code"] == "G4_SOURCE_UNPROVEN"
       and noinv["request_fields"]["invoice_no"]["status"] == "MISSING"
-      and "70076" not in json.dumps(noinv["request_fields"]), noinv["state"])
+      and "70076" not in json.dumps(noinv["request_fields"]) and not noinv.get("output"),
+      noinv["state"])
 check("...and no PO_INVOICE_FROM switch exists any more",
       "invoice_from" not in P.config_from_env()
       and "PO_INVOICE_FROM" not in (HERE / "po" / "pipeline.py").read_text(encoding="utf-8"))
 FILES["be905"] = pdf_of(boe_text(bl="KKLUENR260174", number="40926698905 / 00",
                                  extra="Invoice No: 2600005261\n"))
 HITS.pop("file:be905", None)
-printed = st27.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
-printed = P.process(st27, printed, real_nav(), CONFIG, sleep=NOSLEEP)
-check("A Bill of Entry that PRINTS 'Invoice No: 2600005261' fills G4 from the document",
-      printed["request_fields"]["invoice_no"]["value"] == "2600005261"
-      and "printed on the Bill of Entry" in printed["request_fields"]["invoice_no"]["origin"]
-      and printed["state"] == S.EMAIL_PREPARED,
+st27c = new_store("s27c")
+printed = st27c.create(doctypes.DEFAULT, "KKLUENR260174", {}, started_by="automatic")
+printed = P.process(st27c, printed, real_nav(), CONFIG, sleep=NOSLEEP)
+check("A Bill of Entry that PRINTS 'Invoice No: 2600005261': shown as a CANDIDATE only — G4 is "
+      "not filled from it (the existing logic does not prove that mapping) → NEEDS_REVIEW",
+      printed["state"] == S.NEEDS_REVIEW and printed["failure"]["candidate"] == "2600005261"
+      and printed["request_fields"]["invoice_no"]["value"] is None
+      and "candidate only" in printed["request_fields"]["invoice_no"]["note"],
+      (printed["state"], printed["request_fields"]["invoice_no"]))
+printed, _p = P.supply(st27c, printed, {"invoice_no": "2600005261"}, by="omar", config=CONFIG)
+check("...a person confirms it: G4 = 2600005261, origin 'supplied … at review', EMAIL READY",
+      printed["state"] == S.EMAIL_PREPARED and printed["output"]["cells"]["G4"] == 2600005261
+      and "supplied by omar at review" in printed["request_fields"]["invoice_no"]["origin"],
       (printed["state"], printed["request_fields"]["invoice_no"]))
 check("'Total Invoice Value (CIF)' and 'UNA+ Invoice Number' are never read as an invoice No.",
       X.printed_invoice_no("Total Invoice Value (CIF) USD 169,740.11\nUNA+ Invoice Number 70076")
@@ -2013,8 +2075,8 @@ check("The sweep made one job per Under Clearance record, none for the Cleared o
 check("...each found in the list's rows and processed by the real navigation, marked automatic",
       all((r.get("request") or {}).get("started_by") == "automatic"
           and (r.get("discovery") or {}).get("ehub_record", {}).get("view") == "BU" for r in ran))
-check("...without an invoice number they stop at validation, nothing generated or sent",
-      all(r["state"] == S.VALIDATION_FAILED and not r.get("output") for r in ran))
+check("...without an invoice number they wait in review (G4), nothing generated or sent",
+      all(r["state"] == S.NEEDS_REVIEW and not r.get("output") for r in ran))
 again = CLI.sweep(PAGE, auto, limit=10, log=lambda *a: None)
 check("A second sweep starts nothing new: every record already has its job", again == [], again)
 EH.ehub_rows = real_rows
@@ -2030,7 +2092,7 @@ ok, msg = cp.import_from_worker("w_auto", ran[0]["po_id"], {"record": ran[0],
                                                             "events": auto.events(ran[0]["po_id"])})
 got = cp.store.get(ran[0]["po_id"]) or {}
 check("The control plane takes a job the worker's automatic run created, as that worker's",
-      ok and got.get("worker_id") == "w_auto" and got["state"] == S.VALIDATION_FAILED
+      ok and got.get("worker_id") == "w_auto" and got["state"] == S.NEEDS_REVIEW
       and (got.get("discovery") or {}).get("bill_entry"), (ok, msg, got.get("state")))
 foreign = dict(ran[1], request={"started_by": "someone"})
 ok2, _m = cp.import_from_worker("w_auto", ran[1]["po_id"], {"record": foreign, "events": []})

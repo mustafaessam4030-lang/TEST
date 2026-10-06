@@ -9,6 +9,9 @@ remote control plane alike, so the two cannot drift apart.
     POST /api/po/<id>/send          send it                        po.send
                                     (authorize_resend: po.resend)
     POST /api/po/<id>/confirm       look for it in Sent Items again po.send
+    POST /api/po/<id>/supply        a value review asked for (G4)  po.process
+    GET  /api/po/quality            reliability metrics, from the  po.view
+                                    recorded jobs only
 
 handle() returns ("json", status, payload), ("file", status, (bytes, type,
 name)) or ("forbidden", permission). The caller enforces the permission —
@@ -36,6 +39,8 @@ def permission_for(method, route, body=None):
             return "po.resend" if (body or {}).get("authorize_resend") else "po.send"
         if parts[4] == "confirm":
             return "po.send"
+        if parts[4] == "supply":
+            return "po.process"
     return None
 
 
@@ -62,6 +67,9 @@ def handle(service, method, route, body, actor, can):
             return "json", 200, {"accepted": True, "po_id": record["po_id"],
                                  "message": "Processing {0} in the background.".format(
                                      record["reference"] or "the next Under Clearance record")}
+    if route == "/api/po/quality" and method == "GET":
+        from . import quality
+        return "json", 200, quality.metrics(service.store)
     parts = route.split("/")
     po_id = parts[3] if len(parts) > 3 else ""
     if not ID.match(po_id):
@@ -89,6 +97,16 @@ def handle(service, method, route, body, actor, can):
                                  "message": "Email blocked: " + "; ".join(reasons)}
         return "json", 200, {"accepted": True, "outcome": outcome,
                              "message": "Sending through Microsoft 365…"}
+    if action == "supply" and method == "POST":
+        try:
+            record, problems = service.supply(actor, po_id, {
+                "invoice_no": str((body or {}).get("invoice_no") or "")[:60]})
+        except KeyError:
+            return "json", 404, {"error": "not_found"}
+        if problems:
+            return "json", 409, {"accepted": False, "message": "; ".join(problems)}
+        return "json", 200, {"accepted": True, "state": record["state"],
+                             "message": "Validated again: {0}.".format(record.get("label"))}
     if action == "confirm" and method == "POST":
         record = service.reconfirm(po_id)
         return "json", 200, {"ok": bool(record), "state": (record or {}).get("state")}

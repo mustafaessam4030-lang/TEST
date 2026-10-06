@@ -811,8 +811,21 @@ PO_LABELS = {
     "TEMPLATE_FAILURE": "the template could not be filled and verified",
     "EMAIL_FAILURE": "the email was not sent",
     "UNKNOWN_FAILURE": "the job stopped without a recorded cause",
+    "DISCOVERY_FAILED": "eHub's Shipments list could not be read",
+    "AUTH_REQUIRED": "eHub was not signed in",
+    "MANAGE_NAVIGATION_FAILED": "Manage did not open this record",
+    "PDF_DOWNLOAD_FAILED": "the Bill Entry was found but could not be downloaded",
+    "SAVE_FAILED": "the generated document could not be saved and read back",
+    "EMAIL_UNKNOWN": "the email may or may not have gone out — the mailbox must be checked",
+    "WORKER_DISCONNECTED": "the worker stopped mid-job (resumable)",
+    "G4_SOURCE_UNPROVEN": "the supplier invoice No. (G4) is needed from a person",
+    "SKIPPED_DUPLICATE": "the same Bill of Entry is already handled by another job",
 }
 PO_STAGES = {"ehub_record": "checking the eHub record's clearance status",
+             "auth": "signing in to eHub", "manage": "opening Manage on the row",
+             "identity": "checking whose record Manage opened",
+             "download": "downloading the Bill Entry", "output": "saving the document",
+             "idempotency": "checking the document is not already handled",
              "bill_entry": "choosing the Bill Entry document",
              "pdf_retrieval": "finding the document in the Hub", "pdf_read": "reading the PDF",
              "extraction": "extracting the fields", "validation": "validating against the Hub",
@@ -909,7 +922,9 @@ def from_po(record, events=None, learning=None, history=None):
     email = record.get("email") or {}
     failed = state in ("PDF_NOT_FOUND", "PDF_UNREADABLE", "EXTRACTION_FAILED",
                        "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED", "NEEDS_REVIEW",
-                       "SKIPPED")
+                       "SKIPPED", "DISCOVERY_FAILED", "AUTH_REQUIRED",
+                       "MANAGE_NAVIGATION_FAILED", "DOCUMENT_AMBIGUOUS", "PDF_DOWNLOAD_FAILED",
+                       "SAVE_FAILED", "EMAIL_UNKNOWN", "WORKER_DISCONNECTED")
     blocked = email.get("status") == "BLOCKED" and not failed
     if not failed and not blocked:
         return None
@@ -961,7 +976,8 @@ def from_po(record, events=None, learning=None, history=None):
         facts.append(_fact("Retries the job made: {0}.".format(", ".join(
             "{0} × {1}".format(n, s) for s, n in attempts.items())), "PO job record"))
     unverified = []
-    if category == "EMAIL_FAILURE" and declared.get("kind") == "unknown":
+    if (category == "EMAIL_FAILURE" and declared.get("kind") == "unknown") or \
+            state == "EMAIL_UNKNOWN":
         unverified.append(_item("UNVERIFIED", "Whether Microsoft 365 delivered it is not "
                                 "established; the send outcome is unknown.", "evidence gap"))
     if category == "UNKNOWN_FAILURE":
@@ -982,8 +998,12 @@ def from_po(record, events=None, learning=None, history=None):
     if category in ("NOT_UNDER_CLEARANCE", "DOCUMENT_REVIEW_REQUIRED", "DOCUMENT_NOT_FOUND") \
             and not advice:
         advice = [PO_ADVICE[category]]
+    # The pipeline's own next action for its precise stop (po.store.NEXT_ACTION).
+    if declared.get("next_action") and declared["next_action"] not in advice:
+        advice.append(declared["next_action"])
     recs = [_item("RECOMMENDATION", a, "PO advice") for a in advice]
-    retryable = category in ("NETWORK_FAILURE", "NAVIGATION_FAILURE", "WORKER_UNAVAILABLE") or \
+    retryable = category in ("NETWORK_FAILURE", "NAVIGATION_FAILURE", "WORKER_UNAVAILABLE",
+                             "PDF_DOWNLOAD_FAILED", "WORKER_DISCONNECTED") or \
         (category == "EMAIL_FAILURE" and declared.get("kind") in ("transient", "unknown"))
     learned = []
     for issue in (learning or {}).get("issues") or []:

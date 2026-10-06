@@ -36,6 +36,10 @@ KPI_OF = {
     S.NEEDS_REVIEW: "validation_required",
     S.PDF_NOT_FOUND: "failed", S.PDF_UNREADABLE: "failed", S.EXTRACTION_FAILED: "failed",
     S.TEMPLATE_FAILED: "failed", S.EMAIL_FAILED: "failed",
+    S.DISCOVERY_FAILED: "failed", S.AUTH_REQUIRED: "failed", S.MANAGE_NAVIGATION_FAILED: "failed",
+    S.DOCUMENT_AMBIGUOUS: "validation_required", S.PDF_DOWNLOAD_FAILED: "failed",
+    S.SAVE_FAILED: "failed", S.EMAIL_UNKNOWN: "validation_required",
+    S.WORKER_DISCONNECTED: "pending",
 }
 KPIS = ("pending", "processing", "validation_required", "generated", "sent", "failed")
 PAGE_STATUS = {"pending": "Processing", "processing": "Processing",
@@ -163,8 +167,9 @@ def _email_word(record):
     state, email = record["state"], record.get("email") or {}
     if state == S.VALIDATION_FAILED:
         return "NOT SENT"               # never sent for a document that failed validation
-    return {S.EMAIL_CONFIRMED: "CONFIRMED", S.EMAIL_SENT: "SENT (confirming)",
-            S.EMAIL_SENDING: "SENDING", S.EMAIL_FAILED: "FAILED",
+    return {S.EMAIL_CONFIRMED: "CONFIRMED", S.EMAIL_SENT: "ACCEPTED (confirming)",
+            S.EMAIL_SENDING: "SUBMITTED", S.EMAIL_FAILED: "FAILED",
+            S.EMAIL_UNKNOWN: "UNKNOWN — reconcile, do not resend",
             S.EMAIL_PREPARED: "READY (not sent)"}.get(state) or \
         ("BLOCKED" if email.get("status") == "BLOCKED" else None)
 
@@ -194,7 +199,7 @@ def card(record):
         "validation": ("PASSED" if validation.get("passed") else
                        "FAILED" if validation else None),
         "template": ("SAVED" if output.get("verified") else
-                     "FAILED" if record["state"] == S.TEMPLATE_FAILED else
+                     "FAILED" if record["state"] in (S.TEMPLATE_FAILED, S.SAVE_FAILED) else
                      "GENERATED" if record.get("template") else None),
         "template_version": output.get("template_version") or
         (record.get("template") or {}).get("version"),
@@ -203,6 +208,9 @@ def card(record):
         "created": record.get("created"), "updated": record.get("updated"),
         "started_by": record.get("started_by"),
         "failed": record["state"] in S.FAILED_STATES,
+        "code": (record.get("failure") or {}).get("code") or record.get("skip_reason"),
+        "next_action": (record.get("failure") or {}).get("next_action"),
+        "timings": record.get("timings"),
         "reason": (record.get("failure") or {}).get("detail") or
                   "; ".join(email.get("reasons") or []) or None,
     }
@@ -478,7 +486,7 @@ class PoService(object):
         if record is None:
             raise KeyError(po_id)
         who = actor.get("work_email") if isinstance(actor, dict) else actor
-        reasons = P.blocked_reasons(self.store, record)
+        reasons = P.blocked_reasons(self.store, record, authorize_resend)
         if reasons:
             self.store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons, by=who)
             self.audit("PO_EMAIL_BLOCKED", result="BLOCKED", actor=actor, target=po_id,
@@ -536,6 +544,19 @@ class PoService(object):
         if wait:
             thread.join(120)
         return self.store.get(po_id), "STARTED", []
+
+    def supply(self, actor, po_id, values):
+        """A person supplies what review asked for (G4); validation runs again in full."""
+        record = self.store.get(po_id)
+        if record is None:
+            raise KeyError(po_id)
+        who = actor.get("work_email") if isinstance(actor, dict) else actor
+        done, problems = P.supply(self.store, record, values, by=who, config=self.config())
+        self.audit("PO_REVIEW_SUPPLIED", result="BLOCKED" if problems else "SUCCESS",
+                   actor=actor, target=po_id,
+                   metadata={"fields": sorted((values or {}).keys()), "state": done["state"],
+                             "problems": problems})
+        return done, problems
 
     def reconfirm(self, po_id):
         """A send Graph accepted but Sent Items had not shown yet: look again."""

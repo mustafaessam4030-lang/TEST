@@ -110,6 +110,75 @@ def _kind_of(error):
     return "transient" if any(t in text for t in TRANSIENT) else "permanent"
 
 
+# ── SIGN-IN AND IDENTITY ─────────────────────────────────────────────────
+
+SIGN_IN_URL = re.compile(r"(log-?in|sign-?in|logon|oauth2|/adfs/)", re.I)
+
+
+def auth_state(page):
+    """
+    'signed_in' / 'sign_in_required' / 'unknown'. A visible password field or
+    a sign-in address means eHub is not signed in — the job stops (AUTH_REQUIRED)
+    rather than reading a login page as if it were the list.
+    """
+    try:
+        url = page.url or ""
+    except Exception:
+        return "unknown"
+    try:
+        password = page.evaluate("() => Array.from(document.querySelectorAll("
+                                 "'input[type=password]')).some(e => e.offsetParent !== null)")
+    except Exception:
+        password = False
+    if password or SIGN_IN_URL.search(urlparse(url).path or ""):
+        return "sign_in_required"
+    return "signed_in" if url and not url.startswith("about:") else "unknown"
+
+
+MANAGE_IDENTITY_JS = r"""() => {
+  const text = (document.body && document.body.innerText) || '';
+  const valueAfter = (re) => {
+    const labels = Array.from(document.querySelectorAll('label, span, td, th, div, b, strong'))
+      .filter(el => re.test((el.innerText || '').trim()) && (el.innerText || '').length < 80);
+    for (const el of labels) {
+      const box = el.closest('div, td, tr') || el.parentElement;
+      const input = (el.htmlFor && document.getElementById(el.htmlFor)) ||
+        (box && box.querySelector('input, select, textarea')) ||
+        (el.nextElementSibling && el.nextElementSibling.matches('input, select, textarea')
+          ? el.nextElementSibling : null);
+      if (input && (input.value || '').trim()) return input.value.trim();
+      const next = el.nextElementSibling;
+      if (next && (next.innerText || '').trim()) return next.innerText.trim().split('
+')[0];
+    }
+    return null;
+  };
+  return {text: text.slice(0, 20000),
+          status: valueAfter(/^\s*current\s+status\s*:?\s*$/i),
+          declaration: valueAfter(/^\s*boe\s*\/\s*sgd.*declaration.*:?\s*$/i)};
+}"""
+
+
+def manage_identity(page, row):
+    """
+    Whose record the Manage click opened, from the page itself: the row's
+    BOL/AWB on the page; its current status; the declaration number it
+    shows. {"reference_on_page", "status", "declaration", "url"}.
+    """
+    from .extract import normal_reference
+    try:
+        got = page.evaluate(MANAGE_IDENTITY_JS) or {}
+    except Exception as error:
+        return {"reference_on_page": None, "status": None, "declaration": None,
+                "error": str(error)[:160]}
+    ref = normal_reference(row.get("bol_awb"))
+    flat = normal_reference(got.get("text"))
+    return {"reference_on_page": bool(ref) and ref in flat,
+            "status": " ".join((got.get("status") or "").split()) or None,
+            "declaration": " ".join((got.get("declaration") or "").split()) or None,
+            "url": getattr(page, "url", None)}
+
+
 # ── THE PAGE: Documents section ─────────────────────────────────────────
 
 DOCUMENTS_JS = r"""() => {
@@ -364,14 +433,20 @@ class EHubSource(object):
         def step(name, ok, **detail):
             trail["steps"].append(dict({"step": name, "ok": ok, "at": now()}, **detail))
 
-        def stop(message, kind, **extra):
+        def stop(message, kind, stage=None, **extra):
             error = SourceError(message, kind, extra.pop("candidates", None))
+            error.stage = stage
             seal(False)
             error.trail = trail
             for k, v in extra.items():
                 setattr(error, k, v)
             return error
 
+        # 0. signed in? A sign-in page is never read as the list.
+        if auth_state(self.page) == "sign_in_required":
+            step("auth", False, evidence=capture(self.page, "auth"))
+            raise stop("eHub is showing its sign-in page: the worker's browser is not signed "
+                       "in. Nothing was read.", "auth", "auth")
         # 1. the eHub record
         try:
             row, looked = self.find_record(self.page, reference, self.skip)
@@ -380,10 +455,15 @@ class EHubSource(object):
             error.trail = trail
             raise
         except Exception as error:
+            if auth_state(self.page) == "sign_in_required":
+                step("auth", False, evidence=capture(self.page, "auth"))
+                raise stop("eHub sent the worker to its sign-in page while the Shipments list "
+                           "was being read (the session ended). Nothing was read.", "auth",
+                           "auth")
             step("ehub_record", False, error=str(error)[:200],
                  evidence=capture(self.page, "ehub_record"))
             raise stop("the eHub shipment list could not be read: {0}".format(str(error)[:200]),
-                       _kind_of(error))
+                       _kind_of(error), "ehub_record")
         trail["looked_at"] = looked
         try:
             trail["list_url"] = self.page.url
@@ -398,9 +478,10 @@ class EHubSource(object):
                 raise stop("{0} is not listed under eHub's 'Under Clearance' filter on view "
                            "{1} — its status is not Under Clearance, or it is not in eHub. "
                            "It was not opened.".format(reference, (looked[0] if looked else {})
-                                                        .get("view", "BU")), "skipped")
+                                                        .get("view", "BU")), "skipped",
+                           "ehub_record", skip_reason="SKIPPED_NOT_UNDER_CLEARANCE")
             raise stop("no Under Clearance record is waiting in eHub (every listed one is "
-                       "already processed or not Under Clearance)", "not_found")
+                       "already processed or not Under Clearance)", "not_found", "ehub_record")
         trail["ehub_record"] = row
         step("ehub_record", True, bol_awb=row.get("bol_awb"), carrier=row.get("carrier"),
              table_page=row.get("table_page"), view=row.get("view"))
@@ -412,15 +493,21 @@ class EHubSource(object):
         if not ok:
             raise stop("{0} has status '{1}', not exactly '{2}': skipped, Manage was not "
                        "opened.".format(row.get("bol_awb"), row.get("status"), REQUIRED_STATUS),
-                       "skipped", row=row)
+                       "skipped", "clearance_status", row=row,
+                       skip_reason="SKIPPED_NOT_UNDER_CLEARANCE")
 
         # 3. Manage → the record's details
         try:
             opened = self.open_manage(self.page, row) or {}
         except Exception as error:
             step("manage", False, error=str(error)[:200], evidence=capture(self.page, "manage"))
+            if auth_state(self.page) == "sign_in_required":
+                raise stop("eHub sent the worker to its sign-in page when Manage was pressed "
+                           "for {0}.".format(row.get("bol_awb")), "auth", "auth", row=row)
             raise stop("Manage could not be opened for {0}: {1}".format(
-                row.get("bol_awb"), str(error)[:200]), _kind_of(error), row=row)
+                row.get("bol_awb"), str(error)[:200]),
+                "transient" if _kind_of(error) == "transient" else "navigation", "manage",
+                row=row)
         try:
             opened.setdefault("url", self.page.url)
         except Exception:
@@ -430,6 +517,22 @@ class EHubSource(object):
         trail["navigation_path"].append({"page": "Manage", "url": opened.get("url"),
                                          "row": row.get("bol_awb")})
         step("manage", True, url=opened.get("url"))
+
+        # 3b. whose record is this? The page itself is read: the row's
+        # BOL/AWB, its current status (it may have changed since the list
+        # was read), and the declaration number it shows.
+        identity = manage_identity(self.page, row)
+        trail["identity"] = {k: identity.get(k) for k in ("reference_on_page", "status",
+                                                          "declaration", "url")}
+        if identity.get("status") and not status_ok(identity["status"]):
+            step("identity", False, page_status=identity["status"])
+            raise stop("Manage for {0} shows its current status as '{1}', no longer '{2}': the "
+                       "status changed after the list was read. Skipped; nothing was "
+                       "downloaded.".format(row.get("bol_awb"), identity["status"],
+                                            REQUIRED_STATUS), "skipped", "identity", row=row,
+                       skip_reason="SKIPPED_STATUS_CHANGED")
+        step("identity", True, reference_on_page=identity.get("reference_on_page"),
+             page_status=identity.get("status"), declaration=identity.get("declaration"))
 
         # 4. the Documents section
         section = open_documents(self.page)
@@ -443,7 +546,8 @@ class EHubSource(object):
         if not section.get("found"):
             trail["documents"]["evidence"] = capture(self.page, "documents")
             raise stop("Manage opened for {0}, but its details have no Documents section; "
-                       "nothing is guessed.".format(row.get("bol_awb")), "not_found", row=row)
+                       "nothing is guessed.".format(row.get("bol_awb")), "not_found",
+                       "documents_section", row=row)
 
         # 5. the Bill Entry document and its identifier
         selected, candidates, rule, outcome = select(entries)
@@ -459,10 +563,10 @@ class EHubSource(object):
                        "with 'Bill Entry' (or 'BillofEntry'){2}. No identifier is invented.".format(
                            row.get("bol_awb"), len(entries),
                            " (" + ", ".join(e["name"] for e in entries[:6]) + ")" if entries
-                           else ""), "no_bill_entry", row=row)
+                           else ""), "no_bill_entry", "bill_entry", row=row)
         if outcome == "review":
             step("bill_entry", False, rule=rule)
-            raise stop(rule[0].upper() + rule[1:] + ".", "review", row=row,
+            raise stop(rule[0].upper() + rule[1:] + ".", "review", "bill_entry", row=row,
                        candidates=[c["name"] for c in candidates])
         step("bill_entry", True, filename=selected["name"], rule=rule)
         step("identifier", True, identifier=selected["identifier"],
@@ -475,10 +579,13 @@ class EHubSource(object):
             step("download", False, error=str(error)[:200])
             seal(False)
             error.trail = trail
+            error.stage = "download"
             raise
         if not data.startswith(b"%PDF"):
             step("download", False, error="not a PDF")
-            raise stop("the Bill Entry document is not a PDF", "permanent", row=row)
+            raise stop("the Bill Entry document eHub served is not a PDF (an error page or "
+                       "another file type was saved instead)", "unreadable", "download",
+                       row=row)
         filename = selected["name"]
         m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)', disposition or "", re.I)
         served = unquote(m.group(1)) if m else None
@@ -490,7 +597,9 @@ class EHubSource(object):
                                          "filename": filename})
         step("download", True, method=method, bytes=len(data), served_filename=served)
         seal(True)
-        hub = dict(row, identifier=selected["identifier"], bill_entry=filename)
+        hub = dict(row, identifier=selected["identifier"], bill_entry=filename,
+                   identity_on_manage=identity.get("reference_on_page"),
+                   manage_declaration=identity.get("declaration"))
         return {"data": data, "filename": filename, "url": url, "origin": "ehub", "hub": hub,
                 "identifier": selected["identifier"], "trail": trail}
 
@@ -671,6 +780,15 @@ def capture(page, step):
     import os
     from pathlib import Path
     from . import store as S
+    # Never a picture of a sign-in page: a typed user name or password must
+    # not end up in evidence. The page's address is kept instead.
+    try:
+        if page.evaluate("() => Array.from(document.querySelectorAll('input[type=password]'))"
+                         ".some(e => e.offsetParent !== null)"):
+            return {"not_captured": "a sign-in page (password field) — no screenshot or text "
+                                    "is kept", "url": _safe_url(page.url)}
+    except Exception:
+        pass
     try:
         folder = Path(os.environ.get("PO_DATA_DIR") or S.DEFAULT_DIR) / "evidence"
         folder.mkdir(parents=True, exist_ok=True)
@@ -679,8 +797,13 @@ def capture(page, step):
         shot, text = folder / (stem + ".png"), folder / (stem + ".txt")
         page.screenshot(path=str(shot), full_page=True)
         text.write_text("URL: {0}\nTITLE: {1}\n\n{2}".format(
-            page.url, page.title(), page.locator("body").inner_text(timeout=5000)),
+            _safe_url(page.url), page.title(), page.locator("body").inner_text(timeout=5000)),
             encoding="utf-8")
-        return {"screenshot": str(shot), "page_text": str(text), "url": page.url}
+        return {"screenshot": str(shot), "page_text": str(text), "url": _safe_url(page.url)}
     except Exception as error:
         return {"capture_error": str(error)[:120]}
+
+
+def _safe_url(url):
+    """An address as evidence: no query string (it can carry session values)."""
+    return re.sub(r"[?#].*$", "", str(url or ""))

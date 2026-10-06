@@ -80,6 +80,12 @@ DUTY_REQUEST_V1 = {
         # 40726534505.pdf") must be the declaration the PDF itself prints.
         {"name": "identifier", "label": "Bill Entry No. (eHub) vs Declaration No. (PDF)",
          "pdf": "document_number", "hub": "identifier", "compare": "declaration"},
+        # The declaration number eHub's Manage page itself shows (BOE / SGD /
+        # Customs Declaration Number), when it shows one: a third source for
+        # the same number. Absent on the page → not checked, not blocking.
+        {"name": "manage_declaration", "label": "Declaration No. on eHub's Manage page vs PDF",
+         "pdf": "document_number", "hub": "manage_declaration", "compare": "declaration",
+         "optional": True},
     ],
     # The document's own arithmetic: total duty less the VAT block must equal
     # the import-duty line it prints, within this tolerance (GHS).

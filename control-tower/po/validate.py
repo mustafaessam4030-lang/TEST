@@ -68,7 +68,7 @@ def validate(doctype, fields, hub, request_fields):
             status, detail = "NOT_CHECKED", ("the document has no single value to compare"
                                              if pdf_value is None else
                                              "the Hub record has no value to compare")
-            blocking = True
+            blocking = not (spec.get("optional") and pdf_value is not None)
         else:
             if spec["compare"] == "reference":
                 same = X.normal_reference(pdf_value) == X.normal_reference(hub_value)
@@ -89,6 +89,17 @@ def validate(doctype, fields, hub, request_fields):
         checks.append({"name": "hub:" + spec["name"], "label": spec["label"],
                        "pdf": _value_text(f) if f else None, "hub": hub_value,
                        "status": status, "blocking": blocking, "detail": detail,
+                       "source": "hub"})
+
+    # 2b. Whose Manage page was read: shown, never blocking on its own — the
+    # BL/AWB check above is what proves the document is this shipment's.
+    if hub and "identity_on_manage" in hub:
+        on = hub.get("identity_on_manage")
+        checks.append({"name": "identity:manage", "label": "BOL/AWB shown on the Manage page",
+                       "pdf": None, "hub": hub.get("bol_awb"),
+                       "status": "MATCH" if on else "NOT_CHECKED", "blocking": False,
+                       "detail": None if on else "the Manage page does not print the BOL/AWB; "
+                       "the record is tied to this row by the BL/AWB the PDF prints",
                        "source": "hub"})
 
     # 3. The document's own arithmetic: total duty − VAT block = import duty line.

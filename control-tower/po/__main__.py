@@ -38,7 +38,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -94,12 +96,15 @@ def cmd_process(args):
                 browser, page = _browser(playwright)
             except Exception as error:
                 record = store.transition(record, S.DISCOVERED, "Signing in to eHub…")
-                record = store.transition(record, S.PDF_NOT_FOUND, "eHub could not be opened",
-                                          P.failure("NAVIGATION_FAILURE", "pdf_retrieval",
+                auth = re.search(r"log ?in|sign ?in|credential|password|unauthori", str(error), re.I)
+                state = S.AUTH_REQUIRED if auth else S.DISCOVERY_FAILED
+                record = store.transition(record, state, "eHub could not be opened",
+                                          P.failure(state, "auth" if auth else "ehub_record",
                                                     "eHub could not be opened: {0}".format(
-                                                        str(error)[:200])))
-                store.event(record, "PDF_NOT_FOUND", "pdf_retrieval", "FAILED",
-                            reason=str(error)[:200])
+                                                        str(error)[:200]), code=state,
+                                                    next_action=S.NEXT_ACTION[state]))
+                store.event(record, "AUTH_REQUIRED" if auth else "PDF_NOT_FOUND",
+                            "auth" if auth else "ehub_record", "FAILED", reason=str(error)[:200])
                 return 1
             try:
                 record = P.process(store, record, _source(page, record))
@@ -217,51 +222,99 @@ def cmd_check(args):
     return 0 if report["result"] == "REACHABLE" else 1
 
 
-def sweep(page, store, limit=20, source_factory=None, log=print):
+def eligibility(rows, handled):
     """
-    THE AUTOMATIC RUN: every eHub record listed Under Clearance that has no PO
-    job yet gets one — found by its BOL/AWB, Manage, Documents, Bill Entry —
-    one after another, in this one browser. Returns the jobs it ran.
+    Every row of the Shipments list, decided: ELIGIBLE, or skipped with a
+    reason — DISCOVERED → STATUS_CHECK → ELIGIBLE / SKIPPED. Nothing is
+    silently dropped. Returns [{"bol_awb", "status", "decision", ...}].
     """
-    from po.ehub import EHubSource, ehub_rows, find_in_ehub, open_manage_in_ehub, status_ok
+    from po.ehub import status_ok
+    from po.extract import normal_reference
+    out, seen = [], set()
+    for row in rows:
+        ref = row.get("bol_awb")
+        entry = {"bol_awb": ref, "status": row.get("status"), "carrier": row.get("carrier"),
+                 "table_page": row.get("table_page"), "view": row.get("view")}
+        key = normal_reference(ref)
+        if not key:
+            entry["decision"] = "SKIPPED_MISSING_REQUIRED_REFERENCE"
+        elif not status_ok(row.get("status")):
+            entry["decision"] = "SKIPPED_NOT_UNDER_CLEARANCE"
+        elif key in seen:
+            entry["decision"] = "SKIPPED_DUPLICATE"
+        elif key in handled:
+            entry["decision"] = "SKIPPED_ALREADY_PROCESSED"
+        else:
+            entry["decision"] = "ELIGIBLE"
+        seen.add(key)
+        out.append(entry)
+    return out
+
+
+def sweep(page, store, limit=20, source_factory=None, log=print, mailer_factory=None):
+    """
+    THE AUTOMATIC RUN, one at a time per data folder: interrupted jobs are
+    recovered first; then every eHub Shipments-list row is decided (eligible
+    or skipped, with its reason, written to sweeps/), and every eligible
+    record gets one job — Manage, Documents, Bill Entry — one after another,
+    in this one browser. Returns the jobs it ran.
+    """
+    from po.ehub import EHubSource, ehub_rows, find_in_ehub, open_manage_in_ehub
     from po import service as SV
     from po.extract import normal_reference
-    handled = {normal_reference(r) for r in SV.PoService(store=store, launcher=lambda r: None)
-               .handled_references()}
     config = P.config_from_env()
-    picked, seen = [], set()
-    for row in ehub_rows(page):
-        ref = row.get("bol_awb")
-        if not ref or not status_ok(row.get("status")):
-            continue
-        key = normal_reference(ref)
-        if key in handled or key in seen:
-            continue
-        seen.add(key)
-        picked.append(ref)
-        if len(picked) >= limit:
-            break
-    log("[PO sweep] {0} Under Clearance record(s) without a PO job: {1}".format(
-        len(picked), ", ".join(picked) or "none"))
-    ran = []
-    for ref in picked:
-        record = store.create(doctypes.DEFAULT, ref, {"started_by": "automatic"},
-                              started_by="automatic")
-        source = (source_factory or (lambda pg: EHubSource(pg, find_in_ehub,
-                                                           open_manage_in_ehub)))(page)
-        try:
-            record = P.process(store, record, source, config)
-        except Exception as error:
-            current = store.get(record["po_id"]) or record
-            P.abandon(store, current, "the job stopped unexpectedly: {0}".format(str(error)[:200]))
-            record = store.get(record["po_id"]) or current
-        log("[PO sweep] {0}: {1}".format(ref, record["state"]))
-        if record["state"] == S.EMAIL_PREPARED and config["auto_send"]:
+    make_source = source_factory or (lambda pg: EHubSource(pg, find_in_ehub,
+                                                            open_manage_in_ehub))
+    try:
+        lock = store.xlock("sweep", timeout=1.0, stale_s=6 * 3600)
+        lock.__enter__()
+    except TimeoutError:
+        log("[PO sweep] another PO automatic run holds this data folder; not starting a second")
+        return []
+    try:
+        # 1. Recovery before new work: nothing half-done is left behind.
+        mailer = None
+        if config["auto_send"]:
             from po.mail import GraphMailer
-            record, _o = P.send(store, record, GraphMailer(), by="auto-send",
-                                confirm_wait_s=config["confirm_wait_s"])
-        ran.append(record)
-    return ran
+            mailer = (mailer_factory or GraphMailer)()
+        P.recover(store, config, source=make_source(page), mailer=mailer, log=log)
+        # 2. The list, every row decided.
+        handled = {normal_reference(r) for r in SV.PoService(
+            store=store, launcher=lambda r: None).handled_references()}
+        t0 = time.monotonic()
+        decided = eligibility(ehub_rows(page), handled)
+        picked = [d["bol_awb"] for d in decided if d["decision"] == "ELIGIBLE"][:limit]
+        counts = {}
+        for d in decided:
+            counts[d["decision"]] = counts.get(d["decision"], 0) + 1
+        folder = store.folder / "sweeps"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "sweep-{0}.json".format(datetime.now().strftime("%Y%m%d-%H%M%S"))).write_text(
+            json.dumps({"at": S.now_iso(), "rows": decided, "counts": counts, "limit": limit,
+                        "list_ms": int((time.monotonic() - t0) * 1000)}, indent=1),
+            encoding="utf-8")
+        log("[PO sweep] {0} row(s) read: {1}. Processing {2}: {3}".format(
+            len(decided), ", ".join("{0} {1}".format(v, k) for k, v in sorted(counts.items()))
+            or "none", len(picked), ", ".join(picked) or "none"))
+        ran = []
+        for ref in picked:
+            record = store.create(doctypes.DEFAULT, ref, {"started_by": "automatic"},
+                                  started_by="automatic")
+            try:
+                record = P.process(store, record, make_source(page), config)
+            except Exception as error:
+                current = store.get(record["po_id"]) or record
+                P.interrupt(store, current, "the job stopped unexpectedly: {0}".format(
+                    str(error)[:200]))
+                record = store.get(record["po_id"]) or current
+            log("[PO sweep] {0}: {1}".format(ref, record["state"]))
+            if record["state"] == S.EMAIL_PREPARED and config["auto_send"] and mailer:
+                record, _o = P.send(store, record, mailer, by="auto-send",
+                                    confirm_wait_s=config["confirm_wait_s"])
+            ran.append(record)
+        return ran
+    finally:
+        lock.__exit__(None, None, None)
 
 
 def cmd_sweep(args):
@@ -285,6 +338,100 @@ def cmd_sweep(args):
     print(json.dumps([{"po_id": r["po_id"], "reference": r["reference"], "state": r["state"]}
                       for r in ran], indent=2))
     return 0
+
+
+def cmd_recover(args):
+    """Interrupted jobs resumed, unknown sends reconciled. eHub opened only when needed."""
+    store = S.Store()
+    config = P.config_from_env()
+    from po.mail import GraphMailer, configured
+    mailer = GraphMailer() if configured()[0] else None
+    need_browser = any(r["state"] in (S.WORKER_DISCONNECTED, S.QUEUED, S.DISCOVERED) or
+                       (r["state"] in S.ACTIVE_STATES and store.lease_stale(r))
+                       for r in store.all(500))
+    if need_browser and not args.no_browser:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as playwright:
+            browser, page = _browser(playwright)
+            try:
+                done = P.recover(store, config, source=_source(page, {}), mailer=mailer)
+            finally:
+                browser.close()
+    else:
+        done = P.recover(store, config, source=None, mailer=mailer)
+    print(json.dumps([{"po_id": a, "from": b, "to": c} for a, b, c in done], indent=2))
+    return 0
+
+
+def explain(store, po_id):
+    """Everything that happened to one job, from its own record and events."""
+    record = store.get(po_id)
+    if record is None:
+        return None
+    events = store.events(po_id)
+    doc, out, email = record.get("document") or {}, record.get("output") or {}, \
+        record.get("email") or {}
+    return {
+        "po_id": po_id, "correlation_id": record.get("correlation_id") or po_id,
+        "worker_id": record.get("worker_id"), "state": record["state"],
+        "label": record.get("label"), "reference": record.get("reference"),
+        "provenance": record.get("provenance"),
+        "eligibility": (record.get("discovery") or {}).get("clearance"),
+        "ehub_row": (record.get("discovery") or {}).get("ehub_record"),
+        "manage": (record.get("discovery") or {}).get("manage"),
+        "identity": (record.get("discovery") or {}).get("identity"),
+        "bill_entry": (record.get("discovery") or {}).get("bill_entry"),
+        "document": {k: doc.get(k) for k in ("filename", "sha256", "bytes", "pages",
+                                             "read_methods", "integrity", "retrieved_at")},
+        "extracted": {n: {k: f.get(k) for k in ("status", "value", "raw", "evidence")}
+                      for n, f in (record.get("fields") or {}).items()},
+        "provenance_map": record.get("provenance_map"),
+        "validation": record.get("validation"),
+        "template": record.get("template"),
+        "output": {k: out.get(k) for k in ("path", "filename", "sha256", "bytes",
+                                           "template_version", "verified", "saved_at")},
+        "email": {k: email.get(k) for k in ("status", "recipient", "subject", "attachment",
+                                            "graph_status", "internet_message_id",
+                                            "sent_at", "confirmed_at", "confirmation")},
+        "failure": record.get("failure"), "skip_reason": record.get("skip_reason"),
+        "idempotency_key": record.get("idempotency_key"),
+        "timings_ms": record.get("timings"),
+        "timeline": [{"at": e["timestamp"], "event": e["event"], "stage": e["stage"],
+                      "status": e["status"]} for e in events],
+    }
+
+
+def cmd_explain(args):
+    report = explain(S.Store(), args.po_id)
+    if report is None:
+        print("no such job: {0}".format(args.po_id), file=sys.stderr)
+        return 2
+    print(json.dumps(report, indent=2, default=str))
+    return 0
+
+
+def cmd_quality(args):
+    from po import quality
+    print(json.dumps(quality.metrics(S.Store()), indent=2))
+    return 0
+
+
+def cmd_readiness(args):
+    from po import readiness
+    report = readiness.evaluate(S.Store())
+    print(json.dumps(report, indent=2, default=str))
+    return 0 if report["status"] != "NOT READY" else 1
+
+
+def cmd_supply(args):
+    store = S.Store()
+    record = store.get(args.po_id)
+    if record is None:
+        return 2
+    record, problems = P.supply(store, record, {"invoice_no": args.invoice_no},
+                                by=args.by or "cli")
+    print(record["state"], "—", "; ".join(problems) or record.get("progress") or "")
+    return 0 if not problems else 1
 
 
 def cmd_send(args):
@@ -339,6 +486,16 @@ def main(argv=None):
     e = sub.add_parser("ehub-probe")
     e.add_argument("--reference")
     e.add_argument("--out")
+    rc = sub.add_parser("recover", help="resume interrupted jobs; reconcile unknown sends")
+    rc.add_argument("--no-browser", action="store_true")
+    ex = sub.add_parser("explain", help="everything that happened to one job")
+    ex.add_argument("po_id")
+    sub.add_parser("quality", help="reliability metrics from the recorded jobs")
+    sub.add_parser("readiness", help="the production-readiness gate, from evidence")
+    su = sub.add_parser("supply", help="give a job in review the value it needs (G4)")
+    su.add_argument("--po-id", required=True)
+    su.add_argument("--invoice-no", required=True)
+    su.add_argument("--by")
     w = sub.add_parser("sweep", help="the automatic run: a PO job for every Under Clearance "
                                      "record that has none yet")
     w.add_argument("--limit", type=int, default=int(os.environ.get("PO_SWEEP_LIMIT") or 20))
@@ -352,7 +509,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
             "ehub-check": cmd_check, "sweep": cmd_sweep,
-            "read": cmd_read}[args.cmd](args)
+            "read": cmd_read, "recover": cmd_recover, "explain": cmd_explain,
+            "quality": cmd_quality, "readiness": cmd_readiness, "supply": cmd_supply}[args.cmd](args)
 
 
 if __name__ == "__main__":

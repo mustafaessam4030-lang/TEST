@@ -86,6 +86,8 @@ def _request_fields(doctype, request, config):
 
 
 def _retry(stage, fn, store, record, sleep=time.sleep):
+    """Bounded retries with exponential backoff, each one recorded; only for
+    the failure kind the stage's policy names (transient)."""
     attempts, backoff, when = RETRY_POLICY[stage]
     last = None
     for n in range(1, attempts + 1):
@@ -96,57 +98,114 @@ def _retry(stage, fn, store, record, sleep=time.sleep):
             record.setdefault("attempts", {})[stage] = n
             if getattr(error, "kind", None) != when or n == attempts:
                 raise
+            wait = max(backoff * (2 ** (n - 1)), float(getattr(error, "retry_after", 0) or 0))
             store.event(record, "RETRY", stage, "RETRYING", attempt=n, of=attempts,
-                        reason=str(error)[:200])
-            sleep(backoff * n)
+                        wait_s=round(wait, 1), reason=str(error)[:200])
+            sleep(wait)
     raise last                                         # pragma: no cover
 
 
+def _timed(record, stage, started):
+    """How long a stage took, kept on the job (milliseconds, summed over retries/resumes)."""
+    ms = int((time.monotonic() - started) * 1000)
+    timings = record.setdefault("timings", {})
+    timings[stage] = timings.get(stage, 0) + ms
+    return ms
+
+
+def _stop(store, record, state, code, stage, message, event, event_status="FAILED",
+          category=None, **extra):
+    """One precise stop: state, code, reason, evidence pointer, next action."""
+    record = store.transition(record, state, S.LABELS.get(state, state).capitalize(),
+                              failure(category or code, stage, message, code=code,
+                                      next_action=S.NEXT_ACTION.get(state), **extra))
+    store.event(record, event, stage, event_status, reason=str(message)[:300], code=code,
+                **{k: v for k, v in extra.items() if k in ("candidates", "kind", "duplicate_of",
+                                                            "skip_reason", "ehub_status")})
+    return record
+
+
+# A SourceError's stage decides the precise state; a source that names no
+# stage (a stand-in, an older source) keeps the original mapping.
+STAGE_STATE = {"auth": S.AUTH_REQUIRED, "ehub_record": S.DISCOVERY_FAILED,
+               "manage": S.MANAGE_NAVIGATION_FAILED, "identity": S.MANAGE_NAVIGATION_FAILED,
+               "documents_section": S.PDF_NOT_FOUND, "bill_entry": S.PDF_NOT_FOUND,
+               "download": S.PDF_DOWNLOAD_FAILED}
+
+
+def _source_failure(store, record, error):
+    trail = getattr(error, "trail", None)
+    record["discovery"] = trail
+    record["provenance"] = (trail or {}).get("provenance") or \
+        {"source": "UNKNOWN", "verification": "UNVERIFIED", "why": "no discovery trail"}
+    _trail_events(store, record, trail)
+    row = getattr(error, "row", None) or (trail or {}).get("ehub_record")
+    if row and not record.get("reference"):
+        _adopt_reference(record, row)
+    kind, stage = error.kind, getattr(error, "stage", None)
+    if kind == "skipped":
+        reason = getattr(error, "skip_reason", None) or "SKIPPED_NOT_UNDER_CLEARANCE"
+        record["skip_reason"] = reason
+        return _stop(store, record, S.SKIPPED, reason, stage or "ehub_record", str(error),
+                     "RECORD_SKIPPED", "SKIPPED", category="NOT_UNDER_CLEARANCE",
+                     skip_reason=reason,
+                     ehub_status=(row or {}).get("status"), status=(row or {}).get("status"))
+    if kind == "review":
+        return _stop(store, record, S.DOCUMENT_AMBIGUOUS, "DOCUMENT_AMBIGUOUS", "bill_entry",
+                     str(error), "DOCUMENT_REVIEW_REQUIRED", "BLOCKED",
+                     candidates=error.candidates[:10])
+    if kind == "auth":
+        return _stop(store, record, S.AUTH_REQUIRED, "AUTH_REQUIRED", "auth", str(error),
+                     "AUTH_REQUIRED", "BLOCKED")
+    if kind == "unreadable":
+        record = store.transition(record, S.PDF_UNREADABLE, "The PDF could not be trusted",
+                                  failure("PDF_UNREADABLE", "download", str(error),
+                                          code="PDF_UNREADABLE",
+                                          next_action=S.NEXT_ACTION[S.PDF_UNREADABLE]))
+        store.event(record, "PDF_UNREADABLE", "download", "FAILED", reason=str(error)[:300])
+        return record
+    if stage in STAGE_STATE and kind not in ("not_found", "no_bill_entry"):
+        state = STAGE_STATE[stage]
+        code = {S.AUTH_REQUIRED: "AUTH_REQUIRED", S.DISCOVERY_FAILED: "DISCOVERY_FAILED",
+                S.MANAGE_NAVIGATION_FAILED: "MANAGE_NAVIGATION_FAILED",
+                S.PDF_NOT_FOUND: "DOCUMENT_NOT_FOUND",
+                S.PDF_DOWNLOAD_FAILED: "PDF_DOWNLOAD_FAILED"}[state]
+        return _stop(store, record, state, code, stage, str(error), "PDF_NOT_FOUND",
+                     kind=kind, candidates=error.candidates[:10])
+    category = {"not_found": "DOCUMENT_NOT_FOUND", "no_bill_entry": "DOCUMENT_NOT_FOUND",
+                "ambiguous": "DOCUMENT_AMBIGUOUS",
+                "transient": "NETWORK_FAILURE"}.get(kind, "NAVIGATION_FAILURE")
+    record = store.transition(record, S.PDF_NOT_FOUND, "Document not found",
+                              failure(category, "pdf_retrieval", str(error),
+                                      candidates=error.candidates[:10], code="DOCUMENT_NOT_FOUND"
+                                      if category == "DOCUMENT_NOT_FOUND" else category,
+                                      next_action=S.NEXT_ACTION[S.PDF_NOT_FOUND]))
+    store.event(record, "PDF_NOT_FOUND", "pdf_retrieval", "FAILED", reason=str(error)[:300],
+                kind=kind, candidates=error.candidates[:10])
+    return record
+
+
 def process(store, record, source, config=None, sleep=time.sleep):
-    """One job up to EMAIL_PREPARED (or its failure state). Returns the record."""
+    """One job up to EMAIL_PREPARED (or its precise stop). Returns the record."""
     config = config or config_from_env()
     doctype = doctypes.get(record["doctype"])
     reference = record["reference"]
+    record.setdefault("correlation_id", record["po_id"])
+    if os.environ.get("ATA_WORKER_ID"):
+        record["worker_id"] = os.environ["ATA_WORKER_ID"]
 
     # ── eHUB: the record, its clearance status, Manage, Documents, Bill Entry
     record = store.transition(record, S.DISCOVERED, "Finding the record in eHub…")
     store.event(record, "PO_DISCOVERED", "discovery", "OK", reference=reference or None,
                 mode="reference" if reference else "next Under Clearance record",
                 doctype=doctype["id"])
+    t0 = time.monotonic()
     try:
         found = _retry("pdf_retrieval", lambda: source.fetch(reference), store, record, sleep)
     except SourceError as error:
-        trail = getattr(error, "trail", None)
-        record["discovery"] = trail
-        record["provenance"] = (trail or {}).get("provenance") or \
-            {"source": "UNKNOWN", "verification": "UNVERIFIED", "why": "no discovery trail"}
-        _trail_events(store, record, trail)
-        row = getattr(error, "row", None) or (trail or {}).get("ehub_record")
-        if row and not record.get("reference"):
-            _adopt_reference(record, row)
-        if error.kind == "skipped":
-            record = store.transition(record, S.SKIPPED, "Skipped — not Under Clearance", failure(
-                "NOT_UNDER_CLEARANCE", "ehub_record", str(error),
-                status=(row or {}).get("status")))
-            store.event(record, "RECORD_SKIPPED", "ehub_record", "SKIPPED",
-                        reason=str(error)[:300], ehub_status=(row or {}).get("status"))
-            return record
-        if error.kind == "review":
-            record = store.transition(record, S.NEEDS_REVIEW, "Needs review", failure(
-                "DOCUMENT_REVIEW_REQUIRED", "bill_entry", str(error),
-                candidates=error.candidates[:10]))
-            store.event(record, "DOCUMENT_REVIEW_REQUIRED", "bill_entry", "BLOCKED",
-                        reason=str(error)[:300], candidates=error.candidates[:10])
-            return record
-        category = {"not_found": "DOCUMENT_NOT_FOUND", "no_bill_entry": "DOCUMENT_NOT_FOUND",
-                    "ambiguous": "DOCUMENT_AMBIGUOUS",
-                    "transient": "NETWORK_FAILURE"}.get(error.kind, "NAVIGATION_FAILURE")
-        record = store.transition(record, S.PDF_NOT_FOUND, "Document not found",
-                                  failure(category, "pdf_retrieval", str(error),
-                                          candidates=error.candidates[:10]))
-        store.event(record, "PDF_NOT_FOUND", "pdf_retrieval", "FAILED", reason=str(error)[:300],
-                    kind=error.kind, candidates=error.candidates[:10])
-        return record
+        _timed(record, "discovery", t0)
+        return _source_failure(store, record, error)
+    _timed(record, "discovery", t0)
     data = found["data"]
     sha, path = store.keep_document(data)
     record["hub"] = found.get("hub") or {}
@@ -175,55 +234,73 @@ def process(store, record, source, config=None, sleep=time.sleep):
                 filename=found.get("filename"), bytes=len(data), origin=found.get("origin"),
                 identifier=found.get("identifier"))
 
-    # ── READ ──────────────────────────────────────────────────────────────
+    # ── IDEMPOTENCY: one shipment + Bill Entry + document → one job ──────
+    key = store.idempotency_key(record["doctype"], record["reference"], record.get("identifier"),
+                                sha)
+    record["idempotency_key"] = key
+    ok, holder = store.claim(key, record["po_id"])
+    if not ok:
+        record["skip_reason"] = "SKIPPED_DUPLICATE"
+        record["duplicate_of"] = holder.get("po_id")
+        store.event(record, "DUPLICATE_DETECTED", "idempotency", "BLOCKED",
+                    duplicate_of=holder.get("po_id"), holder_state=holder.get("state"))
+        return _stop(store, record, S.SKIPPED, "SKIPPED_DUPLICATE", "idempotency",
+                     "This Bill of Entry ({0}, same document) is already handled by job {1} "
+                     "({2}); nothing was generated again.".format(
+                         record.get("identifier") or record["reference"], holder.get("po_id"),
+                         S.LABELS.get(holder.get("state"), holder.get("state"))),
+                     "RECORD_SKIPPED", "SKIPPED", skip_reason="SKIPPED_DUPLICATE",
+                     duplicate_of=holder.get("po_id"))
+    return from_document(store, record, data, config)
+
+
+def from_document(store, record, data, config=None):
+    """PDF_FOUND → read → extract → validate → template → save → prepare."""
+    config = config or config_from_env()
+    doctype = doctypes.get(record["doctype"])
+    sha = record["document"]["sha256"]
+
+    # ── READ (with the integrity checks) ─────────────────────────────────
+    t0 = time.monotonic()
     try:
         read = X.read_pdf(data)
     except X.Unreadable as error:
+        _timed(record, "read", t0)
         record = store.transition(record, S.PDF_UNREADABLE, "The PDF could not be read",
-                                  failure("PDF_UNREADABLE", "pdf_read", str(error)))
+                                  failure("PDF_UNREADABLE", "pdf_read", str(error),
+                                          code="PDF_UNREADABLE",
+                                          next_action=S.NEXT_ACTION[S.PDF_UNREADABLE]))
         store.event(record, "PDF_UNREADABLE", "pdf_read", "FAILED", evidence=sha,
                     reason=str(error)[:300])
         return record
+    _timed(record, "read", t0)
     record["document"].update(pages=read["pages"], read_methods=read["methods"],
-                              chars=read["chars"])
+                              chars=read["chars"], integrity=read.get("integrity"))
     record = store.transition(record, S.PDF_READ, "Extracting fields…")
     store.event(record, "PDF_READ", "pdf_read", "OK", evidence=sha, pages=read["pages"],
                 methods=read["methods"])
 
     # ── EXTRACT ───────────────────────────────────────────────────────────
+    t0 = time.monotonic()
     fields = X.extract(read["text"], doctype)
+    _timed(record, "extraction", t0)
     if not X.looks_like(fields):
         record["fields"] = fields
         record = store.transition(record, S.EXTRACTION_FAILED, "Not a {0}".format(
             doctype["document"]), failure(
                 "DATA_EXTRACTION_FAILURE", "extraction",
                 "The PDF does not read as a {0}: fewer than two of its key fields were "
-                "found.".format(doctype["document"])))
+                "found.".format(doctype["document"]), code="EXTRACTION_FAILED",
+                next_action=S.NEXT_ACTION[S.EXTRACTION_FAILED]))
         store.event(record, "EXTRACTION_FAILED", "extraction", "FAILED", evidence=sha,
                     found=[n for n, f in fields.items() if f["status"] == X.FOUND])
         return record
-    request = dict(record.get("request") or {})
-    # The supplier invoice No. (G4): the one the job was given, else the one
-    # the Bill of Entry itself prints under an "Invoice No." label — one
-    # value, or none. Never eHub's "UNA+ Invoice Number" column (kept as
-    # evidence only) and never guessed: with neither, validation stops the
-    # job before anything is generated or sent.
-    if not request.get("invoice_no"):
-        printed = X.printed_invoice_no(read["text"])
-        if printed.get("value"):
-            request["invoice_no"] = printed["value"]
-            request["invoice_no_origin"] = "printed on the Bill of Entry: " + printed["evidence"]
-        elif printed.get("candidates"):
-            request["invoice_no_note"] = "the Bill of Entry prints more than one invoice No. " \
-                "({0}); none was chosen".format(", ".join(printed["candidates"]))
-    request_fields = _request_fields(doctype, request, config)
-    if request.get("invoice_no_origin") and "invoice_no" in request_fields:
-        request_fields["invoice_no"]["origin"] = request["invoice_no_origin"]
-        request_fields["invoice_no"]["evidence"] = request["invoice_no_origin"]
-    if request.get("invoice_no_note") and "invoice_no" in request_fields:
-        request_fields["invoice_no"]["note"] = request["invoice_no_note"]
+    # The supplier invoice No. (G4) comes from the person who gave the job.
+    # An "Invoice No." printed on the Bill of Entry is shown as a CANDIDATE
+    # only — the existing business logic does not say it is G4 — and eHub's
+    # "UNA+ Invoice Number" column is never used.
+    record["invoice_candidate"] = X.printed_invoice_no(read["text"]) or None
     record["fields"] = fields
-    record["request_fields"] = request_fields
     record["number"] = record.get("identifier") or \
         fields.get(doctype["number_field"], {}).get("value")
     record = store.transition(record, S.FIELDS_EXTRACTED, "Validating against the Hub…")
@@ -231,18 +308,58 @@ def process(store, record, source, config=None, sleep=time.sleep):
                 found=[n for n, f in fields.items() if f["status"] == X.FOUND],
                 missing=[n for n, f in fields.items() if f["status"] == X.MISSING],
                 ambiguous=[n for n, f in fields.items() if f["status"] == X.AMBIGUOUS])
+    record = store.transition(record, S.VALIDATING)
+    return validate_onward(store, record, config)
+
+
+def validate_onward(store, record, config=None):
+    """VALIDATING → VALIDATED → TEMPLATE_GENERATED → SAVED → EMAIL_PREPARED, from the
+    job's stored fields — the same path for a first run, a resume, or a review."""
+    config = config or config_from_env()
+    doctype = doctypes.get(record["doctype"])
+    fields = record["fields"]
+    request = dict(record.get("request") or {})
+    request_fields = _request_fields(doctype, request, config)
+    if request.get("invoice_no_origin") and "invoice_no" in request_fields:
+        request_fields["invoice_no"]["origin"] = request["invoice_no_origin"]
+        request_fields["invoice_no"]["evidence"] = request["invoice_no_origin"]
+    cand = record.get("invoice_candidate") or {}
+    if "invoice_no" in request_fields and request_fields["invoice_no"]["status"] == X.MISSING:
+        request_fields["invoice_no"]["note"] = (
+            "not provided for this job; the Bill of Entry prints {0} — shown as a candidate "
+            "only".format(cand.get("value") or " / ".join(cand.get("candidates") or []))
+            if cand else "not provided for this job, and not printed on the Bill of Entry")
+    record["request_fields"] = request_fields
+    record["provenance_map"] = provenance_map(doctype, fields, request_fields)
 
     # ── VALIDATE (the gate) ───────────────────────────────────────────────
-    record = store.transition(record, S.VALIDATING)
     store.event(record, "VALIDATION_STARTED", "validation", "RUNNING")
+    t0 = time.monotonic()
     result = V.validate(doctype, fields, record["hub"], request_fields)
+    _timed(record, "validation", t0)
     record["validation"] = result
     if not result["passed"]:
         record["email"] = {"status": "BLOCKED", "reasons": result["reasons"],
                            "recipient": config.get("recipient")}
+        blocking = [c for c in result["checks"] if c["blocking"]]
+        # Only G4 is missing: its source is a person — NEEDS_REVIEW, not a failure.
+        if blocking and all(c["name"] == "required:invoice_no" and c["status"] == "MISSING"
+                            for c in blocking):
+            record = store.transition(record, S.NEEDS_REVIEW, "Supplier invoice No. needed",
+                                      failure("G4_SOURCE_UNPROVEN", "validation",
+                                              "Supplier invoice No. (G4) is not provided for "
+                                              "this job. Every other check passed.",
+                                              code="G4_SOURCE_UNPROVEN",
+                                              candidate=cand.get("value"),
+                                              next_action=S.NEXT_ACTION[S.NEEDS_REVIEW]))
+            store.event(record, "NEEDS_REVIEW", "validation", "BLOCKED",
+                        reason="supplier invoice No. (G4) needed", candidate=cand.get("value"))
+            store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=result["reasons"])
+            return record
         mismatch = next((c for c in result["checks"] if c["status"] == "MISMATCH"), None)
         record = store.transition(record, S.VALIDATION_FAILED, "Validation failed", failure(
             "VALIDATION_FAILURE", "validation", "; ".join(result["reasons"]),
+            code="VALIDATION_FAILED", next_action=S.NEXT_ACTION[S.VALIDATION_FAILED],
             mismatch={"label": mismatch["label"], "pdf": mismatch["pdf"], "hub": mismatch["hub"]}
             if mismatch else None))
         store.event(record, "VALIDATION_FAILED", "validation", "FAILED",
@@ -259,13 +376,20 @@ def process(store, record, source, config=None, sleep=time.sleep):
     values = {n: f["value"] for n, f in fields.items() if f["status"] == X.FOUND}
     values.update({n: f["value"] for n, f in request_fields.items() if f["status"] == X.FOUND})
     values["request_reference"] = (record.get("request") or {}).get("reference_note") or None
+    t0 = time.monotonic()
     try:
-        built = T.build(doctype, values)
+        built = T.build(doctype, values, trace={"job": record["po_id"],
+                                               "document": record["document"]["sha256"],
+                                               "reference": record["reference"]})
     except Exception as error:
+        _timed(record, "template", t0)
         record = store.transition(record, S.TEMPLATE_FAILED, "Template generation failed",
-                                  failure("TEMPLATE_FAILURE", "template", str(error)[:400]))
+                                  failure("TEMPLATE_FAILURE", "template", str(error)[:400],
+                                          code="TEMPLATE_FAILED",
+                                          next_action=S.NEXT_ACTION[S.TEMPLATE_FAILED]))
         store.event(record, "TEMPLATE_FAILED", "template", "FAILED", reason=str(error)[:300])
         return record
+    _timed(record, "template", t0)
     record["template"] = {"version": built["template_version"],
                           "template_sha256": built["template_sha256"], "cells": built["cells"],
                           "generated_at": S.now_iso(), "read_back": "in memory, every cell"}
@@ -274,16 +398,21 @@ def process(store, record, source, config=None, sleep=time.sleep):
                 cells=len(built["cells"]))
 
     # ── SAVE: to the configured output folder, read back from disk ─────────
+    t0 = time.monotonic()
     try:
-        out = T.save(doctype, built, store.output_dir, record["number"], reference,
+        out = T.save(doctype, built, store.output_dir, record["number"], record["reference"],
                      job=record["po_id"])
     except Exception as error:
-        record = store.transition(record, S.TEMPLATE_FAILED, "The document could not be saved",
-                                  failure("TEMPLATE_FAILURE", "output",
+        _timed(record, "save", t0)
+        record = store.transition(record, S.SAVE_FAILED, "The document could not be saved",
+                                  failure("SAVE_FAILED", "output",
                                           "saving to {0} failed: {1}".format(
-                                              store.output_dir, str(error)[:300])))
+                                              store.output_dir, str(error)[:300]),
+                                          code="SAVE_FAILED",
+                                          next_action=S.NEXT_ACTION[S.SAVE_FAILED]))
         store.event(record, "TEMPLATE_FAILED", "output", "FAILED", reason=str(error)[:300])
         return record
+    _timed(record, "save", t0)
     out["generated_by"] = record.get("started_by")
     out["generated_at"] = record["template"]["generated_at"]
     record["output"] = out
@@ -294,6 +423,30 @@ def process(store, record, source, config=None, sleep=time.sleep):
 
     # ── EMAIL: prepared, never sent from here unless configured to ────────
     return prepare(store, record, config)
+
+
+def provenance_map(doctype, fields, request_fields):
+    """Field → raw text → normalised value → template cell → validation rule. No
+    silent transformation: every value that reaches a cell is traceable here."""
+    cells = {m["field"]: m["cell"] for m in doctype["mapping"]}
+    rules = {}
+    for spec in doctype["fields"]:
+        rules[spec["name"]] = ["required" if spec["required"] else "optional"]
+    for check in doctype["hub_checks"]:
+        rules.setdefault(check["pdf"], []).append("must equal eHub {0}".format(check["hub"]))
+    for name in ("cif_usd", "exchange_rate", "duty_amount_ghs"):
+        rules.setdefault(name, []).append("> 0")
+    rules.setdefault("duty_amount_ghs", []).append(
+        "total duty − VAT block = import duty line (±{0:.2f})".format(
+            doctype.get("duty_tolerance", 1.0)))
+    out = []
+    for name, f in list(fields.items()) + list(request_fields.items()):
+        out.append({"field": name, "label": f.get("label"), "source": f.get("origin") or "pdf",
+                    "raw": f.get("raw") if f.get("kind") != "lines" else None,
+                    "evidence": f.get("evidence"), "normalized": f.get("value"),
+                    "status": f.get("status"), "cell": cells.get(name),
+                    "rules": rules.get(name, []), "note": f.get("note")})
+    return out
 
 
 def prepare(store, record, config):
@@ -318,9 +471,10 @@ def prepare(store, record, config):
 
 
 TRAIL_EVENTS = {"ehub_record": "EHUB_RECORD_FOUND", "clearance_status": "CLEARANCE_CHECKED",
-                "manage": "MANAGE_OPENED", "documents_section": "DOCUMENTS_SECTION_FOUND",
+                "manage": "MANAGE_OPENED", "identity": "IDENTITY_CHECKED",
+                "documents_section": "DOCUMENTS_SECTION_FOUND",
                 "bill_entry": "BILL_ENTRY_FOUND", "identifier": "IDENTIFIER_EXTRACTED",
-                "download": "BILL_ENTRY_DOWNLOADED"}
+                "download": "BILL_ENTRY_DOWNLOADED", "auth": "AUTH_REQUIRED"}
 
 
 def _trail_events(store, record, trail):
@@ -340,7 +494,12 @@ def _adopt_reference(record, row):
     record["po_key"] = S.po_key(record["doctype"], record["reference"])
 
 
-def blocked_reasons(store, record):
+# Graph takes a file attachment inline up to 3 MB; larger needs an upload
+# session, which this sender does not do — refused before anything is sent.
+MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024
+
+
+def blocked_reasons(store, record, authorize_resend=False):
     """Why this record may not be sent now — the gate before any Graph call."""
     reasons = []
     prov = record.get("provenance") or {}
@@ -361,11 +520,27 @@ def blocked_reasons(store, record):
         reasons.append("the output file {0} no longer exists".format(out.get("filename")))
     else:
         import hashlib
-        if hashlib.sha256(Path(out["path"]).read_bytes()).hexdigest() != out.get("sha256"):
+        data = Path(out["path"]).read_bytes()
+        if hashlib.sha256(data).hexdigest() != out.get("sha256"):
             reasons.append("the output file changed after it was generated")
-    if not (record.get("email") or {}).get("recipient"):
+        elif len(data) > MAX_ATTACHMENT_BYTES:
+            reasons.append("the output is {0:,} bytes — over the 3 MB Graph attachment limit; "
+                           "not sent".format(len(data)))
+        else:
+            # The attachment must be THIS job's document: re-opened from disk,
+            # its declaration, invoice No. and duty are this job's own values.
+            reasons += T.verify_output(record)
+    email = record.get("email") or {}
+    if not email.get("recipient"):
         reasons.append("no recipient is configured")
-    if record["state"] not in (S.EMAIL_PREPARED, S.EMAIL_FAILED):
+    if email.get("attachment") and out.get("filename") and email["attachment"] != out["filename"]:
+        reasons.append("the prepared attachment name is not this job's output")
+    if email.get("subject") and (str(record.get("number") or "") not in email["subject"] or
+                                 str(record.get("reference") or "") not in email["subject"]):
+        reasons.append("the prepared subject does not name this job's declaration and shipment")
+    sendable = (S.EMAIL_PREPARED, S.EMAIL_FAILED) + \
+        ((S.EMAIL_SENT, S.EMAIL_CONFIRMED) if authorize_resend else ())
+    if record["state"] not in sendable:
         reasons.append("the job is {0}, not ready to send".format(S.LABELS.get(record["state"])))
     if record["state"] == S.EMAIL_FAILED and (record.get("failure") or {}).get("kind") == \
             "permanent":
@@ -377,42 +552,59 @@ def blocked_reasons(store, record):
 def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
          confirm_wait_s=None, sleep=time.sleep):
     """
-    EMAIL_PREPARED → EMAIL_SENDING → EMAIL_SENT → EMAIL_CONFIRMED.
-    Returns (record, outcome) — outcome is SENT, CONFIRMED, BLOCKED or FAILED.
+    EMAIL_PREPARED → EMAIL_SENDING (submitted) → EMAIL_SENT (Graph 202, accepted)
+    → EMAIL_CONFIRMED (found in Sent Items); EMAIL_UNKNOWN when the outcome of
+    the send cannot be established — never resent blindly.
+    Returns (record, outcome): SENT, CONFIRMED, BLOCKED, FAILED or UNKNOWN.
     """
-    reasons = blocked_reasons(store, record)
+    reasons = blocked_reasons(store, record, authorize_resend)
     if reasons:
         store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons)
         return record, "BLOCKED"
     email = record["email"]
+    if authorize_resend and record["state"] in (S.EMAIL_SENT, S.EMAIL_CONFIRMED):
+        # A new submission of the same document: a new draft; the earlier
+        # send is kept on the job.
+        email.setdefault("previous_sends", []).append(
+            {k: email.get(k) for k in ("internet_message_id", "sent_at", "confirmed_at",
+                                       "status")})
+        for k in ("message_id", "internet_message_id", "sent_at", "confirmed_at",
+                  "confirmation", "graph_status"):
+            email.pop(k, None)
     key = store.ledger_key(record["po_key"], record["document"]["sha256"],
                            record["output"]["template_version"], email["recipient"])
-    previous = store.sent_before(key)
-    resending_own = previous and previous.get("po_id") == record["po_id"] and \
-        previous.get("status") in ("FAILED", "SENDING")
-    if previous and previous.get("status") in ("SENT", "CONFIRMED", "SENDING") and \
-            not resending_own and not authorize_resend:
-        why = ("This document was already sent to {0} on {1} (job {2}). It is not sent again "
+    # Atomic across processes: only one sender for this document + recipient.
+    ok, previous = store.reserve(key, record["po_id"], by, authorize=bool(authorize_resend),
+                                 extra={"recipient": email["recipient"],
+                                        "resend_reason": reason if authorize_resend else None})
+    if not ok:
+        why = ("This document was already {0} to {1} on {2} (job {3}). It is not sent again "
                "unless a resend is explicitly authorized.".format(
-                   email["recipient"], previous.get("at"), previous.get("po_id")))
+                   "sent" if previous.get("status") in ("SENT", "CONFIRMED") else
+                   "being sent" if previous.get("status") == "SENDING" else
+                   "submitted with an unconfirmed outcome", email["recipient"],
+                   previous.get("at"), previous.get("po_id")))
         email.update(status="BLOCKED", reasons=[why], duplicate_of=previous.get("po_id"))
         store.save(record)
         store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=[why], duplicate=True,
                     previous_po=previous.get("po_id"))
         return record, "BLOCKED"
-    store.ledger_write(key, {"status": "SENDING", "at": S.now_iso(), "po_id": record["po_id"],
-                             "by": by, "recipient": email["recipient"],
-                             "authorized_resend": bool(authorize_resend and previous),
-                             "resend_reason": reason if authorize_resend else None})
-    record = store.transition(record, S.EMAIL_SENDING, "Sending…")
+    if authorize_resend and previous:
+        store.ledger_write(key, {"status": "SENDING", "at": S.now_iso(), "po_id": record["po_id"],
+                                 "by": by, "recipient": email["recipient"],
+                                 "authorized_resend": True, "resend_reason": reason})
+    record = store.transition(record, S.EMAIL_SENDING, "Submitting to Microsoft 365…")
     store.event(record, "EMAIL_SEND_STARTED", "email", "RUNNING", recipient=email["recipient"],
                 authorized_resend=bool(authorize_resend and previous), by=by)
+    t0 = time.monotonic()
 
     def fail(error):
         kind = getattr(error, "kind", "permanent")
+        _timed(record, "email", t0)
         r = store.transition(record, S.EMAIL_FAILED, "Email failed", failure(
             "EMAIL_FAILURE", "email", str(error)[:300], kind=kind, step=getattr(error, "step", None),
-            http_status=getattr(error, "status", None)))
+            http_status=getattr(error, "status", None), code="EMAIL_FAILED",
+            next_action=S.NEXT_ACTION[S.EMAIL_FAILED]))
         r["email"].update(status="FAILED", error=str(error)[:300])
         store.save(r)
         store.ledger_write(key, {"status": "FAILED", "at": S.now_iso(), "po_id": r["po_id"],
@@ -422,15 +614,29 @@ def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
                     reason=str(error)[:300])
         return r, "FAILED"
 
+    def unknown(why):
+        _timed(record, "email", t0)
+        r = store.transition(record, S.EMAIL_UNKNOWN, "Email outcome unknown", failure(
+            "EMAIL_UNKNOWN", "email", why, kind="unknown", code="EMAIL_UNKNOWN",
+            next_action=S.NEXT_ACTION[S.EMAIL_UNKNOWN]))
+        r["email"].update(status="UNKNOWN", error=why[:300])
+        store.save(r)
+        store.ledger_write(key, {"status": "UNKNOWN", "at": S.now_iso(), "po_id": r["po_id"],
+                                 "by": by, "recipient": email["recipient"],
+                                 "internet_message_id": email.get("internet_message_id")})
+        store.event(r, "EMAIL_UNKNOWN", "email", "UNKNOWN", reason=why[:300])
+        return r, "UNKNOWN"
+
     # 1. The draft — reused if an earlier attempt of this job created one.
     try:
         if not email.get("message_id"):
             data = Path(record["output"]["path"]).read_bytes()
             text = ("Please find attached the {0} for {1} ({2}).\n\nGenerated by ATA PO "
                     "Automation from the document attached to the Hub shipment, validated "
-                    "against the Hub, template {3}.\n").format(
+                    "against the Hub, template {3}. Job {4}.\n").format(
                         doctypes.get(record["doctype"])["label"], record.get("number"),
-                        record["reference"], record["output"]["template_version"])
+                        record["reference"], record["output"]["template_version"],
+                        record["po_id"])
             created = _retry("email_send", lambda: mailer.create(
                 email["recipient"], email["subject"], text, record["output"]["filename"], data),
                 store, record, sleep)
@@ -440,26 +646,35 @@ def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
     except MailError as error:
         return fail(error)
 
-    # 2. The send. An unknown outcome is checked in Sent Items before any retry;
-    #    resending the same draft cannot duplicate — it no longer exists once sent.
+    # 2. The send. An outcome that is not known is RECONCILED before anything
+    #    else: Sent Items first; then whether the draft still exists. Only a
+    #    draft that is provably still a draft is sent again.
     try:
-        try:
-            accepted = mailer.send(email["message_id"])
-        except MailError as error:
-            if error.kind not in ("unknown", "transient"):
-                raise
-            found = mailer.find_sent(email.get("internet_message_id"))
-            if found:
-                accepted = {"accepted": True, "http_status": None, "found_after_error": True}
-            else:
+        accepted = mailer.send(email["message_id"])
+    except MailError as error:
+        if error.kind not in ("unknown", "transient"):
+            return fail(error)
+        store.event(record, "EMAIL_UNKNOWN", "email", "CHECKING", reason=str(error)[:200])
+        state = _reconcile_state(mailer, email, wait_s=min(20.0, confirm_wait_s or 20.0))
+        if state == "sent":
+            accepted = {"accepted": True, "http_status": None, "found_after_error": True}
+        elif state == "draft":
+            try:
                 store.event(record, "RETRY", "email_send", "RETRYING", attempt=1,
-                            reason=str(error)[:200])
+                            reason="the draft is still a draft: it was not sent")
                 sleep(RETRY_POLICY["email_send"][1])
                 accepted = mailer.send(email["message_id"])
-    except MailError as error:
-        return fail(error)
+            except MailError as again:
+                if again.kind == "permanent":
+                    return fail(again)
+                return unknown("the send was submitted twice without a confirmed outcome: "
+                               "{0}".format(str(again)[:200]))
+        else:
+            return unknown("Microsoft 365 gave no answer to the send ({0}), the message is not "
+                           "in Sent Items yet and the draft is no longer a draft — it may have "
+                           "been sent".format(str(error)[:160]))
     email.update(status="SENT", sent_at=S.now_iso(), graph_status=accepted.get("http_status"))
-    record = store.transition(record, S.EMAIL_SENT, "Sent — confirming delivery…")
+    record = store.transition(record, S.EMAIL_SENT, "Accepted — confirming delivery…")
     store.ledger_write(key, {"status": "SENT", "at": S.now_iso(), "po_id": record["po_id"],
                              "by": by, "recipient": email["recipient"],
                              "internet_message_id": email.get("internet_message_id")})
@@ -474,11 +689,17 @@ def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
     except MailError as error:
         found = None
         email["confirm_error"] = str(error)[:200]
+    _timed(record, "email", t0)
     if not found:
         email["status"] = "SENT"
         email["confirmation"] = "Accepted by Microsoft 365; not yet found in Sent Items."
         store.save(record)
         return record, "SENT"
+    return _confirmed(store, record, key, found, by)
+
+
+def _confirmed(store, record, key, found, by=None):
+    email = record["email"]
     email.update(status="CONFIRMED", confirmed_at=found.get("sentDateTime") or S.now_iso(),
                  confirmation="Found in the mailbox's Sent Items.")
     record = store.transition(record, S.EMAIL_CONFIRMED, "Completed")
@@ -492,18 +713,164 @@ def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
     return record, "CONFIRMED"
 
 
-def abandon(store, record, reason):
-    """A job whose worker died mid-way ends in the failure state its stage allows."""
-    to = {S.QUEUED: S.PDF_NOT_FOUND, S.DISCOVERED: S.PDF_NOT_FOUND,
-          S.PDF_FOUND: S.PDF_UNREADABLE, S.PDF_READ: S.EXTRACTION_FAILED,
-          S.FIELDS_EXTRACTED: None, S.VALIDATING: S.VALIDATION_FAILED,
-          S.VALIDATED: S.TEMPLATE_FAILED, S.TEMPLATE_GENERATED: S.TEMPLATE_FAILED,
-          S.EMAIL_SENDING: S.EMAIL_FAILED}.get(record["state"])
-    if record["state"] == S.FIELDS_EXTRACTED:
-        record = store.transition(record, S.VALIDATING)
-        to = S.VALIDATION_FAILED
-    if to is None:
+def _reconcile_state(mailer, email, wait_s=20.0):
+    """'sent' (in Sent Items), 'draft' (still an unsent draft), or 'unknown'."""
+    try:
+        found = mailer.confirm(email.get("internet_message_id"), wait_s=wait_s)
+    except MailError:
+        found = None
+    if found:
+        return "sent"
+    getter = getattr(mailer, "get_message", None)
+    if getter and email.get("message_id"):
+        try:
+            message = getter(email["message_id"])
+        except MailError:
+            return "unknown"
+        if message and message.get("isDraft") is True:
+            return "draft"
+    return "unknown"
+
+
+def reconcile(store, record, mailer, wait_s=20.0, by="recover"):
+    """
+    EMAIL_UNKNOWN → what the mailbox says: CONFIRMED (in Sent Items), back to
+    sendable (the draft is still a draft — EMAIL_FAILED, transient), or still
+    UNKNOWN (gone without trace: a person checks; never resent automatically).
+    """
+    if record["state"] != S.EMAIL_UNKNOWN:
+        return record, "NOT_APPLICABLE"
+    email = record.get("email") or {}
+    key = store.ledger_key(record["po_key"], record["document"]["sha256"],
+                           record["output"]["template_version"], email.get("recipient"))
+    state = _reconcile_state(mailer, email, wait_s=wait_s)
+    store.event(record, "EMAIL_RECONCILED", "email", state.upper(), by=by)
+    if state == "sent":
+        return _confirmed(store, record, key, mailer.find_sent(email.get("internet_message_id"))
+                          or {}, by)
+    if state == "draft":
+        record = store.transition(record, S.EMAIL_FAILED, "Not sent — safe to send", failure(
+            "EMAIL_FAILURE", "email", "Reconciled: the message is still an unsent draft in the "
+            "mailbox, so it was never sent. It can be sent.", kind="transient",
+            code="EMAIL_FAILED", next_action="Send it from the drawer (the same draft is used)."))
+        record["email"]["status"] = "FAILED"
+        store.save(record)
+        store.ledger_write(key, {"status": "FAILED", "at": S.now_iso(), "po_id": record["po_id"],
+                                 "by": by, "recipient": email.get("recipient")})
+        return record, "SENDABLE"
+    return record, "UNKNOWN"
+
+
+# ── RECOVERY: a worker can stop at any point ─────────────────────────────
+
+def interrupt(store, record, reason):
+    """
+    The worker stopped (or the job broke) mid-way. Nothing is declared failed
+    that may have succeeded: a send in flight becomes EMAIL_UNKNOWN (reconcile
+    before anything else); any other unfinished stage becomes
+    WORKER_DISCONNECTED, resumable from what was already proven.
+    """
+    state = record["state"]
+    if state == S.EMAIL_SENDING:
+        record = store.transition(record, S.EMAIL_UNKNOWN, "Email outcome unknown", failure(
+            "EMAIL_UNKNOWN", "email", "the worker stopped while the email was being submitted: "
+            "{0}".format(reason), kind="unknown", code="EMAIL_UNKNOWN",
+            next_action=S.NEXT_ACTION[S.EMAIL_UNKNOWN]))
+        store.event(record, "EMAIL_UNKNOWN", "email", "UNKNOWN", reason=str(reason)[:300])
         return record
-    record = store.transition(record, to, "Stopped", failure(
-        "UNKNOWN_FAILURE", record["state"].lower(), reason, kind="unknown"))
+    if state not in S.RESUMABLE:
+        return record
+    record["interrupted"] = {"state": state, "at": S.now_iso(), "reason": str(reason)[:300]}
+    record = store.transition(record, S.WORKER_DISCONNECTED, "Interrupted", failure(
+        "WORKER_DISCONNECTED", state.lower(), "the job stopped at {0}: {1}".format(
+            S.LABELS.get(state, state), reason), kind="unknown", code="WORKER_DISCONNECTED",
+        next_action=S.NEXT_ACTION[S.WORKER_DISCONNECTED]))
+    store.event(record, "WORKER_DISCONNECTED", state.lower(), "INTERRUPTED",
+                reason=str(reason)[:300])
     return record
+
+
+# The earlier name: callers that end a job whose worker went away.
+abandon = interrupt
+
+
+def resume(store, record, config=None, source=None, sleep=time.sleep):
+    """
+    Continue an interrupted job from what it had already proven — never from
+    zero when the work is kept, never past a stage that did not finish.
+    """
+    config = config or config_from_env()
+    if record["state"] != S.WORKER_DISCONNECTED:
+        return record
+    was = (record.get("interrupted") or {}).get("state")
+    store.event(record, "RESUMED", "recovery", "RUNNING", from_state=was)
+    record["failure"] = None
+    if was in (S.QUEUED, S.DISCOVERED) or not record.get("document"):
+        if source is None:
+            return record
+        # Discovery again (WORKER_DISCONNECTED → DISCOVERED): nothing was proven yet.
+        return process(store, record, source, config, sleep)
+    if was in (S.PDF_FOUND, S.PDF_READ, S.FIELDS_EXTRACTED) or not record.get("fields"):
+        path = Path((record.get("document") or {}).get("evidence") or "")
+        if not path.is_file():
+            if source is None:
+                return record
+            return process(store, record, source, config, sleep)
+        record = store.transition(record, S.PDF_FOUND, "Reading the kept PDF…")
+        return from_document(store, record, path.read_bytes(), config)
+    # VALIDATING / VALIDATED / TEMPLATE_GENERATED / SAVED: validation again,
+    # in full, then build and save anew — no state past VALIDATED is ever
+    # reached without validating. An earlier saved file is kept and named.
+    if (record.get("output") or {}).get("path"):
+        record.setdefault("superseded_outputs", []).append(
+            {k: record["output"].get(k) for k in ("path", "filename", "sha256", "saved_at")})
+        record["output"] = None
+    record = store.transition(record, S.VALIDATING, "Validating again…")
+    return validate_onward(store, record, config)
+
+
+def supply(store, record, values, by=None, config=None):
+    """
+    A person supplies what review asked for (the supplier invoice No. for G4).
+    Validation then runs again in full — nothing else is skipped.
+    """
+    if record["state"] != S.NEEDS_REVIEW or not record.get("fields"):
+        return record, ["the job is {0}, not waiting for review".format(
+            S.LABELS.get(record["state"], record["state"]))]
+    clean = {k: str(v).strip()[:120] for k, v in (values or {}).items()
+             if k in ("invoice_no",) and str(v or "").strip()}
+    if not clean:
+        return record, ["no value was given"]
+    record["request"] = dict(record.get("request") or {}, **clean,
+                             invoice_no_origin="supplied by {0} at review".format(by or "a person"))
+    record["failure"] = None
+    store.event(record, "RESUMED", "review", "RUNNING", supplied=list(clean), by=by)
+    record = store.transition(record, S.VALIDATING, "Validating with the supplied value…")
+    return validate_onward(store, record, config), []
+
+
+def recover(store, config=None, source=None, mailer=None, log=print):
+    """
+    `python -m po recover` and the start of every sweep: every job whose
+    worker is gone is interrupted, resumed, or (for an unknown send)
+    reconciled with the mailbox. Returns [(po_id, before, after)].
+    """
+    done = []
+    for record in store.all(500):
+        before = record["state"]
+        if before in S.RESUMABLE + (S.EMAIL_SENDING,) and store.lease_stale(record):
+            record = interrupt(store, record, "its worker is no longer running")
+        if record["state"] == S.WORKER_DISCONNECTED:
+            try:
+                record = resume(store, record, config, source)
+            except Exception as error:
+                log("[PO recover] {0}: could not resume: {1}".format(record["po_id"], error))
+        if record["state"] == S.EMAIL_UNKNOWN and mailer is not None:
+            try:
+                record, _o = reconcile(store, record, mailer)
+            except Exception as error:
+                log("[PO recover] {0}: could not reconcile: {1}".format(record["po_id"], error))
+        if record["state"] != before:
+            done.append((record["po_id"], before, record["state"]))
+            log("[PO recover] {0}: {1} → {2}".format(record["po_id"], before, record["state"]))
+    return done

@@ -99,8 +99,17 @@ class GraphMailer(object):
             except Exception:
                 detail = None
             kind = "transient" if status in (408, 429, 500, 502, 503, 504) else "permanent"
-            raise MailError("Microsoft Graph returned {0} at {1}{2}".format(
+            # A send whose answer was a gateway error may still have gone out.
+            if step == "send" and status in (500, 502, 503, 504):
+                kind = "unknown"
+            err = MailError("Microsoft Graph returned {0} at {1}{2}".format(
                 status, step, ": " + detail[:200] if detail else ""), kind, status, step)
+            # Throttling: Graph says how long to wait; the retry honours it.
+            try:
+                err.retry_after = min(120.0, float(error.headers.get("Retry-After") or 0))
+            except (TypeError, ValueError, AttributeError):
+                err.retry_after = 0
+            raise err
         except (urllib.error.URLError, socket.timeout, ConnectionError, TimeoutError) as error:
             reason = getattr(error, "reason", error)
             raise MailError("Microsoft Graph could not be reached at {0}: {1}".format(
@@ -159,6 +168,19 @@ class GraphMailer(object):
             raise MailError("the send was not accepted (HTTP {0})".format(status), "unknown",
                             status, "send")
         return {"accepted": True, "http_status": status}
+
+    def get_message(self, message_id):
+        """The message by id ({'id', 'isDraft', ...}), or None when it no longer exists."""
+        try:
+            status, body = self._call("GET", "{0}/messages/{1}?$select=id,isDraft,sentDateTime,"
+                                      "internetMessageId".format(
+                                          self._mailbox(), urllib.parse.quote(message_id, safe="")),
+                                      None, self._auth(), step="reconcile")
+        except MailError as error:
+            if error.status == 404:
+                return None
+            raise
+        return body
 
     def find_sent(self, internet_message_id):
         """The message in Sent Items, or None. Read-only."""
