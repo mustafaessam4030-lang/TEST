@@ -51,10 +51,15 @@ def _tests():
     except Exception:
         return _gate("Automated tests green", "UNVERIFIED",
                      "no test results file ({0}); run python run_tests.py".format(path.name))
+    if not data.get("complete"):
+        return _gate("Automated tests green", "UNVERIFIED",
+                     "the results file is not from a complete run of python run_tests.py")
     ok = data.get("failed") == 0 and not data.get("broken")
     return _gate("Automated tests green", "PASS" if ok else "FAIL",
-                 "{0} passed, {1} failed ({2})".format(data.get("passed"), data.get("failed"),
-                                                      data.get("at")))
+                 "{0} passed, {1} failed, {2} skipped{3} ({4})".format(
+                     data.get("passed"), data.get("failed"), data.get("skipped", 0),
+                     "; problems: " + ", ".join(data.get("broken")) if data.get("broken") else "",
+                     data.get("at")))
 
 
 def evaluate(store=None):

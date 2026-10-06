@@ -16,8 +16,8 @@ echo.
 echo   The dashboard stays open whether or not a run is going.
 echo   Use Start and Stop in the dashboard header.
 echo.
-where python >nul 2>&1 && (python -m dashboard.supervisor --share --key mantrac2026 & goto :end)
-where py >nul 2>&1 && (py -m dashboard.supervisor --share --key mantrac2026 & goto :end)
+where python >nul 2>&1 && (python -m dashboard.supervisor --share & goto :end)
+where py >nul 2>&1 && (py -m dashboard.supervisor --share & goto :end)
 echo   Python was not found on PATH. Run check_dashboard.bat for help.
 :end
 pause

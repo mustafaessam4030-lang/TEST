@@ -100,11 +100,13 @@ DASHBOARD_OPEN_BROWSER = True
 #                prints the exact links to send them when the run starts.
 DASHBOARD_HOST = "0.0.0.0"
 
-# Required in the URL as ?key=... once you leave loopback. The dashboard is
-# read-only — it cannot start, stop or change the automation — but it does show
-# live shipment references, carriers and dates, so put a key on it before
-# opening the port. Leave as None to disable the check.
-DASHBOARD_ACCESS_KEY = "mantrac2026"
+# Required in the URL as ?key=... The dashboard shows live shipment
+# references, carriers and dates, so it always has a key. There is no key in
+# this file: it comes from the DASHBOARD_ACCESS_KEY environment variable, or —
+# if that is not set — from this installation's own random key, generated on
+# first start into dashboard/.runtime/access_key (never in Git or a release).
+# The console prints the links with the key when the run starts.
+DASHBOARD_ACCESS_KEY = None
 
 # ------------------------------------------------------------
 # DASHBOARD CONTROL
@@ -10296,13 +10298,26 @@ def main():
         if os.environ.get("CT_STATE_FILE"):
             pass          # the supervisor already owns the port
         else:
-            tower_server.start(
-                port=DASHBOARD_PORT,
-                open_browser=DASHBOARD_OPEN_BROWSER,
-                host=DASHBOARD_HOST,
-                access_key=DASHBOARD_ACCESS_KEY,
-                learning=True,
-            )
+            try:
+                try:
+                    from dashboard import access as tower_access
+                except ImportError:             # flattened layout
+                    import access as tower_access
+                _key, _key_source = tower_access.resolve(DASHBOARD_ACCESS_KEY)
+                print(tower_access.explain(_key_source), flush=True)
+            except Exception as error:
+                # Without a key the dashboard is not served; the run goes on.
+                print("Control Tower dashboard not started: no access key ({0}).".format(
+                    error), flush=True)
+                _key = None
+            if _key:
+                tower_server.start(
+                    port=DASHBOARD_PORT,
+                    open_browser=DASHBOARD_OPEN_BROWSER,
+                    host=DASHBOARD_HOST,
+                    access_key=_key,
+                    learning=True,
+                )
     # Under the supervisor the dashboard is served by the parent process, so
     # this run publishes its state to a file instead of hosting a server.
     _state_file = os.environ.get("CT_STATE_FILE")

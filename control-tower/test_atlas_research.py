@@ -416,6 +416,22 @@ check("A success claim the inputs do not make: rejected", not ok and any("claim"
       v)
 ok, v = FG.check("See https://made-up.example/x for details.", src)
 check("A link not in the inputs: rejected", not ok, v)
+neg = ["CMAU7700001: CMA CGM restricted access. Nothing was extracted or written. "
+       "Status RESTRICTED. The ETA was not updated."]
+ok, v = FG.check("For CMAU7700001 the ETA was written to the Hub.", neg)
+check("A negated fact turned positive ('nothing was written' → 'was written'): rejected",
+      not ok and any("did not happen" in x for x in v), v)
+ok, v = FG.check("CMAU7700001's ETA was updated successfully.", neg)
+check("'not updated' → 'updated successfully': rejected", not ok, v)
+check("The negation kept: accepted",
+      FG.check("CMA CGM restricted access for CMAU7700001; nothing was extracted or written, and "
+               "the ETA wasn't updated.", neg)[0])
+ok, v = FG.check("CMAU7700001 is now SUCCESS.", neg)
+check("A status label ATLAS did not use (SUCCESS for a RESTRICTED shipment): rejected",
+      not ok and any("status SUCCESS" in x for x in v), v)
+ok, v = FG.check("The email was sent and the PO is EMAIL_CONFIRMED.",
+                 ["The PO is EMAIL_PREPARED; nothing has been sent yet."])
+check("A PO email claim the record does not make: rejected", not ok, v)
 
 # ═════════════════════════════════════════════════════════════════════════
 rule("5. THE SERVER — progress and the local health endpoint")
@@ -521,6 +537,7 @@ code = ""
 for path in HERE.rglob("*"):
     rel = path.relative_to(HERE).parts
     if not path.is_file() or rel[0].startswith((".", "C:")) or path.name.startswith("test_") \
+            or path.name == "make_release.py" \
             or path.suffix not in (".py", ".js", ".html", ".txt", ".json", ".yml", ".yaml",
                                    ".bicep", ".ps1", ".bat", ".cfg", ".toml", ".env"):
         continue

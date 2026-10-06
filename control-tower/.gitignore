@@ -21,3 +21,11 @@ dist/
 
 # The last full test run, read by the PO readiness gate
 test_results.json
+
+# Dashboard / supervisor / worker runtime state, including this
+# installation's generated dashboard access key — never committed or shipped
+dashboard/.runtime/
+
+# Release packages built by make_release.py
+release/
+*.zip

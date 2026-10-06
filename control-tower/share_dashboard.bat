@@ -8,7 +8,7 @@ echo.
 echo  If nobody can connect, run this ONCE in an Administrator PowerShell:
 echo    New-NetFirewallRule -DisplayName "Mantrac Control Tower" -Direction Inbound -Protocol TCP -LocalPort 8787 -Action Allow -Profile Domain,Private
 echo.
-set /p KEY=Access key to require (press ENTER for none): 
+set /p KEY=Access key to require (press ENTER to use this installation's key): 
 where python >nul 2>&1 && (
   if "%KEY%"=="" (python -m dashboard.server --share --replay --base "C:\Automation") else (python -m dashboard.server --share --key "%KEY%" --replay --base "C:\Automation")
   goto :end

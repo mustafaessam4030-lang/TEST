@@ -323,8 +323,10 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--share", action="store_true",
                         help="shorthand for --host 0.0.0.0")
-    parser.add_argument("--key", default="mantrac2026",
-                        help="access key required in the link")
+    parser.add_argument("--key", default=None,
+                        help="access key required in the link (default: the "
+                             "DASHBOARD_ACCESS_KEY variable, else this installation's "
+                             "generated key — see dashboard/access.py)")
     parser.add_argument("--autostart", action="store_true",
                         help="begin a run immediately on launch")
     args = parser.parse_args()
@@ -333,8 +335,11 @@ def main():
     os.environ.setdefault("ATLAS_DATA_ORIGIN", "production")
     install()
     host = "0.0.0.0" if args.share else args.host
+    from dashboard import access
+    key, source = access.resolve(args.key)
+    print(access.explain(source), flush=True)
     tower_server.start(port=args.port, open_browser=True, host=host,
-                       access_key=args.key or None, learning=True)
+                       access_key=key, learning=True)
 
     print("The dashboard stays up whether or not a run is in progress.", flush=True)
     print("Use Start and Stop in the dashboard header.", flush=True)

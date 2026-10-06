@@ -68,11 +68,22 @@ DASHBOARD_OPEN_BROWSER = True
 
 ```python
 DASHBOARD_HOST = "0.0.0.0"
-DASHBOARD_ACCESS_KEY = "mantrac2026"
+DASHBOARD_ACCESS_KEY = None   # no key in the code — see below
 ```
 
-Change the key to whatever you like. To go back to this-machine-only, set
-`DASHBOARD_HOST = "127.0.0.1"`.
+The dashboard always needs an access key, and there is none in the code or
+the release. It is resolved in this order:
+
+1. `--key` on the command line;
+2. the `DASHBOARD_ACCESS_KEY` environment variable, at least 12 characters;
+3. this installation's own random key. It is generated on first start into
+   `dashboard\.runtime\access_key`, readable by your user only, and is never in
+   Git or the release.
+
+To choose your own key: `setx DASHBOARD_ACCESS_KEY "<a long random value>"`,
+then open a new console. To rotate it, delete `dashboard\.runtime\access_key`
+(or change the variable) and restart. The console prints the links with the
+key. To go back to this-machine-only, set `DASHBOARD_HOST = "127.0.0.1"`.
 
 **Start it with `START_SHARED.bat`.** It asks Windows for permission once,
 opens the port, and starts the run. After that the printed link works on any

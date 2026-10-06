@@ -7,10 +7,9 @@ against a real Ollama or SearXNG install — only against stand-in servers in
 
 ## 0. The paid integration was deleted
 
-The earlier `intelligence/research.py` called the paid Anthropic Messages API
-(web search + web fetch) when `ATLAS_RESEARCH_API_KEY` / `ANTHROPIC_API_KEY`
-was set. That transport, its settings (`ATLAS_RESEARCH*`) and its docs are
-removed — not disabled. `test_atlas_research.py` §8 fails the build if an
+The earlier `intelligence/research.py` called a paid hosted AI API (web
+search + web fetch) when an API key was configured. That transport, its
+settings and its docs are removed — not disabled. `test_atlas_research.py` §8 fails the build if an
 Anthropic, OpenAI or Gemini endpoint, key name, header or SDK reappears in the
 product code or requirements.
 

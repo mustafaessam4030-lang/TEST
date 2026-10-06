@@ -473,6 +473,11 @@ inbound) and optional Azure Bastion for administrators.
 
 ## 16. Integration test results
 
+> Historical record from the round that built the platform (5 Oct 2026). It
+> is not current evidence: the current full-suite result is the one
+> `python run_tests.py` prints (and writes to `test_results.json`), and the
+> release report is `RELEASE_REPORT.md`.
+
 | Suite | Result |
 |---|---|
 | Full suite (`run_tests.py`), last complete run | **2,426 passed, 1 failed** of 2,427 across 29 suites. The one failure was a timing check in `test_remote_session.py` (it read the Start button before the first live state had painted it); fixed, and the suite then passed 51/51 in two consecutive runs. Earlier fixes in this round: the automation no longer sets an environment variable (`test_afkl_resources` 46/46), and the Human Action loop test's person now waits for the run (`test_human_loop` 101/101) |

@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-PASS, FAIL = [], []
+PASS, FAIL, SKIP = [], [], []
 
 
 def check(name, ok, detail=""):
@@ -162,6 +162,7 @@ for path in (root, child, root / "update_eta.py"):
 
 if os.geteuid() != 0:
     print("  (needs root to drop privileges; skipped)")
+    SKIP.append("unprivileged-run check (needs root to drop privileges)")
 else:
     result = subprocess.run(
         ["su", "nobody", "-s", "/bin/sh", "-c",
@@ -205,7 +206,8 @@ check("TARGET_STATUS unchanged", A.TARGET_STATUS == "Under Clearance")
 
 print()
 print("=" * 70)
-print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
+print("{0} passed, {1} failed{2}".format(
+    len(PASS), len(FAIL), ", {0} skipped ({1})".format(len(SKIP), "; ".join(SKIP)) if SKIP else ""))
 for n in FAIL:
     print("  FAILED:", n)
 print("=" * 70)

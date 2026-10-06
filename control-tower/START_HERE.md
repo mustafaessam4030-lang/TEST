@@ -316,15 +316,28 @@ The console prints two links:
 
 ```
   ON THIS MACHINE:
-    http://127.0.0.1:8787/?key=mantrac2026
+    http://127.0.0.1:8787/?key=<this installation's key>
 
   SEND THIS TO COLLEAGUES:
-    http://MANTRAC-PC:8787/?key=mantrac2026
-    http://10.20.30.40:8787/?key=mantrac2026
+    http://MANTRAC-PC:8787/?key=<this installation's key>
+    http://10.20.30.40:8787/?key=<this installation's key>
 ```
 
 Send colleagues one of the **bottom two**. `127.0.0.1` means "this computer" on
 whichever machine opens it, so it will not work for them.
+
+**The access key.** There is no key in the code or in this ZIP. On the first
+start the Control Tower generates a random key for this installation and saves
+it to `dashboard\.runtime\access_key`, readable by your user only. The console
+says so, and the links above include it. To choose your own key, set it once,
+at least 12 characters, then open a new console:
+
+```bat
+setx DASHBOARD_ACCESS_KEY "<a long random value>"
+```
+
+To rotate the key, delete `dashboard\.runtime\access_key` (or change the
+variable) and restart. Old links stop working.
 
 ### Other ways to start
 
@@ -373,7 +386,7 @@ All near the top of `update_eta.py`:
 |---|---|---|
 | `DRY_RUN` | `False` | `True` fills the dates but saves nothing — safe for testing |
 | `DASHBOARD_HOST` | `"0.0.0.0"` | `"127.0.0.1"` makes the dashboard this-machine-only |
-| `DASHBOARD_ACCESS_KEY` | `"mantrac2026"` | the key required in the link |
+| `DASHBOARD_ACCESS_KEY` | `None` | no key in the code: the `DASHBOARD_ACCESS_KEY` environment variable, else this installation's generated key (see §2) |
 | `DASHBOARD_ALLOW_CONTROL` | `False` | Pause/Stop when the dashboard runs inside the automation |
 | `MAX_RECORDS_PER_RUN` | `200` | shipments per run |
 | `TARGET_STATUS` | `"Under Clearance"` | the hub filter |
@@ -424,8 +437,8 @@ python test_logging.py         log paths, rotation, secret redaction
 python test_assistant.py       the assistant, including anti-fabrication
 ```
 
-374 tests. They run without a browser or credentials, so they are safe to run
-on any machine at any time.
+These run without a browser or credentials, so they are safe to run on any
+machine at any time. `run_tests.bat` (§9) runs every suite.
 
 ---
 
@@ -437,8 +450,20 @@ Before a real run, from `C:\Automation`:
 run_tests.bat
 ```
 
-603 tests, no browser and no network needed. It should end with
-`603 passed, 0 failed`. If Python or Playwright is missing it will say so.
+Every suite in `run_tests.py`, with no credentials and no access to eHub,
+carriers or the internet. Several suites drive a local headless Chromium
+against local stand-in pages, so Playwright's Chromium must be installed (see
+below). It ends with one line:
+`N suites, N passed, 0 failed, N skipped, 0 suite(s) with problems`. Anything
+else is a failure. The last complete result is written to `test_results.json`
+(local, never shipped), and `python -m po readiness` reads it.
+
+The runner is bounded. Each suite has a time limit (`CT_SUITE_TIMEOUT_S`,
+default 900 s; the whole run `CT_TOTAL_TIMEOUT_S`, default 7200 s). A suite
+that hangs is killed together with everything it started, and is reported as
+TIMEOUT with its last output lines. A suite that exits without its summary is
+reported as ERROR. Each suite's full output is kept in a temporary folder whose
+path is printed at the top. `python run_tests.py test_po.py` runs one suite.
 
 If this is a fresh machine:
 

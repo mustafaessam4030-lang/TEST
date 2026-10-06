@@ -14,6 +14,7 @@ Two ways to run it:
 import argparse
 import csv
 import io
+import hmac
 import json
 import mimetypes
 import socket
@@ -84,7 +85,10 @@ STATIC_DIR = _find_static()
 # running the automation. Set DASHBOARD_HOST = "0.0.0.0" in update_eta.py to
 # let colleagues open it from their own machines.
 #
-# ACCESS_KEY is optional but strongly recommended once you leave loopback.
+# ACCESS_KEY: required whenever the dashboard leaves loopback — start() then
+# resolves one (dashboard/access.py: --key, DASHBOARD_ACCESS_KEY, or this
+# installation's generated key file) if the caller gave none. There is no
+# built-in default key.
 # The dashboard is read-only — it cannot start, stop or alter the automation —
 # but it does show live shipment references, carriers and dates, and the
 # assistant will answer questions about them. Anyone who can reach the port
@@ -306,13 +310,13 @@ class Handler(BaseHTTPRequestHandler):
         from urllib.parse import urlparse, parse_qs
 
         supplied = (parse_qs(urlparse(self.path).query).get("key") or [None])[0]
-        if supplied == ACCESS_KEY:
+        if supplied and hmac.compare_digest(str(supplied), ACCESS_KEY):
             self._set_cookie = True
             return True
         cookie = self.headers.get("Cookie") or ""
         for part in cookie.split(";"):
             name, _, value = part.strip().partition("=")
-            if name == COOKIE_NAME and value == ACCESS_KEY:
+            if name == COOKIE_NAME and value and hmac.compare_digest(value, ACCESS_KEY):
                 return True
         return False
 
@@ -928,6 +932,19 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
     """
     global _server, ACCESS_KEY, _shared_host, _shared_port
     ACCESS_KEY = access_key or None
+    if not ACCESS_KEY and host not in ("127.0.0.1", "localhost"):
+        # Never serve run data to the network without a key.
+        try:
+            from dashboard import access as _access
+        except ImportError:                     # flattened layout
+            import access as _access
+        try:
+            ACCESS_KEY, source = _access.resolve()
+        except (OSError, ValueError) as error:
+            print("Control Tower did not start: a network-shared dashboard needs an access "
+                  "key, and none could be set up ({0}).".format(error), flush=True)
+            return None
+        print(_access.explain(source), flush=True)
     LEARNING["on"] = bool(learning)
     _shared_host = host not in ("127.0.0.1", "localhost")
     _shared_port = port
@@ -991,8 +1008,8 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
             if not ACCESS_KEY:
                 print(
                     "  NOTE: no access key is set, so anyone who can reach this "
-                    "port can read the run. Set DASHBOARD_ACCESS_KEY in "
-                    "update_eta.py to require one.",
+                    "port can read the run. Set the DASHBOARD_ACCESS_KEY environment "
+                    "variable to require one.",
                     flush=True,
                 )
             print(
@@ -1037,7 +1054,8 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="127.0.0.1",
                         help="0.0.0.0 to allow other machines on the network")
     parser.add_argument("--key", default=None,
-                        help="require ?key=... to view (recommended off loopback)")
+                        help="require ?key=... to view (off loopback a key is always "
+                             "required: DASHBOARD_ACCESS_KEY or the generated key file)")
     parser.add_argument("--share", action="store_true",
                         help="shorthand for --host 0.0.0.0")
     parser.add_argument(
