@@ -25,6 +25,9 @@ ACTIONS = (
     "VIEW_EVIDENCE", "UPLOAD_EVIDENCE",
     "SYSTEM_SETTING_CHANGED", "WORKER_REGISTERED", "WORKER_DISCONNECTED",
     "WORKER_RECONNECTED", "RUN_RECONCILED", "ACCESS_DENIED",
+    # A worker's report of what it observed in the real eHub, with the level
+    # the control plane gave it.
+    "WORKER_OBSERVATION",
     # PO Automation: who started it, what the document and validation said,
     # the template, the recipient and what Microsoft 365 answered.
     "PO_PROCESS_STARTED", "PO_PROCESSED", "PO_EMAIL_SENT", "PO_EMAIL_CONFIRMED",

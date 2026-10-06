@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import rbac
 from .audit import Audit
+from .observations import Observations
 from .config import Settings
 from .db import Database, loads, now
 from .oidc import EntraID, SSOError
@@ -37,6 +38,7 @@ from .security import RateLimiter, page_headers, api_headers, script_hashes, sam
 from .users import Users, AccessError, public as public_user
 
 from dashboard import server as tower_server
+from intelligence import verification as V
 from dashboard import assistant
 from po import service as po_service, store as po_store, web as po_web
 from dashboard.bridge import ControlTowerState
@@ -68,6 +70,7 @@ ROUTE_PERMISSIONS = {
     ("GET", "/api/runs"): "runs.view",
     ("GET", "/api/export.csv"): "runs.view",
     ("GET", "/api/health"): "health.view",
+    ("GET", "/api/observations"): "health.view",
     ("GET", "/api/evidence"): "evidence.view",
     ("GET", "/api/evidence/file"): "evidence.view",
     ("POST", "/api/evidence/upload"): "evidence.upload",
@@ -93,6 +96,8 @@ class App(object):
         self.audit = Audit(self.db)
         self.users = Users(self.db, self.audit, self.s)
         self.orch = Orchestrator(self.db, self.audit, self.s)
+        # The real eHub, as the worker saw it. Nothing here contacts eHub.
+        self.observations = Observations(self.db, self.audit)
         self.relay = Relay(self.db, self.audit, self.s)
         self.entra = EntraID(self.s, self.db) if self.s.entra_enabled else None
         self.limiter = RateLimiter()
@@ -238,6 +243,9 @@ class App(object):
             "atlas": "Ready" if atlas_ok else "Unavailable",
             "current_run": (run["status"] if run else "None"),
             "current_run_id": run["run_id"] if run else None,
+            # Only what a worker reported. The control plane never checks
+            # eHub itself, so before a report this is "Not verified".
+            "ehub": self.observations.latest(),
         }
 
     def synced_ids(self):
@@ -768,6 +776,14 @@ class Handler(tower_server.Handler):
             self._stream()
         elif route == "/api/health":
             self._send(200, app.health())
+        elif route == "/api/observations":
+            q = self._query()
+            if q.get("id"):
+                record = app.observations.get(str(q["id"])[:40])
+                self._send(200 if record else 404, record or {"error": "not_found"})
+            else:
+                self._send(200, {"observations": app.observations.recent(
+                    int(q.get("limit") or 30)), "levels": list(V.LEVELS)})
         elif route == "/api/runs" and method == "GET":
             self._send(200, {"runs": app.orch.runs(int(self._query().get("limit") or 50))})
         elif route == "/api/runs" and method == "POST":
@@ -1330,6 +1346,11 @@ class Handler(tower_server.Handler):
                 app.relay.set_status(action_id, self._json(4096))
                 self._send(200, {"ok": True})
                 return
+        if tail == ["observations"] and method == "POST":
+            record = app.observations.accept(worker, self._json(512 * 1024))
+            self._send(200, {"ok": True, "observation_id": record["observation_id"],
+                             "level": record["level"], "reasons": record["reasons"]})
+            return
         if len(tail) == 2 and tail[0] == "intel" and method == "POST":
             self._intel_sync(worker, tail[1])
             return

@@ -125,6 +125,21 @@ SCHEMA = [
         attempts INTEGER NOT NULL DEFAULT 0,
         result TEXT)""",
     "CREATE INDEX IF NOT EXISTS commands_worker ON commands (worker_id, status)",
+    # What a worker observed in the real eHub (controlplane/observations.py).
+    """CREATE TABLE IF NOT EXISTS observations (
+        observation_id TEXT PRIMARY KEY,
+        worker_id TEXT NOT NULL,
+        run_id TEXT,
+        kind TEXT NOT NULL,
+        level TEXT NOT NULL,
+        claimed_level TEXT,
+        received_at DOUBLE PRECISION NOT NULL,
+        observed_at TEXT,
+        reference TEXT,
+        status TEXT,
+        ehub_host TEXT,
+        data TEXT NOT NULL DEFAULT '{}')""",
+    "CREATE INDEX IF NOT EXISTS observations_received ON observations (received_at)",
     """CREATE TABLE IF NOT EXISTS claims (
         action_id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL,

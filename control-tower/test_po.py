@@ -1573,8 +1573,12 @@ d = diag(HUB + "/ehub/manage/176-88452310", (HUB_USER, HUB_PASS), browser=True)
 check("Signed in, but no shipment list there: APPLICATION at shipment_list",
       d.get("category") == "APPLICATION" and d.get("failed_stage") == "shipment_list", d)
 d = diag(HUB + "/ehub/list", (HUB_USER, HUB_PASS), browser=True)
-check("The stand-in list passes every stage — and is reported as source TEST, not REAL",
-      d.get("result") == "REACHABLE" and d.get("source") == "TEST" and HUB_PASS not in json.dumps(d), d)
+check("The stand-in list passes every stage — named a stand-in, and never REAL",
+      d.get("result") == "REACHABLE" and d.get("target") == "stand-in"
+      and "REAL" not in str(d.get("level")) and HUB_PASS not in json.dumps(d), d)
+check("A connectivity check is never REAL, even against the real host",
+      "REAL" not in str(DG.check(url="https://" + EH.ehub_host() + "/x", launch_browser=False,
+                                 timeout=3).get("level")))
 check("Credentials are never in a report", all(HUB_PASS not in json.dumps(x) for x in (d,)))
 
 rule("23. DISCOVERY FAILURE MODES, at the boundary")
@@ -1631,8 +1635,12 @@ check("...and the PO job ended visibly, on its own job ID: {0}".format(fail_job[
       and pf["failure"]["category"] == "NAVIGATION_FAILURE", pf.get("failure"))
 
 rule("25. SUCCESSFUL REAL DISCOVERY — only on a machine that reaches eHub")
-real = DG.check(launch_browser=False, timeout=8)
-if real["result"] == "REACHABLE" and real["source"] == "REAL":
+# The test suite never touches the real eHub on its own: real verification
+# is the worker's (python -m worker.verify). Opt in on the worker only.
+real = DG.check(launch_browser=False, timeout=8) if os.environ.get("ATA_REAL_EHUB_TESTS") == "1" \
+    else {"category": "NOT RUN", "failed_stage": "-", "reason": "the suite does not touch the real "
+          "eHub unless ATA_REAL_EHUB_TESTS=1 on the Windows worker"}
+if real.get("result") == "REACHABLE" and real.get("target") == "real eHub":
     code = "import json,sys;sys.path.insert(0,'.');from po.__main__ import main;sys.exit(main(['ehub-probe']))"
     run = subprocess.run([sys.executable, "-c", code], cwd=str(HERE), capture_output=True,
                          text=True, timeout=600)

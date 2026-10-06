@@ -185,10 +185,15 @@ Hapag-Lloyd are picked by the Hub's Carrier Name column.
   back: it is **Success only when the Hub reads back the date written**. A
   read-back that cannot be done is *not* a success. To stop ocean writing on
   a machine, set `OCEAN_WRITE=0`.
-- **Prove one shipment against the real eHub:** `python prove_ocean_write.py
-  MEDUAHP69377` runs the normal automation for that one shipment and prints
-  the ETA read, the value written, the value read back and the verdict
-  (VERIFIED SUCCESS or why not). It writes to eHub like a normal run.
+- **Prove the real eHub, on the worker** (see PLATFORM.md, *Real eHub
+  verification*):
+  - `verify_ehub.bat` — read-only: eHub loads, the shipment list renders, a
+    shipment Under Clearance and its status are read. REAL OBSERVED, or
+    REAL VERIFICATION BLOCKED with the exact reason.
+  - `verify_eta.bat MEDUAHP69377` — the normal automation for that one
+    shipment: carrier ETA → write to eHub → read back → compare. REAL
+    VERIFIED only when eHub reads back the date written. It writes to eHub
+    like a normal run.
 - **Hapag-Lloyd:** a container number (HLCU1234567) uses *Tracing by
   Container*. A bill of lading (HLCUTA12609EPQF2) uses tracing by booking.
 - **Grimaldi (GNET) needs a person for every search.** The run fills in

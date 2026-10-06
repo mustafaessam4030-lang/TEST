@@ -246,7 +246,8 @@ python -m po ehub-check [--no-browser]
     shown) → browser → sign-in → shipment list. The first failure is classified
     NETWORK / AUTHENTICATION / BROWSER / APPLICATION; later stages are listed as
     not reached. Writes ehub-check-<time>.json to <PO_DATA_DIR>/probes.
-    Clicks nothing, changes nothing.
+    Clicks nothing, changes nothing. Connectivity only: it is never REAL —
+    the real check is `python -m worker.verify ehub` on the Windows worker.
 python -m po ehub-probe [--reference 176-88452310]
     THE PROOF, on the real eHub, read-only: an Under Clearance record (or the
     one named) → Manage → Documents → Bill Entry → identifier → download → the

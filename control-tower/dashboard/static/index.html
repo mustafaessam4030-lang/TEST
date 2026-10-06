@@ -508,6 +508,13 @@ input,textarea,select{font-family:inherit}
   padding:2px 7px;border-radius:6px;border:1px solid var(--line);color:var(--mid);white-space:nowrap}
 .po-src.test{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
 .po-src.real{border-color:var(--grn-line,var(--line));color:var(--grn);background:var(--grn-wash)}
+/* Evidence levels for the real eHub — one look everywhere. */
+.lvl{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 7px;
+  border-radius:6px;border:1px solid var(--line);color:var(--mid);white-space:nowrap}
+.lvl.l-test,.lvl.l-sim{border-color:var(--y-line);color:var(--y);background:var(--y-wash)}
+.lvl.l-obs{border-color:var(--grn-line,var(--line));color:var(--grn)}
+.lvl.l-ver{border-color:var(--grn-line,var(--line));color:var(--grn);background:var(--grn-wash)}
+.lvl.l-blk{border-color:var(--red-line);color:var(--red);background:var(--red-wash)}
 .pv.ok{color:var(--grn)} .pv.bad{color:var(--red)} .pv.none{color:var(--faint);font-weight:400}
 .po-ax{display:flex;align-items:center;gap:14px;padding:14px 20px;margin-bottom:18px;flex-wrap:wrap}
 .po-ax-f{width:44px;height:44px;flex:none}
@@ -1826,6 +1833,9 @@ td.car{color:var(--ink);font-weight:500}
         <div class="card"><div class="card-h"><div class="card-t">Runner health</div></div>
           <div id="health"></div></div>
       </div>
+      <div class="card" id="vfyCard" hidden><div class="card-h"><div class="card-t">Real eHub verification</div>
+        <div class="card-s">Reported by the Windows worker. The control plane never checks eHub itself.</div></div>
+        <div id="vfy"></div></div>
     </section>
 
     <!-- ═══ ATLAS ═══
@@ -2363,10 +2373,14 @@ function paintPlatform(){
     putHTML($('sysBar'), item('API', h.api) +
       item('Worker', h.worker === 'IDLE' ? 'Online · idle' : h.worker === 'BUSY' ? 'Online · busy' : h.worker,
            h.worker_heartbeat_s != null && h.worker !== 'OFFLINE' ? Math.round(h.worker_heartbeat_s) + ' s ago' : '', h.worker) +
-      item('Browser', h.browser) + item('ATLAS', h.atlas) + item('Storage', h.storage) +
+      item('Browser', h.browser) +
+      item('eHub', h.ehub ? h.ehub.level : 'Not verified by the worker',
+           h.ehub ? acWhen(h.ehub.at) : '', h.ehub ? LVL_DOT[h.ehub.level] : 'Unknown') +
+      item('ATLAS', h.atlas) + item('Storage', h.storage) +
       item('Current run', RUN_WORDS[h.current_run] || h.current_run, h.current_run_id || ''));
     $('sysBar').hidden = false;
   }
+  if (h && changed('vfyAt', JSON.stringify(h.ehub || null))) paintVerify();
   const notice = !run ? '' : run.status === 'WORKER_DISCONNECTED'
     ? 'The worker carrying run ' + run.run_id + ' stopped calling in. The run may still be going on the worker; ' +
       'what you see is its last report, and this updates the moment it reconnects. Human actions cannot be opened until then.'
@@ -2382,6 +2396,38 @@ function paintPlatform(){
     cls($('beatPill'), 'pill' + (age != null && h.worker !== 'OFFLINE' ? (age < 25 ? ' run' : ' bad') : ' bad'));
   }
   if (rv.id) rvPaint();
+}
+
+/* ── The real eHub, as the worker reported it ──
+   TEST · SIMULATED · REAL OBSERVED · REAL VERIFIED · BLOCKED — the level the
+   control plane computed from the worker's evidence, never a claim. */
+const LVL_CLASS = {'TEST':'l-test', 'SIMULATED':'l-sim', 'REAL OBSERVED':'l-obs',
+  'REAL VERIFIED':'l-ver', 'BLOCKED':'l-blk'};
+const LVL_DOT = {'REAL VERIFIED':'Online', 'REAL OBSERVED':'Online', 'BLOCKED':'Unavailable',
+  'TEST':'Unknown', 'SIMULATED':'Unknown'};
+function lvlBadge(level){
+  return '<span class="lvl ' + (LVL_CLASS[level] || '') + '">' +
+    esc(level === 'BLOCKED' ? 'REAL VERIFICATION BLOCKED' : level) + '</span>';
+}
+async function paintVerify(){
+  if (!PF.on || !(PF.perms || []).includes('health.view')) return;
+  let data;
+  try { const r = await fetch('/api/observations?limit=20'); if (!r.ok) return; data = await r.json(); }
+  catch (e) { return; }
+  const rows = data.observations || [];
+  $('vfyCard').hidden = false;
+  putHTML($('vfy'), !rows.length
+    ? empty('Not verified by the worker yet',
+        'On the Windows worker run <code>python -m worker.verify ehub</code>. Until a report arrives, ' +
+        'nothing about the real eHub is shown as verified.')
+    : '<table class="po-vt"><thead><tr><th>When</th><th>Worker</th><th>Check</th><th>Level</th>' +
+      '<th>Shipment</th><th>Status in eHub</th><th>Detail</th></tr></thead><tbody>' +
+      rows.map((o) => '<tr><td>' + esc(acWhen(o.received_at)) + '</td><td>' + esc(o.worker_name || o.worker_id) +
+        '</td><td>' + esc(o.kind === 'eta-write' ? 'ETA write + read-back' : 'eHub connection') +
+        (o.run_id ? '<br><span class="hint">' + esc(o.run_id) + '</span>' : '') +
+        '</td><td>' + lvlBadge(o.level) + (o.real_browser ? '' : '<br><span class="hint">no real browser</span>') +
+        '</td><td>' + esc(o.shipment_reference || '—') + '</td><td>' + esc(o.shipment_status || '—') +
+        '</td><td>' + esc((o.reasons || []).join('; ')) + '</td></tr>').join('') + '</tbody></table>');
 }
 
 /* ── ACCESS: users, audit, workers (admins) ── */

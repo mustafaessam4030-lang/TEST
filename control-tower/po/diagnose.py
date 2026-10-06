@@ -66,8 +66,10 @@ def check(url=None, launch_browser=True, credentials=None, timeout=15):
     port = urlparse(url).port or (443 if url.startswith("https") else 80)
     real_host = urlparse(ehub_url()).hostname
     report = {"check": "ehub-connectivity",
-              # REAL only when the host checked IS the real eHub — never a label.
-              "source": "REAL" if host == real_host else "TEST", "url": url, "host": host,
+              # What was checked — not what it proves. This check never makes
+              # anything REAL: a connection is not an observation of eHub.
+              # The real check is the Windows worker's: python -m worker.verify ehub
+              "target": "real eHub" if host == real_host else "stand-in", "url": url, "host": host,
               "machine": socket.gethostname(), "at": datetime.now().astimezone().isoformat(
                   timespec="seconds"), "result": "REACHABLE", "stages": []}
     _stage(report, "config", bool(host), detail="eHub address from update_eta.INTERNAL_URL")
@@ -203,4 +205,7 @@ def _finish(report, browser=None):
             pass
     reached = {s["stage"] for s in report["stages"]}
     report["not_reached"] = [s for s in STAGES if s not in reached]
+    report["level"] = "BLOCKED" if report["result"] == "FAILED" else \
+        "NOT VERIFIED (connectivity only — the real check is `python -m worker.verify ehub` " \
+        "on the Windows worker)"
     return report

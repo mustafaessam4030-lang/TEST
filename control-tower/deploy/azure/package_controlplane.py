@@ -5,7 +5,7 @@ Build the zip that is deployed to Azure App Service.
     az webapp deploy --resource-group RG --name APP --src-path dist/ata-controlplane.zip --type zip
 
 It holds only what the control plane runs: controlplane/, dashboard/ (the
-page and the ATLAS copilot it serves), intelligence/ and ml/ (code, never
+page and the ATLAS copilot it serves), intelligence/, ml/ and po/ (code, never
 data), and a requirements.txt with the PostgreSQL driver. Not included: the
 automation (update_eta.py), carrier tools, run output, learning data, local
 databases, test fixtures — none of it belongs on the web server.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "dist" / "ata-controlplane.zip"
-PACKAGES = ("controlplane", "dashboard", "intelligence", "ml")
+PACKAGES = ("controlplane", "dashboard", "intelligence", "ml", "po")
 SKIP_DIRS = {"__pycache__", ".runtime", "data", "models"}
 SKIP_SUFFIX = {".pyc", ".db", ".db-wal", ".db-shm", ".jsonl", ".log"}
 REQUIREMENTS = """# The control plane is standard library only, except the PostgreSQL driver.

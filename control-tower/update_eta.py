@@ -9995,6 +9995,21 @@ def update_internal_shipment(internal_page, shipment, dhl_result):
 # MAIN - DHL ONLY, PAGES 1 TO 10
 # ============================================================
 
+def hub_launch_options():
+    """
+    How a run opens its browser: headed Edge, as the operator sees it. The
+    one definition, used by main() and by the worker's real-eHub verification
+    (worker/verify.py), so the check is made in the same kind of session.
+    """
+    return {"channel": "msedge", "headless": False, "slow_mo": SLOW_MO_MS,
+            "args": ["--disable-http2"] if DISABLE_HTTP2 else []}
+
+
+def hub_context_options(username, password):
+    """The browser context eHub is opened in: its basic-auth credentials."""
+    return {"http_credentials": {"username": username, "password": password}}
+
+
 def main():
     if DASHBOARD_ENABLED and TOWER_AVAILABLE:
         if os.environ.get("CT_STATE_FILE"):
@@ -10137,25 +10152,16 @@ def main():
         global _PLAYWRIGHT
         _PLAYWRIGHT = playwright
 
-        launch_args = []
         if DISABLE_HTTP2:
-            launch_args.append("--disable-http2")
             write_log("HTTP/2 is disabled for this run (DISABLE_HTTP2=0 to "
                       "re-enable). Some TLS-inspecting network appliances "
                       "corrupt HTTP/2 framing, which Chromium reports as "
                       "ERR_HTTP2_PROTOCOL_ERROR against every URL on the "
                       "affected host.")
 
-        browser = playwright.chromium.launch(
-            channel="msedge",
-            headless=False,
-            slow_mo=SLOW_MO_MS,
-            args=launch_args,
-        )
+        browser = playwright.chromium.launch(**hub_launch_options())
 
-        context = browser.new_context(
-            http_credentials={"username": username, "password": password}
-        )
+        context = browser.new_context(**hub_context_options(username, password))
 
         internal_page = context.new_page()
         dhl_page = context.new_page()

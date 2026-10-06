@@ -220,6 +220,37 @@ issues it with `python -m controlplane add-worker` or Access → Workers).
 | `POST session/{action}/status` | whether the view is attached/streaming, and why not |
 | `POST intel/events`, `POST intel/evidence` | ATLAS records and captures, with the store's origin |
 | `POST po/{po_id}` | a PO job's record and events as they change; at the end its PDF and generated document, each checked against its SHA-256. Only the worker the job was given; never a sent state |
+| `POST observations` | what the worker observed in the **real eHub** (`python -m worker.verify`). The control plane recomputes the level from the evidence and stamps the worker id from the token |
+
+### Real eHub verification — the worker is the authority
+
+The control plane has no route to eHub and never contacts it. Everything it
+shows about the real eHub is what a worker reported, at a level computed by
+`intelligence/verification.classify()` from the evidence — never the level
+the report claims:
+
+| Level | Meaning |
+|---|---|
+| **TEST** | produced by the test suite |
+| **SIMULATED** | a stand-in played eHub or the carrier |
+| **REAL OBSERVED** | the worker's own browser (the run's headed Edge, the run's sign-in) opened the real eHub host, the BU shipment list rendered with its BOL/AWB and Status columns, and a shipment and its status (Under Clearance) were read off the page |
+| **REAL VERIFIED** | additionally: the carrier's ETA, confirmed for this shipment, was written to it in eHub, the shipment was reopened and the field **read back equal**, and the run ended it SUCCESS |
+| **BLOCKED** | shown as *REAL VERIFICATION BLOCKED* — the worker could not complete the check; the stage (config, credentials, browser, sign_in, page, shipment_list, shipment, status, write) and category (NETWORK, AUTHENTICATION, BROWSER, APPLICATION, CONFIGURATION) and the exact reason are kept |
+
+On the Windows worker (the agent's `ATA_CONTROL_PLANE_URL` / `ATA_WORKER_TOKEN`
+are used to report):
+
+```
+python -m worker.verify ehub [--reference MEDUAHP69377]     read-only     (verify_ehub.bat)
+python -m worker.verify eta --reference MEDUAHP69377        WRITES to eHub (verify_eta.bat)
+```
+
+Each report carries run id, worker id (from the token), timestamps, the
+machine, the eHub host, every navigation stage, the page's host/HTTP
+status/title, the shipment and its status, and the browser (engine, channel,
+version). It lands in **Carriers → Real eHub verification** and in the health
+bar's *eHub* entry, which reads *Not verified by the worker* until one does.
+Run anywhere but the worker, the command's own label is never REAL.
 
 Commands: `start_run`, `stop_run`, `pause_run`, `resume_run`, `reprocess`,
 `human`, `session_attach`, `session_detach`, `po_process` (PO Automation — see
