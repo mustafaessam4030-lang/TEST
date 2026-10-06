@@ -137,7 +137,7 @@ def _clean_failure(failure):
             "kind", "name", "value", "decided_by", "stated_condition") if cause.get(k)}
     observed = failure.get("observed")
     if isinstance(observed, dict):
-        out["observed"] = {str(k)[:30]: str(v)[:80] for k, v in list(observed.items())[:8]}
+        out["observed"] = {str(k)[:30]: str(v)[:240] for k, v in list(observed.items())[:8]}
     return out or None
 
 
@@ -717,18 +717,47 @@ class ControlTowerState:
 
     @_guard
     def human_verification_cleared(self, reference=None, waited_seconds=None):
+        """
+        HUMAN_VERIFICATION_COMPLETED: the challenge is gone. That is NOT
+        carrier access — carrier_access stays NOT_CONFIRMED until the run
+        reads the shipment page itself (carrier_access() below).
+        """
         with self._lock:
             self.human_verification = {
                 "waiting": False, "reference": reference,
                 "where": (self.human_verification or {}).get("where", ""),
                 "since": (self.human_verification or {}).get("since"),
                 "cleared_after_s": waited_seconds,
+                "state": "HUMAN_VERIFICATION_COMPLETED",
+                "carrier_access": "NOT_CONFIRMED",
             }
             self.systems["browser"]["state"] = "connected"
             self.systems["browser"]["activity"] = None
-            self._mark("ok", "Human verification cleared{0}{1}".format(
-                " after " + str(waited_seconds) + "s" if waited_seconds is not None else "",
-                " for " + reference if reference else ""))
+            self._mark("warn", "Human verification completed{0}{1}; carrier access not yet "
+                       "confirmed".format(
+                           " after " + str(waited_seconds) + "s" if waited_seconds is not None
+                           else "", " for " + reference if reference else ""))
+            self._touch()
+
+    def carrier_access(self, reference, state, url=None, detail=""):
+        """
+        CONFIRMED only when the shipment's page was read; RESTRICTED when the
+        carrier showed its restriction page. Kept on the shipment's record
+        and, for the shipment a person just verified, on that state too.
+        """
+        state = "CONFIRMED" if state == "CONFIRMED" else "RESTRICTED"
+        with self._lock:
+            entry = {"state": state, "url": str(url or "")[:300], "detail": str(detail)[:200],
+                     "at": _stamp()}
+            record = self._index.get(reference)
+            if record is not None:
+                record["carrier_access"] = entry
+            hv = self.human_verification
+            if hv and hv.get("reference") == reference:
+                hv["carrier_access"] = state
+                hv["state"] = "CARRIER_ACCESS_" + state
+            if state == "RESTRICTED":
+                self._mark("error", "Carrier access restricted for {0}".format(reference))
             self._touch()
 
     # -- human in the loop -------------------------------------------------

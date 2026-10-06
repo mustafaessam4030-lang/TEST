@@ -35,7 +35,8 @@ CATEGORIES = (
     "NAVIGATION_FAILURE", "PAGE_NOT_READY", "AUTHENTICATION_FAILURE", "TIMEOUT",
     "NETWORK_FAILURE", "DATA_EXTRACTION_FAILURE", "VALIDATION_FAILURE",
     "HUB_WRITE_FAILURE", "HUB_READBACK_FAILURE", "CARRIER_POLICY_BLOCK",
-    "HUMAN_ACTION_REQUIRED", "SECURITY_VERIFICATION_REQUIRED", "UNKNOWN_FAILURE")
+    "HUMAN_ACTION_REQUIRED", "SECURITY_VERIFICATION_REQUIRED", "CARRIER_ACCESS_RESTRICTED",
+    "UNKNOWN_FAILURE")
 
 LABELS = {
     "NAVIGATION_FAILURE": "the carrier page could not be reached",
@@ -50,6 +51,7 @@ LABELS = {
     "CARRIER_POLICY_BLOCK": "the write was blocked by a rule of this automation",
     "HUMAN_ACTION_REQUIRED": "a person's step was not completed",
     "SECURITY_VERIFICATION_REQUIRED": "the carrier asked for human verification",
+    "CARRIER_ACCESS_RESTRICTED": "the carrier restricted access and showed its restriction page",
     "UNKNOWN_FAILURE": "the cause is not identified",
 }
 
@@ -67,6 +69,7 @@ FROM_OUTCOME = {
     "HUMAN TIMEOUT": "HUMAN_ACTION_REQUIRED",
     "HUMAN SESSION LOST": "HUMAN_ACTION_REQUIRED",
     "WRITE BLOCKED BY POLICY": "CARRIER_POLICY_BLOCK",
+    "CARRIER ACCESS RESTRICTED": "CARRIER_ACCESS_RESTRICTED",
 }
 
 # Message rules, applied only when nothing better exists. Each is a stated,
@@ -107,6 +110,7 @@ STAGES = {
     "navigation": "opening the carrier's tracking page",
     "carrier_lookup": "looking the shipment up on the carrier site",
     "human_verification": "the carrier's human verification",
+    "carrier_access": "getting to the shipment page on the carrier site",
     "data_extraction": "reading the dates from the carrier page",
     "validation": "validating the dates read",
     "hub_write": "writing to the Hub",
@@ -121,11 +125,16 @@ STAGE_OF = {
     "HUB_READBACK_FAILURE": "hub_readback", "CARRIER_POLICY_BLOCK": "hub_write",
     "HUMAN_ACTION_REQUIRED": "human_verification",
     "SECURITY_VERIFICATION_REQUIRED": "human_verification",
+    "CARRIER_ACCESS_RESTRICTED": "carrier_access",
 }
 FAILED_STATES = ("failed", "partial", "human_timeout")
 # A skip is a failure when the run classified it as one. "No result" — the
 # carrier publishes no date yet — is an expected outcome, not a failure.
 EXPECTED_SKIPS = (None, "", "NO RESULT", "SUCCESS")
+
+
+def _first_upper(text):
+    return text[:1].upper() + text[1:]
 
 
 def _fact(text, source):
@@ -289,7 +298,26 @@ def from_record(record, run_id=None, recoveries=None, learning=None, events=None
             category, LABELS[category], BASIS_WORDS[basis],
             ", which named it {0}".format(diagnosed) if basis == "recovery" else ""),
             "classification rule"))
-    if root_status == "VERIFIED" and cause.get("stated_condition"):
+    if category == "CARRIER_ACCESS_RESTRICTED":
+        observed = declared.get("observed") or {}
+        if observed.get("url"):
+            facts.append(_fact("The restriction page: {0} — \"{1}\".".format(
+                observed["url"], observed.get("title") or "no title"), "declared failure"))
+        if observed.get("after_human_verification") == "yes":
+            facts.append(_fact("The human verification was completed before this; completing it "
+                               "did not give access to the shipment page.", "declared failure"))
+        if observed.get("page_text") or observed.get("screenshot"):
+            facts.append(_fact("Evidence kept: {0}.".format(", ".join(
+                v for v in (observed.get("page_text"), observed.get("screenshot")) if v)),
+                "declared failure"))
+        unverified.append(_item("UNVERIFIED",
+            "WHY the carrier restricted this worker is not established by the run. {0}. "
+            "Whether the restriction follows the worker's IP/network, the browser session, the "
+            "automation environment, an account, or another carrier-side condition needs the "
+            "worker diagnostic: python -m worker.verify carrier --carrier {1} --reference {2}."
+            .format(_first_upper(cause.get("stated_condition") or "the page names no cause"),
+                    record.get("provider") or "CARRIER", ref), "evidence gap"))
+    elif root_status == "VERIFIED" and cause.get("stated_condition"):
         unverified.append(_item("UNVERIFIED",
             "The configuration's own stated condition is: {0}. Whether that policy should "
             "now change is not something this run can establish.".format(cause["stated_condition"]),
@@ -357,6 +385,9 @@ def _verification(record):
 
 def headline(record, category, read):
     ref, carrier = record.get("reference"), record.get("carrier") or record.get("provider")
+    if category == "CARRIER_ACCESS_RESTRICTED":
+        return "{0} · {1}: carrier access restricted — the carrier showed its restriction page; " \
+               "nothing was extracted or written.".format(ref, carrier)
     if category == "CARRIER_POLICY_BLOCK":
         return "{0} · {1}: {2} — Hub write not performed (blocked by configuration).".format(
             ref, carrier, " and ".join(read) + " read" if read else "result read")
@@ -472,6 +503,10 @@ def plan(item, learning=None):
                                   "within its budget"})
     if not_recoverable and status not in ("HUMAN_REQUIRED",):
         status = "NOT_RECOVERABLE"
+    if category == "CARRIER_ACCESS_RESTRICTED":
+        status, steps = "NOT_RECOVERABLE", []
+        not_recoverable = ("a carrier's access restriction is not retried or worked around; "
+                           "it is diagnosed on the worker and fixed in its environment")
     if status in ("NO_VERIFIED_STRATEGY", "NOT_RECOVERABLE"):
         statement = ("No verified recovery strategy exists for this failure class ({0})."
                      .format(category))
@@ -490,7 +525,15 @@ def plan(item, learning=None):
                      "are: {0}.".format(", ".join(b["strategy"] for b in builtin)))
 
     # Recommendations are labelled as such and never executed.
-    if category == "CARRIER_POLICY_BLOCK":
+    if category == "CARRIER_ACCESS_RESTRICTED":
+        recs.append(_item("RECOMMENDATION",
+            "Run the carrier access diagnostic on the Windows worker (python -m worker.verify "
+            "carrier --carrier {0} --reference {1}): it records VPN, proxy, public IP, network "
+            "type and Edge, and compares a manual Edge with the automation's browser. Decide the "
+            "infrastructure change from that evidence. Do not try to get past the restriction."
+            .format(item.get("provider") or "CARRIER", item.get("shipment_id")),
+            "recommendation"))
+    elif category == "CARRIER_POLICY_BLOCK":
         cause = item.get("declared_cause") or {}
         recs.append(_item("RECOMMENDATION",
             "Review the {0} setting with the automation's owner before changing production "
@@ -540,6 +583,9 @@ def work_mode(item):
     written = bool(item["observed_state"].get("written"))
     if category in ("SECURITY_VERIFICATION_REQUIRED", "HUMAN_ACTION_REQUIRED"):
         return "NEEDS_PERSON", "the carrier needs a person; the automation never does that step"
+    if category == "CARRIER_ACCESS_RESTRICTED":
+        return "NEEDS_DECISION", ("the carrier restricted access; retrying would not change it "
+                                  "and is not done — the worker's environment is diagnosed first")
     if category in RETRY_IN_RUN and state == "failed" and not written:
         return "RETRY_THIS_RUN", ("{0} is transient and nothing was written, so the run retries "
                                   "it once after the other shipments".format(category))

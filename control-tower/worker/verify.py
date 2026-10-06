@@ -11,6 +11,12 @@ REAL eHub verification — run ON THE WINDOWS WORKER.
           Under Clearance), and its status is read off its row
         Clicks nothing that changes eHub.
 
+    python -m worker.verify carrier --carrier CMA_CGM [--reference B/L] [--no-manual]
+        Why a carrier restricts this worker (worker/carrier_access.py): VPN,
+        proxy, public IP, network type, Edge; a normal Edge vs. the
+        automation's browser on the same page; what the restriction follows,
+        only as far as the evidence shows. Nothing is written to eHub.
+
     python -m worker.verify eta --reference MEDUAHP69377 [--no-report]
         The ETA write path for ONE shipment, by the automation's own main():
         carrier page -> ETA -> identity -> the shipment in eHub -> WRITE ->
@@ -432,6 +438,21 @@ def prove_eta(reference, log=print):
     return obs
 
 
+# ── carrier: why a carrier restricts this worker ───────────────────────────
+
+def carrier_observation(provider, reference=None, manual=True, ip_service=None, ask=input,
+                        say=print):
+    from worker import carrier_access as C
+    obs = base("carrier-access")
+    obs.update(C.diagnose(provider, reference, manual=manual,
+                          ip_service=ip_service or C.DEFAULT_IP_SERVICE, ask=ask, say=say))
+    obs["shipment"] = {"reference": reference,
+                       "status": "carrier access: {0}".format(
+                           (obs.get("automation") or {}).get("result"))}
+    obs["result"] = "COMPLETED"
+    return obs
+
+
 # ── reporting ──────────────────────────────────────────────────────────────
 
 def report(obs):
@@ -500,10 +521,23 @@ def main(argv=None):
     t = sub.add_parser("eta", help="the ETA write path for one shipment (writes to eHub)")
     t.add_argument("--reference", required=True)
     t.add_argument("--no-report", action="store_true")
+    c = sub.add_parser("carrier", help="why a carrier restricts this worker: environment, "
+                                       "manual Edge vs. the automation's browser")
+    c.add_argument("--carrier", required=True, help="e.g. CMA_CGM")
+    c.add_argument("--reference")
+    c.add_argument("--no-manual", action="store_true")
+    c.add_argument("--ip-service")
+    c.add_argument("--no-report", action="store_true")
     args = parser.parse_args(argv)
     if os.name != "nt":
         print("NOTE: this is not the Windows worker ({0}). What it observes here is not "
               "taken as REAL.".format(platform.system()), flush=True)
+    if args.cmd == "carrier":
+        obs = carrier_observation(args.carrier.strip().upper(), args.reference,
+                                  manual=not args.no_manual,
+                                  ip_service=args.ip_service)
+        level = finish(obs, send=not args.no_report)
+        return 0 if level == V.REAL_OBSERVED else 1
     obs = observe_ehub(args.reference) if args.cmd == "ehub" else prove_eta(args.reference)
     level = finish(obs, send=not args.no_report)
     return 0 if level in (V.REAL_OBSERVED, V.REAL_VERIFIED) and \

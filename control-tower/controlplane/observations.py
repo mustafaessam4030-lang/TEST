@@ -69,6 +69,11 @@ class Observations(object):
             "browser": data.get("browser") or {},
             "blocked_reason": data.get("blocked_reason"),
         }
+        if kind == "carrier-access":
+            record.update(determination=data.get("determination"),
+                          comparison=data.get("comparison"),
+                          real_browser=((data.get("automation") or {}).get("browser") or {})
+                          .get("real") is True)
         if kind == "eta-write":
             record.update(carrier_result=data.get("carrier_result"),
                           writes=data.get("writes") or [], read_backs=data.get("read_backs") or [],

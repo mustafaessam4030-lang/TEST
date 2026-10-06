@@ -2545,6 +2545,10 @@ def _others(failures, chosen):
 
 
 def _root_line(f):
+    if f["classification"] == "CARRIER_ACCESS_RESTRICTED":
+        # What happened is confirmed; why the carrier did it is not.
+        return ("**Root cause** — confirmed only that the carrier restricted access (its own "
+                "page, recorded by the run). The reason for the restriction is not established.")
     if f["root_cause_status"] == "VERIFIED":
         return "**Root cause** — confirmed: declared by the run's own code at the point it stopped."
     if f["root_cause_status"] == "INFERRED":

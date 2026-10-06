@@ -2423,7 +2423,8 @@ async function paintVerify(){
     : '<table class="po-vt"><thead><tr><th>When</th><th>Worker</th><th>Check</th><th>Level</th>' +
       '<th>Shipment</th><th>Status in eHub</th><th>Detail</th></tr></thead><tbody>' +
       rows.map((o) => '<tr><td>' + esc(acWhen(o.received_at)) + '</td><td>' + esc(o.worker_name || o.worker_id) +
-        '</td><td>' + esc(o.kind === 'eta-write' ? 'ETA write + read-back' : 'eHub connection') +
+        '</td><td>' + esc(o.kind === 'eta-write' ? 'ETA write + read-back'
+          : o.kind === 'carrier-access' ? 'Carrier access' : 'eHub connection') +
         (o.run_id ? '<br><span class="hint">' + esc(o.run_id) + '</span>' : '') +
         '</td><td>' + lvlBadge(o.level) + (o.real_browser ? '' : '<br><span class="hint">no real browser</span>') +
         '</td><td>' + esc(o.shipment_reference || '—') + '</td><td>' + esc(o.shipment_status || '—') +

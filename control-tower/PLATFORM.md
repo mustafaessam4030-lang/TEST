@@ -245,6 +245,13 @@ python -m worker.verify ehub [--reference MEDUAHP69377]     read-only     (verif
 python -m worker.verify eta --reference MEDUAHP69377        WRITES to eHub (verify_eta.bat)
 ```
 
+`python -m worker.verify carrier --carrier CMA_CGM --reference <B/L>`
+(verify_carrier.bat) reports a `carrier-access` observation: VPN, proxy,
+public IP (Python and the automation's browser), network profile and hotspot
+indicators, Edge versions, the operator's record of a normal Edge, the
+automation's result with the restriction URL, and the determination
+(ESTABLISHED / CONSISTENT / NOT_ESTABLISHED). REAL OBSERVED from the worker.
+
 Each report carries run id, worker id (from the token), timestamps, the
 machine, the eHub host, every navigation stage, the page's host/HTTP
 status/title, the shipment and its status, and the browser (engine, channel,

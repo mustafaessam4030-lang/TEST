@@ -185,6 +185,17 @@ Hapag-Lloyd are picked by the Hub's Carrier Name column.
   back: it is **Success only when the Hub reads back the date written**. A
   read-back that cannot be done is *not* a success. To stop ocean writing on
   a machine, set `OCEAN_WRITE=0`.
+- **A carrier restricts access (CMA CGM, 6 Oct)?** A completed human
+  verification is *not* access: the run records HUMAN_VERIFICATION_COMPLETED,
+  and CARRIER_ACCESS_CONFIRMED only when the shipment page itself is read. If
+  the carrier shows its restriction page, the lookup stops — nothing is
+  extracted or written — the shipment is CARRIER ACCESS RESTRICTED, and the
+  page's URL, title, text and a screenshot are kept. It is not retried and
+  nothing tries to get past it. To find out why, on the worker:
+  `verify_carrier.bat CMA_CGM <reference>` — records VPN, proxy, public IP,
+  network (domain / hotspot indicators) and Edge, opens the carrier in your
+  normal Edge (you say what it shows) and in the automation's browser, and
+  states what the restriction follows only as far as that evidence shows.
 - **Prove the real eHub, on the worker** (see PLATFORM.md, *Real eHub
   verification*):
   - `verify_ehub.bat` — read-only: eHub loads, the shipment list renders, a

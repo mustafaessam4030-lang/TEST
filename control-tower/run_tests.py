@@ -38,6 +38,7 @@ SUITES = [
     ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
     ("test_po.py",              "PO Automation: Hub PDF → validate → template → Graph, audited"),
     ("test_verification.py",    "real eHub verification: worker evidence, levels, never from the cloud"),
+    ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),

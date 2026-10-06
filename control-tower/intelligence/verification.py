@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 
 LEVELS = ("TEST", "SIMULATED", "REAL OBSERVED", "REAL VERIFIED", "BLOCKED")
 TEST, SIMULATED, REAL_OBSERVED, REAL_VERIFIED, BLOCKED = LEVELS
-KINDS = ("ehub-connection", "eta-write")
+KINDS = ("ehub-connection", "eta-write", "carrier-access")
 DEFAULT_EHUB_HOST = "logisticshub.mantracgroup.com"
 REQUIRED_STATUS = "Under Clearance"
 # The categories a BLOCKED observation is filed under.
@@ -63,8 +63,22 @@ def classify(obs, channel):
     if obs.get("result") == "BLOCKED":
         return BLOCKED, [obs.get("blocked_reason") or "the worker could not complete the check"]
     if channel != "worker":
-        return BLOCKED, ["not observed on the Windows worker — real eHub verification is "
-                         "the worker's, and this arrived on the '{0}' channel".format(channel)]
+        return BLOCKED, ["not observed on the Windows worker — real verification is the "
+                         "worker's, and this arrived on the '{0}' channel".format(channel)]
+
+    if obs.get("kind") == "carrier-access":
+        # About a carrier, not eHub: real when the worker's own automation
+        # browser opened the carrier page and the result was recorded.
+        auto = obs.get("automation") or {}
+        if (auto.get("browser") or {}).get("real") is not True or not auto.get("result") \
+                or auto.get("result") == "ERROR":
+            return BLOCKED, ["the automation's browser did not reach the carrier page: {0}".format(
+                auto.get("message") or auto.get("error") or "no result recorded")]
+        determination = obs.get("determination") or {}
+        return REAL_OBSERVED, ["carrier access observed on the worker: automation {0}, manual "
+                               "{1}; follows: {2} ({3})".format(
+                                   auto.get("result"), (obs.get("manual") or {}).get("result"),
+                                   determination.get("follows"), determination.get("confidence"))]
 
     missing = []
     browser = obs.get("browser") or {}
