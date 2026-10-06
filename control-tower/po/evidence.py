@@ -19,7 +19,7 @@ ORDER = (
     ("manage", "Manage opened"), ("documents", "Documents section"),
     ("bill_entry", "Bill Entry document"), ("identifier", "PO identifier"),
     ("pdf", "PDF retrieved"), ("fields", "Fields extracted"),
-    ("validation", "Validated against eHub"), ("template", "Approved template"),
+    ("validation", "Validated against eHub"), ("template", "Template generated"),
     ("output", "Output saved"), ("email", "Email sent (Graph)"),
     ("verified", "Email verified (Sent Items)"),
 )
@@ -92,14 +92,21 @@ def stages(record):
                         if c["name"].startswith("hub:") or c.get("blocking")],
              "reasons": validation.get("reasons")})
     output = record.get("output") or {}
-    if output.get("verified"):
-        put("template", "OK", {"template": output.get("template_version"),
-                               "template_sha256": output.get("template_sha256"),
-                               "cells_read_back": len(output.get("cells") or {})})
-        put("output", "OK", {"filename": output.get("filename"), "sha256": output.get("sha256"),
-                             "bytes": output.get("bytes")})
+    generated = record.get("template") or {}
+    if generated or output.get("verified"):
+        put("template", "OK", {"template": generated.get("version") or output.get("template_version"),
+                               "template_sha256": generated.get("template_sha256")
+                               or output.get("template_sha256"),
+                               "cells_read_back": len(generated.get("cells") or output.get("cells")
+                                                      or {})})
     elif state == "TEMPLATE_FAILED":
         put("template", "FAILED", {"error": (record.get("failure") or {}).get("detail")})
+    if output.get("verified"):
+        put("output", "OK", {"filename": output.get("filename"), "folder": output.get("folder"),
+                             "sha256": output.get("sha256"), "bytes": output.get("bytes"),
+                             "saved_at": output.get("saved_at")})
+    elif state == "TEMPLATE_FAILED" and generated:
+        put("output", "FAILED", {"error": (record.get("failure") or {}).get("detail")})
     email = record.get("email") or {}
     if state in ("EMAIL_SENT", "EMAIL_CONFIRMED"):
         put("email", "OK", {"recipient": email.get("recipient"), "graph_status": email.get("graph_status"),

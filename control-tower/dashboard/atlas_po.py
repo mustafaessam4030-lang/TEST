@@ -25,6 +25,22 @@ DOC_WORDS = re.compile(r"\b(pdf|template|e-?mail|recipient|sent to|attachment|do
                        r"bill entry|ehub|e-hub)\b", re.I)
 
 KINDS = (
+    # "Who was it sent to?" is about the recipient, not whether it was sent.
+    ("recipient", r"\bwho (was|is) it sent to\b|\bsent to whom\b|\bwho (did|will) (it|you) "
+                  r"(send|email)\b|\bwho got it\b"),
+    ("document", r"\bwhere (is|are|was|were|did) (the )?(bill ?(of )?entry )?(pdf|document|file|"
+                 r"bill ?(of )?entry)s?\b|\bwhere'?s the (bill ?(of )?entry|pdf|document)\b"),
+    ("extracted", r"\bwhat did (we|you|it|atlas) (extract|read|get)\b|\bextracted (values?|fields?|"
+                  r"data|figures?)\b|\bwhat (was|were|values were) extracted\b|"
+                  r"\bwhat values\b|\bwhat (is|was) in the pdf\b"),
+    ("email_sent", r"\b(was|has|is) (the )?(e-?mail|po|it|message) (actually |really )?(been )?sent\b|"
+                   r"\bdid (the )?(e-?mail|it|message) (actually |really )?(go( out)?|send)\b|"
+                   r"\be-?mail (actually )?sent\b"),
+    ("template", r"\b(was|is|has) (the )?(template|document|output) (been )?(generated|filled|"
+                 r"created|made|saved)\b|\btemplate generated\b|\b(what|which) template\b|"
+                 r"\btemplate (version|used)\b|\bwhere (is|was) (the )?output\b"),
+    ("happened", r"\bwhat happened (to|with) (this|that|the) (po|job|one|declaration)\b|"
+                 r"\bwhat happened\??$"),
     ("discovery", r"\bhow (was|did|is) (it|this|the (document|pdf|po|file)) (found|discovered|"
                   r"picked|chosen|get found)\b|\bbill entry\b|\bidentifier\b|\bunder clearance\b|"
                   r"\bwhy (was|is) (it|this|the \w+) skipped\b|\bwhy skipped\b|\bmanage\b|"
@@ -39,7 +55,6 @@ KINDS = (
               r"(the )?hub\b|\b(mismatch|validation)\b"),
     ("recipient", r"\bwho (was|is) it sent to\b|\bsent to whom\b|\brecipient\b|\bwho (did|will) "
                   r"(it|you) (send|email)\b|\bwho got it\b"),
-    ("template", r"\b(what|which) template\b|\btemplate (version|used)\b"),
     ("what_failed", r"\bwhat (failed|went wrong|broke)\b|\bwhy did (it|this|the \w+) fail\b|"
                     r"\bwhy the error\b|\bwhat'?s? (is )?wrong\b|\bwhy\s*\??$"),
     ("next", r"\bwhat should (i|we) do\b|\bnext step\b|\bwhat now\b|\bwhat do (i|we) do\b"),
@@ -165,8 +180,124 @@ def answer(kind, question, context=None):
         record.get("label"))
     email = record.get("email") or {}
     validation = record.get("validation") or {}
+    # Every answer about one job says first whether it ran against the real
+    # eHub: a stand-in's values are not production evidence.
+    prov = record.get("provenance") or {}
+    if prov.get("source") != "REAL" or prov.get("verification") != "VERIFIED":
+        title += ("**Not established** — This job did not run against the real eHub "
+                  "({0} / {1}{2}). Nothing below is production evidence: its document and "
+                  "values are not proven to come from a real Bill Entry.\n\n".format(
+                      prov.get("source") or "no source recorded",
+                      prov.get("verification") or "UNVERIFIED",
+                      " — " + prov["why"] if prov.get("why") else ""))
 
-    if kind == "discovery":
+    if kind == "document":
+        doc = record.get("document") or {}
+        trail = record.get("discovery") or {}
+        manage = next((s for s in trail.get("steps") or [] if s.get("step") == "manage"), {})
+        bill = trail.get("bill_entry") or {}
+        if doc.get("sha256"):
+            lines = ["**Fact** — The Bill Entry PDF is {0} ({1:,} bytes, SHA-256 {2}…), "
+                     "retrieved at {3}{4}.".format(
+                         doc.get("filename"), doc.get("bytes") or 0, str(doc["sha256"])[:16],
+                         doc.get("retrieved_at"), " by " + doc["method"] if doc.get("method") else ""),
+                     "**Fact** — The copy the job read is kept at {0}.".format(doc.get("evidence"))]
+            if manage.get("url"):
+                lines.append("**Fact** — It was taken from the record's Manage page: {0}.".format(
+                    manage["url"]))
+            if doc.get("served_filename") and doc.get("served_filename") != doc.get("filename"):
+                lines.append("**Fact** — eHub served it as {0}.".format(doc["served_filename"]))
+            if bill.get("rule"):
+                lines.append("**Fact** — Chosen by the rule: {0}.".format(bill["rule"]))
+        else:
+            lines = ["**Fact** — No PDF was retrieved for this job: it is {0}.".format(
+                record.get("label", "").lower())]
+            if (record.get("failure") or {}).get("detail"):
+                lines.append("**Fact** — " + record["failure"]["detail"])
+            if bill.get("candidates"):
+                lines.append("**Fact** — Documents seen on the Manage page: {0}.".format(
+                    ", ".join(c["name"] for c in bill["candidates"])))
+            if failure is not None:
+                lines += _lines(failure["recommendations"])
+        text = title + "\n".join(lines)
+    elif kind == "extracted":
+        fields = record.get("fields") or {}
+        if not fields:
+            text = title + "**Fact** — Nothing was extracted: the job stopped at {0}, before the " \
+                           "PDF was read.".format(record.get("label", "").lower())
+        else:
+            doc = record.get("document") or {}
+            lines = ["**Fact** — Read from {0} (SHA-256 {1}…) by {2}:".format(
+                doc.get("filename"), str(doc.get("sha256"))[:16],
+                ", ".join(doc.get("read_methods") or []) or "the PDF reader")]
+            for f in fields.values():
+                if f.get("status") == "FOUND":
+                    value = f["value"]
+                    if f.get("kind") == "lines":
+                        value = "; ".join("{0} {1:,.2f}".format(l["label"], l["amount"])
+                                          for l in value)
+                    elif isinstance(value, float):
+                        value = "{0:,.2f}".format(value)
+                    lines.append("**Fact** — {0}: {1}{2}".format(
+                        f["label"], value, " — from the line “{0}”".format(f["evidence"])
+                        if f.get("evidence") else ""))
+                elif f.get("status") == "AMBIGUOUS":
+                    lines.append("**Fact** — {0}: ambiguous — the PDF prints {1}; none chosen.".format(
+                        f["label"], ", ".join(str(c["value"]) for c in f.get("candidates") or [])))
+                else:
+                    lines.append("**Fact** — {0}: not found in the PDF.".format(f["label"]))
+            duty = next((c for c in validation.get("checks") or []
+                         if c["name"] == "arithmetic:duty"), None)
+            if duty:
+                lines.append("**Fact** — Calculated by the duty request rule (duty amount less the "
+                             "VAT/levy lines): {0}.".format(duty.get("detail") or duty.get("pdf")))
+            text = title + "\n".join(lines)
+    elif kind == "email_sent":
+        state = record["state"]
+        if state == "EMAIL_CONFIRMED":
+            text = title + "**Fact** — Yes. Microsoft Graph accepted it (HTTP {0}) at {1}, and it " \
+                           "was found in the mailbox's Sent Items{2}. Sent to {3}.".format(
+                               email.get("graph_status"), email.get("sent_at"),
+                               " (" + email["confirmation"] + ")" if email.get("confirmation")
+                               else "", email.get("recipient"))
+        elif state == "EMAIL_SENT":
+            text = title + "**Fact** — Microsoft Graph accepted it (HTTP {0}) at {1}.\n" \
+                           "**Not established** — It has not been found in Sent Items yet, so " \
+                           "delivery is not confirmed.".format(email.get("graph_status"),
+                                                              email.get("sent_at"))
+        elif state == "EMAIL_FAILED":
+            text = title + "**Fact** — No. The send failed: {0}.".format(
+                email.get("error") or (record.get("failure") or {}).get("detail"))
+        elif state == "VALIDATION_FAILED":
+            text = title + "**Fact** — No. Validation failed, and an email is never sent for a " \
+                           "document that did not pass validation."
+        elif state == "EMAIL_PREPARED":
+            text = title + "**Fact** — No. It is prepared for {0} and waits for someone to press " \
+                           "Send PO.".format(email.get("recipient"))
+        else:
+            text = title + "**Fact** — No. It is {0}{1}.".format(
+                record.get("label", "").lower(),
+                "; " + "; ".join(email["reasons"]) if email.get("reasons") else "")
+    elif kind == "happened":
+        from po import evidence as _ev
+        lines = []
+        for s in _ev.stages(record):
+            if s["status"] == "NOT_RUN":
+                continue
+            lines.append("**Fact** — {0}: {1}{2}".format(
+                s["label"], s["status"], " — " + _short(s["evidence"]) if s["evidence"] else ""))
+        not_run = [s["label"] for s in _ev.stages(record) if s["status"] == "NOT_RUN"]
+        if not_run:
+            lines.append("**Fact** — Not reached: {0}.".format(", ".join(not_run)))
+        if failure is not None:
+            lines += _lines(failure["unverified"]) + _lines(failure["recommendations"])
+        if events:
+            lines.append("\n**Events** (newest last):")
+            lines += ["• {0} — {1} ({2})".format(e.get("timestamp"), e.get("event"),
+                                                 str(e.get("status")).lower())
+                      for e in events[-14:]]
+        text = title + "\n".join(lines)
+    elif kind == "discovery":
         prov = record.get("provenance") or {}
         lines = ["**Fact** — Source: {0} / {1} — {2}.".format(
             prov.get("source", "UNKNOWN"), prov.get("verification", "UNVERIFIED"),
@@ -246,7 +377,8 @@ def answer(kind, question, context=None):
                 lines.append("**Fact** — Left empty (optional): {0}.".format(", ".join(optional)))
             text = title + "\n".join(lines)
     elif kind == "match":
-        checks = [c for c in validation.get("checks") or [] if c["name"].startswith("hub:")]
+        checks = [c for c in validation.get("checks") or [] if c["name"].startswith("hub:")
+                  or (c.get("blocking") and c["status"] not in ("OK", "PASSED"))]
         if not checks:
             text = title + "**Fact** — It was not compared with the Hub: the job stopped at " \
                            "{0}.".format(record.get("label", "").lower())
@@ -258,6 +390,12 @@ def answer(kind, question, context=None):
             if any(c["status"] == "MISMATCH" for c in checks):
                 text += "\n**Fact** — A mismatch blocks generation and sending; neither value " \
                         "was chosen."
+            for reason in validation.get("reasons") or []:
+                text += "\n**Fact** — " + reason
+            if record["state"] == "VALIDATION_FAILED":
+                text += "\n**Fact** — No template was generated and no email was sent."
+                if failure is not None:
+                    text += "\n" + "\n".join(_lines(failure["recommendations"]))
     elif kind == "recipient":
         if email.get("status") in ("SENT", "CONFIRMED"):
             text = title + "**Fact** — Sent to {0} from {1}, subject “{2}”, attachment {3}. " \
@@ -273,11 +411,21 @@ def answer(kind, question, context=None):
             text = title + "**Fact** — It was not sent to anyone; no email was prepared."
     elif kind == "template":
         out = record.get("output") or {}
+        generated = record.get("template") or {}
         if out.get("verified"):
-            text = title + "**Fact** — Template {0} (SHA-256 {1}…) filled into {2}, saved and " \
-                           "read back cell by cell.".format(out.get("template_version"),
-                                                            str(out.get("template_sha256"))[:12],
-                                                            out.get("filename"))
+            text = title + "**Fact** — Yes. Template {0} (SHA-256 {1}…) was filled from the " \
+                           "validated values and read back cell by cell ({2} cells).\n" \
+                           "**Fact** — Saved as {3} in {4} at {5} ({6:,} bytes, SHA-256 {7}…), " \
+                           "re-opened from disk and read back.".format(
+                               out.get("template_version"), str(out.get("template_sha256"))[:12],
+                               len(out.get("cells") or {}), out.get("filename"),
+                               out.get("folder") or "the output folder", out.get("saved_at") or
+                               out.get("generated_at"), out.get("bytes") or 0,
+                               str(out.get("sha256"))[:16])
+        elif generated:
+            text = title + "**Fact** — The template was generated and read back in memory, but " \
+                           "it was NOT saved: {0}.".format(
+                               (record.get("failure") or {}).get("detail") or "the job stopped")
         else:
             text = title + "**Fact** — No template was filled: the job stopped at {0}. The " \
                            "template it would use is {1}.".format(
@@ -307,6 +455,15 @@ def answer(kind, question, context=None):
         text = title + "**Fact** — " + _status_line(record)
     reply["answer"] = text
     return reply
+
+
+def _short(evidence):
+    """A stage's evidence, in one line."""
+    if isinstance(evidence, dict):
+        return "; ".join("{0} {1}".format(k, v if not isinstance(v, (list, dict)) else
+                                          (", ".join(map(str, v)) if isinstance(v, list) else "…"))
+                         for k, v in evidence.items() if v not in (None, "", []))[:240]
+    return str(evidence)[:240]
 
 
 def _because(failure, record):

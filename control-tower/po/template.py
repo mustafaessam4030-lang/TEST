@@ -85,7 +85,35 @@ def output_name(doctype, number, reference, stamp, job=None):
 
 
 def fill(doctype, values, output_dir, number, reference, stamp=None, job=None):
-    """values: {field: value} — validated values only (the pipeline enforces it)."""
+    """build() then save() — for callers that want both in one step."""
+    return save(doctype, build(doctype, values), output_dir, number, reference, stamp, job)
+
+
+def _read_back(doctype, sheet, written):
+    """Every mapped cell and every template formula, as the workbook holds them."""
+    spec = doctype["template"]
+    mismatched = []
+    for ref, value in written.items():
+        got = sheet[ref].value
+        if isinstance(value, datetime):
+            ok = isinstance(got, datetime) and got.date() == value.date()
+        else:
+            ok = got == value
+        if not ok:
+            mismatched.append("{0}: wrote {1!r}, read {2!r}".format(ref, value, got))
+    for ref, formula in spec["formulas"].items():
+        if sheet[ref].value != formula:
+            mismatched.append("{0}: the template formula {1} was not kept".format(ref, formula))
+    return mismatched
+
+
+def build(doctype, values):
+    """
+    TEMPLATE_GENERATED: the approved template filled with the validated values,
+    serialised, then re-opened from those bytes and every mapped cell and
+    template formula read back. Nothing is written to disk here.
+    -> {"payload", "written", "manifest", "cells"}
+    """
     from io import BytesIO
     from openpyxl import load_workbook
     data, m = approved_template(doctype)
@@ -110,14 +138,33 @@ def fill(doctype, values, output_dir, number, reference, stamp=None, job=None):
         m["version"], datetime.now().isoformat(timespec="seconds"))
     ws["I3"] = "Verify every figure against the attached declaration before release."
 
+    buffer = BytesIO()
+    wb.save(buffer)
+    payload = buffer.getvalue()
+    mismatched = _read_back(doctype, load_workbook(BytesIO(payload))[spec["sheet"]], written)
+    if mismatched:
+        raise TemplateError("the generated document did not read back: " +
+                            "; ".join(mismatched[:4]))
+    return {"payload": payload, "written": written, "manifest": m,
+            "cells": {k: (v.date().isoformat() if isinstance(v, datetime) else v)
+                      for k, v in written.items()},
+            "sha256": _sha256_bytes(payload), "bytes": len(payload),
+            "template_version": m["version"], "template_sha256": m["sha256"]}
+
+
+def save(doctype, built, output_dir, number, reference, stamp=None, job=None):
+    """
+    SAVED: the generated document written to the output folder — created
+    exclusively, never overwriting — then OPENED FROM DISK and read back.
+    """
+    from openpyxl import load_workbook
+    spec, m, written = doctype["template"], built["manifest"], built["written"]
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M%S")
     name = output_name(doctype, number, reference, stamp, job)
     path = out_dir / name
-    buffer = BytesIO()
-    wb.save(buffer)
-    payload = buffer.getvalue()
+    payload = built["payload"]
     try:
         # Exclusive create: an existing output is never overwritten.
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
@@ -128,23 +175,13 @@ def fill(doctype, values, output_dir, number, reference, stamp=None, job=None):
         handle.write(payload)
 
     # PROOF: open what is on disk and read every mapped cell back.
-    check = load_workbook(str(path))[spec["sheet"]]
-    mismatched = []
-    for ref, value in written.items():
-        got = check[ref].value
-        if isinstance(value, datetime):
-            ok = isinstance(got, datetime) and got.date() == value.date()
-        else:
-            ok = got == value
-        if not ok:
-            mismatched.append("{0}: wrote {1!r}, read {2!r}".format(ref, value, got))
-    for ref, formula in spec["formulas"].items():
-        if check[ref].value != formula:
-            mismatched.append("{0}: the template formula {1} was not kept".format(ref, formula))
+    mismatched = _read_back(doctype, load_workbook(str(path))[spec["sheet"]], written)
     if mismatched:
         raise TemplateError("the saved output did not read back: " + "; ".join(mismatched[:4]))
     disk = path.read_bytes()
-    return {"path": str(path), "filename": name, "sha256": _sha256_bytes(disk),
+    return {"path": str(path), "filename": name, "folder": str(out_dir),
+            "saved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "sha256": _sha256_bytes(disk),
             "bytes": len(disk), "template_version": m["version"],
             "template_sha256": m["sha256"],
             "cells": {k: (v.date().isoformat() if isinstance(v, datetime) else v)

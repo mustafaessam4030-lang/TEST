@@ -31,7 +31,7 @@ KPI_OF = {
     S.FIELDS_EXTRACTED: "processing", S.VALIDATING: "processing", S.EMAIL_SENDING: "processing",
     S.VALIDATED: "processing",
     S.VALIDATION_FAILED: "validation_required",
-    S.TEMPLATE_GENERATED: "generated", S.EMAIL_PREPARED: "generated",
+    S.TEMPLATE_GENERATED: "generated", S.SAVED: "generated", S.EMAIL_PREPARED: "generated",
     S.EMAIL_SENT: "sent", S.EMAIL_CONFIRMED: "sent",
     S.NEEDS_REVIEW: "validation_required",
     S.PDF_NOT_FOUND: "failed", S.PDF_UNREADABLE: "failed", S.EXTRACTION_FAILED: "failed",
@@ -148,6 +148,27 @@ class WorkerLauncher(object):
         store.save(current)
 
 
+def _extraction_word(record):
+    fields = record.get("fields") or {}
+    if record["state"] in (S.EXTRACTION_FAILED, S.PDF_UNREADABLE):
+        return "FAILED"
+    if not fields:
+        return None
+    found = sum(1 for f in fields.values() if f.get("status") == "FOUND")
+    return "{0}/{1} fields".format(found, len(fields))
+
+
+def _email_word(record):
+    """What happened to the email, from the state — never ahead of Graph."""
+    state, email = record["state"], record.get("email") or {}
+    if state == S.VALIDATION_FAILED:
+        return "NOT SENT"               # never sent for a document that failed validation
+    return {S.EMAIL_CONFIRMED: "CONFIRMED", S.EMAIL_SENT: "SENT (confirming)",
+            S.EMAIL_SENDING: "SENDING", S.EMAIL_FAILED: "FAILED",
+            S.EMAIL_PREPARED: "READY (not sent)"}.get(state) or \
+        ("BLOCKED" if email.get("status") == "BLOCKED" else None)
+
+
 def card(record):
     """A queue row: what the table shows, nothing more."""
     email = record.get("email") or {}
@@ -167,10 +188,18 @@ def card(record):
         "state": record["state"], "label": record.get("label"),
         "progress": record.get("progress"),
         "kpi": KPI_OF.get(record["state"]),
+        # Declaration No. — only as read from the PDF itself, never filled in.
+        "declaration": ((record.get("fields") or {}).get("document_number") or {}).get("value"),
+        "extraction": _extraction_word(record),
         "validation": ("PASSED" if validation.get("passed") else
                        "FAILED" if validation else None),
-        "template": output.get("template_version"),
-        "email": email.get("status"),
+        "template": ("SAVED" if output.get("verified") else
+                     "FAILED" if record["state"] == S.TEMPLATE_FAILED else
+                     "GENERATED" if record.get("template") else None),
+        "template_version": output.get("template_version") or
+        (record.get("template") or {}).get("version"),
+        "output": output.get("filename"),
+        "email": _email_word(record),
         "created": record.get("created"), "updated": record.get("updated"),
         "started_by": record.get("started_by"),
         "failed": record["state"] in S.FAILED_STATES,
@@ -225,7 +254,8 @@ class PoService(object):
         except Exception:
             return False
         state = record["state"]
-        if state in S.ACTIVE_STATES or state in (S.VALIDATED, S.TEMPLATE_GENERATED, S.SKIPPED):
+        if state in S.ACTIVE_STATES or state in (S.VALIDATED, S.TEMPLATE_GENERATED, S.SAVED,
+                                                 S.SKIPPED):
             return False                # a skip is not an outcome to learn from
         key = "_learned_" + state
         if record.get(key):

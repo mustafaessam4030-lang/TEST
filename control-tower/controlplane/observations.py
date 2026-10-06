@@ -69,6 +69,8 @@ class Observations(object):
             "browser": data.get("browser") or {},
             "blocked_reason": data.get("blocked_reason"),
         }
+        if kind == "po-pipeline":
+            record.update(po_steps=data.get("po_steps"), po_job=data.get("po_job"))
         if kind == "carrier-access":
             record.update(determination=data.get("determination"),
                           comparison=data.get("comparison"),

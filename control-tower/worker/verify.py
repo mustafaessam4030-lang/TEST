@@ -172,14 +172,17 @@ def pick(rows, reference=None):
 
 # ── ehub: the connection and the list, read-only ───────────────────────────
 
-def observe_ehub(reference=None, credentials=None, launch=None, log=print):
+def observe_ehub(reference=None, credentials=None, launch=None, log=print, continue_with=None,
+                 kind="ehub-connection", downloads=False):
     """
     The observation. `credentials` and `launch` exist for the test suite
     (which marks what it produces TEST); a worker uses neither.
+    `continue_with(page, obs)`, when given, takes over once eHub is open and
+    signed in (the PO check runs the PO pipeline from there).
     """
     import update_eta as A
     A.write_log = getattr(A, "write_log", None) or (lambda *a, **k: None)
-    obs = base("ehub-connection")
+    obs = base(kind)
     obs["reference_asked"] = reference or None
     host = obs["ehub_host"]
     if host != V.ehub_host():
@@ -187,6 +190,10 @@ def observe_ehub(reference=None, credentials=None, launch=None, log=print):
                        "update_eta.INTERNAL_URL is on {0!r}, but the eHub host is {1!r}"
                        .format(host, V.ehub_host()))
     stage(obs, "config", True, url=A.INTERNAL_URL)
+    # Python's own view of the network, recorded up front so a report from a
+    # machine that cannot reach eHub says so even when it stops earlier (a
+    # missing credentials file). Informational: Edge may use a proxy.
+    obs["network_probe"] = network_probe(host)
 
     if credentials is None:
         try:
@@ -217,7 +224,9 @@ def observe_ehub(reference=None, credentials=None, launch=None, log=print):
                               "headless": bool(options.get("headless")),
                               "same_launch_as_runs": launch is None}
             stage(obs, "browser", True, version=browser.version, channel=options.get("channel"))
-            context = browser.new_context(**A.hub_context_options(*credentials))
+            context = browser.new_context(**dict(A.hub_context_options(*credentials),
+                                                 **({"accept_downloads": True} if downloads
+                                                    else {})))
             page = context.new_page()
             visited, documents = [], []
             page.on("framenavigated", lambda frame: visited.append(V.host_of(frame.url))
@@ -246,6 +255,9 @@ def observe_ehub(reference=None, credentials=None, launch=None, log=print):
                                "after sign-in the browser is on {0!r}, not eHub".format(page.url[:160]))
             stage(obs, "sign_in", True, http_status=status)
             stage(obs, "page", True, **obs["page"])
+            if continue_with is not None:
+                continue_with(page, obs)
+                return obs
 
             try:
                 A.ensure_filtered_page(page, A.SOURCE_VIEW, 1)
@@ -521,6 +533,13 @@ def main(argv=None):
     t = sub.add_parser("eta", help="the ETA write path for one shipment (writes to eHub)")
     t.add_argument("--reference", required=True)
     t.add_argument("--no-report", action="store_true")
+    p = sub.add_parser("po", help="the PO pipeline on the real eHub, steps A-J (no business "
+                                  "email; a controlled Graph test only with --email-to)")
+    p.add_argument("--reference", help="the BOL/AWB; default: the next Under Clearance record")
+    p.add_argument("--invoice-no", help="the supplier invoice number the duty request needs")
+    p.add_argument("--email-to", help="J: send the generated document to THIS address only, as a "
+                                      "controlled test")
+    p.add_argument("--no-report", action="store_true")
     c = sub.add_parser("carrier", help="why a carrier restricts this worker: environment, "
                                        "manual Edge vs. the automation's browser")
     c.add_argument("--carrier", required=True, help="e.g. CMA_CGM")
@@ -532,6 +551,11 @@ def main(argv=None):
     if os.name != "nt":
         print("NOTE: this is not the Windows worker ({0}). What it observes here is not "
               "taken as REAL.".format(platform.system()), flush=True)
+    if args.cmd == "po":
+        from worker import po_check
+        obs = po_check.run(args.reference, args.invoice_no, args.email_to)
+        level = finish(obs, send=not args.no_report)
+        return 0 if level == V.REAL_VERIFIED else 1
     if args.cmd == "carrier":
         obs = carrier_observation(args.carrier.strip().upper(), args.reference,
                                   manual=not args.no_manual,

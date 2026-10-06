@@ -32,13 +32,17 @@ DEFAULT_DIR = HERE.parent / "ml" / "data" / "po"
 
 # ── STATES ───────────────────────────────────────────────────────────────
 QUEUED = "QUEUED"
-DISCOVERED = "DISCOVERED"
+# The state names of the PO brief, exactly. DISCOVERED is the code's name
+# for PO_DISCOVERED; a record stored before the rename reads as the new one.
+DISCOVERED = PO_DISCOVERED = "PO_DISCOVERED"
+LEGACY_STATES = {"DISCOVERED": "PO_DISCOVERED"}
 PDF_FOUND = "PDF_FOUND"
 PDF_READ = "PDF_READ"
 FIELDS_EXTRACTED = "FIELDS_EXTRACTED"
 VALIDATING = "VALIDATING"
 VALIDATED = "VALIDATED"
 TEMPLATE_GENERATED = "TEMPLATE_GENERATED"
+SAVED = "SAVED"
 EMAIL_PREPARED = "EMAIL_PREPARED"
 EMAIL_SENDING = "EMAIL_SENDING"
 EMAIL_SENT = "EMAIL_SENT"
@@ -67,7 +71,10 @@ TRANSITIONS = {
     FIELDS_EXTRACTED: (VALIDATING,),
     VALIDATING: (VALIDATED, VALIDATION_FAILED),
     VALIDATED: (TEMPLATE_GENERATED, TEMPLATE_FAILED),
-    TEMPLATE_GENERATED: (EMAIL_PREPARED,),
+    # Generated (filled and read back in memory) is not saved: SAVED only once
+    # the file is in the output folder and read back from disk.
+    TEMPLATE_GENERATED: (SAVED, TEMPLATE_FAILED),
+    SAVED: (EMAIL_PREPARED,),
     EMAIL_PREPARED: (EMAIL_SENDING,),
     EMAIL_SENDING: (EMAIL_SENT, EMAIL_FAILED, EMAIL_CONFIRMED),
     EMAIL_SENT: (EMAIL_CONFIRMED,),
@@ -80,7 +87,7 @@ TRANSITIONS = {
 LABELS = {
     QUEUED: "QUEUED", DISCOVERED: "FINDING PDF", PDF_FOUND: "PDF FOUND", PDF_READ: "READING",
     FIELDS_EXTRACTED: "EXTRACTING", VALIDATING: "VALIDATING", VALIDATED: "VALIDATED",
-    TEMPLATE_GENERATED: "TEMPLATE GENERATED", EMAIL_PREPARED: "EMAIL READY",
+    TEMPLATE_GENERATED: "TEMPLATE GENERATED", SAVED: "SAVED", EMAIL_PREPARED: "EMAIL READY",
     EMAIL_SENDING: "SENDING", EMAIL_SENT: "EMAIL SENT", EMAIL_CONFIRMED: "VERIFIED",
     PDF_NOT_FOUND: "PDF NOT FOUND", PDF_UNREADABLE: "PDF UNREADABLE",
     EXTRACTION_FAILED: "EXTRACTION FAILED", VALIDATION_FAILED: "VALIDATION FAILED",
@@ -93,11 +100,18 @@ EVENTS = ("PO_DISCOVERED", "EHUB_RECORD_FOUND", "CLEARANCE_CHECKED", "RECORD_SKI
           "BILL_ENTRY_DOWNLOADED", "DOCUMENT_REVIEW_REQUIRED", "PDF_FOUND", "PDF_NOT_FOUND", "PDF_READ", "PDF_UNREADABLE",
           "FIELDS_EXTRACTED", "EXTRACTION_FAILED", "VALIDATION_STARTED", "VALIDATION_PASSED",
           "VALIDATION_FAILED", "TEMPLATE_GENERATION_STARTED", "TEMPLATE_GENERATED",
-          "TEMPLATE_FAILED", "EMAIL_PREPARED", "EMAIL_BLOCKED", "EMAIL_SEND_STARTED",
+          "TEMPLATE_FAILED", "OUTPUT_SAVED", "EMAIL_PREPARED", "EMAIL_BLOCKED", "EMAIL_SEND_STARTED",
           "EMAIL_SENT", "EMAIL_CONFIRMED", "EMAIL_FAILED", "PO_COMPLETED", "RETRY")
 
 FORBIDDEN = ("password", "secret", "token", "authorization", "cookie", "captcha",
              "security_code", "credential")
+
+
+def _current(record):
+    """A record stored under an older state name, read under the current one."""
+    if isinstance(record, dict) and record.get("state") in LEGACY_STATES:
+        record["state"] = LEGACY_STATES[record["state"]]
+    return record
 
 
 class IllegalTransition(Exception):
@@ -154,7 +168,7 @@ class Store(object):
 
     def get(self, po_id):
         try:
-            return json.loads(self._path(po_id).read_text(encoding="utf-8"))
+            return _current(json.loads(self._path(po_id).read_text(encoding="utf-8")))
         except Exception:
             return None
 
@@ -173,7 +187,7 @@ class Store(object):
         rows = []
         for path in (self.folder / "jobs").glob("*.json"):
             try:
-                rows.append(json.loads(path.read_text(encoding="utf-8")))
+                rows.append(_current(json.loads(path.read_text(encoding="utf-8"))))
             except Exception:
                 continue
         rows.sort(key=lambda r: -float(r.get("created_epoch") or 0))

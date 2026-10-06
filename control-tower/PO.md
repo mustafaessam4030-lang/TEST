@@ -107,8 +107,8 @@ Blocking, any one stops the job at `VALIDATION_FAILED`:
 ## States and events (`po/store.py`)
 
 ```
-QUEUED → DISCOVERED (eHub) → PDF_FOUND → PDF_READ → FIELDS_EXTRACTED → VALIDATING → VALIDATED
-       → TEMPLATE_GENERATED → EMAIL_PREPARED → EMAIL_SENDING → EMAIL_SENT → EMAIL_CONFIRMED
+QUEUED → PO_DISCOVERED (eHub) → PDF_FOUND → PDF_READ → FIELDS_EXTRACTED → VALIDATING → VALIDATED
+       → TEMPLATE_GENERATED → SAVED → EMAIL_PREPARED → EMAIL_SENDING → EMAIL_SENT → EMAIL_CONFIRMED
 failures: PDF_NOT_FOUND · PDF_UNREADABLE · EXTRACTION_FAILED · VALIDATION_FAILED
           TEMPLATE_FAILED · EMAIL_FAILED
 not processed: SKIPPED (not Under Clearance) · NEEDS_REVIEW (a person chooses the document)
@@ -119,7 +119,7 @@ the template or email without `VALIDATED`. Events: PO_DISCOVERED, PDF_FOUND,
 PDF_NOT_FOUND, PDF_READ, PDF_UNREADABLE, FIELDS_EXTRACTED, EXTRACTION_FAILED,
 VALIDATION_STARTED, VALIDATION_PASSED, VALIDATION_FAILED,
 TEMPLATE_GENERATION_STARTED, TEMPLATE_GENERATED, TEMPLATE_FAILED,
-EMAIL_PREPARED, EMAIL_BLOCKED, EMAIL_SEND_STARTED, EMAIL_SENT, EMAIL_CONFIRMED,
+OUTPUT_SAVED, EMAIL_PREPARED, EMAIL_BLOCKED, EMAIL_SEND_STARTED, EMAIL_SENT, EMAIL_CONFIRMED,
 EMAIL_FAILED, PO_COMPLETED, RETRY — each with event_id, run_id, po_id,
 timestamp, stage, status, source, evidence_reference and metadata.
 
@@ -128,9 +128,59 @@ timestamp, stage, status, source, evidence_reference and metadata.
 | Claim | Evidence |
 |---|---|
 | Validated | every blocking check passed |
-| Template generated | the saved file was re-opened and every written cell read back |
+| Template generated | the filled template was re-opened (in memory) and every written cell and template formula read back |
+| Saved | the file was created in the output folder (never overwriting), re-opened from disk and read back again; path, folder, SHA-256 |
 | Email sent | Graph answered 202 to the send |
 | Verified | the message was found in the mailbox's Sent Items by its internetMessageId |
+
+A record stored before the rename (state `DISCOVERED`) is read as
+`PO_DISCOVERED`. QUEUED (accepted, not started), EMAIL_SENDING (the send is in
+flight, before Graph's answer) and SKIPPED are kept beside the brief's states:
+none of them claims a success.
+
+## Your BOE logic, reused (`po/extract.py`, `po/validate.py`, `po/template.py`)
+
+From `boe_to_duty_request.py`, unchanged: the field patterns (user reference,
+BOE/declaration No., BL/AWB, CIF, exchange rate, total duty, the import duty
+line), the five VAT/levy labels and "the rightmost figure on the line",
+`to_float`, native PDF text with Tesseract OCR below 120 characters a page,
+the derived duty (duty amount − VAT block) and its variance against the
+BOE's import duty line (tolerance 1.00), the G20 VAT formula
+(`=a+b+…`), the twelve input cells (D2 G4 G6 G8 G10 G11 G13 C9 C13 C19 C21 G20)
+and the template's own formulas left alone.
+
+Deliberately stricter than the script — each stops a job instead of guessing:
+
+| The script | Here |
+|---|---|
+| an unreadable date → today's date in G8 | missing; never filled in |
+| the first match of a pattern wins | two different values → AMBIGUOUS, none chosen |
+| `%m/%d/%Y` accepted | not accepted (ambiguous with `%d/%m/%Y`) |
+| variance > 1.00 → a red review row | VALIDATION_FAILED: not generated, not sent |
+
+## On the real worker: `python -m worker.verify po` (verify_po.bat)
+
+Runs the PO pipeline itself on ONE real eHub record, as a real job, and
+reads each step off that job's record:
+
+| | Step | Evidence |
+|---|---|---|
+| A | eHub reachable | the run's sign-in; the page on the eHub host |
+| B | Under Clearance row | the BU list row, its status read off the row |
+| C | Manage opened | the Manage page URL |
+| D | Bill Entry found | the file name, the number after "Bill Entry" |
+| E | PDF retrieved | bytes, SHA-256, pages |
+| F | extraction | the fields above, each with its PDF line |
+| G | validation | PDF vs eHub (BOL/AWB, Bill Entry No.) and the duty arithmetic |
+| H | template generated | cells read back |
+| I | output saved | the file in `PO_OUTPUT_DIR`, read back from disk |
+| J | Graph email | only with `--email-to`: the document to that address as a TEST, 202 + Sent Items |
+
+The business recipient is never emailed from the check. The report goes to
+the control plane as a `po-pipeline` observation: REAL VERIFIED only when A–J
+all passed on the worker and the job's discovery is REAL / VERIFIED;
+REAL OBSERVED when A–E did; otherwise REAL VERIFICATION BLOCKED with the step
+and reason.
 
 ## Email through Microsoft Graph (`po/mail.py`)
 

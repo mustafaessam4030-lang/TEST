@@ -36,7 +36,7 @@ SUITES = [
     ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
     ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
     ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
-    ("test_po.py",              "PO Automation: Hub PDF → validate → template → Graph, audited"),
+    ("test_po.py",              "PO Automation: eHub → Bill Entry → extract → validate → template → save → Graph"),
     ("test_verification.py",    "real eHub verification: worker evidence, levels, never from the cloud"),
     ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),

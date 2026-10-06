@@ -908,8 +908,8 @@ check("READY — not sent: nothing goes out until someone presses Send PO",
 nocfg = dict(CONFIG, recipient=None)
 r2 = P.process(store, store.create(doctypes.DEFAULT, "176-88452310", {"invoice_no": "1"}),
                hub_source(), nocfg, sleep=NOSLEEP)
-check("With no recipient configured, the email is BLOCKED with that reason",
-      r2["state"] == S.TEMPLATE_GENERATED and r2["email"]["status"] == "BLOCKED"
+check("With no recipient configured, the email is BLOCKED with that reason (the output is SAVED)",
+      r2["state"] == S.SAVED and r2["email"]["status"] == "BLOCKED"
       and "No recipient" in r2["email"]["reasons"][0])
 
 
@@ -1633,6 +1633,188 @@ pf = indep.get(fail_job["po_id"])
 check("...and the PO job ended visibly, on its own job ID: {0}".format(fail_job["po_id"]),
       po_proc.returncode != 0 and pf["state"] == S.PDF_NOT_FOUND
       and pf["failure"]["category"] == "NAVIGATION_FAILURE", pf.get("failure"))
+
+rule("26. THE BRIEF'S STATE MACHINE, THE WORKER CHECK A-J, THE QUEUE ROW, ATLAS")
+from dashboard import atlas_po as AP                          # noqa: E402
+from intelligence import verification as VER                  # noqa: E402
+from worker import po_check as PC                             # noqa: E402
+
+BRIEF = ("PO_DISCOVERED", "PDF_FOUND", "PDF_READ", "FIELDS_EXTRACTED", "VALIDATING", "VALIDATED",
+         "TEMPLATE_GENERATED", "SAVED", "EMAIL_PREPARED", "EMAIL_SENT", "EMAIL_CONFIRMED")
+FAILS = ("PDF_NOT_FOUND", "PDF_UNREADABLE", "EXTRACTION_FAILED", "VALIDATION_FAILED",
+         "TEMPLATE_FAILED", "EMAIL_FAILED", "NEEDS_REVIEW")
+names = {getattr(S, n) for n in dir(S) if n.isupper() and isinstance(getattr(S, n), str)}
+check("Every state the brief names exists, under that exact name",
+      set(BRIEF) | set(FAILS) <= names, sorted(set(BRIEF) | set(FAILS) - names))
+check("The brief's success path is the state machine's: each step leads to the next",
+      all(BRIEF[i + 1] in S.TRANSITIONS.get(BRIEF[i], ()) for i in range(len(BRIEF) - 1)
+          if BRIEF[i] not in ("EMAIL_PREPARED",))
+      and S.EMAIL_SENDING in S.TRANSITIONS[S.EMAIL_PREPARED]
+      and S.EMAIL_SENT in S.TRANSITIONS[S.EMAIL_SENDING])
+check("Generated is not saved: TEMPLATE_GENERATED cannot jump to EMAIL_PREPARED",
+      S.EMAIL_PREPARED not in S.TRANSITIONS[S.TEMPLATE_GENERATED]
+      and S.TRANSITIONS[S.SAVED] == (S.EMAIL_PREPARED,))
+st26 = new_store("s26")
+legacy = st26.create(doctypes.DEFAULT, "176-LEGACY01", {"invoice_no": "1"})
+raw = json.loads(st26._path(legacy["po_id"]).read_text(encoding="utf-8"))
+raw["state"] = "DISCOVERED"
+st26._path(legacy["po_id"]).write_text(json.dumps(raw), encoding="utf-8")
+check("A job stored before the rename reads as PO_DISCOVERED",
+      st26.get(legacy["po_id"])["state"] == "PO_DISCOVERED")
+
+good26 = run_job(st26, "176-88452310")
+ev26 = [e["event"] for e in st26.events(good26["po_id"])]
+check("A good job: TEMPLATE_GENERATED, then OUTPUT_SAVED, then EMAIL_PREPARED — in that order",
+      good26["state"] == S.EMAIL_PREPARED and ev26.index("TEMPLATE_GENERATED") <
+      ev26.index("OUTPUT_SAVED") < ev26.index("EMAIL_PREPARED"), ev26)
+check("...the generated template is recorded (version, cells read back in memory)",
+      (good26.get("template") or {}).get("cells") and good26["template"]["read_back"])
+check("...and the saved file is in the configured output folder, on disk, with its SHA-256",
+      Path(good26["output"]["path"]).exists() and good26["output"]["folder"] == str(st26.output_dir)
+      and hashlib.sha256(Path(good26["output"]["path"]).read_bytes()).hexdigest()
+      == good26["output"]["sha256"])
+check("...and no email went out: EMAIL READY, nothing sent", good26["email"]["status"] == "READY")
+
+broken = new_store("s26b")
+blocker = WORK / "s26b-not-a-folder"
+blocker.write_text("x")
+broken.output_dir = blocker / "out"
+nosave = run_job(broken, "176-88452310")
+check("The output folder cannot be written: TEMPLATE_FAILED at the output stage, after "
+      "TEMPLATE_GENERATED — never SAVED, no email prepared",
+      nosave["state"] == S.TEMPLATE_FAILED and nosave["failure"]["stage"] == "output"
+      and nosave.get("template") and not nosave.get("output")
+      and "EMAIL_PREPARED" not in [e["event"] for e in broken.events(nosave["po_id"])],
+      (nosave["state"], nosave.get("failure")))
+bad26 = run_job(st26, "176-99001122")
+check("Validation fails: no template, nothing saved, no email",
+      bad26["state"] == S.VALIDATION_FAILED and not bad26.get("template")
+      and not bad26.get("output") and not {"TEMPLATE_GENERATED", "OUTPUT_SAVED", "EMAIL_PREPARED",
+                                           "EMAIL_SENT"} & {e["event"] for e in st26.events(
+                                               bad26["po_id"])})
+
+# The worker check, A-J, read off the job record.
+obs = {"kind": "po-pipeline", "po_steps": {}, "result": "COMPLETED",
+       "provenance": good26.get("provenance")}
+PC._step(obs, "A", "OK", {"page": "stand-in"})
+PC._from_record(obs, good26)
+check("B-I are read off the job record: every one OK for the good job",
+      all(obs["po_steps"][k]["status"] == "OK" for k in "BCDEFGHI"),
+      {k: obs["po_steps"][k]["status"] for k in "BCDEFGHI"})
+obs_bad = {"kind": "po-pipeline", "po_steps": {}, "provenance": bad26.get("provenance")}
+PC._step(obs_bad, "A", "OK")
+PC._from_record(obs_bad, bad26)
+check("For the mismatching job: G FAILED with the reason, H and I not reached",
+      obs_bad["po_steps"]["G"]["status"] == "FAILED"
+      and "mismatch" in str(obs_bad["po_steps"]["G"]["reason"]).lower()
+      and obs_bad["po_steps"]["H"]["status"] == "NOT_RUN"
+      and obs_bad["po_steps"]["I"]["status"] == "NOT_RUN", obs_bad["po_steps"]["G"])
+PC.controlled_email(obs, good26, None)
+check("J without --email-to: NOT_RUN — the business recipient is never emailed from the check",
+      obs["po_steps"]["J"]["status"] == "NOT_RUN" and "never emailed" in obs["po_steps"]["J"]["reason"])
+saved_env = {k: os.environ.pop(k) for k in ("GRAPH_CLIENT_SECRET",) if k in os.environ}
+PC.controlled_email(obs, good26, "tester@mantrac.com")
+check("J with Graph not configured: BLOCKED, naming the missing setting (never its value)",
+      obs["po_steps"]["J"]["status"] == "BLOCKED"
+      and "GRAPH_CLIENT_SECRET" in obs["po_steps"]["J"]["reason"]
+      and SECRET not in json.dumps(obs))
+os.environ.update(saved_env)
+sent_before = len(GRAPH["sent"])
+PC.controlled_email(obs, good26, "tester@mantrac.com", wait_s=3)
+check("J controlled send: created, accepted (202) and found in Sent Items — to the test address",
+      obs["po_steps"]["J"]["status"] == "OK" and obs["po_steps"]["J"]["evidence"]["send_http"] == 202
+      and obs["po_steps"]["J"]["evidence"]["sent_items"] is True
+      and len(GRAPH["sent"]) == sent_before + 1, obs["po_steps"]["J"])
+check("...marked a test in its subject, and the job itself was NOT marked sent",
+      "VERIFICATION — TEST" in obs["po_steps"]["J"]["evidence"]["subject"]
+      and st26.get(good26["po_id"])["state"] == S.EMAIL_PREPARED)
+check("The stand-in job is never REAL: its discovery is TEST, so the worker level is BLOCKED",
+      VER.classify(obs, "worker")[0] == "BLOCKED"
+      and "not REAL / VERIFIED" in VER.classify(obs, "worker")[1][0])
+real_like = dict(obs, provenance={"source": "REAL", "verification": "VERIFIED"})
+check("Were the same steps observed REAL on the worker, A-J all OK -> REAL VERIFIED",
+      VER.classify(real_like, "worker")[0] == "REAL VERIFIED")
+check("...and never from the cloud or the suite",
+      VER.classify(real_like, "cloud")[0] == "BLOCKED" and VER.classify(real_like, "test")[0] == "TEST")
+partial = json.loads(json.dumps(real_like))
+partial["po_steps"]["J"] = {"step": "J", "label": "Graph", "status": "NOT_RUN", "reason": "no --email-to"}
+check("A-I real but no controlled email -> REAL OBSERVED, NOT VERIFIED (J)",
+      VER.classify(partial, "worker")[0] == "REAL OBSERVED"
+      and any("step J" in r for r in VER.classify(partial, "worker")[1]))
+import update_eta as _A                                       # noqa: E402
+_load = _A.load_credentials
+_A.load_credentials = lambda: (_ for _ in ()).throw(Exception("Missing credentials file: x"))
+blocked_run = PC.run(store=new_store("s26c"))
+_A.load_credentials = _load
+check("The whole check where eHub cannot be opened: A BLOCKED with the reason, B-J NOT_RUN, "
+      "no job created", blocked_run["po_steps"]["A"]["status"] == "BLOCKED"
+      and all(blocked_run["po_steps"][k]["status"] == "NOT_RUN" for k in "BCDEFGHIJ")
+      and not new_store("s26c").all(5), blocked_run["po_steps"]["A"])
+check("...and the network as this machine sees it is recorded with it",
+      "host" in (blocked_run.get("network_probe") or {}))
+
+# The queue row.
+row = SV.card(good26)
+check("Queue row: Declaration No. from the PDF, Bill Entry No., extraction, template SAVED, "
+      "email READY (not sent)", row["declaration"] == good26["fields"]["document_number"]["value"]
+      and row["identifier"] == good26["identifier"] and row["extraction"].endswith("fields")
+      and row["template"] == "SAVED" and row["email"] == "READY (not sent)", row)
+rowb = SV.card(bad26)
+check("...for a validation failure: no template, email NOT SENT",
+      rowb["validation"] == "FAILED" and rowb["template"] is None and rowb["email"] == "NOT SENT", rowb)
+UIH = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+check("The PO queue shows the brief's columns", all(c in UIH for c in (
+    "<th>Declaration No.</th>", "<th>BOL / AWB</th>", "<th>Supplier</th>",
+    "<th>Bill Entry / PO No.</th>", "<th>Document</th>", "<th>Status</th>", "<th>Extraction</th>",
+    "<th>Validation</th>", "<th>Template</th>", "<th>Email</th>", "<th>Created</th>",
+    "<th>Last update</th>")))
+
+# ATLAS, on these job records.
+SV.register(SV.PoService(store=st26, launcher=lambda r: None))
+
+
+def ask_po(q, job):
+    ctx = {"domain": "po", "po_id": job["po_id"]}
+    kind = AP.detect(q, ctx)
+    return kind, (AP.answer(kind, q, ctx) or {}).get("answer", "")
+
+
+k, a = ask_po("What happened to this PO?", good26)
+check("'What happened to this PO?' — stage by stage, from the record",
+      k == "happened" and "Template generated: OK" in a and "Output saved: OK" in a
+      and "Email sent (Graph): WAITING" in a, (k, a[:500]))
+check("...and it says first that this job was not on the real eHub (stand-in, not evidence)",
+      a.find("**Not established** — This job did not run against the real eHub") >= 0
+      and a.find("Not established") < a.find("Template generated"), a[:400])
+k, a = ask_po("Where is the Bill Entry PDF?", good26)
+check("'Where is the Bill Entry PDF?' — the file, its SHA-256, where the job kept it",
+      k == "document" and good26["document"]["filename"] in a
+      and good26["document"]["sha256"][:16] in a and good26["document"]["evidence"] in a, (k, a[:400]))
+k, a = ask_po("What did we extract?", good26)
+check("'What did we extract?' — each value with the PDF line it came from, and the duty "
+      "calculation", k == "extracted" and "from the line" in a
+      and "duty request rule (duty amount less the VAT/levy lines)" in a, (k, a[:600]))
+k, a = ask_po("Why did validation fail?", bad26)
+check("'Why did validation fail?' — the mismatch, both values, and that nothing was generated "
+      "or sent", k == "match" and "MISMATCH" in a
+      and "No template was generated and no email was sent." in a, (k, a[:600]))
+k, a = ask_po("Was the template generated?", good26)
+check("'Was the template generated?' — yes, with the saved file and folder",
+      k == "template" and a.count("Yes.") == 1 and good26["output"]["filename"] in a, (k, a[:400]))
+k, a = ask_po("Was the template generated?", bad26)
+check("...and for the failed job: no", k == "template" and "No template was filled" in a, a[:300])
+k, a = ask_po("Was the email actually sent?", good26)
+check("'Was the email actually sent?' — No: prepared, waiting for Send PO",
+      k == "email_sent" and "**Fact** — No." in a and "Yes" not in a.split("\n\n")[-1], (k, a[:400]))
+k, a = ask_po("Was the email actually sent?", bad26)
+check("...for a validation failure: No, never sent for a document that did not pass",
+      "No. Validation failed" in a, a[:300])
+sent26, _o = P.send(st26, st26.get(good26["po_id"]), M.GraphMailer(), by="omar",
+                    confirm_wait_s=3, sleep=NOSLEEP)
+k, a = ask_po("Was the email actually sent?", sent26)
+check("...after a real (stand-in Graph) send: Yes — accepted (HTTP 202) and found in Sent Items",
+      sent26["state"] == S.EMAIL_CONFIRMED and "Yes. Microsoft Graph accepted it (HTTP 202)" in a
+      and "found in the mailbox's Sent Items" in a, (sent26["state"], a[:400]))
 
 rule("25. SUCCESSFUL REAL DISCOVERY — only on a machine that reaches eHub")
 # The test suite never touches the real eHub on its own: real verification

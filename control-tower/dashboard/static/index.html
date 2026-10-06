@@ -2122,8 +2122,8 @@ td.car{color:var(--ink);font-weight:500}
           <div class="card-s" id="poQs">Newest first · open a job for its extracted data, validation and email</div></div>
           <div class="sp"></div><div class="kick" id="poN"></div></div>
         <div class="tw"><table class="po-t">
-          <thead><tr><th>Bill Entry No.</th><th>BOL / AWB</th><th>Supplier</th><th>Document</th><th>Status</th>
-            <th>Validation</th><th>Template</th><th>Email</th><th>Created</th><th>Last update</th><th><span class="sr">Actions</span></th></tr></thead>
+          <thead><tr><th>Declaration No.</th><th>BOL / AWB</th><th>Supplier</th><th>Bill Entry / PO No.</th><th>Document</th><th>Status</th>
+            <th>Extraction</th><th>Validation</th><th>Template</th><th>Email</th><th>Created</th><th>Last update</th><th><span class="sr">Actions</span></th></tr></thead>
           <tbody id="poRows"></tbody></table></div>
         <div id="poEmpty"></div>
       </div>
@@ -2424,7 +2424,8 @@ async function paintVerify(){
       '<th>Shipment</th><th>Status in eHub</th><th>Detail</th></tr></thead><tbody>' +
       rows.map((o) => '<tr><td>' + esc(acWhen(o.received_at)) + '</td><td>' + esc(o.worker_name || o.worker_id) +
         '</td><td>' + esc(o.kind === 'eta-write' ? 'ETA write + read-back'
-          : o.kind === 'carrier-access' ? 'Carrier access' : 'eHub connection') +
+          : o.kind === 'carrier-access' ? 'Carrier access'
+          : o.kind === 'po-pipeline' ? 'PO pipeline A–J' : 'eHub connection') +
         (o.run_id ? '<br><span class="hint">' + esc(o.run_id) + '</span>' : '') +
         '</td><td>' + lvlBadge(o.level) + (o.real_browser ? '' : '<br><span class="hint">no real browser</span>') +
         '</td><td>' + esc(o.shipment_reference || '—') + '</td><td>' + esc(o.shipment_status || '—') +
@@ -4301,11 +4302,11 @@ function poSteps(d){
   let stopped = false;
   PO_TRAIL.forEach(([k, label]) => {
     const x = byName[k];
-    const cls = x ? (x.ok ? 'done' : 'bad') : (stopped ? '' : (st === 'DISCOVERED' || st === 'QUEUED' ? '' : ''));
+    const cls = x ? (x.ok ? 'done' : 'bad') : (stopped ? '' : (st === 'PO_DISCOVERED' || st === 'QUEUED' ? '' : ''));
     if (x && !x.ok) stopped = true;
     out.push([label, cls]);
   });
-  const after = ['FIELDS_EXTRACTED','VALIDATING','VALIDATED','TEMPLATE_GENERATED','EMAIL_PREPARED','EMAIL_SENDING','EMAIL_SENT','EMAIL_CONFIRMED'];
+  const after = ['FIELDS_EXTRACTED','VALIDATING','VALIDATED','TEMPLATE_GENERATED','SAVED','EMAIL_PREPARED','EMAIL_SENDING','EMAIL_SENT','EMAIL_CONFIRMED'];
   const at = (s0) => after.indexOf(s0);
   const v = d.validation;
   out.push(['Fields extracted', d.fields ? 'done' : (st === 'EXTRACTION_FAILED' || st === 'PDF_UNREADABLE' ? 'bad' : '')]);
@@ -4356,12 +4357,18 @@ function paintPO(){
   put($('poN'), jobs.length ? jobs.length + ' job' + (jobs.length === 1 ? '' : 's') : '');
   putHTML($('poRows'), jobs.map((j) => '<tr data-po="' + esc(j.po_id) + '" tabindex="0"' +
     (PO.open === j.po_id ? ' class="sel"' : '') + '>' +
-    '<td class="mono">' + esc(j.number || '—') + '</td><td class="mono">' + esc(j.reference) + '</td>' +
-    '<td>' + esc(j.supplier || '—') + '</td><td class="wrap">' + esc(j.document || '—') + '</td>' +
+    '<td class="mono">' + esc(j.declaration || '—') + '</td><td class="mono">' + esc(j.reference || '—') + '</td>' +
+    '<td>' + esc(j.supplier || '—') + '</td><td class="mono">' + esc(j.identifier || j.number || '—') + '</td>' +
+    '<td class="wrap">' + esc(j.document || '—') + '</td>' +
     '<td>' + poPill(j) + poSource(j) + '</td>' +
+    '<td><span class="pv ' + (j.extraction === 'FAILED' ? 'bad' : j.extraction ? 'ok' : 'none') + '">' +
+      esc(j.extraction || '—') + '</span></td>' +
     '<td><span class="pv ' + (j.validation === 'PASSED' ? 'ok' : j.validation === 'FAILED' ? 'bad' : 'none') + '">' +
       esc(j.validation || '—') + '</span></td>' +
-    '<td>' + esc(j.template || '—') + '</td><td>' + esc(j.email || '—') + '</td>' +
+    '<td><span class="pv ' + (j.template === 'SAVED' ? 'ok' : j.template === 'FAILED' ? 'bad' : 'none') + '"' +
+      (j.output ? ' title="' + esc(j.output) + '"' : '') + '>' + esc(j.template || '—') + '</span></td>' +
+    '<td><span class="pv ' + (j.email === 'CONFIRMED' ? 'ok' : /FAILED|BLOCKED|NOT SENT/.test(j.email || '') ? 'bad' : 'none') + '">' +
+      esc(j.email || '—') + '</span></td>' +
     '<td>' + poWhen(j.created) + '</td><td>' + poWhen(j.updated) + '</td>' +
     '<td><button class="po-open" type="button" data-po-open="' + esc(j.po_id) + '" aria-label="Open job ' + esc(j.reference) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></td></tr>').join(''));
@@ -4419,7 +4426,7 @@ $('poScrim').addEventListener('click', closePO);
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && PO.open) closePO(); });
 function loadPODetail(force){
   if (!PO.open || PO.dBusy) return;
-  const moving = PO.detail && ['QUEUED','DISCOVERED','PDF_FOUND','PDF_READ','FIELDS_EXTRACTED',
+  const moving = PO.detail && ['QUEUED','PO_DISCOVERED','PDF_FOUND','PDF_READ','FIELDS_EXTRACTED',
     'VALIDATING','VALIDATED','EMAIL_SENDING','EMAIL_SENT'].indexOf(PO.detail.state) >= 0;
   if (!force && Date.now() - PO.dAt < (moving ? 1200 : 8000)) return;
   PO.dBusy = true;

@@ -24,7 +24,8 @@ from urllib.parse import urlparse
 
 LEVELS = ("TEST", "SIMULATED", "REAL OBSERVED", "REAL VERIFIED", "BLOCKED")
 TEST, SIMULATED, REAL_OBSERVED, REAL_VERIFIED, BLOCKED = LEVELS
-KINDS = ("ehub-connection", "eta-write", "carrier-access")
+KINDS = ("ehub-connection", "eta-write", "carrier-access", "po-pipeline")
+PO_STEPS = "ABCDEFGHIJ"
 DEFAULT_EHUB_HOST = "logisticshub.mantracgroup.com"
 REQUIRED_STATUS = "Under Clearance"
 # The categories a BLOCKED observation is filed under.
@@ -65,6 +66,31 @@ def classify(obs, channel):
     if channel != "worker":
         return BLOCKED, ["not observed on the Windows worker — real verification is the "
                          "worker's, and this arrived on the '{0}' channel".format(channel)]
+
+    if obs.get("kind") == "po-pipeline":
+        # REAL only for a job whose discovery the pipeline itself marked
+        # REAL / VERIFIED (production navigation, every page on eHub).
+        steps = obs.get("po_steps") or {}
+        prov = obs.get("provenance") or {}
+        first_bad = next((k for k in "ABCDE" if (steps.get(k) or {}).get("status") != "OK"), None)
+        if first_bad:
+            s = steps.get(first_bad) or {}
+            return BLOCKED, ["step {0} ({1}) {2}: {3}".format(
+                first_bad, s.get("label"), (s.get("status") or "not run").lower(),
+                s.get("reason") or "no reason recorded")]
+        if prov.get("source") != "REAL" or prov.get("verification") != "VERIFIED":
+            return BLOCKED, ["the job's discovery is {0} / {1}, not REAL / VERIFIED: {2}".format(
+                prov.get("source"), prov.get("verification"), prov.get("why"))]
+        gaps = ["step {0} ({1}) {2}: {3}".format(k, (steps.get(k) or {}).get("label"),
+                                                 ((steps.get(k) or {}).get("status") or
+                                                  "not run").lower(),
+                                                 (steps.get(k) or {}).get("reason"))
+                for k in "FGHIJ" if (steps.get(k) or {}).get("status") != "OK"]
+        if not gaps:
+            return REAL_VERIFIED, ["every step A-J passed on the worker against the real eHub, "
+                                   "with Graph confirming the controlled send in Sent Items"]
+        return REAL_OBSERVED, ["A-E observed on the real eHub"] + ["NOT VERIFIED: " + g
+                                                                    for g in gaps]
 
     if obs.get("kind") == "carrier-access":
         # About a carrier, not eHub: real when the worker's own automation

@@ -16,7 +16,9 @@ and template problems never are — retrying cannot change a mismatch.
 
 Nothing here claims a success it has not observed:
   VALIDATED           every blocking check passed
-  TEMPLATE_GENERATED  the saved file was re-opened and every cell read back
+  TEMPLATE_GENERATED  the filled template was re-opened and every cell read back
+  SAVED               the file is in the output folder, re-opened from disk and
+                      read back again, with its SHA-256
   EMAIL_SENT          Graph answered 202 to the send
   EMAIL_CONFIRMED     the message was found in the mailbox's Sent Items
 """
@@ -239,19 +241,36 @@ def process(store, record, source, config=None, sleep=time.sleep):
     values.update({n: f["value"] for n, f in request_fields.items() if f["status"] == X.FOUND})
     values["request_reference"] = (record.get("request") or {}).get("reference_note") or None
     try:
-        out = T.fill(doctype, values, store.output_dir, record["number"], reference,
-                     job=record["po_id"])
+        built = T.build(doctype, values)
     except Exception as error:
         record = store.transition(record, S.TEMPLATE_FAILED, "Template generation failed",
                                   failure("TEMPLATE_FAILURE", "template", str(error)[:400]))
         store.event(record, "TEMPLATE_FAILED", "template", "FAILED", reason=str(error)[:300])
         return record
+    record["template"] = {"version": built["template_version"],
+                          "template_sha256": built["template_sha256"], "cells": built["cells"],
+                          "generated_at": S.now_iso(), "read_back": "in memory, every cell"}
+    record = store.transition(record, S.TEMPLATE_GENERATED, "Saving the document…")
+    store.event(record, "TEMPLATE_GENERATED", "template", "OK", template=built["template_version"],
+                cells=len(built["cells"]))
+
+    # ── SAVE: to the configured output folder, read back from disk ─────────
+    try:
+        out = T.save(doctype, built, store.output_dir, record["number"], reference,
+                     job=record["po_id"])
+    except Exception as error:
+        record = store.transition(record, S.TEMPLATE_FAILED, "The document could not be saved",
+                                  failure("TEMPLATE_FAILURE", "output",
+                                          "saving to {0} failed: {1}".format(
+                                              store.output_dir, str(error)[:300])))
+        store.event(record, "TEMPLATE_FAILED", "output", "FAILED", reason=str(error)[:300])
+        return record
     out["generated_by"] = record.get("started_by")
-    out["generated_at"] = S.now_iso()
+    out["generated_at"] = record["template"]["generated_at"]
     record["output"] = out
-    record = store.transition(record, S.TEMPLATE_GENERATED, "Preparing the email…")
-    store.event(record, "TEMPLATE_GENERATED", "template", "OK", evidence=out["sha256"],
-                filename=out["filename"], template=out["template_version"],
+    record = store.transition(record, S.SAVED, "Preparing the email…")
+    store.event(record, "OUTPUT_SAVED", "output", "OK", evidence=out["sha256"],
+                filename=out["filename"], folder=out["folder"], template=out["template_version"],
                 bytes=out["bytes"])
 
     # ── EMAIL: prepared, never sent from here unless configured to ────────
@@ -459,7 +478,8 @@ def abandon(store, record, reason):
     to = {S.QUEUED: S.PDF_NOT_FOUND, S.DISCOVERED: S.PDF_NOT_FOUND,
           S.PDF_FOUND: S.PDF_UNREADABLE, S.PDF_READ: S.EXTRACTION_FAILED,
           S.FIELDS_EXTRACTED: None, S.VALIDATING: S.VALIDATION_FAILED,
-          S.VALIDATED: S.TEMPLATE_FAILED, S.EMAIL_SENDING: S.EMAIL_FAILED}.get(record["state"])
+          S.VALIDATED: S.TEMPLATE_FAILED, S.TEMPLATE_GENERATED: S.TEMPLATE_FAILED,
+          S.EMAIL_SENDING: S.EMAIL_FAILED}.get(record["state"])
     if record["state"] == S.FIELDS_EXTRACTED:
         record = store.transition(record, S.VALIDATING)
         to = S.VALIDATION_FAILED
