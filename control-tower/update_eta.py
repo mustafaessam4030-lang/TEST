@@ -5632,6 +5632,30 @@ CARRIER_ACCESS_RESTRICTED = "CARRIER ACCESS RESTRICTED"
 CARRIER_ACCESS_NOT_CONFIRMED = "CARRIER ACCESS NOT CONFIRMED"
 
 
+def safe_url(url, reference=None):
+    """
+    A carrier address that is safe to keep: scheme, host and path; of the
+    query, only a value that IS the shipment's reference survives — every
+    other value (a security code a person typed into a GET form, a token) is
+    replaced. Never the fragment.
+    """
+    try:
+        from urllib.parse import urlsplit, parse_qsl, urlencode, urlunsplit
+        parts = urlsplit(str(url or ""))
+    except Exception:
+        return None
+    if not parts.scheme:
+        return None
+
+    def norm(value):
+        return re.sub(r"[\s\-/]", "", str(value or "")).upper()
+
+    query = [(k, v if reference and norm(v) == norm(reference) else "redacted")
+             for k, v in parse_qsl(parts.query, keep_blank_values=True)]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query, safe="redacted"),
+                       ""))[:300]
+
+
 def carrier_restriction(page, reference=None):
     """
     The carrier's restriction page, as evidence, or None. Never raises.
@@ -5654,7 +5678,7 @@ def carrier_restriction(page, reference=None):
     if reference and awb_on_page(page, reference):
         return None                    # the shipment is on the page
     try:
-        url, title = page.url, page.title()
+        url, title = safe_url(page.url, reference), page.title()
     except Exception:
         url, title = None, None
     return {"signals": found, "url": url, "title": (title or "")[:160],
@@ -5721,7 +5745,7 @@ def carrier_access_not_confirmed(page, label, reference):
     text_path = save_page_text(page, reference, re.sub(r"[^a-z0-9]+", "_", label.lower())
                                .strip("_") + "_access_not_confirmed")
     try:
-        url, title = page.url, page.title()
+        url, title = safe_url(page.url, reference), page.title()
     except Exception:
         url, title = None, None
     facts = dict(_access_facts(label, True, "not confirmed"))
@@ -5799,7 +5823,7 @@ def carrier_access_restricted(page, label, reference, found, after_human):
 def carrier_access_confirmed(page, label, reference, after_human):
     """The shipment's own result is on the page: access is confirmed now."""
     try:
-        tower.carrier_access(reference, "CONFIRMED", page.url,
+        tower.carrier_access(reference, "CONFIRMED", safe_url(page.url, reference),
                              "{0} shipment page read".format(label))
     except Exception as error:
         note_suppressed("publishing carrier access", error)

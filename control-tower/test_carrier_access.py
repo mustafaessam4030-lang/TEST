@@ -101,6 +101,9 @@ check("One signal alone (a footer mentioning a VPN) is not a restriction",
 check("A page carrying the shipment's own reference is not a restriction",
       A.carrier_restriction(Page("B/L {0} ETA 12/10/2026. ".format(REF) + RESTRICTED), REF)
       is None)
+check("A carrier URL keeps the shipment's reference but never a typed security code",
+      A.safe_url("https://g.test/gresult?ship=S330348776&code=7Q4K#x", "S330348776")
+      == "https://g.test/gresult?ship=S330348776&code=redacted")
 check("A long result page is not mistaken for one",
       A.carrier_restriction(Page(RESTRICTED + "y" * 9000), REF) is None)
 
@@ -371,7 +374,7 @@ answers = iter(["3", "", "2", "https://carrier.example/blocked?x=1", "n", "said 
 m = C.manual_check("https://carrier.example/tracking", "CMAU1", "/bin/true",
                    ask=lambda prompt: next(answers), say=lambda *a: None)
 check("Manual check: a challenge is left to the operator, then the answer is recorded",
-      m["result"] == "RESTRICTED" and m["url_shown"] == "https://carrier.example/blocked?x=1"
+      m["result"] == "RESTRICTED" and m["url_shown"] == "https://carrier.example/blocked?x=redacted"
       and m["signed_in_to_carrier"] is False and m["operator_note"] == "said VPN", m)
 check("Proxy URLs are recorded without their user:password",
       C._redact_proxy("http://user:S3cret@proxy.corp:8080") == "http://***@proxy.corp:8080")

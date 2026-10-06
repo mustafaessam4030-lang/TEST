@@ -616,11 +616,14 @@ check("Human verification: the plan is a person's step, never automation",
 check("An expected 'no result' skip is not a failure; a success is not either",
       F.from_record(rec(state="skipped", outcome="NO RESULT")) is None
       and F.from_record(rec(state="updated")) is None)
-check("Every category the brief names exists", set(F.CATEGORIES) == {
+check("Every category the brief names exists", set(F.CATEGORIES) >= {
     "NAVIGATION_FAILURE", "PAGE_NOT_READY", "AUTHENTICATION_FAILURE", "TIMEOUT", "NETWORK_FAILURE",
     "DATA_EXTRACTION_FAILURE", "VALIDATION_FAILURE", "HUB_WRITE_FAILURE", "HUB_READBACK_FAILURE",
     "CARRIER_POLICY_BLOCK", "HUMAN_ACTION_REQUIRED", "SECURITY_VERIFICATION_REQUIRED",
     "UNKNOWN_FAILURE"})
+check("...and the carrier-access categories added for the 6 Oct case",
+      {"CARRIER_ACCESS_RESTRICTED", "CARRIER_ACCESS_NOT_CONFIRMED"} <= set(F.CATEGORIES)
+      and len(F.CATEGORIES) == 15)
 full = F.build(state)[0]
 check("The failure record carries every field of the contract", all(k in full for k in (
     "failure_id", "run_id", "shipment_id", "carrier", "operation", "stage", "timestamp",

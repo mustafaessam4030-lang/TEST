@@ -265,7 +265,9 @@ def manual_check(url, reference, edge_path, ask=input, say=print):
     account = str(ask("Is this Edge signed in to a carrier account on that site? (y/n/unsure): "
                       )).strip().lower()[:1]
     note = str(ask("Anything else on the page worth noting? (Enter to skip): ")).strip()
-    return {"result": MANUAL_CHOICES[answer], "url_shown": shown[:300] or None,
+    import update_eta as A
+    return {"result": MANUAL_CHOICES[answer], "url_shown": A.safe_url(shown, reference) or
+            (shown[:300] or None),
             "signed_in_to_carrier": {"y": True, "n": False}.get(account),
             "operator_note": note[:300] or None, "opened": url, "started": started,
             "recorded": _now(), "browser": "installed Edge, the user's own profile, no automation",
@@ -353,7 +355,7 @@ def automation_check(provider, reference, ip_service, launch=None):
                     out.update(result="PAGE_OPENED")
             out["seconds"] = int(time.time() - started)
             try:
-                out["final_url"] = page.url
+                out["final_url"] = A.safe_url(page.url, reference)
                 out["final_title"] = (page.title() or "")[:160]
                 out["page_sees"] = page.evaluate(PROBE_JS)
             except Exception as error:
