@@ -415,11 +415,20 @@ class PoService(object):
             return record, "BLOCKED", reasons
         if authorize_resend and not (reason or "").strip():
             return record, "BLOCKED", ["a resend needs a reason, recorded in the audit log"]
-        if self.mailer_factory is None:
-            from .mail import GraphMailer
-            factory = GraphMailer
-        else:
-            factory = self.mailer_factory
+        from .mail import GraphMailer, configured
+        factory = self.mailer_factory or GraphMailer
+        if factory is GraphMailer:
+            ok, missing = configured()
+            if not ok:
+                # Not a failure of this job: email is not set up yet. The job
+                # stays ready, and is sent once an admin configures Graph.
+                reasons = ["Microsoft 365 email is not configured ({0} not set). Nothing was "
+                           "sent; the job stays ready.".format(", ".join(missing))]
+                self.store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons,
+                                 by=who)
+                self.audit("PO_EMAIL_BLOCKED", result="NOT_CONFIGURED", actor=actor,
+                           target=po_id, metadata={"missing": missing})
+                return record, "BLOCKED", reasons
         cfg = self.config()
 
         def run():

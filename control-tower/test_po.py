@@ -694,6 +694,24 @@ else:
     check("The Graph client secret is in no record, event or ledger", True)
 
 
+# Microsoft 365 not configured: blocked, the job left ready — not failed.
+saved = {k: os.environ.pop(k) for k in ("GRAPH_CLIENT_SECRET", "PO_MAIL_SENDER")}
+st11c = new_store("s11c")
+nc = run_job(st11c, "176-88452310")
+svc11 = SV.PoService(store=st11c, launcher=lambda r: None, config=CONFIG)
+before = GRAPH["counter"]
+nc2, outcome, why = svc11.send("omar.ops@mantrac.com", nc["po_id"])
+os.environ.update(saved)
+check("Email not configured: Send PO is BLOCKED, naming what is missing",
+      outcome == "BLOCKED" and "GRAPH_CLIENT_SECRET" in why[0] and "PO_MAIL_SENDER" in why[0], why)
+check("...no Graph call, and the job stays EMAIL READY (not failed)",
+      GRAPH["counter"] == before and st11c.get(nc["po_id"])["state"] == S.EMAIL_PREPARED)
+nc3, outcome, why = svc11.send("omar.ops@mantrac.com", nc["po_id"], wait=True)
+check("...once configured, the same job sends and is confirmed",
+      outcome == "STARTED" and st11c.get(nc["po_id"])["state"] == S.EMAIL_CONFIRMED,
+      st11c.get(nc["po_id"])["state"])
+
+
 # ═════════════════════════════════════════════════════════════════════════
 rule("12. DUPLICATE-SEND PREVENTION")
 # ═════════════════════════════════════════════════════════════════════════

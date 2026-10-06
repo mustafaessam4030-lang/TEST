@@ -5507,6 +5507,12 @@ document.addEventListener('click', (e) => {
   const body = $('chatBody'), input = $('chatIn');
   let busy = false, lastReference = null, lastFocus = '', lastEvidence = '';
   let askCtx = null;
+  // Asked on the PO page (or about one PO job): ATLAS is told which job.
+  function withPoContext(body){
+    if (activePage === 'po' || askCtx)
+      Object.assign(body.context, {domain: 'po', po_id: (askCtx && askCtx.po_id) || PO.open || ''});
+    return body;
+  }
   // Rude messages this tab has sent — a count, for a firmer reply each time.
   let conductCount = 0;
   /* A real image — a capture from the automation's browser or one the
@@ -5820,9 +5826,8 @@ document.addEventListener('click', (e) => {
 
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q, context: Object.assign({reference: lastReference, action_id: lastFocus,
-                                                   evidence_id: lastEvidence, conduct: conductCount},
-        activePage === 'po' || askCtx ? {domain: 'po', po_id: (askCtx && askCtx.po_id) || PO.open || ''} : {})})
+      body: JSON.stringify(withPoContext({question: q, context: {reference: lastReference, action_id: lastFocus,
+                                                   evidence_id: lastEvidence, conduct: conductCount}}))
     })
       .then((r) => r.json())
       .then((d) => {
