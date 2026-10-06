@@ -965,6 +965,8 @@ def classify_failure(error):
         return WRITE_BLOCKED
     if declared == "CARRIER_ACCESS_RESTRICTED":
         return CARRIER_ACCESS_RESTRICTED
+    if declared == "CARRIER_ACCESS_NOT_CONFIRMED":
+        return CARRIER_ACCESS_NOT_CONFIRMED
     text = "{0} {1}".format(type(error).__name__, error).casefold()
 
     # Checked FIRST: the message carries its own verdict, and it must not be
@@ -5604,6 +5606,18 @@ def captcha_on_page(page):
 # a copy of it; the page's own text is saved each time so they can be
 # checked against it. Two of them, on a page that does not carry the
 # shipment's reference, are needed — one alone is a footer.
+# One of these alone is a restriction page (still only on a short page that
+# does not carry the shipment's reference). "Access is temporarily
+# restricted" is what CMA CGM showed on the 6th after a completed verification.
+CARRIER_RESTRICTION_STRONG = (
+    ("access temporarily restricted",
+     r"access\s+(?:is|has\s+been)\s+temporarily\s+(?:restricted|blocked|suspended)|"
+     r"temporarily\s+restricted"),
+    ("access restricted", r"access\s+(?:is|has\s+been)\s+(?:restricted|blocked|denied|suspended)"),
+    ("you have been blocked", r"you\s+have\s+been\s+blocked"),
+    ("access denied", r"^\s*access\s+denied\b"),
+    ("request blocked", r"\brequest\s+(?:has\s+been\s+)?blocked\b"),
+)
 CARRIER_RESTRICTION_SIGNALS = (
     ("attention", r"attracted\s+(?:our|the|their)\s+attention"),
     ("blockage", r"\bblockage\b|\bhave\s+been\s+blocked\b|\baccess\s+(?:has\s+been\s+|is\s+)?"
@@ -5615,6 +5629,7 @@ CARRIER_RESTRICTION_SIGNALS = (
     ("supported browser", r"(?:normal|supported|standard|common)\s+(?:web\s+)?browsers?"),
 )
 CARRIER_ACCESS_RESTRICTED = "CARRIER ACCESS RESTRICTED"
+CARRIER_ACCESS_NOT_CONFIRMED = "CARRIER ACCESS NOT CONFIRMED"
 
 
 def carrier_restriction(page, reference=None):
@@ -5629,10 +5644,13 @@ def carrier_restriction(page, reference=None):
         return None
     if not text or len(text) > 8000:
         return None
+    strong = [name for name, pattern in CARRIER_RESTRICTION_STRONG
+              if re.search(pattern, text, re.I | re.M)]
     found = [name for name, pattern in CARRIER_RESTRICTION_SIGNALS
              if re.search(pattern, text, re.I)]
-    if len(found) < 2:
+    if not strong and len(found) < 2:
         return None
+    found = strong + [f for f in found if f not in strong]
     if reference and awb_on_page(page, reference):
         return None                    # the shipment is on the page
     try:
@@ -5645,8 +5663,90 @@ def carrier_restriction(page, reference=None):
                                                      "supported browser")]}
 
 
-class CarrierAccessRestricted(SkipShipment):
-    """The carrier showed its restriction page: no extraction, no write."""
+class CarrierAccessRestricted(Exception):
+    """
+    The carrier showed its restriction page: no extraction, no write. A
+    failure — the shipment ends FAILED and is parked for recovery — not a
+    skip, which would say the shipment simply had nothing for us.
+    """
+
+    def __init__(self, message="", failure=None):
+        Exception.__init__(self, message)
+        self.failure = failure or {}
+
+
+def _access_facts(label, after_human, access):
+    """What the run records about the attempt — the operator's checklist."""
+    return {"carrier": label, "verification_completed": bool(after_human),
+            "carrier_access": access, "extraction": "not performed",
+            "hub_write": "not performed", "final_result": "FAILED — RECOVERY_REQUIRED"}
+
+
+def _record_clear_outcome(reference, access_ok, category):
+    """The cleared challenge, learned only together with what followed it."""
+    pending = HUMAN_STATE.pop("pending_clear", None)
+    if not pending or pending.get("reference") != reference:
+        return
+    ml_record(ml_context(provider="BROWSER", page="portal_entry", field="captcha"),
+              "captcha_cleared", bool(access_ok), pending.get("waited_ms"),
+              "OK" if access_ok else category,
+              detail="{0}; carrier access {1}".format(
+                  pending.get("label"), "confirmed" if access_ok else category.lower()),
+              reference=reference)
+
+
+def check_access_after_human(page, label, reference):
+    """
+    Right after a person completed a verification: is the carrier page usable?
+    A restriction page stops the lookup here. Otherwise access is still only
+    PENDING — confirmed when the shipment's own result is read.
+    """
+    found = carrier_restriction(page, reference)
+    if found:
+        carrier_access_restricted(page, label, reference, found, True)
+    if not HUMAN_STATE.get("access_checked") == reference:
+        HUMAN_STATE["access_checked"] = reference
+        write_log("CARRIER ACCESS CHECK after the verification for {0}: no restriction page "
+                  "on {1}; access is confirmed only when the shipment's result is read."
+                  .format(reference, label))
+        try:
+            tower.step("Carrier access check after verification: no restriction page yet; "
+                       "waiting for the shipment page", system="browser")
+        except Exception:
+            pass
+
+
+def carrier_access_not_confirmed(page, label, reference):
+    """After a verification the shipment page never appeared: not 'no result'."""
+    text_path = save_page_text(page, reference, re.sub(r"[^a-z0-9]+", "_", label.lower())
+                               .strip("_") + "_access_not_confirmed")
+    try:
+        url, title = page.url, page.title()
+    except Exception:
+        url, title = None, None
+    facts = dict(_access_facts(label, True, "not confirmed"))
+    try:
+        tower.carrier_access(reference, "NOT_CONFIRMED", url,
+                             "{0}: the shipment page never appeared after the verification"
+                             .format(label), facts=facts)
+    except Exception as error:
+        note_suppressed("publishing carrier access", error)
+    human_event("CARRIER_ACCESS_NOT_CONFIRMED", HUMAN_STATE.get("last"),
+                "{0} never showed the shipment page after the verification".format(label))
+    _record_clear_outcome(reference, False, "CARRIER_ACCESS_NOT_CONFIRMED")
+    raise CarrierAccessRestricted(
+        "Human verification was completed, but {0} never showed the shipment page for {1}: "
+        "carrier access was not confirmed. Nothing was extracted or written. URL: {2}".format(
+            label, reference, url),
+        failure={
+            "category": "CARRIER_ACCESS_NOT_CONFIRMED", "stage": "carrier_access",
+            "operation": "Carrier access", "last_success": "human verification completed",
+            "detail": "After the human verification, {0}'s page never showed shipment {1}; "
+                      "no restriction wording was recognised on it.".format(label, reference),
+            "observed": {"url": url, "title": (title or "")[:160],
+                         "after_human_verification": "yes", "page_text": str(text_path),
+                         "extraction": "not performed", "hub_write": "not performed"},
+        })
 
 
 def carrier_access_restricted(page, label, reference, found, after_human):
@@ -5656,13 +5756,14 @@ def carrier_access_restricted(page, label, reference, found, after_human):
     shot = take_screenshot(page, reference, slug + "_access_restricted")
     when = "after the human verification was completed" if after_human else \
         "when the tracking page was opened"
+    facts = _access_facts(label, after_human, "restricted")
     write_log("CARRIER ACCESS RESTRICTED: {0} showed a restriction page {1} for {2}. "
               "URL {3!r}; title {4!r}; signals: {5}. Lookup stopped; nothing extracted, "
               "nothing written to the Hub.".format(label, when, reference, found["url"],
                                                   found["title"], ", ".join(found["signals"])))
     try:
         tower.carrier_access(reference, "RESTRICTED", found["url"],
-                             "{0} restriction page {1}".format(label, when))
+                             "{0} restriction page {1}".format(label, when), facts=facts)
         tower.step("Carrier access RESTRICTED by {0} ({1}); nothing written".format(label, when),
                    system="browser")
     except Exception as error:
@@ -5671,6 +5772,7 @@ def carrier_access_restricted(page, label, reference, found, after_human):
         human_event("CARRIER_ACCESS_RESTRICTED", HUMAN_STATE.get("last"),
                     "{0} showed its restriction page after the verification; "
                     "the shipment page was not reached".format(label))
+    _record_clear_outcome(reference, False, "CARRIER_ACCESS_RESTRICTED")
     raise CarrierAccessRestricted(
         "{0} restricted access {1} for {2}: its page says the browser's behaviour attracted "
         "its attention ({3}). Nothing was extracted or written. URL: {4}".format(
@@ -5689,7 +5791,8 @@ def carrier_access_restricted(page, label, reference, found, after_human):
             "observed": {"url": found["url"], "title": found["title"],
                          "signals": ", ".join(found["signals"]),
                          "after_human_verification": "yes" if after_human else "no",
-                         "page_text": str(text_path), "screenshot": str(shot)},
+                         "page_text": str(text_path), "screenshot": str(shot),
+                         "extraction": "not performed", "hub_write": "not performed"},
         })
 
 
@@ -5700,6 +5803,7 @@ def carrier_access_confirmed(page, label, reference, after_human):
                              "{0} shipment page read".format(label))
     except Exception as error:
         note_suppressed("publishing carrier access", error)
+    _record_clear_outcome(reference, True, "OK")
     if after_human:
         human_event("CARRIER_ACCESS_CONFIRMED", HUMAN_STATE.get("last"),
                     "{0} shows the shipment page for {1}".format(label, reference))
@@ -6465,7 +6569,10 @@ def await_human_verification(page, tracking_number, label="the carrier page"):
     started = time.time()
     outcome = wait_for_human(
         page, tracking_number, label,
-        ready=lambda: (not captcha_on_page(page),
+        # Ends when the challenge is gone — or when the carrier has shown its
+        # restriction page instead: the person's part is over either way, and
+        # the access check that follows says which.
+        ready=lambda: (not captcha_on_page(page) or bool(carrier_restriction(page, tracking_number)),
                        "the verification check is still on the page"),
         instructions="Complete the verification check in the browser.",
         wait_ms=CAPTCHA_WAIT_MS, step="human verification check")
@@ -6480,10 +6587,12 @@ def await_human_verification(page, tracking_number, label="the carrier page"):
             tower.human_verification_cleared(tracking_number, waited)
         except Exception:
             pass
-        ml_record(ml_context(provider="BROWSER", page="portal_entry",
-                             field="captcha"),
-                  "captcha_cleared", True, waited * 1000.0, "OK",
-                  detail=label, reference=tracking_number)
+        # NOT recorded as a success yet. A completed verification is a
+        # success only if the carrier then serves the shipment page: the
+        # outcome is recorded by the access check (carrier_access_confirmed /
+        # carrier_access_restricted), never on the challenge alone.
+        HUMAN_STATE["pending_clear"] = {"reference": tracking_number, "label": label,
+                                        "waited_ms": waited * 1000.0}
         return True
 
     write_log("Human verification was not completed ({0}). Leaving {1} for a "
@@ -8819,13 +8928,25 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
         end_time = time.time() + config.get("wait", 40)
         identity_required = bool(config.get("verify_identity"))
         while time.time() < end_time:
+            # CARRIER ACCESS, once a person has completed a verification: the
+            # carrier may still refuse. Checked first, so a restriction page
+            # is never taken for another challenge to hand back to a person.
+            if after_human:
+                check_access_after_human(page, config["label"], tracking_number)
             # HUMAN VERIFICATION. Checked before extraction, because a
             # challenge page carries no shipment data and reading it would
             # produce "no result" for a shipment that was never looked up.
             if captcha_on_page(page):
-                after_human = await_human_verification(
-                    page, tracking_number, config["label"]) or after_human
-                if captcha_on_page(page):
+                cleared = await_human_verification(page, tracking_number, config["label"])
+                after_human = cleared or after_human
+                if cleared:
+                    # Immediately: is the carrier page usable now? And the
+                    # lookup gets its full wait again from here — a person
+                    # who took longer than the carrier's wait must not leave
+                    # the page unread.
+                    check_access_after_human(page, config["label"], tracking_number)
+                    end_time = max(end_time, time.time() + config.get("wait", 40))
+                if captcha_on_page(page) and not carrier_restriction(page, tracking_number):
                     raise CaptchaRequired(tracking_number, config["label"])
                 continue
             # CARRIER ACCESS. A restriction page is not a result and not a
@@ -8905,6 +9026,8 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
     take_screenshot(page, tracking_number, slug + "_no_result")
     save_page_text(page, tracking_number, slug + "_no_result")
     describe_page_dates(page, config["label"], tracking_number)
+    if after_human and not awb_on_page(page, tracking_number):
+        carrier_access_not_confirmed(page, config["label"], tracking_number)
     raise SkipShipment(f"{airline} returned no arrival date that could be read.")
 
 

@@ -188,10 +188,18 @@ Hapag-Lloyd are picked by the Hub's Carrier Name column.
 - **A carrier restricts access (CMA CGM, 6 Oct)?** A completed human
   verification is *not* access: the run records HUMAN_VERIFICATION_COMPLETED,
   and CARRIER_ACCESS_CONFIRMED only when the shipment page itself is read. If
-  the carrier shows its restriction page, the lookup stops — nothing is
-  extracted or written — the shipment is CARRIER ACCESS RESTRICTED, and the
-  page's URL, title, text and a screenshot are kept. It is not retried and
-  nothing tries to get past it. To find out why, on the worker:
+  the carrier shows its restriction page — e.g. "Access is temporarily
+  restricted", even right after you completed the verification — the lookup
+  stops at once: nothing is extracted or written, the shipment ends FAILED /
+  CARRIER ACCESS RESTRICTED (parked, recovery required), and the page's URL,
+  title, text and a screenshot are kept, with the run's checklist:
+  verification_completed, carrier_access, extraction, hub_write, final_result.
+  A verification that is followed by neither the shipment page nor a
+  recognised restriction ends CARRIER ACCESS NOT CONFIRMED. Neither is
+  retried, nothing tries to get past it, and the cleared verification is not
+  learned as a success. Ask ATLAS "Why did the error happen?" and "What
+  should I do next?" — it answers from that evidence with a diagnose-first
+  plan. To find out why, on the worker:
   `verify_carrier.bat CMA_CGM <reference>` — records VPN, proxy, public IP,
   network (domain / hotspot indicators) and Edge, opens the carrier in your
   normal Edge (you say what it shows) and in the automation's browser, and

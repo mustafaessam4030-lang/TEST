@@ -710,6 +710,9 @@ class ControlTowerState:
             self.systems["browser"]["state"] = "waiting"
             self.systems["browser"]["activity"] = (
                 "Human verification required" + (" for " + reference if reference else ""))
+            record = self._index.get(reference) or self._current_record()
+            if record is not None:
+                record["human_verification"] = "REQUIRED"
             self._mark("warn", "Human verification required{0}{1}".format(
                 " on " + str(label) if label else "",
                 " for " + reference if reference else ""))
@@ -731,6 +734,13 @@ class ControlTowerState:
                 "state": "HUMAN_VERIFICATION_COMPLETED",
                 "carrier_access": "NOT_CONFIRMED",
             }
+            record = self._index.get(reference) or self._current_record()
+            if record is not None:
+                record["human_verification"] = "COMPLETED"
+                record["carrier_access"] = {"state": "NOT_CONFIRMED", "url": "",
+                                            "detail": "verification completed; the shipment "
+                                                      "page has not been read yet",
+                                            "at": _stamp()}
             self.systems["browser"]["state"] = "connected"
             self.systems["browser"]["activity"] = None
             self._mark("warn", "Human verification completed{0}{1}; carrier access not yet "
@@ -739,25 +749,32 @@ class ControlTowerState:
                            else "", " for " + reference if reference else ""))
             self._touch()
 
-    def carrier_access(self, reference, state, url=None, detail=""):
+    def carrier_access(self, reference, state, url=None, detail="", facts=None):
         """
         CONFIRMED only when the shipment's page was read; RESTRICTED when the
         carrier showed its restriction page. Kept on the shipment's record
         and, for the shipment a person just verified, on that state too.
         """
-        state = "CONFIRMED" if state == "CONFIRMED" else "RESTRICTED"
+        state = state if state in ("CONFIRMED", "NOT_CONFIRMED") else "RESTRICTED"
         with self._lock:
             entry = {"state": state, "url": str(url or "")[:300], "detail": str(detail)[:200],
                      "at": _stamp()}
-            record = self._index.get(reference)
+            record = self._index.get(reference) or self._current_record()
             if record is not None:
                 record["carrier_access"] = entry
+                if isinstance(facts, dict):
+                    # The operator's checklist for this attempt, as the run
+                    # recorded it: verification, access, extraction, write.
+                    record["access_check"] = {str(k)[:30]: (v if isinstance(v, bool)
+                                                            else str(v)[:80])
+                                              for k, v in list(facts.items())[:8]}
             hv = self.human_verification
             if hv and hv.get("reference") == reference:
                 hv["carrier_access"] = state
                 hv["state"] = "CARRIER_ACCESS_" + state
-            if state == "RESTRICTED":
-                self._mark("error", "Carrier access restricted for {0}".format(reference))
+            if state != "CONFIRMED":
+                self._mark("error", "Carrier access {0} for {1}".format(
+                    "restricted" if state == "RESTRICTED" else "not confirmed", reference))
             self._touch()
 
     # -- human in the loop -------------------------------------------------

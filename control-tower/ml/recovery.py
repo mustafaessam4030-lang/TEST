@@ -53,6 +53,7 @@ SESSION_EXPIRED = "SESSION_EXPIRED"
 WRONG_DESTINATION = "WRONG_DESTINATION"
 PARTIAL_LOAD = "PARTIAL_LOAD"
 SERVER_ERROR = "SERVER_ERROR"
+CARRIER_ACCESS_RESTRICTED = "CARRIER_ACCESS_RESTRICTED"
 UNKNOWN = "UNKNOWN"
 
 ERROR_CLASSES = (
@@ -61,7 +62,8 @@ ERROR_CLASSES = (
     NAVIGATION_FAILURE, NETWORK_TRANSIENT, SAVE_FAILURE,
     VERIFICATION_FAILURE, HUMAN_VERIFICATION, INPUT_REJECTED,
     VALIDATION_FAILURE, AUTHENTICATION, ELEMENT_DISABLED, BLOCKING_DIALOG,
-    SESSION_EXPIRED, WRONG_DESTINATION, PARTIAL_LOAD, SERVER_ERROR, UNKNOWN,
+    SESSION_EXPIRED, WRONG_DESTINATION, PARTIAL_LOAD, SERVER_ERROR,
+    CARRIER_ACCESS_RESTRICTED, UNKNOWN,
 )
 
 # NOT RECOVERABLE, and each for its own reason. Recovery is never attempted
@@ -98,6 +100,14 @@ NOT_RECOVERABLE = {
     VALIDATION_FAILURE: ("the Hub rejected the value itself; a business rule "
                          "answered and will answer the same way again"),
     AUTHENTICATION: "a credential problem is not a recoverable page problem",
+    # The carrier decided not to serve this browser. Every page action that
+    # exists — reload, re-navigate, retry, another tab — is another request to
+    # a carrier that is restricting it, and would be an attempt to get past
+    # its security. Diagnosed on the worker; changed only by a person.
+    CARRIER_ACCESS_RESTRICTED: ("the carrier is restricting access; reloading, re-navigating "
+                                "or retrying would be another request against its restriction "
+                                "and is not allowed — the worker's environment is diagnosed "
+                                "and a person decides"),
 }
 
 
@@ -117,6 +127,7 @@ def classify(error=None, category=None, text=None):
     # The category the automation already assigned is stronger evidence than
     # the message text, so it is read first.
     by_category = {
+        "CARRIER_ACCESS_RESTRICTED": CARRIER_ACCESS_RESTRICTED,
         "BOT_CHALLENGE": HUMAN_VERIFICATION,
         "VERIFICATION_FAILURE": VERIFICATION_FAILURE,
         "VALIDATION_FAILURE": VALIDATION_FAILURE,
@@ -133,7 +144,10 @@ def classify(error=None, category=None, text=None):
         klass = by_category[category]
         return klass, _signature(klass, blob)
 
-    if ("human verification" in blob or "captcha" in blob
+    if "carrieraccessrestricted" in blob or "restricted access" in blob or \
+            "access is temporarily restricted" in blob:
+        klass = CARRIER_ACCESS_RESTRICTED
+    elif ("human verification" in blob or "captcha" in blob
             or "turnstile" in blob or "challenge" in blob):
         klass = HUMAN_VERIFICATION
     elif "unauthor" in blob or "credential" in blob or "sign in" in blob:

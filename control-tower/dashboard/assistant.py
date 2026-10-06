@@ -2545,7 +2545,7 @@ def _others(failures, chosen):
 
 
 def _root_line(f):
-    if f["classification"] == "CARRIER_ACCESS_RESTRICTED":
+    if f["classification"] in ("CARRIER_ACCESS_RESTRICTED", "CARRIER_ACCESS_NOT_CONFIRMED"):
         # What happened is confirmed; why the carrier did it is not.
         return ("**Root cause** — confirmed only that the carrier restricted access (its own "
                 "page, recorded by the run). The reason for the restriction is not established.")
@@ -2571,6 +2571,47 @@ def _safety_word(value):
     if risk <= 0.5:
         return "changes page UI state, not data"
     return "rebuilds the page (reload or re-navigate), no data change"
+
+
+def _live_access_answer(data):
+    """
+    The shipment in progress, when it is at a human verification or a
+    carrier-access check — from the run's live state, before any failure
+    record exists. None when there is nothing of that kind to say.
+    """
+    hv = (data.state or {}).get("human_verification") or {}
+    record = None
+    for r in data.shipments:
+        if r.get("state") == "processing" and (r.get("human_verification") or r.get("carrier_access")):
+            record = r
+    if record is None and not hv:
+        return None
+    ref = (record or {}).get("reference") or hv.get("reference")
+    carrier = (record or {}).get("carrier") or hv.get("where") or "the carrier"
+    access = ((record or {}).get("carrier_access") or {}).get("state") or hv.get("carrier_access")
+    lines = []
+    if (record or {}).get("human_verification") == "REQUIRED" or hv.get("waiting"):
+        lines.append("**Fact** — {0} ({1}) is waiting for a person to complete the carrier's "
+                     "human verification. Nothing has been extracted or written.".format(ref, carrier))
+    elif (record or {}).get("human_verification") == "COMPLETED" or \
+            hv.get("state") == "HUMAN_VERIFICATION_COMPLETED":
+        lines.append("**Fact** — Human verification for {0} ({1}) was completed. Carrier access is "
+                     "{2}: {3}".format(ref, carrier, (access or "NOT_CONFIRMED").replace("_", " ")
+                                       .lower(),
+                                       "the run is checking that the shipment page is shown — "
+                                       "nothing is extracted or written until it is."
+                                       if access in (None, "NOT_CONFIRMED") else
+                                       "see the failure record."))
+    else:
+        return None
+    steps = [s.get("text") for s in ((record or {}).get("steps") or []) if s.get("text")][-4:]
+    if steps:
+        lines.append("**Fact** — Latest steps: {0}.".format("; ".join(steps)))
+    lines.append("**Not established** — No failure has been recorded for {0} yet; if the carrier "
+                 "keeps refusing, the run records CARRIER_ACCESS_RESTRICTED with its evidence."
+                 .format(ref))
+    return {"answer": "\n".join(lines), "card": None, "grounded": True,
+            "intent": "carrier_access_live", "sources": ["run state", "human verification"]}
 
 
 def _recovery_lines(f):
@@ -2715,9 +2756,12 @@ def answer_failure(kind, data, question, record, context):
     facts = f["facts"]
     by_source = lambda src: [x for x in facts if x["source"] == src]      # noqa: E731
     if kind in ("why", "what", "carrier"):
-        key = [x for x in facts if x["text"].startswith(("Data extraction", "Read before",
-                                                         "Stopped at", "Decided by",
-                                                         "Nothing was written", "Hub actions"))]
+        key = [x for x in facts if x["source"] == "carrier-access record"] + \
+            [x for x in facts if x["text"].startswith(("Data extraction", "Read before",
+                                                       "Stopped at", "Decided by",
+                                                       "Nothing was written", "Hub actions",
+                                                       "The restriction page", "Evidence kept",
+                                                       "The human verification was completed"))]
         diagnosis = _lines(key) + _lines(f["inferences"]) + _lines(f["unverified"]) + \
             [_root_line(f)] + _lines(f["recommendations"]) + \
             ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])] + \
@@ -2797,6 +2841,20 @@ def answer_failure(kind, data, question, record, context):
         if f["evidence_refs"]:
             reply["evidence_id"] = f["evidence_refs"][0]["id"]
         return reply
+    elif kind == "next" and f["recovery_plan"]["status"] == "RECOVERY_REQUIRED":
+        # Diagnose first, from the run's own evidence; then the plan, in the
+        # order it must happen and who does each step. Nothing automatic.
+        diagnosis = [x for x in facts if x["source"] == "carrier-access record"] + \
+            [x for x in facts if x["text"].startswith(("The restriction page", "Evidence kept"))]
+        plan_ = f["recovery_plan"]
+        text = title + "**Diagnosis (from this run)**\n" + "\n".join(
+            _lines(diagnosis) + _lines(f["unverified"])) + \
+            "\n\n**Recovery plan** — {0}\n".format(plan_["statement"]) + "\n".join(
+                "{0}. **{1}** ({2}) — {3} Evidence: {4}. Safety: {5}. Runs: {6}.".format(
+                    i + 1, step["strategy"], step["source"], step["reason"], step["evidence"],
+                    step["safety"], step["executes"]) for i, step in enumerate(plan_["steps"])) + \
+            "\n\n" + "\n".join(_lines(f["recommendations"]) +
+                                 [x for x in [_work_line(f, data)] if x])
     elif kind == "next":
         text = title + "\n".join(_lines(f["recommendations"]) +
                                  ["**Recovery** — {0}".format(f["recovery_plan"]["statement"])] +
@@ -3085,6 +3143,10 @@ def _answer_core(question, state, context=None):
             produced = answer_failure(fq, data, question, record, context)
             if produced is not None:
                 return produced
+            if fq in ("why", "what", "next", "facts", "root", "stage"):
+                live = _live_access_answer(data)
+                if live is not None:
+                    return dict(live, reference=context.get("reference"))
 
         # -- ATLAS copilot: queue, operations, follow-ups -------------------
         produced = copilot(question, data, context, intent, record)
@@ -3250,6 +3312,12 @@ def _answer_core(question, state, context=None):
             produced = answer_failure("why", data, question, record, context)
             if produced is not None:
                 return produced
+        # No failure recorded yet, but a shipment is mid-way through a human
+        # verification or a carrier-access check: say exactly where it stands.
+        if ERRORISH.search(question) or failure_question(question):
+            live = _live_access_answer(data)
+            if live is not None:
+                return dict(live, reference=context.get("reference"))
 
         # Rather than shrugging, say where the run stands and point at the
         # nearest useful thing.

@@ -307,10 +307,14 @@ check("WHY it was restricted is stated as NOT established, with the worker diagn
 check("No cause is invented: the run does not claim VPN, proxy, hotspot or IP as the cause",
       not re.search(r"(caused by|because of|the cause is)[^.]*(VPN|proxy|hotspot|IP)",
                     json.dumps(item), re.I))
-check("Recovery: none — not retried, not worked around",
-      item["recovery_plan"]["status"] == "NOT_RECOVERABLE" and not item["recovery_plan"]["steps"]
-      and "not retried or worked around" in item["recovery_plan"]["statement"],
-      item["recovery_plan"]["statement"])
+check("Recovery: RECOVERY_REQUIRED — nothing automatic, not retried, not worked around",
+      item["recovery_plan"]["status"] == "RECOVERY_REQUIRED"
+      and "No automatic recovery is permitted" in item["recovery_plan"]["statement"]
+      and not [s for s in item["recovery_plan"]["steps"] if "automatic" in s["executes"]],
+      item["recovery_plan"])
+check("...its steps diagnose first and end with access verified before extraction",
+      [s["strategy"] for s in item["recovery_plan"]["steps"]][0].startswith("Diagnose")
+      and "verify access before extraction" in item["recovery_plan"]["steps"][-1]["strategy"])
 check("The recommendation is the worker diagnostic, and says not to get past it",
       "worker.verify carrier" in item["recommendations"][0]["text"]
       and "Do not try to get past the restriction" in item["recommendations"][0]["text"])
@@ -319,7 +323,7 @@ check("Headline", "carrier access restricted" in item["headline"])
 
 from dashboard import assistant                              # noqa: E402
 state = tower.snapshot()
-answer = assistant.answer("why the error?", state, {})["answer"]
+answer = assistant.answer("why the error?", state, {"reference": "RESTRICT1"})["answer"]
 print("\n--- ATLAS: why the error? ---\n" + answer[:1500] + "\n---")
 check("ATLAS explains from the run: the shipment, the restriction and its URL",
       "RESTRICT1" in answer and "restrict" in answer.lower()
