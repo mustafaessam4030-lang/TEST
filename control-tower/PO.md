@@ -25,7 +25,7 @@ learning store, and the dashboard's design system.
 | | |
 |---|---|
 | Source document | The eHub record's **Bill Entry** document (Manage → Documents) |
-| Identifier | The number after "Bill Entry" in that document's name, e.g. `Bill Entry 40726534505.pdf` → `40726534505` |
+| Identifier | The number after "Bill Entry" in that document's name. eHub writes it `BillofEntry_40926696852 (1) (1).pdf` (seen on the real Manage page, 6 Oct 2026) → `40926696852` |
 | Approved template | Mantrac Ghana **Duty Payment Request** (cheque request) — `po/templates/DUTY_REQUEST_V1.xlsx` |
 | eHub checks | Status exactly "Under Clearance"; the BL/AWB printed on the document = the record's BOL/AWB in eHub; the declaration number the PDF prints = the identifier from the Bill Entry name |
 | Output | Excel (.xlsx), the approved template's own layout, formulas and logo |
@@ -55,9 +55,14 @@ existing eHub list navigation, read-only; `update_eta.py` is not changed.
 | Clearance status | the row's Status cell must be exactly `Under Clearance` (spacing normalised; nothing else forgiven) | anything else → **SKIPPED**, the status recorded, Manage never opened |
 | Manage | `update_eta.click_manage_in_view` on that row | cannot open → failed, retried if transient |
 | Documents | a "Documents" tab is clicked if there is one; the section under the "Documents" heading is read | no section → DOCUMENT_NOT_FOUND |
-| Bill Entry | a document whose name starts with `Bill Entry` (a "View" link in the same row is paired with the name in that row) | none → **DOCUMENT_NOT_FOUND**; different identifiers → **NEEDS_REVIEW** (no rule is safe); the same identifier on copies → the first listed, the rule recorded |
-| Identifier | the token after "Bill Entry" (an optional "No." skipped; `.pdf` and ` (1)` not part of it) | none → **NEEDS_REVIEW** |
+| Bill Entry | a document whose name starts with `Bill Entry`, `Bill of Entry`, `Bill_Entry` or `BillofEntry` (a "View" link in the same row is paired with the name in that row). Other files on the record — e.g. `KIA1-G-40926696852-01 (1).pdf`, `20260910094658174 (1).pdf` — are listed but never taken | none → **DOCUMENT_NOT_FOUND**; different identifiers → **NEEDS_REVIEW** (no rule is safe); the same identifier on copies → the first listed, the rule recorded |
+| Identifier | the token after "Bill Entry" (an optional "No." skipped; `.pdf` and any number of ` (1)` copy suffixes not part of it) | none → **NEEDS_REVIEW** |
 | Download | a link is fetched, a WebForms postback / button is clicked and its download (or popup) captured, through the same eHub session | not a PDF → failed |
+
+**Never pressed.** The Manage page also carries Save, Correction Required,
+Complete, Choose Files and Upload. The automation clicks only the selected
+document's own entry; a control whose label matches any of those is refused
+(`NEVER_CLICK`), and the test suite proves none is ever pressed.
 
 Every step is written to the job's **discovery trail** and as an event
 (EHUB_RECORD_FOUND, CLEARANCE_CHECKED, RECORD_SKIPPED, MANAGE_OPENED,

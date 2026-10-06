@@ -39,13 +39,21 @@ from urllib.parse import unquote, urljoin, urlparse
 from .pipeline import SourceError
 
 REQUIRED_STATUS = "Under Clearance"
-BILL_ENTRY = re.compile(r"^\s*bill[\s_\-]*entry\b", re.I)
-# The identifier: the first token after "Bill Entry" (an optional "No." /
-# "Number" / "#" between), with a digit in it; ".pdf" and a " (1)" copy
-# suffix are not part of it.
+# "Bill Entry" as eHub actually writes it. The real Manage page (screenshot,
+# 2026-10-06) lists "BillofEntry_40926696852 (1) (1).pdf": no spaces, "of"
+# in the middle, an underscore before the number. "Bill Entry", "Bill of
+# Entry", "Bill_Entry" and "BillofEntry" are all the same document type.
+BILL_ENTRY = re.compile(r"^\s*bill[\s_\-]*(?:of[\s_\-]*)?entry(?![a-z])", re.I)
+# The identifier: the first token after it (an optional "No." / "Number" /
+# "#" between) with a digit in it. The extension and any number of browser
+# copy suffixes — " (1)", " (1) (1)" — are not part of it.
 IDENTIFIER = re.compile(
-    r"^\s*bill[\s_\-]*entry[\s_\-:.#]*(?:(?:no|number|nr)\b[\s_\-:.#]*)?"
-    r"(?P<id>[A-Za-z0-9][A-Za-z0-9/\-]*?)\s*(?:\(\d+\))?\s*(?:\.[A-Za-z0-9]{2,5})?\s*$", re.I)
+    r"^\s*bill[\s_\-]*(?:of[\s_\-]*)?entry[\s_\-:.#]*(?:(?:no|number|nr)\b[\s_\-:.#]*)?"
+    r"(?P<id>[A-Za-z0-9][A-Za-z0-9/\-]*?)(?:\s*\(\d+\))*\s*(?:\.[A-Za-z0-9]{2,5})?\s*$", re.I)
+# Controls on the Manage page the PO automation must never press: they change
+# the eHub record. Only the selected document's own entry is ever clicked.
+NEVER_CLICK = re.compile(r"\b(save|complete|correction|upload|submit|delete|remove|approve|"
+                         r"reject|cancel|choose files?)\b", re.I)
 TRANSIENT = ("timeout", "net::", "err_", "connection", "econnreset", "502", "503", "504")
 
 
@@ -88,7 +96,7 @@ def select(entries):
                                   "there is no safe rule to choose — a person decides".format(
                                       len(candidates), ", ".join(sorted(ids)))), "review"
     if len(candidates) == 1:
-        return candidates[0], candidates, "the only document whose name starts with 'Bill Entry'", \
+        return candidates[0], candidates, "the only document whose name starts with 'Bill Entry' (eHub writes 'BillofEntry_')", \
             "selected"
     return candidates[0], candidates, ("{0} documents carry the same identifier {1}; the first "
                                        "listed in the Documents section was taken (the PDF is "
@@ -198,6 +206,13 @@ def _entries(section):
         href = e.get("href") or ""
         if not name or (not e.get("clickable") and not href):
             continue
+        # A document has a file name or a link to one; "Upload", "Save" and
+        # the like are controls, not documents.
+        looks_like_file = bool(re.search(r"\.[A-Za-z0-9]{2,5}\s*$", name)) or (
+            href and not href.startswith(("javascript:", "#")) and
+            "." in unquote(urlparse(href).path).rsplit("/", 1)[-1]) or BILL_ENTRY.match(name)
+        if not looks_like_file or NEVER_CLICK.search(e.get("text") or name):
+            continue
         filename = unquote(urlparse(href).path).rsplit("/", 1)[-1] if href and \
             not href.startswith(("javascript:", "#")) else ""
         # The name eHub shows; the link's own file name only when it shows none.
@@ -229,6 +244,9 @@ def download(page, frame, entry):
             raise SourceError("eHub answered {0} for the document".format(response.status),
                               "permanent")
         return response.body(), url, "link", response.headers.get("content-disposition")
+    if NEVER_CLICK.search(entry.get("text") or "") or NEVER_CLICK.search(entry.get("name") or ""):
+        raise SourceError("refused to click '{0}': it is a control that changes the eHub record, "
+                          "not a document".format(entry.get("text") or entry["name"]), "permanent")
     locator = frame.locator("[id='{0}']".format(entry["id"])) if entry.get("id") else \
         frame.get_by_text(entry.get("text") or entry["name"], exact=True).first
     try:
@@ -354,7 +372,7 @@ class EHubSource(object):
         if outcome == "none":
             step("bill_entry", False, documents=len(entries))
             raise stop("Manage → Documents for {0} lists {1} document(s), none whose name starts "
-                       "with 'Bill Entry'{2}. No identifier is invented.".format(
+                       "with 'Bill Entry' (or 'BillofEntry'){2}. No identifier is invented.".format(
                            row.get("bol_awb"), len(entries),
                            " (" + ", ".join(e["name"] for e in entries[:6]) + ")" if entries
                            else ""), "no_bill_entry", row=row)

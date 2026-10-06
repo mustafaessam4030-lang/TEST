@@ -141,9 +141,34 @@ FILES = {}            # file key -> bytes
 HITS = {}
 
 
-def ehub_row(bol, status="Under Clearance", docs=(), carrier="DHL Express", section=True):
+def ehub_row(bol, status="Under Clearance", docs=(), carrier="DHL Express", section=True,
+             layout="tabs"):
     EHUB.append({"bol": bol, "carrier": carrier, "status": status, "docs": list(docs),
-                 "section": section})
+                 "section": section, "layout": layout})
+
+
+PRESSED = []          # any record-changing control the automation pressed (must stay empty)
+
+
+def real_layout(r):
+    """
+    The Manage page as the real eHub shows it (screenshot, 2026-10-06):
+    comments, then a "Documents" heading and the file names as links, then
+    Choose Files / Upload, then Save / Correction Required / Complete.
+    """
+    docs = "".join("<div class='doc-row'><a href='/ehub/file/{1}?name={2}'>{0}</a></div>".format(
+        name, key, urllib.parse.quote(name)) for name, key, mode in r["docs"])
+    return ("<html><body><form id='aspnetForm' method='post' action='/ehub/press/{0}'>"
+            "<label>Delay Codes :</label><select><option>Select Clearance Delay</option></select>"
+            "<label>Inspection Comments :</label><textarea></textarea>"
+            "<label>General Comments :</label><textarea>15/09 CARGO DELIVERED</textarea>"
+            "<div class='docs'><h4>Documents</h4>{1}</div>"
+            "<input type='file' name='files'><button type='submit' name='act' value='upload'>"
+            "Upload</button>"
+            "<button type='submit' name='act' value='save'>Save</button>"
+            "<button type='submit' name='act' value='correction'>Correction Required</button>"
+            "<button type='submit' name='act' value='complete'>Complete</button>"
+            "</form></body></html>").format(r["bol"], docs)
 
 
 def ehub_get(bol):
@@ -210,6 +235,9 @@ class Hub(BaseHTTPRequestHandler):
             if r is None:
                 self._reply(404, "no record")
                 return
+            if r.get("layout") == "real":
+                self._reply(200, real_layout(r))
+                return
             docs = ""
             for i, (name, key, mode) in enumerate(r["docs"]):
                 if mode == "postback":
@@ -246,7 +274,11 @@ class Hub(BaseHTTPRequestHandler):
             return
         path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
         n = int(self.headers.get("Content-Length") or 0)
-        form = urllib.parse.parse_qs(self.rfile.read(n).decode())
+        form = urllib.parse.parse_qs(self.rfile.read(n).decode(errors="ignore"))
+        if path.startswith("/ehub/press/"):
+            PRESSED.append((path, form.get("act")))
+            self._reply(200, "<html><body>record changed</body></html>")
+            return
         r = ehub_get(path.rsplit("/", 1)[-1]) if path.startswith("/ehub/manage/") else None
         target = (form.get("__EVENTTARGET") or [""])[0]
         m = re.match(r"ctl00\$docs\$lnk(\d+)$", target)
@@ -479,6 +511,13 @@ ehub_row("176-99001122", docs=[("Bill Entry 40726534505.pdf", "good", "postback"
 ehub_row("176-88800099", docs=[("Bill Entry 40711111111.pdf", "idmis", "postback")])
 ehub_row("176-12121212", carrier="Air France KLM Cargo",
          docs=[("Bill Entry 40799887766.pdf", "e2e", "postback")])
+FILES["real"] = pdf_of(boe_text(bl="176-40926696", number="40926696852 / 01"))
+FILES["kia"] = pdf_of("KIA1-G assessment 40926696852-01\n" + "x" * 200)
+FILES["scan"] = pdf_of("scan 20260910094658174\n" + "x" * 200)
+ehub_row("176-40926696", carrier="Kia Motors", layout="real",
+         docs=[("BillofEntry_40926696852 (1) (1).pdf", "real", "link"),
+               ("KIA1-G-40926696852-01 (1).pdf", "kia", "link"),
+               ("20260910094658174 (1).pdf", "scan", "link")])
 
 found = hub_source().fetch("176 88452310")
 tr = found["trail"]
@@ -569,10 +608,27 @@ for name, ident in (("Bill Entry 40726534505.pdf", "40726534505"),
                     ("Bill_Entry-40726534505.PDF", "40726534505"),
                     ("BILL ENTRY No. 40726534505", "40726534505"),
                     ("Bill Entry 40726534505 (1).pdf", "40726534505"),
-                    ("Bill Entry.pdf", None), ("Bill of Entry 40726534505.pdf", None),
+                    ("BillofEntry_40926696852 (1) (1).pdf", "40926696852"),
+                    ("Bill of Entry 40726534505.pdf", "40726534505"),
+                    ("KIA1-G-40926696852-01 (1).pdf", None), ("20260910094658174 (1).pdf", None),
+                    ("Bill Entry.pdf", None), ("Billing Entry 4.pdf", None),
                     ("Invoice 40726534505.pdf", None)):
     check("identifier_of({0!r}) = {1!r}".format(name, ident), EH.identifier_of(name) == ident,
           EH.identifier_of(name))
+shot = hub_source().fetch("176-40926696")
+st_tr = shot["trail"]
+check("THE REAL LAYOUT (screenshot): Documents lists exactly the three files, not the controls",
+      st_tr["documents"]["entries"] == ["BillofEntry_40926696852 (1) (1).pdf",
+                                        "KIA1-G-40926696852-01 (1).pdf",
+                                        "20260910094658174 (1).pdf"], st_tr["documents"])
+check("...BillofEntry_40926696852 (1) (1).pdf is the Bill Entry document",
+      st_tr["bill_entry"]["selected"] == "BillofEntry_40926696852 (1) (1).pdf"
+      and [c["name"] for c in st_tr["bill_entry"]["candidates"]] ==
+      ["BillofEntry_40926696852 (1) (1).pdf"], st_tr["bill_entry"])
+check("...identifier 40926696852 (the KIA1-G file with the same number is not taken)",
+      shot["identifier"] == "40926696852" and shot["data"] == FILES["real"])
+check("...and Save, Correction Required, Complete and Upload were never pressed", PRESSED == [],
+      PRESSED)
 check("Status rule: exact (spacing normalised), nothing else",
       EH.status_ok("Under Clearance") and EH.status_ok(" Under  Clearance ")
       and not EH.status_ok("under clearance") and not EH.status_ok("Under Clearance - Hold")
@@ -602,6 +658,12 @@ check("Each step is an event: EHUB_RECORD_FOUND → CLEARANCE_CHECKED → MANAGE
 check("The document record says where it came from, when, and its hash",
       j["document"]["source"] == "ehub" and j["document"]["retrieved_at"]
       and len(j["document"]["sha256"]) == 64 and j["document"]["method"] == "download")
+rj = run_job(st1, "176-40926696")
+rjc = [c for c in rj["validation"]["checks"] if c["name"] == "hub:identifier"][0]
+check("A job on the real layout: identifier 40926696852 vs the PDF's 40926696852 / 01 → MATCH, "
+      "EMAIL READY", rj["state"] == S.EMAIL_PREPARED and rjc["status"] == "MATCH"
+      and rj["number"] == "40926696852", (rj["state"], rjc))
+check("...still nothing pressed on the record", PRESSED == [])
 sk = run_job(st1, "176-30000001")
 check("A record not Under Clearance → SKIPPED, with its status and why",
       sk["state"] == S.SKIPPED and sk["failure"]["category"] == "NOT_UNDER_CLEARANCE"
