@@ -48,6 +48,17 @@ param deployBastion bool = true
 @description('App Service plan SKU. P1v3 keeps Always On and enough memory for the SSE streams.')
 param appSku string = 'P1v3'
 
+// PO Automation email, through Microsoft Graph (never the Outlook UI). The app
+// registration needs the Mail.Send APPLICATION permission, restricted to the
+// sender mailbox by an Exchange application access policy (PLATFORM.md). Its
+// client secret goes into the vault as "graph-client-secret".
+@description('Mailbox PO Automation sends from, e.g. ata@mantrac.com. Empty: email stays off.')
+param poMailSender string = ''
+@description('The one configured recipient of PO documents (version 1).')
+param poMailRecipient string = ''
+@description('App registration (client) id with Mail.Send. Empty: the Entra sign-in app is used.')
+param graphClientId string = ''
+
 var name = toLower(prefix)
 var suffix = uniqueString(resourceGroup().id)
 var kvName = '${name}-kv-${substring(suffix, 0, 6)}'
@@ -167,6 +178,12 @@ resource app 'Microsoft.Web/sites@2023-01-01' = {
         { name: 'ENTRA_ALLOWED_DOMAINS', value: entraAllowedDomains }
         { name: 'ATLAS_INTEL_DIR', value: '/home/ata/intelligence' }
         { name: 'ATLAS_DATA_ORIGIN', value: 'production' }
+        { name: 'PO_DATA_DIR', value: '/home/ata/po' }
+        { name: 'PO_MAIL_SENDER', value: poMailSender }
+        { name: 'PO_MAIL_RECIPIENT', value: poMailRecipient }
+        { name: 'GRAPH_TENANT_ID', value: empty(entraTenantId) ? subscription().tenantId : entraTenantId }
+        { name: 'GRAPH_CLIENT_ID', value: empty(graphClientId) ? entraClientId : graphClientId }
+        { name: 'GRAPH_CLIENT_SECRET', value: empty(poMailSender) ? '' : '@Microsoft.KeyVault(VaultName=${kvName};SecretName=graph-client-secret)' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
         { name: 'WEBSITES_CONTAINER_START_TIME_LIMIT', value: '600' }

@@ -133,8 +133,14 @@ def build(rows=None):
             "human_tasks": 0, "human_completed": 0, "questions": 0, "answered": 0,
             "new_issues": set(), "feedback": {}})
 
+    po_rows = []
     for row in rows:
         kind = row.get("kind")
+        if kind == "po":
+            # PO Automation outcomes are their own domain: they never count as
+            # shipments, runs or signals in the monthly evaluation.
+            po_rows.append(row)
+            continue
         cell = month_cell(row)
         if row.get("run_id"):
             cell["runs"].add(row["run_id"])
@@ -299,9 +305,36 @@ def build(rows=None):
         "feedback": feedback,
         "months": [months[m] for m in sorted(months)],
     }
+    snap["po"] = _po_learning(po_rows, snap["issues"])
     snap["summary"] = summarize(snap)
     snap["proposals"] = proposals(snap)
     return snap
+
+
+def _po_learning(rows, issue_list):
+    """
+    PO outcomes: each failure category is an issue (provider "PO"); it counts
+    as resolved only when the same document later reached a CONFIRMED send —
+    the verified outcome, never a send that was merely accepted.
+    """
+    confirmed_keys = {r.get("po_key") for r in rows if r.get("verified")}
+    issues = {}
+    for row in rows:
+        if row.get("verified") or not row.get("category"):
+            continue
+        issue = issues.setdefault(_issue_key("PO", row["category"]),
+                                  _new_issue("PO", row.get("doctype"), row["category"], "po"))
+        _seen(issue, row)
+        if row.get("po_key") in confirmed_keys:
+            issue["resolved_verified"] += 1
+    for issue in issues.values():
+        issue["runs"] = sorted(issue["runs"])
+        issue["learned"] = issue["occurrences"] >= RECURRING and len(issue["runs"]) >= 2
+        issue["ranking"], issue["best"], issue["current_first"] = [], None, None
+        issue_list.append(issue)
+    return {"jobs": len(rows), "confirmed": sum(1 for r in rows if r.get("verified")),
+            "failed": sum(1 for r in rows if not r.get("verified") and r.get("category")),
+            "issues": sorted(issues)}
 
 
 def snapshot():

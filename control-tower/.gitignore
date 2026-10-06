@@ -12,6 +12,9 @@ ml/models/*.json
 # ATLAS learning store (events, evidence, maturity) — real operational data
 ml/data/intelligence/
 
+# PO Automation: jobs, retrieved documents, generated output — operational data
+ml/data/po/
+
 # Control plane: local database and the deployment package
 controlplane/data/
 dist/

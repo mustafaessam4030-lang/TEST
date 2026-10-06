@@ -29,7 +29,7 @@ ACTIVE = ("QUEUED", "STARTING", "RUNNING", "STOPPING", "WORKER_DISCONNECTED")
 ENDED = ("COMPLETED", "STOPPED", "FAILED", "FAILED_TO_START", "INTERRUPTED")
 WORKER_STATES = ("ONLINE", "IDLE", "BUSY", "DEGRADED", "OFFLINE")
 COMMAND_KINDS = ("start_run", "stop_run", "pause_run", "resume_run", "reprocess",
-                 "human", "session_attach", "session_detach")
+                 "human", "session_attach", "session_detach", "po_process")
 # A command the worker has not collected in this long is withdrawn.
 COMMAND_TTL_S = 120
 # Delivered but never answered: offered again after this long, this often.
@@ -270,6 +270,16 @@ class Orchestrator(object):
         self._notify()
         self._bump()
         return public_run(self.run(run_id))
+
+    def po_worker(self):
+        """A worker that can take a PO job: enabled and calling in. A PO job is a
+        process of its own beside any run, so a BUSY worker can take one."""
+        for w in self.db.all("SELECT * FROM workers WHERE enabled = 1 "
+                             "ORDER BY last_heartbeat DESC", ()):
+            view = self.worker_view(w)
+            if view["state"] in ("IDLE", "ONLINE", "BUSY"):
+                return view
+        return None
 
     def run(self, run_id):
         return self.db.one("SELECT * FROM runs WHERE run_id = ?", (run_id,))

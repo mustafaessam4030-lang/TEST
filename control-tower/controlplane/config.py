@@ -66,6 +66,8 @@ class Settings(object):
         self.session_lease_s = int(get("ATA_SESSION_LEASE_S", 45))
         self.static_dir = ROOT / "dashboard" / "static"
         self.intel_dir = get("ATLAS_INTEL_DIR") or None
+        # PO Automation: jobs, events, the send ledger and generated output.
+        self.po_dir = get("PO_DATA_DIR") or str(ROOT / "controlplane" / "data" / "po")
 
     @property
     def entra_enabled(self):

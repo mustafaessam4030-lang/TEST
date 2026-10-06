@@ -24,15 +24,20 @@ PERMISSIONS = {
     "audit.view":         "Read the audit log",
     "settings.manage":    "Change system settings and register workers",
     "health.view":        "See worker heartbeat and system health",
+    "po.view":            "See PO Automation jobs, their documents and results",
+    "po.process":         "Start processing a PO document",
+    "po.send":            "Send a validated, generated PO document by email",
+    "po.resend":          "Authorize sending the same PO document again",
 }
 
 ROLE_PERMISSIONS = {
     ADMIN: frozenset(PERMISSIONS),
     OPERATOR: frozenset((
         "dashboard.view", "runs.view", "runs.start", "runs.stop", "human.act",
-        "evidence.view", "evidence.upload", "atlas.chat", "health.view")),
+        "evidence.view", "evidence.upload", "atlas.chat", "health.view",
+        "po.view", "po.process", "po.send")),
     VIEWER: frozenset((
-        "dashboard.view", "runs.view", "atlas.chat", "health.view")),
+        "dashboard.view", "runs.view", "atlas.chat", "health.view", "po.view")),
 }
 
 ROLE_LABELS = {ADMIN: "Admin", OPERATOR: "Operator", VIEWER: "Viewer"}

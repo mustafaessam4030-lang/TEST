@@ -149,6 +149,10 @@ run (`CT_DRY_RUN`), opens a loopback-only session endpoint
 | `users.manage` | create users, roles, activate, reset | ✓ | | |
 | `audit.view` | read the audit log | ✓ | | |
 | `settings.manage` | system settings, register workers | ✓ | | |
+| `po.view` | PO Automation: jobs, documents, results | ✓ | ✓ | ✓ |
+| `po.process` | start a PO job | ✓ | ✓ | |
+| `po.send` | send a validated PO document | ✓ | ✓ | |
+| `po.resend` | authorize sending the same PO document again | ✓ | | |
 
 Enforced in `controlplane/app.py` on every request; the page draws controls
 from the same list only as a courtesy. Unauthenticated → **401**; signed in
@@ -193,6 +197,10 @@ Signed in (permission in brackets; every non-GET needs `X-CSRF-Token` and a same
 | `GET /api/admin/audit` | audit.view | filters: action, user, run, before |
 | `GET/POST /api/admin/workers` | settings.manage | POST returns the token once |
 | `GET /api/admin/rbac` | users.manage | the matrix |
+| `GET /api/po`, `GET /api/po/{id}`, `GET /api/po/{id}/output` | po.view | queue + KPIs; one job with events; the generated document (download audited) |
+| `POST /api/po` | po.process | `{reference, invoice_no, supplier?, branch?, charge_to?, priority?, reference_note?, document_name?}` → queued for a worker |
+| `POST /api/po/{id}/send` | po.send (`authorize_resend`: po.resend) | 409 with the reasons when blocked |
+| `POST /api/po/{id}/confirm` | po.send | look for an accepted send in Sent Items again |
 
 ## 6. Worker protocol
 
@@ -211,9 +219,11 @@ issues it with `python -m controlplane add-worker` or Access → Workers).
 | `GET session/{action}/input?wait=8` | the holder's pointer/key events |
 | `POST session/{action}/status` | whether the view is attached/streaming, and why not |
 | `POST intel/events`, `POST intel/evidence` | ATLAS records and captures, with the store's origin |
+| `POST po/{po_id}` | a PO job's record and events as they change; at the end its PDF and generated document, each checked against its SHA-256. Only the worker the job was given; never a sent state |
 
 Commands: `start_run`, `stop_run`, `pause_run`, `resume_run`, `reprocess`,
-`human`, `session_attach`, `session_detach`. A worker can act only on the run
+`human`, `session_attach`, `session_detach`, `po_process` (PO Automation — see
+[PO.md](PO.md); runs as its own process beside any run). A worker can act only on the run
 it carries and on sessions claimed for that run.
 
 **States.** Worker: `ONLINE`/`IDLE`/`BUSY`/`DEGRADED` while heartbeats

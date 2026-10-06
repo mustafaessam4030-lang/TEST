@@ -389,6 +389,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(assistant.atlas_brief(_assistant_state())))
             return
 
+        if route == "/api/po" or route.startswith("/api/po/"):
+            self._po("GET", route)
+            return
+
         if route == "/api/ml":
             # Real values from the live ml package. Nothing here is a demo
             # figure: an unknown is null, not zero.
@@ -448,6 +452,10 @@ class Handler(BaseHTTPRequestHandler):
             self._evidence_upload()
             return
 
+        if route == "/api/po" or route.startswith("/api/po/"):
+            self._po("POST", route)
+            return
+
         if route == "/api/feedback":
             # Feedback is stored as material for a later, deliberate training
             # and evaluation pass. It never reaches a production model on its
@@ -500,6 +508,10 @@ class Handler(BaseHTTPRequestHandler):
                        "action_id": str(raw_context.get("action_id") or "")[:64],
                        "evidence_id": re.sub(r"[^0-9a-f]", "", str(
                            raw_context.get("evidence_id") or ""))[:16],
+                       # Asked from the PO Automation page, about which job.
+                       "domain": "po" if raw_context.get("domain") == "po" else "",
+                       "po_id": re.sub(r"[^0-9a-z-]", "", str(
+                           raw_context.get("po_id") or ""))[:40],
                        # How many rude messages this tab has sent — a count only.
                        "conduct": int(raw_context.get("conduct") or 0)
                        if str(raw_context.get("conduct") or "0").isdigit() else 0}
@@ -534,6 +546,40 @@ class Handler(BaseHTTPRequestHandler):
             reply["accepted"] = accepted
 
         self._send(200, json.dumps(reply))
+
+    # -- PO Automation ---------------------------------------------------------
+
+    def _po(self, method, route):
+        """
+        The PO routes (po/web.py). On a single machine whoever holds the
+        dashboard's access key is the operator; there is no role to check, and
+        every action is written to the PO store's own audit log.
+        """
+        body = {}
+        if method == "POST":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 8000:
+                    self._send(413, json.dumps({"error": "request too long"}))
+                    return
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                self._send(400, json.dumps({"error": "bad request"}))
+                return
+        from po import service as po_service, web as po_web
+        kind, status, payload = po_web.handle(po_service.local(), method, route, body,
+                                              "local operator", lambda permission: True)
+        if kind == "file":
+            data, content_type, name = payload
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", 'attachment; filename="{0}"'.format(name))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        self._send(status, json.dumps(payload, default=str))
 
     # -- ATLAS intelligence --------------------------------------------------
 

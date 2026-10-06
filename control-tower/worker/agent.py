@@ -18,6 +18,9 @@ Threads, each one loop:
     watcher       notices the run's process ending and reports the exit code
     intel         ATLAS's records and captures, forwarded to the control plane
     session-*     while a Human Action is open remotely: frames up, input down
+    po-*          a PO job (`python -m po process`) in its own process; its
+                  record and events go up as they change, and at the end the
+                  PDF and the generated document, each with its SHA-256
 """
 
 import base64
@@ -176,6 +179,11 @@ def edge_status():
         if os.path.exists(path):
             return {"found": True, "path": path}
     return {"found": False, "path": None}
+
+
+def po_store_active():
+    from po import store as po_store
+    return po_store.ACTIVE_STATES
 
 
 class Agent(object):
@@ -340,7 +348,81 @@ class Agent(object):
             return self.session_attach(payload.get("action_id"), payload.get("viewer"))
         if kind == "session_detach":
             return self.session_detach(payload.get("action_id"))
+        if kind == "po_process":
+            return self.po_process(payload.get("po_id"), payload.get("record") or {})
         return False, "Unknown command."
+
+    # -- PO Automation -----------------------------------------------------
+
+    def po_process(self, po_id, record, wait=False):
+        """
+        Run one PO job here — this machine has the Hub browser — and report it.
+        The job never sends email: that is the control plane's, after it has
+        the generated document and its hash.
+        """
+        from po import store as po_store
+        if not po_id or record.get("po_id") != po_id:
+            return False, "The PO job is incomplete."
+        store = po_store.Store(folder=os.environ.get("PO_DATA_DIR") or
+                               (self.runtime / "po"))
+        if store.get(po_id) is not None:
+            return True, "PO job {0} is already here.".format(po_id)
+        record = dict(record, state=po_store.QUEUED)
+        store.save(record)
+        thread = threading.Thread(target=self._po_run, args=(store, po_id), daemon=True,
+                                  name="po-" + po_id)
+        thread.start()
+        if wait:
+            thread.join(900)
+        return True, "PO job {0} started.".format(po_id)
+
+    def _po_push(self, store, po_id, files=False):
+        record = store.get(po_id)
+        if record is None:
+            return None
+        body = {"record": record, "events": store.events(po_id)}
+        if files:
+            body["files"] = {}
+            path = (record.get("output") or {}).get("path")
+            if path and Path(path).is_file():
+                body["files"]["output"] = base64.b64encode(Path(path).read_bytes()).decode("ascii")
+            sha = (record.get("document") or {}).get("sha256")
+            doc = store.folder / "documents" / "{0}.pdf".format(sha)
+            if sha and doc.is_file():
+                body["files"]["document"] = base64.b64encode(doc.read_bytes()).decode("ascii")
+        status, data, _h = self.cp.request("POST", "/worker/v1/po/{0}".format(po_id), body)
+        return status
+
+    def _po_run(self, store, po_id):
+        import subprocess
+        env = dict(os.environ, PO_DATA_DIR=str(store.folder),
+                   PO_OUTPUT_DIR=str(store.output_dir), PO_AUTO_SEND="0")
+        try:
+            process = subprocess.Popen([sys.executable, "-m", "po", "process", "--po-id", po_id],
+                                       cwd=str(ROOT), env=env, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL)
+        except Exception as error:
+            self.log("[worker] PO job {0} could not start: {1}".format(po_id, error))
+            return
+        seen = None
+        while process.poll() is None:
+            record = store.get(po_id) or {}
+            if record.get("updated") != seen:
+                seen = record.get("updated")
+                self._safe(self._po_push, store, po_id)
+            time.sleep(1.0)
+        record = store.get(po_id)
+        if record and record["state"] in po_store_active():
+            from po import pipeline as po_pipeline
+            po_pipeline.abandon(store, record, "the PO job process ended (exit code {0})".format(
+                process.returncode))
+        for _ in range(4):
+            status = self._safe(self._po_push, store, po_id, True)
+            if status == 200:
+                break
+            time.sleep(3)
+        self.log("[worker] PO job {0} finished: {1}".format(
+            po_id, (store.get(po_id) or {}).get("state")))
 
     def start_run(self, run_id, options):
         with self._lock:

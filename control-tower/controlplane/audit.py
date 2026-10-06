@@ -25,6 +25,10 @@ ACTIONS = (
     "VIEW_EVIDENCE", "UPLOAD_EVIDENCE",
     "SYSTEM_SETTING_CHANGED", "WORKER_REGISTERED", "WORKER_DISCONNECTED",
     "WORKER_RECONNECTED", "RUN_RECONCILED", "ACCESS_DENIED",
+    # PO Automation: who started it, what the document and validation said,
+    # the template, the recipient and what Microsoft 365 answered.
+    "PO_PROCESS_STARTED", "PO_PROCESSED", "PO_EMAIL_SENT", "PO_EMAIL_CONFIRMED",
+    "PO_EMAIL_FAILED", "PO_EMAIL_BLOCKED", "PO_RESEND_AUTHORIZED", "PO_OUTPUT_DOWNLOADED",
 )
 
 # Never stored, whatever a caller passes.

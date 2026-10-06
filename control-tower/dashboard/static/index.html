@@ -463,6 +463,88 @@ input,textarea,select{font-family:inherit}
 /* An em-dash set large looks like a rule, not an absence. */
 .kpi-v.none{color:var(--faint);font-size:22px;font-weight:400}
 
+/* ── PO AUTOMATION ── */
+.po-head{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.po-h-k{font-size:13px;color:var(--faint);display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.po-st{font-size:12px;font-weight:600;line-height:1;letter-spacing:.01em;padding:6px 11px;border-radius:100px;
+  background:var(--surface-3);color:var(--mid)}
+.po-st.s-processing{background:var(--blu-wash);color:var(--blu)}
+.po-st.s-validation{background:var(--y-wash);color:var(--y)}
+.po-st.s-generated{background:var(--brand-wash);color:var(--ink)}
+.po-st.s-sent{background:var(--grn-wash);color:var(--grn)}
+.po-st.s-failed{background:var(--red-wash);color:var(--red)}
+.po-form{margin-bottom:18px}
+.po-fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 16px;padding:0 20px 6px}
+.po-fg label{display:grid;gap:5px;font-size:12px;color:var(--faint);font-weight:500}
+.po-fg label b{color:var(--red);font-weight:600}
+.po-fg label i{font-style:normal;font-weight:400}
+.po-fg .in{max-width:none;width:100%}
+.po-fa{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 20px 18px}
+.po-msg{font-size:12.5px;color:var(--mid)}
+.po-msg.bad{color:var(--red)}
+.po-t td{white-space:nowrap}
+.po-t th:last-child,.po-t td:last-child{width:1%;padding-left:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.po-open{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--card);
+  color:var(--mid);display:grid;place-items:center;cursor:pointer}
+.po-open:hover{background:var(--surface-2);color:var(--ink)}
+.po-open:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.po-open svg{width:14px;height:14px}
+.po-t td.wrap{white-space:normal;min-width:160px}
+.po-t tr[data-po]{cursor:pointer}
+.po-t tr[data-po]:hover td{background:var(--surface-2)}
+.po-t tr[data-po].sel td{background:var(--brand-wash)}
+.pt{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:100px;font-size:11.5px;
+  font-weight:600;letter-spacing:.02em;background:var(--surface-3);color:var(--mid);white-space:nowrap}
+.pt::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pt.k-processing,.pt.k-pending{background:var(--blu-wash);color:var(--blu)}
+.pt.k-processing::before{animation:blip 1.8s infinite}
+.pt.k-validation_required{background:var(--y-wash);color:var(--y)}
+.pt.k-generated{background:var(--brand-wash);color:var(--ink)}
+.pt.k-sent{background:var(--grn-wash);color:var(--grn)}
+.pt.k-failed{background:var(--red-wash);color:var(--red)}
+.pv{font-size:11.5px;font-weight:600}
+.pv.ok{color:var(--grn)} .pv.bad{color:var(--red)} .pv.none{color:var(--faint);font-weight:400}
+.po-ax{display:flex;align-items:center;gap:14px;padding:14px 20px;margin-bottom:18px;flex-wrap:wrap}
+.po-ax-f{width:44px;height:44px;flex:none}
+.po-ax-m{flex:1;min-width:220px}
+.po-ax-t{font-weight:600;font-size:14px;color:var(--ink)}
+.po-ax-t span{font-weight:400;font-size:12px;color:var(--faint);margin-left:6px}
+.po-ax-b{font-size:13px;line-height:1.55;color:var(--ink);margin-top:2px}
+.po-ax-b p{margin:0}
+.po-ax-b .k{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-right:6px}
+.po-ax-a{display:flex;gap:8px;flex-wrap:wrap}
+.po-how-c{margin-top:18px}
+.po-how{list-style:none;margin:0;padding:0 20px 18px;display:grid;gap:14px 22px;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));counter-reset:step}
+.po-how li{display:grid;gap:4px;font-size:12.5px;color:var(--mid);line-height:1.5;counter-increment:step}
+.po-how li b{color:var(--ink);font-weight:600;font-size:13px}
+.po-how li b::before{content:counter(step);display:inline-grid;place-items:center;width:18px;height:18px;
+  border-radius:50%;background:var(--surface-3);color:var(--mid);font-size:11px;margin-right:7px}
+.po-dw .dw-b{padding-bottom:28px}
+.po-sec{margin-top:20px}
+.po-sec h4{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.po-kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px}
+.po-kv dt{color:var(--faint)} .po-kv dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+.po-vt{width:100%;border-collapse:collapse;font-size:12.5px}
+.po-vt th{text-align:left;font-weight:500;color:var(--faint);padding:5px 8px 5px 0;border-bottom:1px solid var(--line-2)}
+.po-vt td{padding:6px 8px 6px 0;border-bottom:1px solid var(--line-2);vertical-align:top;overflow-wrap:anywhere}
+.po-vt .s-MATCH,.po-vt .s-PRESENT,.po-vt .s-OK{color:var(--grn);font-weight:600}
+.po-vt .s-MISMATCH,.po-vt .s-MISSING,.po-vt .s-AMBIGUOUS,.po-vt .s-FAILED{color:var(--red);font-weight:600}
+.po-vt .s-NOT_CHECKED{color:var(--faint)}
+.po-vt .s-FOUND{color:var(--grn)}
+.po-block{border:1px solid var(--red-line);background:var(--red-wash);border-radius:12px;padding:12px 14px;font-size:13px;margin-top:8px}
+.po-block b{display:block;color:var(--red);font-size:11px;letter-spacing:.06em;margin-bottom:4px}
+.po-ok{border:1px solid var(--line-2);background:var(--surface-2);border-radius:12px;padding:12px 14px;font-size:13px;margin-top:8px}
+.po-steps{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.po-steps span{font-size:11px;padding:3px 8px;border-radius:100px;background:var(--surface-3);color:var(--faint)}
+.po-steps span.done{background:var(--grn-wash);color:var(--grn)}
+.po-steps span.now{background:var(--blu-wash);color:var(--blu)}
+.po-steps span.bad{background:var(--red-wash);color:var(--red)}
+.po-ev{font-size:12px;color:var(--mid);display:grid;gap:3px}
+.po-ev .t{color:var(--faint);font-variant-numeric:tabular-nums;margin-right:8px}
+.po-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
 /* ── LAYOUT GRIDS ── */
 .ov{display:grid;gap:18px}
 .ov-side{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
@@ -1982,6 +2064,67 @@ td.car{color:var(--ink);font-weight:500}
     <!-- ═══ ACCESS (admins) ═══ Users, the audit log and the workers. Every
          action here is checked again on the server and written to the audit
          log; passwords are never shown, and a link or token is shown once. -->
+    <!-- ═══ PO AUTOMATION ═══
+         The document pipeline, drawn from its own records: every status here
+         is a state the pipeline reached, with its evidence. Validation is a
+         gate — a mismatch stops the job and nothing is generated or sent. -->
+    <section class="page" data-p="po">
+      <div class="po-head">
+        <div class="po-h-l">
+          <div class="po-h-k">Document automation <span class="po-st" id="poStatus">Ready</span></div>
+          <div class="hello-s" id="poSub">Hub → PDF → extraction → validation → template → Microsoft 365</div>
+        </div>
+        <div class="sp"></div>
+        <button class="btn" id="poNew" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Process PO</button>
+      </div>
+      <form class="card po-form" id="poForm" hidden autocomplete="off">
+        <div class="card-h"><div><div class="card-t">Process a document</div>
+          <div class="card-s" id="poFormS">ATA opens the shipment in the Hub, takes the attached declaration, validates it against the Hub and fills the approved template. Nothing is sent until you press Send PO.</div></div></div>
+        <div class="po-fg">
+          <label><span>BOL / AWB in the Hub <b>*</b></span><input class="in" name="reference" required maxlength="60" placeholder="e.g. 176-88452310"></label>
+          <label><span>Supplier invoice No. <b>*</b></span><input class="in" name="invoice_no" maxlength="60" placeholder="Not printed on the declaration"></label>
+          <label><span>Supplier</span><input class="in" name="supplier" maxlength="60" id="poSupplier"></label>
+          <label><span>Receiving branch</span><input class="in" name="branch" maxlength="60"></label>
+          <label><span>Charge to</span><input class="in" name="charge_to" maxlength="60"></label>
+          <label><span>Priority</span><input class="in" name="priority" maxlength="60"></label>
+          <label><span>Reference note (D2)</span><input class="in" name="reference_note" maxlength="60"></label>
+          <label><span>Document name <i>only if the shipment has several</i></span><input class="in" name="document_name" maxlength="80"></label>
+        </div>
+        <div class="po-fa"><button class="btn" type="submit" id="poGo">Process</button>
+          <button class="btn ghost" type="button" id="poCancel">Cancel</button>
+          <span class="po-msg" id="poMsg" aria-live="polite"></span></div>
+      </form>
+      <div class="kpis" id="poKpis"></div>
+      <!-- ATLAS, compact: the same character and the same intelligence, on
+           the PO jobs. Not a second assistant — "Ask ATLAS" opens the one chat. -->
+      <div class="card po-ax">
+        <div class="po-ax-f" id="poAxFig"></div>
+        <div class="po-ax-m"><div class="po-ax-t">ATLAS <span>PO intelligence · from the jobs' own records</span></div>
+          <div class="po-ax-b" id="poAx"></div></div>
+        <div class="po-ax-a" id="poAxA"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div><div class="card-t">Queue</div>
+          <div class="card-s" id="poQs">Newest first · open a job for its extracted data, validation and email</div></div>
+          <div class="sp"></div><div class="kick" id="poN"></div></div>
+        <div class="tw"><table class="po-t">
+          <thead><tr><th>Declaration No.</th><th>BOL / AWB</th><th>Supplier</th><th>Document</th><th>Status</th>
+            <th>Validation</th><th>Template</th><th>Email</th><th>Created</th><th>Last update</th><th><span class="sr">Actions</span></th></tr></thead>
+          <tbody id="poRows"></tbody></table></div>
+        <div id="poEmpty"></div>
+      </div>
+      <div class="card po-how-c">
+        <div class="card-h"><div class="card-t">How a job runs</div></div>
+        <ol class="po-how" id="poHow">
+          <li><b>Find the document in the Hub</b><span>The shipment is opened by its BOL/AWB and the declaration attached to it is downloaded with the Hub's own sign-in.</span></li>
+          <li><b>Read and extract</b><span>Each field is found, missing or ambiguous. A missing value is never filled in; two different values are never chosen between.</span></li>
+          <li><b>Validate — the gate</b><span>The BL/AWB must match the Hub, every required field must be present and the duty must add up. Anything else stops the job.</span></li>
+          <li><b>Fill the approved template</b><span>Only its input cells are written; its formulas compute. The saved file is opened again and read back before it counts.</span></li>
+          <li><b>Send through Microsoft 365</b><span>On Send PO, from the ATA mailbox. Verified when it appears in Sent Items. The same document is never sent twice by accident.</span></li>
+        </ol>
+      </div>
+    </section>
+
     <section class="page" data-p="access">
       <div class="card" id="acUsers">
         <div class="card-h"><div class="card-t">Users</div><div class="sp"></div>
@@ -2052,6 +2195,16 @@ td.car{color:var(--ink);font-weight:500}
     </div>
     <div class="dw-atlas"><div id="dwAtlas"></div></div>
     <div class="dw-b" id="dwBody"></div>
+  </aside>
+  <!-- PO JOB DETAIL. The same drawer, for one PO job. -->
+  <div class="dw-scrim" id="poScrim"></div>
+  <aside class="drawer po-dw" id="poDw" role="dialog" aria-modal="false" aria-labelledby="poDwRef" aria-hidden="true">
+    <div class="dw-h">
+      <div class="dw-top"><span class="kick">PO job</span><span id="poDwTag"></span>
+        <button class="dw-x" id="poDwX" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+      <div class="dw-ref" id="poDwRef">—</div>
+    </div>
+    <div class="dw-b" id="poDwBody"></div>
   </aside>
 
   <!-- There is no audio anywhere in this dashboard, by request. The intro is
@@ -2753,6 +2906,7 @@ const PAGES = [
   {id:'live',      t:'Live Runs',     i:'M3 12h4l3 8 4-16 3 8h4'},
   {id:'shipments', t:'Shipments',     i:'M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4'},
   {id:'systems',   t:'Carriers',      i:'M3 17h13V6H3zM16 10h3.5L22 13v4h-6M7 20a2 2 0 100-4 2 2 0 000 4zm11 0a2 2 0 100-4 2 2 0 000 4z'},
+  {id:'po',        t:'PO Automation', i:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4'},
   {g:'Intelligence'},
   {id:'atlas',     t:'ATLAS',         i:'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zm0 9l8-4.5M12 12v9m0-9L4 7.5'},
   {id:'human',     t:'Human Action',  i:'M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM4.5 21a7.5 7.5 0 0 1 15 0'},
@@ -2834,6 +2988,7 @@ function go(id){
   activePage = id;
   if (id === 'atlas') setTimeout(() => { loadLearning(true); loadFailures(true); }, 0);
   if (id === 'access') setTimeout(loadAccess, 0);
+  if (id === 'po') setTimeout(() => loadPO(true), 0);
   const lit = navFor(id);
   document.querySelectorAll('.nav-i,.tnav-i').forEach((n) => n.classList.toggle('on', n.dataset.nav === lit));
   document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.dataset.p === id));
@@ -4072,6 +4227,262 @@ function fact(k, v, wide, mono){
   return '<div' + (wide ? ' class="w"' : '') + '><div class="fk">' + k + '</div><div class="fv' +
     (mono ? ' mono' : '') + '">' + v + '</div></div>';
 }
+/* ═══ PO AUTOMATION ═══
+   Everything drawn here is a state the pipeline reached and recorded. The
+   page asks /api/po; it never decides a status itself. While a job is
+   moving it is asked often, otherwise rarely. */
+const PO = {list:null, at:0, busy:false, open:null, detail:null, dAt:0, dBusy:false};
+const PO_KPIS = [['pending','Pending','var(--blu)'], ['processing','Processing','var(--blu)'],
+  ['validation_required','Validation required','var(--y-dot)'], ['generated','Generated','var(--brand)'],
+  ['sent','Sent','var(--grn)'], ['failed','Failed','var(--red)']];
+const PO_STATUS_CLASS = {Processing:'s-processing', 'Validation Required':'s-validation',
+  Generated:'s-generated', Sent:'s-sent', Failed:'s-failed'};
+const PO_STAGES = [['DISCOVERED','Hub'], ['PDF_FOUND','PDF'], ['PDF_READ','Read'],
+  ['FIELDS_EXTRACTED','Extract'], ['VALIDATED','Validate'], ['TEMPLATE_GENERATED','Template'],
+  ['EMAIL_PREPARED','Email ready'], ['EMAIL_SENT','Sent'], ['EMAIL_CONFIRMED','Verified']];
+const PO_FAIL_AT = {PDF_NOT_FOUND:0, PDF_UNREADABLE:2, EXTRACTION_FAILED:3, VALIDATION_FAILED:4,
+  TEMPLATE_FAILED:5, EMAIL_FAILED:7};
+const poWhen = (iso) => { if (!iso) return '—'; const d = new Date(iso);
+  return isNaN(d) ? esc(iso) : d.toLocaleString([], {day:'2-digit', month:'short'}) + ' ' +
+    d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false}); };
+const cap = (t) => t ? String(t).charAt(0).toUpperCase() + String(t).slice(1) : '';
+function loadPO(force){
+  if (PO.busy) return;
+  const moving = PO.list && (PO.list.jobs || []).some((j) => j.kpi === 'processing' || j.kpi === 'pending');
+  if (!force && Date.now() - PO.at < (moving ? 1400 : 10000)) return;
+  PO.busy = true;
+  fetch('/api/po').then((r) => r.ok ? r.json() : null).then((d) => {
+    if (!d) return;
+    PO.list = d; PO.at = Date.now(); paintPO();
+  }).catch(() => {}).finally(() => { PO.busy = false; });
+}
+function poPill(j){ return '<span class="pt k-' + esc(j.kpi || 'none') + '">' + esc(j.label || j.state) + '</span>'; }
+function paintPO(){
+  const d = PO.list; if (!d) return;
+  const c = d.config || {};
+  put($('poStatus'), d.status);
+  $('poStatus').className = 'po-st ' + (PO_STATUS_CLASS[d.status] || '');
+  put($('poSub'), (c.doctype_label || 'Document') + ' · template ' + (c.template || '—') + ' · ' +
+    (c.recipient ? 'emails to ' + c.recipient : 'no recipient configured') +
+    (c.graph_configured ? '' : ' · Microsoft 365 not configured'));
+  $('poNew').hidden = !PF.can('po.process');
+  if (c.defaults && c.defaults.supplier && !$('poSupplier').value) $('poSupplier').placeholder = c.defaults.supplier;
+  const k = d.kpis || {};
+  putHTML($('poKpis'), PO_KPIS.map((x) => '<div class="kpi" style="--c:' + (k[x[0]] ? x[2] : 'var(--line-hi)') +
+    '"><div class="kpi-k"><i></i>' + x[1] + '</div><div class="kpi-v' + (k[x[0]] ? '' : ' nil') + '">' +
+    (k[x[0]] || 0) + '</div></div>').join(''));
+  const jobs = d.jobs || [];
+  put($('poN'), jobs.length ? jobs.length + ' job' + (jobs.length === 1 ? '' : 's') : '');
+  putHTML($('poRows'), jobs.map((j) => '<tr data-po="' + esc(j.po_id) + '" tabindex="0"' +
+    (PO.open === j.po_id ? ' class="sel"' : '') + '>' +
+    '<td class="mono">' + esc(j.number || '—') + '</td><td class="mono">' + esc(j.reference) + '</td>' +
+    '<td>' + esc(j.supplier || '—') + '</td><td class="wrap">' + esc(j.document || '—') + '</td>' +
+    '<td>' + poPill(j) + '</td>' +
+    '<td><span class="pv ' + (j.validation === 'PASSED' ? 'ok' : j.validation === 'FAILED' ? 'bad' : 'none') + '">' +
+      esc(j.validation || '—') + '</span></td>' +
+    '<td>' + esc(j.template || '—') + '</td><td>' + esc(j.email || '—') + '</td>' +
+    '<td>' + poWhen(j.created) + '</td><td>' + poWhen(j.updated) + '</td>' +
+    '<td><button class="po-open" type="button" data-po-open="' + esc(j.po_id) + '" aria-label="Open job ' + esc(j.reference) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></td></tr>').join(''));
+  putHTML($('poEmpty'), jobs.length ? '' : empty('No PO job yet',
+    PF.can('po.process') ? 'Press Process PO, give the shipment’s BOL/AWB and the supplier invoice number.'
+                         : 'Jobs started by an operator appear here.'));
+  paintPOAtlas();
+  if (PO.open) loadPODetail(false);
+}
+function paintPOAtlas(){
+  const jobs = (PO.list && PO.list.jobs) || [];
+  const moving = jobs.find((j) => j.kpi === 'processing' || j.kpi === 'pending');
+  const problem = jobs.find((j) => j.kpi === 'validation_required' || j.kpi === 'failed' ||
+                                   (j.email === 'BLOCKED'));
+  const ready = jobs.find((j) => j.state === 'EMAIL_PREPARED');
+  let st = 'idle', html, focus = null, ask = null;
+  if (!jobs.length){
+    html = '<p>No PO job has run yet. When one does, I explain every step from its own record.</p>';
+  } else if (moving){
+    st = 'monitoring'; focus = moving;
+    html = '<p><span class="k">Now</span>' + esc(moving.reference) + ' — ' + esc(moving.progress || moving.label) + '</p>';
+  } else if (problem){
+    st = 'analyzing'; focus = problem; ask = 'Why wasn’t this PO sent?';
+    html = '<p><span class="k">Noticed</span>' + esc(problem.number || problem.reference) + ' was not sent.</p>' +
+      '<p>' + esc(cap(problem.reason || problem.label)) + '</p>';
+  } else if (ready){
+    st = 'monitoring'; focus = ready;
+    html = '<p><span class="k">Ready</span>' + esc(ready.number || ready.reference) + ' passed validation; its document is generated and waits for Send PO.</p>';
+  } else {
+    st = 'success'; focus = jobs[0];
+    html = '<p><span class="k">Verified</span>' + esc(jobs[0].number || jobs[0].reference) + ' — ' + esc(jobs[0].label) + '.</p>';
+  }
+  Atlas($('poAxFig'), {state: st, size: 'xs', text: false});
+  putHTML($('poAx'), html);
+  putHTML($('poAxA'), (focus ? '<button class="btn ghost" type="button" data-po-open="' + esc(focus.po_id) + '">Open job</button>' : '') +
+    (focus ? '<button class="btn ghost" type="button" data-po-ask="' + esc(focus.po_id) + '" data-q="' +
+      esc(ask || 'What happened with this PO?') + '">Ask ATLAS</button>' : ''));
+}
+function openPO(id){
+  PO.open = id; PO.detail = null;
+  $('poDw').classList.add('on'); $('poDw').setAttribute('aria-hidden', 'false'); $('poScrim').classList.add('on');
+  putHTML($('poDwBody'), '<div class="hint" style="padding:16px 0">Loading…</div>');
+  document.querySelectorAll('tr[data-po]').forEach((tr) => tr.classList.toggle('sel', tr.dataset.po === id));
+  loadPODetail(true);
+  setTimeout(() => $('poDwX').focus(), 60);
+}
+function closePO(){
+  if (!PO.open) return;
+  PO.open = null;
+  $('poDw').classList.remove('on'); $('poDw').setAttribute('aria-hidden', 'true'); $('poScrim').classList.remove('on');
+  document.querySelectorAll('tr[data-po]').forEach((tr) => tr.classList.remove('sel'));
+}
+$('poDwX').addEventListener('click', closePO);
+$('poScrim').addEventListener('click', closePO);
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && PO.open) closePO(); });
+function loadPODetail(force){
+  if (!PO.open || PO.dBusy) return;
+  const moving = PO.detail && ['QUEUED','DISCOVERED','PDF_FOUND','PDF_READ','FIELDS_EXTRACTED',
+    'VALIDATING','VALIDATED','EMAIL_SENDING','EMAIL_SENT'].indexOf(PO.detail.state) >= 0;
+  if (!force && Date.now() - PO.dAt < (moving ? 1200 : 8000)) return;
+  PO.dBusy = true;
+  const id = PO.open;
+  fetch('/api/po/' + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).then((d) => {
+    if (!d || PO.open !== id) return;
+    PO.detail = d; PO.dAt = Date.now(); paintPODrawer();
+  }).catch(() => {}).finally(() => { PO.dBusy = false; });
+}
+function poVal(f){
+  if (!f) return '—';
+  if (f.status === 'AMBIGUOUS') return 'ambiguous: ' + (f.candidates || []).map((c) => esc(c.value)).join(' · ');
+  if (f.status === 'MISSING') return '<span class="s-MISSING">missing</span>' + (f.note ? ' — ' + esc(f.note) : '');
+  if (Array.isArray(f.value)) return f.value.map((l) => esc(l.label) + ' ' + Number(l.amount).toLocaleString(undefined, {minimumFractionDigits:2})).join('<br>');
+  return esc(typeof f.value === 'number' ? f.value.toLocaleString(undefined, {maximumFractionDigits:4}) : f.value);
+}
+function paintPODrawer(){
+  const d = PO.detail; if (!d) return;
+  const card = d.card || {}, doc = d.document || {}, email = d.email || {}, out = d.output || {},
+        val = d.validation || null, hub = d.hub || {};
+  put($('poDwRef'), (d.number ? d.number + ' · ' : '') + d.reference);
+  putHTML($('poDwTag'), poPill(card));
+  const reached = PO_STAGES.findIndex((x) => x[0] === d.state);
+  const failAt = PO_FAIL_AT[d.state];
+  const steps = PO_STAGES.map((x, i) => {
+    let cls = '';
+    if (failAt !== undefined){ cls = i < failAt ? 'done' : (i === failAt ? 'bad' : ''); }
+    else if (reached >= 0){ cls = i < reached ? 'done' : (i === reached ? (d.state === 'EMAIL_CONFIRMED' ? 'done' : 'now') : ''); }
+    return '<span class="' + cls + '">' + x[1] + '</span>';
+  }).join('');
+  const kv = (rows) => '<dl class="po-kv">' + rows.filter((r) => r[1] !== undefined && r[1] !== null && r[1] !== '')
+    .map((r) => '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>').join('') + '</dl>';
+  let html = '<div class="po-sec"><h4>Progress</h4><div class="po-steps">' + steps + '</div>' +
+    '<div class="hint" style="margin-top:6px">' + esc(d.progress || '') + '</div></div>';
+  html += '<div class="po-sec"><h4>Job</h4>' + kv([
+    ['Declaration No.', d.number ? '<span class="mono">' + esc(d.number) + '</span>' : null],
+    ['BOL / AWB (Hub)', '<span class="mono">' + esc(hub.bol_awb || d.reference) + '</span>'],
+    ['Supplier', esc(card.supplier || '—')],
+    ['Declaration date', d.fields && d.fields.document_date && d.fields.document_date.value ? esc(d.fields.document_date.value) : null],
+    ['Currency', d.fields && d.fields.cif_usd && d.fields.cif_usd.value ? 'USD (invoice value) · GHS (duty)' : null],
+    ['Total duty', d.fields && d.fields.duty_amount_ghs && d.fields.duty_amount_ghs.value ? 'GHS ' + Number(d.fields.duty_amount_ghs.value).toLocaleString(undefined, {minimumFractionDigits:2}) : null],
+    ['Document', doc.filename ? esc(doc.filename) + (doc.pages ? ' · ' + doc.pages + ' page' + (doc.pages === 1 ? '' : 's') : '') : null],
+    ['Source', doc.source ? esc(doc.source === 'hub' ? 'Hub shipment page' : doc.source) : null],
+    ['Created', poWhen(d.created) + (d.started_by ? ' · ' + esc(d.started_by) : '')],
+    ['Run ID', '<span class="mono">' + esc(d.run_id || d.po_id) + '</span>']]) + '</div>';
+  const failure = d.failure;
+  if (failure && (d.state || '').match(/FAILED|NOT_FOUND|UNREADABLE/)){
+    html += '<div class="po-block"><b>' + esc((card.label || d.state).toUpperCase()) + '</b>' + esc(failure.detail || '') +
+      ((failure.candidates || []).length ? '<div class="hint" style="margin-top:6px">Candidates: ' + failure.candidates.map(esc).join(' · ') + '</div>' : '') + '</div>';
+  }
+  const fields = Object.assign({}, d.fields || {}, d.request_fields || {});
+  if (Object.keys(fields).length){
+    html += '<div class="po-sec"><h4>Extracted data</h4><table class="po-vt"><thead><tr><th>Field</th><th>Value</th><th>Source</th></tr></thead><tbody>' +
+      Object.values(fields).map((f) => '<tr><td>' + esc(f.label) + '</td><td>' + poVal(f) + '</td><td class="s-' + esc(f.status) + '">' +
+        esc(f.origin || (f.status === 'FOUND' ? 'PDF' : f.status.toLowerCase())) + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+  if (val){
+    html += '<div class="po-sec"><h4>Validation · ' + (val.passed ? 'passed' : 'failed') + '</h4><table class="po-vt"><thead><tr><th>Check</th><th>PDF</th><th>Hub</th><th>Status</th></tr></thead><tbody>' +
+      val.checks.map((c) => '<tr><td>' + esc(c.label) + (c.detail && c.status !== 'MATCH' && c.status !== 'PRESENT' ? '<div class="hint">' + esc(c.detail) + '</div>' : '') +
+        '</td><td class="mono">' + esc(c.pdf == null ? '—' : typeof c.pdf === 'number' ? c.pdf.toLocaleString() : c.pdf) +
+        '</td><td class="mono">' + esc(c.hub == null ? '—' : c.hub) + '</td><td class="s-' + esc(c.status) + '">' + esc(c.status.replace('_', ' ')) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+  if (out.verified){
+    html += '<div class="po-sec"><h4>Document</h4>' + kv([
+      ['Output', esc(out.filename) + ' · <a href="/api/po/' + encodeURIComponent(d.po_id) + '/output">Download</a>'],
+      ['Template', esc(out.template_version) + ' · SHA-256 ' + esc(String(out.template_sha256 || '').slice(0, 12)) + '…'],
+      ['Folder', esc(out.folder || '')],
+      ['Verified', 'saved, reopened and read back cell by cell'],
+      ['Generated', poWhen(out.generated_at) + (out.generated_by ? ' · ' + esc(out.generated_by) : '')]]) + '</div>';
+  }
+  html += '<div class="po-sec"><h4>Email</h4>';
+  if (email.recipient || email.status){
+    html += kv([['Recipient', esc(email.recipient || '—')], ['Subject', esc(email.subject || '—')],
+                ['Attachment', esc(email.attachment || '—')], ['From', esc(email.sender || '—')],
+                ['Status', '<b>' + esc(email.status || 'not prepared') + '</b>'],
+                ['Delivery', esc(email.confirmation || (email.status === 'SENT' ? 'Accepted by Microsoft 365' : ''))]]);
+  } else {
+    html += '<div class="hint">No email is prepared for this job.</div>';
+  }
+  const reasons = (email.status === 'BLOCKED' ? email.reasons : null) || d.blocked || [];
+  if (email.status === 'BLOCKED' || (d.blocked && d.blocked.length && d.state !== 'EMAIL_PREPARED')){
+    html += '<div class="po-block"><b>EMAIL BLOCKED</b>' + reasons.map(esc).join('<br>') + '<div style="margin-top:6px">No email was sent.</div></div>';
+  }
+  const canSend = PF.can('po.send') && (d.state === 'EMAIL_PREPARED' || d.state === 'EMAIL_FAILED') && !(d.blocked || []).length;
+  const acts = [];
+  if (canSend && email.status !== 'BLOCKED') acts.push('<button class="btn" type="button" id="poSend">Send PO</button>');
+  if (email.duplicate_of && PF.can('po.resend'))
+    acts.push('<input class="in" id="poWhy" placeholder="Why send it again? (audited)" style="max-width:240px">' +
+              '<button class="btn ghost" type="button" id="poResend">Send again (authorized)</button>');
+  if (d.state === 'EMAIL_SENT' && PF.can('po.send')) acts.push('<button class="btn ghost" type="button" id="poConfirm">Check delivery</button>');
+  acts.push('<button class="btn ghost" type="button" data-po-ask="' + esc(d.po_id) + '" data-q="What happened with this PO?">Ask ATLAS</button>');
+  html += '<div class="po-act">' + acts.join('') + '</div><div class="po-msg" id="poSendMsg" aria-live="polite"></div></div>';
+  const ev = d.events || [];
+  if (ev.length){
+    html += '<div class="po-sec"><h4>Events</h4><div class="po-ev">' + ev.slice(-16).map((e) =>
+      '<div><span class="t">' + poWhen(e.timestamp) + '</span>' + esc(e.event) + ' · ' + esc(String(e.status).toLowerCase()) + '</div>').join('') + '</div></div>';
+  }
+  putHTML($('poDwBody'), html);
+}
+function poSend(body){
+  const id = PO.open; if (!id) return;
+  const m = $('poSendMsg'); if (m){ m.className = 'po-msg'; put(m, 'Sending…'); }
+  fetch('/api/po/' + encodeURIComponent(id) + '/send', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body || {})}).then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
+      const m2 = $('poSendMsg'); if (m2){ m2.className = 'po-msg' + (st >= 400 ? ' bad' : ''); put(m2, x.message || ''); }
+      setTimeout(() => { loadPODetail(true); loadPO(true); }, 400);
+    }).catch(() => { const m3 = $('poSendMsg'); if (m3){ m3.className = 'po-msg bad'; put(m3, 'The request did not reach the server.'); } });
+}
+document.addEventListener('click', (e) => {
+  const o = e.target.closest('[data-po-open]'); if (o){ e.stopPropagation(); openPO(o.dataset.poOpen); return; }
+  const a = e.target.closest('[data-po-ask]');
+  if (a && window.ctAskAtlas){ window.ctAskAtlas(a.dataset.q, {domain:'po', po_id:a.dataset.poAsk}); return; }
+  if (e.target.closest('#poSend')){ poSend({}); return; }
+  if (e.target.closest('#poResend')){
+    const why = ($('poWhy') || {}).value || '';
+    if (!why.trim()){ const m = $('poSendMsg'); m.className = 'po-msg bad'; put(m, 'Say why it is sent again — it is recorded in the audit log.'); return; }
+    poSend({authorize_resend:true, reason:why.trim()}); return;
+  }
+  if (e.target.closest('#poConfirm')){
+    fetch('/api/po/' + encodeURIComponent(PO.open) + '/confirm', {method:'POST'}).then(() => loadPODetail(true)); return;
+  }
+});
+$('poRows').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-po]'); if (tr) openPO(tr.dataset.po); });
+$('poRows').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const tr = e.target.closest('tr[data-po]'); if (tr){ e.preventDefault(); openPO(tr.dataset.po); }
+});
+$('poNew').addEventListener('click', () => { $('poForm').hidden = false; $('poForm').reference.focus(); });
+$('poCancel').addEventListener('click', () => { $('poForm').hidden = true; put($('poMsg'), ''); });
+$('poForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = $('poForm'), body = {};
+  ['reference','invoice_no','supplier','branch','charge_to','priority','reference_note','document_name'].forEach((k) => {
+    const v = (f[k].value || '').trim(); if (v) body[k] = v; });
+  const m = $('poMsg'); m.className = 'po-msg'; put(m, 'Starting…');
+  fetch('/api/po', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    .then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
+      m.className = 'po-msg' + (st >= 400 ? ' bad' : ''); put(m, x.message || '');
+      if (st < 400){ f.reset(); f.hidden = true; put(m, ''); loadPO(true); if (x.po_id) setTimeout(() => openPO(x.po_id), 200); }
+    }).catch(() => { m.className = 'po-msg bad'; put(m, 'The request did not reach the server.'); });
+});
+setInterval(() => { if (activePage === 'po' && !document.hidden){ loadPO(false); loadPODetail(false); } }, 1200);
+
 /* ═══ FAILURE INTELLIGENCE ═══
    From /api/atlas — the same records ATLAS's chat and "ATLAS noticed" use.
    Loaded when the ATLAS page or a failed shipment's drawer is open, and
@@ -5095,6 +5506,7 @@ document.addEventListener('click', (e) => {
 (function chat(){
   const body = $('chatBody'), input = $('chatIn');
   let busy = false, lastReference = null, lastFocus = '', lastEvidence = '';
+  let askCtx = null;
   // Rude messages this tab has sent — a count, for a firmer reply each time.
   let conductCount = 0;
   /* A real image — a capture from the automation's browser or one the
@@ -5291,7 +5703,7 @@ document.addEventListener('click', (e) => {
   /* Dashboard actions ATLAS may take: filter Live operations, open a
      shipment, go to a page. A whitelist, checked here as well as on the
      server; anything else is ignored. Returns what was done, in words. */
-  const UI_PAGES = {human:1, atlas:1, logs:1, exceptions:1, shipments:1, overview:1,
+  const UI_PAGES = {po:1, human:1, atlas:1, logs:1, exceptions:1, shipments:1, overview:1,
                     live:1, systems:1, analysis:1};
   function runUi(a){
     if (!a || typeof a !== 'object') return '';
@@ -5408,8 +5820,9 @@ document.addEventListener('click', (e) => {
 
     fetch('/api/ask', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q, context: {reference: lastReference, action_id: lastFocus,
-                                                   evidence_id: lastEvidence, conduct: conductCount}})
+      body: JSON.stringify({question: q, context: Object.assign({reference: lastReference, action_id: lastFocus,
+                                                   evidence_id: lastEvidence, conduct: conductCount},
+        activePage === 'po' || askCtx ? {domain: 'po', po_id: (askCtx && askCtx.po_id) || PO.open || ''} : {})})
     })
       .then((r) => r.json())
       .then((d) => {
@@ -5485,6 +5898,13 @@ document.addEventListener('click', (e) => {
   $('chatX').addEventListener('click', () => {
     $('chat').classList.remove('on'); $('fab').classList.remove('hide');
   });
+  // The PO page asks ATLAS about one job: the same ATLAS, given that job.
+  window.ctAskAtlas = (question, ctx) => {
+    if (!$('chat').classList.contains('on')) $('fab').click();
+    askCtx = ctx || null;
+    input.value = question; send();
+    setTimeout(() => { askCtx = null; }, 0);
+  };
 })();
 
 </script>

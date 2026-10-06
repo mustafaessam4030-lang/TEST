@@ -631,3 +631,215 @@ def context():
         return {"learning": L.snapshot(), "events": E.all_events(), "evidence": V}
     except Exception:
         return {"learning": None, "events": None, "evidence": None}
+
+
+# ── PO AUTOMATION: the same failure intelligence, another domain ─────────
+#
+# A PO job that did not complete is a failure record in the same shape as a
+# shipment's, so the chat, the work list and ATLAS NOTICED read it the same
+# way. Its category is DECLARED by the pipeline stage that stopped it (po/
+# pipeline.failure); its facts come from the job record and its events.
+
+PO_LABELS = {
+    "DOCUMENT_NOT_FOUND": "no document was found on the Hub shipment",
+    "DOCUMENT_AMBIGUOUS": "more than one document could be the one",
+    "NAVIGATION_FAILURE": "the Hub shipment page could not be opened",
+    "NETWORK_FAILURE": "the Hub did not respond normally",
+    "WORKER_UNAVAILABLE": "no automation worker was online to open the Hub",
+    "PDF_UNREADABLE": "the PDF could not be read",
+    "DATA_EXTRACTION_FAILURE": "the PDF does not read as the expected document",
+    "VALIDATION_FAILURE": "the document did not pass validation",
+    "TEMPLATE_FAILURE": "the template could not be filled and verified",
+    "EMAIL_FAILURE": "the email was not sent",
+    "UNKNOWN_FAILURE": "the job stopped without a recorded cause",
+}
+PO_STAGES = {"pdf_retrieval": "finding the document in the Hub", "pdf_read": "reading the PDF",
+             "extraction": "extracting the fields", "validation": "validating against the Hub",
+             "template": "filling the template", "email": "sending the email"}
+# What a person can do, by category — a recommendation, never an action.
+PO_ADVICE = {
+    "DOCUMENT_NOT_FOUND": "Attach the declaration to the shipment in the Hub, then process it "
+                          "again.",
+    "DOCUMENT_AMBIGUOUS": "Name the document when you process it again (Document name), so one "
+                          "is chosen by a person, not by ATA.",
+    "NAVIGATION_FAILURE": "Process it again; if it repeats, check the shipment opens in the Hub.",
+    "NETWORK_FAILURE": "Process it again once the Hub responds normally.",
+    "WORKER_UNAVAILABLE": "Start the automation worker, then process it again.",
+    "PDF_UNREADABLE": "Replace the PDF in the Hub with a readable copy (not password-protected, "
+                      "not an empty scan).",
+    "DATA_EXTRACTION_FAILURE": "Check the document attached to the shipment is the declaration "
+                               "(BOE).",
+    "TEMPLATE_FAILURE": "Ask the automation's owner to check the approved template; nothing "
+                        "was sent.",
+}
+
+
+def _po_validation_advice(record):
+    advice = []
+    for c in (record.get("validation") or {}).get("checks") or []:
+        if not c.get("blocking"):
+            continue
+        if c["status"] == "MISMATCH":
+            advice.append("Check which document is attached to {0} in the Hub: the PDF says {1}, "
+                          "the Hub says {2}. Correct the attachment or the Hub record, then "
+                          "process it again.".format(record["reference"], c["pdf"], c["hub"]))
+        elif c["status"] == "MISSING" and c.get("source") == "request":
+            advice.append("Provide the {0} when you process it again.".format(c["label"].lower()))
+        elif c["status"] == "MISSING" and c.get("source") == "config":
+            advice.append("Set the {0} in the PO configuration or provide it with the "
+                          "request.".format(c["label"].lower()))
+        elif c["status"] in ("MISSING", "AMBIGUOUS"):
+            advice.append("Check the {0} on the PDF itself: {1}.".format(
+                c["label"], c.get("detail") or c["status"].lower()))
+        elif c["status"] == "FAILED":
+            advice.append("Reconcile the figures on the declaration before release: {0}.".format(
+                c.get("detail")))
+    return advice
+
+
+def from_po(record, events=None, learning=None, history=None):
+    """The failure record for a PO job that did not complete, or None."""
+    if not isinstance(record, dict):
+        return None
+    state = record.get("state")
+    email = record.get("email") or {}
+    failed = state in ("PDF_NOT_FOUND", "PDF_UNREADABLE", "EXTRACTION_FAILED",
+                       "VALIDATION_FAILED", "TEMPLATE_FAILED", "EMAIL_FAILED")
+    blocked = email.get("status") == "BLOCKED" and not failed
+    if not failed and not blocked:
+        return None
+    declared = record.get("failure") or {}
+    category = declared.get("category") or ("EMAIL_FAILURE" if blocked else "UNKNOWN_FAILURE")
+    if blocked:
+        category = "VALIDATION_FAILURE" if not (record.get("validation") or {}).get("passed") \
+            else "EMAIL_FAILURE"
+    label = PO_LABELS.get(category, category.replace("_", " ").lower())
+    stage = declared.get("stage") or ("email" if blocked else "unknown")
+    ref, number = record.get("reference"), record.get("number")
+    events = [e for e in (events or []) if e.get("po_id") == record.get("po_id")]
+    ok_events = [e for e in events if e.get("status") == "OK"]
+    last_ok = ok_events[-1]["event"] if ok_events else None
+    doc = record.get("document") or {}
+    facts = [_fact("PO job {0} for {1} ({2}) stopped at {3}: {4}.".format(
+        record.get("po_id"), ref, record.get("doctype"), PO_STAGES.get(stage, stage), state if
+        failed else "email blocked"), "PO job record")]
+    if doc.get("filename"):
+        facts.append(_fact("The document {0} was retrieved from the {1} ({2} bytes, SHA-256 "
+                           "{3}…).".format(doc["filename"], doc.get("source") or "Hub",
+                                           doc.get("bytes"), str(doc.get("sha256"))[:12]),
+                           "PO job record"))
+    fields = record.get("fields") or {}
+    found = [f for f in fields.values() if f.get("status") == "FOUND"]
+    if fields:
+        facts.append(_fact("Extracted from the PDF: {0} field(s) found{1}.".format(
+            len(found), "; missing: " + ", ".join(f["label"] for f in fields.values()
+                                                  if f.get("status") == "MISSING")
+            if any(f.get("status") == "MISSING" for f in fields.values()) else ""),
+            "PO job record"))
+    for c in (record.get("validation") or {}).get("checks") or []:
+        if c.get("blocking"):
+            facts.append(_fact("Validation — {0}: {1}{2}.".format(
+                c["label"], c["status"],
+                " (PDF: {0}, Hub: {1})".format(c["pdf"], c["hub"]) if c["status"] == "MISMATCH"
+                else " — " + c["detail"] if c.get("detail") else ""), "validation"))
+    if not (record.get("output") or {}).get("verified"):
+        facts.append(_fact("No document was generated.", "PO job record"))
+    if email.get("status") in ("BLOCKED", "FAILED", None) and state not in ("EMAIL_SENT",
+                                                                          "EMAIL_CONFIRMED"):
+        facts.append(_fact("No email was sent.", "PO job record"))
+    if declared.get("detail"):
+        facts.append(_fact('The pipeline\'s own reason: "{0}"'.format(declared["detail"][:400]),
+                           "declared by the pipeline"))
+    attempts = record.get("attempts") or {}
+    if attempts:
+        facts.append(_fact("Retries the job made: {0}.".format(", ".join(
+            "{0} × {1}".format(n, s) for s, n in attempts.items())), "PO job record"))
+    unverified = []
+    if category == "EMAIL_FAILURE" and declared.get("kind") == "unknown":
+        unverified.append(_item("UNVERIFIED", "Whether Microsoft 365 delivered it is not "
+                                "established; the send outcome is unknown.", "evidence gap"))
+    if category == "UNKNOWN_FAILURE":
+        unverified.append(_item("UNVERIFIED", "The job stopped without recording why.",
+                                "evidence gap"))
+    advice = _po_validation_advice(record) if category == "VALIDATION_FAILURE" else \
+        [PO_ADVICE[category]] if category in PO_ADVICE else []
+    if category == "EMAIL_FAILURE":
+        if declared.get("kind") in ("transient", "unknown"):
+            advice.append("Send again from the PO page: the same prepared message is used, and "
+                          "the send ledger stops a duplicate.")
+        elif email.get("duplicate_of"):
+            advice.append("It was already sent (job {0}). Send again only with an authorized "
+                          "resend.".format(email["duplicate_of"]))
+        else:
+            advice.append("Check the Microsoft 365 mail settings (Mail.Send permission, the "
+                          "sender mailbox) with the platform owner, then send again.")
+    recs = [_item("RECOMMENDATION", a, "PO advice") for a in advice]
+    retryable = category in ("NETWORK_FAILURE", "NAVIGATION_FAILURE", "WORKER_UNAVAILABLE") or \
+        (category == "EMAIL_FAILURE" and declared.get("kind") in ("transient", "unknown"))
+    learned = []
+    for issue in (learning or {}).get("issues") or []:
+        if issue.get("provider") == "PO" and issue.get("issue") == category:
+            others = [r for r in issue.get("runs") or [] if r != record.get("po_id")]
+            if others:
+                learned.append(_item("LEARNED", "Seen before in PO Automation: {0} time(s) "
+                                     "across {1} other job(s); {2} later resolved with a "
+                                     "confirmed send.".format(issue.get("occurrences"),
+                                                              len(others),
+                                                              issue.get("resolved_verified", 0)),
+                                     "learning store"))
+    item = {
+        "domain": "po", "po_id": record.get("po_id"),
+        "failure_id": "f_" + hashlib.sha1("{0}|{1}".format(record.get("po_id"), state).encode(
+            "utf-8")).hexdigest()[:12],
+        "run_id": record.get("run_id"), "shipment_id": ref, "number": number,
+        "carrier": "PO Automation", "provider": "PO",
+        "operation": PO_STAGES.get(stage, stage), "stage": stage,
+        "stage_label": PO_STAGES.get(stage, stage),
+        "timestamp": record.get("updated"), "error_type": category,
+        "error_message": (declared.get("detail") or "; ".join(email.get("reasons") or []))[:600],
+        "observed_state": {"state": state, "outcome": state, "read": [], "written": [],
+                           "email": email.get("status")},
+        "evidence_refs": [{"id": doc.get("sha256"), "event": "PDF_FOUND", "at": None}]
+        if doc.get("sha256") else [],
+        "previous_events": [{"at": e.get("timestamp"), "text": e.get("event")} for e in events][-12:],
+        "last_successful_event": last_ok,
+        "first_failing_event": next((e["event"] for e in events if e.get("status") in
+                                     ("FAILED", "BLOCKED")), state),
+        "recovery_attempts": [{"action": "retry " + s, "result": "FAILED", "verified": None,
+                               "error_class": category} for s, n in attempts.items()
+                              for _ in range(max(0, int(n) - 1))],
+        "recovery_result": None, "verification_result": email.get("confirmation") or
+        ("Validation: " + ("passed" if (record.get("validation") or {}).get("passed") else
+                           "failed" if record.get("validation") else "not run")),
+        "classification": category, "classification_basis": "declared",
+        "classification_label": label,
+        "root_cause_status": "VERIFIED" if declared.get("category") or blocked else "UNKNOWN",
+        "root_cause": declared.get("detail") or label,
+        "facts": facts, "inferences": [], "unverified": unverified,
+        "recommendations": recs, "learned": learned, "declared_cause": None,
+        "headline": "PO {0}{1}: {2}{3}.".format(
+            number + " · " if number else "", ref, label,
+            " — not sent" if state not in ("EMAIL_SENT", "EMAIL_CONFIRMED") else ""),
+        "impact": "No document was sent for {0}; nothing reached the recipient.".format(ref),
+        "recovery_plan": {
+            "status": "BUILT_IN_RULES" if retryable else "NO_VERIFIED_STRATEGY",
+            "statement": ("The job retries this stage itself when the cause is transient "
+                          "(the PO retry policy); it can be run again safely."
+                          if retryable else
+                          "No verified recovery strategy exists for this failure. A retry "
+                          "cannot change it; a person decides."),
+            "steps": [{"strategy": "run the job again", "source": "PO retry policy",
+                       "reason": "the cause is transient", "evidence": category,
+                       "expected": "the stage completes and the job continues",
+                       "safety": "the same gate and ledger apply",
+                       "executes": "when a person processes or sends it again"}]
+            if retryable else [],
+            "recommendations": recs, "recovery_class": None,
+            "executes": "ATLAS never acts; a person runs the job again."},
+        "learning_status": "Recorded as {0} — no positive learning credit; only a confirmed send "
+                           "earns it.".format(state),
+        "work": {"mode": "NEXT_RUN" if retryable else "NEEDS_DECISION",
+                 "why": "a transient cause — run it again" if retryable else
+                 "a retry would not change a {0}".format(category), "retried": False},
+    }
+    return item

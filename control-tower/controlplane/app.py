@@ -38,6 +38,7 @@ from .users import Users, AccessError, public as public_user
 
 from dashboard import server as tower_server
 from dashboard import assistant
+from po import service as po_service, store as po_store, web as po_web
 from dashboard.bridge import ControlTowerState
 
 HERE = Path(__file__).resolve().parent
@@ -96,16 +97,45 @@ class App(object):
         self.entra = EntraID(self.s, self.db) if self.s.entra_enabled else None
         self.limiter = RateLimiter()
         self.orch.on_state = self._follow_claims
+        # PO Automation. Jobs go to a worker (it holds the Hub browser); email
+        # goes from here, through Microsoft Graph. One service, registered so
+        # ATLAS reads the same records.
+        self.po = po_service.register(po_service.PoService(
+            store=po_store.Store(folder=self.s.po_dir),
+            launcher=po_service.WorkerLauncher(self._po_dispatch), audit=self._po_audit))
         self._closed = {}
         self._synced = None
         self._index = None
         self._stop = threading.Event()
+
+    # -- PO Automation -------------------------------------------------------
+
+    def _po_dispatch(self, record):
+        worker = self.orch.po_worker()
+        if worker is None:
+            raise RuntimeError("no worker is online")
+        self.orch.enqueue(worker["worker_id"], "po_process",
+                          {"po_id": record["po_id"], "record": record})
+        return worker["worker_id"]
+
+    def _po_audit(self, action, result="SUCCESS", actor=None, target=None, metadata=None):
+        user = actor if isinstance(actor, dict) else (
+            self.users.by_email(actor) if isinstance(actor, str) and "@" in actor else None)
+        meta = dict(metadata or {})
+        if isinstance(actor, str) and user is None:
+            meta["by"] = actor
+        self.audit.record(action, result=result, user=user, target_type="po", target_id=target,
+                          run_id=(metadata or {}).get("run_id") or target, metadata=meta)
 
     # -- background ----------------------------------------------------------
 
     def start_background(self):
         def sweep():
             while not self._stop.wait(5):
+                try:
+                    self.po.expire_stale()
+                except Exception:
+                    pass
                 try:
                     self.orch.sweep()
                 except Exception:
@@ -718,6 +748,9 @@ class Handler(tower_server.Handler):
         if route.startswith("/api/runs/"):
             self._run_route(method, route)
             return
+        if route == "/api/po" or route.startswith("/api/po/"):
+            self._po(method, route)
+            return
 
         permission = ROUTE_PERMISSIONS.get(key)
         if permission is None:
@@ -788,6 +821,27 @@ class Handler(tower_server.Handler):
             self._send(200, {"matrix": rbac.matrix(), "roles": list(rbac.ROLES)})
         else:
             self._send(404, {"error": "not_found"})
+
+    # -- PO Automation -------------------------------------------------------
+
+    def _po(self, method, route):
+        """po/web.py's routes, each checked against the RBAC table here."""
+        body = self._json(8192) if method == "POST" else {}
+        kind, status, payload = po_web.handle(self.app.po, method, route, body, self.user,
+                                              lambda permission: rbac.allowed(self.user,
+                                                                              permission))
+        if kind == "forbidden":
+            self._need(status)              # records ACCESS_DENIED and answers 403
+            return
+        if kind == "file":
+            data, content_type, name = payload
+            self.app.audit.record("PO_OUTPUT_DOWNLOADED", user=self.user, target_type="po",
+                                  target_id=route.split("/")[3], ip=self.client_ip(),
+                                  metadata={"filename": name})
+            self._send(200, data, content_type,
+                       extra={"Content-Disposition": 'attachment; filename="{0}"'.format(name)})
+            return
+        self._send(status, payload)
 
     # -- runs ----------------------------------------------------------------
 
@@ -1016,6 +1070,10 @@ class Handler(tower_server.Handler):
         context = {"reference": str(raw.get("reference") or "")[:64],
                    "action_id": str(raw.get("action_id") or "")[:64],
                    "evidence_id": re.sub(r"[^0-9a-f]", "", str(raw.get("evidence_id") or ""))[:16],
+                   "domain": "po" if raw.get("domain") == "po" else "",
+                   "po_id": re.sub(r"[^0-9a-z-]", "", str(raw.get("po_id") or ""))[:40],
+                   # ATLAS answers about PO jobs only for a role that may see them.
+                   "po": "1" if rbac.allowed(self.user, "po.view") else "0",
                    "conduct": int(raw.get("conduct") or 0)
                    if str(raw.get("conduct") or "0").isdigit() else 0}
         state = self.app.payload(self.user)
@@ -1245,6 +1303,11 @@ class Handler(tower_server.Handler):
                                         detail=data.get("detail"))
                 self._send(200, {"ok": ok})
                 return
+        if len(tail) == 2 and tail[0] == "po" and method == "POST":
+            ok, message = app.po.import_from_worker(worker["worker_id"], tail[1][:64],
+                                                    self._json(40 * 1024 * 1024))
+            self._send(200 if ok else 409, {"ok": ok, "message": message})
+            return
         if len(tail) == 3 and tail[0] == "session" and _ID.match(tail[1]):
             action_id = tail[1]
             if not self._worker_owns_action(worker, action_id):

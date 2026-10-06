@@ -30,7 +30,7 @@ import threading
 from . import store
 
 FILE = "events.jsonl"
-KINDS = ("shipment", "recovery", "human_task", "question", "feedback")
+KINDS = ("shipment", "recovery", "human_task", "question", "feedback", "po")
 VERDICTS = ("helpful", "not_helpful", "correct", "incorrect", "recovery_worked",
             "recovery_failed", "suggestion_useful", "suggestion_not_useful")
 

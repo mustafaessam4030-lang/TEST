@@ -36,6 +36,7 @@ SUITES = [
     ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
     ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
     ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
+    ("test_po.py",              "PO Automation: Hub PDF → validate → template → Graph, audited"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
@@ -71,7 +72,8 @@ def main():
         # Every suite's data is labelled TEST, so none of it can ever be mixed
         # into a production store.
         env = dict(os.environ, ATLAS_INTEL_DIR=tempfile.mkdtemp(prefix="ct_atlas_intel_"),
-                   ATLAS_DATA_ORIGIN="test")
+                   ATLAS_DATA_ORIGIN="test",
+                   PO_DATA_DIR=tempfile.mkdtemp(prefix="ct_po_"))
         result = subprocess.run(
             [sys.executable, str(path)], cwd=str(HERE),
             capture_output=True, text=True, env=env)

@@ -5,6 +5,11 @@
 # toolchain on the machine that runs it.
 playwright>=1.40
 
+# PO Automation (po/): reading the PDF and filling the approved Excel
+# template. Not needed by the ETA automation itself.
+openpyxl>=3.1
+pymupdf>=1.24
+
 # After installing, fetch the browser once:
 #     python -m playwright install chromium
 

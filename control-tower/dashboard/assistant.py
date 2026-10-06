@@ -1123,6 +1123,10 @@ try:
     from . import atlas_learning
 except Exception:                                   # pragma: no cover
     import atlas_learning
+try:
+    from . import atlas_po
+except Exception:                                   # pragma: no cover
+    import atlas_po
 
 MODE_WORDS = {"air": "Air", "ocean": "Ocean", "road": "Road", "rail": "Rail",
               "unknown": "Unknown"}
@@ -2992,6 +2996,15 @@ def _answer_core(question, state, context=None):
             return {"answer": _answer_code_request(data), "card": None,
                     "reference": context.get("reference"), "grounded": True,
                     "intent": intent}
+
+        # -- PO Automation: the same ATLAS, another domain ------------------
+        # A question about PO work — or one asked from the PO page — is
+        # answered from the PO job records, never from the shipment run.
+        po_kind = atlas_po.detect(question, context)
+        if po_kind:
+            produced = atlas_po.answer(po_kind, question, context)
+            if produced is not None:
+                return produced
 
         # -- what ATLAS has learned, its evidence, its evaluation ----------
         # From the intelligence stores, read-only. Checked before the run's
