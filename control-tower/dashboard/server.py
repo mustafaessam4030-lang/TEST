@@ -38,18 +38,21 @@ if __package__ in (None, ""):
         from dashboard.control import control
         from dashboard import feedback as feedback_store
         from dashboard import mlstatus
+        from dashboard import live_view
     except ImportError:
         from bridge import bridge
         import assistant
         from control import control
         import feedback as feedback_store
         import mlstatus
+        import live_view
 else:
     from .bridge import bridge
     from . import assistant
     from .control import control
     from . import feedback as feedback_store
     from . import mlstatus
+    from . import live_view
 
 # An iPhone ringtone (.m4r) is plain AAC in an MP4 container — the same bytes
 # a browser happily plays as .m4a — but Python's mimetypes has never heard of
@@ -198,6 +201,8 @@ def build_payload(trim=True, since_cold=None):
     data = bridge.snapshot(trim=trim, since_cold=since_cold)
     data["control"] = control.snapshot()
     data["health"] = machine_health()
+    # Whether Open Session can show the paused carrier tab here (live_view).
+    data["live_view"] = live_view.available()
     return data
 
 
@@ -224,13 +229,15 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- helpers -----------------------------------------------------------
 
-    def _send(self, status, body, content_type="application/json; charset=utf-8"):
+    def _send(self, status, body, content_type="application/json; charset=utf-8", extra=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (extra or {}).items():
+            self.send_header(name, value)
         self._maybe_set_cookie()
         self.end_headers()
         self.wfile.write(body)
@@ -336,6 +343,43 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _live_view(self, method, route):
+        """/api/session/<action_id>/(frame|input|release) — the local live view
+        (live_view.py). Only the dashboard tab that opened it is served."""
+        from urllib.parse import parse_qs, urlparse
+        parts = route.split("/")
+        if len(parts) != 5 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", parts[3]):
+            self._send(404, json.dumps({"error": "not_found"}))
+            return
+        action_id, verb = parts[3], parts[4]
+        query = parse_qs(urlparse(self.path).query)
+        if verb == "frame" and method == "GET":
+            client = (query.get("client") or [""])[0][:64]
+            status, headers, body = live_view.frame(action_id, client,
+                                                    (query.get("after") or ["0"])[0])
+            kind = "image/jpeg" if status == 200 else "application/json; charset=utf-8"
+            self._send(status, body, kind, dict(headers, **{"Cache-Control": "no-store, private"})
+                       if status == 200 else headers)
+            return
+        if method == "POST" and verb in ("input", "release"):
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 32 * 1024:
+                    self._send(413, json.dumps({"error": "too_large"}))
+                    return
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                self._send(400, json.dumps({"error": "bad_request"}))
+                return
+            client = str(payload.get("client_id") or "")[:64]
+            if verb == "input":
+                status, out = live_view.send_input(action_id, client, payload.get("events"))
+                self._send(status, json.dumps(out))     # nothing typed is echoed
+            else:
+                self._send(200, json.dumps({"ok": live_view.release(action_id, client)}))
+            return
+        self._send(404, json.dumps({"error": "not_found"}))
+
     def do_GET(self):
         if not self._authorised():
             self._deny()
@@ -416,6 +460,10 @@ class Handler(BaseHTTPRequestHandler):
             self._po("GET", route)
             return
 
+        if route.startswith("/api/session/"):
+            self._live_view("GET", route)
+            return
+
         if route == "/api/ml":
             # Real values from the live ml package. Nothing here is a demo
             # figure: an unknown is null, not zero.
@@ -467,8 +515,18 @@ class Handler(BaseHTTPRequestHandler):
                 accepted, message = False, "Human actions are not available."
             else:
                 accepted, message = handler(op, run_id, action_id, client_id)
+            live = False
+            if accepted and op == "open" and live_view.available():
+                # The paused tab, in this operator's own browser (live_view).
+                live, why = live_view.open_for(action_id, client_id)
+                if why and not live:
+                    message = "{0} {1}".format(message or "", why).strip()
             self._send(200, json.dumps({"accepted": accepted,
-                                        "message": message}))
+                                        "message": message, "live": live}))
+            return
+
+        if route.startswith("/api/session/"):
+            self._live_view("POST", route)
             return
 
         if route == "/api/evidence/upload":

@@ -151,9 +151,11 @@ same run and keeps the browser tab open where it stopped:
 
 1. The dashboard shows **HUMAN ACTION REQUIRED**: carrier, shipment, run ID,
    reason and how long it has been waiting.
-2. **Open Session** brings that exact tab to the front of the
-   automation's Edge window on the automation server. Work in it there, or
-   over Remote Desktop to that machine.
+2. **Open Session** (or **Open & Continue** on the queue card) shows that
+   exact tab inside the dashboard, in your own browser: click and type in it
+   there. The automation's Edge window on the server is the same tab, so it
+   moves too. (`ATA_LOCAL_LIVE_VIEW=0` turns the in-browser view off; Open
+   then only brings the tab to the front on the server.)
 3. Do the step (for GNET: type the security code and press Search), then
    press **Resume**. If the result isn't on the page yet, the run says so and
    keeps waiting.

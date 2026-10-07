@@ -62,6 +62,7 @@ SUITES = [
     ("test_po_hardening.py",    "PO hardening: idempotency, recovery, email reconciliation, numbers"),
     ("test_po_engine.py",       "PO transaction engine: invariants, crash points, races, properties"),
     ("test_po_icums.py",        "PO on the real ICUMS BOE layout: the business's Duty Template, cell for cell"),
+    ("test_local_live_view.py", "local dashboard: Open Session shows the paused carrier page in your browser"),
     ("test_verification.py",    "real eHub verification: worker evidence, levels, never from the cloud"),
     ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),

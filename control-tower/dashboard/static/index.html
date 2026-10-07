@@ -2210,7 +2210,7 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
         <div class="hbox-m" id="hHow"></div>
         <div class="hbox-a">
           <div class="hbox-i" id="hAtlas"></div>
-          <button class="cbtn" id="hOpen" title="Bring the paused carrier tab to the front of the automation's Edge window">Open Session</button>
+          <button class="cbtn" id="hOpen" title="Show the paused carrier page in your browser">Open Session</button>
           <button class="cbtn solid" id="hResume">Resume</button>
           <span class="hbox-m" id="hMsg"></span>
         </div>
@@ -3150,7 +3150,8 @@ function closeViewer(release){
   document.body.classList.remove('rv-on');
   if (rv.url){ URL.revokeObjectURL(rv.url); rv.url = null; }
   $('rvImg').removeAttribute('src');
-  if (release && id) fetch('/api/session/' + encodeURIComponent(id) + '/release', {method:'POST'}).catch(() => {});
+  if (release && id) fetch('/api/session/' + encodeURIComponent(id) + '/release', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({client_id: hClient})}).catch(() => {});
 }
 $('rvLeave').addEventListener('click', () => {
   const t = rvTask();
@@ -3159,7 +3160,8 @@ $('rvLeave').addEventListener('click', () => {
 });
 function rvLoop(gen){
   if (gen !== rv.gen || !rv.id) return;
-  _fetch('/api/session/' + encodeURIComponent(rv.id) + '/frame?after=' + rv.seq, {credentials:'same-origin'})
+  _fetch('/api/session/' + encodeURIComponent(rv.id) + '/frame?after=' + rv.seq +
+         '&client=' + encodeURIComponent(hClient), {credentials:'same-origin'})
     .then((r) => {
       if (gen !== rv.gen) return null;
       if (r.status === 200){
@@ -3181,7 +3183,7 @@ function rvLoop(gen){
         return null;
       }
       if (r.status === 409) return r.json().then((d) => { rv.held = false; put($('rvWaitMsg'), d.message); $('rvWaitMsg').hidden = false; throw 'stop'; });
-      if (r.status === 401) { signedOut(true); throw 'stop'; }
+      if (r.status === 401) { if (PF.on) signedOut(true); throw 'stop'; }
       return new Promise((ok) => setTimeout(ok, 1500));
     })
     .then(() => rvLoop(gen), (e) => { if (e !== 'stop') setTimeout(() => rvLoop(gen), 1500); });
@@ -3230,7 +3232,7 @@ function rvFlush(){
   if (!rv.id || !rv.queue.length) return;
   const events = rv.queue.splice(0, 100);
   fetch('/api/session/' + encodeURIComponent(rv.id) + '/input', {method:'POST',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify({events})}).catch(() => {});
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({events, client_id: hClient})}).catch(() => {});
   if (rv.queue.length) rv.timer = setTimeout(rvFlush, 40);
 }
 const BUTTONS = ['left', 'middle', 'right'];
@@ -6021,9 +6023,11 @@ function paintHuman(){
   put($('hWaitE'), waiting ? 'now' : (a.closed_at ? a.closed_at.slice(11) : ''));
   put($('hDeadline'), a.deadline ? a.deadline.slice(11) : '—');
   const mine = !a.claimed_by || a.claimed_by === hClient;
+  const live = PF.on || (S && S.live_view);
   put($('hHow'), waiting ? (a.instructions || '') +
-    ' Open Session brings the paused tab to the front of the automation\u2019s Edge window' +
-    ' on the automation server — work in it there, or over Remote Desktop.' +
+    (live ? ' Open Session shows the paused carrier page here, in your browser — do the step in it.'
+          : ' Open Session brings the paused tab to the front of the automation\u2019s Edge window' +
+            ' on the automation server — work in it there, or over Remote Desktop.') +
     (mine ? '' : ' Another operator has taken over this session.') : '');
   $('hOpen').style.display = waiting ? '' : 'none';
   $('hResume').style.display = waiting ? '' : 'none';
@@ -6042,7 +6046,7 @@ function sendHuman(op){
     body: JSON.stringify({op: op, run_id: a.run_id, action_id: a.action_id, client_id: hClient})
   }).then((r) => r.json()).then((r) => {
     hNote = r.message || '';
-    if (r.accepted && op === 'open' && PF.on) openViewer(a.action_id);
+    if (r.accepted && op === 'open' && (PF.on || r.live)) openViewer(a.action_id);
     paintHuman();
     setTimeout(() => { hNote = ''; paintHuman(); }, 6000);
   }).catch(() => { hNote = 'Could not reach the dashboard server.'; paintHuman(); });
@@ -6190,7 +6194,7 @@ function hqOpen(actionId){
   }).then((r) => r.json()).then((r) => {
     hqNote = r.message || ''; paintQueue();
     if (r.accepted) hqWatch(t);
-    if (r.accepted && PF.on) openViewer(t.action_id);
+    if (r.accepted && (PF.on || r.live)) openViewer(t.action_id);
     return r;
   }).catch(() => {
     hqNote = 'Could not reach the dashboard server.'; paintQueue();

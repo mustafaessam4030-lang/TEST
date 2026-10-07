@@ -31,12 +31,14 @@ if __package__ in (None, ""):
 try:
     from dashboard import server as tower_server
     from dashboard.bridge import bridge
+    from dashboard import live_view
     from dashboard.control import (validate_human_request,
                                    human_request_record, human_ok_message,
                                    queue_task)
 except ImportError:
     import server as tower_server
     from bridge import bridge
+    import live_view
     from control import (validate_human_request, human_request_record,
                          human_ok_message, queue_task)
 
@@ -101,6 +103,12 @@ class Supervisor:
             for key, value in (extra_env or {}).items():
                 if str(key).startswith("CT_") and value is not None:
                     environment[str(key)] = str(value)
+            if "CT_SESSION_PORT" not in (extra_env or {}):
+                # Started here, from the local dashboard: the run gets its own
+                # loopback session endpoint, so Open Session can show its
+                # paused tab in the operator's browser (live_view.py). The
+                # worker agent passes its own instead.
+                environment.update(live_view.new_run_env())
 
             try:
                 self.process = subprocess.Popen(
@@ -315,9 +323,12 @@ def install():
     tower_server.control = supervisor      # /api/control calls supervisor.request
 
 
-def _payload(trim=True):
+def _payload(trim=True, since_cold=None):
+    # since_cold: the live stream asks for only what changed since its last
+    # frame; the published state is always sent whole here.
     data = supervisor.snapshot()
     data["health"] = tower_server.machine_health()
+    data["live_view"] = live_view.available() and supervisor.is_running()
     return data
 
 
