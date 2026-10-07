@@ -2077,6 +2077,158 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
   .is-analyzing .ax-head,.is-recovering .ax-head,.is-success .atlas-fig,
   .is-human_required .atlas-fig{animation:none}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLISH LAYER — the visual system, refined. CSS only: no markup, script
+   or behaviour depends on anything below; delete this block and the
+   interface returns exactly as it was.
+
+   One accent (indigo) for actions, focus and selection. Status keeps its
+   own colours — green verified, amber attention, red failure, blue in
+   progress — and nothing else is coloured. Surfaces are told apart by a
+   step of tone and a hairline, not by shadows and boxes. Every contrast
+   pair below was measured: text ≥ 4.5:1 on its own surface.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#F5F5F7; --surface:#FFFFFF; --surface-2:#F9F9FB; --surface-3:#EEEEF1;
+  --ink:#1D1D1F; --mid:#4B4B52; --faint:#6E6E76;
+  --line:rgba(0,0,0,.08); --line-2:rgba(0,0,0,.055); --line-hi:rgba(0,0,0,.13);
+  --brand:#4B50D8; --brand-hi:#3E42C2; --brand-wash:rgba(75,80,216,.08);
+  --solid:#4B50D8; --on-solid:#FFFFFF;
+  --vio:#4B50D8; --vio-wash:rgba(75,80,216,.08); --vio-line:rgba(75,80,216,.24);
+  --nav-on:#FFFFFF; --on-nav:#1D1D1F;
+  --card-edge:rgba(0,0,0,.06);
+  --shadow:0 1px 2px rgba(0,0,0,.035);
+  --lift:0 1px 2px rgba(0,0,0,.06),0 0 0 .5px rgba(0,0,0,.04);
+  --r:12px; --r-sm:9px; --r-lg:16px;
+  --e:cubic-bezier(.23,1,.32,1);
+  --t-display:600 28px/1.15 var(--s);
+  --t-title:600 17px/1.3 var(--s);
+  --t-label:600 11px/1.2 var(--s);
+}
+:root[data-theme="dark"]{
+  --bg:#0B0E14; --surface:#141922; --surface-2:#10141C; --surface-3:#1C2230;
+  --ink:#F2F4F8; --mid:#B1B8C4; --faint:#8C95A4;
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.05); --line-hi:rgba(255,255,255,.14);
+  --brand:#8A8DF7; --brand-hi:#6E72F0; --brand-wash:rgba(138,141,247,.14);
+  --solid:#5A5EE6; --on-solid:#FFFFFF;
+  --vio:#9A9DF8; --vio-wash:rgba(154,157,248,.12); --vio-line:rgba(154,157,248,.32);
+  --nav-on:rgba(255,255,255,.11); --on-nav:#FFFFFF;
+  --card-edge:rgba(255,255,255,.07);
+  --shadow:0 1px 2px rgba(0,0,0,.45);
+  --lift:0 1px 2px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.06);
+  --ch-me:#2B3245; --ch-me-ink:#F2F4F8;
+}
+:root{--ch-me:#1D1D1F;--ch-me-ink:#FFFFFF;--ch-y:var(--solid);--ch-y-ink:var(--on-solid)}
+:root[data-theme="dark"]{--ch-me:#2B3245;--ch-me-ink:#F2F4F8;--ch-y:var(--solid);--ch-y-ink:var(--on-solid)}
+body{letter-spacing:-.003em}
+
+/* The bar: one hairline, the page colour; navigation as a quiet segmented
+   control whose selection is a lifted surface, not a coloured capsule. */
+.appbar{background:var(--bg);border-bottom:1px solid var(--line-2)}
+.tnav{background:var(--surface-3);border-color:transparent;padding:3px;gap:0}
+.tnav-ind{top:3px;bottom:3px;background:var(--nav-on);box-shadow:var(--lift);
+  transition:transform .32s var(--e),width .32s var(--e)}
+.tnav-i{padding:6px 14px;font-size:13px;font-weight:500;letter-spacing:-.006em;
+  transition:color .2s var(--e)}
+.tnav-i.on{font-weight:600}
+.tnav-i .nav-c{background:var(--line);color:var(--mid);border-radius:999px}
+.tnav-i.on .nav-c{background:var(--line);color:var(--ink)}
+:root[data-theme="dark"] .tnav-i.on .nav-c{background:rgba(255,255,255,.14);color:#FFFFFF}
+.ibtn{border-color:transparent;background:transparent;transition:background-color .18s var(--e),color .18s var(--e)}
+.ibtn:hover{background:var(--surface-3);color:var(--ink)}
+
+/* Page rhythm: an 8-point scale, headings that state rather than shout. */
+.page{padding:28px 32px 56px}
+.hello{margin-bottom:28px;gap:16px 24px}
+.hello-k{font-size:13px;letter-spacing:0;margin-bottom:6px}
+.hello-t{font:var(--t-display);letter-spacing:-.022em}
+
+/* Cards: a surface one step above the page, a hairline, no glow. */
+.card{border:1px solid var(--card-edge);box-shadow:var(--shadow);border-radius:var(--r-lg)}
+.card-h{padding:18px 24px 16px;border-bottom-color:var(--line-2)}
+.card-t{font-size:15px;font-weight:600;letter-spacing:-.012em}
+.card-s{font-size:12.5px;margin-top:3px}
+.card-b{padding:20px 24px}
+
+/* Metrics: numbers carry the weight; labels whisper. */
+.kpis{border-color:var(--card-edge);box-shadow:var(--shadow);margin-bottom:24px}
+.kpi{padding:18px 24px 20px}
+.kpi-k{font-size:12.5px;font-weight:500;letter-spacing:-.003em}
+.kpi-v{font-size:28px;font-weight:600;letter-spacing:-.03em;margin-top:10px}
+.kpi-n{font-size:12px;margin-top:6px}
+
+/* Buttons: tactile, rounded-rect, one filled action per view. */
+.cbtn,.btn,.share{border-radius:var(--r-sm);font-weight:500;letter-spacing:-.006em;
+  transition:background-color .18s var(--e),border-color .18s var(--e),color .18s var(--e),
+    box-shadow .18s var(--e),transform .16s var(--e)}
+.cbtn{padding:7px 14px;background:var(--surface);border-color:var(--line);box-shadow:0 1px 1px rgba(0,0,0,.025)}
+.cbtn:hover{background:var(--surface-2);border-color:var(--line-hi)}
+.cbtn.solid,.btn:not(.ghost){background:var(--solid);border-color:var(--solid);color:var(--on-solid);
+  box-shadow:0 1px 2px rgba(40,44,140,.18)}
+.cbtn.solid:hover,.btn:not(.ghost):hover{background:var(--brand-hi);border-color:var(--brand-hi)}
+:root[data-theme="dark"] .cbtn.solid:hover,:root[data-theme="dark"] .btn:not(.ghost):hover{background:#6B6FEE;border-color:#6B6FEE}
+.btn.ghost{border-radius:var(--r-sm)}
+.cbtn:active:not(:disabled),.btn:active,.chip:active,.share:active,.ibtn:active{transform:scale(.97)}
+
+/* Status: a soft tint and a dot, sentence case, one shape everywhere. */
+.pill{border-color:transparent;background:var(--surface-3);font-weight:500;padding:5px 11px}
+.pill.run,.pill.bad,.pill.fin{border-color:transparent}
+.tag,.pt,.po-st{font-weight:500;letter-spacing:-.003em;text-transform:none;border-radius:999px}
+.tag,.pt{font-size:12px;padding:3px 9px}
+/* PO states arrive in capitals: set small and tracked, they read as a label. */
+.pt{font-size:11px;letter-spacing:.03em}
+.conf{font-weight:500}
+.po-src,.po-src.test,.po-src.real{border-color:transparent;border-radius:6px;font-weight:600;letter-spacing:.03em}
+.atlas-t{border-color:transparent;background:none;padding:2px 0;
+  font-family:var(--s);font-size:10.5px;font-weight:500;letter-spacing:.06em}
+.atlas-t.on{background:var(--vio-wash);padding:2px 6px;border-radius:6px}
+
+/* Filters: quiet text until chosen; the choice is the accent, softly. */
+.chip{border-color:transparent;background:transparent;font-weight:500;padding:6px 12px;
+  transition:background-color .18s var(--e),color .18s var(--e),transform .16s var(--e)}
+.chip:hover{background:var(--surface-3);color:var(--ink)}
+.chip.on{background:var(--vio-wash);border-color:transparent;color:var(--vio);font-weight:500}
+.in{background:var(--surface-2);border-color:var(--line);border-radius:var(--r-sm);
+  transition:border-color .18s var(--e),box-shadow .18s var(--e),background-color .18s var(--e)}
+.in:focus{border-color:var(--vio);box-shadow:0 0 0 3px var(--vio-wash)}
+.seg{background:var(--surface-3)}
+.seg button.on{box-shadow:var(--lift)}
+
+/* Tables: air, alignment, hairlines between rows, one selection colour. */
+th{font:var(--t-label);letter-spacing:.06em;padding:12px 16px 10px;color:var(--faint)}
+td{padding:14px 16px;border-bottom:1px solid var(--line-2)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr{transition:background-color .16s var(--e)}
+tbody tr:hover{background:var(--surface-2)}
+tbody tr.sel{background:var(--vio-wash)}
+thead th:first-child,tbody td:first-child{padding-left:24px}
+thead th:last-child,tbody td:last-child{padding-right:24px}
+td.ref{font-weight:500}
+
+/* Links and focus: the accent, consistently. */
+.link{color:var(--vio);font-weight:500}
+:focus-visible{outline:2px solid var(--vio);outline-offset:2px}
+
+/* ATLAS launcher: a calm surface, the character beside its name. */
+.fab{background:var(--surface);color:var(--ink);border:1px solid var(--card-edge);
+  box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.08)}
+:root[data-theme="dark"] .fab{box-shadow:0 1px 2px rgba(0,0,0,.5),0 10px 28px rgba(0,0,0,.45)}
+
+/* ATLAS chat: lighter chrome, a clean operator bubble, readable answers. */
+#chat{border-color:var(--card-edge)}
+#chat .ch-h{border-bottom-color:var(--line-2)}
+#chat .msg.me .bub{border-radius:18px 18px 6px 18px;box-shadow:none}
+#chat .ch-box{border-radius:16px}
+#chat .ch-box:focus-within{border-color:var(--vio-line);box-shadow:0 0 0 3px var(--vio-wash)}
+.top .top-t{font-size:28px;font-weight:600;letter-spacing:-.022em}
+
+@media (max-width:1024px){.page{padding:24px 24px 48px}}
+@media (max-width:640px){.page{padding:20px 16px 40px}.hello-t{font-size:24px}}
+@media (prefers-reduced-motion:reduce){
+  .cbtn,.btn,.chip,.share,.ibtn{transition:background-color .18s ease,color .18s ease,border-color .18s ease}
+  .cbtn:active:not(:disabled),.btn:active,.chip:active,.share:active,.ibtn:active{transform:none}
+}
 </style>
 </head>
 <body>
