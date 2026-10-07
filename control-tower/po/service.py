@@ -90,10 +90,17 @@ class SubprocessLauncher(object):
             args = [sys.executable, "-m", "po", "sweep"]
             if no_email:
                 args.append("--no-email")
+            # The run's own output is kept, so a run that stops (eHub cannot be
+            # opened, the sign-in fails) says why on the PO page.
+            log_path = Path(self.store.folder) / "sweeps" / "run-last.log"
             try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log = open(str(log_path), "w", encoding="utf-8")
                 self._sweep = subprocess.Popen(args, cwd=str(Path(__file__).resolve().parent.parent),
                                                env=env, stdin=subprocess.DEVNULL,
-                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                               stdout=log, stderr=subprocess.STDOUT)
+                log.close()
+                self._sweep_log = log_path
             except Exception as error:
                 return False, "PO Automation could not start: {0}".format(error)
         return True, "PO Automation started: it opens eHub, reads the Shipments list and " \
@@ -101,6 +108,24 @@ class SubprocessLauncher(object):
 
     def sweep_running(self):
         return getattr(self, "_sweep", None) is not None and self._sweep.poll() is None
+
+    def sweep_ended(self):
+        """How the last run started here ended: {"ok", "message"} — None while it
+        runs or when none was started."""
+        proc = getattr(self, "_sweep", None)
+        if proc is None or proc.poll() is None:
+            return None
+        lines = []
+        try:
+            lines = [l.strip() for l in Path(self._sweep_log).read_text(
+                encoding="utf-8", errors="replace").splitlines() if l.strip()]
+        except (OSError, AttributeError):
+            pass
+        said = [l for l in lines if l.startswith("[PO sweep]")] or lines[-3:]
+        if proc.returncode == 0:
+            return {"ok": True, "message": None}
+        return {"ok": False, "message": "PO Automation stopped (exit {0}): {1}".format(
+            proc.returncode, " ".join(said)[-400:] or "no output — see sweeps/run-last.log")}
 
     def _drain(self):
         while True:
@@ -559,7 +584,8 @@ class PoService(object):
         except (ValueError, OSError):
             pass
         running = getattr(self.launcher, "sweep_running", lambda: None)()
-        return {"running": running, "last": last}
+        ended = getattr(self.launcher, "sweep_ended", lambda: None)()
+        return {"running": running, "last": last, "ended": ended}
 
     def send(self, actor, po_id, authorize_resend=False, reason=None, wait=False):
         record = self.store.get(po_id)

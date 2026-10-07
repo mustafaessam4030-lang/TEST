@@ -482,6 +482,8 @@ input,textarea,select{font-family:inherit}
 .po-fa{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 20px 18px}
 .po-msg{font-size:12.5px;color:var(--mid)}
 .po-msg.bad{color:var(--red)}
+.po-run-big{margin:16px auto 0;padding:13px 26px;font-size:15px}
+#poRun:disabled{opacity:.45;cursor:not-allowed}
 .po-t td{white-space:nowrap}
 .po-t th:last-child,.po-t td:last-child{width:1%;padding-left:0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
@@ -4815,8 +4817,12 @@ function paintPO(){
   put($('poSub'), (c.doctype_label || 'Document') + ' · template ' + (c.template || '—') + ' · ' +
     (c.recipient ? 'emails to ' + c.recipient : 'no recipient configured') +
     (c.graph_configured ? '' : ' · Microsoft 365 not configured'));
+  // Always shown: a role that may not start it sees why, instead of no button.
   $('poNew').hidden = !PF.can('po.process');
-  $('poRun').hidden = !PF.can('po.process');
+  $('poRun').disabled = !PF.can('po.process');
+  $('poRun').title = PF.can('po.process')
+    ? 'Opens eHub, reads the Shipments list and processes every Under Clearance record. Nothing to enter.'
+    : 'Your role (' + ((PF.user || {}).role || 'viewer') + ') cannot start PO Automation — an Admin or Operator can.';
   if (c.defaults && c.defaults.supplier && !$('poSupplier').value) $('poSupplier').placeholder = c.defaults.supplier;
   const k = d.kpis || {};
   putHTML($('poKpis'), PO_KPIS.map((x) => '<div class="kpi" style="--c:' + (k[x[0]] ? x[2] : 'var(--line-hi)') +
@@ -4841,9 +4847,11 @@ function paintPO(){
     '<td>' + poWhen(j.created) + '</td><td>' + poWhen(j.updated) + '</td>' +
     '<td><button class="po-open" type="button" data-po-open="' + esc(j.po_id) + '" aria-label="Open job ' + esc(j.reference) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></td></tr>').join(''));
-  putHTML($('poEmpty'), jobs.length ? '' : empty('No PO job yet',
-    PF.can('po.process') ? 'Press Process PO, give the shipment’s BOL/AWB and the supplier invoice number.'
-                         : 'Jobs started by an operator appear here.'));
+  putHTML($('poEmpty'), jobs.length ? '' : (PF.can('po.process')
+    ? '<div class="empty"><h3>No PO job yet</h3><p>Press Start PO Automation. ATA opens eHub, finds every Under Clearance ' +
+      'record, takes its Bill of Entry and fills the Duty Payment Request — nothing to enter.</p>' +
+      '<button class="btn po-run-big" type="button" data-po-run>' + PO_RUN_ICON + 'Start PO Automation</button></div>'
+    : empty('No PO job yet', 'Jobs started by an operator appear here.')));
   paintPOAtlas();
   if (PO.open) loadPODetail(false);
 }
@@ -5090,7 +5098,10 @@ $('poNew').addEventListener('click', () => { $('poForm').hidden = false; $('poFo
 $('poCancel').addEventListener('click', () => { $('poForm').hidden = true; put($('poMsg'), ''); });
 // THE PRIMARY WORKFLOW: nothing to enter. The worker opens eHub, reads the
 // Shipments list, decides every row and processes each Under Clearance record.
+const PO_RUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 5l12 7-12 7z"/></svg>';
+document.addEventListener('click', (e) => { if (e.target.closest('[data-po-run]')) $('poRun').click(); });
 $('poRun').addEventListener('click', () => {
+  if ($('poRun').disabled) return;
   const m = $('poRunMsg'); m.className = 'po-msg'; put(m, 'Starting…');
   fetch('/api/po/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
     .then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
@@ -5101,11 +5112,15 @@ $('poRun').addEventListener('click', () => {
 function loadPORun(){
   fetch('/api/po/run').then((r) => r.ok ? r.json() : null).then((d) => {
     if (!d) return;
-    const m = $('poRunMsg'); if (m.classList.contains('bad')) return;
+    const m = $('poRunMsg');
+    if (d.ended && !d.ended.ok){ m.className = 'po-msg bad'; put(m, d.ended.message); return; }
+    if (m.classList.contains('bad')) return;
     const c = (d.last || {}).counts || {};
     const last = d.last ? 'Last run ' + (d.last.at || '').replace('T', ' ').slice(0, 16) + ': ' + d.last.rows + ' eHub row(s) read, ' +
       (c.ELIGIBLE || 0) + ' Under Clearance processed' : '';
-    put(m, d.running ? 'PO Automation is running — reading eHub…' : last);
+    // Nothing newer to say: the message from the click stays.
+    if (d.running) put(m, 'PO Automation is running — reading eHub…');
+    else if (last) put(m, last);
   }).catch(() => {});
 }
 $('poForm').addEventListener('submit', (e) => {

@@ -2270,6 +2270,26 @@ check("The PO page's primary action is Start PO Automation; the one-record form 
       "fallback with no invoice field",
       'id="poRun"' in UIH2 and "Start PO Automation" in UIH2 and "Manual fallback" in UIH2
       and 'name="invoice_no"' not in UIH2 and 'id="poNext"' not in UIH2)
+check("The empty queue carries its own Start PO Automation button, and a role that may not "
+      "start it sees the button disabled with why — never no button",
+      "data-po-run" in UIH2 and "$('poRun').disabled = !PF.can('po.process')" in UIH2
+      and "$('poRun').hidden" not in UIH2 and "Press Process PO" not in UIH2)
+from po import service as SVC  # noqa: E402
+fail_dir = Path(tempfile.mkdtemp(prefix="po_runfail_"))
+fail_launcher = SVC.SubprocessLauncher(S.Store(folder=fail_dir))
+# A stand-in for a run that stops at once — the suite never opens the real eHub.
+fail_launcher._sweep_log = fail_dir / "run-last.log"
+with open(str(fail_launcher._sweep_log), "w") as _log:
+    fail_launcher._sweep = subprocess.Popen(
+        [sys.executable, "-c", "print('[PO sweep] eHub could not be opened: Missing credentials "
+                               "file'); raise SystemExit(1)"], stdout=_log, stderr=subprocess.STDOUT)
+started = True
+fail_launcher._sweep.wait(30)
+ended = fail_launcher.sweep_ended() or {}
+check("A run that stops (here: eHub cannot be opened — no credentials) says why on the PO page, "
+      "from the run's own output (sweeps/run-last.log)",
+      started and ended.get("ok") is False and "eHub could not be opened" in (ended.get("message")
+                                                                              or ""), ended)
 A27.INTERNAL_URL = saved_url
 A27.ensure_filtered_page = saved_nav
 
