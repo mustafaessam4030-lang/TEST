@@ -205,11 +205,15 @@ check("Closed at first: the dialog is hidden from assistive technology",
       page.get_attribute("#chat", "aria-hidden") == "true" and not page.is_visible("#chat"))
 open_chat(page)
 box = page.locator("#chat").bounding_box()
-check("Open: a large centered surface on desktop (≥ 900px wide, ≥ 780px tall)",
-      box["width"] >= 900 and box["height"] >= 780 and abs(box["x"] + box["width"] / 2 - 720) < 4,
-      box)
-check("...over a dimmed backdrop, the launcher out of the way",
-      page.is_visible("#chScrim") and not page.is_visible("#fab"))
+check("Open: by default (Medium) a compact panel docked bottom right — the dashboard stays in "
+      "view (≤ 480 × 700, a third of the screen at most)",
+      400 <= box["width"] <= 480 and box["height"] <= 700 and
+      1440 - (box["x"] + box["width"]) <= 32 and 900 - (box["y"] + box["height"]) <= 40 and
+      box["width"] * box["height"] <= 1440 * 900 / 3 and
+      page.get_attribute("#chat", "data-size") == "m", box)
+check("...over a faint veil (no blur), the launcher out of the way",
+      page.is_visible("#chScrim") and "compact" in page.get_attribute("#chScrim", "class")
+      and not page.is_visible("#fab"))
 check("A modal dialog, named by its title",
       page.get_attribute("#chat", "role") == "dialog"
       and page.get_attribute("#chat", "aria-modal") == "true"
@@ -229,8 +233,8 @@ check("...and one live line from the run state: watching / human action / ready"
 check("...its dot matches it", page.get_attribute("#chRole", "data-s") in ("live", "wait", "idle"))
 check("The run in context: the run id, as a button", page.is_visible("#chCtx")
       and page.inner_text("#chCtxV").strip() == RUN, page.inner_text("#chCtx"))
-check("Empty state: the welcome, centered", page.is_visible("#chEmpty") and
-      "Ask me about this run, shipments, failures, human actions, or PO automation."
+check("Empty state: the welcome, a friendly hello, centered", page.is_visible("#chEmpty") and
+      "Hi 👋 Ask me about this run, shipments, failures, human actions, or PO automation."
       in page.inner_text("#chEmpty"))
 chips = page.locator("#chEmptySug .ch-chip")
 check("...with 3–4 suggestions taken from this run", 3 <= chips.count() <= 4,
@@ -262,7 +266,7 @@ check("...on the right", me["x"] + me["width"] > body_box["x"] + body_box["width
 check("Thinking: ATLAS (analyzing) with what it is doing, as a status",
       page.is_visible("#chatBody .msg.think") and
       page.get_attribute("#chatBody .msg.think", "role") == "status" and
-      page.inner_text("#chatBody .msg.think .th-label").strip() == "Checking the run…" and
+      page.inner_text("#chatBody .msg.think .th-label").strip() == "Give me a second — checking the run…" and
       page.locator("#chatBody .msg.think .atlas.is-analyzing").count() == 1,
       page.inner_text("#chatBody .msg.think") if page.is_visible("#chatBody .msg.think") else "")
 check("...the same words for screen readers", page.inner_text("#chTy").strip().endswith("…"),
@@ -525,6 +529,12 @@ check("One status badge, from the run's own state: written and read back → VER
       bub.locator(".ch-badge").count() == 1 and
       bub.locator(".ch-badge").inner_text().strip() == "VERIFIED",
       bub.locator(".ch-badge").all_inner_texts())
+check("ATLAS's voice: a friendly opener from that same recorded state (verified → ✅), a separate "
+      "marked line — the server's answer below it untouched",
+      bub.locator("[data-voice]").count() == 1 and
+      bub.locator("[data-voice]").inner_text().strip() == "Yep — that one went through cleanly. ✅"
+      and "MSC's notice says the service runs two days late." in bub.inner_text(),
+      bub.locator("[data-voice]").all_inner_texts())
 page.unroute("**/api/ask")
 page.unroute("**/api/ask/progress*")
 ctx.close()
@@ -539,6 +549,10 @@ check("A long grounded record folds into one disclosure; the lead stays readable
 check("...the failed shipment carries its RESTRICTED badge",
       bub.locator(".ch-badge").all_inner_texts() == ["RESTRICTED"],
       bub.locator(".ch-badge").all_inner_texts())
+check("...and the opener names the snag the record shows, never success",
+      bub.locator("[data-voice]").inner_text().strip() ==
+      "Yeah, I found the snag 😅 — the carrier restricted access.",
+      bub.locator("[data-voice]").all_inner_texts())
 dock = page.locator("#chDock").bounding_box()
 page.evaluate("document.querySelector('#chatBody').scrollTop = 1e9")
 page.wait_for_timeout(250)
@@ -590,7 +604,82 @@ ctx.close()
 ctx, page, errors = new_page(834, 1112)
 open_chat(page)
 box = page.locator("#chat").bounding_box()
-check("Tablet: a large sheet with a margin", 760 <= box["width"] <= 810 and box["x"] >= 12, box)
+check("Tablet: the compact panel by default, inside the screen",
+      box["width"] <= 480 and box["x"] >= 12 and box["x"] + box["width"] <= 834, box)
+page.click("#chSize [data-size='l']")
+page.wait_for_timeout(200)
+box = page.locator("#chat").bounding_box()
+check("...Large: a large sheet with a margin", 760 <= box["width"] <= 810 and box["x"] >= 12, box)
+ctx.close()
+
+# ═════════════════════════════════════════════════════════════════════════
+rule("6b. CHAT SIZE: SMALL / MEDIUM / LARGE, REMEMBERED")
+# ═════════════════════════════════════════════════════════════════════════
+ctx, page, errors = new_page()
+page.evaluate("() => { try { localStorage.removeItem('ata-chat-size'); } catch (e) {} }")
+open_chat(page)
+sizes = {}
+for size in ("s", "m", "l"):
+    page.click("#chSize [data-size='{0}']".format(size))
+    page.wait_for_timeout(200)
+    sizes[size] = page.locator("#chat").bounding_box()
+check("Three sizes, one tap each: Small < Medium < Large",
+      sizes["s"]["width"] < sizes["m"]["width"] < sizes["l"]["width"] and
+      sizes["s"]["height"] < sizes["m"]["height"] < sizes["l"]["height"], sizes)
+check("...Large is the centred workspace (≥ 900 wide, centred, blurred backdrop)",
+      sizes["l"]["width"] >= 900 and abs(sizes["l"]["x"] + sizes["l"]["width"] / 2 - 720) < 4
+      and "compact" not in page.get_attribute("#chScrim", "class"), sizes["l"])
+check("...the chosen size is shown as pressed (a toggle group)",
+      page.get_attribute("#chSize [data-size='l']", "aria-pressed") == "true" and
+      page.get_attribute("#chSize [data-size='m']", "aria-pressed") == "false" and
+      page.get_attribute("#chSize", "role") == "group")
+ask(page, "How is the run going?")
+check("...a conversation reads in every size (Small: nothing scrolls sideways)",
+      page.click("#chSize [data-size='s']") is None and page.evaluate(
+          "() => { const b = document.querySelector('#chatBody'); "
+          "return b.scrollWidth <= b.clientWidth + 1; }"))
+page.click("#chSize [data-size='l']")
+page.reload()
+page.wait_for_function("() => typeof S !== 'undefined' && S && S.run && S.run.run_id", timeout=15000)
+open_chat(page)
+check("...remembered on this device: Large after a reload",
+      page.get_attribute("#chat", "data-size") == "l")
+page.click("#chSize [data-size='m']")
+check("No script errors", not errors, errors[:3])
+ctx.close()
+
+# ═════════════════════════════════════════════════════════════════════════
+rule("6c. ATLAS A LITTLE MORE ALIVE — ONE SMALL REACTION PER STATE, NO LOOPS ADDED")
+# ═════════════════════════════════════════════════════════════════════════
+ctx, page, errors = new_page()
+anims = page.evaluate("""() => {
+  const out = {};
+  for (const st of ['idle', 'monitoring', 'analyzing', 'recovering', 'success', 'human_required']) {
+    const el = document.createElement('div'); document.body.appendChild(el);
+    Atlas(el, {size: 'md', text: false, state: st});
+    const fig = getComputedStyle(el.querySelector('.atlas-fig'));
+    const head = el.querySelector('.ax-head');
+    const h = head ? getComputedStyle(head) : {animationName: 'none', animationIterationCount: '0'};
+    out[st] = {fig: fig.animationName, figN: fig.animationIterationCount,
+               head: h.animationName, headN: h.animationIterationCount,
+               float: getComputedStyle(el.querySelector('.atlas-float')).animationDuration};
+    el.remove();
+  }
+  return out; }""")
+check("Analyzing: a thoughtful head tilt; recovering: a focused lean (each once)",
+      anims["analyzing"]["head"] == "axPonder" and anims["recovering"]["head"] == "axFocus"
+      and anims["analyzing"]["headN"] == "1" and anims["recovering"]["headN"] == "1", anims)
+check("Verified: one small happy hop; human required: one attention nudge (each once)",
+      anims["success"]["fig"] == "axCheer" and anims["success"]["figN"] == "1" and
+      anims["human_required"]["fig"] == "axAlert" and anims["human_required"]["figN"] == "1", anims)
+check("Idle: a slower, calmer breath; monitoring keeps its attentive glance",
+      anims["idle"]["float"] == "6.2s" and anims["monitoring"]["fig"] == "none", anims)
+ctx.close()
+ctx, page, errors = new_page(reduced=True)
+still = page.evaluate("""() => { const el = document.createElement('div'); document.body.appendChild(el);
+  Atlas(el, {size: 'md', text: false, state: 'success'});
+  return getComputedStyle(el.querySelector('.atlas-fig')).animationName; }""")
+check("Reduced motion: no reaction animation", still == "none", still)
 ctx.close()
 
 ctx, page, errors = new_page(reduced=True)

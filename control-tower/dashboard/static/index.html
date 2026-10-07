@@ -2003,6 +2003,80 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
   #chat .msg.think .atlas-float{animation:none!important}
   #chat .ch-x:hover{transform:none}
 }
+
+/* ── ATLAS chat size: Small, Medium (the default), Large ──────────────────
+   Small and Medium are a panel docked at the bottom right: the dashboard
+   stays in view behind a faint veil (a click on it still closes the chat).
+   Large is the centred workspace. A phone is always full screen (above). */
+.ch-size{display:inline-flex;flex:none;gap:2px;padding:3px;margin-left:8px;border-radius:10px;
+  background:var(--surface-3)}
+.ch-size button{min-width:24px;height:24px;padding:0 6px;border-radius:7px;font-size:11.5px;
+  font-weight:650;color:var(--mid);transition:background .18s var(--e),color .18s var(--e)}
+.ch-size button:hover{color:var(--ink)}
+.ch-size button[aria-pressed="true"]{background:var(--card);color:var(--ink);
+  box-shadow:0 1px 2px rgba(11,31,51,.12)}
+.ch-size button:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
+#chat .ch-id{flex:1 1 auto}
+#chat .ch-ctx{margin-left:8px}
+@media(min-width:641px){
+  #chat[data-size="s"],#chat[data-size="m"]{--ch-x:none;top:auto;left:auto;right:24px;
+    bottom:calc(var(--player) + 20px);width:min(var(--ch-w),calc(100vw - 48px));
+    height:min(var(--ch-h),calc(100vh - var(--player) - 40px));border-radius:18px;--ch-col:100%}
+  #chat[data-size="s"]{--ch-w:368px;--ch-h:520px}
+  #chat[data-size="m"]{--ch-w:440px;--ch-h:640px}
+  .ch-scrim.compact{background:rgba(10,19,32,.07);-webkit-backdrop-filter:none;backdrop-filter:none}
+  :root[data-theme="dark"] .ch-scrim.compact{background:rgba(3,8,15,.22)}
+  /* the same conversation, set a little tighter */
+  #chat[data-size="s"] .ch-h,#chat[data-size="m"] .ch-h{min-height:58px;padding:9px 10px 9px 14px;gap:10px}
+  #chat[data-size="s"] .ch-av,#chat[data-size="m"] .ch-av{--ax:40px;width:40px;height:40px;margin:0}
+  #chat[data-size="s"] .ch-nm span{display:none}
+  #chat[data-size="s"] .ch-id,#chat[data-size="m"] .ch-id{flex:1 1 0;min-width:0}
+  #chat[data-size="s"] .ch-rl,#chat[data-size="m"] .ch-rl{display:flex;white-space:nowrap;min-width:0;font-size:11.5px;gap:6px}
+  #chat[data-size="s"] .ch-rl span,#chat[data-size="m"] .ch-rl span{min-width:0;overflow:hidden;
+    text-overflow:ellipsis}
+  #chat[data-size="s"] .ch-ctx{display:none}
+  #chat[data-size="s"] .ch-ctx-k,#chat[data-size="m"] .ch-ctx-k{display:none}
+  #chat[data-size="m"] .ch-ctx{max-width:96px;padding:5px 8px}
+  #chat[data-size="s"] .ch-h,#chat[data-size="m"] .ch-h{gap:8px}
+  #chat[data-size="s"] .ch-x,#chat[data-size="m"] .ch-x{width:30px;height:30px;margin-left:2px}
+  #chat[data-size="s"] .ch-b,#chat[data-size="m"] .ch-b{gap:18px;padding-left:16px;padding-right:16px;padding-top:18px}
+  #chat[data-size="s"] .msg.bot .bub,#chat[data-size="m"] .msg.bot .bub{font-size:14px;line-height:1.62}
+  #chat[data-size="s"] .msg.me .bub,#chat[data-size="m"] .msg.me .bub{font-size:14px}
+  #chat[data-size="s"] .msg.me,#chat[data-size="m"] .msg.me{max-width:86%}
+  #chat[data-size="s"] .ax-indent,#chat[data-size="s"] .dl-row{margin-left:0;max-width:100%}
+  #chat[data-size="s"] .ch-empty,#chat[data-size="m"] .ch-empty{padding:22px 18px calc(var(--ch-dock,132px) + 4px)}
+  #chat[data-size="s"] .ch-e-t,#chat[data-size="m"] .ch-e-t{font-size:18px}
+  #chat[data-size="s"] .ch-e-p,#chat[data-size="m"] .ch-e-p{font-size:14px;margin:10px 0 14px}
+  #chat[data-size="s"] .ch-e-n{display:none}
+  #chat[data-size="s"] .ch-hint{display:none}
+  #chat[data-size="s"] .ch-s,#chat[data-size="m"] .ch-s{padding-left:14px;padding-right:14px}
+  #chat[data-size="s"] .ch-f,#chat[data-size="m"] .ch-f{padding-left:12px;padding-right:12px}
+}
+@media(max-width:640px){.ch-size{display:none}}
+
+/* ── ATLAS's voice: one short, friendly opener above an answer ─────────────
+   Presentation only: picked from what the run itself records (see voice()),
+   never a fact of its own. */
+#chat .ax-voice{display:block;margin:0 0 6px;font-weight:550;color:var(--ink)}
+
+/* ── ATLAS a little more alive: one small, one-time reaction when his state
+   changes; nothing loops that did not loop before. ── */
+.is-analyzing .ax-head{transform-box:view-box;transform-origin:60px 46px;
+  animation:axPonder .9s var(--e) .05s both}
+@keyframes axPonder{to{transform:rotate(-5deg)}}
+.is-recovering .ax-head{transform-box:view-box;transform-origin:60px 46px;
+  animation:axFocus .7s var(--e) both}
+@keyframes axFocus{to{transform:translateY(1.6px) rotate(2deg)}}
+.is-success .atlas-fig{animation:axCheer .8s var(--ch-spring) .1s 1 both}
+@keyframes axCheer{0%,100%{transform:none}35%{transform:translateY(-7%) scale(1.03)}
+  60%{transform:translateY(0) scale(.99)}}
+.is-human_required .atlas-fig{animation:axAlert .7s var(--e) .1s 1 both}
+@keyframes axAlert{0%,100%{transform:none}30%{transform:scale(1.05)}55%{transform:scale(.99)}}
+.is-idle .atlas-float{animation-duration:6.2s}
+@media(prefers-reduced-motion:reduce){
+  .is-analyzing .ax-head,.is-recovering .ax-head,.is-success .atlas-fig,
+  .is-human_required .atlas-fig{animation:none}
+}
 </style>
 </head>
 <body>
@@ -2675,7 +2749,7 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
 
   <button class="fab" id="fab" aria-label="Ask ATLAS" aria-haspopup="dialog" aria-controls="chat"><span id="fabAtlas"></span>Ask ATLAS</button>
   <div class="ch-scrim" id="chScrim" hidden></div>
-  <div class="chat" id="chat" role="dialog" aria-modal="true" aria-labelledby="chTitle" aria-hidden="true">
+  <div class="chat" id="chat" role="dialog" aria-modal="true" aria-labelledby="chTitle" aria-hidden="true" data-size="m">
     <div class="ch-h">
       <div class="ch-av" id="chAtlas" aria-hidden="true"></div>
       <div class="ch-id"><div class="ch-nm" id="chTitle">ATLAS <span class="ch-sub">Operational Intelligence</span></div>
@@ -2683,6 +2757,11 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
         <div class="ch-ty sr" id="chTy" aria-live="polite"></div></div>
       <!-- Which run (or shipment) the conversation is about. Opens it. -->
       <button class="ch-ctx" id="chCtx" type="button" hidden><span class="ch-ctx-k" id="chCtxK">Run</span><span class="ch-ctx-v" id="chCtxV"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+      <div class="ch-size" id="chSize" role="group" aria-label="Chat size">
+        <button type="button" data-size="s" aria-pressed="false" title="Small chat">S</button>
+        <button type="button" data-size="m" aria-pressed="true" title="Medium chat">M</button>
+        <button type="button" data-size="l" aria-pressed="false" title="Large chat">L</button>
+      </div>
       <button class="ch-x" id="chatX" type="button" aria-label="Close ATLAS"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <!-- What ATLAS noticed, from the run state. Each line takes you to it. -->
@@ -2692,7 +2771,7 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
         <div class="ch-e-av" id="chEmptyAv" aria-hidden="true"></div>
         <div class="ch-e-t">ATLAS</div>
         <div class="ch-e-s">Operational Intelligence</div>
-        <p class="ch-e-p">Ask me about this run, shipments, failures, human actions, or PO automation.</p>
+        <p class="ch-e-p">Hi 👋 Ask me about this run, shipments, failures, human actions, or PO automation.</p>
         <div class="ch-e-sug" id="chEmptySug" aria-label="Suggested questions"></div>
         <p class="ch-e-n">I start from this run's data and never guess — if I can't verify something, I'll say so.</p>
       </div>
@@ -6452,8 +6531,8 @@ document.addEventListener('click', (e) => {
   // The first thing the server does with a question: read the PO jobs, or
   // the run. Later lines come from the server's own progress (setThinking).
   function thinkingLabel(){
-    if (activePage === 'po' || askCtx) return 'Reading the PO job records\u2026';
-    return 'Checking the run\u2026';
+    if (activePage === 'po' || askCtx) return 'One moment — reading the PO job records\u2026';
+    return 'Give me a second — checking the run\u2026';
   }
   function thinking(label){
     const wait = document.createElement('div');
@@ -6817,7 +6896,9 @@ document.addEventListener('click', (e) => {
         // The whole answer arrives at once (the backend answers in one
         // piece); the bubble's entrance is the only motion.
         const wantsDetail = /\b(evidence|details?|facts|everything|show me)\b/i.test(q);
-        b.innerHTML = meta(d) + rich(d.answer || 'No answer came back.', wantsDetail);
+        const said = voice(q, d);
+        b.innerHTML = (said ? '<span class="ax-voice" data-voice>' + esc(said) + '</span>' : '') +
+          meta(d) + rich(d.answer || 'No answer came back.', wantsDetail);
         if (d.details) detailsBox(b, d.details, wantsDetail);
         if (d.web_sources && d.web_sources.length) sourcesBox(b, d.web_sources, d.research || {});
         evidenceBox(d);
@@ -6888,6 +6969,63 @@ document.addEventListener('click', (e) => {
     panel.setAttribute('aria-hidden', 'true');
     document.documentElement.classList.remove('ch-open');
   }
+  /* Chat size — Small, Medium (the default), Large — remembered on this
+     device, like the theme. */
+  const SIZES = ['s', 'm', 'l'];
+  function setSize(size, keep){
+    if (SIZES.indexOf(size) < 0) size = 'm';
+    panel.dataset.size = size;
+    $('chScrim').classList.toggle('compact', size !== 'l');
+    $('chSize').querySelectorAll('button[data-size]').forEach((b) =>
+      b.setAttribute('aria-pressed', String(b.dataset.size === size)));
+    if (keep) try { localStorage.setItem('ata-chat-size', size); } catch (e) {}
+  }
+  setSize((() => { try { return localStorage.getItem('ata-chat-size'); } catch (e) { return null; } })());
+  $('chSize').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-size]');
+    if (b) setSize(b.dataset.size, true);
+  });
+
+  /* ATLAS's voice — presentation only. At most one short, friendly opener
+     above an answer, chosen from what the run itself records for the
+     shipment (or PO job) the answer is about — the same state its badge
+     shows — or from the operator's own tone. It never states a fact the
+     record does not: no record, no opener. The answer itself is untouched. */
+  function voice(q, d){
+    if (!d || d.conduct || /^(greeting|thanks|conduct)$/.test(d.intent || '')) return '';
+    // A recorded state speaks only for an answer that understood the question.
+    const r = d.understood !== false && d.reference &&
+      ((S && S.shipments) || []).find((x) => x.reference === d.reference);
+    if (r){
+      const v = r.verification ? Object.keys(r.verification).map((k) => r.verification[k]) : [];
+      const restricted = /restrict/i.test(r.outcome || '') ||
+        ((r.carrier_access || {}).state === 'RESTRICTED');
+      if (r.state === 'updated') return v.length && v.every((x) => x === true)
+        ? 'Yep — that one went through cleanly. ✅'
+        : 'It was written, but I can’t call it verified yet — here’s what the record shows.';
+      if (r.state === 'processing') return 'Still in progress ⏳ — here’s where it stands.';
+      if (r.state === 'waiting_for_human') return 'This one is waiting on a person 👀 — here’s what’s needed.';
+      if (r.state === 'human_timeout') return 'This one timed out waiting for a person. Here’s the record.';
+      if (r.state === 'failed') return restricted
+        ? 'Yeah, I found the snag 😅 — the carrier restricted access.'
+        : 'This one didn’t go through. I’d check the evidence before retrying.';
+    }
+    const poId = (activePage === 'po' || askCtx) && ((askCtx && askCtx.po_id) || PO.open);
+    const job = d.understood !== false && poId &&
+      ((PO.list && PO.list.jobs) || []).find((j) => j.po_id === poId);
+    if (job){
+      if (job.state === 'EMAIL_CONFIRMED') return 'Done — and the email is confirmed. ✅';
+      if (job.state === 'SAVED') return 'The Duty Payment Request is saved and waiting for your review.';
+      if (job.state === 'NEEDS_REVIEW') return 'This one needs your eyes 👀 — here’s why.';
+      if (/FAILED|MISMATCH|UNREADABLE|NOT_FOUND/.test(job.state))
+        return 'It stopped at a check, on purpose. Here’s why.';
+    }
+    if (/\b(still|again)\b.*\b(not|fail|broken|wrong|stuck)|\?{2,}|!{2,}|\bwhy (isn.t|is it not|doesn.t|won.t)\b/i.test(q))
+      return 'I hear you — let’s get to the bottom of it.';
+    if (/\b(urgent|asap|quick(ly)?|hurry)\b/i.test(q)) return 'On it — short version first.';
+    return '';
+  }
+
   function openChat(){
     if (panel.classList.contains('on') && !panel.classList.contains('closing')) return;
     opener = document.activeElement;
