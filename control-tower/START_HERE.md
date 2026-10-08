@@ -6,6 +6,25 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · Carrier checks are remembered between runs.** A carrier's "are you
+human?" check, once a person has passed it, is remembered the way your own
+Edge remembers it: carrier pages open in their own browser profile,
+`C:\Automation\carrier_profile`. Security limits:
+- **Carriers only.** The Logistics Hub signs in in a separate browser that is
+  thrown away after the run, so your Hub sign-in is never saved and carrier
+  sites never see it.
+- **Private folder.** Only the Windows account the automation runs as (and
+  SYSTEM) can open it.
+- **Cleared automatically** every 30 days (`CARRIER_PROFILE_DAYS`).
+- **Never copied** into logs, diagnostics, release ZIPs or Git.
+- **To forget everything now:** run `reset_carrier_profile.bat`.
+- **To turn it off:** set `ATA_CARRIER_PROFILE=0`, and every run starts fresh as before.
+
+**New · Ten more airlines** from the carrier sheet: Lufthansa, Saudia,
+Ethiopian, EgyptAir, South African, Emirates, Turkish, RwandAir, DHL Aviation
+(615) and Virgin Atlantic; Astral moved to its new tracker. All 94 airlines on
+the sheet are known by their AWB prefix.
+
 **New · Top navigation, Tracking map, On the way.**
 - **Navigation:** pages are a pill bar in the header (the sidebar is now only
   the phone and tablet menu). Settings is the gear on the right; Export CSV

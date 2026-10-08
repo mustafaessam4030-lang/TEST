@@ -11,6 +11,8 @@ import atexit
 import json
 import os
 import threading
+import shutil
+import subprocess
 import tempfile
 
 from playwright.sync_api import sync_playwright
@@ -362,6 +364,33 @@ if OUTPUT_FOLDER != BASE_FOLDER:
 
 LOG_FOLDER.mkdir(parents=True, exist_ok=True)
 SCREENSHOT_FOLDER.mkdir(parents=True, exist_ok=True)
+
+# ── The carriers' own browser profile ─────────────────────────────────
+#
+# A carrier that asks "are you human?" remembers the answer in a cookie. A
+# fresh browser every run forgets it, so the same check came back run after
+# run. Carrier pages therefore open in a browser that keeps its profile here,
+# the way a person's own Edge does. Agreed with the operator on 8 Oct 2026,
+# with these limits:
+#
+#   carriers only   the Logistics Hub signs in in its own, throw-away browser
+#                   (its credentials are never in this profile, and carrier
+#                   sites never see them)
+#   private folder  readable by the account the automation runs as, and
+#                   SYSTEM, nobody else (Windows ACL; 0700 elsewhere)
+#   bounded         wiped and started again after CARRIER_PROFILE_DAYS
+#   never shipped   not in logs, diagnostics, release ZIPs or Git; nothing
+#                   here reads, prints or copies a cookie
+#   off switch      ATA_CARRIER_PROFILE=0 — a fresh browser every run, as
+#                   before; reset_carrier_profile.bat deletes it
+CARRIER_PROFILE_ON = os.environ.get("ATA_CARRIER_PROFILE", "1").strip().lower() not in (
+    "0", "false", "no", "off")
+CARRIER_PROFILE_DIR = Path(os.environ.get("ATA_CARRIER_PROFILE_DIR")
+                           or (LOG_FOLDER.parent / "carrier_profile"))
+try:
+    CARRIER_PROFILE_DAYS = max(1, int(os.environ.get("CARRIER_PROFILE_DAYS") or 30))
+except ValueError:
+    CARRIER_PROFILE_DAYS = 30
 
 # Microseconds AND the process id, so two runs started in the same second — or
 # at the same instant on different processes — can never share a file.
@@ -10656,6 +10685,67 @@ def hub_launch_options():
             "args": ["--disable-http2"] if DISABLE_HTTP2 else []}
 
 
+def _private_folder(folder):
+    """Create `folder` readable only by this account (and SYSTEM on Windows).
+    Best effort for the permissions; returns what was done, in words."""
+    folder.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        user = os.environ.get("USERNAME") or ""
+        if not user:
+            return "folder created; Windows account unknown, permissions left as inherited"
+        done = subprocess.run(
+            ["icacls", str(folder), "/inheritance:r",
+             "/grant:r", "{0}:(OI)(CI)F".format(user), "/grant:r", "SYSTEM:(OI)(CI)F"],
+            capture_output=True, text=True, timeout=30)
+        return ("limited to {0} and SYSTEM".format(user) if done.returncode == 0
+                else "permissions could not be limited (icacls {0})".format(done.returncode))
+    os.chmod(folder, 0o700)
+    return "limited to this account (0700)"
+
+
+def _carrier_profile_ready():
+    """The profile folder, wiped first when it is older than
+    CARRIER_PROFILE_DAYS. Returns a line for the run log."""
+    born = CARRIER_PROFILE_DIR / "created.txt"
+    if born.exists():
+        age = (time.time() - born.stat().st_mtime) / 86400
+        if age > CARRIER_PROFILE_DAYS:
+            shutil.rmtree(CARRIER_PROFILE_DIR, ignore_errors=True)
+            write_log("Carrier browser profile was {0:.0f} days old (limit {1}); "
+                      "it was deleted and starts again empty.".format(age, CARRIER_PROFILE_DAYS))
+    fresh = not CARRIER_PROFILE_DIR.exists()
+    access = _private_folder(CARRIER_PROFILE_DIR)
+    if fresh or not born.exists():
+        born.write_text("Carrier browser profile, created {0:%Y-%m-%d %H:%M}. Delete this "
+                        "folder (or run reset_carrier_profile.bat) to forget every carrier "
+                        "verification.\n".format(datetime.now()), encoding="utf-8")
+    return access
+
+
+def open_carrier_context(playwright):
+    """
+    The browser the carrier sites open in -> (context, kept: bool).
+
+    kept=True: the persistent profile above. If it cannot be opened — turned
+    off, or locked by another run still using it — a fresh browser is used,
+    as before, and the log says why. Never the Hub's context.
+    """
+    if CARRIER_PROFILE_ON:
+        try:
+            access = _carrier_profile_ready()
+            context = playwright.chromium.launch_persistent_context(
+                str(CARRIER_PROFILE_DIR), accept_downloads=False, **hub_launch_options())
+            write_log("Carrier sites open in their own browser profile ({0}; {1}; "
+                      "cleared after {2} days).".format(CARRIER_PROFILE_DIR, access,
+                                                        CARRIER_PROFILE_DAYS))
+            return context, True
+        except Exception as error:
+            write_log("Carrier browser profile not used this run ({0}); carrier sites "
+                      "open in a fresh browser.".format(str(error).splitlines()[0][:160]))
+    browser = playwright.chromium.launch(**hub_launch_options())
+    return browser.new_context(), False
+
+
 def hub_context_options(username, password):
     """The browser context eHub is opened in: its basic-auth credentials."""
     return {"http_credentials": {"username": username, "password": password}}
@@ -10828,8 +10918,10 @@ def main():
         context = browser.new_context(**hub_context_options(username, password))
 
         internal_page = context.new_page()
-        dhl_page = context.new_page()
-        qatar_page = context.new_page()
+        # The carriers have a browser of their own: see open_carrier_context.
+        carrier_context, _carrier_kept = open_carrier_context(playwright)
+        dhl_page = carrier_context.new_page()
+        qatar_page = carrier_context.new_page()
         provider_pages = {"DHL": dhl_page, "QATAR": qatar_page}
         # One tab per simple portal, opened once and reused for the whole run.
         for _portal in PORTALS:
@@ -10837,7 +10929,7 @@ def main():
             # shipments comes up; seven idle tabs at start-up help nobody.
             if PORTALS[_portal].get("ocean") or PORTALS[_portal].get("lazy"):
                 continue
-            provider_pages[_portal] = context.new_page()
+            provider_pages[_portal] = carrier_context.new_page()
 
         fatal_error = None
 
@@ -11311,6 +11403,12 @@ def main():
                 human_event("HUMAN_SESSION_LOST", _task,
                             "the run ended with the task still open")
             close_afkl_side_browsers()
+            try:
+                carrier_context.close()
+                if not _carrier_kept and carrier_context.browser:
+                    carrier_context.browser.close()
+            except Exception as error:
+                note_suppressed("closing the carriers' browser", error)
             browser.close()
             write_log("Microsoft Edge closed automatically.")
 

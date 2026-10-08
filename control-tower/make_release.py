@@ -36,7 +36,8 @@ PREFIX = HERE.name                       # "control-tower"
 
 EXCLUDED_PARTS = {".runtime", "__pycache__", "C:\\Automation", "logs", "screenshots",
                   "dist", "release", "node_modules", ".venv", "venv", ".pytest_cache",
-                  "htmlcov", "browser-profile", "edge-profile", "user-data-dir"}
+                  "htmlcov", "browser-profile", "edge-profile", "user-data-dir",
+                  "carrier_profile"}
 EXCLUDED_PATHS = ("ml/data/", "ml/models/", "controlplane/data/")
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".log", ".zip", ".sqlite", ".sqlite3", ".db", ".pem",
                      ".key", ".pfx", ".p12", ".jsonl")

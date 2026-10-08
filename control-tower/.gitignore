@@ -29,3 +29,6 @@ dashboard/.runtime/
 # Release packages built by make_release.py
 release/
 *.zip
+
+# The carriers' browser profile (cookies of carrier sites) — never committed.
+carrier_profile/
