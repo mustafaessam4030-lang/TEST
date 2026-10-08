@@ -424,8 +424,8 @@ check("AFKL is routed from the prefix, not the carrier name",
 check("get_provider_result routes every configured portal",
       "if provider in PORTALS:" in Path("update_eta.py").read_text(encoding="utf-8"))
 SRC_A = Path("update_eta.py").read_text(encoding="utf-8")
-check("A browser tab is created for every portal",
-      "provider_pages[_portal] = context.new_page()" in SRC_A)
+check("A browser tab is created for every portal (in the carriers' own browser)",
+      "provider_pages[_portal] = carrier_context.new_page()" in SRC_A)
 
 
 print()
