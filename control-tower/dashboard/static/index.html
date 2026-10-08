@@ -2138,6 +2138,15 @@ body{letter-spacing:-.003em}
 .ibtn{border-color:transparent;background:transparent;transition:background-color .18s var(--e),color .18s var(--e)}
 .ibtn:hover{background:var(--surface-3);color:var(--ink)}
 
+/* Brand corner: the official logo as supplied (never redrawn or recoloured),
+   a touch smaller with a hairline edge; the product name in clean type. An
+   official mantrac-logo.svg in /static/brand/ makes it sharp at any size. */
+.logo,.logo img{height:24px}
+.logo img{border-radius:5px;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
+.brand{gap:14px}
+.brand-t{padding-left:14px;border-left:1px solid var(--line)}
+.brand.has-logo .brand-p{font-size:13px;font-weight:600;letter-spacing:-.01em;text-transform:none;color:var(--ink)}
+
 /* Page rhythm: an 8-point scale, headings that state rather than shout. */
 .page{padding:28px 32px 56px}
 .hello{margin-bottom:28px;gap:16px 24px}
