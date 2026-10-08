@@ -81,7 +81,7 @@ check("A transport error retries the SAME url",
       "retrying the SAME url" in SRC or "the same url" in SRC)
 check("Astral is untouched by any of this",
       A.PORTALS["ASTRAL"].get("detail_url") is None
-      and A.PORTALS["ASTRAL"]["urls"] == ["https://astral-aviation.com/track-cargo/"])
+      and A.PORTALS["ASTRAL"]["urls"] == ["https://astral.fr8booking.com/trackAndTrace"])
 
 
 class Page:
