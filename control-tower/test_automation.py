@@ -317,8 +317,9 @@ for awb, expected_provider, expected_name in [
     ("157-49568713", "QATAR", "Qatar Airways"),
     ("057 1234 5678", "AFKL", "Air France"),
     ("074-99887766", "AFKL", "KLM Royal Dutch Airlines"),
-    ("020-11223344", None, "Lufthansa Cargo"),
-    ("077-12345678", None, "EgyptAir"),
+    ("020-11223344", "LUFTHANSA", "Lufthansa Cargo"),
+    ("077-12345678", "EGYPTAIR", "EgyptAir"),
+    ("125-12345678", None, "British Airways"),
 ]:
     prefix, entry = A.airline_from_awb(awb)
     check("{0} -> {1}".format(awb, expected_name),
@@ -330,7 +331,7 @@ for awb, expected_provider, expected_name in [
 check("Spacing and dashes are tolerated",
       A.airline_from_awb("157 4956 8713")[0] == A.airline_from_awb("157-49568713")[0])
 check("An unknown prefix is not guessed at",
-      A.airline_from_awb("999-11112222")[1] is None)
+      A.airline_from_awb("998-11112222")[1] is None)
 check("A too-short reference yields nothing",
       A.airline_from_awb("12")[0] is None)
 check("The prefix outranks a wrong carrier name",
@@ -339,7 +340,8 @@ check("Carrier name still works when no AWB is given",
       A.carrier_provider("DHL EXPRESS") == "DHL")
 check("Air France and KLM share one integration",
       A.AIRLINES["057"]["provider"] == A.AIRLINES["074"]["provider"] == "AFKL")
-check("All 16 airlines are registered", len(A.AIRLINES) == 16, str(len(A.AIRLINES)))
+check("All 94 airlines on the operator's carrier sheet are registered",
+      len(A.AIRLINES) == 94, str(len(A.AIRLINES)))
 
 A._unsupported_seen.clear()
 reason = A.describe_unsupported("020-11223344", "Lufthansa")
@@ -641,14 +643,14 @@ SRC_G = Path("update_eta.py").read_text(encoding="utf-8")
 
 # 615-62310566 came back READY_NO_RESULT in 15.6s from dhl.com parcel tracking,
 # while plain 9451291275 worked on the same page. 615 is an air waybill.
-check("615 is no longer sent to parcel tracking",
-      A.AIRLINES["615"]["provider"] is None)
-check("615 gives an actionable reason",
-      "DHL Aviation (615)" in A.describe_unsupported("615-62310566", "DHL European"))
+# Since 8 Oct 2026 it goes to DHL's air-cargo portal, aviationcargo.dhl.com.
+check("615 is not sent to parcel tracking — it goes to DHL Aviation's own portal",
+      A.AIRLINES["615"]["provider"] == "DHL_AVIATION"
+      and "aviationcargo.dhl.com" in A.PORTALS["DHL_AVIATION"]["deep_link"])
 check("Plain DHL Express numbers still route to DHL",
       A.carrier_provider("DHL Express", "9451291275") == "DHL")
-check("A 615 shipment is skipped, not failed against the wrong site",
-      A.carrier_provider("DHL European", "615-62310566") is None)
+check("A 615 shipment is not failed against the wrong site",
+      A.carrier_provider("DHL European", "615-62310566") == "DHL_AVIATION")
 
 # Both AFKL URLs died with ERR_HTTP2_PROTOCOL_ERROR on the retry, losing a
 # shipment whose number had already been accepted.
@@ -700,7 +702,7 @@ afkl = next(s for s in state.snapshot()["systems"] if s["key"] == "AFKL")
 check("AFKL declares both airlines it covers",
       "Air France" in afkl["role"] and "KLM" in afkl["role"], afkl["role"])
 check("An unautomated carrier is NOT shown as a system",
-      not any("Lufthansa" in n for n in names), str(names))
+      not any("British Airways" in n for n in names), str(names))
 
 
 print()

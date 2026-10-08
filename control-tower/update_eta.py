@@ -3381,28 +3381,108 @@ def build_header_map(table):
 # lets the run log count what each missing airline is costing.
 
 AIRLINES = {
-    "020": {"name": "Lufthansa Cargo",          "code": "LH", "provider": None},
+    "020": {"name": "Lufthansa Cargo",          "code": "LH", "provider": "LUFTHANSA"},
     "057": {"name": "Air France",               "code": "AF", "provider": "AFKL"},
-    "065": {"name": "Saudia Cargo",             "code": "SV", "provider": None},
-    "071": {"name": "Ethiopian Airlines",       "code": "ET", "provider": None},
+    "065": {"name": "Saudia Cargo",             "code": "SV", "provider": "SAUDIA"},
+    "071": {"name": "Ethiopian Airlines",       "code": "ET", "provider": "ETHIOPIAN"},
     "074": {"name": "KLM Royal Dutch Airlines", "code": "KL", "provider": "AFKL"},
-    "077": {"name": "EgyptAir",                 "code": "MS", "provider": None},
-    "083": {"name": "South African Airways",    "code": "SA", "provider": None},
+    "077": {"name": "EgyptAir",                 "code": "MS", "provider": "EGYPTAIR"},
+    "083": {"name": "South African Airways",    "code": "SA", "provider": "SAA"},
     "125": {"name": "British Airways",          "code": "BA", "provider": None},
     "157": {"name": "Qatar Airways",            "code": "QR", "provider": "QATAR"},
-    "176": {"name": "Emirates SkyCargo",        "code": "EK", "provider": None},
-    "235": {"name": "Turkish Airlines",         "code": "TK", "provider": None},
-    "459": {"name": "RwandAir",                 "code": "WB", "provider": None},
+    "176": {"name": "Emirates SkyCargo",        "code": "EK", "provider": "EMIRATES"},
+    "235": {"name": "Turkish Airlines",         "code": "TK", "provider": "TURKISH"},
+    "459": {"name": "RwandAir",                 "code": "WB", "provider": "RWANDAIR"},
     "485": {"name": "Astral Aviation",          "code": "8V", "provider": "ASTRAL"},
     "574": {"name": "Allied Air Limited",       "code": "4W", "provider": None},
     # 615 is an AIR WAYBILL, not a parcel number. dhl.com consumer tracking
     # does not recognise it — the run log shows 615-62310566 returning
     # READY_NO_RESULT in 15.6s while a plain 10-digit DHL Express number
-    # (9451291275) worked on the same page. It needs DHL's air-cargo portal,
-    # so it is marked unautomated until that URL is available rather than
-    # being sent somewhere that will always answer "no result".
-    "615": {"name": "DHL Aviation",             "code": "QY", "provider": None},
-    "932": {"name": "Virgin Atlantic Cargo",    "code": "VS", "provider": None},
+    # (9451291275) worked on the same page. DHL's air-cargo portal does:
+    # aviationcargo.dhl.com/track/615-62308396 (the operator's example).
+    "615": {"name": "DHL Aviation",             "code": "QY", "provider": "DHL_AVIATION"},
+    "932": {"name": "Virgin Atlantic Cargo",    "code": "VS", "provider": "VIRGIN"},
+    # The rest of the operator's carrier sheet (Carrier_Data_Request_002,
+    # October 2026): known by prefix so a run names them, not automated —
+    # the sheet gives no tracking link for them.
+    "098": {"name": "Air India",                       "code": "AI", "provider": None},
+    "001": {"name": "American Airlines",               "code": "AA", "provider": None},
+    "014": {"name": "Air Canada",                      "code": "AC", "provider": None},
+    "055": {"name": "Alitalia Cargo / ITA Airways",    "code": "AZ", "provider": None},
+    "061": {"name": "Air Seychelles",                  "code": "HM", "provider": None},
+    "086": {"name": "Air New Zealand",                 "code": "NZ", "provider": None},
+    "105": {"name": "Finnair",                         "code": "AY", "provider": None},
+    "217": {"name": "Thai Airways",                    "code": "TG", "provider": None},
+    "201": {"name": "Air Jamaica",                     "code": "JM", "provider": None},
+    "205": {"name": "All Nippon Airways",              "code": "NH", "provider": None},
+    "239": {"name": "Air Mauritius",                   "code": "MK", "provider": None},
+    "257": {"name": "Austrian Airlines",               "code": "OS", "provider": None},
+    "360": {"name": "Africa West Cargo",               "code": "3L", "provider": None},
+    "524": {"name": "Absa Cargo",                      "code": "M3", "provider": None},
+    "555": {"name": "Aeroflot",                        "code": "SU", "provider": None},
+    "649": {"name": "Air Transat",                     "code": "TS", "provider": None},
+    "693": {"name": "Air Slovakia",                    "code": "GM", "provider": None},
+    "705": {"name": "Air Sahara",                      "code": "S2", "provider": None},
+    "771": {"name": "Azerbaijan Airlines",             "code": "J2", "provider": None},
+    "817": {"name": "South American Airways",          "code": "N5", "provider": None},
+    "870": {"name": "Aerosvit Airlines",               "code": "VV", "provider": None},
+    "891": {"name": "Air Ukraine",                     "code": "6U", "provider": None},
+    "988": {"name": "Asiana Airlines",                 "code": "OZ", "provider": None},
+    "999": {"name": "Air China",                       "code": "CA", "provider": None},
+    "236": {"name": "British Midland (BMI)",           "code": "BD", "provider": None},
+    "695": {"name": "EVA Airways",                     "code": "BR", "provider": None},
+    "997": {"name": "Biman Bangladesh",                "code": "BG", "provider": None},
+    "278": {"name": "Cargoitalia",                     "code": "2G", "provider": None},
+    "005": {"name": "Continental Airlines",            "code": "CO", "provider": None},
+    "160": {"name": "Cathay Pacific Airways",          "code": "CX", "provider": None},
+    "297": {"name": "China Airlines Cargo",            "code": "CI", "provider": None},
+    "781": {"name": "China Eastern Cargo",             "code": "MU", "provider": None},
+    "784": {"name": "China Southern",                  "code": "CZ", "provider": None},
+    "423": {"name": "DHL Airways",                     "code": "ER", "provider": None},
+    "761": {"name": "DAS Air Cargo",                   "code": "WD", "provider": None},
+    "991": {"name": "Daallo Airlines",                 "code": "D3", "provider": None},
+    "114": {"name": "EL AL Israel",                    "code": "LY", "provider": None},
+    "607": {"name": "Etihad Airways",                  "code": "EY", "provider": None},
+    "736": {"name": "Eurofly",                         "code": "GJ", "provider": None},
+    "023": {"name": "FedEx Express",                   "code": "FX", "provider": None},
+    "072": {"name": "Gulf Air Cargo",                  "code": "GF", "provider": None},
+    "250": {"name": "Uzbekistan Airways",              "code": "HY", "provider": None},
+    "058": {"name": "Indian Airlines",                 "code": "IC", "provider": None},
+    "096": {"name": "Iran Air",                        "code": "IR", "provider": None},
+    "635": {"name": "Yemen Airways",                   "code": "IY", "provider": None},
+    "131": {"name": "Japan Airlines",                  "code": "JL", "provider": None},
+    "589": {"name": "Jet Airways",                     "code": "9W", "provider": None},
+    "180": {"name": "Korean Air",                      "code": "KE", "provider": None},
+    "229": {"name": "Kuwait Airways",                  "code": "KU", "provider": None},
+    "760": {"name": "Kenya Airways",                   "code": "KQ", "provider": None},
+    "758": {"name": "Kyrgyzstan Airlines",             "code": "R8", "provider": None},
+    "045": {"name": "LAN Chile Cargo",                 "code": "LA", "provider": None},
+    "080": {"name": "LOT Polish Airlines",             "code": "LO", "provider": None},
+    "266": {"name": "LTU International",               "code": "LT", "provider": None},
+    "724": {"name": "Swiss WorldCargo",                "code": "LX", "provider": None},
+    "182": {"name": "Malev Air Cargo",                 "code": "MA", "provider": None},
+    "232": {"name": "Malaysia Airlines",               "code": "MH", "provider": None},
+    "537": {"name": "Mahan Airlines",                  "code": "W5", "provider": None},
+    "599": {"name": "Myanmar Airways",                 "code": "8M", "provider": None},
+    "673": {"name": "OceanAir",                        "code": "O6", "provider": None},
+    "910": {"name": "Oman Air",                        "code": "WY", "provider": None},
+    "214": {"name": "Pakistan International Airlines", "code": "PK", "provider": None},
+    "403": {"name": "Polar Air Cargo",                 "code": "PO", "provider": None},
+    "081": {"name": "Qantas Airways",                  "code": "QF", "provider": None},
+    "070": {"name": "Syrian Arab Airlines",            "code": "RB", "provider": None},
+    "281": {"name": "Tarom Romanian Air",              "code": "RO", "provider": None},
+    "285": {"name": "Royal Nepal Airlines",            "code": "RA", "provider": None},
+    "512": {"name": "Royal Jordanian",                 "code": "RJ", "provider": None},
+    "117": {"name": "Scandinavian Airlines",           "code": "SK", "provider": None},
+    "603": {"name": "SriLankan Airlines",              "code": "UL", "provider": None},
+    "618": {"name": "Singapore Airlines",              "code": "SQ", "provider": None},
+    "502": {"name": "Tajikistan Airlines",             "code": "7J", "provider": None},
+    "542": {"name": "Turkmenistan Airlines",           "code": "T5", "provider": None},
+    "016": {"name": "United Airlines",                 "code": "UA", "provider": None},
+    "037": {"name": "US Airways",                      "code": "US", "provider": None},
+    "406": {"name": "UPS",                             "code": "5X", "provider": None},
+    "670": {"name": "Transaero Airlines",              "code": "UN", "provider": None},
+    "738": {"name": "Vietnam Airlines",                "code": "VN", "provider": None},
 }
 
 # Counted per run so the log can report what each unautomated airline costs.
@@ -5243,6 +5323,104 @@ PORTALS = {
         # what a person does and what actually works. See open_afkl_detail.
         "detail_url": True,
     },
+    # ── Airlines added on the 8th of October 2026, from the operator's
+    # carrier sheet (Carrier_Data_Request_002). Each page was opened live and
+    # searched with a made-up waybill; what it answered is noted. "lazy": the
+    # tab opens the first time one of the airline's shipments comes up.
+    "LUFTHANSA": {
+        # Two boxes, prefix and serial. Shown a Cloudflare check from a
+        # datacentre address; on the worker that goes to a person if it shows.
+        "label": "Lufthansa Cargo",
+        "urls": ["https://www.lufthansa-cargo.com/en/eservices/etracking"],
+        "placeholder": r"Airwaybill\s*number", "box_css": "#etrk_awbp",
+        "split_awb": {"serial_css": "#etrk_awbs"}, "button": r"^\s*Submit\s*$",
+    },
+    "SAUDIA": {
+        # One box. Its reCAPTCHA refused the datacentre browser ("Captcha
+        # verification is required"); on the worker that goes to a person.
+        "label": "Saudia Cargo",
+        "urls": ["https://www.saudiacargo.com/en/digital-services?tab=trackShipment"],
+        "placeholder": r"Enter\s+AWB\s+Number", "button": r"^\s*Submit\s*$",
+    },
+    "ETHIOPIAN": {
+        # One box; answers an unknown waybill "No cargo tracking details
+        # found" and prints the waybill as its serial only ("AWB No :
+        # 12345675"), so the serial is what proves the page is this one.
+        "label": "Ethiopian Cargo",
+        "urls": ["https://ethiopiancargo.azurewebsites.net/my-cargo/track-your-shipment"],
+        "placeholder": r"^\s*AWB\s*$", "box_css": "#AirwayBilNum",
+        "button": r"^\s*Search\s*$", "identity": "serial",
+        "no_result": [r"No\s+cargo\s+tracking\s+details\s+found"],
+    },
+    "EGYPTAIR": {
+        # Two boxes (Pre1, AWB1) and a Submit input; the answer opens in an
+        # "AWB DETAILS" frame: "No tracking information found for 077-…".
+        "label": "EgyptAir Cargo",
+        "urls": ["https://egyptair-cargo.com/home.htm"],
+        "placeholder": r"AWB", "box_css": "#Pre1",
+        "split_awb": {"serial_css": "#AWB1"}, "button_css": "#send",
+        "button": r"^\s*Submit\s*$",
+        "no_result": [r"No\s+tracking\s+information\s+found"],
+    },
+    "SAA": {
+        # iCargo: the form is behind the "Track Shipments" tab, and an
+        # overlay takes clicks on Next — Tab then Enter submits it. Unknown
+        # waybills: "Following AWBs are invalid: …".
+        "label": "South African Airways Cargo",
+        "urls": ["https://saa.ibsplc.aero/icargoneoportal/app/main/#/app/track"],
+        "tab": r"^\s*Track\s+Shipments\s*$",
+        "placeholder": r"Enter\s+the\s+AWB\s+Number", "box_css": "#shipmentValue",
+        "button": r"^\s*Next\s*$", "submit_keys": ["Tab", "Enter"],
+        "no_result": [r"Following\s+AWBs\s+are\s+invalid"],
+    },
+    "TURKISH": {
+        # Prefix and serial; the serial is added as a tag with Enter before
+        # Search is enabled. Searching shows a PerimeterX "Press & Hold"
+        # check, which goes to a person.
+        "label": "Turkish Cargo",
+        "urls": ["https://www.turkishcargo.com/en/cargo-tracking"],
+        "placeholder": r"AWB\s+numbers", "box_css": "input[maxlength='3']",
+        "split_awb": {"serial_css": "input[maxlength='8']", "enter": True},
+        "button": r"^\s*Search\s*$",
+    },
+    "RWANDAIR": {
+        # Two boxes and an image button. A made-up waybill gets no answer at
+        # all, so how a real result reads has not been seen yet.
+        "label": "RwandAir Cargo",
+        "urls": ["https://www.rwandair.com/cargotracking/cargo.php"],
+        "placeholder": r"AWB", "box_css": "#awb_code",
+        "split_awb": {"serial_css": "#awb_number"},
+        "button_css": "input[type='image']#btncargosubmit", "button": r"Track",
+    },
+    "DHL_AVIATION": {
+        # The waybill goes in the address; read by _read_dhl_aviation_page.
+        "label": "DHL Aviation",
+        "urls": ["https://aviationcargo.dhl.com/"],
+        "deep_link": "https://aviationcargo.dhl.com/track/{0}",
+        "placeholder": r"AWB|waybill", "button": r"Track",
+        "no_result": [r"either\s+incorrect\s+or\s+unknown"],
+    },
+    "VIRGIN": {
+        # Accelya "Offer and Order": the search page's own address carries
+        # the document number. Unknown: "No matching records found."
+        "label": "Virgin Atlantic Cargo",
+        "urls": ["https://myvs.virginatlanticcargo.com/app/offerandorder/#/home/find-offer"],
+        "deep_link": ("https://myvs.virginatlanticcargo.com/app/offerandorder/"
+                      "#/shipments/list?type=D&values={0}"),
+        "placeholder": r"Doc\.?\s*No", "button": r"^\s*Search\s*$", "dashed": False,
+        "no_result": [r"No\s+matching\s+records\s+found"],
+    },
+    "EMIRATES": {
+        # The same Accelya platform as Virgin (skycargo.com's Track links go
+        # here). It did not render for a datacentre browser, so it has not
+        # been seen working yet.
+        "label": "Emirates SkyCargo",
+        "urls": ["https://eskycargo.emirates.com/app/offerandorder/#/home/find-offer"],
+        "deep_link": ("https://eskycargo.emirates.com/app/offerandorder/"
+                      "#/shipments/list?type=D&values={0}"),
+        "placeholder": r"Doc\.?\s*No", "button": r"^\s*Search\s*$", "dashed": False,
+        "no_result": [r"No\s+matching\s+records\s+found"],
+    },
     "ASTRAL": {
         "label": "Astral Aviation",
         # astral-aviation.com/track-cargo/ answers 404 since October 2026;
@@ -5262,6 +5440,14 @@ PORTALS = {
         "attempts": 2,
     },
 }
+
+# The airlines added from the carrier sheet share these settings: wait as
+# long as AFKL and Astral do, open their tab only when needed, and read a
+# result only when it carries the requested waybill.
+for _key in ("LUFTHANSA", "SAUDIA", "ETHIOPIAN", "EGYPTAIR", "SAA", "TURKISH",
+             "RWANDAIR", "DHL_AVIATION", "VIRGIN", "EMIRATES"):
+    PORTALS[_key] = dict(dict(dashed=True, wait=40, attempts=2, lazy=True,
+                              verify_identity=True), **PORTALS[_key])
 
 
 # ── Ocean carriers ────────────────────────────────────────────────────
@@ -5557,6 +5743,8 @@ CAPTCHA_SELECTORS = (
     # access" slider CMA CGM put in front of its tracking page on the 4th of
     # October. Its challenge is served from captcha-delivery.com.
     "iframe[src*='captcha-delivery.com']",
+    # PerimeterX "Press & Hold" (Turkish Cargo).
+    "#px-captcha",
     "iframe[title*='DataDome' i]",
 )
 
@@ -5569,6 +5757,11 @@ CAPTCHA_PHRASES = re.compile(
     r"needs\s+to\s+review\s+the\s+security\s+of\s+your\s+connection|"
     r"complete\s+the\s+security\s+check|unusual\s+traffic\s+from\s+your|"
     r"slide\s+right\s+to\s+(?:secure\s+your\s+access|complete)|"
+    # Cloudflare's current interstitial (Lufthansa Cargo, October 2026):
+    # "Performing security verification … verifies you are not a bot".
+    r"performing\s+security\s+verification|verifies\s+you\s+are\s+not\s+a\s+bot|"
+    # Saudia Cargo, when its reCAPTCHA does not let the search through.
+    r"captcha\s+verification\s+is\s+required|"
     r"^\s*verification\s+required\s*$",
     re.I | re.M)
 
@@ -6638,6 +6831,22 @@ def await_human_verification(page, tracking_number, label="the carrier page"):
     return False
 
 
+def awb_serial_on_page(page, tracking_number):
+    """
+    The eight-digit serial of this air waybill is on the page. For a site
+    that serves one airline only and prints the waybill without its prefix
+    (Ethiopian: "AWB No : 12345675"), the prefix is the site itself.
+    """
+    digits = re.sub(r"\D", "", str(tracking_number or ""))
+    if len(digits) < 11:
+        return False
+    try:
+        text = _page_text(page)
+    except Exception:
+        return False
+    return digits[3:11] in re.sub(r"[\s-]", "", text)
+
+
 def awb_on_page(page, tracking_number):
     """
     Does this page actually carry the requested air waybill?
@@ -7675,6 +7884,18 @@ def open_portal(page, config, tracking_number):
             # failure screenshot and may cover controls on a small window.
             write_log(f"{config['label']}: no cookie panel was dismissed.")
 
+        if config.get("tab"):
+            # The tracking form sits behind a tab (South African's "Track
+            # Shipments", beside "Get a Quote"). Opened by its own name.
+            tab = first_visible([page.get_by_text(re.compile(config["tab"], re.I))],
+                                PORTAL_FORM_READY_MS)
+            if tab is not None:
+                tab.click(timeout=CLICK_TIMEOUT_MS)
+                page.wait_for_timeout(1500)
+            else:
+                write_log("{0}: the '{1}' tab was not found.".format(
+                    config["label"], config["tab"]))
+
         # Patient, and bounded. find_portal_input's own probe is 2.4s, which
         # is fine once an app has booted and far too short when it has not —
         # and after the change above we no longer get DCL as a free hint that
@@ -7836,7 +8057,15 @@ def submit_split_awb(page, field, config, tracking_number):
             "they hold '{3}' / '{4}').".format(config["label"], prefix, serial,
                                                landed[0], landed[1]))
     write_log("{0} air waybill accepted: {1}-{2}".format(config["label"], prefix, serial))
+    if config["split_awb"].get("enter"):
+        # Turkish Cargo takes each serial as a tag: "Press Enter or click Add
+        # to enter the AWB number"; Search stays disabled until it is added.
+        serial_box.press("Enter")
+        page.wait_for_timeout(800)
+    # A page whose search button has no usable name (an image, a bare
+    # input) says which one it is with button_css.
     button = first_visible(
+        ([page.locator(config["button_css"])] if config.get("button_css") else []) +
         [page.get_by_role("button", name=re.compile(config["button"], re.I))],
         PROBE_TIMEOUT_MS * 3)
     if button is None:
@@ -7868,11 +8097,21 @@ def submit_portal_awb(page, field, config, tracking_number):
 
     write_log(f"{config['label']} air waybill accepted: {landed}")
 
+    if config.get("submit_keys"):
+        # A form whose button sits under an overlay that swallows clicks
+        # (South African's iCargo): the keys a person would use instead.
+        keys = list(config["submit_keys"])
+        field.press(keys[0])
+        for key in keys[1:]:
+            page.keyboard.press(key)
+        return
+
     # `input[type='submit']` used to be in here unqualified, which on a page
     # with two forms is a coin toss. Both fallbacks are now scoped to the
     # form the air waybill box is actually in.
     own_form = field.locator("xpath=ancestor::form[1]")
     button = first_visible(
+        ([page.locator(config["button_css"])] if config.get("button_css") else []) +
         [page.get_by_role("button", name=re.compile(config["button"], re.I)),
          own_form.get_by_role("button", name=re.compile(r"Track", re.I)),
          own_form.locator("input[type='submit']")],
@@ -8900,10 +9139,68 @@ def extract_portal_result(page, provider):
     """
     if provider == "AFKL":
         return _read_afkl_page(page, provider)
+    if provider == "DHL_AVIATION":
+        return _read_dhl_aviation_page(page, provider)
     if PORTALS.get(provider, {}).get("ocean"):
         return _read_ocean_page(page, provider)
 
     return _read_generic_portal_page(page, provider)
+
+
+DHL_AVIATION_ARRIVAL_CODES = ("RCF", "ARR", "NFD", "AWD", "DLV")
+_WEEKDAY_HEADER = re.compile(
+    r"^\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+"
+    r"([A-Za-z]+\s+\d{1,2},\s+\d{4})")
+
+
+def _read_dhl_aviation_page(page, provider):
+    """
+    DHL Aviation (aviationcargo.dhl.com/track/615-…) lists checkpoints, not
+    an ETA: "These are the tracking results for 61562308396 for 54 pieces",
+    "From DHL Org BRU to DHL Dest LOS", then events under each day —
+    "NFD  Awaiting Consignee Collection  46 pcs  LOS  HUB  14:07".
+
+    ATA: the day the LAST of the shipment's pieces reached the destination,
+    by one arrival checkpoint (RCF, ARR, NFD, AWD, DLV) whose pieces at the
+    destination add up to the shipment's total. A shipment only partly there
+    has no ATA yet — nothing is read off a split delivery. No ETA: the page
+    gives none, and none is made up.
+    """
+    text = _page_text(page)
+    own = PORTALS.get(provider, {}).get("no_result")
+    if own and _matches(text, own):
+        return {"provider": provider, "tracking_status": "No result",
+                "eta": None, "ata": None, "no_result": True}
+    total = re.search(r"tracking\s+results\s+for\s+\d{11}\s+for\s+(\d+)\s+pieces",
+                      text, re.I)
+    dest = re.search(r"\bDHL\s+Dest\s+([A-Z]{3})\b", text)
+    if not total or not dest:
+        return None
+    total, dest = int(total.group(1)), dest.group(1)
+    day, arrived = None, {}
+    for line in text.splitlines():
+        header = _WEEKDAY_HEADER.match(line)
+        if header:
+            day = normalize_date(header.group(1))
+            continue
+        event = re.match(r"\s*({0})\b.*?\b(\d+)\s+pcs\s+([A-Z]{{3}})\b".format(
+            "|".join(DHL_AVIATION_ARRIVAL_CODES)), line)
+        if event and day and event.group(3) == dest:
+            arrived.setdefault(event.group(1), []).append((day, int(event.group(2))))
+    complete = []
+    for code, seen in arrived.items():
+        if sum(pieces for _day, pieces in seen) >= total:
+            last = max(datetime.strptime(d, "%d/%m/%Y") for d, _p in seen)
+            complete.append((last, code))
+    if complete:
+        last, code = min(complete)
+        return {"provider": provider, "tracking_status": "Arrived", "eta": None,
+                "ata": last.strftime("%d/%m/%Y"),
+                "ata_source": "{0} at {1}: all {2} pieces".format(code, dest, total)}
+    most = max((sum(p for _d, p in seen) for seen in arrived.values()), default=0)
+    return {"provider": provider, "eta": None, "ata": None,
+            "tracking_status": ("Partly arrived ({0} of {1} pieces at {2})".format(
+                most, total, dest) if most else "In transit")}
 
 
 def _read_generic_portal_page(page, provider):
@@ -8982,8 +9279,11 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
 
         if not direct and config.get("deep_link"):
             # The carrier takes the reference in the address itself.
-            link = config["deep_link"].format(
-                quote(str(tracking_number).strip(), safe=""))
+            # A bill of lading goes in as the Hub holds it; an air waybill in
+            # the carrier's own XXX-XXXXXXXX form.
+            reference = (str(tracking_number).strip() if config.get("verbatim")
+                         else portal_awb(tracking_number, config.get("dashed", True)))
+            link = config["deep_link"].format(quote(reference, safe=""))
             write_log("{0}: opening the shipment page directly — {1}".format(
                 config["label"], link))
             try:
@@ -9056,7 +9356,10 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             # page_is_afkl_detail(); this covers the search-form fallback,
             # where a stale result would otherwise be read and filed under the
             # AWB that was requested.
-            if result and identity_required and not awb_on_page(page, tracking_number):
+            if result and identity_required and not (
+                    awb_serial_on_page(page, tracking_number)
+                    if config.get("identity") == "serial"
+                    else awb_on_page(page, tracking_number)):
                 write_log(
                     "{0}: a result rendered but it does not carry {1}. Not "
                     "reading it — waiting for the requested shipment."
@@ -10532,7 +10835,7 @@ def main():
         for _portal in PORTALS:
             # Ocean carriers open their tab the first time one of their
             # shipments comes up; seven idle tabs at start-up help nobody.
-            if PORTALS[_portal].get("ocean"):
+            if PORTALS[_portal].get("ocean") or PORTALS[_portal].get("lazy"):
                 continue
             provider_pages[_portal] = context.new_page()
 

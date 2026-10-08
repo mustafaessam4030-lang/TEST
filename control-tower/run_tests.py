@@ -73,6 +73,7 @@ SUITES = [
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
     ("test_atlas.py",           "ATLAS identity and attribution"),
     ("test_captcha.py",         "human verification, AFKL URL and AWB prefix"),
+    ("test_airlines.py",        "airlines from the carrier sheet, their pages"),
     ("test_recovery.py",        "safe error recovery, bounded and attributed"),
     ("test_platform.py",        "remote platform: auth, roles, audit, workers, runs"),
     ("test_remote_session.py",  "remote Human Action end to end, in a real browser"),
