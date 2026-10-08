@@ -280,7 +280,7 @@ check("Neither column holding an air waybill changes nothing either",
           two, "J859154") == "J859154")
 check("A number that is not a known airline prefix is not used",
       A.carrier_reference(
-          Cells(["J859154", "KLM", "999-88887777", "14/09/2026", "x"]),
+          Cells(["J859154", "KLM", "998-88887777", "14/09/2026", "x"]),
           two, "J859154") == "J859154")
 check("...nor is something too short to be one",
       A.carrier_reference(
