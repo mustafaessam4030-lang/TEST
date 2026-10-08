@@ -364,7 +364,8 @@ check("...and page_is_afkl_detail is exactly that verdict",
       "return afkl_detail_verdict(page, tracking_number)[0]" in
       SRC.split("def page_is_afkl_detail")[1].split("\ndef ")[0])
 check("The search-form path verifies it too",
-      "identity_required and not awb_on_page(page, tracking_number)" in SRC)
+      "if result and identity_required and not (" in SRC
+      and "else awb_on_page(page, tracking_number))" in SRC)
 check("...and AFKL asks for that check",
       A.PORTALS["AFKL"].get("verify_identity") is True)
 check("A wrong-AWB page is refused rather than read",
