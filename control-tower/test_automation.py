@@ -435,8 +435,23 @@ check("Astral is registered against its prefix",
 check("Astral routes from the AWB prefix",
       A.carrier_provider("anything", "485-12345678") == "ASTRAL")
 check("Astral has a portal configuration", "ASTRAL" in A.PORTALS)
-check("Its tracking page is the cargo one",
-      "astral-aviation.com/track-cargo" in A.PORTALS["ASTRAL"]["urls"][0])
+check("Its tracking page is the one the site links to now (the old one is 404)",
+      A.PORTALS["ASTRAL"]["urls"][0] == "https://astral.fr8booking.com/trackAndTrace")
+check("The air waybill goes in two boxes: prefix, then serial",
+      A.PORTALS["ASTRAL"]["box_css"] == "input[maxlength='3']"
+      and A.PORTALS["ASTRAL"]["split_awb"]["serial_css"] == "input[maxlength='8']")
+try:
+    A.submit_split_awb(None, None, A.PORTALS["ASTRAL"], "485-1234567")
+    split_refused = False
+except A.SkipShipment:
+    split_refused = True
+check("A number that is not 11 digits is refused before anything is typed", split_refused)
+r = A.extract_portal_result(AfklPage("TRACK\nCLEAR\nBACK\nNo AWB or tracking details available"),
+                            "ASTRAL")
+check("Astral's own one-line 'no details' reply is a no-result",
+      r and r.get("no_result") is True, str(r))
+check("...a sentence only Astral is read for",
+      A.extract_portal_result(AfklPage("No AWB or tracking details available"), "QATAR") is None)
 
 # Its box reads "Enter 11 Digit AWB Number eg XXX-XXXXXXXX".
 check("AWB formatted as XXX-XXXXXXXX",

@@ -85,8 +85,9 @@ print("=" * 72)
 print("1. DETECTION — STRUCTURE FIRST")
 print("=" * 72)
 for selector in ("iframe[src*='challenges.cloudflare.com']",
-                 "iframe[title*='reCAPTCHA']", "div.cf-turnstile",
-                 "div.g-recaptcha", "#challenge-form",
+                 "iframe[title*='reCAPTCHA']:not([src*='size=invisible'])",
+                 "div.cf-turnstile",
+                 "div.g-recaptcha:not([data-size='invisible'])", "#challenge-form",
                  "input[name='cf-turnstile-response']"):
     check("{0} is detected".format(selector),
           A.captcha_on_page(Page(CARGO, {selector})))
@@ -312,8 +313,12 @@ check("The direct shipment page is built under the same myCargo path",
       A.AFKL_DETAIL_URL.startswith(
           "https://www.afklcargo.com/mycargo/shipment/detail/"),
       A.AFKL_DETAIL_URL)
-check("Astral is untouched",
-      A.PORTALS["ASTRAL"]["urls"] == ["https://astral-aviation.com/track-cargo/"])
+check("Astral is on its own tracker (the old page answers 404)",
+      A.PORTALS["ASTRAL"]["urls"] == ["https://astral.fr8booking.com/trackAndTrace"])
+check("An invisible reCAPTCHA badge is not a challenge — a challenge frame still is",
+      all("recaptcha" not in sel.lower() or "invisible" in sel
+          for sel in A.CAPTCHA_SELECTORS)
+      and any("recaptcha" in sel for sel in A.CAPTCHA_SELECTORS))
 
 print()
 print("=" * 72)
@@ -365,9 +370,10 @@ check("...and AFKL asks for that check",
 check("A wrong-AWB page is refused rather than read",
       "does not carry {1}. Not " in SRC)
 check("...and the evidence is kept", '"_wrong_awb"' in SRC)
-check("The other carriers are unaffected",
-      not A.PORTALS["ASTRAL"].get("verify_identity")
-      and not A.PORTALS.get("QATAR", {}).get("verify_identity"))
+check("The other air carriers are unaffected",
+      not A.PORTALS.get("QATAR", {}).get("verify_identity"))
+check("Astral's result is read only when it carries the air waybill",
+      A.PORTALS["ASTRAL"].get("verify_identity") is True)
 check("A page for the wrong shipment is refused by the detail check",
       not A.page_is_afkl_detail(Page(CARGO.replace("JRO", "JRO 074-99887766")),
                                 "057-05765454"))

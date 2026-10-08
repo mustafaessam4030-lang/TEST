@@ -5245,10 +5245,18 @@ PORTALS = {
     },
     "ASTRAL": {
         "label": "Astral Aviation",
-        "urls": ["https://astral-aviation.com/track-cargo/"],
-        # Its box reads "Enter 11 Digit AWB Number eg XXX-XXXXXXXX".
+        # astral-aviation.com/track-cargo/ answers 404 since October 2026;
+        # the site's own Track link goes to this tracker. It asks for the air
+        # waybill in two boxes — PREFIX (3 digits) and SERIAL NO (8) — and
+        # answers an unknown one with "No AWB or tracking details available".
+        "urls": ["https://astral.fr8booking.com/trackAndTrace"],
         "placeholder": r"AWB\s*Number|11\s*Digit",
+        "box_css": "input[maxlength='3']",
+        "split_awb": {"serial_css": "input[maxlength='8']"},
+        "no_result": [r"No\s+AWB\s+or\s+tracking\s+details\s+available"],
         "button": r"^\s*Track\s*$",
+        # The result is read only when it carries this air waybill.
+        "verify_identity": True,
         "dashed": True,
         "wait": 40,
         "attempts": 2,
@@ -5532,12 +5540,16 @@ CAPTCHA_POLL_MS = 2000
 CAPTCHA_SELECTORS = (
     "iframe[src*='challenges.cloudflare.com']",
     "iframe[title*='Cloudflare']",
-    "iframe[src*='recaptcha']",
-    "iframe[title*='reCAPTCHA']",
+    # An INVISIBLE reCAPTCHA (size=invisible) is only the badge in the
+    # corner: it asks nothing of anyone, and Astral's tracker carries it on
+    # every page. When it does decide to challenge, the challenge frame
+    # (api2/bframe) is a different iframe, and that one is still caught.
+    "iframe[src*='recaptcha']:not([src*='size=invisible'])",
+    "iframe[title*='reCAPTCHA']:not([src*='size=invisible'])",
     "iframe[src*='hcaptcha']",
     "div.cf-turnstile",
     "div#cf-challenge-running",
-    "div.g-recaptcha",
+    "div.g-recaptcha:not([data-size='invisible'])",
     "div.h-captcha",
     "#challenge-form",
     "input[name='cf-turnstile-response']",
@@ -7464,7 +7476,7 @@ def portal_awb(tracking_number, dashed=True):
 
 
 def find_portal_input(page, placeholder, strict=False, timeout_ms=None,
-                      label=None):
+                      label=None, css=None):
     """
     The air waybill box, or None.
 
@@ -7482,6 +7494,10 @@ def find_portal_input(page, placeholder, strict=False, timeout_ms=None,
         page.get_by_label(re.compile(r"Air\s*waybill|AWB", re.I)),
         page.locator("input[name*='awb' i], input[id*='awb' i]"),
     ]
+    if css:
+        # A box with no placeholder or label to go by — Astral's PREFIX box
+        # is known only by its shape (three characters).
+        candidates.insert(0, page.locator(css))
     if label:
         # A box named by the text BESIDE it rather than inside it — Hapag-
         # Lloyd's "Container No.", Grimaldi's "Shipment #". Anchored, so it
@@ -7673,7 +7689,8 @@ def open_portal(page, config, tracking_number):
             [("the air waybill box",
               lambda: find_portal_input(page, config["placeholder"],
                                         strict=True, timeout_ms=250,
-                                        label=config.get("box_label"))
+                                        label=config.get("box_label"),
+                                        css=config.get("box_css"))
               is not None)],
             PORTAL_FORM_READY_MS,
             reason="the {0} air waybill box".format(config["label"]))
@@ -7682,7 +7699,8 @@ def open_portal(page, config, tracking_number):
         # not type into it.
         field = find_portal_input(page, config["placeholder"],
                                   strict=bool(config.get("needs_person")),
-                                  label=config.get("box_label"))
+                                  label=config.get("box_label"),
+                                  css=config.get("box_css"))
         if field is not None:
             if url != config["urls"][0]:
                 write_log(f"{config['label']}: used the fallback entry point {url}")
@@ -7787,6 +7805,45 @@ def is_flight_status_field(field):
         if value and FLIGHT_FIELD_WORDS.search(value):
             return True
     return False
+
+
+def submit_split_awb(page, field, config, tracking_number):
+    """
+    An air waybill asked for in two boxes: the airline prefix in `field`, the
+    eight-digit serial in the box config["split_awb"]["serial_css"] names.
+    Both are typed and confirmed before Track is pressed; a number that is
+    not eleven digits is not guessed at.
+    """
+    digits = re.sub(r"\D", "", str(tracking_number or ""))
+    if len(digits) < 11:
+        raise SkipShipment(
+            "{0} asks for an 11-digit air waybill; '{1}' is not one. Nothing "
+            "was typed.".format(config["label"], tracking_number))
+    prefix, serial = digits[:3], digits[3:11]
+    serial_box = first_visible([page.locator(config["split_awb"]["serial_css"])],
+                               PROBE_TIMEOUT_MS * 3)
+    if serial_box is None:
+        save_page_text(page, tracking_number, config["label"].lower() + "_no_input")
+        raise SkipShipment("The {0} serial number box was not found next to the "
+                           "prefix box.".format(config["label"]))
+    landed = (type_into(field, prefix, "the {0} prefix box".format(config["label"])),
+              type_into(serial_box, serial,
+                        "the {0} serial number box".format(config["label"])))
+    if (re.sub(r"\D", "", landed[0]), re.sub(r"\D", "", landed[1])) != (prefix, serial):
+        save_page_text(page, tracking_number, config["label"].lower() + "_not_typed")
+        raise SkipShipment(
+            "The {0} boxes would not accept the air waybill (typed {1} / {2}, "
+            "they hold '{3}' / '{4}').".format(config["label"], prefix, serial,
+                                               landed[0], landed[1]))
+    write_log("{0} air waybill accepted: {1}-{2}".format(config["label"], prefix, serial))
+    button = first_visible(
+        [page.get_by_role("button", name=re.compile(config["button"], re.I))],
+        PROBE_TIMEOUT_MS * 3)
+    if button is None:
+        serial_box.press("Enter")
+        return
+    wait_until_enabled(page, button, 6000, "The {0} Track button".format(config["label"]))
+    button.click(timeout=CLICK_TIMEOUT_MS)
 
 
 def submit_portal_awb(page, field, config, tracking_number):
@@ -8852,6 +8909,12 @@ def extract_portal_result(page, provider):
 def _read_generic_portal_page(page, provider):
     """The label-driven reader: works wherever the value follows its label."""
     text = _page_text(page)
+    # A portal's own "nothing for this number" sentence is answer enough,
+    # however short the page: Astral's whole reply is that one line.
+    own = PORTALS.get(provider, {}).get("no_result")
+    if own and _matches(text, own):
+        return {"provider": provider, "tracking_status": "No result",
+                "eta": None, "ata": None, "no_result": True}
     if len(text.strip()) < 120:
         return None
 
@@ -8948,6 +9011,8 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             if config.get("needs_person"):
                 after_human = await_person_search(page, field, config,
                                                   provider, tracking_number)
+            elif config.get("split_awb"):
+                submit_split_awb(page, field, config, tracking_number)
             else:
                 submit_portal_awb(page, field, config, tracking_number)
 
