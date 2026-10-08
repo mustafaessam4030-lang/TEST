@@ -300,7 +300,7 @@ def episode(episode_id, reference, view, field, value, outcome,
 
 def decision(context, chosen, scores, used, reason, redactor=None,
              mode=None, shadow=False, support=None, trials=None,
-             level_key=None, label=None, candidates=None):
+             level_key=None, label=None, candidates=None, episode_id=None):
     """
     What the predictor recommended and whether the automation took it.
 
@@ -312,6 +312,9 @@ def decision(context, chosen, scores, used, reason, redactor=None,
     """
     return record({
         "kind": "decision",
+        # The write episode this decision was made for, so a shadow choice can
+        # be scored against that episode's verified outcome (ml/shadow.py).
+        "episode_id": episode_id,
         "context": context,
         # The candidates the automation actually offered, in ITS order, so
         # the baseline can be reconstructed from the row rather than assumed.

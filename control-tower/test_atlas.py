@@ -207,6 +207,8 @@ for _ in range(50):
     built.observe(features.keys(context), "xpath_ata_date", 1.0, duration_ms=700)
     built.observe(features.keys(context), "label_exact", 0.0)
 built.meta["feature_version"] = features.FEATURE_VERSION
+# Active use needs an approval on the model (python -m ml.trainer --approve).
+built.meta["approval"] = {"approved_by": "test fixture", "shadow_verdict": "BETTER"}
 built.finalise()
 model_path = tmp / "champion.json"
 model_path.write_text(built.to_json(), encoding="utf-8")
@@ -517,9 +519,11 @@ CFG = (HERE / "ml" / "config.py").read_text(encoding="utf-8")
 check("The shipped mode is still shadow, so ATLAS cannot steer production",
       'ML_MODE = (os.environ.get("ML_MODE") or "shadow")' in CFG
       and 'ML_MODE = "shadow"' in CFG)
-check("...and shadow returns used=False, whatever it recommends",
-      'if config.ML_MODE != "active":' in PRED
-      and "used=False" in PRED.split('if config.ML_MODE != "active":')[1][:400])
+check("...and shadow returns used=False, whatever it recommends — as does active "
+      "mode with a model nobody approved",
+      'if not _active(model):' in PRED
+      and "used=False" in PRED.split('if not _active(model):')[1][:400]
+      and 'config.ML_MODE == "active" and approved_for_active(model)' in PRED)
 check("The only place that can claim ATLAS steered a write is ml_order()",
       SRC.count("episode.atlas_influenced = True") == 1)
 check("...and it runs only after the recommendation was actually taken",

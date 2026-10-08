@@ -131,7 +131,7 @@ def enough_to_train(rows, minimum_rows=MINIMUM_ROWS, minimum_strategies=2):
 
 
 def train(telemetry_path=None, model_path=None, minimum_rows=MINIMUM_ROWS,
-          dry_run=False, echo=print):
+          dry_run=False, echo=print, require_ready=True):
     """
     Returns (ok, message, model_or_None).
 
@@ -156,6 +156,16 @@ def train(telemetry_path=None, model_path=None, minimum_rows=MINIMUM_ROWS,
     if not ok:
         return False, "Not training: {0}\n{1}".format(
             reason, episodes.explain_shortfall(report)), None
+
+    # 60 rows is a checkpoint, not permission: the data must also be diverse
+    # and reliable enough (ml/readiness.py). Refused, with every criterion.
+    if require_ready:
+        from . import readiness
+        assessed = readiness.assess(rows, report, episodes._read(
+            telemetry_path or config.TELEMETRY_PATH))
+        if not assessed["ready"]:
+            return False, "Not training: {0}\n{1}".format(
+                assessed["summary"], readiness.render(assessed)), None
 
     summary = episodes.summarise(rows)
     echo("Strategies seen:")
@@ -205,6 +215,12 @@ def promote(telemetry_path=None, holdout=0.25, echo=print, force=False):
     ok, reason = enough_to_train(rows)
     if not ok and not force:
         return False, "Not promoting: {0}".format(reason), None
+    if not force:
+        from . import readiness
+        assessed = readiness.assess(rows, report, episodes._read(
+            telemetry_path or config.TELEMETRY_PATH))
+        if not assessed["ready"]:
+            return False, "Not promoting: {0}".format(assessed["summary"]), None
 
     result = evaluator.evaluate(telemetry_path, holdout=holdout, echo=echo)
     if not result.get("ok") and not force:
@@ -240,6 +256,45 @@ def promote(telemetry_path=None, holdout=0.25, echo=print, force=False):
     temporary.replace(champion)
     return True, "Promoted challenger to champion at {0} ({1}).".format(
         champion, verdict), result
+
+
+def approve(by, telemetry_path=None, echo=print):
+    """
+    Explicit approval for ACTIVE use of the champion — the only thing that
+    lets ML_MODE=active reorder anything (ml/predictor.py checks for it).
+
+    Refused unless: a champion exists, it was promoted on merit (not forced),
+    and the SHADOW scorecard — the champion's picks on real runs, scored only
+    against what the Hub read back — says BETTER. The approver's name, the
+    time and the scorecard are written into the champion, so who approved
+    what, on which evidence, stays with the model.
+    -> (approved, message)
+    """
+    from . import shadow
+    by = str(by or "").strip()
+    if not by:
+        return False, "Not approving: say who approves (--by NAME)."
+    champion = Path(config.CHAMPION_PATH)
+    if not champion.exists():
+        return False, "Not approving: there is no champion at {0}.".format(champion)
+    built = model_module.StrategyModel.from_json(
+        champion.read_text(encoding="utf-8"), feature_version=features.FEATURE_VERSION)
+    if built.meta.get("promotion_forced") or built.meta.get("promotion_verdict") != "BETTER":
+        return False, ("Not approving: the champion was not promoted on a BETTER "
+                       "offline evaluation.")
+    card = shadow.score(path=telemetry_path)
+    if card["verdict"] != shadow.BETTER:
+        return False, "Not approving: shadow scorecard says {0} — {1}.".format(
+            card["verdict"], card["reason"])
+    built.meta["approval"] = {
+        "approved_by": by, "approved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "shadow_verdict": card["verdict"], "shadow_reason": card["reason"],
+        "shadow_scored": card["scored"]}
+    temporary = champion.with_suffix(".json.tmp")
+    temporary.write_text(built.to_json(), encoding="utf-8")
+    temporary.replace(champion)
+    return True, ("Approved for active use by {0}: {1}. It is used only when "
+                  "ML_MODE=active is also set.".format(by, card["reason"]))
 
 
 def status(echo=print):
@@ -305,11 +360,25 @@ def main(argv=None):
     parser.add_argument("--promote", action="store_true",
                         help="evaluate, and promote to champion only if it wins")
     parser.add_argument("--status", action="store_true")
+    parser.add_argument("--readiness", action="store_true",
+                        help="assess whether the data is diverse and reliable enough")
+    parser.add_argument("--approve", action="store_true",
+                        help="approve the champion for ML_MODE=active (needs --by "
+                             "and a BETTER shadow scorecard)")
+    parser.add_argument("--by", default=None, help="who approves")
     args = parser.parse_args(argv)
 
     if args.status:
         status()
         return 0
+    if args.readiness:
+        from . import readiness
+        print(readiness.render(readiness.assess_file(args.telemetry)))
+        return 0
+    if args.approve:
+        approved, message = approve(args.by, args.telemetry)
+        print(message)
+        return 0 if approved else 1
 
     ok, message, built = train(args.telemetry, args.model,
                                minimum_rows=args.min_rows, dry_run=args.dry_run)

@@ -358,7 +358,22 @@ print("12. SHADOW IS THE DEFAULT, AND SHADOW CHANGES NOTHING")
 print("=" * 70)
 model_path = tmp / "good.json"
 built.meta["feature_version"] = features.FEATURE_VERSION
+# Active use needs an approval on the model (python -m ml.trainer --approve,
+# which demands a BETTER shadow scorecard). First WITHOUT one: active mode
+# must change nothing.
 model_path.write_text(built.to_json(), encoding="utf-8")
+with_env(ML_ENABLED=1, ML_MODE="active", ML_MODEL_PATH=model_path,
+         ML_CONFIDENCE_THRESHOLD=0.5)
+predictor.reset()
+r = predictor.recommend_strategy(seen, ["label_exact", "xpath_ata_date"])
+check("ML_MODE=active with an UNAPPROVED model reorders nothing", r.used is False, repr(r))
+check("...and says why", "not approved for active use" in r.reason, r.reason)
+waited, why = predictor.recommend_wait(seen, 15000, floor_ms=3000)
+check("...nor shortens a wait", waited == 15000, "{0} {1}".format(waited, why))
+built.meta["approval"] = {"approved_by": "test fixture", "approved_at": "2026-10-08",
+                          "shadow_verdict": "BETTER"}
+model_path.write_text(built.to_json(), encoding="utf-8")
+predictor.reset()
 
 with_env(ML_MODE=None, ML_ENABLED=None, ML_MODEL_PATH=None,
          ML_CONFIDENCE_THRESHOLD=None)
@@ -591,6 +606,7 @@ with open(pipe, "w", encoding="utf-8") as handle:
             "ts": stamp}) + "\n")
         handle.write(json.dumps({
             "kind": "episode", "episode_id": episode_id,
+            "reference": "SHIP{0:03d}".format(index % 300),
             "outcome": "VERIFIED" if persisted else "MISMATCH",
             "verified": bool(persisted), "ts": stamp}) + "\n")
 

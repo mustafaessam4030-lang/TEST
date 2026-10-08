@@ -221,6 +221,8 @@ for _ in range(50):
     built.observe(features.keys(ctx), "second", 0.0)
 built.finalise()
 built.meta["feature_version"] = features.FEATURE_VERSION
+# Active use needs an approval on the model (python -m ml.trainer --approve).
+built.meta["approval"] = {"approved_by": "test fixture", "shadow_verdict": "BETTER"}
 path = tmp / "m.json"
 path.write_text(built.to_json(), encoding="utf-8")
 

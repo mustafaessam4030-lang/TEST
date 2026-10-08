@@ -2074,7 +2074,7 @@ def ml_order(named_candidates, context):
     try:
         names = [name for name, _ in named_candidates]
         recommendation = ml_predictor.recommend_strategy(
-            context, names, log=write_log)
+            context, names, log=write_log, episode_id=ml_episode_id())
         if not recommendation.used:
             return named_candidates, None
         by_name = dict(named_candidates)

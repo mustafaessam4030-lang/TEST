@@ -141,6 +141,9 @@ def status():
         "feature_version": features.FEATURE_VERSION,
         "promoted_at": meta.get("promoted_at"),
         "promotion_verdict": meta.get("promotion_verdict"),
+        # Who approved ACTIVE use, on which shadow evidence. None: active
+        # mode behaves exactly like shadow (approved_for_active).
+        "approval": meta.get("approval"),
         # The one sentence that must never be overstated. A model is only
         # "proven" once a promotion recorded a BETTER verdict against real
         # held-out production telemetry.
@@ -257,6 +260,27 @@ def initialize(log=print):
         return False
 
 
+def approved_for_active(model):
+    """ML_MODE=active alone is not enough: the loaded model must carry an
+    approval written by `python -m ml.trainer --approve --by NAME`, which is
+    refused without a BETTER shadow scorecard. Without it, active behaves
+    exactly like shadow."""
+    meta = (getattr(model, "meta", None) or {}) if model else {}
+    return bool((meta.get("approval") or {}).get("approved_by"))
+
+
+def _active(model):
+    return config.ML_MODE == "active" and approved_for_active(model)
+
+
+def _shadow_word(model):
+    """How a non-acting decision introduces itself: plain shadow, or active
+    mode refused for want of an approval."""
+    if config.ML_MODE == "active" and not approved_for_active(model):
+        return "shadow (ML_MODE=active, but this model is not approved for active use)"
+    return "shadow"
+
+
 def active():
     """True when a recommendation could actually be acted on right now."""
     if not config.ML_ENABLED:
@@ -265,7 +289,10 @@ def active():
     return model is not None
 
 
-def recommend_strategy(context, strategies, log=None):
+_EPISODE = {"id": None}
+
+
+def recommend_strategy(context, strategies, log=None, episode_id=None):
     """
     Rank `strategies` for `context`.
 
@@ -277,7 +304,11 @@ def recommend_strategy(context, strategies, log=None):
     omits one — reordering only. That is what keeps every existing safety
     guard intact: the candidates themselves, and the ETA/ATA guards baked into
     them, are the caller's and are untouched.
+
+    `episode_id` is written on the decision row so the choice can later be
+    scored against what the Hub read back for that write.
     """
+    _EPISODE["id"] = episode_id
     try:
         # These three declines used to return without recording anything, so
         # the commonest state of all — no trained model yet — produced ZERO
@@ -378,11 +409,11 @@ def recommend_strategy(context, strategies, log=None):
         # list. This is the only way to collect unbiased evidence about
         # decisions the deterministic order gets right, which an off-policy
         # replay of past telemetry structurally cannot provide.
-        if config.ML_MODE != "active":
+        if not _active(model):
             result = Recommendation(
                 used=False, order=[], top=None, scores=scores,
-                reason="shadow: would have put {0} first ({1})".format(
-                    order[0], reason),
+                reason="{0}: would have put {1} first ({2})".format(
+                    _shadow_word(model), order[0], reason),
                 level=level, trials=trials, would_have_used=True,
                 shadow_order=order)
             _log_decision(context, order[0], scores, False, result.reason, log,
@@ -492,11 +523,11 @@ def recommend_recovery(context, error_class, actions, log=None, history=None):
 
         # SHADOW. ATLAS has a plan and none of it is carried out. The caller
         # records "would try", never "tried".
-        if config.ML_MODE != "active":
+        if not _active(model):
             result = Recommendation(
                 used=False, order=[], top=None, scores=scores,
-                reason="shadow: would try {0} first ({1})".format(
-                    ordered[0], reason),
+                reason="{0}: would try {1} first ({2})".format(
+                    _shadow_word(model), ordered[0], reason),
                 level=verdict["level"], trials=verdict["trials"],
                 would_have_used=True, shadow_order=ordered)
             _log_recovery_decision(context, error_class, ordered[0], scores,
@@ -580,7 +611,7 @@ def recommend_wait(context, default_ms, floor_ms=500, log=None):
         # still the model steering the run — a shadow run whose timings differ
         # from a deterministic one is not the comparison shadow mode exists to
         # provide. The proposal is logged and dropped.
-        if config.ML_MODE != "active":
+        if not _active(model):
             if log:
                 try:
                     log(identity.line(
@@ -638,7 +669,7 @@ def _log_decision(context, chosen, scores, used, reason, log,
             detail = reason
 
         telemetry.decision(context, chosen, scores, used, reason,
-                           candidates=candidates,
+                           candidates=candidates, episode_id=_EPISODE["id"],
                            mode=config.ML_MODE, shadow=shadow,
                            support=(verdict or {}).get("has_support"),
                            trials=(verdict or {}).get("trials"),

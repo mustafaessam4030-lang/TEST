@@ -325,6 +325,7 @@ def _snapshot():
             "label_rule": meta.get("label_rule"),
             "promoted_at": meta.get("promoted_at"),
             "promotion_verdict": meta.get("promotion_verdict"),
+            "approval": meta.get("approval"),
             "quarantined": summary.get("quarantined"),
         }
 
@@ -338,8 +339,20 @@ def _snapshot():
         # on, and showing 4,000 would say the opposite.
         rows, report = ml_episodes.join()
         ok, why = ml_trainer.enough_to_train(rows)
-        trainable = bool(ok)
-        reason = why if ok else ml_episodes.explain_shortfall(report)
+        # Enough rows is only the checkpoint. "Trainable" also needs the data
+        # to be diverse and reliable (ml/readiness.py) — the same gate the
+        # trainer applies.
+        from ml import readiness as ml_readiness
+        assessed = ml_readiness.assess(rows, report, ml_episodes._read(
+            ml_config.TELEMETRY_PATH))
+        trainable = bool(ok and assessed["ready"])
+        reason = (assessed["summary"] if ok else ml_episodes.explain_shortfall(report))
+        telemetry["readiness"] = {
+            "verdict": assessed["verdict"],
+            "checkpoint_reached": assessed["checkpoint_reached"],
+            "criteria": [{k: c[k] for k in ("name", "value", "threshold", "passed")}
+                         for c in assessed["criteria"]],
+            "warnings": assessed["warnings"]}
         telemetry["usable_rows"] = report.get("kept", 0)
         telemetry["rejected_test_rows"] = report.get("dropped_not_real", 0)
         telemetry["episodes"] = report.get("episodes", 0)
@@ -348,6 +361,16 @@ def _snapshot():
         telemetry["verification_rows_excluded"] = report.get(
             "dropped_verification_rows", 0)
         telemetry["label_rule"] = report.get("label_rule")
+    except Exception:
+        pass
+    try:
+        # The champion's shadow picks scored against Hub read-backs; the only
+        # evidence on which active use can be approved.
+        from ml import shadow as ml_shadow
+        card = ml_shadow.score()
+        telemetry["shadow"] = {k: card.get(k) for k in (
+            "verdict", "reason", "decisions", "scored", "disagreements",
+            "model_wins", "baseline_wins")}
     except Exception:
         pass
 

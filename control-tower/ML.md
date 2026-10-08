@@ -230,8 +230,13 @@ set VERIFY_AFTER_SAVE=1
 python update_eta.py
 python -c "from ml import episodes; print(episodes.join()[1])"
 
-REM 2 · Train a challenger. 60 labelled rows is the floor; a few hundred is
-REM      better. It refuses and says exactly what is missing if there are not.
+REM 2 · Is the data good enough — not just big enough? 60 labelled rows is a
+REM      CHECKPOINT. Readiness also needs 40+ verified writes, 20+ shipments,
+REM      14+ days on 5+ days, 10+ verified successes AND failures, and two
+REM      strategies seen 15+ times each. Every criterion is printed.
+python -m ml.readiness
+
+REM 3 · Train a challenger. Refused, with the criteria, until readiness passes.
 python -m ml.trainer --show
 
 REM 3 · Prove it beats the automation's own order. Trains on the earlier
@@ -245,12 +250,21 @@ python -m ml.trainer --status
 REM 5 · The champion is now loaded, in SHADOW. It still changes nothing.
 python update_eta.py
 
-REM 6 · Only after shadow decisions confirm it on real runs:
+REM 6 · Score the champion's shadow picks against what the Hub read back.
+REM      Conservative: a pick never tried counts as a miss.
+python -m ml.shadow
+
+REM 7 · Approve — refused unless the shadow scorecard says BETTER. Records
+REM      who approved, when, and on which evidence, inside the champion.
+python -m ml.trainer --approve --by "Your Name"
+
+REM 8 · Only an APPROVED champion acts in active mode. Without the approval,
+REM      ML_MODE=active behaves exactly like shadow and says why.
 set ML_MODE=active
 python update_eta.py
 ```
 
-Steps 3 and 6 are not optional. `NO DIFFERENCE` and `INSUFFICIENT DATA` both
+Steps 2, 4, 6 and 7 are not optional. `NO DIFFERENCE` and `INSUFFICIENT DATA` both
 mean leave it in shadow.
 
 ## Settings
