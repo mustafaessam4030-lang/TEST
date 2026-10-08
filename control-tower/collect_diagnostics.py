@@ -8,7 +8,8 @@ The zip (C:\\Automation\\diagnostics-<date>.zip) holds:
 
   versions.txt     Python, Playwright, PyMuPDF, openpyxl, Windows, this release
   eta/             the last 3 run logs, tracking_results.csv, the human-action
-                   events, the dashboard's last published run state
+                   events, the dashboard's last published run state, and the
+                   text of the last 60 carrier pages a lookup failed on
   po/jobs.txt      every PO job: state, failure, each field read and from where
   po/sweeps/       the last 3 automatic runs' list decisions
   po/pdf/          up to 6 Bill of Entry PDFs whose extraction failed, each with
@@ -159,6 +160,10 @@ def main():
         add_file(z, "eta/human_actions.jsonl", BASE / "logs" / "human_actions.jsonl")
         add_file(z, "eta/tracking_results.csv", BASE / "tracking_results.csv")
         add_file(z, "eta/last_run_state.json", RUNTIME / "state.json")
+        # What each carrier page showed when a lookup failed (…_no_input,
+        # …_no_result, …_wrong_awb): the text the run saved, not screenshots.
+        for path in newest(BASE / "logs", "*.txt", 60):
+            add_file(z, "eta/carrier_pages/" + path.name, path, limit=256 * 1024)
         po_jobs(z)
     print("\n  Done. Send this file:\n    {0}\n".format(target))
     print("  It holds logs, results and the failed Bill of Entry PDFs — no passwords,")
