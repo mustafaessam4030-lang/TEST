@@ -682,13 +682,14 @@ check("The logo is the official file from /static/brand/, never drawn here",
       and ".logo.missing::after{content:\"Logo\"}" in INDEX)
 check("The brand folder says where the official logo goes",
       (HERE / "dashboard" / "static" / "brand" / "README.txt").exists())
-check("The sidebar has the eight destinations",
+check("The sidebar has the destinations kept",
       all("t:'{0}'".format(t) in INDEX for t in (
-          "Overview", "Live Runs", "Shipments", "Carriers", "ATLAS",
-          "Human Action", "History", "Settings")))
-check("History keeps Analysis, Exceptions and the Activity log behind one "
-      "segmented control", "group:['analysis','exceptions','logs']" in INDEX
-      and INDEX.count('class="seg"') == 3)
+          "Overview", "Shipments", "PO Automation", "ATLAS", "Human Action", "Settings")))
+check("Live Runs, Carriers and History are out of the navigation",
+      not any("t:'{0}'".format(t) in INDEX for t in ("Live Runs", "Carriers", "History"))
+      and "data-go=\"exceptions\"" not in INDEX.split('data-p="analysis"')[0])
+check("ATLAS's links to the removed pages open the Overview",
+      "UI_MOVED = {live:'overview', systems:'overview', analysis:'overview'" in INDEX)
 check("The five overview metrics are the ones asked for",
       all("k:'{0}'".format(t) in INDEX for t in (
           "Total shipments", "Processing", "Completed", "Waiting for human",

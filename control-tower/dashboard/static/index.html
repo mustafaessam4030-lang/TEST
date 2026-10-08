@@ -2558,8 +2558,7 @@ td.ref{font-weight:500}
             <div class="card-b" id="atlasRec"></div>
           </div>
           <div class="card">
-            <div class="card-h"><div class="card-t">Recent automation issues</div><div class="sp"></div>
-              <button class="link" data-go="exceptions">All exceptions</button></div>
+            <div class="card-h"><div class="card-t">Recent automation issues</div></div>
             <div id="atlasIssues"></div>
           </div>
         </div>
@@ -3663,19 +3662,17 @@ stackQ.addEventListener('change', () => document.querySelectorAll('.tw tbody').f
 function cls(el, n){ if (el && el.className !== n) el.className = n; }
 
 /* ═══ NAV ═══
-   Eight destinations. History holds three views behind one segmented
-   control, so its nav item stays lit whichever of them is showing. */
+   Live Runs, Carriers and History are left out of the navigation: their
+   sections stay in the page (the run still fills them) but nothing opens
+   them. History's group is kept so its views would stay lit together. */
 const PAGES = [
   {g:'Operations'},
   {id:'overview',  t:'Overview',      i:'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 4v3h6V4z'},
-  {id:'live',      t:'Live Runs',     i:'M3 12h4l3 8 4-16 3 8h4'},
   {id:'shipments', t:'Shipments',     i:'M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4'},
-  {id:'systems',   t:'Carriers',      i:'M3 17h13V6H3zM16 10h3.5L22 13v4h-6M7 20a2 2 0 100-4 2 2 0 000 4zm11 0a2 2 0 100-4 2 2 0 000 4z'},
   {id:'po',        t:'PO Automation', i:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4'},
   {g:'Intelligence'},
   {id:'atlas',     t:'ATLAS',         i:'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zm0 9l8-4.5M12 12v9m0-9L4 7.5'},
   {id:'human',     t:'Human Action',  i:'M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM4.5 21a7.5 7.5 0 0 1 15 0'},
-  {id:'analysis',  t:'History',       i:'M12 7v5l3 2M3.05 11a9 9 0 1 1 .5 4M3 4v5h5', group:['analysis','exceptions','logs']},
   {id:'access',    t:'Access',        i:'M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6zM9.5 12l2 2 3.5-4', admin:true},
   {spacer:true},
   {id:'settings',  t:'Settings',      i:'M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2m12 0h2M12 4v2m0 12v2'},
@@ -6817,8 +6814,11 @@ document.addEventListener('click', (e) => {
   /* Dashboard actions ATLAS may take: filter Live operations, open a
      shipment, go to a page. A whitelist, checked here as well as on the
      server; anything else is ignored. Returns what was done, in words. */
-  const UI_PAGES = {po:1, human:1, atlas:1, logs:1, exceptions:1, shipments:1, overview:1,
-                    live:1, systems:1, analysis:1};
+  const UI_PAGES = {po:1, human:1, atlas:1, shipments:1, overview:1};
+  // Pages taken out of the navigation: ATLAS's links to them open the
+  // Overview, which shows the same run.
+  const UI_MOVED = {live:'overview', systems:'overview', analysis:'overview',
+                    exceptions:'overview', logs:'overview'};
   function runUi(a){
     if (!a || typeof a !== 'object') return '';
     if (a.type === 'filter'){
@@ -6835,6 +6835,7 @@ document.addEventListener('click', (e) => {
       hideChrome();
       return 'Opened ' + a.reference + '.';
     }
+    if (a.type === 'page' && UI_MOVED[a.page]) a = Object.assign({}, a, {page:UI_MOVED[a.page]});
     if (a.type === 'page' && UI_PAGES[a.page]){
       go(a.page);
       if (a.focus) setTimeout(() => hqFocus(a.focus), 120);
