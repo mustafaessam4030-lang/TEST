@@ -40,11 +40,18 @@ class Scripted:
 
     def __init__(self, *replies):
         self.replies = list(replies)
-        self.prompts = []
+        self.prompts, self.systems, self.skipped = [], [], 0
 
     def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
         self.prompts.append(prompt)
+        self.systems.append(system[:12])
         reply = self.replies.pop(0)
+        if not system.startswith("You route") and isinstance(reply, dict) and \
+                "question_en" in reply:
+            # The rules recognised the question, so ATLAS skipped the
+            # "understand" call this script had a reply ready for.
+            self.skipped += 1
+            reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
         return reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
@@ -274,6 +281,49 @@ r = converse.answer("which failed?", STATE, {}, assistant._answer_rules)
 check("A real records answer stays one click away (details)", bool(r.get("details")))
 llm.provider = real_provider
 
+from intelligence import factguard as _FG
+check("Fact guard: 'the run wrote it' affirms 'written' (same verb, other form)",
+      _FG.check("1570046231 was written to the Hub.",
+                ["1570046231 is with QATAR AIRWAYS. The run wrote it to the Hub."])[0])
+check("Fact guard: 'never wrote it' still blocks 'was written'",
+      not _FG.check("1570046231 was written to the Hub.",
+                    ["Nothing was written. The run never wrote 1570046231."])[0])
+check("Fact guard: 'success' still needs the records to say it",
+      not _FG.check("It was a success.", ["2 written to the Hub"])[0])
+
+print("=" * 68)
+print("6d. ONE MODEL CALL WHEN THE RULES ALREADY UNDERSTAND")
+print("=" * 68)
+one = Scripted({"answer": "8842001173 failed.", "verified": ["8842001173 failed"], "likely": [],
+                "missing": [], "external": []})
+use(one)
+r = converse.answer("Why did 8842001173 fail?", STATE, {}, assistant._answer_rules)
+check("A records question the rules recognise: one model call, no 'understand'",
+      r["llm"]["used"] and len(one.prompts) == 1 and r["llm"]["timings"]["route"] == "rules",
+      one.systems)
+two = Scripted(plan("What does ERR_HTTP2_PROTOCOL_ERROR mean?", True, "ERR_HTTP2_PROTOCOL_ERROR"),
+               {"answer": "No research.", "verified": [], "likely": [], "missing": [],
+                "external": []})
+use(two)
+converse.answer("What does ERR_HTTP2_PROTOCOL_ERROR mean?", STATE, {}, assistant._answer_rules)
+check("A web question still goes through 'understand' (it may need the web)",
+      two.systems[0].startswith("You route"), two.systems)
+ar = Scripted(plan("Which shipments failed?"), {"answer": "الشحنة 8842001173 فشلت.",
+              "verified": [], "likely": [], "missing": [], "external": []})
+use(ar)
+converse.answer("ما هي الشحنات التي فشلت؟", STATE, {}, assistant._answer_rules)
+check("Arabic still goes through 'understand'", ar.systems[0].startswith("You route"))
+thanks = Scripted({"answer": "You're welcome, happy to help!"})
+use(thanks)
+r = converse.answer("thanks atlas", STATE, {}, assistant._answer_rules)
+check("Thanks: a warm model reply in one call", r["intent"] == "chat" and
+      r["llm"]["used"] and len(thanks.prompts) == 1, r["answer"])
+use(Scripted(llm.LLMError("the local model is not reachable (timed out)")))
+r = converse.answer("im so sad", STATE, {}, assistant._answer_rules)
+check("A personal message the model cannot reach gets a kind word, not 'not in the records'",
+      r["answer"] == converse.CHAT_FALLBACK["en"] and not r.get("details"), r["answer"][:80])
+llm.provider = real_provider
+
 print("=" * 68)
 print("6c. MANY QUESTIONS AT ONCE: THE OPTIONAL MODEL GATE")
 print("=" * 68)
@@ -337,6 +387,14 @@ os.environ["ATLAS_LLM_WAIT_S"] = "0"
 slow, out = burst(3)
 check("Waiting longer than ATLAS_LLM_WAIT_S: the quick answer, not an endless wait",
       sum(not r["llm"]["used"] for r in out.values()) == 2)
+for k in ("ATLAS_LLM_SLOTS", "ATLAS_LLM_QUEUE", "ATLAS_LLM_WAIT_S"):
+    os.environ.pop(k, None)
+os.environ.update({"ATLAS_LLM_SLOTS": "1", "ATLAS_LLM_QUEUE": "0", "ATLAS_LLM_WAIT_S": "0"})
+converse._GATE["running"] = 1                      # someone is in the model
+r = converse.answer("im so sad", STATE, {}, assistant._answer_rules)
+converse._GATE["running"] = 0
+check("Busy and personal: a kind word, not the busy notice over 'not in the records'",
+      r["answer"] == converse.CHAT_FALLBACK["en"], r["answer"][:80])
 for k in ("ATLAS_LLM_SLOTS", "ATLAS_LLM_QUEUE", "ATLAS_LLM_WAIT_S"):
     os.environ.pop(k, None)
 check("The gate is empty afterwards", converse._GATE["running"] == 0 and

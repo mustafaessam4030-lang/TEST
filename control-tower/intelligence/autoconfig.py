@@ -85,6 +85,12 @@ def _use_model(url, model, warm=True):
     # Loaded once, kept for the working day: reloading takes minutes on a
     # cold disk.
     os.environ.setdefault("ATLAS_LLM_KEEP_ALIVE", "8h")
+    # One question in the model at a time, two waiting, the rest answered
+    # from the records at once (load test 2026-10-09: without it, 8 of 10
+    # simultaneous questions timed out in Ollama's queue). 0 turns it off.
+    os.environ.setdefault("ATLAS_LLM_SLOTS", "1")
+    os.environ.setdefault("ATLAS_LLM_QUEUE", "2")
+    os.environ.setdefault("ATLAS_LLM_WAIT_S", "150")
     if warm:
         _warm(url, model)
 

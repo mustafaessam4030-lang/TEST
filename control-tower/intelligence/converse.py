@@ -111,6 +111,8 @@ Rules — absolute:
   RECORDS or WEB. Copy numbers and references exactly, with Western digits.
 - Never say something succeeded, was verified, written, saved or confirmed unless
   RECORDS say so. Keep uncertainty uncertain. If RECORDS say there is no data, say so.
+- Describe outcomes in the RECORDS' own words ("written to the Hub", "updated",
+  "skipped", "failed"); do not write "success" or "successfully" unless RECORDS do.
 - "verified" and "likely" are only for RECORDS; everything from WEB goes in "external".
 - "missing" is only for a fact the operator explicitly asked for that RECORDS lack; it
   is usually empty. Do not list things RECORDS mention.
@@ -267,7 +269,8 @@ def render(sections, lang, web):
 # timed out after waiting and fell back to the rules (benchmark, 2026-10-09).
 # With ATLAS_LLM_SLOTS set, at most that many questions are in the model at
 # once, ATLAS_LLM_QUEUE more may wait up to ATLAS_LLM_WAIT_S, and anyone
-# beyond gets the rules' answer at once, said plainly. Unset: as before.
+# beyond gets the rules' answer at once, said plainly. The tower and the demo
+# set 1 / 2 / 150 (intelligence/autoconfig.py, atlas_demo.py); 0 = no gate.
 BUSY = {
     "en": "I'm answering other questions right now, so here's the quick answer "
           "straight from the run's records:",
@@ -325,9 +328,12 @@ def answer(question, state, context, rules):
     R.stage(R.clean_progress_id((context or {}).get("progress_id")), "Waiting for my turn…")
     busy = _enter()
     if busy:
+        lang = language_of(question)
         reply = rules(question, state, dict(context or {}, _no_phrase=True))
-        reply["answer"] = BUSY[language_of(question)] + "\n\n" + (reply.get("answer") or "")
         reply["llm"] = {"used": False, "reason": busy, "mode": "conversation"}
+        if (reply.get("fallback") or not reply.get("intent")) and PERSONAL.search(question):
+            return _kind_if_personal(reply, question, lang)
+        reply["answer"] = BUSY[lang] + "\n\n" + (reply.get("answer") or "")
         return reply
     try:
         return _answer(question, state, context, rules)
@@ -347,23 +353,36 @@ def _answer(question, state, context, rules):
         # without a second model call: the model already failed this question.
         reply = base or rules(question, state, dict(context or {}, _no_phrase=True))
         reply["llm"] = {"used": False, "reason": reason, "mode": "conversation"}
-        return reply
+        return _kind_if_personal(reply, question, lang)
 
-    try:
-        R.stage(pid, "Understanding the question…")
-        t = time.time()
-        plan = understand(question)
-        timings["understand_s"] = round(time.time() - t, 1)
-    except llm.LLMError as error:
-        return fallback(str(error))
-    except Exception as error:
-        return fallback("the model's reading of the question failed: {0}".format(error))
+    # The rules read the question first: when they recognise it as a question
+    # about the records (or a hello / thank-you), the model's "understand"
+    # call is skipped — one model call instead of two, half the queue.
+    direct = rules(question, state, inner) if lang == "en" else None
+    route = "model"
+    if direct and direct.get("intent") in ("greeting", "thanks"):
+        plan = {"question_en": question, "needs_web": False, "web_query": "", "chat": True}
+        route = "rules"
+    elif direct and _records_question(direct, question):
+        plan = {"question_en": question, "needs_web": False, "web_query": "", "chat": False}
+        route = "rules"
+    else:
+        try:
+            R.stage(pid, "Understanding the question…")
+            t = time.time()
+            plan = understand(question)
+            timings["understand_s"] = round(time.time() - t, 1)
+        except llm.LLMError as error:
+            return fallback(str(error))
+        except Exception as error:
+            return fallback("the model's reading of the question failed: {0}".format(error))
+    timings["route"] = route
 
     if plan["chat"] and not plan["needs_web"]:
         return _chat(question, state, inner, rules, lang, plan, timings, started)
 
     R.stage(pid, "Reading ELAP's records…")
-    base = rules(plan["question_en"], state, inner)
+    base = direct if route == "rules" else rules(plan["question_en"], state, inner)
     if base.get("request"):
         # An action is only ever taken from the operator's own words, through
         # the rules and the dashboard's own checks — never from the model's
@@ -426,6 +445,40 @@ def _answer(question, state, context, rules):
 WORK = re.compile(r"\b(run|runs|shipment|shipments|automation|work|working|carrier|carriers|"
                   r"hub|eta|ata|po|failed|failure|error|stuck|slow|taking|queue)\b|"
                   r"شحن|تشغيل|عمل|أتمتة|ناقل", re.I)
+
+# Intents the rules answer from the run's records. "general_knowledge" and
+# "filter" are left to the model: they may need the web.
+RECORD_INTENTS = {
+    "shipment", "eta", "ata", "carrier", "failure_why", "failure_what", "skipped",
+    "summary", "run", "compare", "attention", "human", "latest_failure", "stuck",
+    "story", "changed", "report", "briefing", "carrier_health", "carrier_timing",
+    "slowest", "fastest", "average", "duration", "health", "history", "next_step",
+    "wait_time", "recovery", "verification", "failure_cats", "strategy_perf",
+    "noticed", "work", "no_eta", "why",
+}
+WEB_CUE = re.compile(r"\b(web|website|site|internet|online|search|google|news|notice|"
+                     r"cloudflare|mean|means|meaning|what\s+is|how\s+(?:do|to|can)|"
+                     r"documentation|docs)\b", re.I)
+PERSONAL = re.compile(r"\b(sad|tired|stress(?:ed)?|happy|bored|angry|upset|lonely|love|miss|"
+                      r"hate|feel|feeling|mood|cry|worried|anxious|thanks?|thank\s+you|hi|"
+                      r"hello|hey|good\s+(?:morning|evening|night))\b|"
+                      r"حزين|تعبان|زعلان|شكرا|مرحبا|صباح الخير", re.I)
+
+
+def _records_question(reply, question):
+    intent = str(reply.get("intent") or "")
+    return not reply.get("fallback") and not reply.get("request") and \
+        (intent in RECORD_INTENTS or intent.startswith("po_")) and not WEB_CUE.search(question)
+
+
+def _kind_if_personal(reply, question, lang):
+    """A personal message the model could not reach gets a kind word, not
+    the rules' "that isn't something this run records"."""
+    if (reply.get("fallback") or not reply.get("intent")) and PERSONAL.search(question or ""):
+        reply.update(answer=CHAT_FALLBACK[lang], intent="chat", card=None, understood=True)
+        reply.pop("details", None)
+    return reply
+
 
 CHAT_FALLBACK = {
     "en": "I hear you 💛 I'm right here if you need anything — just ask me about the run.",

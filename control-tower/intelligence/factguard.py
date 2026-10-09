@@ -19,6 +19,10 @@ URL = re.compile(r"https?://\S+", re.I)
 CLAIMS = re.compile(r"\b(verified|confirmed|succeeded|success|successful(?:ly)?|written|saved|"
                     r"updated|sent|delivered|accepted|completed|resolved|recovered|fixed|"
                     r"cleared|approved|arrived)\b", re.I)
+# The same claim in another form of its verb: inputs saying "the run wrote it
+# to the Hub" affirm "written". Only the verb form changes, never the claim.
+FORMS = {"wrote": "written"}
+SOURCE_CLAIMS = re.compile(CLAIMS.pattern[:-3] + "|" + "|".join(FORMS) + r")\b", re.I)
 # Operational status labels: a phrasing may only use the ones ATLAS used.
 STATUS = re.compile(r"\b(?:[A-Z]{3,}(?:_[A-Z]+)+|SUCCESS|FAILED|RESTRICTED|VERIFIED|UNVERIFIED|"
                     r"CONFIRMED|PARTIAL|SKIPPED|BLOCKED|READY|UNKNOWN|LIKELY|POSSIBLE)\b")
@@ -35,7 +39,8 @@ def _negated(text, start):
 
 def _affirmed(text):
     """The claim words `text` states affirmatively (not negated)."""
-    return {m.group(0).lower() for m in CLAIMS.finditer(text) if not _negated(text, m.start())}
+    return {FORMS.get(m.group(0).lower(), m.group(0).lower())
+            for m in SOURCE_CLAIMS.finditer(text) if not _negated(text, m.start())}
 
 
 def _digits(text):
@@ -66,7 +71,9 @@ def check(phrased, inputs):
     src_affirmed = _affirmed(source)
     for claim in CLAIMS.finditer(phrased or ""):
         word = claim.group(0).lower()
-        if word not in src_low:
+        if word not in src_low and not any(
+                re.search(r"\b{0}\b".format(form), src_low)
+                for form, same in FORMS.items() if same == word):
             violations.append("claim '{0}'".format(claim.group(0)))
         elif not _negated(phrased, claim.start()) and word not in src_affirmed:
             # "nothing was written" must not come back as "it was written".
