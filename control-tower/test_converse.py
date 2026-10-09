@@ -224,6 +224,30 @@ r = assistant.answer("How is the run going?", STATE)
 check("No label otherwise", "TEST DATA" not in r["answer"])
 
 print("=" * 68)
+print("6b. FROM THE PO PAGE, A WAITING PERSON IS NEVER HIDDEN")
+print("=" * 68)
+waiting_bridge = ControlTowerState()
+waiting_bridge.run_started(dry_run=False, target_status="Under Clearance")
+waiting_bridge.shipment_started(dict(bol_awb="S330348776", carrier="Grimaldi", provider="GRIMALDI"))
+waiting_bridge.human_action_opened({
+    "run_id": "r1", "action_id": "9f2c11ab33d0", "reference": "S330348776",
+    "carrier": "Grimaldi Lines", "reason": "human_verification_required",
+    "opened_at": time.strftime("%Y-%m-%d %H:%M:%S"), "timeout_s": 180,
+    "deadline": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + 180)),
+    "instructions": "Type the security code shown on the page."})
+WAITING = waiting_bridge.snapshot()
+po_reply = {"answer": "No PO job has been processed yet.", "intent": "po_status"}
+out = assistant._also_waiting(dict(po_reply), WAITING)
+check("A PO answer while a person is needed ends with what is waiting",
+      "Also waiting for you in the ETA run" in out["answer"] and "S330348776" in out["answer"],
+      out["answer"][-160:])
+out = assistant._also_waiting(dict(po_reply), STATE)
+check("Nothing waiting: the PO answer is unchanged", out["answer"] == po_reply["answer"])
+out = assistant._also_waiting({"answer": "Run status", "intent": "run"}, WAITING)
+check("A shipment-run answer is left alone (it covers waiting itself)",
+      out["answer"] == "Run status")
+
+print("=" * 68)
 print("7. THE REAL TOWER SWITCHES THE LOCAL AI ON BY ITSELF")
 print("=" * 68)
 import threading

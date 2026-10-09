@@ -3031,10 +3031,36 @@ def answer(question, state, context=None):
         try:
             from intelligence import converse
             if converse.enabled():
-                return _labelled(converse.answer(question, state, context, _answer_rules))
+                return _labelled(_also_waiting(
+                    converse.answer(question, state, context, _answer_rules), state))
         except Exception:
             pass
-    return _labelled(_answer_rules(question, state, context))
+    return _labelled(_also_waiting(_answer_rules(question, state, context), state))
+
+
+def _also_waiting(reply, state):
+    """
+    An answer about PO work (asked from the PO page, say) while the ETA run
+    is waiting for a person ends with what is waiting — from the run's own
+    attention answer, so "what happened?" never hides a paused browser.
+    """
+    try:
+        if not str((reply or {}).get("intent") or "").startswith("po_"):
+            return reply
+        if not ((state or {}).get("human_action") or (state or {}).get("human_queue")):
+            return reply
+        waiting = _answer_rules("What needs my attention?", state, {"_raw": True})
+        if waiting.get("intent") != "attention":
+            return reply
+        text = (waiting.get("answer") or "").split("\n\nAlso:")[0].strip()
+        if not text or text.lower().startswith("nothing"):
+            return reply
+        reply["answer"] = (reply.get("answer") or "").rstrip() + \
+            "\n\n**Also waiting for you in the ETA run**\n" + text + \
+            "\nAsk “What needs me?” for the details."
+    except Exception:
+        pass
+    return reply
 
 
 TEST_DATA_LABEL = ("**TEST DATA** — this dashboard is showing a labelled demonstration "
