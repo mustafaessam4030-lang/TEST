@@ -32,6 +32,7 @@ anything: the model sees text and returns text.
 import json
 import os
 import re
+import threading
 import time
 
 from . import factguard, llm
@@ -259,12 +260,82 @@ def render(sections, lang, web):
     return "\n\n".join(p for p in parts if p)
 
 
+# ── how many questions use the model at once (optional) ─────────────────
+# Ollama answers one model call at a time by default (OLLAMA_NUM_PARALLEL=1)
+# and queues the rest; the per-call limit counts that queue time. Measured on
+# 4 CPU cores: 5 questions at once -> 1 model answer, 10 -> 2; the others
+# timed out after waiting and fell back to the rules (benchmark, 2026-10-09).
+# With ATLAS_LLM_SLOTS set, at most that many questions are in the model at
+# once, ATLAS_LLM_QUEUE more may wait up to ATLAS_LLM_WAIT_S, and anyone
+# beyond gets the rules' answer at once, said plainly. Unset: as before.
+BUSY = {
+    "en": "I'm answering other questions right now, so here's the quick answer "
+          "straight from the run's records:",
+    "ar": "أجيب على أسئلة أخرى الآن، لذلك هذه إجابة سريعة من سجلات التشغيل مباشرة:",
+}
+_GATE = {"cond": threading.Condition(), "running": 0, "waiting": 0}
+
+
+def _int_env(name, default):
+    try:
+        return int(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+def _enter():
+    """-> None when this question may use the model, else why not."""
+    slots = _int_env("ATLAS_LLM_SLOTS", 0)
+    if slots <= 0:
+        return None
+    gate = _GATE
+    with gate["cond"]:
+        if gate["running"] < slots:
+            gate["running"] += 1
+            return None
+        if gate["waiting"] >= _int_env("ATLAS_LLM_QUEUE", 2):
+            return "busy: {0} question(s) in the model and {1} waiting".format(
+                gate["running"], gate["waiting"])
+        gate["waiting"] += 1
+        try:
+            ok = gate["cond"].wait_for(lambda: gate["running"] < slots,
+                                       timeout=_int_env("ATLAS_LLM_WAIT_S", 150))
+        finally:
+            gate["waiting"] -= 1
+        if not ok:
+            return "busy: waited {0} s for the model".format(_int_env("ATLAS_LLM_WAIT_S", 150))
+        gate["running"] += 1
+        return None
+
+
+def _leave():
+    with _GATE["cond"]:
+        _GATE["running"] -= 1
+        _GATE["cond"].notify()
+
+
 def answer(question, state, context, rules):
     """
     The conversation answer, or ATLAS's rule-based one. `rules(question,
     state, context)` is the existing ATLAS (dashboard/assistant.py).
     Never raises.
     """
+    if _int_env("ATLAS_LLM_SLOTS", 0) <= 0:
+        return _answer(question, state, context, rules)
+    R.stage(R.clean_progress_id((context or {}).get("progress_id")), "Waiting for my turn…")
+    busy = _enter()
+    if busy:
+        reply = rules(question, state, dict(context or {}, _no_phrase=True))
+        reply["answer"] = BUSY[language_of(question)] + "\n\n" + (reply.get("answer") or "")
+        reply["llm"] = {"used": False, "reason": busy, "mode": "conversation"}
+        return reply
+    try:
+        return _answer(question, state, context, rules)
+    finally:
+        _leave()
+
+
+def _answer(question, state, context, rules):
     started = time.time()
     lang = language_of(question)
     pid = R.clean_progress_id((context or {}).get("progress_id"))

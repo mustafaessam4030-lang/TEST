@@ -18,6 +18,7 @@ for name in ("ATLAS_LLM_PROVIDER", "ATLAS_SEARCH_URL", "ATLAS_DEMO_TEST_DATA", "
     os.environ.pop(name, None)
 
 from intelligence import converse, llm
+BUSY_EN = converse.BUSY["en"]
 from intelligence import research as R
 from dashboard import assistant
 from dashboard.bridge import ControlTowerState
@@ -271,6 +272,75 @@ use(Scripted(plan("Which shipments failed?"), {
     "missing": [], "external": []}))
 r = converse.answer("which failed?", STATE, {}, assistant._answer_rules)
 check("A real records answer stays one click away (details)", bool(r.get("details")))
+llm.provider = real_provider
+
+print("=" * 68)
+print("6c. MANY QUESTIONS AT ONCE: THE OPTIONAL MODEL GATE")
+print("=" * 68)
+import threading as _th
+
+
+class SlowModel:
+    """A thread-safe stand-in: each call takes a moment; counts overlap."""
+    name, model = "ollama", "stand-in"
+
+    def __init__(self):
+        self.lock, self.now, self.peak = _th.Lock(), 0, 0
+
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
+        with self.lock:
+            self.now += 1
+            self.peak = max(self.peak, self.now)
+        time.sleep(0.25)
+        with self.lock:
+            self.now -= 1
+        if system.startswith("You route"):
+            q = prompt.split("Question: ", 1)[1]
+            return json.dumps({"chat": False, "question_en": q, "needs_web": False})
+        return json.dumps({"answer": "8842001173 failed.", "verified": [], "likely": [],
+                           "missing": [], "external": []})
+
+
+def burst(n):
+    slow = SlowModel()
+    use(slow)
+    out = {}
+
+    def one(i):
+        out[i] = converse.answer("Why did 8842001173 fail? #{0}".format(i), STATE, {},
+                                 assistant._answer_rules)
+    threads = [_th.Thread(target=one, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return slow, out
+
+
+os.environ.pop("ATLAS_LLM_SLOTS", None)
+slow, out = burst(4)
+check("Gate off (default): questions reach the model together, as before", slow.peak > 1,
+      slow.peak)
+os.environ.update({"ATLAS_LLM_SLOTS": "1", "ATLAS_LLM_QUEUE": "2", "ATLAS_LLM_WAIT_S": "30"})
+slow, out = burst(6)
+used = [i for i, r in out.items() if r["llm"]["used"]]
+busy = [i for i, r in out.items() if not r["llm"]["used"]]
+check("Gate on: one question in the model at a time", slow.peak == 1, slow.peak)
+check("1 running + 2 waiting get the model; the other 3 the quick answer at once",
+      len(used) == 3 and len(busy) == 3, (used, busy))
+check("The quick answer says plainly why, and is still the run's own answer",
+      all(out[i]["answer"].startswith(BUSY_EN) and "8842001173" in out[i]["answer"]
+          and out[i]["llm"]["reason"].startswith("busy") for i in busy))
+check("Every model answer is its own question's", all(
+      out[i]["llm"]["question_en"].endswith("#{0}".format(i)) for i in used))
+os.environ["ATLAS_LLM_WAIT_S"] = "0"
+slow, out = burst(3)
+check("Waiting longer than ATLAS_LLM_WAIT_S: the quick answer, not an endless wait",
+      sum(not r["llm"]["used"] for r in out.values()) == 2)
+for k in ("ATLAS_LLM_SLOTS", "ATLAS_LLM_QUEUE", "ATLAS_LLM_WAIT_S"):
+    os.environ.pop(k, None)
+check("The gate is empty afterwards", converse._GATE["running"] == 0 and
+      converse._GATE["waiting"] == 0, converse._GATE)
 llm.provider = real_provider
 
 print("=" * 68)
