@@ -37,6 +37,8 @@ INTENTS = [
     ("image_compare", ["compare this screenshot", "compare this image", "compare the screenshot",
                        "compare it with the previous", "compare with the previous failure"]),
     ("image_read", ["this screenshot", "this image", "the screenshot i sent", "the image i sent",
+                    "this photo", "the photo", "this picture", "the picture", "attached photo",
+                    "the image", "in the photo", "in the picture",
                     "the screenshot i uploaded", "the image i uploaded", "from the screenshot",
                     "attached screenshot", "attached image", "in the screenshot"]),
     ("evidence", ["show me the screenshot", "show the screenshot", "send me the screenshot",

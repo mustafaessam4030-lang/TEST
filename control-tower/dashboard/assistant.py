@@ -400,6 +400,10 @@ INTENTS = [
     ("stuck",       ["stuck", "not moving", "hanging", "frozen", "blocked on"]),
     ("recovery",    ["recovery", "recover", "recovered", "strategies tried",
                      "self-heal", "self heal"]),
+    # Charts on request; "give me the analysis" stays the written report
+    # (which carries the same charts, below) with its CSV downloads.
+    ("analysis",    ["chart", "graph", "visualis", "visualiz", "plot the", "plot of",
+                     "show me the numbers"]),
     ("story",       ["what happened to", "walk me through", "timeline of",
                      "history of this", "history of shipment"]),
     ("attention",   ["need my attention", "needs my attention", "needs attention",
@@ -708,6 +712,85 @@ def _answer_average(data):
     return "\n".join(lines)
 
 
+# The outcomes a run records, in the order a reader expects them.
+OUTCOMES = [("updated", "Written to the Hub"), ("partial", "Partly written"),
+            ("skipped", "Skipped"), ("failed", "Failed"),
+            ("waiting_for_human", "Waiting for a person"),
+            ("human_timeout", "Timed out waiting for a person"),
+            ("processing", "In progress")]
+
+
+def _answer_analysis(data):
+    """
+    The run in numbers, with charts drawn from exactly those numbers:
+    outcome of every shipment, results by carrier, time per carrier. Every
+    figure is counted from the run's own records; nothing is estimated.
+    """
+    rows = data.shipments
+    if not rows:
+        return {"text": NO_DATA, "charts": []}
+    total = len(rows)
+    counts = {key: sum(1 for r in rows if r.get("state") == key) for key, _ in OUTCOMES}
+    present = [(key, label) for key, label in OUTCOMES if counts[key]]
+    written = counts["updated"] + counts["partial"]
+
+    charts = [{
+        "kind": "bars", "title": "Outcome of every shipment in this run",
+        "unit": "shipments", "total": total,
+        "series": [{"key": key, "label": label} for key, label in present],
+        "rows": [{"label": label, "values": {key: counts[key]}} for key, label in present],
+    }]
+
+    carriers = {}
+    for r in rows:
+        name = r.get("carrier") or "Unknown carrier"
+        bucket = carriers.setdefault(name, {key: 0 for key, _ in present})
+        if r.get("state") in bucket:
+            bucket[r.get("state")] += 1
+    ranked = sorted(carriers.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))
+    charts.append({
+        "kind": "stacked", "title": "Results by carrier", "unit": "shipments",
+        "series": [{"key": key, "label": label} for key, label in present],
+        "rows": [{"label": name, "values": values} for name, values in ranked],
+    })
+
+    timing = []
+    for name, _values in ranked:
+        avg = data.average_ms([r for r in rows if (r.get("carrier") or "Unknown carrier") == name])
+        if avg:
+            timing.append((name, round(avg / 1000.0, 1)))
+    if timing:
+        charts.append({
+            "kind": "bars", "title": "Average time per shipment, by carrier",
+            "unit": "seconds",
+            "series": [{"key": "time", "label": "Average seconds"}],
+            "rows": [{"label": name, "values": {"time": secs}} for name, secs in
+                     sorted(timing, key=lambda t: -t[1])],
+        })
+
+    parts = ["{0} shipment(s) in this run: {1} written to the Hub ({2}%)".format(
+        total, written, round(written * 100.0 / total))]
+    parts += ["{0} {1}".format(counts[key], label.lower()) for key, label in present
+              if key not in ("updated", "partial")]
+    lines = ["**Run analysis** — " + ", ".join(parts) + "."]
+    failing = [name for name, values in ranked if values.get("failed")]
+    if failing:
+        lines.append("Failures came from: " + ", ".join(
+            "{0} ({1})".format(name, carriers[name]["failed"]) for name in failing) + ".")
+    best = [name for name, values in ranked
+            if sum(values.values()) and values.get("updated", 0) == sum(values.values())]
+    if best:
+        lines.append("Every shipment written for: " + ", ".join(best) + ".")
+    if len(timing) > 1:
+        slow, fast = max(timing, key=lambda t: t[1]), min(timing, key=lambda t: t[1])
+        lines.append("Slowest carrier on average: {0} ({1} s); fastest: {2} ({3} s).".format(
+            slow[0], slow[1], fast[0], fast[1]))
+    elif not timing:
+        lines.append("No processing times worth charting are recorded for this run, "
+                     "so there is no timing chart.")
+    return {"text": "\n".join(lines), "charts": charts}
+
+
 def _answer_compare(data):
     groups = data.by_carrier()
     if len(groups) < 2:
@@ -785,6 +868,14 @@ def _answer_history(data):
         for event in data.latest_events(6):
             lines.append("• {0} — {1}".format(event.get("time"), event.get("text")))
     return "\n".join(lines)
+
+
+def _report_with_charts(data):
+    """The written report, with the analysis charts when there are rows."""
+    text = _answer_report(data)
+    if not data.shipments:
+        return text
+    return {"text": text, "charts": _answer_analysis(data)["charts"]}
 
 
 def _answer_report(data):
@@ -3357,10 +3448,11 @@ def _answer_core(question, state, context=None):
             "fastest": lambda: _answer_fastest(data),
             "average": lambda: _answer_average(data),
             "compare": lambda: _answer_compare(data),
+            "analysis": lambda: _answer_analysis(data),
             "duration": lambda: _answer_duration(data),
             "health": lambda: _answer_health(data),
             "history": lambda: _answer_history(data),
-            "report": lambda: _answer_report(data),
+            "report": lambda: _report_with_charts(data),
             "all_of": lambda: _answer_all_of(data, question),
             "help": lambda: _help(data),
             "run": lambda: _answer_run(data),
@@ -3399,13 +3491,17 @@ def _answer_core(question, state, context=None):
             produced = handlers[intent]()
             # The telemetry handlers return (text, sources) so the answer can
             # say what it was built from; the run-scoped ones return text.
+            extras = {}
             if isinstance(produced, tuple):
                 text, sources = produced
+            elif isinstance(produced, dict):            # text with charts
+                text, sources = produced["text"], ["bridge.snapshot"]
+                extras = {k: v for k, v in produced.items() if k != "text"}
             else:
                 text, sources = produced, ["bridge.snapshot"]
-            return {"answer": text, "card": None,
-                    "reference": context.get("reference"), "grounded": True,
-                    "sources": sources, "intent": intent}
+            return dict({"answer": text, "card": None,
+                         "reference": context.get("reference"), "grounded": True,
+                         "sources": sources, "intent": intent}, **extras)
 
         wanted_filter = _filter_of(data, question) if intent in (None, "system") else {}
         if wanted_filter and (intent is None or IMPERATIVE.search(question)):

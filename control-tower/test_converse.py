@@ -40,11 +40,13 @@ class Scripted:
 
     def __init__(self, *replies):
         self.replies = list(replies)
-        self.prompts, self.systems, self.skipped = [], [], 0
+        self.prompts, self.systems, self.skipped, self.images = [], [], 0, []
 
-    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700,
+                 images=None):
         self.prompts.append(prompt)
         self.systems.append(system[:12])
+        self.images.append(images)
         reply = self.replies.pop(0)
         if not system.startswith("You route") and isinstance(reply, dict) and \
                 "question_en" in reply:
@@ -290,6 +292,92 @@ check("Fact guard: 'never wrote it' still blocks 'was written'",
                     ["Nothing was written. The run never wrote 1570046231."])[0])
 check("Fact guard: 'success' still needs the records to say it",
       not _FG.check("It was a success.", ["2 written to the Hub"])[0])
+
+print("=" * 68)
+print("6e. ANALYSIS WITH CHARTS, FROM THE RUN'S OWN NUMBERS")
+print("=" * 68)
+r = assistant._answer_rules("Analyze this run with a chart", STATE, {"_raw": True})
+charts = r.get("charts") or []
+check("'Analyze ... chart' is the analysis answer, with charts", r["intent"] == "analysis"
+      and len(charts) >= 2, [c["title"] for c in charts])
+outcome = charts[0]
+check("Outcome chart adds up to every shipment in the run",
+      sum(v for row in outcome["rows"] for v in row["values"].values())
+      == len(STATE["shipments"]), outcome)
+by_carrier = charts[1]
+check("Carrier chart has one row per carrier, also adding up",
+      len(by_carrier["rows"]) == len({x.get("carrier") for x in STATE["shipments"]}) and
+      sum(v for row in by_carrier["rows"] for v in row["values"].values())
+      == len(STATE["shipments"]))
+check("The analysis text states the same counts",
+      "2 written to the Hub (50%)" in r["answer"] and "1 failed" in r["answer"], r["answer"])
+check("'show me a breakdown by carrier' is the report, with the same charts",
+      (lambda b: b["intent"] == "report" and len(b.get("charts") or []) >= 2)(
+          assistant._answer_rules("show me a breakdown by carrier", STATE, {"_raw": True})))
+one = Scripted({"answer": "should not be needed"})
+use(one)
+r = converse.answer("Analyze this run with a chart", STATE, {}, assistant._answer_rules)
+check("Analysis is computed from the run, instantly: no model call, charts kept",
+      not one.prompts and r["llm"]["mode"] == "analysis" and len(r.get("charts") or []) >= 2)
+llm.provider = real_provider
+
+print("=" * 68)
+print("6f. READING AN ATTACHED PHOTO WITH THE VISION MODEL")
+print("=" * 68)
+import tempfile as _tf
+from pathlib import Path as _P
+from intelligence import evidence as _EV, vision as _VI
+png = _P(_tf.mkdtemp()) / "shot.png"
+png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+real_file_for, real_ocr = _EV.file_for, _VI.ocr
+_EV.file_for = lambda eid: ({"id": eid}, png)
+OCR = {"lines": [("Qatar Airways Cargo Air waybill 1570046231 Status Arrived", 96)]}
+_VI.ocr = lambda path, timeout=40: (OCR["lines"], "tesseract", None)
+
+
+def image_rules(question, state, context=None):
+    return {"answer": "Reference 1570046231 (high); status Arrived (high).",
+            "intent": "image_read", "evidence": [{"id": "e1"}], "evidence_id": "e1",
+            "reading": {"verification_screen": False}, "card": None}
+
+
+eyes = Scripted({"answer": "This is a Qatar Airways Cargo tracking page for 1570046231; it "
+                           "shows the shipment as Arrived.",
+                 "seen": ["Qatar Airways Cargo", "Air waybill 1570046231", "Status: Arrived"],
+                 "unclear": []})
+use(eyes)
+r = converse.answer("What does this image show?", STATE, {"evidence_id": "e1"}, image_rules)
+check("The vision model reads the photo and answers", r["llm"]["used"] and
+      r["llm"]["mode"] == "image" and "What I see in the image" in r["answer"], r["llm"])
+check("The image itself is sent to the model", bool(eyes.images[-1]) and
+      isinstance(eyes.images[-1][0], str))
+check("The OCR text stays one click away, titled as such",
+      r.get("details_title", "").startswith("Read from the image") and
+      "1570046231" in r.get("details", ""))
+use(Scripted({"answer": "AWB 1579999999 arrived.", "seen": ["1579999999"], "unclear": []}))
+r = converse.answer("What does this image show?", STATE, {"evidence_id": "e1"}, image_rules)
+check("A number the text reader did not find: the safe OCR answer instead",
+      not r["llm"]["used"] and "1579999999" not in r["answer"], r["llm"].get("reason"))
+OCR["lines"] = [("Please verify you are human. Enter the code", 90)]
+blind = Scripted({"answer": "should not be called"})
+use(blind)
+r = converse.answer("What does this image show?", STATE, {"evidence_id": "e1"}, image_rules)
+check("A security verification never reaches the model", not blind.prompts)
+OCR["lines"] = None
+use(Scripted({"answer": "A Qatar Airways Cargo page.", "seen": ["Qatar Airways Cargo"],
+              "unclear": ["the air waybill number is cut off"]}))
+r = converse.answer("What does this photo show?", STATE, {"evidence_id": "e1"}, image_rules)
+check("No text reader on the PC: shown, labelled as not cross-checked",
+      r["llm"]["used"] and r["llm"]["cross_checked"] is False and "check it against the image"
+      in r["answer"] and "Not clear in the image" in r["answer"])
+plain = Scripted({"answer": "8842001173 failed.", "verified": [], "likely": [], "missing": [],
+                  "external": []})
+use(plain)
+converse.answer("Why did 8842001173 fail?", STATE, {"evidence_id": "e1"}, assistant._answer_rules)
+check("A later question that is not about the image is not sent with it",
+      not any(plain.images))
+_EV.file_for, _VI.ocr = real_file_for, real_ocr
+llm.provider = real_provider
 
 print("=" * 68)
 print("6d. ONE MODEL CALL WHEN THE RULES ALREADY UNDERSTAND")

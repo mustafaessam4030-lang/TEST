@@ -1953,6 +1953,24 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
 #chat .cl-group .evx-b{padding-top:4px}
 /* sources the research actually checked */
 .ch-src{margin-top:14px;padding-top:10px;border-top:1px solid var(--ch-hair)}
+/* ATLAS's charts: counted from the run, drawn to one scale per chart. */
+.ch-chart{margin-top:14px;padding-top:10px;border-top:1px solid var(--ch-hair);min-width:0}
+.ch-chart-h{font-size:12.5px;font-weight:650;color:var(--ink);margin-bottom:8px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.ch-chart-h em{font-style:normal;font-weight:500;font-size:11.5px;color:var(--faint)}
+.cc-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:var(--mid);margin:0 0 8px}
+.cc-key{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.cc-rows{display:grid;gap:6px}
+.cc-row{display:grid;grid-template-columns:minmax(80px,34%) 1fr;gap:10px;align-items:center;font-size:12px}
+.cc-lab{color:var(--mid);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-track{position:relative;height:16px;display:flex;align-items:center;min-width:0}
+.cc-bar{display:flex;height:12px;border-radius:3px;overflow:hidden;min-width:3px}
+.cc-seg{height:100%}
+.cc-val{padding-left:7px;font-size:11.5px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cc-axis{display:grid;grid-template-columns:minmax(80px,34%) 1fr;gap:10px;margin-top:4px}
+.cc-ticks{position:relative;height:16px;border-top:1px solid var(--ch-hair);font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.cc-ticks span{position:absolute;top:2px;transform:translateX(-50%)}
+.cc-ticks span:first-child{transform:none}
+.cc-ticks span:last-child{transform:translateX(-100%)}
 .ch-src-h{font-size:11px;font-weight:650;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
   margin-bottom:6px;display:flex;gap:8px}
 .ch-src-h em{font-style:normal;font-weight:500;letter-spacing:0;text-transform:none}
@@ -6489,7 +6507,7 @@ document.addEventListener('click', (e) => {
       bubble('bot').innerHTML = fmt('That is not a PNG, JPEG, WebP or GIF image.'); return;
     }
     setBusy(true);
-    const wait = thinking('Uploading screenshot…');
+    const wait = thinking('Uploading the image…');
     fetch('/api/evidence/upload', {method:'POST', body:file,
       headers:{'Content-Type': file.type, 'X-Filename': (file.name || 'upload').slice(0, 80)}})
       .then((r) => r.json()).then((r) => {
@@ -6497,7 +6515,10 @@ document.addEventListener('click', (e) => {
         if (!r.accepted){ bubble('bot').innerHTML = fmt(r.message || 'The image was not accepted.'); return; }
         lastEvidence = r.evidence.id;
         evidenceFig(r.evidence, true);
-        input.value = 'What does this screenshot tell us?';
+        // The operator's own question about the image, if they typed one first.
+        const asked = input.value.trim();
+        input.value = asked && /photo|picture|image|screenshot|screen shot|\bpic\b|attached|صورة|لقطة/i.test(asked)
+          ? asked : (asked ? asked + ' (about this image)' : 'What does this image show?');
         send();
       }).catch(() => { wait.remove(); setBusy(false);
         failed('The screenshot didn\u2019t reach the platform, so nothing was uploaded.', null,
@@ -6781,11 +6802,12 @@ document.addEventListener('click', (e) => {
     return text.replace(/\n\n(Sources|المصادر):\n(\[\d+\][^\n]*(\n|$))+$/, '');
   }
   // The run's own grounded answer, when research wrote the reply.
-  function detailsBox(into, text, open){
+  function detailsBox(into, text, open, title){
     const box = document.createElement('details');
     box.className = 'evx cl-group';
     if (open) box.open = true;
-    box.innerHTML = '<summary>' + CHEV + 'From this run<em>what the run itself recorded</em></summary>' +
+    box.innerHTML = '<summary>' + CHEV + (title ? esc(title) + '<em>exact text found on the image</em>'
+                                                 : 'From this run<em>what the run itself recorded</em>') + '</summary>' +
       '<div class="evx-b"></div>';
     box.querySelector('.evx-b').innerHTML = rich(text, true, true);
     into.appendChild(box);
@@ -6806,12 +6828,62 @@ document.addEventListener('click', (e) => {
   /* The run's own evidence behind an answer — the shipment's record and any
      captures — folded under the answer until asked for. Only what the
      backend returned; never a security code (the backend never sends one). */
-  function evidenceBox(d){
+  /* ATLAS's charts: each value is a count or time from the run itself; one
+     scale per chart, so bars compare honestly. */
+  const CHART_COLOURS = {updated:'var(--grn-dot)', partial:'var(--teal-dot)', skipped:'var(--nomode)',
+    failed:'var(--red)', waiting_for_human:'var(--y-dot)', human_timeout:'var(--y)',
+    processing:'var(--blu)', time:'var(--blu)'};
+  function chartsBox(into, charts){
+    (charts || []).slice(0, 4).forEach((c) => {
+      const rows = c.rows || [], series = c.series || [];
+      if (!rows.length) return;
+      const totals = rows.map((r) => series.reduce((t, s) => t + (Number(r.values[s.key]) || 0), 0));
+      const max = Math.max.apply(null, totals.concat([0]));
+      if (!(max > 0)) return;
+      const nice = c.unit === 'shipments' ? Math.max(1, Math.ceil(max)) : max;
+      const fmtv = (v) => (c.unit === 'seconds' ? (Math.round(v * 10) / 10) + ' s' : String(v));
+      const box = document.createElement('div');
+      box.className = 'ch-chart';
+      box.setAttribute('role', 'img');
+      box.setAttribute('aria-label', c.title + ': ' + rows.map((r, i) =>
+        r.label + ' ' + fmtv(totals[i])).join(', '));
+      let html = '<div class="ch-chart-h">' + esc(c.title) + '<em>' + esc(c.unit || '') + '</em></div>';
+      if (c.kind === 'stacked' && series.length > 1){
+        html += '<div class="cc-legend">' + series.map((s) => '<span><span class="cc-key" style="background:' +
+          (CHART_COLOURS[s.key] || 'var(--blu)') + '"></span>' + esc(s.label) + '</span>').join('') + '</div>';
+      }
+      html += '<div class="cc-rows">' + rows.map((r, i) => {
+        const segs = series.map((s) => {
+          const v = Number(r.values[s.key]) || 0;
+          if (!v) return '';
+          return '<span class="cc-seg" title="' + esc(s.label + ': ' + fmtv(v)) + '" style="width:' +
+            (v / totals[i] * 100) + '%;background:' + (CHART_COLOURS[s.key] || 'var(--blu)') + '"></span>';
+        }).join('');
+        return '<div class="cc-row"><span class="cc-lab" title="' + esc(r.label) + '">' + esc(r.label) +
+          '</span><span class="cc-track"><span class="cc-bar" style="width:' + (totals[i] / nice * 100) +
+          '%">' + segs + '</span><span class="cc-val">' + fmtv(totals[i]) + '</span></span></div>';
+      }).join('') + '</div>';
+      const ticks = c.unit === 'shipments' && nice <= 4 ? Array.from({length: nice + 1}, (_, k) => k)
+        : [0, nice / 2, nice];
+      html += '<div class="cc-axis"><span></span><div class="cc-ticks">' + ticks.map((t) =>
+        '<span style="left:' + (t / nice * 100) + '%">' + fmtv(Math.round(t * 10) / 10) + '</span>').join('') +
+        '</div></div>';
+      box.innerHTML = html;
+      into.appendChild(box);
+    });
+  }
+
+  function evidenceBox(d, q){
     const ev = (d.evidence || []).filter((e) => e && e.url);
     const hasCard = d.card && d.card.type === 'shipment';
     if (!hasCard && !ev.length) return;
     const box = document.createElement('details');
     box.className = 'evx ax-indent';
+    // Asked for a screenshot: show it, don't fold it away. (A photo the
+    // operator attached is already in their own message.)
+    const imageReply = /^image_/.test(d.intent || '') || (d.llm && d.llm.mode === 'image');
+    if (ev.length && !imageReply &&
+        (d.intent === 'evidence' || /screen\s*shot|capture|photo|picture|evidence/i.test(q || ''))) box.open = true;
     const what = [hasCard ? d.card.reference : '', ev.length ? ev.length + ' capture' +
                   (ev.length === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
     box.innerHTML = '<summary>' + CHEV + 'Evidence from this run<em>' + esc(what) + '</em></summary>' +
@@ -7077,9 +7149,10 @@ document.addEventListener('click', (e) => {
         const said = voice(q, d);
         b.innerHTML = (said ? '<span class="ax-voice" data-voice>' + esc(said) + '</span>' : '') +
           meta(d) + rich(answerText(d) || 'No answer came back.', wantsDetail);
-        if (d.details) detailsBox(b, d.details, wantsDetail);
+        if (d.details) detailsBox(b, d.details, wantsDetail, d.details_title);
+        if (d.charts && d.charts.length) chartsBox(b, d.charts);
         if (d.web_sources && d.web_sources.length) sourcesBox(b, d.web_sources, d.research || {});
-        evidenceBox(d);
+        evidenceBox(d, q);
         if (d.buttons && d.buttons.length) actionsRow(d.buttons);
         if (d.actions && d.actions.length){
           const done = runUi(d.actions[0]);

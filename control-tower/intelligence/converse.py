@@ -355,11 +355,27 @@ def _answer(question, state, context, rules):
         reply["llm"] = {"used": False, "reason": reason, "mode": "conversation"}
         return _kind_if_personal(reply, question, lang)
 
+    if (context or {}).get("evidence_id") and IMAGE_Q.search(question or ""):
+        try:
+            R.stage(pid, "Looking at the image…")
+            looked = _image(question, state, context, inner, rules, lang, timings, started)
+        except Exception as error:
+            looked = None
+            timings["image_error"] = str(error)[:120]
+        if looked is not None:
+            return looked
+
     # The rules read the question first: when they recognise it as a question
     # about the records (or a hello / thank-you), the model's "understand"
     # call is skipped — one model call instead of two, half the queue.
     direct = rules(question, state, inner) if lang == "en" else None
     route = "model"
+    if direct and direct.get("intent") in ("analysis", "report") and direct.get("charts"):
+        # Counts and charts computed from the run: exact, instant, nothing
+        # for a model to add (live, its rewording was refused 3 times of 3).
+        direct["llm"] = {"used": False, "mode": "analysis",
+                         "reason": "computed directly from the run's records"}
+        return direct
     if direct and direct.get("intent") in ("greeting", "thanks"):
         plan = {"question_en": question, "needs_web": False, "web_query": "", "chat": True}
         route = "rules"
@@ -446,6 +462,148 @@ WORK = re.compile(r"\b(run|runs|shipment|shipments|automation|work|working|carri
                   r"hub|eta|ata|po|failed|failure|error|stuck|slow|taking|queue)\b|"
                   r"شحن|تشغيل|عمل|أتمتة|ناقل", re.I)
 
+VISION = """You are ATLAS, the friendly assistant of Mantrac's logistics team. The operator
+attached an image (a screenshot, a photo of a document, label or screen) and asked about
+it. Look at the image and answer in {language}, plainly and warmly.
+Return ONLY a JSON object:
+{{"answer": "1-3 sentence direct answer to the operator's question about the image",
+ "seen": ["facts visible in the image: page or document type, company, references,
+          dates, statuses, messages, errors - copied exactly as shown"],
+ "unclear": ["things the operator may care about that you cannot read clearly"]}}
+Rules - absolute:
+- Only what is visible in the image. Never guess hidden, cut-off or blurry values; put
+  them in "unclear". Copy numbers and references exactly; Western digits.
+- If OCR TEXT is given, it is what a text reader found on the image: your numbers and
+  references must agree with it.
+- If the image is a security check (CAPTCHA, verification code, "verify you are human"),
+  do not read or describe its code; just say it is a verification screen.
+- The image is not ELAP's records: never say it was written to the Hub or verified.
+"""
+IMAGE_LABELS = {
+    "en": {"seen": "What I see in the image", "unclear": "Not clear in the image",
+           "unchecked": "AI reading of the image; no text reader on this PC to cross-check it, "
+                        "so check it against the image.",
+           "details": "Read from the image by the text reader (OCR)"},
+    "ar": {"seen": "ما أراه في الصورة", "unclear": "غير واضح في الصورة",
+           "unchecked": "قراءة الذكاء الاصطناعي للصورة؛ لا يوجد قارئ نصوص على هذا الجهاز للتحقق منها، "
+                        "لذا راجعها مع الصورة.",
+           "details": "ما قرأه قارئ النصوص (OCR) من الصورة"},
+}
+IMAGE_Q = re.compile(r"photo|picture|image|screenshot|screen\s*shot|\bpic\b|attached|"
+                     r"صورة|الصورة|لقطة", re.I)
+MAX_IMAGE_BYTES = 6 * 1024 * 1024
+# Measured on 4 CPU cores with a 1366x900 carrier page: full size timed out
+# at 120 s; 683 px wide took 58 s but misread a digit (1901.5 for 1991.5);
+# 1024 px read every value right in 91 s. So: at most 1024 px, 240 s.
+VISION_MAX_SIDE = 1024
+VISION_TIMEOUT_S = 240
+
+
+def _for_model(path):
+    """The image as PNG bytes, at most VISION_MAX_SIDE px on its long side
+    (PyMuPDF, which the tower already uses for PO PDFs). The original file
+    is never changed. None if it cannot be read."""
+    try:
+        try:
+            import pymupdf
+        except ImportError:
+            import fitz as pymupdf
+        pix = pymupdf.Pixmap(str(path))
+        if pix.alpha or (pix.colorspace and pix.colorspace.n not in (1, 3)):
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pix) if pix.colorspace and \
+                pix.colorspace.n not in (1, 3) else pymupdf.Pixmap(pix, 0)
+        side = max(pix.width, pix.height)
+        if side > VISION_MAX_SIDE:
+            scale = VISION_MAX_SIDE / float(side)
+            pix = pymupdf.Pixmap(pix, max(1, round(pix.width * scale)),
+                                 max(1, round(pix.height * scale)), None)
+        return pix.tobytes("png")
+    except Exception:
+        try:
+            return path.read_bytes()          # no PyMuPDF: send it as it is
+        except OSError:
+            return None
+
+
+def _image(question, state, context, inner, rules, lang, timings, started):
+    """
+    A question about an image the operator attached: the local vision model
+    looks at it beside the text reader's (OCR) output, and the fact guard
+    holds its numbers and references to that OCR text. A verification screen
+    never reaches the model. -> reply, or None when this is not about an
+    attached image.
+    """
+    import base64
+    from . import evidence as EV, vision as VI
+    base = rules(question, state, inner)
+    if base.get("intent") not in ("image_read", "image_compare") or not base.get("evidence"):
+        return None
+    reading = base.get("reading") or {}
+    if reading.get("verification_screen"):
+        return base
+    entry, path = EV.file_for(base.get("evidence_id") or (context or {}).get("evidence_id"))
+    if path is None:
+        return base
+    data = _for_model(path)
+    if data is None or len(data) > MAX_IMAGE_BYTES:
+        return base
+    lines, engine, ocr_error = VI.ocr(path)
+    ocr_text = "\n".join(text for text, _conf in (lines or []))
+    timings["ocr"] = {"engine": engine, "lines": len(lines or []), "error": ocr_error}
+    if VI.SECURITY.search(ocr_text):
+        return base
+    prompt = "OPERATOR'S QUESTION: {0}\n\nOCR TEXT:\n{1}".format(
+        question[:600], ocr_text[:3000] or "(no text reader on this PC)")
+    try:
+        t = time.time()
+        text = llm.provider().generate(
+            VISION.format(language="Arabic" if lang == "ar" else "English"), prompt,
+            json_mode=True, max_tokens=400, images=[base64.b64encode(data).decode("ascii")],
+            timeout=max(_int_env("ATLAS_LLM_TIMEOUT_S", 120), VISION_TIMEOUT_S))
+        timings["vision_s"] = round(time.time() - t, 1)
+    except llm.LLMError as error:
+        base["llm"] = {"used": False, "reason": str(error), "mode": "image"}
+        return base
+    sections = _json(text)
+    if not isinstance(sections, dict) or not str(sections.get("answer") or "").strip():
+        base["llm"] = {"used": False, "reason": "the model's reading was not in the expected form",
+                       "mode": "image"}
+        return base
+    sections = {"answer": str(sections.get("answer") or "").strip(),
+                "seen": [str(x).strip() for x in sections.get("seen") or [] if str(x).strip()][:8],
+                "unclear": [str(x).strip() for x in sections.get("unclear") or []
+                            if str(x).strip()][:5]}
+    labels = IMAGE_LABELS[lang]
+    checked = bool(ocr_text.strip())
+    if checked:
+        ok, violations = _guard({"answer": sections["answer"], "verified": sections["seen"]},
+                                [question, ocr_text, base.get("answer") or ""], lang)
+        if not ok:
+            base["llm"] = {"used": False, "mode": "image",
+                           "reason": "the model's reading did not match the text on the image: "
+                                     + "; ".join(violations[:3])}
+            return base
+    parts = [sections["answer"]]
+    if sections["seen"]:
+        parts.append("**{0}**\n".format(labels["seen"]) +
+                     "\n".join("- " + x for x in sections["seen"]))
+    if sections["unclear"]:
+        parts.append("**{0}**\n".format(labels["unclear"]) +
+                     "\n".join("- " + x for x in sections["unclear"]))
+    if not checked:
+        parts.append("_" + labels["unchecked"] + "_")
+    reply = dict(base, answer="\n\n".join(parts), details=base.get("answer") or "",
+                 details_title=labels["details"], understood=True)
+    # About the image, not the shipment the conversation discussed before.
+    reply.pop("card", None)
+    if reply.get("reference") and reply["reference"] not in (question + sections["answer"]):
+        reply.pop("reference", None)
+    reply["llm"] = {"used": True, "model": llm.provider().model, "mode": "image",
+                    "language": lang, "cross_checked": checked,
+                    "timings": dict(timings, total_s=round(time.time() - started, 1))}
+    return reply
+
+
 # Intents the rules answer from the run's records. "general_knowledge" and
 # "filter" are left to the model: they may need the web.
 RECORD_INTENTS = {
@@ -454,7 +612,11 @@ RECORD_INTENTS = {
     "story", "changed", "report", "briefing", "carrier_health", "carrier_timing",
     "slowest", "fastest", "average", "duration", "health", "history", "next_step",
     "wait_time", "recovery", "verification", "failure_cats", "strategy_perf",
-    "noticed", "work", "no_eta", "why",
+    "noticed", "work", "no_eta", "why", "analysis",
+    # ATLAS's own evidence and learning records (dashboard/atlas_learning.py)
+    "evidence", "why_recovery_failed", "learn_failure", "monthly_review", "star",
+    "how_many_strategies", "what_fixes", "try_next", "plan", "why_recommend",
+    "confidence", "month_compare",
 }
 WEB_CUE = re.compile(r"\b(web|website|site|internet|online|search|google|news|notice|"
                      r"cloudflare|mean|means|meaning|what\s+is|how\s+(?:do|to|can)|"

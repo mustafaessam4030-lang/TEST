@@ -106,6 +106,65 @@ def seed_test_run(bridge):
     bridge.run_finished("finished")
 
 
+DEMO_CAPTURES = [
+    ("1570046231", "QATAR AIRWAYS", "QATAR", "provider_result", """
+      <h1>Qatar Airways Cargo &middot; Track shipment</h1>
+      <p class="sub">Air waybill <b>1570046231</b></p>
+      <table><tr><th>Status</th><td>Arrived</td></tr>
+      <tr><th>Estimated arrival (ETA)</th><td>24/08/2026</td></tr>
+      <tr><th>Actual arrival (ATA)</th><td>20/08/2026</td></tr></table>"""),
+    ("8842001173", "DHL GLOBAL FORWARDING", "DHL", "failed", """
+      <h1>Mantrac Logistics Hub &middot; Manage shipment</h1>
+      <p class="sub">Reference <b>8842001173</b> &middot; DHL GLOBAL FORWARDING</p>
+      <table><tr><th>COE ETA</th><td>12/08/2026</td></tr>
+      <tr><th>Status</th><td>Under Clearance</td></tr></table>
+      <p class="err">The Save/Update button is not on this page.</p>"""),
+]
+CAPTURE_PAGE = """<html><body style="font:15px Segoe UI,Arial,sans-serif;margin:0;background:#f4f6f8">
+<div style="background:#B45309;color:#fff;padding:8px 16px;font-weight:700">TEST DATA &mdash;
+demonstration capture for atlas_demo.py --test-data, not a real page</div>
+<div style="padding:22px 26px">{body}</div>
+<style>h1{{font-size:20px;margin:0 0 4px}} .sub{{color:#555;margin:0 0 14px}}
+table{{border-collapse:collapse;background:#fff}} th,td{{border:1px solid #ccd;padding:7px 12px;text-align:left}}
+th{{background:#eef1f4}} .err{{color:#b91c1c;font-weight:600;margin-top:14px}}</style></body></html>"""
+
+
+def seed_test_captures(folder):
+    """Screenshots for the labelled test run, so "show me the screenshot of
+    8842001173" has something real to show. Each image says TEST DATA on it.
+    Uses the automation's own browser library; skipped if it cannot start."""
+    from intelligence import evidence
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return 0
+    folder.mkdir(parents=True, exist_ok=True)
+    made = 0
+    try:
+        with sync_playwright() as pw:
+            options = {"headless": True}
+            if os.name == "nt":
+                options["channel"] = "msedge"
+            elif os.path.exists("/opt/pw-browsers/chromium"):
+                options["executable_path"] = "/opt/pw-browsers/chromium"
+            browser = pw.chromium.launch(**options)
+            page = browser.new_page(viewport={"width": 900, "height": 420})
+            for ref, carrier, provider, event, body in DEMO_CAPTURES:
+                page.set_content(CAPTURE_PAGE.format(body=body))
+                image = folder / "{0}_{1}.png".format(ref, event)
+                page.screenshot(path=str(image))
+                text = folder / "{0}_{1}.txt".format(ref, event)
+                text.write_text(page.inner_text("body"), encoding="utf-8")
+                if evidence.register_capture(image, run_id="TEST-DATA-DEMO", reference=ref,
+                                             carrier=carrier, provider=provider, event=event,
+                                             text_path=text):
+                    made += 1
+            browser.close()
+    except Exception as error:
+        print("  (test screenshots skipped: {0})".format(str(error).splitlines()[0][:100]))
+    return made
+
+
 def main():
     parser = argparse.ArgumentParser(description="ATLAS demonstration launcher")
     source = parser.add_mutually_exclusive_group()
@@ -165,6 +224,8 @@ def main():
         os.environ["ATLAS_DEMO_TEST_DATA"] = "1"
         seed_test_run(bridge)
         print("  data          TEST DATA — every answer is labelled as such")
+        shots = seed_test_captures(Path(os.environ["ATLAS_INTEL_DIR"]) / "demo_captures")
+        print("  screenshots   {0} TEST DATA capture(s) for \"show me the screenshot\"".format(shots))
     elif args.replay:
         server.replay(args.base)
         if (Path(args.base) / "tracking_results.csv").exists():

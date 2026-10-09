@@ -48,7 +48,8 @@ class NullProvider(object):
         return {"ok": False, "provider": "none", "model": None,
                 "detail": "no local model configured (ATLAS_LLM_PROVIDER=none)"}
 
-    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700,
+                 images=None):
         raise LLMError("no local model is configured")
 
 
@@ -108,8 +109,10 @@ class OllamaProvider(object):
             self._health = (time.time(), out)
         return out
 
-    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
-        """The model's reply text. `json_mode` asks Ollama for a JSON object.
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700,
+                 images=None):
+        """The model's reply text. `json_mode` asks Ollama for a JSON object;
+        `images` (base64 strings) go to a vision model with the prompt.
         Reasoning ("thinking") is switched off: an operator is waiting."""
         if not self.health()["ok"]:
             raise LLMError(self.health()["detail"])
@@ -118,6 +121,8 @@ class OllamaProvider(object):
                 "options": {"temperature": 0.2, "num_predict": int(max_tokens)},
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": prompt}]}
+        if images:
+            body["messages"][1]["images"] = list(images)
         if json_mode:
             body["format"] = "json"
         threads = (os.environ.get("ATLAS_LLM_THREADS") or "").strip()

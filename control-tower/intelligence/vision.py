@@ -92,8 +92,12 @@ def ocr(path, timeout=40):
         if key in _cache:
             return _cache[key]
     try:
+        # One thread: Tesseract's OpenMP threads spin and crawl when the
+        # local model or a browser is busy on the other cores (measured:
+        # 0.4 s alone; past the 40 s limit beside a busy browser).
+        env = dict(os.environ, OMP_THREAD_LIMIT="1")
         done = subprocess.run([cmd, str(path), "stdout", "--psm", "3", "tsv"],
-                              capture_output=True, timeout=timeout)
+                              capture_output=True, timeout=timeout, env=env)
         if done.returncode != 0:
             result = (None, "tesseract", (done.stderr or b"").decode("utf-8", "replace")[:200]
                       or "OCR failed")
@@ -121,8 +125,9 @@ def ocr(path, timeout=40):
         result = (None, "tesseract", "OCR took too long on this image")
     except Exception as error:
         result = (None, "tesseract", str(error)[:200])
-    with _lock:
-        _cache[key] = result
+    if result[0] is not None:          # a failure or timeout is not remembered
+        with _lock:
+            _cache[key] = result
     return result
 
 
