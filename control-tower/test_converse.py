@@ -225,6 +225,55 @@ r = assistant.answer("How is the run going?", STATE)
 check("No label otherwise", "TEST DATA" not in r["answer"])
 
 print("=" * 68)
+print("6a. PERSONAL MESSAGES: A WARM REPLY, NOT A ROBOTIC ONE")
+print("=" * 68)
+llm.provider = real_provider
+sad = Scripted({"chat": True, "question_en": "I am so sad", "needs_web": False, "web_query": ""},
+               {"answer": "I'm really sorry you're feeling down. I'm here if you want to talk."})
+use(sad)
+r = converse.answer("im so sad", STATE, {}, assistant._answer_rules)
+check("A feeling gets a warm reply from the model", r["llm"]["used"] and r["intent"] == "chat"
+      and "sorry" in r["answer"], r["answer"])
+check("No second, robotic answer underneath (no details box)", not r.get("details"))
+check("Shipments are kept out of a personal message", "not needed" in sad.prompts[-1]
+      and "8842001173" not in sad.prompts[-1])
+
+use(Scripted({"chat": True, "question_en": "", "needs_web": False, "web_query": ""},
+             {"answer": "Sending you a hug. I'm here if you need me."}))
+r = converse.answer("im so sad", STATE, {}, assistant._answer_rules)
+check("A personal message with nothing to restate still gets the warm reply",
+      r["llm"]["used"] and r["intent"] == "chat", r["llm"].get("reason"))
+
+worried = Scripted({"chat": True, "question_en": "I'm stressed, the run is slow",
+                    "needs_web": False, "web_query": ""},
+                   {"answer": "That sounds stressful. 8842001173 is queued for a retry."})
+use(worried)
+r = converse.answer("I'm stressed, the run is slow", STATE, {}, assistant._answer_rules)
+check("Work worries may use one real fact from the run", r["llm"]["used"]
+      and "8842001173" in worried.prompts[-1], r["answer"])
+
+use(Scripted({"chat": True, "question_en": "I'm stressed about work", "needs_web": False,
+              "web_query": ""},
+             {"answer": "Don't worry, 9990001112 was saved."}))
+r = converse.answer("I'm stressed about work", STATE, {}, assistant._answer_rules)
+check("An invented fact in a warm reply is refused: a kind fallback instead",
+      not r["llm"]["used"] and "9990001112" not in r["answer"] and "💛" in r["answer"],
+      r["answer"])
+
+use(Scripted(plan("What is the meaning of life?"),
+             {"answer": "That one is beyond the run records.", "verified": [], "likely": [],
+              "missing": [], "external": []}))
+r = converse.answer("what is the meaning of life?", STATE, {}, assistant._answer_rules)
+check("The rules' 'I didn't understand' text is not shown as a second answer",
+      not r.get("details"), r.get("details", "")[:80])
+use(Scripted(plan("Which shipments failed?"), {
+    "answer": "8842001173 failed.", "verified": ["8842001173 failed"], "likely": [],
+    "missing": [], "external": []}))
+r = converse.answer("which failed?", STATE, {}, assistant._answer_rules)
+check("A real records answer stays one click away (details)", bool(r.get("details")))
+llm.provider = real_provider
+
+print("=" * 68)
 print("6b. FROM THE PO PAGE, A WAITING PERSON IS NEVER HIDDEN")
 print("=" * 68)
 waiting_bridge = ControlTowerState()

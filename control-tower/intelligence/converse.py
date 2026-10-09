@@ -63,7 +63,11 @@ automation platform (ELAP). ELAP's records hold: automation runs, shipments and 
 carriers, ETAs/ATAs, failures and their evidence, human checks, PO (customs duty)
 jobs, carrier health and site-change checks, and a morning briefing.
 Return ONLY a JSON object:
-{"question_en": "...", "needs_web": true or false, "web_query": "..."}
+{"chat": true or false, "question_en": "...", "needs_web": true or false, "web_query": "..."}
+- chat: true when the message is personal or casual rather than a question about the
+  work or the outside world: feelings ("I'm so sad", "I'm tired"), greetings, thanks,
+  jokes, small talk. false for anything that asks about runs, shipments, PO jobs,
+  carriers, errors or the world.
 - question_en: the question restated as a short plain-English question. Keep every
   shipment reference, PO number, carrier and error text exactly as written.
 - needs_web: true only when the answer needs public information ELAP cannot hold
@@ -78,8 +82,21 @@ When it fits, use ATLAS's own wording for question_en: "summarize this run",
 retry or change anything.
 """
 
-COMPOSE = """You are ATLAS, the assistant of Mantrac's Enterprise Logistics Automation
-Platform (ELAP). Answer the operator in {language}.
+CHAT = """You are ATLAS, the friendly assistant of Mantrac's logistics team. The
+operator wrote something personal or casual. Reply in {language} like a kind, warm
+colleague: 1-3 short, natural sentences with real empathy or a light touch of humour as
+fits, and at most one emoji. Put the person first. Do not bring up failures, shipments or
+numbers unless the operator mentioned work; then you may mention ONE fact from RUN, copied
+exactly. You may end with a gentle offer to help. Never invent anything, never lecture,
+never say you cannot feel or cannot check feelings.
+Return ONLY a JSON object: {{"answer": "..."}}
+"""
+
+COMPOSE = """You are ATLAS, the friendly assistant of Mantrac's Enterprise Logistics
+Automation Platform (ELAP). Answer the operator in {language}, warmly and naturally, like
+a helpful colleague who knows the run: plain words, the direct answer first; a short
+human touch is welcome ("Good news —", "Heads up:", "Sorry, that one's stuck"), at most
+one emoji. Never robotic, never stiff.
 Use ONLY the RECORDS and WEB below. RECORDS come from ELAP and are authoritative.
 WEB is public research: never present it as ELAP data or as live carrier status.
 Return ONLY a JSON object:
@@ -94,7 +111,8 @@ Rules — absolute:
 - Never say something succeeded, was verified, written, saved or confirmed unless
   RECORDS say so. Keep uncertainty uncertain. If RECORDS say there is no data, say so.
 - "verified" and "likely" are only for RECORDS; everything from WEB goes in "external".
-- "missing" is only for what the operator asked; do not list things RECORDS mention.
+- "missing" is only for a fact the operator explicitly asked for that RECORDS lack; it
+  is usually empty. Do not list things RECORDS mention.
 - Leave a list empty rather than guess. No URLs. Never suggest bypassing CAPTCHAs,
   carrier security or access restrictions.
 """
@@ -130,10 +148,13 @@ def understand(question, timeout=None):
                                    timeout=timeout, json_mode=True, max_tokens=160)
     data = _json(text) or {}
     q_en = str(data.get("question_en") or "").strip()
+    if not q_en and data.get("chat") is True:
+        q_en = question.strip()           # "im so sad" has no question to restate
     if not q_en:
         raise llm.LLMError("the model did not restate the question")
     return {"question_en": q_en[:500], "needs_web": bool(data.get("needs_web")),
-            "web_query": str(data.get("web_query") or "").strip()[:200]}
+            "web_query": str(data.get("web_query") or "").strip()[:200],
+            "chat": data.get("chat") is True}
 
 
 def web_research(query, limit=5):
@@ -267,6 +288,9 @@ def answer(question, state, context, rules):
     except Exception as error:
         return fallback("the model's reading of the question failed: {0}".format(error))
 
+    if plan["chat"] and not plan["needs_web"]:
+        return _chat(question, state, inner, rules, lang, plan, timings, started)
+
     R.stage(pid, "Reading ELAP's records…")
     base = rules(plan["question_en"], state, inner)
     if base.get("request"):
@@ -311,8 +335,11 @@ def answer(question, state, context, rules):
                                   + "; ".join(violations[:4]), base), web, web_problem, plan)
 
     sections = _sort(sections, "\n".join([question, plan["question_en"], records]), web)
-    reply = dict(base, answer=render(sections, lang, web), details=records,
-                 understood=True)
+    reply = dict(base, answer=render(sections, lang, web), understood=True)
+    # The run's own answer stays one click away only when it is one: not the
+    # "I didn't understand" text, which would read as a second, robotic reply.
+    if base.get("intent") and not base.get("fallback"):
+        reply["details"] = records
     ref = reply.get("reference")
     if plan["needs_web"] and ref and ref not in question + plan["question_en"]:
         # A question about the outside world is not about the shipment the
@@ -323,6 +350,51 @@ def answer(question, state, context, rules):
                     "language": lang, "question_en": plan["question_en"],
                     "timings": dict(timings, total_s=round(time.time() - started, 1))}
     return _with_web(reply, web, web_problem, plan, rendered=True)
+
+
+WORK = re.compile(r"\b(run|runs|shipment|shipments|automation|work|working|carrier|carriers|"
+                  r"hub|eta|ata|po|failed|failure|error|stuck|slow|taking|queue)\b|"
+                  r"شحن|تشغيل|عمل|أتمتة|ناقل", re.I)
+
+CHAT_FALLBACK = {
+    "en": "I hear you 💛 I'm right here if you need anything — just ask me about the run.",
+    "ar": "أنا معك 💛 إذا احتجت أي شيء، اسألني عن التشغيل في أي وقت.",
+}
+
+
+def _chat(question, state, inner, rules, lang, plan, timings, started):
+    """A personal or casual message: a warm, short reply, with at most one fact
+    from the run — and the same fact guard. Never the rules' "I don't know"."""
+    run = rules("summarize this run", state, inner)
+    # The run's facts only when the operator brought up work: "I'm so sad"
+    # is about the person, and a 4B model will not keep shipments out of it
+    # when they are in front of it.
+    about_work = WORK.search(question + " " + plan["question_en"])
+    brief = (run.get("answer") or "")[:1500] if about_work else "(not needed: personal message)"
+    reply = {"answer": CHAT_FALLBACK[lang], "card": None, "intent": "chat",
+             "understood": True, "grounded": True,
+             "suggestions": run.get("suggestions") or []}
+    try:
+        t = time.time()
+        text = llm.provider().generate(
+            CHAT.format(language="Arabic" if lang == "ar" else "English"),
+            "OPERATOR: {0}\n\nRUN:\n{1}".format(question[:500], brief),
+            json_mode=True, max_tokens=160)
+        timings["compose_s"] = round(time.time() - t, 1)
+        said = str((_json(text) or {}).get("answer") or "").strip()
+        ok, violations = _guard({"answer": said}, [question, brief], lang) if said else (False, [])
+        if ok:
+            reply["answer"] = said
+            reply["llm"] = {"used": True, "model": llm.provider().model, "mode": "chat",
+                            "language": lang, "question_en": plan["question_en"],
+                            "timings": dict(timings, total_s=round(time.time() - started, 1))}
+            return reply
+        reason = "the model's reply added things the run does not hold: " + \
+            "; ".join(violations[:3]) if violations else "the model gave no reply"
+    except llm.LLMError as error:
+        reason = str(error)
+    reply["llm"] = {"used": False, "reason": reason, "mode": "chat"}
+    return reply
 
 
 def _with_web(reply, web, problem, plan, rendered=False):

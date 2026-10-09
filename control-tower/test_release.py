@@ -119,6 +119,11 @@ else:
                 not node.level else []
             for name in names:
                 top = name.split(".")[0]
+                # searxng_local.run() executes in SearXNG's own environment
+                # (searxng\venv), which installs these from SearXNG's
+                # requirements; the tower's Python never imports them there.
+                if rel == "intelligence/searxng_local.py" and top in ("yaml", "certifi"):
+                    continue
                 if top not in stdlib and top not in local:
                     third.setdefault(top, set()).add(rel)
     undeclared = sorted(t for t in third if t not in declared)
