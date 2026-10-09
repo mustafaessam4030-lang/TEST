@@ -223,9 +223,11 @@ check("Normalisation is unchanged",
 check("The parser still exists", hasattr(A, "_read_afkl_page"))
 check("The ETA/ATA rule is untouched",
       'if re.search(r"Estimated\\s*:", stripped, re.I):' in SRC)
-check("Side browsers are closed when the run ends",
+_END = SRC[SRC.index("close_afkl_side_browsers()\n            try:\n                carrier_context.close()"):]
+check("Side browsers are closed when the run ends — then the carriers' browser, "
+      "then the Hub's",
       "close_afkl_side_browsers()" in SRC
-      and SRC.index("close_afkl_side_browsers()\n            browser.close()") > 0)
+      and _END.index("carrier_context.close()") < _END.index("            browser.close()"))
 
 print()
 print("=" * 74)
