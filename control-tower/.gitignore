@@ -1,0 +1,36 @@
+__pycache__/
+*.pyc
+# Test runs create this on non-Windows hosts because BASE_FOLDER is a
+# Windows path; it is run output, not source. The backslash needs escaping —
+# unescaped, gitignore reads it as an escape for the 'A' and the pattern
+# silently matches nothing, which is how run logs kept showing up as
+# untracked.
+C:\\Automation/
+ml/data/*.jsonl
+ml/models/*.json
+
+# ATLAS learning store (events, evidence, maturity) — real operational data
+ml/data/intelligence/
+
+# PO Automation: jobs, retrieved documents, generated output — operational data
+ml/data/po/
+
+# Control plane: local database and the deployment package
+controlplane/data/
+dist/
+
+# The last full test run, read by the PO readiness gate
+test_results.json
+
+# Dashboard / supervisor / worker runtime state, including this
+# installation's generated dashboard access key — never committed or shipped
+dashboard/.runtime/
+
+# Release packages built by make_release.py
+release/
+*.zip
+
+# The carriers' browser profile (cookies of carrier sites) — never committed.
+carrier_profile/
+# Web search installed on the PC by SETUP_WEB_SEARCH.bat (intelligence/searxng_local.py)
+/searxng/

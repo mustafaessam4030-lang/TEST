@@ -1,0 +1,87 @@
+ATA CONTROL TOWER - CARRIER ACCESS FIX (CMA CGM, 6 Oct 2026)
+Branch: claude/maia-m6rhri   Commit: 9cf922c
+================================================================
+
+THE PROBLEM IN THE RUN (3 causes)
+- The run did not recognise "Access is temporarily restricted" as a block
+  page. Detection needed two phrases from a list, and that sentence matched
+  none of them.
+- The person took longer than the run's 45-second wait for the CMA CGM page.
+  So the run never read the page again after the verification, and the
+  shipment ended as an ordinary "no result".
+- ATLAS treats a "no result" ending as normal. It found no failure, so it
+  answered "I don't have that information".
+
+A) FIXES IN THE AUTOMATION
+- "Access is temporarily restricted" (and similar block messages) is now
+  recognised on its own.
+- Completing the verification is recorded as its own state,
+  HUMAN_VERIFICATION_COMPLETED. It does NOT mean the carrier gave access.
+- Right after the verification, the run checks whether the CMA CGM page is
+  actually usable.
+- If the page is still restricted:
+    * nothing is extracted from the page
+    * nothing is written to the Hub
+    * the shipment ends FAILED, as CARRIER ACCESS RESTRICTED, and is parked
+      for recovery
+    * the run keeps the page address, the page text and a screenshot
+    * the run records: carrier, verification completed, access restricted,
+      extraction not performed, Hub write not performed, final result
+- Access is confirmed (CARRIER_ACCESS_CONFIRMED) only when the shipment's
+  own page is read. Only then does the run extract and write.
+- After the person finishes, the run gets a fresh wait. A slow verification
+  no longer leaves the page unread.
+- If neither the shipment page nor a block page appears after the
+  verification, the shipment ends CARRIER ACCESS NOT CONFIRMED instead of
+  "no result".
+- A completed verification counts as a success for learning only if access
+  is confirmed afterwards.
+- The recovery rules allow no automatic retry or reload against a carrier
+  block. Nothing tries to get around CMA CGM's security.
+
+B) FIXES IN ATLAS
+- A blocked shipment, or a verification followed by no shipment page, now
+  counts as a failure.
+- "Why the error?" now answers from the run, for example:
+    "Human verification was completed, but CMA CGM continued to restrict
+     access. The carrier page never became usable for extraction, so no
+     shipment data was extracted and no Hub write was attempted."
+  It also gives the evidence and the page address, and says that the reason
+  for the block is not yet known.
+- While a verification is still in progress, ATLAS says where the shipment
+  stands instead of "I don't have that information".
+- "What should I do next?" gives the diagnosis first, then a safe plan:
+    1. Read the evidence from this run.
+    2. Run verify_carrier.bat on the worker to find out whether the block
+       comes from the session, the browser, the IP or the carrier.
+    3. A person makes only the change that this finding supports.
+    4. Re-run the shipment. Extraction starts only after access is
+       confirmed.
+
+SECURITY PROBLEM FOUND AND FIXED
+- The first full test run showed that the new code was saving page
+  addresses that could contain a security code a person had typed (in the
+  Grimaldi search form).
+- Addresses are now saved with every value removed except the shipment
+  reference.
+
+TESTS
+- A new end-to-end test (test_carrier_access_e2e.py) runs the real
+  automation loop in a real browser against stand-in CMA CGM pages. It
+  reproduces the exact case:
+    verification completed -> carrier still restricted -> nothing extracted
+    -> no Hub write -> failure classified correctly -> ATLAS explains it
+    -> ATLAS gives the plan
+- It also reproduces the run's old "no result" ending and checks that ATLAS
+  now explains it.
+- Full test suite: 2972 passed, 0 failed.
+
+DELIVERED
+- Pushed to branch claude/maia-m6rhri (commit 9cf922c).
+- ZIP of the project, built from that commit.
+
+NOT DONE YET
+- Nothing has been tested against the real CMA CGM site.
+- Next step, on the Windows worker:
+    verify_carrier.bat CMA_CGM <B/L from that run>
+  and send back the output.

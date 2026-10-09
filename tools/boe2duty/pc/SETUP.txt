@@ -1,0 +1,46 @@
+BOE -> Duty Payment Request
+===========================
+
+WHAT YOU NEED
+  Python 3.8 or newer.  https://python.org/downloads
+  On Windows, tick "Add Python to PATH" during install.
+  Nothing else. No pip install.
+
+SETUP (once)
+  1. Make a folder anywhere, e.g.  C:\Duty
+  2. Put these in it:
+       run_boe.py
+       run.bat
+       your CHEQUE REQUEST TEMPLATE .xlsx
+  3. Make a file called  key.txt  in the same folder.
+     One line, your Anthropic API key (starts with sk-ant-).
+  4. Double-click run.bat once. It creates  in\  out\  and inputs.csv, then stops.
+
+EVERY TIME
+  1. Drop BOE photos or PDFs into   in\
+  2. Open  inputs.csv  and add a row per BOE:
+       ref                = any part of the User Reference, e.g. 9116093
+       invoice_cfr_cif    = from the SUPPLIER INVOICE (not the BOE)
+       bog_rate           = Bank of Ghana rate (not the BOE's rate)
+       the rest is optional
+  3. Double-click  run.bat
+  4. Filled workbooks land in  out\  next to summary.csv
+
+IF YOU LEAVE inputs.csv EMPTY
+  It still works. Everything from the BOE gets filled. Only C19
+  (invoice value) and C26 (% of duty) are left blank for you, and
+  bog_rate falls back to the DEFAULT_BOG_RATE at the top of the script.
+
+IF A FILE IS SKIPPED
+  It means the tax lines did not add up to the Total printed on that BOE,
+  so a digit was misread. The message shows the difference. Open the scan,
+  check the Amount Payable column, and either fix the cached read in
+  _read\<name>.json or delete that file and run again.
+  Nothing is written when the numbers do not agree. That is deliberate.
+
+NOTES
+  _read\  caches each transcription, so re-running costs nothing and does
+  not call the API again. Delete a file in there to force a fresh read.
+
+  Change the defaults (BOG rate, supplier, department names) at the top
+  of run_boe.py under SETTINGS.

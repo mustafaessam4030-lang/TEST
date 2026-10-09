@@ -1,0 +1,4 @@
+{
+  "about": "Optional final ATLAS renders. Map a state to a file in this folder (webp, png or svg). A state not listed here keeps the drawn figure built into the dashboard.",
+  "states": {}
+}

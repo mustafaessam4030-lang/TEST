@@ -1,0 +1,17 @@
+# SearXNG for ATLAS web research: local only, JSON output on, no rate limiter
+# (one user: ATLAS). The secret comes from the SEARXNG_SECRET environment
+# variable; never put it in this file.
+use_default_settings: true
+general:
+  instance_name: "ATLAS research (local)"
+server:
+  bind_address: "127.0.0.1"
+  port: 8888
+  limiter: false
+  public_instance: false
+  image_proxy: false
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
