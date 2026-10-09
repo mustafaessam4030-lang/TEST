@@ -1016,6 +1016,14 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
             return None
         print(_access.explain(source), flush=True)
     LEARNING["on"] = bool(learning)
+    if learning:
+        # The real tower (update_eta.py or the supervisor): ATLAS uses the
+        # local model and search when this machine has them. Never raises.
+        try:
+            from intelligence import autoconfig
+            autoconfig.apply(lambda line: print(line, flush=True))
+        except Exception as error:
+            print("ATLAS AI check skipped: {0}".format(error), flush=True)
     _shared_host = host not in ("127.0.0.1", "localhost")
     _shared_port = port
     try:

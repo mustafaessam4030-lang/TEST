@@ -9,6 +9,7 @@ Run:  python test_converse.py
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -221,6 +222,100 @@ check("Every answer says TEST DATA in demo test-data mode", r["answer"].startswi
 os.environ.pop("ATLAS_DEMO_TEST_DATA")
 r = assistant.answer("How is the run going?", STATE)
 check("No label otherwise", "TEST DATA" not in r["answer"])
+
+print("=" * 68)
+print("7. THE REAL TOWER SWITCHES THE LOCAL AI ON BY ITSELF")
+print("=" * 68)
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from intelligence import autoconfig
+
+LOADS = []
+
+
+class StandIn(BaseHTTPRequestHandler):
+    """Ollama (/api/tags, /api/generate) and SearXNG (/search) stand-ins."""
+    models = ["qwen3.5:4b"]
+
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        if self.path.startswith("/api/tags"):
+            body = {"models": [{"name": m} for m in self.models]}
+        elif self.path.startswith("/search"):
+            body = {"results": [{"url": "https://example.org", "title": "t", "content": "c"}]}
+        else:
+            self.send_response(404); self.end_headers(); return
+        data = json.dumps(body).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(data)))
+        self.end_headers(); self.wfile.write(data)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        LOADS.append(json.loads(self.rfile.read(length) or b"{}"))
+        data = b"{}"
+        self.send_response(200); self.send_header("Content-Length", "2")
+        self.end_headers(); self.wfile.write(data)
+
+
+stand_in = ThreadingHTTPServer(("127.0.0.1", 0), StandIn)
+threading.Thread(target=stand_in.serve_forever, daemon=True).start()
+BASE = "http://127.0.0.1:{0}".format(stand_in.server_address[1])
+AI_VARS = ("ATLAS_AI", "ATLAS_LLM_PROVIDER", "ATLAS_LLM_URL", "ATLAS_LLM_MODEL",
+           "ATLAS_LLM_TIMEOUT_S", "ATLAS_LLM_RETRIES", "ATLAS_LLM_THREADS",
+           "ATLAS_LLM_KEEP_ALIVE", "ATLAS_SEARCH_URL")
+
+
+def fresh(**env):
+    for name in AI_VARS:
+        os.environ.pop(name, None)
+    os.environ.update(env)
+    autoconfig._started.clear()
+    autoconfig._started["done"] = False
+    del LOADS[:]
+
+
+lines = []
+fresh(ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE)
+autoconfig.apply(lines.append)
+for _ in range(50):
+    if LOADS:
+        break
+    time.sleep(0.1)
+check("Model installed and pulled: conversation switched on",
+      os.environ.get("ATLAS_LLM_PROVIDER") == "ollama" and
+      os.environ.get("ATLAS_LLM_MODEL") == "qwen3.5:4b", lines)
+check("Search answering: web research switched on", os.environ.get("ATLAS_SEARCH_URL") == BASE)
+check("A core is left for Edge and the automation",
+      int(os.environ["ATLAS_LLM_THREADS"]) == max(1, (os.cpu_count() or 2) - 1))
+check("The model is loaded once in the background, kept for the day",
+      LOADS and LOADS[0].get("model") == "qwen3.5:4b" and LOADS[0].get("keep_alive") == "8h")
+check("The startup lines say what is on", any("conversation: ON" in x for x in lines))
+
+StandIn.models = []
+fresh(ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE)
+lines = []
+autoconfig.apply(lines.append)
+check("Model not pulled: conversation stays off, and says how to fix it",
+      "ATLAS_LLM_PROVIDER" not in os.environ and any("ollama pull" in x for x in lines), lines)
+StandIn.models = ["qwen3.5:4b"]
+
+fresh(ATLAS_AI="0", ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE)
+autoconfig.apply(lambda line: None)
+check("ATLAS_AI=0: nothing is switched on", "ATLAS_LLM_PROVIDER" not in os.environ)
+
+fresh(ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE, ATLAS_LLM_TIMEOUT_S="300")
+autoconfig.apply(lambda line: None)
+check("A setting the operator made wins", os.environ.get("ATLAS_LLM_TIMEOUT_S") == "300")
+
+fresh(ATLAS_LLM_URL="http://127.0.0.1:9", ATLAS_SEARCH_URL="http://127.0.0.1:9")
+lines = []
+autoconfig.apply(lines.append)
+check("Nothing installed: ATLAS stays rule-based, as before",
+      "ATLAS_LLM_PROVIDER" not in os.environ and "conversation: off" in lines[0], lines)
+fresh()
+stand_in.shutdown()
 
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))

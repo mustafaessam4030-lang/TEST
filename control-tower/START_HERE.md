@@ -587,6 +587,28 @@ the existing automation works is in `ARCHITECTURE.md`.
 
 ---
 
+## 10a. Turn on ATLAS AI (natural answers, web search) — once per machine
+
+1. Install **Ollama** from https://ollama.com/download (free, runs offline).
+2. Double-click **SETUP_ATLAS_AI.bat**. It downloads the model once
+   (`qwen3.5:4b`, about 3.3 GB) and shows what ATLAS can use.
+3. Run the automation exactly as before (`update_eta.py`, `START_TOWER.bat` or
+   the scheduled task). At start the console shows:
+
+       ATLAS conversation: ON — qwen3.5:4b ready at http://127.0.0.1:11434
+       ATLAS web research: ON — ...   (only with SearXNG, see below)
+
+The tower finds Ollama by itself (`intelligence/autoconfig.py`) and loads the
+model in the background; the first answers come from ATLAS's rules until it
+is loaded (about 1–2 minutes after a restart). It keeps one CPU core free for
+Edge and the automation, and keeps the model in memory for 8 hours (about
+3.7 GB of RAM). The automation itself never uses the model. Without Ollama,
+everything works as before. `set ATLAS_AI=0` switches it off.
+
+Web search additionally needs SearXNG running on this machine at
+`127.0.0.1:8888` — see `deploy/searxng/README.md` (Windows routes not yet
+tested). Without it, ATLAS says it did not search the web.
+
 ## 10b. ATLAS research and the local model — optional, free, nothing installed for you
 
 ATLAS always answers run facts from the run; that deterministic answer is the
