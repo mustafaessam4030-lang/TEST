@@ -21,6 +21,7 @@ It never writes: no automation control, no credential access, no mutation of
 any shipment record. It receives a snapshot and nothing else.
 """
 
+import os
 import re
 
 UNKNOWN = "—"
@@ -415,7 +416,9 @@ INTENTS = [
                         "why did the latest", "why did the last", "latest error",
                         "last error", "most recent error"]),
     ("summary",     ["summarize", "summarise", "sum up", "summary of this run",
-                     "summary of the run", "summarize this run"]),
+                     "summary of the run", "summarize this run",
+                     "summary of the last run", "summary of the latest run",
+                     "summarize the last run", "summarize the latest run"]),
     ("changed",     ["what changed", "changed recently", "what's new", "whats new",
                      "anything new", "recent changes", "last few minutes",
                      "past few minutes"]),
@@ -3015,6 +3018,38 @@ def _conduct_reply(kind, strikes, question):
 
 
 def answer(question, state, context=None):
+    """
+    Answer one question. With a local model configured, the conversation
+    layer (intelligence/converse.py) reads the question in any wording or
+    language, has the rules below answer it from the records, and writes the
+    reply behind the fact guard — falling back to the rules' answer on any
+    problem. Without one, the rules answer directly, as before.
+    """
+    context = context or {}
+    if not context.get("_raw") and not conduct_of(question) and \
+            detect_intent((question or "").strip()) != "code_request":
+        try:
+            from intelligence import converse
+            if converse.enabled():
+                return _labelled(converse.answer(question, state, context, _answer_rules))
+        except Exception:
+            pass
+    return _labelled(_answer_rules(question, state, context))
+
+
+TEST_DATA_LABEL = ("**TEST DATA** — this dashboard is showing a labelled demonstration "
+                   "run (atlas_demo.py --test-data), not a real automation run.")
+
+
+def _labelled(reply):
+    """Every answer says so when the run on screen is the demo's test data."""
+    if os.environ.get("ATLAS_DEMO_TEST_DATA") == "1" and isinstance(reply, dict):
+        reply["answer"] = TEST_DATA_LABEL + "\n\n" + (reply.get("answer") or "")
+        reply["data_origin"] = "test"
+    return reply
+
+
+def _answer_rules(question, state, context=None):
     """
     Answer one question and attach contextual follow-up chips.
 

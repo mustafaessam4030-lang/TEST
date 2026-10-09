@@ -6655,7 +6655,7 @@ document.addEventListener('click', (e) => {
       m = /^[-•*]\s+(.*)$/.exec(line);
       if (m){
         if (list !== 'ul'){ close(); out.push('<ul>'); list = 'ul'; }
-        out.push('<li>' + fmt(m[1]) + '</li>'); return;
+        out.push('<li dir="auto">' + fmt(m[1]) + '</li>'); return;
       }
       m = /^(\d{1,2})[.)]\s+(.*)$/.exec(line);
       if (m){
@@ -6665,9 +6665,9 @@ document.addEventListener('click', (e) => {
       close();
       m = /^\*\*([^*]+)\*\*:?$/.exec(line);
       // A short bold line is a section label; a long one is a sentence.
-      if (m && m[1].length <= 44){ out.push('<div class="ah">' + esc(m[1]) + '</div>'); return; }
+      if (m && m[1].length <= 44){ out.push('<div class="ah" dir="auto">' + esc(m[1]) + '</div>'); return; }
       if (m){ out.push('<p class="hl">' + esc(m[1]) + '</p>'); return; }
-      out.push('<p>' + fmt(line) + '</p>');
+      out.push('<p dir="auto">' + fmt(line) + '</p>');
     });
     close();
     return (flat ? out : group(out, openDetails)).join('');
@@ -6773,6 +6773,13 @@ document.addEventListener('click', (e) => {
     const b = d.reference && d.understood !== false ? badgeFor(d.reference) : '';
     return b ? '<div class="ch-meta">' + b + '</div>' : '';
   }
+  // A conversation reply lists its sources in text for every reader; the
+  // chat shows them as links in the Sources box instead, numbered the same.
+  function answerText(d){
+    const text = d.answer || '';
+    if (!(d.llm && d.llm.mode === 'conversation' && d.web_sources && d.web_sources.length)) return text;
+    return text.replace(/\n\n(Sources|المصادر):\n(\[\d+\][^\n]*(\n|$))+$/, '');
+  }
   // The run's own grounded answer, when research wrote the reply.
   function detailsBox(into, text, open){
     const box = document.createElement('details');
@@ -6790,8 +6797,8 @@ document.addEventListener('click', (e) => {
     const n = (r.searches || []).length;
     box.innerHTML = '<div class="ch-src-h">Sources<em>' + (r.cached ? 'from a few minutes ago' :
       n ? n + ' search' + (n === 1 ? '' : 'es') : '') + '</em></div>' +
-      list.slice(0, 6).map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' +
-        '<b>' + esc(s.publisher || '') + '</b><span>' + esc(s.title || s.url) + '</span><small>' +
+      list.slice(0, 6).map((s, i) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' +
+        '<b>[' + (i + 1) + '] ' + esc(s.publisher || '') + '</b><span>' + esc(s.title || s.url) + '</span><small>' +
         esc(s.kind || '') + '</small></a>').join('');
     into.appendChild(box);
   }
@@ -7069,7 +7076,7 @@ document.addEventListener('click', (e) => {
         const wantsDetail = /\b(evidence|details?|facts|everything|show me)\b/i.test(q);
         const said = voice(q, d);
         b.innerHTML = (said ? '<span class="ax-voice" data-voice>' + esc(said) + '</span>' : '') +
-          meta(d) + rich(d.answer || 'No answer came back.', wantsDetail);
+          meta(d) + rich(answerText(d) || 'No answer came back.', wantsDetail);
         if (d.details) detailsBox(b, d.details, wantsDetail);
         if (d.web_sources && d.web_sources.length) sourcesBox(b, d.web_sources, d.research || {});
         evidenceBox(d);

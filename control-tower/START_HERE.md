@@ -631,6 +631,33 @@ state at `GET /api/atlas/llm`. A 7–8B model on CPU takes roughly 10–40 s per
 answer; a GPU or a smaller model is needed for conversational speed. Review
 the model's licence before use (Qwen2.5: Apache-2.0).
 
+**Conversation (ATLAS in any wording, English or Arabic).** With a model
+configured, ATLAS (`intelligence/converse.py`) asks the model to restate the
+question in plain English and decide whether it needs the web. ATLAS's own
+rules then answer that restatement from the run. The model writes the reply in
+the operator's language as sections, and ATLAS adds the labels itself:
+*Verified (ELAP records)*, *Likely, not proven*, *Not in the records* and
+*External research (web, not live carrier status)* with the source links. The
+fact guard checks the reply; anything with a number the records lack is moved
+to the web section or dropped. An action (pause, retry…) is only ever taken
+from the operator's own words, never from the model's restatement. Any failure
+falls back to the rules' answer. `ATLAS_CONVERSE=0` turns this off. Tested
+with `qwen3.5:4b` (about 3.3 GB on disk, about 3.7 GB of RAM while loaded). On a
+4-core CPU with no GPU, an answer took 24–71 s (median 38 s), and up to 91 s with
+the dashboard open in a browser on the same machine. `atlas_demo.py` leaves one
+core free for the browser (`ATLAS_LLM_THREADS`); with every core taken by the
+model, answers stalled past the 120 s limit and fell back to the rules. A
+demonstration:
+
+```bat
+ollama pull qwen3.5:4b
+python atlas_demo.py --check        & rem what is ready
+START_ATLAS_DEMO.bat                & rem the last real run (or --test-data)
+python atlas_demo_acceptance.py     & rem tests A-F against it
+```
+
+SearXNG setup, including the untested Windows routes: `deploy/searxng/README.md`.
+
 Rules both layers work under: run facts win over the web (a disagreement is
 stated, never silently replaced); a source is shown only if a real search or
 fetch returned it in that request; nothing suggests bypassing CAPTCHA, carrier

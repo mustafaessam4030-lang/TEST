@@ -221,8 +221,9 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
         out = dict(reply, answer=text, intent="general_knowledge", understood=True,
                    knowledge="general", grounded=True)
         out.pop("fallback", None)
-        if not (fresh and R.enabled()):
-            return _phrased(out, question, brief(data), [], pid)
+        if not (fresh and R.enabled()) or context.get("_raw"):
+            return _phrased(out, question, brief(data), [], pid,
+                            raw=context.get("_raw") or context.get("_no_phrase"))
     elif mode in ("error", "mixed") and failure is not None:
         R.stage(pid, "Reading the failure evidence…")
         ranking = K.investigate_failure(failure, data.shipments)
@@ -236,9 +237,13 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
         out = dict(reply)
 
     # 2. Outside sources — only when a self-hosted search service is set up.
+    # Not on the conversation layer's inner pass (_raw): it searches itself.
     run_brief = brief(data, record, failure, run_text, ranking)
     web = []
-    if R.enabled():
+    raw = bool(context.get("_raw"))
+    if raw:
+        pass
+    elif R.enabled():
         subject = (record or {}).get("reference") or (failure or {}).get("failure_id")
         research_mode = {"search": "mixed" if record else "general",
                          "fallback": "general"}.get(mode, mode)
@@ -273,7 +278,8 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
         out["research"] = {"ok": False, "reason": off}
 
     # 3. Optional local model: phrasing only, behind the fact guard.
-    return _phrased(out, question, run_brief, web, pid)
+    return _phrased(out, question, run_brief, web, pid,
+                    raw=raw or bool(context.get("_no_phrase")))
 
 
 def _web_section(web):
@@ -288,15 +294,16 @@ def _web_section(web):
     return "\n".join(lines)
 
 
-def _phrased(out, question, run_brief, web, pid):
+def _phrased(out, question, run_brief, web, pid, raw=False):
     """
     The local model's phrasing of ATLAS's answer — used only when a local
     model is configured and healthy AND the fact guard accepts it. Otherwise
-    ATLAS's own answer, unchanged.
+    ATLAS's own answer, unchanged. Not on the conversation layer's inner pass
+    (raw): that layer writes the final answer itself.
     """
     from intelligence import factguard, llm
     p = llm.provider()
-    if p.name == "none":
+    if p.name == "none" or raw:
         return out
     health = p.health()
     if not health.get("ok"):

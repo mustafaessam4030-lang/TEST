@@ -34,6 +34,9 @@ sys.path.insert(0, str(HERE))
 os.environ.setdefault("ATLAS_INTEL_DIR", tempfile.mkdtemp(prefix="ct_research_intel_"))
 os.environ.setdefault("ATLAS_DATA_ORIGIN", "test")
 os.environ.setdefault("PO_DATA_DIR", tempfile.mkdtemp(prefix="ct_research_po_"))
+# These checks cover the phrasing path ATLAS uses with the conversation layer
+# off; the conversation layer (intelligence/converse.py) has test_converse.py.
+os.environ["ATLAS_CONVERSE"] = "0"
 for k in ("ATLAS_SEARCH_URL", "ATLAS_LLM_PROVIDER", "ATLAS_LLM_MODEL", "ATLAS_LLM_URL"):
     os.environ.pop(k, None)
 

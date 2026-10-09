@@ -14,6 +14,8 @@ it does without one.
     ATLAS_LLM_MODEL         e.g. qwen2.5:7b-instruct  (no default: must be named)
     ATLAS_LLM_TIMEOUT_S     default 20
     ATLAS_LLM_RETRIES       default 1 (with backoff)
+    ATLAS_LLM_THREADS       CPU threads for the model (default: Ollama's choice;
+                            atlas_demo.py sets cores - 1)
     ATLAS_LLM_ALLOW_REMOTE  1 = allow a non-local host (default: localhost /
                             private network only, so a hosted, billed endpoint
                             cannot be configured by accident)
@@ -46,7 +48,7 @@ class NullProvider(object):
         return {"ok": False, "provider": "none", "model": None,
                 "detail": "no local model configured (ATLAS_LLM_PROVIDER=none)"}
 
-    def generate(self, system, prompt, timeout=None):
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
         raise LLMError("no local model is configured")
 
 
@@ -106,13 +108,23 @@ class OllamaProvider(object):
             self._health = (time.time(), out)
         return out
 
-    def generate(self, system, prompt, timeout=None):
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700):
+        """The model's reply text. `json_mode` asks Ollama for a JSON object.
+        Reasoning ("thinking") is switched off: an operator is waiting."""
         if not self.health()["ok"]:
             raise LLMError(self.health()["detail"])
-        body = {"model": self.model, "stream": False,
-                "options": {"temperature": 0.2, "num_predict": 700},
+        body = {"model": self.model, "stream": False, "think": False,
+                "keep_alive": os.environ.get("ATLAS_LLM_KEEP_ALIVE") or "30m",
+                "options": {"temperature": 0.2, "num_predict": int(max_tokens)},
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": prompt}]}
+        if json_mode:
+            body["format"] = "json"
+        threads = (os.environ.get("ATLAS_LLM_THREADS") or "").strip()
+        if threads.isdigit() and int(threads) > 0:
+            # Fewer threads than cores leaves room for the browser and the
+            # automation; with every core taken, a CPU-only model stalls.
+            body["options"]["num_thread"] = int(threads)
         last = None
         for attempt in range(self.retries + 1):
             try:

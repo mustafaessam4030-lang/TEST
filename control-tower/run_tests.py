@@ -68,6 +68,7 @@ SUITES = [
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
     ("test_atlas_research.py",  "ATLAS research: shipment intelligence, error investigation, sources"),
+    ("test_converse.py",        "ATLAS conversation: any language, grounded, labelled web, fail closed"),
     ("test_chat_ui.py",         "ATLAS conversation in a real browser: open, think, answer, a11y, mobile"),
     ("test_ml.py",              "learning layer, on its own"),
     ("test_ml_integration.py",  "learning layer, as the automation sees it"),
