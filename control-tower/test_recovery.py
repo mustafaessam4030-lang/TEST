@@ -282,9 +282,10 @@ print("8. SHADOW MODE SAYS 'WOULD TRY', NEVER 'TRIED'")
 print("=" * 74)
 check("The shipped mode is shadow", config.ML_MODE == "shadow")
 RECPRED = PRED.split("def recommend_recovery")[1].split("def recovery_module")[0]
-check("Shadow returns used=False whatever it recommends",
-      'if config.ML_MODE != "active":' in RECPRED
-      and "used=False" in RECPRED.split('if config.ML_MODE != "active":')[1][:400])
+check("Shadow returns used=False whatever it recommends — as does active mode "
+      "with a model nobody approved",
+      'if not _active(model):' in RECPRED
+      and "used=False" in RECPRED.split('if not _active(model):')[1][:400])
 check("...with the order still populated, which is what makes it evaluable",
       "shadow_order=ordered" in RECPRED)
 check("A shadow plan is announced as WOULD TRY",
