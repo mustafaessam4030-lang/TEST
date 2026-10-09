@@ -591,7 +591,10 @@ the existing automation works is in `ARCHITECTURE.md`.
 
 1. Install **Ollama** from https://ollama.com/download (free, runs offline).
 2. Double-click **SETUP_ATLAS_AI.bat**. It downloads the model once
-   (`qwen3.5:4b`, about 3.3 GB) and shows what ATLAS can use.
+   (`qwen3.5:4b`, about 3.3 GB), then tests ATLAS for real on this PC: the
+   machine, the model loading, one real question (and a real web search when
+   SearXNG is there). It ends with `RESULT: ATLAS AI is working on this PC`
+   or says what to fix. To repeat the test: `python -m intelligence.autoconfig --test`.
 3. Run the automation exactly as before (`update_eta.py`, `START_TOWER.bat` or
    the scheduled task). At start the console shows:
 

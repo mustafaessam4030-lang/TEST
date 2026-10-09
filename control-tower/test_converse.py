@@ -309,6 +309,22 @@ fresh(ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE, ATLAS_LLM_TIMEOUT_S="300")
 autoconfig.apply(lambda line: None)
 check("A setting the operator made wins", os.environ.get("ATLAS_LLM_TIMEOUT_S") == "300")
 
+# A company PC's proxy setting must not swallow requests to this machine.
+saved = {k: os.environ.get(k) for k in ("HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")}
+for k in ("NO_PROXY", "no_proxy"):
+    os.environ.pop(k, None)
+os.environ["HTTP_PROXY"] = os.environ["http_proxy"] = "http://127.0.0.1:9"
+fresh(ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE)
+ok_model, _d = autoconfig.check_model(BASE, "qwen3.5:4b")
+ok_search, _d2 = autoconfig.check_search(BASE)
+check("Behind a (broken) company proxy, Ollama and SearXNG here are still reached",
+      ok_model and ok_search, (_d, _d2))
+for k, v in saved.items():
+    if v is None:
+        os.environ.pop(k, None)
+    else:
+        os.environ[k] = v
+
 fresh(ATLAS_LLM_URL="http://127.0.0.1:9", ATLAS_SEARCH_URL="http://127.0.0.1:9")
 lines = []
 autoconfig.apply(lines.append)

@@ -225,11 +225,25 @@ class ResearchError(Exception):
     pass
 
 
+# A service on this machine or its network is reached directly. On a company
+# PC, Windows' Internet Settings proxy would otherwise also be given requests
+# for 127.0.0.1 (Ollama, SearXNG) and refuse them. Public sites still go
+# through the proxy, as before.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def open_url(request, timeout):
+    url = request.full_url if isinstance(request, urllib.request.Request) else request
+    if local_host(url):
+        return _DIRECT.open(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
 def _get(url, timeout, limit=MAX_FETCH_BYTES):
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT,
                                                    "Accept": "application/json, text/html"})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with open_url(request, timeout) as response:
             return response.read(limit + 1)[:limit], response.headers.get("Content-Type", "")
     except urllib.error.HTTPError as error:
         raise ResearchError("HTTP {0}".format(error.code))

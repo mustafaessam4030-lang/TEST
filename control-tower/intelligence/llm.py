@@ -72,7 +72,7 @@ class OllamaProvider(object):
         request = urllib.request.Request(self.url + path, data=data, method=method,
                                          headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
+            with R.open_url(request, timeout or self.timeout) as response:
                 return json.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as error:
             raise LLMError("the local model answered HTTP {0}".format(error.code))

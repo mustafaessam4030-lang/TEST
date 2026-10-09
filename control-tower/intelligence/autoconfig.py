@@ -26,6 +26,8 @@ import threading
 import time
 import urllib.request
 
+from . import research as R
+
 DEFAULT_MODEL = "qwen3.5:4b"
 DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_SEARCH = "http://127.0.0.1:8888"
@@ -37,7 +39,7 @@ _started = {"done": False}
 
 
 def _get(url, timeout=4):
-    with urllib.request.urlopen(url, timeout=timeout) as response:
+    with R.open_url(url, timeout) as response:
         return json.loads(response.read().decode("utf-8", "replace"))
 
 
@@ -69,7 +71,7 @@ def check_search(url):
     return True, "{0} results for a test query at {1}".format(count, url)
 
 
-def _use_model(url, model):
+def _use_model(url, model, warm=True):
     os.environ.setdefault("ATLAS_LLM_PROVIDER", "ollama")
     os.environ.setdefault("ATLAS_LLM_URL", url)
     os.environ.setdefault("ATLAS_LLM_MODEL", model)
@@ -82,7 +84,8 @@ def _use_model(url, model):
     # Loaded once, kept for the working day: reloading takes minutes on a
     # cold disk.
     os.environ.setdefault("ATLAS_LLM_KEEP_ALIVE", "8h")
-    _warm(url, model)
+    if warm:
+        _warm(url, model)
 
 
 def _warm(url, model):
@@ -101,7 +104,7 @@ def _warm(url, model):
                                          data=json.dumps(body).encode("utf-8"),
                                          headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=WARM_TIMEOUT_S) as response:
+            with R.open_url(request, WARM_TIMEOUT_S) as response:
                 response.read()
         except Exception:
             _started["warming"] = False             # a later look tries again
@@ -109,7 +112,7 @@ def _warm(url, model):
     threading.Thread(target=load, name="atlas-model-load", daemon=True).start()
 
 
-def _probe():
+def _probe(warm=True):
     """One look. -> (model_ok, model_detail, search_ok, search_detail)"""
     url = os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA
     model = os.environ.get("ATLAS_LLM_MODEL") or DEFAULT_MODEL
@@ -118,7 +121,7 @@ def _probe():
     else:
         model_ok, model_detail = check_model(url, model)
         if model_ok:
-            _use_model(url, model)
+            _use_model(url, model, warm)
     search = os.environ.get("ATLAS_SEARCH_URL") or DEFAULT_SEARCH
     search_ok, search_detail = check_search(search)
     if search_ok:
@@ -155,8 +158,121 @@ def apply(log=print):
     threading.Thread(target=keep_looking, name="atlas-autoconfig", daemon=True).start()
 
 
+def _machine():
+    """CPU cores, total and free memory (GB), free disk (GB) here — or None."""
+    import shutil
+    total = free = None
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("sullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            status = MemoryStatus()
+            status.dwLength = ctypes.sizeof(MemoryStatus)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            total, free = status.ullTotalPhys / 1e9, status.ullAvailPhys / 1e9
+        else:
+            info = dict(line.split(":", 1) for line in open("/proc/meminfo"))
+            total = int(info["MemTotal"].split()[0]) / 1e6
+            free = int(info["MemAvailable"].split()[0]) / 1e6
+    except Exception:
+        pass
+    disk = shutil.disk_usage(os.path.dirname(os.path.abspath(__file__))).free / 1e9
+    return os.cpu_count(), total, free, disk
+
+
+def self_test():
+    """
+    python -m intelligence.autoconfig --test
+
+    On the machine that runs the automation: checks the PC, loads the model,
+    asks ATLAS a real question the way the dashboard does, and prints PASS or
+    FAIL with the reason. It reads nothing from the Hub and changes nothing.
+    """
+    results = []
+
+    def line(ok, label, detail=""):
+        results.append(ok)
+        print("  {0:<5} {1}{2}".format("PASS" if ok else ("WARN" if ok is None else "FAIL"),
+                                      label, ("  — " + detail) if detail else ""), flush=True)
+
+    print("ATLAS AI self-test on this PC")
+    cores, total, free, disk = _machine()
+    # A short machine is a warning, not a failure: ATLAS still answers, slower.
+    line(True if (cores or 0) >= 4 else None, "CPU cores: {0}".format(cores),
+         "" if (cores or 0) >= 4 else "answers will be slow with fewer than 4")
+    if total is not None:
+        line(True if free >= 4.5 else None, "Memory: {0:.1f} GB total, {1:.1f} GB free".format(
+            total, free), "" if free >= 4.5 else "the model needs about 4 GB free")
+    line(True if disk >= 5 else None, "Free disk here: {0:.0f} GB".format(disk))
+
+    m_ok, m_detail, s_ok, s_detail = _probe(warm=False)
+    line(m_ok, "Ollama and the model", m_detail)
+    line(s_ok if s_ok else None, "Web search (optional)", s_detail)
+    if not m_ok:
+        print("\nRESULT: ATLAS AI is NOT ready — fix the FAIL line above, then run this again.")
+        return 1
+
+    # The first load after a restart can take minutes; wait for it here.
+    os.environ["ATLAS_LLM_TIMEOUT_S"] = "600"
+    url, model = os.environ["ATLAS_LLM_URL"], os.environ["ATLAS_LLM_MODEL"]
+    print("  ...   loading the model into memory (first time can take a few minutes)",
+          flush=True)
+    started = time.time()
+    body = {"model": model, "keep_alive": os.environ["ATLAS_LLM_KEEP_ALIVE"],
+            "options": {"num_thread": int(os.environ["ATLAS_LLM_THREADS"])}}
+    try:
+        request = urllib.request.Request(url.rstrip("/") + "/api/generate",
+                                         data=json.dumps(body).encode("utf-8"),
+                                         headers={"Content-Type": "application/json"})
+        with R.open_url(request, WARM_TIMEOUT_S) as response:
+            response.read()
+        line(True, "Model loaded", "{0:.0f} s".format(time.time() - started))
+    except Exception as error:
+        line(False, "Model loaded", str(error)[:120])
+        print("\nRESULT: ATLAS AI is NOT ready — the model did not load.")
+        return 1
+
+    from dashboard import assistant
+    from dashboard.bridge import ControlTowerState
+    state = ControlTowerState().snapshot()
+    questions = [("How is the automation doing right now?", False)]
+    if s_ok:
+        questions.append(("What does ERR_HTTP2_PROTOCOL_ERROR mean in Playwright?", True))
+    for question, needs_web in questions:
+        started = time.time()
+        reply = assistant.answer(question, state)
+        used = (reply.get("llm") or {}).get("used")
+        detail = "{0:.0f} s".format(time.time() - started)
+        if not used:
+            detail += "; " + str((reply.get("llm") or {}).get("reason"))
+        line(bool(used), "ATLAS answered in conversation: " + question, detail)
+        if needs_web:
+            line(bool(reply.get("web_sources")), "Real web search with sources",
+                 ", ".join(w["url"] for w in (reply.get("web_sources") or [])[:2]))
+        print("\n" + "\n".join("        " + x for x in (reply.get("answer") or "").splitlines()[:8])
+              + "\n", flush=True)
+
+    if all(r is not False for r in results):
+        print("RESULT: ATLAS AI is working on this PC. Start the automation as usual.")
+        return 0
+    print("RESULT: something failed — send a photo of this window.")
+    return 1
+
+
 if __name__ == "__main__":
+    import sys
+    if "--test" in sys.argv:
+        sys.exit(self_test())
     # python -m intelligence.autoconfig  — what this machine has, nothing changed.
-    m_ok, m_detail, s_ok, s_detail = _probe()
+    m_ok, m_detail, s_ok, s_detail = _probe(warm=False)
     print("ATLAS conversation: {0}".format(("READY — " if m_ok else "OFF — ") + m_detail))
     print("ATLAS web research: {0}".format(("READY — " if s_ok else "OFF — ") + s_detail))
