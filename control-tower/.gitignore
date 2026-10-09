@@ -32,3 +32,5 @@ release/
 
 # The carriers' browser profile (cookies of carrier sites) — never committed.
 carrier_profile/
+# Web search installed on the PC by SETUP_WEB_SEARCH.bat (intelligence/searxng_local.py)
+/searxng/

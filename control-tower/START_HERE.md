@@ -608,9 +608,11 @@ Edge and the automation, and keeps the model in memory for 8 hours (about
 3.7 GB of RAM). The automation itself never uses the model. Without Ollama,
 everything works as before. `set ATLAS_AI=0` switches it off.
 
-Web search additionally needs SearXNG running on this machine at
-`127.0.0.1:8888` — see `deploy/searxng/README.md` (Windows routes not yet
-tested). Without it, ATLAS says it did not search the web.
+**Web search:** double-click **SETUP_WEB_SEARCH.bat** once. It installs a
+private SearXNG in the `searxng` folder (no WSL or Docker), starts it, and
+tests ATLAS with a real search. From then on the tower starts it by itself
+and the console shows `ATLAS web research: ON`. Details:
+`deploy/searxng/README.md`. Without it, ATLAS says it did not search the web.
 
 ## 10b. ATLAS research and the local model — optional, free, nothing installed for you
 

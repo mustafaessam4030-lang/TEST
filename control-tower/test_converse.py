@@ -9,6 +9,7 @@ Run:  python test_converse.py
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -356,6 +357,44 @@ check("Nothing installed: ATLAS stays rule-based, as before",
       "ATLAS_LLM_PROVIDER" not in os.environ and "conversation: off" in lines[0], lines)
 fresh()
 stand_in.shutdown()
+
+print("=" * 68)
+print("8. WEB SEARCH ON THE PC: THE LOCAL SEARXNG'S SETTINGS")
+print("=" * 68)
+from pathlib import Path
+from intelligence import searxng_local as SX
+real_paths = (SX.HOME, SX.SRC, SX.VENV)
+SX.HOME = Path(tempfile.mkdtemp(prefix="sx_"))
+SX.SRC, SX.VENV = SX.HOME / "src", SX.HOME / "venv"
+saved = {k: os.environ.get(k) for k in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")}
+os.environ["HTTPS_PROXY"] = os.environ["https_proxy"] = "http://proxy.company.example:8080"
+try:
+    import yaml
+    data = yaml.safe_load(SX._settings().read_text(encoding="utf-8"))
+    check("Listens on this PC only (127.0.0.1:8888)",
+          data["server"]["bind_address"] == "127.0.0.1" and data["server"]["port"] == 8888)
+    check("JSON answers on, rate limiter off (ATLAS is its only user)",
+          "json" in data["search"]["formats"] and data["server"]["limiter"] is False)
+    check("The PC's proxy is passed on",
+          data["outgoing"]["proxies"] == {"all://": ["http://proxy.company.example:8080"]})
+    bundle = Path(data["outgoing"]["verify"])
+    check("Trusted certificates go in one file SearXNG checks against",
+          bundle.exists() and "BEGIN CERTIFICATE" in bundle.read_text(encoding="ascii"))
+    check("No secret is written to the settings file", "secret_key" not in data["server"])
+    check("Not installed: nothing is started", not SX.installed() and SX.start() is False)
+except ImportError:
+    check("PyYAML present for the settings test", False, "pip install pyyaml")
+finally:
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    SX.HOME, SX.SRC, SX.VENV = real_paths
+check("The tower only starts the local search for the default address",
+      (os.environ.update({"ATLAS_SEARCH_URL": "http://127.0.0.1:9"}) or True) and
+      autoconfig._start_local_search() is False)
+os.environ.pop("ATLAS_SEARCH_URL", None)
 
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))

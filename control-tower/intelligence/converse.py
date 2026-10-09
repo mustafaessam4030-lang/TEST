@@ -217,7 +217,8 @@ def render(sections, lang, web):
     lists = {key: [] for key in ("verified", "likely", "missing", "external")}
     for key in lists:
         for item in sections.get(key) or []:
-            item = str(item).strip()
+            # The model sometimes drops a citation's closing bracket: "[2".
+            item = re.sub(r"\[(\d{1,2})(?![\d\]])", r"[\1]", str(item).strip())
             if not CITATION.sub("", item).strip(" .,;-"):
                 continue                                # only a citation mark
             lists["external" if (web and CITATION.search(item)) or key == "external"

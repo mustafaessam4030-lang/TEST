@@ -539,7 +539,10 @@ rule("8. NO PAID AI API ANYWHERE")
 code = ""
 for path in HERE.rglob("*"):
     rel = path.relative_to(HERE).parts
-    if not path.is_file() or rel[0].startswith((".", "C:")) or path.name.startswith("test_") \
+    # searxng/: the search service SETUP_WEB_SEARCH.bat installs on the PC —
+    # third-party, ignored by Git, never packaged (make_release.py).
+    if not path.is_file() or rel[0].startswith((".", "C:")) or rel[0] == "searxng" \
+            or path.name.startswith("test_") \
             or path.name == "make_release.py" \
             or path.suffix not in (".py", ".js", ".html", ".txt", ".json", ".yml", ".yaml",
                                    ".bicep", ".ps1", ".bat", ".cfg", ".toml", ".env"):

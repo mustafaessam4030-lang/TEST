@@ -75,8 +75,9 @@ def _use_model(url, model, warm=True):
     os.environ.setdefault("ATLAS_LLM_PROVIDER", "ollama")
     os.environ.setdefault("ATLAS_LLM_URL", url)
     os.environ.setdefault("ATLAS_LLM_MODEL", model)
-    # A CPU-only model needs time; one attempt, then ATLAS's own answer.
-    os.environ.setdefault("ATLAS_LLM_TIMEOUT_S", "120")
+    # A CPU-only model needs time (a web answer took 137 s on 4 cores);
+    # one attempt, then ATLAS's own answer.
+    os.environ.setdefault("ATLAS_LLM_TIMEOUT_S", "180")
     os.environ.setdefault("ATLAS_LLM_RETRIES", "0")
     # Leave a core for Edge and the automation: with every core taken, a
     # CPU-only model stalls (measured) and the browser slows.
@@ -129,6 +130,18 @@ def _probe(warm=True):
     return model_ok, model_detail, search_ok, search_detail
 
 
+def _start_local_search():
+    """Start this PC's SearXNG (intelligence/searxng_local.py) when it is
+    installed and the default address is the one in use. -> True if started."""
+    if (os.environ.get("ATLAS_SEARCH_URL") or DEFAULT_SEARCH).rstrip("/") != DEFAULT_SEARCH:
+        return False
+    try:
+        from . import searxng_local
+        return searxng_local.installed() and searxng_local.start()
+    except Exception:
+        return False
+
+
 def apply(log=print):
     """Turn on what is installed; keep looking a while for what is not yet up."""
     if _started["done"] or (os.environ.get("ATLAS_AI") or "").strip() == "0":
@@ -137,8 +150,12 @@ def apply(log=print):
     model_ok, model_detail, search_ok, search_detail = _probe()
     log("ATLAS conversation: {0}".format(
         "ON — " + model_detail if model_ok else "off — " + model_detail))
-    log("ATLAS web research: {0}".format(
-        "ON — " + search_detail if search_ok else "off — " + search_detail))
+    if not search_ok and _start_local_search():
+        log("ATLAS web research: starting the local search service (SETUP_WEB_SEARCH.bat "
+            "installed it); it is used as soon as it answers")
+    else:
+        log("ATLAS web research: {0}".format(
+            "ON — " + search_detail if search_ok else "off — " + search_detail))
     if model_ok and search_ok:
         return
 

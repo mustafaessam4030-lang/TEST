@@ -23,7 +23,20 @@ SEARXNG_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(24))") \
 
 Check it: `http://127.0.0.1:8888/search?q=air+waybill&format=json` returns results.
 
-## Windows: NOT tested
+## Windows: SETUP_WEB_SEARCH.bat (the simple route)
+
+Double-click `SETUP_WEB_SEARCH.bat` in the tower folder once. It runs
+`python -m intelligence.searxng_local install`: downloads this SearXNG version
+from GitHub into `searxng\`, gives it its own Python environment there,
+installs its packages, starts it and checks a real search. After that the
+tower (`update_eta.py`, the supervisor) starts it by itself when it is not
+running. For Windows it supplies a stand-in for the Linux-only `pwd` module
+(used only by a cache this setup leaves off), adds the certificates Windows
+trusts (for networks that inspect HTTPS) and passes on the Internet Settings
+proxy. Tested here on Linux with `pwd` removed to imitate Windows; the first
+real Windows run is on your PC. Remove it by deleting the `searxng` folder.
+
+## Windows: WSL 2 or Docker (alternatives, NOT tested)
 
 SearXNG does not support Windows natively. There are two routes, and neither
 has been tested on the company machine:
