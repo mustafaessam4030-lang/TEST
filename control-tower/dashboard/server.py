@@ -437,6 +437,18 @@ class Handler(BaseHTTPRequestHandler):
                                                    else _research.why_off()}}))
             return
 
+        if route == "/api/atlas/briefing":
+            # The morning briefing, carrier health and carrier-page findings —
+            # all counted from recorded shipment outcomes and page checks.
+            from intelligence import briefing as _briefing
+            built = _briefing.build()
+            self._send(200, json.dumps({
+                "text": _briefing.render(built), "action": built["action"],
+                "lines": built["lines"], "sources": built["sources"],
+                "site_changes": built["site_changes"], "health": built["health"]},
+                default=str))
+            return
+
         if route.startswith("/api/atlas/") or route.startswith("/api/evidence"):
             self._intel_get(route)
             return

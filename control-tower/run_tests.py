@@ -76,6 +76,7 @@ SUITES = [
     ("test_airlines.py",        "airlines from the carrier sheet, their pages"),
     ("test_carrier_profile.py", "carriers' own browser profile, its limits"),
     ("test_learning_gates.py",  "learning data, readiness, shadow scorecard, approval"),
+    ("test_carrier_intel.py",   "carrier page changes, carrier health, morning briefing"),
     ("test_recovery.py",        "safe error recovery, bounded and attributed"),
     ("test_platform.py",        "remote platform: auth, roles, audit, workers, runs"),
     ("test_remote_session.py",  "remote Human Action end to end, in a real browser"),

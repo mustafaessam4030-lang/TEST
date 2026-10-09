@@ -431,6 +431,16 @@ INTENTS = [
                      "everything for"]),
     ("download",    ["download", "export", "csv", "spreadsheet", "excel",
                      "send me the data", "give me the data", "report"]),
+    # The morning briefing and carrier health, counted from the recorded
+    # shipment outcomes and carrier-page checks (intelligence/briefing.py,
+    # carrier_health.py, pagecheck.py) — or "nothing recorded", never a guess.
+    ("briefing",       ["morning briefing", "briefing", "daily brief", "brief me",
+                        "what happened overnight", "overnight", "since yesterday",
+                        "last 24 hours"]),
+    ("carrier_health", ["carrier health", "health of the carriers", "how are the carriers",
+                        "carriers doing", "site change", "page changed", "website changed",
+                        "site changed", "carrier page", "carrier website",
+                        "tracking page changed"]),
     # Questions about measured history rather than this run's snapshot.
     # These are answered from the telemetry file, with sample sizes, or not
     # at all — see dashboard/insights.py.
@@ -603,6 +613,37 @@ def _answer_download(data):
             "{0} processed · {1} written to the Hub · {2} skipped · {3} failed"
             ).format(counters.get("processed", 0), counters.get("successful", 0),
                      counters.get("skipped", 0), counters.get("failed", 0))
+
+
+def _answer_briefing():
+    """(text, sources) — the morning briefing from recorded outcomes."""
+    try:
+        from intelligence import briefing
+        built = briefing.build()
+    except Exception as error:
+        return ("I could not read the recorded outcomes for a briefing: {0}".format(error), [])
+    return (briefing.render(built), built["sources"])
+
+
+def _answer_carrier_health():
+    """(text, sources) — carrier health plus any carrier-page findings."""
+    try:
+        from intelligence import carrier_health, pagecheck
+        result = carrier_health.health()
+        findings = pagecheck.assess()
+    except Exception as error:
+        return ("I could not read the recorded outcomes for carrier health: {0}".format(
+            error), [])
+    text = carrier_health.render(result)
+    if findings:
+        text += "\n\nCarrier pages:\n" + "\n".join(
+            "  " + pagecheck.describe(f) for f in findings)
+    else:
+        text += "\n\nCarrier pages: no missing tracking box has been recorded."
+    sources = ["{0} shipment outcome records (7 days)".format(result["records"])]
+    if findings:
+        sources.append("{0} carrier page finding(s)".format(len(findings)))
+    return (text, sources)
 
 
 def _from_telemetry(kind, produce, topic):
@@ -3289,6 +3330,8 @@ def _answer_core(question, state, context=None):
             "ml_recs": lambda: _from_telemetry(
                 "ml_recommendations", lambda: insights.ml_recommendations(),
                 "what the model recommended"),
+            "briefing": _answer_briefing,
+            "carrier_health": _answer_carrier_health,
         }
 
         if intent in handlers:

@@ -7856,9 +7856,62 @@ def log_reachability(url, label):
         note_suppressed("probing reachability", error)
 
 
+_PAGECHECK_OK = set()          # carriers whose box was found this run
+
+
+def _pagecheck_store():
+    """The page-check store, on production runs only (main() attaches the
+    ATLAS store; tests and demos never write to it)."""
+    if INTEL.get("events") is None:
+        return None
+    try:
+        from intelligence import pagecheck
+        return pagecheck
+    except Exception:
+        return None
+
+
+def _missing_box_evidence(page, config, tracking_number, url, status, problems,
+                          started):
+    """What the page looked like when no tracking box could be found: enough
+    to tell loading, network, a human check, a refusal or a moved page from a
+    real redesign. Text and a screenshot are kept as files; the record holds
+    numbers, flags and their paths — never page content beyond the title."""
+    evidence = {"url": url, "http_status": status,
+                "navigated": status is not None or not problems,
+                "nav_error": "; ".join(problems)[:300] if problems else None,
+                "waited_ms": int((time.time() - started) * 1000)}
+    try:
+        evidence["final_url"] = page.url
+        evidence["title"] = (page.title() or "")[:120]
+        evidence["ready_state"] = page.evaluate("document.readyState")
+        text = _page_text(page)
+        evidence["text_len"] = len(text.strip())
+        evidence["excerpt"] = " ".join(text.split())[:300]
+        inputs = page.evaluate(
+            "() => [...document.querySelectorAll('input,textarea')]"
+            ".filter(e => e.offsetParent && e.type !== 'hidden')"
+            ".map(e => ({placeholder: e.placeholder || '', name: e.name || '',"
+            " id: e.id || '', type: e.type || ''}))")
+        evidence["input_count"] = len(inputs)
+        from intelligence import pagecheck
+        evidence["input_signature"] = pagecheck.signature(inputs)
+    except Exception as error:
+        note_suppressed("reading the page for the missing-box check", error)
+    evidence["captcha"] = bool(captcha_on_page(page))
+    evidence["restricted"] = bool(carrier_restriction(page, tracking_number))
+    host = re.sub(r"^https?://", "", url or "").split("/")[0]
+    if host:
+        evidence["carrier_probe"] = probe_host(host)
+        evidence["control_probe"] = probe_host(REACHABILITY_CONTROL_HOST)
+    return evidence
+
+
 def open_portal(page, config, tracking_number):
     """Open whichever entry point actually shows the air waybill box."""
     problems = []
+    started = time.time()
+    status, last_url = None, None
     for url in config["urls"]:
         # Chromium raises ERR_HTTP2_PROTOCOL_ERROR against some carrier servers
         # on a rapid second navigation — it hit both AFKL URLs on the retry and
@@ -7872,8 +7925,10 @@ def open_portal(page, config, tracking_number):
                 # holds it open past any timeout while the page sits there
                 # rendered and usable. A real outage still fails here, because
                 # nothing commits without a response.
-                page.goto(url, wait_until="commit",
-                          timeout=NAVIGATION_TIMEOUT_MS)
+                response = page.goto(url, wait_until="commit",
+                                     timeout=NAVIGATION_TIMEOUT_MS)
+                status = response.status if response is not None else None
+                last_url = url
                 navigated = True
                 break
             except Exception as error:
@@ -7954,14 +8009,46 @@ def open_portal(page, config, tracking_number):
         if field is not None:
             if url != config["urls"][0]:
                 write_log(f"{config['label']}: used the fallback entry point {url}")
+            checker = _pagecheck_store()
+            if checker and config["label"] not in _PAGECHECK_OK:
+                _PAGECHECK_OK.add(config["label"])
+                checker.record_ok(config["label"], config["label"], RUN_ID)
             return field
-        problems.append("{0}: no air waybill box on the page".format(url))
 
-    save_page_text(page, tracking_number, config["label"].lower() + "_no_input")
+    text_file = save_page_text(page, tracking_number, config["label"].lower() + "_no_input")
     log_reachability(config["urls"][0], config["label"])
+    # WHY was there no box? A missing box is not by itself a site change:
+    # rule out network, loading, a human check, a refusal and a moved page
+    # first (intelligence/pagecheck.py). The shipment is skipped exactly as
+    # before; the cause and its evidence go with it.
+    nav_problems = [p for p in problems if "no air waybill box" not in p]
+    evidence = _missing_box_evidence(page, config, tracking_number,
+                                     last_url or config["urls"][0], status,
+                                     nav_problems, started)
+    evidence["page_text_file"] = str(text_file)
+    if evidence.get("captcha"):
+        shot = None            # verification screens are never stored
+    else:
+        shot = take_screenshot(page, tracking_number,
+                               config["label"].lower() + "_no_input", full_page=False)
+    evidence["screenshot_file"] = str(shot) if shot else None
+    from intelligence import pagecheck
+    checker = _pagecheck_store()
+    verdict = (checker.record(config["label"], config["label"], RUN_ID, evidence,
+                              reference=tracking_number)
+               if checker else pagecheck.classify(evidence))
+    write_log("{0}: no tracking box — cause {1}: {2}".format(
+        config["label"], verdict["cause"], "; ".join(verdict["reasons"])))
+    problems.append("{0}: no air waybill box on the page".format(
+        last_url or config["urls"][0]))
     raise SkipShipment(
-        "No {0} air waybill box was found. Tried: {1}".format(
-            config["label"], " | ".join(problems)))
+        "No {0} air waybill box was found ({1}). Tried: {2}".format(
+            config["label"], verdict["cause"].replace("_", " ").lower(),
+            " | ".join(problems)),
+        failure={"category": "CARRIER_PAGE_" + verdict["cause"],
+                 "stage": "carrier_search_form",
+                 "operation": "{0} tracking page".format(config["label"]),
+                 "detail": "; ".join(verdict["reasons"])})
 
 
 def type_into(field, value, description=""):

@@ -483,6 +483,9 @@ class ControlTowerState:
                    written=written, duration_ms=record.get("duration_ms"),
                    error=(record.get("error") or None),
                    human_step=bool(record.get("human_step")),
+                   # What the code that stopped it declared (e.g.
+                   # CARRIER_PAGE_LAYOUT_CANDIDATE), for carrier health.
+                   failure_category=(record.get("failure") or {}).get("category"),
                    strategy_issue=record.get("strategy_issue"),
                    strategies=record.get("strategies") or [])
         try:

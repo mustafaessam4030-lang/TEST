@@ -6,6 +6,23 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · ATLAS: morning briefing, carrier health, carrier page changes.** Ask
+ATLAS "morning briefing" or "has any carrier website changed?", or run
+`python -m intelligence.briefing`. Everything is counted from recorded
+outcomes. Below 5 shipments a carrier shows "insufficient data" instead of a
+rate, and with no records the briefing says so.
+
+When a tracking box is missing, the run first rules out loading, network, a
+human check, an access refusal and a moved page. It then calls it a site
+change POSSIBLE (seen once), LIKELY (seen twice in one run, or a 404) or
+CONFIRMED (seen in two runs with the page unchanged). The saved page text and
+screenshot are the evidence, and the next successful lookup closes it.
+
+Model learning: `python -m ml.readiness` (is the data good enough to train
+on?), `python -m ml.shadow` (did the model beat the automation's own choices,
+judged by Hub read-backs?). Active use needs `python -m ml.trainer --approve
+--by NAME` (see ML.md).
+
 **New · Carrier checks are remembered between runs.** A carrier's "are you
 human?" check, once a person has passed it, is remembered the way your own
 Edge remembers it: carrier pages open in their own browser profile,
