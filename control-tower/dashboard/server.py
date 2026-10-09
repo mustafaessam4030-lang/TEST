@@ -221,11 +221,85 @@ def _assistant_state():
         return bridge.snapshot()
 
 
+DRAIN_MAX_BYTES = 1024 * 1024
+
+
+class _RequestBody:
+    """
+    The request body, as the handlers read it: never past Content-Length, and
+    counted, so what a handler leaves unread can be dealt with before the
+    connection carries the next request.
+    """
+
+    def __init__(self, raw, length):
+        self.raw, self.left = raw, length
+
+    def read(self, size=-1):
+        if self.left <= 0:
+            return b""
+        size = self.left if size is None or size < 0 else min(size, self.left)
+        data = self.raw.read(size)
+        self.left -= len(data)
+        return data
+
+    def readline(self, size=-1):
+        if self.left <= 0:
+            return b""
+        size = self.left if size is None or size < 0 else min(size, self.left)
+        data = self.raw.readline(size)
+        self.left -= len(data)
+        return data
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *args):
         pass  # keep the automation console clean
+
+    # -- one request per body ------------------------------------------------
+    # A reply sent without reading the body (a refusal, a 409, a size limit)
+    # used to leave the body on the keep-alive connection, where it was read
+    # as the start of the next request: '{"client_id":...}POST' answered 501,
+    # and a Sign out on that connection never reached the server.
+
+    def parse_request(self):
+        if not BaseHTTPRequestHandler.parse_request(self):
+            return False
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or self.headers.get("Transfer-Encoding"):
+            self.close_connection = True       # a body we cannot measure
+            length = 0
+        self._socket_rfile = self.rfile
+        self.rfile = _RequestBody(self._socket_rfile, length)
+        return True
+
+    def handle_one_request(self):
+        try:
+            BaseHTTPRequestHandler.handle_one_request(self)
+        finally:
+            self._settle_body()
+
+    def _settle_body(self):
+        body = self.rfile
+        if not isinstance(body, _RequestBody):
+            return
+        self.rfile = self._socket_rfile
+        if body.left <= 0:
+            return
+        if body.left > DRAIN_MAX_BYTES:
+            self.close_connection = True
+            return
+        try:
+            while body.left > 0:
+                if not body.read(min(body.left, 65536)):
+                    self.close_connection = True
+                    return
+        except (OSError, ValueError):
+            self.close_connection = True
 
     # -- helpers -----------------------------------------------------------
 

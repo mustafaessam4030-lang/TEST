@@ -356,13 +356,15 @@ class _Handler(BaseHTTPRequestHandler):
         self._reply(404, {"error": "not_found"})
 
     def do_POST(self):
+        # A refusal leaves the body unread; closing the connection keeps it
+        # from being read as the start of the next request.
         if not self._ok():
-            self._reply(401, {"error": "unauthorized"})
+            self._reply(401, {"error": "unauthorized"}, headers={"Connection": "close"})
             return
         try:
             body = self._body()
         except Exception:
-            self._reply(400, {"error": "bad_request"})
+            self._reply(400, {"error": "bad_request"}, headers={"Connection": "close"})
             return
         if self.path == "/session/attach":
             BROKER.attach(str(body.get("action_id") or "")[:64] or None,

@@ -274,6 +274,43 @@ check("Path traversal out of the static folder is refused", s in (403, 404) and 
 s, _d, _ = admin.call("POST", "/api/ask", raw=b"x" * 200000,
                       headers={"Content-Type": "application/json"})
 check("An oversized body is refused, not read", s in (400, 413))
+
+
+def keep_alive_pair(first, second):
+    """Two requests on ONE keep-alive connection, as a browser sends them."""
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", int(base.rsplit(":", 1)[1]), timeout=15)
+    try:
+        replies = []
+        for method, path, body, headers in (first, second):
+            conn.request(method, path, body=body, headers=headers)
+            r = conn.getresponse()
+            replies.append((r.status, r.read(), dict(r.getheaders())))
+        return replies
+    finally:
+        conn.close()
+
+
+refused, after = keep_alive_pair(
+    ("POST", "/api/session/abc123/release", b'{"client_id":"u_keepalive"}',
+     {"Content-Type": "application/json"}),
+    ("GET", "/healthz", None, {}))
+check("A request refused without reading its body does not poison the next one on the "
+      "same connection", refused[0] == 401 and after[0] == 200 and
+      json.loads(after[1]).get("ok") is True, "{0} then {1} {2}".format(
+          refused[0], after[0], after[1][:80]))
+s, d, h = Client(base).post("/api/auth/login", {"email": "omar.ops@mantrac.com",
+                                                "password": PASSWORDS["OPERATOR"]})
+cookie = h.get("Set-Cookie", "").split(";")[0]
+auth = {"Cookie": cookie, "Origin": base, "Content-Type": "application/json"}
+refused, out = keep_alive_pair(
+    ("POST", "/api/runs", b'{"client_id":"u_keepalive"}', dict(auth, **{"X-CSRF-Token": "no"})),
+    ("POST", "/api/auth/logout", b"{}", dict(auth, **{"X-CSRF-Token": d["csrf"]})))
+s_me, _d, _ = Client(base, origin=base).call("GET", "/api/auth/me", headers={"Cookie": cookie},
+                                             csrf=False)
+check("...so a Sign out sent right after a refused request really ends the session",
+      refused[0] == 403 and out[0] == 200 and s_me == 401,
+      "{0} then {1}; /api/auth/me afterwards {2}".format(refused[0], out[0], s_me))
 s, d, _ = admin.post("/api/auth/login", {"email": "' OR 1=1 --", "password": "' OR '1'='1"})
 check("SQL in the sign-in form is just a wrong email", s in (401, 429))
 wid, wtoken = app.orch.add_worker("sec-worker")

@@ -3031,8 +3031,22 @@ const platformReady = _fetch('/api/auth/me', {credentials:'same-origin'}).then((
   const saved = (u.prefs || {}).theme;
   if (saved && saved !== themeChoice()) applyTheme(saved, false);
 }).catch(() => {});
+// Signed out only when the server says the session has ended (or was already
+// gone): going to the sign-in page after a failed logout left the session
+// alive behind a page that said otherwise.
+function logout(){
+  return fetch('/api/auth/logout', {method:'POST'})
+    .then((r) => r.ok || r.status === 401, () => false);
+}
 $('pfOut').addEventListener('click', () => {
-  fetch('/api/auth/logout', {method:'POST'}).finally(() => signedOut(false));
+  const btn = $('pfOut');
+  btn.disabled = true;
+  logout().then((done) => done || logout()).then((done) => {
+    if (done){ signedOut(false); return; }
+    btn.disabled = false;
+    window.alert('Sign out did not reach the server, so you are still signed in. ' +
+                 'Check the connection and choose Sign out again.');
+  });
 });
 
 /* ── Theme: Light, Dark, System ── */
