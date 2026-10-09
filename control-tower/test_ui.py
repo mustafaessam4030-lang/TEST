@@ -674,8 +674,9 @@ print()
 print("=" * 72)
 print("THE MANTRAC REDESIGN")
 print("=" * 72)
-check("The brand bar names the product: MANTRAC, ATA Control Tower",
-      ">MANTRAC<" in INDEX and "ATA Control Tower" in INDEX)
+check("The brand bar names the product: Enterprise Logistics Automation Platform",
+      "<span class=\"brand-p\">Enterprise Logistics Automation Platform</span>" in INDEX
+      and "<title>Enterprise Logistics Automation Platform — Mantrac</title>" in INDEX)
 check("The logo is the official file from /static/brand/, never drawn here",
       "/static/brand/mantrac-logo.svg" in INDEX
       and "/static/brand/mantrac-logo.png" in INDEX

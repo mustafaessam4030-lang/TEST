@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#F5F5F7" />
 <meta name="color-scheme" content="light dark" />
-<title>ATA Control Tower — Mantrac</title>
+<title>Enterprise Logistics Automation Platform — Mantrac</title>
 <!-- THEME, before the first paint, so the page never flashes the wrong one.
      The choice is Light, Dark or System; System follows the device. The
      account's saved choice (remote) overrides this cache once it loads. -->
@@ -340,7 +340,7 @@ input,textarea,select{font-family:inherit}
 .logo{height:28px;display:flex;align-items:center;flex:none}
 .logo img{height:28px;width:auto;display:block;border-radius:3px}
 /* The official lockup already reads MANTRAC (with CAT), so the text beside
-   it says only what the logo does not: ATA Control Tower. */
+   it says only what the logo does not: Enterprise Logistics Automation Platform. */
 .brand.has-logo .brand-n{display:none}
 .brand.has-logo .brand-p{font-size:11px;color:var(--ink);font-weight:600;letter-spacing:.18em}
 .logo.missing{width:112px;border:1px dashed var(--line-hi);border-radius:6px;
@@ -2147,6 +2147,10 @@ body{letter-spacing:-.003em}
 .brand{gap:14px}
 .brand-t{padding-left:14px;border-left:1px solid var(--line)}
 .brand.has-logo .brand-p{font-size:13px;font-weight:600;letter-spacing:-.01em;text-transform:none;color:var(--ink)}
+/* The product name stays on one line; where it would crowd the page pills,
+   the logo stands alone (the name is in the tab title either way). */
+.brand-p{white-space:nowrap}
+@media (min-width:881px) and (max-width:1239px){.brand.has-logo .brand-t{display:none}}
 
 /* Page rhythm: an 8-point scale, headings that state rather than shout. */
 .page{padding:28px 32px 56px}
@@ -2301,7 +2305,7 @@ td.ref{font-weight:500}
     <div class="brand">
       <span class="logo" id="brandLogo"><img id="brandImg" src="/static/brand/mantrac-logo.svg" alt="Mantrac"></span>
       <span class="brand-t"><span class="brand-n">MANTRAC</span>
-        <span class="brand-p">ATA Control Tower</span></span>
+        <span class="brand-p">Enterprise Logistics Automation Platform</span></span>
     </div>
     <div class="sp"></div>
     <nav class="tnav" id="tnav" aria-label="Pages"><span class="tnav-ind" id="tnavInd" aria-hidden="true"></span></nav>
@@ -6496,7 +6500,7 @@ document.addEventListener('click', (e) => {
         input.value = 'What does this screenshot tell us?';
         send();
       }).catch(() => { wait.remove(); setBusy(false);
-        failed('The screenshot didn\u2019t reach the Control Tower, so nothing was uploaded.', null,
+        failed('The screenshot didn\u2019t reach the platform, so nothing was uploaded.', null,
                'Upload failed'); });
   }
   // Queue progress lands in the conversation as ATLAS's own lines.
@@ -7092,7 +7096,7 @@ document.addEventListener('click', (e) => {
         polling = false;
         wait.remove(); put($('chTy'), '');
         offline = true; paintStatus();
-        failed('I can\u2019t reach the Control Tower backend right now, so I can\u2019t safely ' +
+        failed('I can\u2019t reach the platform\u2019s backend right now, so I can\u2019t safely ' +
                'answer from live run data.', q);
       })
       .finally(() => { polling = false; setBusy(false); showFrom(mine.parentNode); });

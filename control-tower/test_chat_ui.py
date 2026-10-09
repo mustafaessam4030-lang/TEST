@@ -455,7 +455,7 @@ page.wait_for_selector("#chatBody .bub.err", timeout=10000)
 err = page.locator("#chatBody .bub.err").last
 check("A failed answer: 'Connection unavailable', and why it won't guess",
       "Connection unavailable" in err.inner_text() and
-      "can’t reach the Control Tower backend right now, so I can’t safely answer from live run "
+      "can’t reach the platform’s backend right now, so I can’t safely answer from live run "
       "data" in err.inner_text(), err.inner_text())
 check("...with Retry", err.locator("button", has_text="Retry").count() == 1)
 check("...and the composer usable again", not page.is_disabled("#chatIn")

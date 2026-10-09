@@ -586,7 +586,7 @@ def _answer_thanks(data):
 
 
 def _answer_identity(data):
-    return ("I am the Control Tower assistant. I read this run's data and "
+    return ("I am ATLAS, the assistant of the Enterprise Logistics Automation Platform. I read this run's data and "
             "answer from it — nothing else.\n\n"
             "I have no language model behind me, which is deliberate: it means "
             "I cannot invent an ETA, a carrier or a status. If the automation "
