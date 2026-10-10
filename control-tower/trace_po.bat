@@ -1,6 +1,7 @@
 @echo off
 rem Why a PO job stopped: each blocking field and every value the Bill of Entry prints for it,
-rem with its page. Read-only: nothing is changed, sent or written.
+rem with its page, then the kept PDF read again with this version (the job is not changed).
+rem Read-only: nothing is changed, sent or written.
 rem   trace_po.bat 41026844263      (or the BOL/AWB, e.g. K284375)
 cd /d "%~dp0"
 set "PY=python"

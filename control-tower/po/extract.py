@@ -80,9 +80,11 @@ def _ocr_page(page):
 
 
 def _page_words(page):
-    """The page's words with their boxes: (x0, y0, x1, y1, text). A word never
-    spans two text runs (spans), so a value printed right against a label
-    ("Import" | "88") stays two words."""
+    """The page's words with their boxes: (x0, y0, x1, y1, text, print). A word
+    never spans two text runs (spans), so a value printed right against a
+    label ("Import" | "88") stays two words. print = {"size", "color", "font",
+    "upright"}: how the word is printed, so a stamp printed over the form can
+    be told from the form's own text."""
     out = []
     try:
         blocks = page.get_text("rawdict")["blocks"]
@@ -90,13 +92,18 @@ def _page_words(page):
         return [tuple(w[:5]) for w in page.get_text("words") if str(w[4]).strip()]
     for block in blocks:
         for line in block.get("lines") or []:
+            direction = line.get("dir") or (1, 0)
+            upright = abs(direction[1]) < 0.02 and direction[0] > 0
             for span in line.get("spans") or []:
+                printed = {"size": round(float(span.get("size") or 0), 2),
+                           "color": span.get("color"), "font": span.get("font"),
+                           "upright": upright}
                 token, box = "", None
                 for ch in span.get("chars") or []:
                     c = ch.get("c") or ""
                     if c.isspace():
                         if token:
-                            out.append(tuple(box) + (token,))
+                            out.append(tuple(box) + (token, printed))
                         token, box = "", None
                         continue
                     b = ch["bbox"]
@@ -104,7 +111,7 @@ def _page_words(page):
                                                        max(box[2], b[2]), max(box[3], b[3])]
                     token += c
                 if token:
-                    out.append(tuple(box) + (token,))
+                    out.append(tuple(box) + (token, printed))
     return out
 
 
@@ -390,8 +397,10 @@ def resolve_by_identifier(field, identifier):
     its document name). Settled only when EXACTLY ONE printed candidate has
     that number as its declaration number (the part before any "/ NN"
     suffix) — then that printed value is used, and every other candidate is
-    kept as evidence. Two candidates with the same number but different
-    suffixes, or none matching, stay AMBIGUOUS: a person decides at review.
+    kept as evidence. The number printed in full ("/ 00") and also without
+    its suffix is one declaration: the full form is used. Two candidates with
+    the same number but different suffixes, or none matching, stay
+    AMBIGUOUS: a person decides at review.
     Nothing is typed in, and a value not printed in the document is never used.
     """
     if not isinstance(field, dict) or field.get("status") != AMBIGUOUS:
@@ -405,7 +414,23 @@ def resolve_by_identifier(field, identifier):
 
     if len(wanted) < 6:
         return dict(field, note="ambiguous, and eHub gave no document number to check against")
+    def suffix(c):
+        m = DECLARATION_FORM.fullmatch(str(c.get("value") or "").strip())
+        return m.group(2) if m else None
+
     matching = [c for c in candidates if number(c) == wanted]
+    rule = "the only printed value matching eHub's document number"
+    # The same number printed in full on one page ("41026844263 / 00") and
+    # without its suffix on another ("41026844263", a continuation sheet's
+    # header): one declaration. The full form is the one printed, so it is
+    # used — but only when every printing that carries a suffix carries the
+    # SAME one. Two different suffixes (/ 00 and / 01) stay AMBIGUOUS.
+    suffixed = {suffix(c) for c in matching if suffix(c)}
+    if len(matching) > 1 and len(suffixed) == 1:
+        full = [c for c in matching if suffix(c)]
+        matching = full[:1]
+        rule = ("eHub's document number, printed in full with suffix / {0}; the other "
+                "printings of the same number omit the suffix".format(next(iter(suffixed))))
     if len(matching) != 1:
         return dict(field, note=(
             "ambiguous: {0} printed values carry eHub's number {1} with different "
@@ -416,7 +441,7 @@ def resolve_by_identifier(field, identifier):
     return dict(field, status=FOUND, value=chosen["value"], raw=chosen.get("raw"),
                 evidence=chosen.get("line"), page=chosen.get("page"), method=method,
                 confidence="LOW" if method == "ocr" else "HIGH", candidates=[],
-                resolution={"rule": "the only printed value matching eHub's document number",
+                resolution={"rule": rule,
                             "identifier": identifier,
                             "chosen": {k: chosen.get(k) for k in ("value", "page", "line")},
                             "rejected": [{k: c.get(k) for k in ("value", "page", "line")}
@@ -757,13 +782,65 @@ def _currency_form(raw):
     return "ok" if re.fullmatch(r"[A-Z]{3}", raw.strip()) else "skip"
 
 
+# The B ACCOUNTING DETAILS column headings: a row of only these words, before
+# the first tax line, is the heading printed on two rows — not a tax line.
+TAX_HEADING = re.compile(r"(taxes|code|exempted|suspended|exempted/suspended|exempted/|"
+                         r"amount|amounts|payable|\(?ghs\)?|\(?ghc\)?)", re.I)
+
+
+def _print_of(w):
+    return w[5] if len(w) > 5 and isinstance(w[5], dict) else None
+
+
+def _table_print(words):
+    """How the table's own figures are printed: the most common size and
+    colour of its words that carry a digit (a stamp never sets this)."""
+    sizes, colours = [], {}
+    for w in words:
+        p = _print_of(w)
+        if p and re.search(r"\d", w[4]) and p.get("upright"):
+            sizes.append(p.get("size") or 0)
+            colours[p.get("color")] = colours.get(p.get("color"), 0) + 1
+    if not sizes:
+        return None
+    sizes.sort()
+    return {"size": sizes[len(sizes) // 2], "color": max(colours, key=colours.get)}
+
+
+def _overprint(w, ref):
+    """Why a word is printed OVER the table (a stamp), not part of it — or
+    None. Only a word with no digit can be set aside: a figure is never
+    dropped. Decided by how it is printed, never by what it says."""
+    p = _print_of(w)
+    if ref is None or p is None or re.search(r"\d", w[4]):
+        return None
+    if not p.get("upright"):
+        return "printed at an angle"
+    if ref["size"] and abs((p.get("size") or 0) - ref["size"]) > 0.25 * ref["size"]:
+        return "printed at {0:g} pt, the table at {1:g} pt".format(p.get("size") or 0,
+                                                                  ref["size"])
+    if p.get("color") != ref["color"]:
+        return "printed in another colour (#{0:06x}, the table #{1:06x})".format(
+            int(p.get("color") or 0), int(ref["color"] or 0))
+    return None
+
+
 def _tax_tables(rows):
     """B ACCOUNTING DETAILS, per page: {"lines": [...], "total": {...} | None,
     "malformed": [...]} — read from its "Taxes  Code  Exempted/Suspended"
     heading to its Total row, column by column: the name left of the Code
     column, the tax code in it, the amounts right of it (the last is Amount
     Payable). A row that does not fit the columns is MALFORMED — the table is
-    never cut short or read around it."""
+    never cut short or read around it.
+
+    Two things on the real form are not table rows: the column heading
+    printed on two rows ("Exempted/Suspended" under "Taxes  Code"), skipped
+    before the first tax line; and a stamp printed across the table
+    ("Validated Entry accepted by Declarant"). A stamp word is set aside only
+    when it carries no digit AND is printed differently from the table's
+    figures (at an angle, another size, another colour); every word set aside
+    is kept as evidence ("overprint"). A stamp printed exactly like the table
+    is not guessed at: the row stays MALFORMED."""
     tables = []
     for hit in _find(rows, r"\btaxes\b"):
         head = rows[hit["row"]]
@@ -776,12 +853,32 @@ def _tax_tables(rows):
         code_x = []
         amounts_left = next((w[0] - tol for w in head["words"] if w[0] > code_word[2] and
                              re.search(r"exempt|amount", w[4], re.I)), code_word[2] + tol)
-        lines, total, malformed = [], None, []
+        lines, total, malformed, overprint = [], None, [], []
+        below = [r for r in rows[hit["row"] + 1:] if r["page"] == head["page"]]
+        ref = _table_print([w for r in below for w in r["words"] if w[0] >= left])
         for row in rows[hit["row"] + 1:]:
             if row["page"] != head["page"]:
                 break
-            words = [w for w in row["words"] if w[0] >= left]
+            words = []
+            for w in row["words"]:
+                if w[0] < left:
+                    continue
+                why = _overprint(w, ref)
+                if why:
+                    overprint.append({"text": w[4], "why": why, "page": row["page"],
+                                      "line": " ".join(x[4] for x in row["words"]
+                                                       if x[0] >= left)[:160]})
+                    continue
+                words.append(w)
             if not words:
+                continue
+            if not lines and total is None and \
+                    all(TAX_HEADING.fullmatch(w[4]) for w in words):
+                # The heading's second row: it may hold the amounts column's
+                # heading, which marks where the amounts begin.
+                amounts_left = min([amounts_left] + [
+                    w[0] - tol for w in words
+                    if w[0] > code_word[2] and re.search(r"exempt|amount", w[4], re.I)])
                 continue
             mid = lambda w: (w[0] + w[2]) / 2                       # noqa: E731
             amounts = [w[4] for w in words if mid(w) >= amounts_left]
@@ -836,7 +933,7 @@ def _tax_tables(rows):
                                                                     "the Code column"})
         if lines or total:
             tables.append({"lines": lines, "total": total, "malformed": malformed,
-                           "page": head["page"]})
+                           "overprint": overprint, "page": head["page"]})
     return tables
 
 
@@ -985,6 +1082,15 @@ def read_layout(words, doctype):
                                        len(table["lines"]), (total or {}).get("raw"))
                                    if table["lines"] else None,
                                    confidence="HIGH" if table["lines"] else "NONE")
+    if table.get("overprint"):
+        # The stamp's words, set aside by how they are printed — kept as evidence.
+        words = table["overprint"]
+        fields["tax_lines"]["set_aside"] = words
+        fields["tax_lines"]["note"] = "; ".join(filter(None, [
+            fields["tax_lines"].get("note"),
+            "{0} word(s) printed over the table set aside as a stamp, not tax names: "
+            "'{1}' ({2})".format(len(words), " ".join(w["text"] for w in words),
+                                 words[0]["why"])]))
     return fields
 
 

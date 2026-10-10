@@ -189,11 +189,17 @@ def icums_boe_pdf(bl="J552493", number="40726534505 / 00", date="15/07/2026",
                   invoice_currency="USD", rate="11.4857", rate_currency="USD",
                   fob_ncy="1,776,621.53", terms=("CPT", "ACCRA"), tax_lines=None,
                   total=TOTAL, reference="2607150575GCH000154", extra_footer=None,
-                  font_scale=1.0, reading_order=False, continuation_number=None):
+                  font_scale=1.0, reading_order=False, continuation_number=None,
+                  stamp=None, split_heading=False):
     """reading_order: write the text top to bottom instead (labels and values
     interleaved); font_scale: print every word larger or smaller;
     continuation_number: add a page 2 whose header repeats the "Bill of
-    Entry(BOE) No :" label with this number beside it (a second candidate)."""
+    Entry(BOE) No :" label with this number beside it (a second candidate);
+    stamp: {"size", "color"} — print the clearing stamp "Validated Entry /
+    accepted by Declarant" across the EXIM and Inspection Fee rows of the
+    accounting table, as on job 41026844263 (sanitised: the words only);
+    split_heading: print "Exempted/Suspended" on a row of its own, under
+    "Taxes  Code"."""
     o = dict(bl=bl, number=number, date=date, invoice_fcy=invoice_fcy,
              invoice_currency=invoice_currency, rate=rate, rate_currency=rate_currency,
              fob_ncy=fob_ncy, terms=terms, tax_lines=TAX_LINES if tax_lines is None else tax_lines,
@@ -221,6 +227,8 @@ def icums_boe_pdf(bl="J552493", number="40726534505 / 00", date="15/07/2026",
     # reference number, so a label-then-value reading takes the wrong value.
     labels = _labels(o)
     for x, y, text in labels:
+        if split_heading and (x, y, text) == (520, 600, "Exempted/Suspended"):
+            y = 605
         if text == "BL/AWB :":
             put(x, y, text)
             put(205, 122, o["reference"], size=6.5, bold=True)
@@ -238,6 +246,20 @@ def icums_boe_pdf(bl="J552493", number="40726534505 / 00", date="15/07/2026",
     put.flushing = True
     for y, x, text, size, bold, right in sorted(queue):
         put(x, y, text, size=size, bold=bold, right=right)
+    if stamp:
+        # The stamp's words fall among the rows' own words: "Validated" inside
+        # the EXIM name, "Entry" between its code and amounts, "accepted" over
+        # the Inspection Fee name, "by Declarant" before its code.
+        rows = {label: 612 + 11 * i for i, (label, _, _, _) in enumerate(o["tax_lines"])}
+        exim = rows.get("Ghana Export-Import Bank (EXIM) Levy")
+        fee = rows.get("Inspection Fee")
+        for x, y, text in ((448, exim, "Validated"), (500, exim, "Entry"),
+                           (336, fee, "accepted"), (420, fee, "by Declarant")):
+            if y is not None:
+                page.insert_text((x * SCALE, y * SCALE), text,
+                                 fontsize=stamp.get("size", 6.5) * font_scale,
+                                 fontname=stamp.get("font", "hebo"),
+                                 color=stamp.get("color", (0, 0, 0)))
     if continuation_number:
         more = doc.new_page(width=595, height=842)
         more.insert_text((447 * SCALE, 108 * SCALE), "Bill of Entry(BOE) No :", fontsize=6.0,

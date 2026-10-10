@@ -371,7 +371,9 @@ def now_iso():
 
 
 def _clean(value, depth=0):
-    if depth > 5:
+    # Deep enough for a field's evidence: record → fields → field →
+    # resolution → rejected → candidate → value.
+    if depth > 7:
         return None
     if isinstance(value, dict):
         return {str(k): _clean(v, depth + 1) for k, v in value.items()

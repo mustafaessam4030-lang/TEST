@@ -321,6 +321,112 @@ check("Without an eHub number nothing is settled",
 check("A value never printed in the document is never used, even if eHub has it",
       X.resolve_by_identifier(dn, "12345678901")["status"] == X.AMBIGUOUS)
 
+# ═════════════════════════════════════════════════════════════════════════
+rule("8. THE REAL DOCUMENT OF JOB 41026844263: '/ 00' AND A BARE NUMBER, A STAMP OVER THE "
+     "TAX TABLE, A HEADING ON TWO ROWS")
+# ═════════════════════════════════════════════════════════════════════════
+# What the trace of the real document showed (sanitised replica, no real
+# content): page 1 prints "41026844263 / 00", page 2 "41026844263"; the
+# clearing stamp "Validated Entry / accepted by Declarant" falls across the
+# EXIM and Inspection Fee rows; "Exempted/Suspended" sits on its own row.
+from po.__main__ import reread_lines  # noqa: E402
+bare = icums_boe_pdf(continuation_number="40726534505")
+dn2 = read(bare)[1]["document_number"]
+check("Reproduced: '/ 00' on page 1 and the bare number on page 2 read as two values (AMBIGUOUS)",
+      dn2["status"] == X.AMBIGUOUS and sorted(c["value"] for c in dn2["candidates"]) ==
+      ["40726534505", "40726534505 / 00"], dn2.get("candidates"))
+j = job(bare, identifier="40726534505")
+f = j["fields"]["document_number"]
+kept = S.Store(folder=WORK / "job{0}".format(_n["i"])).get(j["po_id"])
+check("The saved job keeps the full evidence of the other printing (value, page, line)",
+      kept["fields"]["document_number"]["resolution"]["rejected"] ==
+      [{"value": "40726534505", "page": 2, "line": f["resolution"]["rejected"][0]["line"]}]
+      and f["resolution"]["rejected"][0]["line"],
+      kept["fields"]["document_number"].get("resolution"))
+check("With eHub's number: one declaration — the full printed form '/ 00' (page 1) is used",
+      f["status"] == X.FOUND and f["value"] == "40726534505 / 00" and f["page"] == 1, f)
+check("...the rule says why, and the bare printing is kept as evidence",
+      "suffix / 00" in f["resolution"]["rule"] and
+      [(c["value"], c["page"]) for c in f["resolution"]["rejected"]] == [("40726534505", 2)],
+      f.get("resolution"))
+check("...and the job reaches the same end as the one-page document, C13 = '40726534505 / 00'",
+      j["state"] == job(EXAMPLE_PDF)["state"] and j.get("output") and
+      j["fields"]["document_number"]["value"] == EXAMPLE["C13"], j["state"])
+check("Without eHub's number the two printings stay AMBIGUOUS (nothing is assumed)",
+      X.resolve_by_identifier(dn2, None)["status"] == X.AMBIGUOUS)
+three = dict(dn2, candidates=dn2["candidates"] + [dict(dn2["candidates"][0],
+                                                       value="40726534505 / 01", page=3)])
+check("'/ 00', '/ 01' and the bare number: two different suffixes stay AMBIGUOUS",
+      X.resolve_by_identifier(three, "40726534505")["status"] == X.AMBIGUOUS)
+
+RED, BLUE = (0.8, 0.0, 0.0), (0.0, 0.0, 0.7)
+r, f = read(icums_boe_pdf(stamp={"size": 6.5}))
+t = f["tax_lines"]
+check("Reproduced: a stamp printed EXACTLY like the table makes the rows MALFORMED — the same "
+      "rows as the real trace, and nothing is guessed",
+      t["status"] == X.MALFORMED and "(EXIM) Validated Levy 87 Entry 0.00" in t["note"],
+      t.get("note"))
+k = job(icums_boe_pdf(stamp={"size": 6.5}))
+check("...the job stops at EXTRACTION_FAILED (NORMALIZATION_FAILED), no template",
+      k["state"] == S.EXTRACTION_FAILED and k["failure"]["code"] == "NORMALIZATION_FAILED"
+      and not k.get("output"), (k["state"], k.get("failure")))
+folder = WORK / "job{0}".format(_n["i"])
+before = S.Store(folder=folder).get(k["po_id"])
+again = "\n".join(reread_lines(k, folder))
+check("'trace' re-reads the kept PDF with this version and shows how each table word is "
+      "printed (size, colour, font)",
+      "RE-READ NOW" in again and "tax_lines" in again and "Validated[6.5pt #000000" in again
+      and "the table's figures are printed 6.5 pt #000000" in again, again[-600:])
+after = S.Store(folder=folder).get(k["po_id"])
+check("...and the re-read changes nothing: same state, same fields, same events",
+      after["state"] == before["state"] and after["fields"] == before["fields"] and
+      len(S.Store(folder=folder).events(k["po_id"])) ==
+      len(S.Store(folder=folder).events(k["po_id"])))
+for style, why in (({"size": 6.5, "color": RED}, "another colour"),
+                   ({"size": 9.0}, "a larger size")):
+    r, f = read(icums_boe_pdf(stamp=style))
+    t = f["tax_lines"]
+    want = [(n, c, X.to_float(a)) for n, c, _e, a in TAX_LINES]
+    got = [(l["label"], l["code"], l["amount"]) for l in t.get("value") or []]
+    check("A stamp printed in {0}: its words set aside, every tax line read as printed".format(
+          why), t["status"] == X.FOUND and got == want, (t.get("note"), got[13:17]))
+    check("...the words set aside are kept as evidence, with why ({0})".format(why),
+          [w["text"] for w in t["set_aside"]][:1] == ["Validated"] and
+          all(w["why"] and w["line"] for w in t["set_aside"]) and "stamp" in t["note"],
+          t.get("set_aside"))
+s = job(icums_boe_pdf(stamp={"size": 6.5, "color": RED}))
+check("...and the job reaches the same end as the unstamped document (Σ lines = Total)",
+      s["state"] == job(EXAMPLE_PDF)["state"] and s.get("output"), s["state"])
+check("...and 'trace' lists the stamp words it set aside, with why",
+      "set aside (stamp): 'Validated' — printed in another colour" in "\n".join(trace_lines(s)))
+digit = (10, 10, 30, 16, "12/09/2026", {"size": 9, "color": 0xCC0000, "upright": True})
+ref = {"size": 6.5, "color": 0}
+check("A word with a digit is never set aside, however it is printed (no figure is dropped)",
+      X._overprint(digit, ref) is None)
+check("A word printed at an angle is set aside; one printed like the table is not",
+      X._overprint((0, 0, 5, 30, "Validated", {"size": 6.5, "color": 0, "upright": False}),
+                   ref) == "printed at an angle" and
+      X._overprint((0, 0, 30, 6, "Levy", {"size": 6.5, "color": 0, "upright": True}),
+                   ref) is None)
+check("A word with no print information (another reader) is never set aside",
+      X._overprint((0, 0, 30, 6, "Validated"), ref) is None)
+f = read(icums_boe_pdf(split_heading=True))[1]
+check("'Exempted/Suspended' on its own row under the heading is the heading, not a tax line",
+      f["tax_lines"]["status"] == X.FOUND and len(f["tax_lines"]["value"]) == len(TAX_LINES),
+      f["tax_lines"].get("note"))
+real = job(icums_boe_pdf(continuation_number="40726534505", split_heading=True,
+                         stamp={"size": 6.5, "color": BLUE}), identifier="40726534505")
+check("All three at once (the real document's shape): the job reaches the same end as the "
+      "clean document, C13 '40726534505 / 00', every value verified by validation",
+      real["state"] == job(EXAMPLE_PDF)["state"] and real.get("output") and
+      real["fields"]["document_number"]["value"] == "40726534505 / 00" and
+      real["validation"]["passed"], (real["state"], real.get("failure")))
+real_bad = job(icums_boe_pdf(continuation_number="40726534505 / 01", split_heading=True,
+                             stamp={"size": 6.5, "color": BLUE}), identifier="40726534505")
+check("...but with two different suffixes printed, it still stops for review — no template",
+      real_bad["state"] in (S.VALIDATION_FAILED, S.NEEDS_REVIEW) and not real_bad.get("output"),
+      real_bad["state"])
+
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

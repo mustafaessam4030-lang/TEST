@@ -442,7 +442,7 @@ def trace_lines(record):
         out.append("document: {0} · {1} page(s) · sha256 {2}…".format(
             doc.get("filename"), doc.get("pages") or "?", str(doc.get("sha256") or "")[:12]))
     for name, f in sorted((record.get("fields") or {}).items()):
-        if f.get("status") == X.FOUND and not f.get("resolution"):
+        if f.get("status") == X.FOUND and not f.get("resolution") and not f.get("set_aside"):
             continue
         out.append("")
         out.append("{0} ({1}): {2}{3}".format(name, f.get("label"), f.get("status"),
@@ -464,6 +464,77 @@ def trace_lines(record):
                 if isinstance(line, dict) and line.get("malformed"):
                     out.append("  malformed line: {0} '{1}' · {2}".format(
                         line.get("label"), line.get("malformed"), line.get("line")))
+        for w in f.get("set_aside") or []:
+            out.append("  set aside (stamp): '{0}' — {1} · {2}".format(w.get("text"),
+                                                                     w.get("why"), w.get("line")))
+    return out
+
+
+BLOCKING = (X.MISSING, X.AMBIGUOUS, X.MALFORMED)
+
+
+def _print_text(w):
+    p = X._print_of(w) or {}
+    return "{0}[{1:g}pt #{2:06x} {3}{4}]".format(
+        w[4], p.get("size") or 0, int(p.get("color") or 0), p.get("font") or "?",
+        "" if p.get("upright", True) else " angled")
+
+
+def reread_lines(record, folder):
+    """The kept Bill of Entry read again with THIS version of the reader —
+    nothing is saved, sent or changed: the job keeps its recorded state. Shows
+    whether the fix reads the real document, and, for the tax table, how each
+    word is printed (size, colour, font, angle) so a stamp can be told apart."""
+    sha = str((record.get("document") or {}).get("sha256") or "")
+    path = Path(folder) / "documents" / (sha + ".pdf")
+    if not sha or not path.is_file():
+        return ["", "re-read: the kept PDF is not at {0}".format(path)]
+    try:
+        read = X.read_pdf(path.read_bytes())
+    except X.Unreadable as error:
+        return ["", "re-read: UNREADABLE — {0}".format(error)]
+    fields = X.extract(read["text"], doctypes.get(record["doctype"]), read.get("spans"),
+                       read.get("words"))
+    if "document_number" in fields:
+        fields["document_number"] = X.resolve_by_identifier(fields["document_number"],
+                                                            record.get("identifier"))
+    out = ["", "─" * 70, "RE-READ NOW with this version (read-only: the job is not changed)"]
+    blocking = [n for n, f in sorted(fields.items()) if f.get("status") in BLOCKING]
+    out.append("blocking fields: " + (", ".join(blocking) if blocking else
+                                      "none — re-run the job to process it"))
+    again = dict(record, fields=fields, failure=None, document=None)
+    out += trace_lines(again)[1:]
+    tax = fields.get("tax_lines") or {}
+    if tax.get("status") != X.FOUND or tax.get("set_aside"):
+        rows = X._rows(read.get("words") or [])
+        for hit in X._find(rows, r"\btaxes\b"):
+            head = rows[hit["row"]]
+            if not any(w[4].lower() == "code" for w in head["words"]):
+                continue
+            below = [r for r in rows[hit["row"] + 1:] if r["page"] == head["page"]]
+            ref = X._table_print([w for r in below for w in r["words"]
+                                  if w[0] >= hit["x0"] - head["h"]])
+            out.append("")
+            out.append("tax table, page {0} — the table's figures are printed {1}".format(
+                head["page"], "{0:g} pt #{1:06x}".format(ref["size"], int(ref["color"] or 0))
+                if ref else "(unknown)"))
+            # Only the rows that matter: the heading, the rows that did not
+            # fit (or held a stamp), and one ordinary row to compare with.
+            bad = {m.get("line") for t in X._tax_tables(rows) if t["page"] == head["page"]
+                   for m in t["malformed"]}
+            bad |= {w.get("line") for w in tax.get("set_aside") or []}
+            shown, ordinary = [], None
+            for r in below[:40]:
+                words = [w for w in r["words"] if w[0] >= hit["x0"] - head["h"]]
+                text = " ".join(w[4] for w in words)[:160]
+                if not words:
+                    continue
+                if text in bad or all(X.TAX_HEADING.fullmatch(w[4]) for w in words):
+                    shown.append(words)
+                elif ordinary is None and re.search(r"\d", text):
+                    ordinary = words
+            for words in ([ordinary] if ordinary else []) + shown:
+                out.append("  " + "  ".join(_print_text(w) for w in words))
     return out
 
 
@@ -519,6 +590,9 @@ def cmd_trace(args):
         return 2
     print("job folder: {0}".format(folder))
     print("\n".join(trace_lines(record)))
+    if record.get("state") == S.EXTRACTION_FAILED or any(
+            (f or {}).get("status") in BLOCKING for f in (record.get("fields") or {}).values()):
+        print("\n".join(reread_lines(record, folder)))
     return 0
 
 
