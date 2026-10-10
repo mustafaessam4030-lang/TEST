@@ -110,6 +110,8 @@ def cmd_process(args):
                 record = P.process(store, record, _source(page, record))
             finally:
                 browser.close()
+        from po import heal as H
+        H.after_stop(store, record)
         config = P.config_from_env()
         if record["state"] == S.EMAIL_PREPARED and config["auto_send"]:
             from po.mail import GraphMailer
@@ -302,6 +304,8 @@ def sweep(page, store, limit=20, source_factory=None, log=print, mailer_factory=
                                   started_by="automatic")
             try:
                 record = P.process(store, record, make_source(page), config)
+                from po import heal as H
+                H.after_stop(store, record, config)
             except Exception as error:
                 current = store.get(record["po_id"]) or record
                 P.interrupt(store, current, "the job stopped unexpectedly: {0}".format(

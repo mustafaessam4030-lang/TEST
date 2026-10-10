@@ -164,6 +164,8 @@ class InlineLauncher(object):
                           self.source_factory(record), self.config, sleep=lambda s: None)
             except Exception as error:
                 P.abandon(self.store, self.store.get(record["po_id"]), str(error)[:200])
+            from po import heal as H
+            H.after_stop(self.store, self.store.get(record["po_id"]), self.config)
             if self.service is not None:
                 self.service.processed(self.store.get(record["po_id"]))
         thread = threading.Thread(target=run, daemon=True, name="po-inline")
@@ -244,7 +246,9 @@ def card(record):
     email = record.get("email") or {}
     validation = record.get("validation") or {}
     output = record.get("output") or {}
+    from po import heal as H
     return {
+        "atlas_healing": H.status_line(record),
         "po_id": record["po_id"], "reference": record["reference"],
         "number": record.get("number"), "doctype": record["doctype"],
         "identifier": record.get("identifier"),

@@ -601,6 +601,7 @@ input,textarea,select{font-family:inherit}
 @keyframes poSheen{from{transform:translateX(-100%)}to{transform:translateX(260%)}}
 .po-mini{display:block;margin-top:5px;width:96px}
 .po-mini.po-bar{height:4px}
+.po-heal{font-size:11px;line-height:1.35;opacity:.85;margin-top:4px;max-width:280px;white-space:normal}
 @media (prefers-reduced-motion:reduce){.po-live-dot,.po-bar i::after,.po-steps span.now{animation:none}}
 .po-steps span.bad{background:var(--red-wash);color:var(--red)}
 .po-ev{font-size:12px;color:var(--mid);display:grid;gap:3px}
@@ -5247,7 +5248,9 @@ function paintPO(){
     '<td class="mono">' + esc(j.declaration || '—') + '</td><td class="mono">' + esc(j.reference || '—') + '</td>' +
     '<td>' + esc(j.supplier || '—') + '</td><td class="mono">' + esc(j.identifier || j.number || '—') + '</td>' +
     '<td class="wrap">' + esc(j.document || '—') + '</td>' +
-    '<td>' + poPill(j) + poSource(j) + (poRunning(j) && poAt(j.state)
+    '<td>' + poPill(j) + poSource(j) +
+    (j.atlas_healing ? '<div class="po-heal" title="Tested in isolation on the kept PDF; the job keeps its state">🩺 ' + esc(j.atlas_healing) + '</div>' : '') +
+    (poRunning(j) && poAt(j.state)
       ? '<span class="po-bar po-mini" title="' + esc(poAt(j.state).label) + '"><i style="width:' +
         Math.max(6, Math.round((poAt(j.state).i + 0.5) / (poAt(j.state).of + 1) * 100)) + '%"></i></span>'
       : '') + '</td>' +
