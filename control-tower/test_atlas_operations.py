@@ -198,7 +198,11 @@ r = say("Show failed shipments.")
 check("'Show failed shipments' filters Live operations to them",
       auto(r) == [{"type": "filter", "label": "Failed", "state": "failed"}], str(auto(r)))
 r = say("Why did AFKL fail?")
-check("'Why did AFKL fail?' explains the latest AFKL failure",
+check("'Why did AFKL fail?' in a sentence: how many, and the latest with its recorded reason",
+      r["answer"].startswith("2 Air France KLM Cargo shipments failed. The latest, 074-47798870")
+      and "\n" not in r["answer"], r["answer"])
+r = say("Explain why AFKL failed")
+check("'Explain why AFKL failed' explains the latest AFKL failure",
       r.get("reference") == "074-47798870" and "2 Air France KLM Cargo shipments" in r["answer"],
       r["answer"][:160])
 check("...from the recorded sequence, in order",

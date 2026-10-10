@@ -239,6 +239,10 @@ search_off()
 llm_off()
 before = (len(SEARCHES), len(CHATS))
 r = ask("Where is MEDUAHP69377?")
+check("A plain 'where is' gets a plain answer from the run: due date, written and read back",
+      r["answer"].startswith("MEDUAHP69377 (MSC) is due on 10/11/2026") and "read it back" in r["answer"] and
+      "\n" not in r["answer"], r["answer"])
+r = ask("Tell me everything about MEDUAHP69377")
 a = r["answer"]
 check("Shipment question from run data: a colleague's opening",
       a.startswith("I checked what we have in the run first. MEDUAHP69377 is with MSC."), a[:160])
@@ -253,6 +257,10 @@ check("No search and no model call while neither is set up",
 check("No robotic phrasing", not ROBOTIC.search(a), a[:200])
 
 r = ask("Why did CMAU7700001 fail?")
+check("A plain 'why' gets the recorded reason in a sentence, and that a person decides next",
+      r["answer"].startswith("CMAU7700001 (CMA CGM) failed (CARRIER ACCESS RESTRICTED)") and
+      "decision from the owner" in r["answer"] and "\n" not in r["answer"], r["answer"])
+r = ask("Explain why CMAU7700001 failed")
 a = r["answer"]
 check("Error investigation: the plain-words lead first",
       a.startswith("The run got past the human verification, but CMA CGM still returned its "
@@ -344,7 +352,7 @@ check("Nothing reliable found: said so, nothing invented, no sources",
       "found nothing reliable" in r["answer"] and not r.get("web_sources"), r["answer"][-160:])
 STAND["results"], STAND["search_down"] = "msc", True
 R.clear_cache()
-r = ask("Where is MEDUAHP69377?")
+r = ask("Tell me everything about MEDUAHP69377")
 check("Search service down: ATLAS still answers from the run and says it couldn't check",
       r["answer"].startswith("I checked what we have in the run first.")
       and "couldn't" in r["answer"] and "search service could not be used" in r["answer"],
@@ -381,14 +389,14 @@ r = ask("Where is MEDUAHP69377?")
 check("A phrasing that INVENTS a vessel, IMO, date and 'confirmed': rejected, ATLAS's own answer "
       "shown", (r.get("llm") or {}).get("used") is False
       and "added things ATLAS does not hold" in r["llm"]["reason"]
-      and r["answer"].startswith("I checked what we have in the run first."),
+      and r["answer"].startswith("MEDUAHP69377 (MSC) is due on 10/11/2026"),
       (r.get("llm"), r["answer"][:80]))
 llm_on("slow")
 t0 = time.monotonic()
 r = ask("Where is MEDUAHP69377?")
 check("A model that does not answer within the timeout: ATLAS's own answer, bounded wait",
       (r.get("llm") or {}).get("used") is False and time.monotonic() - t0 < 6
-      and r["answer"].startswith("I checked what we have in the run first."),
+      and r["answer"].startswith("MEDUAHP69377 (MSC) is due on 10/11/2026"),
       (r.get("llm"), round(time.monotonic() - t0, 1)))
 os.environ["ATLAS_LLM_MODEL"] = "not-pulled:1b"
 r = ask("Where is MEDUAHP69377?")

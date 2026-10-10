@@ -255,11 +255,11 @@ rule("2. SEND, THINK, RECEIVE — THE REAL ANSWER, WHOLE, GROUNDED")
 page.evaluate("""() => { const f = window.fetch; window.__hold = 1200;
   window.fetch = (u, o) => String(u).indexOf('/api/ask') >= 0 && window.__hold
     ? new Promise((r) => setTimeout(() => r(f(u, o)), window.__hold)) : f(u, o); }""")
-page.fill("#chatIn", "Why did this fail?")
+page.fill("#chatIn", "Explain why this failed")
 page.press("#chatIn", "Enter")
 page.wait_for_timeout(250)
 check("The question appears at once, right-aligned in the operator's bubble",
-      page.locator("#chatBody .msg.me .bub").last.inner_text().strip() == "Why did this fail?")
+      page.locator("#chatBody .msg.me .bub").last.inner_text().strip() == "Explain why this failed")
 me = page.locator("#chatBody .msg.me").last.bounding_box()
 body_box = page.locator("#chatBody").bounding_box()
 check("...on the right", me["x"] + me["width"] > body_box["x"] + body_box["width"] * 0.7, me)
@@ -283,7 +283,7 @@ check("No fake streaming: the answer is whole the moment it arrives",
 check("...and no typing timer exists in the page",
       "typeOut" not in INDEX and "class=\"cur\"" not in INDEX)
 page.evaluate("window.__hold = 0")
-want = api_ask("Why did this fail?")["answer"]
+want = api_ask("Explain why this failed")["answer"]
 shown = " ".join(bub.text_content().split())
 missing = [plain(l) for l in want.split("\n") if plain(l) and plain(l) not in shown]
 check("Every line of the server's answer is on the page — nothing dropped or added",
@@ -541,7 +541,14 @@ ctx.close()
 
 ctx, page, errors = new_page()
 open_chat(page)
-ask(page, "Why did this fail?")
+short = ask(page, "Why did {0} fail?".format(REF))
+plain_answer = api_ask("Why did {0} fail?".format(REF))["answer"]
+check("A plain question renders as a plain answer: one short paragraph, no card, no disclosure",
+      short.locator("details").count() == 0 and
+      short.locator(".ch-card, .cl-k, .ch-meta, [data-voice]").count() == 0
+      and "\n" not in plain_answer.strip() and len(plain_answer) < 360
+      and REF in short.inner_text(), (len(plain_answer), plain_answer))
+ask(page, "Explain why this failed")
 bub = page.locator("#chatBody .msg.bot .bub").last
 check("A long grounded record folds into one disclosure; the lead stays readable",
       bub.locator("details.cl-group").count() >= 1 and
@@ -589,7 +596,7 @@ check("...the keyboard is not forced up on open",
       page.evaluate("document.activeElement.id") != "chatIn")
 check("...the page behind cannot scroll",
       page.evaluate("getComputedStyle(document.body).overflow") == "hidden")
-ask(page, "Why did this fail?")
+ask(page, "Explain why this failed")
 comp = page.locator("#chat .ch-f").bounding_box()
 check("...the composer sits at the bottom, inside the screen",
       comp["y"] + comp["height"] <= 844 + 1 and comp["y"] > 600, comp)

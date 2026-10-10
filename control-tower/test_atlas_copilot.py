@@ -221,6 +221,10 @@ check("A quiet run produces no notices — nothing to report is reported as noth
 
 rule("11. A FAILURE IS EXPLAINED FROM ITS RECORDED EVENTS ONLY")
 r = ask("Why did the latest shipment fail?")
+check("A plain 'why' gets a plain answer: the shipment, its recorded reason, nothing invented",
+      r["answer"].startswith("057-05765454") and "AFKL NAVIGATION ERROR" in r["answer"] and
+      "\n" not in r["answer"] and r.get("card") is None, r["answer"])
+r = ask("Explain why the latest shipment failed")
 a = r["answer"]
 check("The recorded steps, in order", a.index("Opening AFKL tracking") < a.index("Searching 057-05765454"))
 check("The recorded outcome and reason", "AFKL NAVIGATION ERROR" in a and "did not open" in a)
@@ -232,6 +236,10 @@ bare.run_started(run_id="r3")
 bare.shipment_started({"bol_awb": "111222333", "carrier": "DHL Express", "provider": "DHL"})
 bare.shipment_finished("111222333", "FAILED", "Unexpected page", outcome="UNEXPECTED PAGE STATE")
 a = assistant.answer("Why did 111222333 fail?", bare.snapshot())["answer"]
+check("The short answer states only the recorded reason and class — no steps claimed",
+      "Unexpected page" in a and "UNEXPECTED PAGE STATE" in a and
+      not re.search(r"\b(step|retried|timed out|page load)\b", a, re.I), a)
+a = assistant.answer("Explain why 111222333 failed", bare.snapshot())["answer"]
 check("With no trace recorded, it says so instead of making one up",
       "No step-by-step trace was recorded" in a and "UNEXPECTED PAGE STATE" in a, a)
 

@@ -7220,9 +7220,11 @@ document.addEventListener('click', (e) => {
         // The whole answer arrives at once (the backend answers in one
         // piece); the bubble's entrance is the only motion.
         const wantsDetail = /\b(evidence|details?|facts|everything|show me)\b/i.test(q);
-        const said = voice(q, d);
+        // A short answer (d.brief) is just the answer: no opener line and no
+        // badge row above a sentence that already says both.
+        const said = d.brief ? '' : voice(q, d);
         b.innerHTML = (said ? '<span class="ax-voice" data-voice>' + esc(said) + '</span>' : '') +
-          meta(d) + rich(answerText(d) || 'No answer came back.', wantsDetail);
+          (d.brief ? '' : meta(d)) + rich(answerText(d) || 'No answer came back.', wantsDetail);
         if (d.details) detailsBox(b, d.details, wantsDetail, d.details_title);
         if (d.charts && d.charts.length) chartsBox(b, d.charts);
         if (d.web_sources && d.web_sources.length) sourcesBox(b, d.web_sources, d.research || {});

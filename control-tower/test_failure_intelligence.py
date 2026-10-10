@@ -255,6 +255,12 @@ print("\n--- ATLAS: why the error? ---\n" + text + "\n---")
 check("Not the generic fallback", FALLBACK not in text)
 check("Shipment identity", MSC_REF in text)
 check("Carrier", "MSC" in text)
+check("In a sentence: the ETA was read, and why it was not written (OCEAN_WRITE)",
+      "10/11/2026" in text and "OCEAN_WRITE" in text and "\n" not in text, text)
+r = ask("Explain why the error happened", state)
+text = r["answer"]
+check("Asked to explain: the full diagnosis, for the same shipment", MSC_REF in text and
+      "**Fact**" in text, text[:200])
 check("Successful ETA extraction, as read", "10/11/2026" in text and
       re.search(r"Data extraction succeeded|eta 10/11/2026 was read", text, re.I) is not None)
 check("The read-only write condition, from the run's own declaration",

@@ -542,6 +542,14 @@ def normalise(question):
     return lowered
 
 
+def _phrase_in(phrase, lowered):
+    """A phrase in the question. A very short bare word ("eta", "hey", "csv")
+    must be a whole word: "details" contains "eta", "they" contains "hey"."""
+    if len(phrase) <= 3 and phrase.isalpha():
+        return re.search(r"\b" + re.escape(phrase) + r"\b", lowered) is not None
+    return phrase in lowered
+
+
 def detect_intent(question):
     """
     First intent with a matching phrase wins; INTENTS is ordered by specificity.
@@ -553,7 +561,7 @@ def detect_intent(question):
     words = len(lowered.split())
 
     for name, phrases in INTENTS:
-        if not any(phrase in lowered for phrase in phrases):
+        if not any(_phrase_in(phrase, lowered) for phrase in phrases):
             continue
         if name in ("greeting", "thanks") and words > 6:
             continue          # pleasantry attached to a real question
@@ -3152,10 +3160,24 @@ def answer(question, state, context=None):
             from intelligence import converse
             if converse.enabled():
                 return _labelled(_also_waiting(
-                    converse.answer(question, state, context, _answer_rules), state))
+                    converse.answer(question, state, context, _answer_chat), state))
         except Exception:
             pass
-    return _labelled(_also_waiting(_answer_rules(question, state, context), state))
+    return _labelled(_also_waiting(_answer_chat(question, state, context), state))
+
+
+def _answer_chat(question, state, context=None):
+    """
+    The rules' answer, as the chat says it: a sentence or two for an everyday
+    question (dashboard/brief.py), the full sectioned answer when details are
+    asked for. Presentation only — the same records, nothing else changes.
+    """
+    reply = _answer_rules(question, state, context)
+    try:
+        from dashboard import brief
+        return brief.concise(question, reply, state, RunData(state))
+    except Exception:
+        return reply
 
 
 def _also_waiting(reply, state):
@@ -3183,14 +3205,14 @@ def _also_waiting(reply, state):
     return reply
 
 
-TEST_DATA_LABEL = ("**TEST DATA** — this dashboard is showing a labelled demonstration "
-                   "run (atlas_demo.py --test-data), not a real automation run.")
+# Short, so the answer still comes first; the dashboard says the rest.
+TEST_DATA_LABEL = "**TEST DATA** ·"
 
 
 def _labelled(reply):
     """Every answer says so when the run on screen is the demo's test data."""
     if os.environ.get("ATLAS_DEMO_TEST_DATA") == "1" and isinstance(reply, dict):
-        reply["answer"] = TEST_DATA_LABEL + "\n\n" + (reply.get("answer") or "")
+        reply["answer"] = TEST_DATA_LABEL + " " + (reply.get("answer") or "")
         reply["data_origin"] = "test"
     return reply
 

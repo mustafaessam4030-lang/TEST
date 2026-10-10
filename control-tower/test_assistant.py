@@ -82,8 +82,18 @@ print("1. GROUNDED ANSWERS FROM REAL DATA")
 print("=" * 68)
 
 r = full("Where is shipment 1570046231?", STATE)
-a, card_ = r["answer"], r["card"]
+a = r["answer"]
 check("Shipment lookup finds the record", "1570046231" in a)
+check("...and answers in a sentence or two, from the record: carrier, ATA, ETA, written",
+      a == "1570046231 (QATAR AIRWAYS) arrived on 20/08/2026, carrier ETA 24/08/2026. "
+           "I wrote it to the Hub.", a)
+check("...with no card, heading or list in a normal answer",
+      r.get("card") is None and "**" not in a and "\n" not in a and "•" not in a)
+check("...and one tap to the full details", r["suggestions"][0] == "Tell me everything about 1570046231",
+      str(r["suggestions"]))
+r = full("Full details for shipment 1570046231", STATE)
+card_ = r["card"]
+check("Asking for the full details brings the card back", card_ is not None)
 rows = dict((k, v) for k, v in card_["rows"])
 check("Reports the real carrier", rows["Carrier"] == "QATAR AIRWAYS", rows["Carrier"])
 check("Reports the real carrier ETA", rows["Carrier ETA"] == "24/08/2026")
@@ -100,8 +110,12 @@ check("Failure reason is the real error", "Save/Update button" in a)
 check("Failure reports the outcome class", "UNEXPECTED PAGE STATE" in a)
 
 a = ask("How many shipments failed?", STATE)
-check("Counts are correct", "Failed: 1" in a and "Skipped: 1" in a, a[:80])
-check("Updated count is correct", "Updated in the hub: 2" in a)
+check("'How many failed?' answers that, with the reference", a == "1 shipment failed: 8842001173.", a)
+a = ask("How many shipments were written to the Hub?", STATE)
+check("Updated count is correct", a == "2 shipments were written to the Hub.", a)
+a = ask("How many shipments failed, in detail?", STATE)
+check("...and the full counters are there when asked for",
+      "Failed: 1" in a and "Skipped: 1" in a and "Updated in the hub: 2" in a, a[:80])
 
 a = ask("Show me shipments with no ETA.", STATE)
 check("No-ETA list finds both", "1570049117" in a and "8842001173" in a)
@@ -132,7 +146,7 @@ check("Unknown reference invents no carrier",
 
 a = ask("What is the ETA for 1570049117?", STATE)
 check("Missing ETA is reported as missing",
-      "no carrier eta" in a.casefold(), a[:70])
+      "didn't give an eta" in a.casefold() or "no carrier eta" in a.casefold(), a[:70])
 check("Missing ETA invents no date", not DATE.search(a))
 
 a = ask("Tell me about 1570046231, what is the destination?", STATE)
@@ -147,7 +161,8 @@ check("Origin is declared unavailable", "not available" in a.casefold()
 
 empty = ControlTowerState().snapshot()
 a = ask("How many shipments failed?", empty)
-check("Empty run reports zeros, not guesses", "Failed: 0" in a)
+check("Empty run reports nothing processed, not guesses",
+      a == "No shipments have been processed yet.", a)
 a = ask("Where is shipment 5271993480?", empty)
 check("Empty run refuses a lookup", "nothing on" in a.casefold(), a[:70])
 
@@ -192,14 +207,18 @@ a = ask("What is the latest event?", STATE)
 check("Latest events come from the timeline", len(a) > 20 and "—" in a, a[:60])
 
 a = ask("What happened during the latest run?", STATE)
-check("Run summary reports real counters", "1 updated" in a or "updated" in a, a[:60])
+check("Run summary reports real counters",
+      "2 written to the Hub" in a and "1 failed" in a and "4 processed" in a, a[:90])
 
 print()
 print("=" * 68)
 print("2c. FOLLOW-UP CONTEXT AND CARDS")
 print("=" * 68)
 r = full("What is the status of 1570046231?", STATE)
-check("Shipment answer carries a card", r["card"] is not None)
+check("A plain status question gets a sentence, not a card", r["card"] is None and
+      "1570046231" in r["answer"])
+r = full("Full details for 1570046231", STATE)
+check("Shipment answer carries a card when the details are asked for", r["card"] is not None)
 check("Card is for the right shipment", r["card"]["reference"] == "1570046231")
 check("Card exposes carrier and ETA rows",
       any(row[0] == "Carrier ETA" and row[1] == "24/08/2026" for row in r["card"]["rows"]))
