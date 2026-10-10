@@ -56,7 +56,7 @@ SUITES = [
     ("test_human_queue.py",    "Human Action Queue: states, choosing, safe points, main()"),
     ("test_atlas_operations.py", "ATLAS + queue: conversation, operations, security boundary"),
     ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
-    ("test_atlas_state.py",    "ATLAS state engine + Potato Garden: transitions, verification, safety"),
+    ("test_potato_mode.py",    "Potato Mode: one joke per incident, harvest on verification, never in the way"),
     ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
     ("test_work_list.py",      "ATLAS work list: every failure planned, the run never stops"),
     ("test_po.py",              "PO Automation: eHub → Bill Entry → extract → validate → template → save → Graph"),

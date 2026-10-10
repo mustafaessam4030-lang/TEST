@@ -92,8 +92,8 @@ def seed_test_run(bridge):
     for ship, result, outcome, detail, outcome_class in rows:
         bridge.shipment_started(ship)
         if outcome == "FAILED":
-            # A recovery that runs out of options: what puts ATLAS in
-            # RECOVERING and plants a potato (intelligence/atlas_state.py).
+            # A recovery that runs out of options: three errors on one
+            # incident, enough for Potato Mode (intelligence/potato.py).
             bridge.recovery_plan("UNEXPECTED PAGE STATE", detail,
                                  ["reload_page", "reopen_manage", "alternate_selector"],
                                  {}, True)
@@ -232,7 +232,7 @@ def main():
         # The test run never reaches ATLAS's real learning store.
         os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="atlas_demo_")
         os.environ["ATLAS_DEMO_TEST_DATA"] = "1"
-        bridge.persist_atlas_state()          # the temporary folder above
+        bridge.persist_potato()               # the temporary folder above
         seed_test_run(bridge)
         print("  data          TEST DATA — every answer is labelled as such")
         shots = seed_test_captures(Path(os.environ["ATLAS_INTEL_DIR"]) / "demo_captures")

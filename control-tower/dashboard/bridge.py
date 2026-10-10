@@ -155,20 +155,20 @@ def _verified_outcome(result, verification):
             all(v is True for v in values)
 
 
-def _state_engine(persist):
+def _potato(persist):
     """
-    ATLAS's state engine, with the store's persistence and configuration
-    when `persist` (the automation attached the store), else in memory.
+    Potato Mode, with the store's persistence and configuration when
+    `persist` (the automation attached the store), else in memory.
     """
     try:
-        from intelligence import atlas_state as _as
+        from intelligence import potato as _p
         if not persist:
-            return _as.StateEngine()
+            return _p.PotatoMode()
         from intelligence import store as _st
-        return _as.StateEngine(
-            _st.load_json(_as.CONFIG_FILE, {}),
-            load=lambda: _st.load_json(_as.STATE_FILE, None),
-            save=lambda data: _st.admitted() and _st.save_json(_as.STATE_FILE, data))
+        return _p.PotatoMode(
+            _st.load_json(_p.CONFIG_FILE, {}),
+            load=lambda: _st.load_json(_p.STATE_FILE, None),
+            save=lambda data: _st.admitted() and _st.save_json(_p.STATE_FILE, data))
     except Exception:
         return None
 
@@ -244,10 +244,11 @@ class ControlTowerState:
         self._retried = set()
         # Where the same lines go in the run log (the automation sets it).
         self.log_hook = None
-        # ATLAS's simulated state and the Potato Garden (intelligence/
-        # atlas_state.py). Observe-only: fed the events below, it never
-        # changes what the run does. In memory until the store is attached.
-        self.atlas_state = _state_engine(persist=False)
+        # Potato Mode (intelligence/potato.py): a joke after repeated errors
+        # on one incident, a potato when it is resolved and verified. Fed the
+        # events below; it never changes what the run does. In memory until
+        # the store is attached.
+        self.potato = _potato(persist=False)
 
         self.atlas_events = deque(maxlen=MAX_ATLAS_EVENTS)
         self.atlas_influenced_actions = 0
@@ -407,10 +408,9 @@ class ControlTowerState:
             elif verified is False or result == "FAILED":
                 self._intel_event("verification_failed", ref, action=action,
                                   result=result, verified=verified)
-                self._observe("attempt_failed", key="af|{0}|{1}|{2}|{3}".format(
+                self._observe("error", key="af|{0}|{1}|{2}|{3}".format(
                     self.run_id, ref, self.recovery.get("started"), index),
-                    reference=ref, action=action,
-                    error_class=self.recovery.get("error_class"))
+                    reference=ref, problem=self.recovery.get("error_class"))
             self.recovery["status"] = "RUNNING"
             self._touch()
 
@@ -432,13 +432,11 @@ class ControlTowerState:
                               self.recovery.get("reference"),
                               error_class=self.recovery.get("error_class"),
                               verified=verified, reason=reason)
-            last = (self.recovery.get("attempts") or [{}])[-1]
-            self._observe("recovery_completed" if recovered else "recovery_exhausted",
-                          key="rd|{0}|{1}|{2}".format(self.run_id, self.recovery.get("reference"),
-                                                       self.recovery.get("started")),
-                          reference=self.recovery.get("reference"),
-                          error_class=self.recovery.get("error_class"),
-                          action=last.get("action"), verified=verified)
+            if not recovered:
+                self._observe("error", key="rd|{0}|{1}|{2}".format(
+                    self.run_id, self.recovery.get("reference"), self.recovery.get("started")),
+                    reference=self.recovery.get("reference"),
+                    problem=self.recovery.get("error_class"))
             self._archive_recovery()
             self._mark("ok" if recovered else "warn",
                        "ATLAS recovery {0}".format(
@@ -640,8 +638,6 @@ class ControlTowerState:
                     self.successful, self.skipped, self.failed
                 ),
             )
-            self._observe("run_finished", key="rf|{0}|{1}".format(self.run_id, status),
-                          status=status)
             self._touch()
 
     @_guard
@@ -953,17 +949,17 @@ class ControlTowerState:
         """Record outcomes to ATLAS's event store from now on (or stop: None)."""
         self.intel = events
         if events is not None:
-            self.persist_atlas_state()
+            self.persist_potato()
 
-    def persist_atlas_state(self):
-        """Keep ATLAS's state and garden in the store folder from now on."""
-        engine = _state_engine(persist=True)
+    def persist_potato(self):
+        """Keep the potato count in the store folder from now on."""
+        engine = _potato(persist=True)
         if engine is not None:
-            self.atlas_state = engine
+            self.potato = engine
 
-    def _atlas_state_view(self):
-        """The engine's view, with Human Action priority from this state. Lock held."""
-        engine = self.atlas_state
+    def _potato_view(self):
+        """Potato Mode for the page; no joke while a Human Action waits. Lock held."""
+        engine = self.potato
         if engine is None:
             return None
         try:
@@ -975,8 +971,8 @@ class ControlTowerState:
             return None
 
     def _observe(self, event, key=None, **fields):
-        """One event for ATLAS's state engine. Display only; never raises."""
-        engine = self.atlas_state
+        """One event for Potato Mode. Display only; never raises."""
+        engine = self.potato
         if engine is None:
             return
         try:
@@ -991,19 +987,7 @@ class ControlTowerState:
             return
         try:
             fields.setdefault("run_id", self.run_id)
-            written = intel.record(kind, **fields)
-            if written and kind == "recovery":
-                actions = [a.get("action") for a in (fields.get("attempts") or [])
-                           if a.get("verified") is True]
-                self._observe("learning_recorded",
-                              key="lr|{0}|{1}|{2}".format(self.run_id, fields.get("reference"),
-                                                          fields.get("error_class")),
-                              reference=fields.get("reference"), kind="recovery",
-                              status=fields.get("status"), error_class=fields.get("error_class"),
-                              action=actions[-1] if actions else None,
-                              verified=(fields.get("recovery_verified") is True
-                                        and fields.get("shipment_verified") is True))
-            if written and kind in ("shipment", "recovery"):
+            if intel.record(kind, **fields) and kind in ("shipment", "recovery"):
                 self._intel_event(
                     "learning_recorded", fields.get("reference"), kind=kind,
                     verified=bool(fields.get("verified") if kind == "shipment"
@@ -1204,8 +1188,6 @@ class ControlTowerState:
     def shipment_started(self, shipment):
         with self._lock:
             reference = shipment.get("bol_awb")
-            self._observe("shipment_started", key="ss|{0}|{1}|{2}".format(
-                self.run_id, reference, reference in self._retried), reference=reference)
             record = {
                 "reference": reference,
                 "carrier": shipment.get("carrier"),
@@ -1443,12 +1425,14 @@ class ControlTowerState:
             if result != "HUMAN_QUEUED":
                 self._failure_intelligence(record)
                 self._emit_outcome(record, result)
-            self._observe("shipment_finished", key="sf|{0}|{1}|{2}|{3}".format(
-                self.run_id, reference, result, reference in self._retried),
-                reference=reference, result=result,
-                verified=_verified_outcome(result, record.get("verification")),
-                error_class=(record.get("failure") or {}).get("category")
-                or record.get("outcome"))
+            if result in ("FAILED", "HUMAN_TIMEOUT"):
+                self._observe("error", key="sf|{0}|{1}|{2}|{3}".format(
+                    self.run_id, reference, result, reference in self._retried),
+                    reference=reference, problem=(record.get("failure") or {}).get("category")
+                    or record.get("outcome") or result)
+            elif _verified_outcome(result, record.get("verification")):
+                self._observe("verified", key="sv|{0}|{1}".format(self.run_id, reference),
+                              reference=reference)
 
             self.current_shipment = None
             self.current_step = "Waiting before next shipment"
@@ -1597,8 +1581,8 @@ class ControlTowerState:
                 # ATLAS's operational intelligence log, newest first.
                 "intel_log": list(self.intel_log)[:100],
                 "retry_queue": list(self.retry_queue),
-                # ATLAS's simulated state and the Potato Garden: display only.
-                "atlas_state": self._atlas_state_view(),
+                # Potato Mode: a joke and a fun counter, display only.
+                "potato": self._potato_view(),
                 "atlas": {
                     "name": ATLAS_NAME,
                     "full_name": ATLAS_FULL_NAME,

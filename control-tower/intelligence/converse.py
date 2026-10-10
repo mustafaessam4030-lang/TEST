@@ -370,10 +370,10 @@ def _answer(question, state, context, rules):
     # call is skipped — one model call instead of two, half the queue.
     direct = rules(question, state, inner) if lang == "en" else None
     route = "model"
-    if direct and direct.get("intent") == "atlas_state":
-        # Read straight from the state engine: nothing for a model to add.
-        direct["llm"] = {"used": False, "mode": "atlas_state",
-                         "reason": "read directly from ATLAS's state engine"}
+    if direct and direct.get("intent") == "potato":
+        # Read straight from Potato Mode: nothing for a model to add.
+        direct["llm"] = {"used": False, "mode": "potato",
+                         "reason": "read directly from Potato Mode"}
         return direct
     if direct and direct.get("intent") in ("analysis", "report") and direct.get("charts"):
         # Counts and charts computed from the run: exact, instant, nothing
@@ -612,7 +612,7 @@ def _image(question, state, context, inner, rules, lang, timings, started):
 # Intents the rules answer from the run's records. "general_knowledge" and
 # "filter" are left to the model: they may need the web.
 RECORD_INTENTS = {
-    "atlas_state",
+    "potato",
     "shipment", "eta", "ata", "carrier", "failure_why", "failure_what", "skipped",
     "summary", "run", "compare", "attention", "human", "latest_failure", "stuck",
     "story", "changed", "report", "briefing", "carrier_health", "carrier_timing",

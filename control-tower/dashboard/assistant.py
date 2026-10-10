@@ -402,10 +402,8 @@ INTENTS = [
                      "self-heal", "self heal"]),
     # Charts on request; "give me the analysis" stays the written report
     # (which carries the same charts, below) with its CSV downloads.
-    # ATLAS's simulated state and the Potato Garden (display only).
-    ("atlas_state", ["potato", "garden", "your state", "your mood", "how do you feel",
-                     "how are you feeling", "are you frustrated", "why are you frustrated",
-                     "atlas state", "what state are you", "بطاطس", "البطاطس"]),
+    # Potato Mode, the Easter egg (display only).
+    ("potato",      ["potato", "potatoes", "بطاطس", "البطاطس"]),
     ("analysis",    ["chart", "graph", "visualis", "visualiz", "plot the", "plot of",
                      "show me the numbers"]),
     ("story",       ["what happened to", "walk me through", "timeline of",
@@ -724,48 +722,31 @@ OUTCOMES = [("updated", "Written to the Hub"), ("partial", "Partly written"),
             ("processing", "In progress")]
 
 
-def _answer_atlas_state(data, question=""):
-    """
-    ATLAS's simulated state and the Potato Garden, read from the state engine
-    (intelligence/atlas_state.py) through the run snapshot. Read-only: nothing
-    said here plants, harvests or changes anything.
-    """
-    st = data.state.get("atlas_state") if isinstance(data.state, dict) else None
-    if not isinstance(st, dict):
-        return {"text": "My state display is not available in this view.", "atlas_state": None}
-    lines = ["I'm **{0}** right now, since {1}. That's a simulated status for display, "
-             "not a feeling.".format(st.get("label"), st.get("since")),
-             "Why: {0}".format(st.get("reason"))]
-    if st.get("priority") == "human_action":
-        lines.append("A Human Action is waiting, and that comes first.")
-    elif st.get("message"):
-        lines.append(st["message"])
-    moves = st.get("transitions") or []
-    if moves:
-        lines.append("Recent changes:")
-        for t in moves[:4]:
-            lines.append("• {0}: {1} → {2}, {3}".format(t.get("at"), t.get("from"),
-                                                       t.get("to"), t.get("reason")))
-    g = st.get("garden") or {}
-    current = g.get("current")
-    lines.append("Potato Garden 🥔 ({0}): {1} planted, {2} harvested.".format(
-        "gamification only, not an operational metric", g.get("planted", 0), g.get("harvests", 0)))
-    if current:
-        lines.append("Growing now: {0}, a {1} from the incident on {2}, planted {3}.".format(
-            current.get("id"), current.get("stage_name"), current.get("reference") or "a shipment",
-            current.get("planted_at")))
-    latest = st.get("latest_verified_recovery")
-    if latest:
-        lines.append("Latest verified recovery: {0} on {1} ({2}), recorded {3}.".format(
-            latest.get("solution") or "a recovery", latest.get("reference"),
-            latest.get("problem") or "error", latest.get("at")))
-    else:
-        lines.append("No verified recovery has been recorded yet.")
+def _answer_potato(data, question=""):
+    """Potato Mode (intelligence/potato.py), read-only: a joke and a fun counter."""
+    p = data.state.get("potato") if isinstance(data.state, dict) else None
+    if not isinstance(p, dict):
+        return {"text": "No potatoes in this view 🥔", "potato": None}
+    lines = []
+    if p.get("active") and p.get("message"):
+        ctx = p.get("context") or {}
+        lines.append(p["message"])
+        lines.append("({0} errors on {1}{2}. Recovery and root-cause work carry on as "
+                     "normal.)".format(ctx.get("errors"), ctx.get("reference"),
+                                       ", " + ctx["problem"] if ctx.get("problem") else ""))
+    lines.append("Potatoes harvested: {0} 🥔 (planted {1}). One is planted after {2} errors on "
+                 "the same shipment, and harvested when that shipment is fixed and verified. "
+                 "Just for fun, not an operational metric.".format(
+                     p.get("harvests", 0), p.get("planted", 0), p.get("threshold")))
+    if p.get("last_harvest"):
+        h = p["last_harvest"]
+        lines.append("Last harvest: {0} ({1}), {2}.".format(h.get("reference"),
+                                                          h.get("problem") or "error", h.get("at")))
     q = str(question or "").lower()
     if any(w in q for w in ("plant", "harvest", "grow", "ازرع", "إزرع")):
-        lines.append("I can't plant or harvest on request: a potato is planted only by a real "
-                     "recovery incident and harvested only when that shipment is verified.")
-    return {"text": "\n".join(lines), "atlas_state": st}
+        lines.append("I can't plant or harvest on request: only real errors plant them, and only "
+                     "a verified fix harvests them 😄")
+    return {"text": "\n".join(lines), "potato": p}
 
 
 def _answer_analysis(data):
@@ -3497,7 +3478,7 @@ def _answer_core(question, state, context=None):
             "average": lambda: _answer_average(data),
             "compare": lambda: _answer_compare(data),
             "analysis": lambda: _answer_analysis(data),
-            "atlas_state": lambda: _answer_atlas_state(data, question),
+            "potato": lambda: _answer_potato(data, question),
             "duration": lambda: _answer_duration(data),
             "health": lambda: _answer_health(data),
             "history": lambda: _answer_history(data),
