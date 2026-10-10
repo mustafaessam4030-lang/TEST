@@ -5249,6 +5249,7 @@ function paintPO(){
     '<td>' + esc(j.supplier || '—') + '</td><td class="mono">' + esc(j.identifier || j.number || '—') + '</td>' +
     '<td class="wrap">' + esc(j.document || '—') + '</td>' +
     '<td>' + poPill(j) + poSource(j) +
+    (j.signatures ? '<div class="po-heal" title="Signatures recorded with evidence only — none are assumed">' + esc(j.signatures) + '</div>' : '') +
     (j.atlas_healing ? '<div class="po-heal" title="Tested in isolation on the kept PDF; the job keeps its state">🩺 ' + esc(j.atlas_healing) + '</div>' : '') +
     (poRunning(j) && poAt(j.state)
       ? '<span class="po-bar po-mini" title="' + esc(poAt(j.state).label) + '"><i style="width:' +

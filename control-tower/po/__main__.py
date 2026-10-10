@@ -656,6 +656,103 @@ def cmd_send(args):
     return 0 if outcome in ("SENT", "CONFIRMED") else 1
 
 
+def _job_or_report(key):
+    record, folder, searched = find_job(key)
+    if record is None:
+        print("no PO job for {0}".format(key), file=sys.stderr)
+        for path, count in searched:
+            print("  searched {0} — {1} job(s)".format(path, count), file=sys.stderr)
+    return record, folder
+
+
+def _print_preview(preview):
+    v = preview["validation"]
+    print("FROM        {0}".format(preview["from"] or "NOT CONFIGURED (PO_MAIL_SENDER)"))
+    print("TO          {0}".format(preview["to"] or "—"))
+    print("SUBJECT     {0}".format(preview["subject"] or "—"))
+    print("ATTACHMENT  {0} · {1} bytes · sha256 {2}".format(
+        preview["attachment"], preview["attachment_bytes"], preview["attachment_sha256"]))
+    print("BODY\n  " + "\n  ".join((preview["body"] or "—").splitlines()))
+    print("VALUES      " + "; ".join("{0} = {1}".format(k, v_) for k, v_ in
+                                     preview["values"].items()))
+    print("VALIDATION  {0} · {1} checks · blocking failures: {2}".format(
+        v["decision"], v["checks"], ", ".join(v["failed"]) or "none"))
+    print("TEMPLATE    read back as this job's: {0}".format(
+        "yes" if preview["template_read_back"] else "NO"))
+    print("GRAPH       {0}".format("configured" if preview["graph_configured"] else
+                                   "MISSING: " + ", ".join(preview["graph_missing"])))
+    if preview["blocking"]:
+        print("NOT SENDABLE YET:")
+        for r in preview["blocking"]:
+            print("  - " + r)
+
+
+def cmd_email_preview(args):
+    """Prepare (if needed) and show exactly what would be sent. Sends nothing."""
+    record, folder = _job_or_report(args.job)
+    if record is None:
+        return 2
+    store = S.Store(folder=folder)
+    if record["state"] == S.SAVED:
+        record, reasons = P.prepare_email(store, record, args.to)
+        if reasons:
+            print("STOPPED — the email is not prepared:")
+            for r in reasons:
+                print("  - " + r)
+            return 1
+    elif record["state"] != S.EMAIL_PREPARED:
+        print("STOPPED — the job is {0}: only a SAVED job (validated, template saved and read "
+              "back) gets an email.".format(S.LABELS.get(record["state"], record["state"])))
+        return 1
+    elif (record.get("email") or {}).get("recipient") != args.to:
+        print("STOPPED — this job's email is prepared for {0}, not {1}.".format(
+            (record.get("email") or {}).get("recipient"), args.to))
+        return 1
+    print("job folder: {0}\njob: {1} · {2} · {3}\n".format(folder, record["po_id"],
+                                                         record["reference"], record["state"]))
+    _print_preview(P.email_preview(store, record))
+    print("\nNothing was sent.")
+    return 0
+
+
+def cmd_authorize_send(args):
+    """The named person authorizes this one email — then it is sent and checked."""
+    from po import authorize as A
+    from po.mail import GraphMailer, configured
+    record, folder = _job_or_report(args.job)
+    if record is None:
+        return 2
+    store = S.Store(folder=folder)
+    ok, missing = configured()
+    if not ok:
+        print("STOPPED — Microsoft Graph is not configured: missing " + ", ".join(missing))
+        return 1
+    if args.confirm != "SEND":
+        print("STOPPED — type --confirm SEND to authorize this one email.")
+        return 1
+    granted, reasons = A.grant(store, record, args.to, args.by)
+    if not granted:
+        print("STOPPED — not authorized:")
+        for r in reasons:
+            print("  - " + r)
+        return 1
+    record = store.get(record["po_id"])
+    blocking = P.blocked_reasons(store, record)
+    if blocking:
+        print("STOPPED — the gate refuses the send:")
+        for r in blocking:
+            print("  - " + r)
+        return 1
+    record, outcome = P.send(store, record, GraphMailer(), by=args.by)
+    email = record.get("email") or {}
+    print("RESULT      {0}".format(outcome))
+    print("STATE       {0}".format(record["state"]))
+    print("SENT ITEMS  {0}".format(email.get("confirmation") or email.get("reconciliation") or
+                                   email.get("reasons") or "not found yet"))
+    print("MESSAGE ID  {0}".format(email.get("internet_message_id") or "—"))
+    return 0 if outcome == "CONFIRMED" else 1
+
+
 def cmd_read(args):
     doctype = doctypes.get(args.doctype)
     data = Path(args.file).read_bytes()
@@ -714,6 +811,16 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("process")
     p.add_argument("--po-id", required=True)
+    ep = sub.add_parser("email-preview", help="prepare and show exactly what would be "
+                                              "emailed (nothing is sent)")
+    ep.add_argument("job")
+    ep.add_argument("--to", required=True)
+    au = sub.add_parser("authorize-send", help="authorize and send ONE prepared PO email, then "
+                                               "verify it in Sent Items")
+    au.add_argument("job")
+    au.add_argument("--to", required=True)
+    au.add_argument("--by", required=True)
+    au.add_argument("--confirm", default="")
     s = sub.add_parser("send")
     s.add_argument("--po-id", required=True)
     s.add_argument("--by")
@@ -762,6 +869,7 @@ def main(argv=None):
                    help="print every row of the PDF with its words' positions")
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
+            "email-preview": cmd_email_preview, "authorize-send": cmd_authorize_send,
             "ehub-check": cmd_check, "sweep": cmd_sweep,
             "read": cmd_read, "recover": cmd_recover, "explain": cmd_explain, "trace": cmd_trace,
             "quality": cmd_quality, "readiness": cmd_readiness, "supply": cmd_supply,

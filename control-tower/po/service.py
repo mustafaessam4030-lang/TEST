@@ -246,9 +246,10 @@ def card(record):
     email = record.get("email") or {}
     validation = record.get("validation") or {}
     output = record.get("output") or {}
-    from po import heal as H
+    from po import heal as H, signatures as SG
     return {
         "atlas_healing": H.status_line(record),
+        "signatures": SG.line(record),
         "po_id": record["po_id"], "reference": record["reference"],
         "number": record.get("number"), "doctype": record["doctype"],
         "identifier": record.get("identifier"),

@@ -58,6 +58,7 @@ SUITES = [
     ("test_intelligence.py",   "ATLAS learning: verified signals, plans, evidence, vision, stars"),
     ("test_po_progress_ui.py", "PO page: a running job is visibly working (banner, real step, bars)"),
     ("test_po_heal.py", "ATLAS PO self-healing: isolated test, verified before learned, job untouched"),
+    ("test_po_email.py", "PO email: preview, one authorized send, Sent Items check, signatures never assumed"),
     ("test_chat_brief.py",     "ATLAS chat: a normal answer to a normal question, details on request"),
     ("test_potato_mode.py",    "Potato Mode: one joke per incident, harvest on verification, never in the way"),
     ("test_failure_intelligence.py", "ATLAS failure intelligence: why, recovery plan, learning"),
