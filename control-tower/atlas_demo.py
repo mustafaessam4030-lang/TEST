@@ -215,8 +215,9 @@ def main():
         os.environ["ATLAS_LLM_TIMEOUT_S"] = str(args.timeout)
         # A slow answer falls back to the rules once, rather than waiting twice.
         os.environ.setdefault("ATLAS_LLM_RETRIES", "0")
-        # Leave one core for the dashboard's browser (see ATLAS_LLM_THREADS).
-        os.environ.setdefault("ATLAS_LLM_THREADS", str(max(1, (os.cpu_count() or 2) - 1)))
+        # Leave cores for the browser and the dashboard (autoconfig.model_threads).
+        from intelligence.autoconfig import model_threads
+        os.environ.setdefault("ATLAS_LLM_THREADS", str(model_threads()))
         # The same bounded queue as the tower (intelligence/autoconfig.py).
         os.environ.setdefault("ATLAS_LLM_SLOTS", "1")
         os.environ.setdefault("ATLAS_LLM_QUEUE", "2")

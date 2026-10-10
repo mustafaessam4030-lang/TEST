@@ -250,10 +250,9 @@ def ask(question, st=None):
 
 why = ask("Why did the error happen?")
 check("The short answer: verification got through, the carrier still restricted access, "
-      "nothing written — and the recorded reason with its URL",
+      "nothing written, in one paragraph",
       "human verification" in why["answer"] and "access-restricted" in why["answer"] and
-      "nothing was written to the Hub" in why["answer"] and
-      BASE + "/result?ref=" + RESTRICTED_REF in why["answer"] and "\n" not in why["answer"],
+      "nothing was written to the Hub" in why["answer"] and "\n" not in why["answer"],
       why["answer"])
 why = ask("Explain why the error happened")
 print("\n--- Explain why the error happened ---\n" + why["answer"][:1800] + "\n---")

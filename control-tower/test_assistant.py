@@ -242,7 +242,7 @@ print("2d. CONVERSATION, ANALYSIS AND DOWNLOADS")
 print("=" * 68)
 for greeting in ["hi", "hello there", "good morning"]:
     a = ask(greeting, STATE)
-    check("Greets: {0!r}".format(greeting), "Hello" in a, a[:40])
+    check("Greets: {0!r}".format(greeting), a.startswith("Hi! 👋"), a[:40])
 check("A greeting attached to a question is NOT treated as a greeting",
       "8842001173" in ask("hi, which shipments failed?", STATE))
 check("Thanks is acknowledged", "Any time" in ask("thanks!", STATE))

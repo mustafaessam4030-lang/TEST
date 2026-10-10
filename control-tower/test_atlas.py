@@ -380,8 +380,8 @@ print()
 print("=" * 72)
 print("9. THE UI RENDERS ATTRIBUTION FROM RECORDED STATE ONLY")
 print("=" * 72)
-check("The card is titled ATLAS",
-      '<div class="card-t">ATLAS</div>' in UI)
+check("The card is titled ATLAS (in plain words: 'ATLAS learning')",
+      '>ATLAS learning</div>' in UI)
 check("...with the full name beneath it",
       "Adaptive Logistics Strategy Engine" in UI)
 check("...and the old generic title is gone",

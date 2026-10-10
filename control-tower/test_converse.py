@@ -403,9 +403,26 @@ converse.answer("ما هي الشحنات التي فشلت؟", STATE, {}, assis
 check("Arabic still goes through 'understand'", ar.systems[0].startswith("You route"))
 thanks = Scripted({"answer": "You're welcome, happy to help!"})
 use(thanks)
+t0 = time.time()
 r = converse.answer("thanks atlas", STATE, {}, assistant._answer_rules)
-check("Thanks: a warm model reply in one call", r["intent"] == "chat" and
-      r["llm"]["used"] and len(thanks.prompts) == 1, r["answer"])
+check("Thanks: a warm reply at once, with no model call", r["intent"] == "thanks" and
+      not r["llm"]["used"] and len(thanks.prompts) == 0 and "😊" in r["answer"] and
+      time.time() - t0 < 1, r["answer"])
+r = converse.answer("hello", STATE, {}, assistant._answer_rules)
+os.environ.update({"ATLAS_LLM_SLOTS": "1", "ATLAS_LLM_QUEUE": "0"})
+converse._GATE["running"] += 1                     # another question holds the model
+t0 = time.time()
+busy_hello = converse.answer("hello", STATE, {}, assistant._answer_rules)
+converse._GATE["running"] -= 1
+for k in ("ATLAS_LLM_SLOTS", "ATLAS_LLM_QUEUE"):
+    os.environ.pop(k, None)
+check("While the model is busy and the queue is full, 'hello' is still answered at once",
+      busy_hello["intent"] == "greeting" and busy_hello["answer"].startswith("Hi! 👋")
+      and time.time() - t0 < 1 and "busy" not in busy_hello["answer"].lower(),
+      busy_hello["answer"][:80])
+check("Hello: a warm reply at once, with no model call", r["intent"] == "greeting" and
+      not r["llm"]["used"] and len(thanks.prompts) == 0 and r["answer"].startswith("Hi! 👋"),
+      r["answer"])
 use(Scripted(llm.LLMError("the local model is not reachable (timed out)")))
 r = converse.answer("im so sad", STATE, {}, assistant._answer_rules)
 check("A personal message the model cannot reach gets a kind word, not 'not in the records'",
@@ -577,8 +594,10 @@ check("Model installed and pulled: conversation switched on",
       os.environ.get("ATLAS_LLM_PROVIDER") == "ollama" and
       os.environ.get("ATLAS_LLM_MODEL") == "qwen3.5:4b", lines)
 check("Search answering: web research switched on", os.environ.get("ATLAS_SEARCH_URL") == BASE)
-check("A core is left for Edge and the automation",
-      int(os.environ["ATLAS_LLM_THREADS"]) == max(1, (os.cpu_count() or 2) - 1))
+from intelligence.autoconfig import model_threads              # noqa: E402
+check("Cores are left for Edge, the automation and the dashboard (at least two, or a quarter)",
+      int(os.environ["ATLAS_LLM_THREADS"]) == model_threads() and
+      [model_threads(c) for c in (2, 4, 8, 16)] == [1, 2, 6, 12])
 check("The model is loaded once in the background, kept for the day",
       LOADS and LOADS[0].get("model") == "qwen3.5:4b" and LOADS[0].get("keep_alive") == "8h")
 check("The startup lines say what is on", any("conversation: ON" in x for x in lines))

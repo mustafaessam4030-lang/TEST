@@ -633,9 +633,13 @@ for size in ("s", "m", "l"):
 check("Three sizes, one tap each: Small < Medium < Large",
       sizes["s"]["width"] < sizes["m"]["width"] < sizes["l"]["width"] and
       sizes["s"]["height"] < sizes["m"]["height"] < sizes["l"]["height"], sizes)
-check("...Large is the centred workspace (≥ 900 wide, centred, blurred backdrop)",
+check("...Large is the centred workspace (≥ 900 wide, centred, dimmed backdrop)",
       sizes["l"]["width"] >= 900 and abs(sizes["l"]["x"] + sizes["l"]["width"] / 2 - 720) < 4
       and "compact" not in page.get_attribute("#chScrim", "class"), sizes["l"])
+check("...and the backdrop is a plain dim: no full-screen blur over the live dashboard",
+      page.evaluate("getComputedStyle(document.getElementById('chScrim')).backdropFilter")
+      in ("none", ""), page.evaluate(
+          "getComputedStyle(document.getElementById('chScrim')).backdropFilter"))
 check("...the chosen size is shown as pressed (a toggle group)",
       page.get_attribute("#chSize [data-size='l']", "aria-pressed") == "true" and
       page.get_attribute("#chSize [data-size='m']", "aria-pressed") == "false" and

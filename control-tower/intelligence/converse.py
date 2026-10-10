@@ -325,6 +325,11 @@ def answer(question, state, context, rules):
     """
     if _int_env("ATLAS_LLM_SLOTS", 0) <= 0:
         return _answer(question, state, context, rules)
+    # What never needs the model never queues for it: a hello is instant
+    # even while another question has the model.
+    quick = _instant(question, state, context, rules)
+    if quick is not None:
+        return quick
     R.stage(R.clean_progress_id((context or {}).get("progress_id")), "Waiting for my turn…")
     busy = _enter()
     if busy:
@@ -339,6 +344,31 @@ def answer(question, state, context, rules):
         return _answer(question, state, context, rules)
     finally:
         _leave()
+
+
+INSTANT = {"greeting": "a greeting is answered at once, without the model",
+           "thanks": "a thank-you is answered at once, without the model",
+           "potato": "read directly from Potato Mode"}
+
+
+def _instant(question, state, context, rules):
+    """The rules' reply when it needs no model at all, else None. Never raises."""
+    try:
+        if language_of(question) != "en":
+            return None
+        reply = rules(question, state, dict(context or {}, _raw=True))
+        intent = (reply or {}).get("intent")
+        if intent in INSTANT:
+            reply["llm"] = {"used": False, "mode": "instant" if intent != "potato" else "potato",
+                            "reason": INSTANT[intent]}
+            return reply
+        if intent in ("analysis", "report") and reply.get("charts"):
+            reply["llm"] = {"used": False, "mode": "analysis",
+                            "reason": "computed directly from the run's records"}
+            return reply
+    except Exception:
+        pass
+    return None
 
 
 def _answer(question, state, context, rules):
@@ -382,9 +412,11 @@ def _answer(question, state, context, rules):
                          "reason": "computed directly from the run's records"}
         return direct
     if direct and direct.get("intent") in ("greeting", "thanks"):
-        plan = {"question_en": question, "needs_web": False, "web_query": "", "chat": True}
-        route = "rules"
-    elif direct and _records_question(direct, question):
+        # Instant: a hello never waits for the model (seconds on a CPU-only PC).
+        direct["llm"] = {"used": False, "mode": "instant",
+                         "reason": "a greeting is answered at once, without the model"}
+        return direct
+    if direct and _records_question(direct, question):
         plan = {"question_en": question, "needs_web": False, "web_query": "", "chat": False}
         route = "rules"
     else:

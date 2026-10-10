@@ -207,7 +207,7 @@ input,textarea,select{font-family:inherit}
 
 /* ═══════════ INTRO ═══════════ */
 /* ═══ AI ENGINE CARD ═══ */
-.ml-pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono,ui-monospace,monospace);
+.ml-pill{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none;font-family:var(--mono,ui-monospace,monospace);
   font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mid)}
 .ml-pill .d{width:7px;height:7px;border-radius:50%;background:var(--faint)}
 .ml-pill.on{color:var(--grn)} .ml-pill.on .d{background:var(--grn)}
@@ -220,6 +220,14 @@ input,textarea,select{font-family:inherit}
   font-variant-numeric:tabular-nums;line-height:1.1}
 .ml-k span{display:block;font-size:12px;font-weight:400;color:var(--faint);margin-top:5px}
 .ml-note{padding:11px 14px;font-size:12px;color:var(--mid);line-height:1.5}
+.ml-plain{padding:12px 14px 14px;font-size:13.5px;color:var(--ink);line-height:1.55;
+  border-top:1px solid var(--line)}
+.ml-plain b{font-weight:650}
+.ml-tech{border-top:1px solid var(--line)}
+.ml-tech>summary{cursor:pointer;padding:10px 14px;font-size:12px;color:var(--faint);list-style:none}
+.ml-tech>summary::-webkit-details-marker{display:none}
+.ml-tech>summary::before{content:"›";display:inline-block;margin-right:7px;transition:transform .2s}
+.ml-tech[open]>summary::before{transform:rotate(90deg)}
 /* ATLAS RECOVERY. Quiet by construction: one hairline-topped block in the
    existing ATLAS card, the same type roles as everything else, and no colour
    except the semantic ones already defined. */
@@ -573,7 +581,27 @@ input,textarea,select{font-family:inherit}
 .po-steps{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
 .po-steps span{font-size:11px;padding:3px 8px;border-radius:100px;background:var(--surface-3);color:var(--faint)}
 .po-steps span.done{background:var(--grn-wash);color:var(--grn)}
-.po-steps span.now{background:var(--blu-wash);color:var(--blu)}
+.po-steps span.now{background:var(--blu-wash);color:var(--blu);animation:poNow 1.4s ease-in-out infinite}
+@keyframes poNow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 3px var(--blu-wash)}}
+/* PO is working: a live banner, a real-step progress bar with a moving sheen. */
+.po-live{display:grid;gap:7px;margin:14px 0 4px;padding:13px 16px;border-radius:14px;
+  border:1px solid var(--line);background:var(--surface)}
+.po-live-h{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink)}
+.po-live-dot{width:9px;height:9px;border-radius:50%;background:var(--blu);flex:none;
+  animation:poDot 1.2s ease-in-out infinite}
+@keyframes poDot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.45}}
+.po-live-e{margin-left:auto;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.po-live-s{font-size:12.5px;color:var(--mid)}
+.po-bar{position:relative;height:6px;border-radius:100px;background:var(--surface-3);overflow:hidden}
+.po-bar i{position:absolute;inset:0 auto 0 0;width:0;border-radius:inherit;background:var(--blu);
+  transition:width .6s cubic-bezier(.2,.8,.2,1);overflow:hidden}
+.po-bar i::after{content:"";position:absolute;inset:0;width:40%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  animation:poSheen 1.3s linear infinite}
+@keyframes poSheen{from{transform:translateX(-100%)}to{transform:translateX(260%)}}
+.po-mini{display:block;margin-top:5px;width:96px}
+.po-mini.po-bar{height:4px}
+@media (prefers-reduced-motion:reduce){.po-live-dot,.po-bar i::after,.po-steps span.now{animation:none}}
 .po-steps span.bad{background:var(--red-wash);color:var(--red)}
 .po-ev{font-size:12px;color:var(--mid);display:grid;gap:3px}
 .po-ev .t{color:var(--faint);font-variant-numeric:tabular-nums;margin-right:8px}
@@ -1591,8 +1619,9 @@ td.car{color:var(--ink);font-weight:500}
 :root{--ch-me:#0B1F33;--ch-me-ink:#FFFFFF;--ch-col:760px;--ch-spring:cubic-bezier(.2,.9,.24,1.04);
   --ch-x:translateX(-50%)}
 :root[data-theme="dark"]{--ch-me:#26394F;--ch-me-ink:#EEF3FA}
-.ch-scrim{position:fixed;inset:0;z-index:70;background:rgba(10,19,32,.30);
-  -webkit-backdrop-filter:blur(6px) saturate(1.05);backdrop-filter:blur(6px) saturate(1.05);
+/* A plain dim, no blur: blurring the whole live dashboard on every update
+   is what made it stutter on office PCs (integrated graphics). */
+.ch-scrim{position:fixed;inset:0;z-index:70;background:rgba(10,19,32,.38);
   opacity:0;transition:opacity .3s var(--e)}
 :root[data-theme="dark"] .ch-scrim{background:rgba(3,8,15,.55)}
 .ch-scrim.on{opacity:1}
@@ -1911,7 +1940,7 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
 .ch-e-p{font-size:15.5px;margin:12px 0 16px;max-width:440px;color:var(--mid)}
 .ch-e-n{margin-top:14px;font-size:12px;color:var(--faint)}
 .ch-jump{bottom:calc(var(--ch-dock,132px) + 6px);background:var(--ch-glass);
-  -webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
   border:1px solid var(--ch-hair)}
 
 /* the dock: suggestions + composer, on glass, over a fade */
@@ -1921,14 +1950,14 @@ html.ch-open,html.ch-open body{overscroll-behavior:none}
 #chat .ch-s{padding-bottom:10px;transition:opacity .2s var(--e),transform .25s var(--ch-fast)}
 #chat.typing .ch-s,#chat.busy .ch-s{opacity:0;transform:translateY(4px);pointer-events:none}
 #chat .ch-chip{background:var(--ch-glass);border:1px solid var(--ch-hair);font-size:13px;padding:8px 14px;
-  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
   transition:background .18s var(--e),transform .2s var(--ch-spring)}
 #chat .ch-chip:hover{background:var(--ch-soft-2)}
 #chat .ch-chip:active{transform:scale(.95)}
 .ch-e-sug .ch-chip{background:var(--ch-soft)!important;border-color:transparent!important}
 #chat .ch-f{padding-top:0}
 .ch-box{background:var(--ch-glass);border:1px solid var(--ch-hair);border-radius:24px;
-  -webkit-backdrop-filter:blur(22px) saturate(1.6);backdrop-filter:blur(22px) saturate(1.6);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
   box-shadow:0 1px 1px rgba(11,31,51,.04),0 14px 36px -10px rgba(11,31,51,.22);
   transition:border-color .2s var(--e),box-shadow .25s var(--e),transform .3s var(--ch-spring)}
 :root[data-theme="dark"] .ch-box{background:var(--ch-glass);
@@ -2618,14 +2647,19 @@ td.ref{font-weight:500}
         <div class="card" id="mlCard">
           <div class="card-h">
             <div>
-              <div class="card-t">ATLAS</div>
-              <div class="atlas-sub" id="mlSub">Adaptive Logistics Strategy Engine</div>
+              <div class="card-t" title="ATLAS — Adaptive Logistics Strategy Engine">ATLAS learning</div>
+              <div class="atlas-sub" id="mlSub">Learns from verified results</div>
             </div>
             <div class="sp"></div>
             <span class="ml-pill" id="mlPill"><span class="d"></span><span id="mlPillT">…</span></span>
           </div>
-          <div class="ml-g" id="mlGrid"></div>
-          <div class="ml-note" id="mlNote"></div>
+          <!-- The plain answer first; the engine's counters for whoever asks. -->
+          <div class="ml-plain" id="mlPlain"></div>
+          <details class="ml-tech">
+            <summary>Technical details</summary>
+            <div class="ml-g" id="mlGrid"></div>
+            <div class="ml-note" id="mlNote"></div>
+          </details>
           <!-- Recovery. Hidden until there is a real error to show; it is a
                live status, not a history, and it never renders a plan ATLAS
                did not produce. -->
@@ -2842,6 +2876,14 @@ td.ref{font-weight:500}
           <button class="btn ghost" type="button" id="poCancel">Cancel</button>
           <span class="po-msg" id="poMsg" aria-live="polite"></span></div>
       </form>
+      <!-- PO AUTOMATION IS WORKING: shown only while a job is queued or running.
+           The bar is the job's real step (from its state), not a timer. -->
+      <div class="po-live" id="poLive" role="status" aria-live="polite" hidden>
+        <div class="po-live-h"><span class="po-live-dot" aria-hidden="true"></span>
+          <b id="poLiveT">PO Automation is working</b><span class="po-live-e" id="poLiveE"></span></div>
+        <div class="po-live-s" id="poLiveS"></div>
+        <div class="po-bar" aria-hidden="true"><i id="poLiveBar"></i></div>
+      </div>
       <div class="kpis" id="poKpis"></div>
       <!-- ATLAS, compact: the same character and the same intelligence, on
            the PO jobs. Not a second assistant — "Ask ATLAS" opens the one chat. -->
@@ -3598,14 +3640,18 @@ document.addEventListener('keydown', (e) => {
   const dash = (v) => (v === null || v === undefined || v === '') ? '—' : v;
   const num = (v) => (typeof v === 'number') ? v.toLocaleString() : dash(v);
 
+  /* What each engine state means, in plain words. FALLBACK is the normal
+     state before ATLAS is trained — not an error, so it is not orange. */
+  const PLAIN = {ENABLED: 'Active', SHADOW: 'Learning', FALLBACK: 'Standard mode',
+                 DISABLED: 'Off', UNAVAILABLE: 'Not installed'};
   function paint(d){
     const status = d.status || 'UNAVAILABLE';
-    pillT.textContent = status;
+    pillT.textContent = PLAIN[status] || status;
+    pill.title = 'Engine state: ' + status;
     /* SHADOW is not ENABLED. A loaded model that is learning but steering
        nothing gets its own pill, because showing it as ENABLED would tell an
        operator the automation is being driven when it is not. */
-    pill.className = 'ml-pill' + (status === 'ENABLED' ? ' on'
-                                 : status === 'UNAVAILABLE' ? '' : ' warn');
+    pill.className = 'ml-pill' + (status === 'ENABLED' ? ' on' : status === 'SHADOW' ? ' warn' : '');
     const model = d.model || {};
     const tel = d.telemetry || {};
     const cfg = d.config || {};
@@ -3643,7 +3689,25 @@ document.addEventListener('keydown', (e) => {
     ];
     grid.innerHTML = cells.map(([k, v]) =>
       '<div class="ml-k"><b>' + v + '</b><span>' + k + '</span></div>').join('');
-    if (sub && d.engine_full_name) sub.textContent = d.engine_full_name;
+    const plain = $('mlPlain');
+    if (plain){
+      const writes = typeof tel.verified_success === 'number' ? tel.verified_success : null;
+      const rows = typeof tel.usable_rows === 'number' ? tel.usable_rows : null;
+      const kept = (writes !== null ? '<b>' + writes.toLocaleString() + '</b> verified write' +
+                    (writes === 1 ? '' : 's') + ' so far' : '') +
+                   (rows !== null ? (writes !== null ? ', ' : '') + '<b>' + rows.toLocaleString() +
+                    '</b> ready for training' : '');
+      const lead = status === 'ENABLED'
+        ? 'Active: ATLAS may reorder lookups and shorten waits. It never decides what is written.' +
+          (d.proven ? '' : ' Not yet proven better than the standard steps.')
+        : status === 'SHADOW'
+        ? 'Learning: ATLAS suggests a choice at each step, but the standard steps still decide.'
+        : status === 'DISABLED'
+        ? 'Switched off: the automation uses its standard steps.'
+        : 'Not trained yet, so the automation follows its standard steps. That is normal: every ' +
+          'result read back from the Hub is kept to train ATLAS later.';
+      plain.innerHTML = esc(lead) + (kept ? ' ' + kept + '.' : '');
+    }
 
     let text;
     if (status === 'ENABLED'){
@@ -4075,11 +4139,12 @@ function paintAtlasFeed(a){
   const events = (a && a.events) || [];
   if (!events.length){ box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
+  // Shown in plain words: "Deterministic fallback" is the standard step.
   putHTML(box, events.map((e) =>
     '<div class="r' + (e.influenced ? ' on' : '') + '">' +
       '<time>' + esc(e.time) + '</time>' +
-      '<span class="lb">' + esc(e.label) + '</span>' +
-      '<span class="dt">' + esc(e.detail || '') + '</span>' +
+      '<span class="lb">' + esc(e.label === 'Deterministic fallback' ? 'Standard step' : e.label) + '</span>' +
+      '<span class="dt">' + esc(String(e.detail || '').replace(/\s*[—-]\s*completed by the deterministic order, not by ATLAS\.?$/, '')) + '</span>' +
     '</div>').join(''));
 }
 
@@ -5085,11 +5150,17 @@ function poSteps(d){
   const at = (s0) => after.indexOf(s0);
   const v = d.validation;
   out.push(['Fields extracted', d.fields ? 'done' : (st === 'EXTRACTION_FAILED' || st === 'PDF_UNREADABLE' ? 'bad' : '')]);
+  // While the job runs, the first step not yet done is the one in progress.
+  const running = ['QUEUED', 'PO_DISCOVERED', 'PDF_FOUND', 'PDF_READ'].indexOf(st) >= 0;
   out.push(['Validation', v ? (v.passed ? 'done' : 'bad') : (st === 'VALIDATING' ? 'now' : '')]);
   out.push(['Template', (d.output || {}).verified ? 'done' : (st === 'TEMPLATE_FAILED' ? 'bad' : '')]);
   const em = (d.email || {}).status;
   out.push(['Email', st === 'EMAIL_CONFIRMED' ? 'done' : st === 'EMAIL_SENT' ? 'now' :
     (st === 'EMAIL_FAILED' || em === 'BLOCKED') ? 'bad' : (st === 'EMAIL_PREPARED' ? 'now' : '')]);
+  if (running && !out.some((x) => x[1] === 'now' || x[1] === 'bad')){
+    const next = out.find((x) => x[1] === '');
+    if (next) next[1] = 'now';
+  }
   return out;
 }
 const poWhen = (iso) => { if (!iso) return '—'; const d = new Date(iso);
@@ -5114,6 +5185,41 @@ function poSource(j){
   return ' <span class="po-src test">' + esc(src === 'REAL' ? 'REAL · UNVERIFIED' : src + ' · UNVERIFIED') + '</span>';
 }
 function poPill(j){ return '<span class="pt k-' + esc(j.kpi || 'none') + '">' + esc(j.label || j.state) + '</span>'; }
+/* Where a running job is, from its state: the real step, not a timer. The
+   last step is "ready" — the email is prepared, never sent from here. */
+const PO_FLOW = [['QUEUED', 'Queued'], ['PO_DISCOVERED', 'Finding the record in eHub'],
+  ['PDF_FOUND', 'Bill of Entry found'], ['PDF_READ', 'Reading the Bill of Entry'],
+  ['FIELDS_EXTRACTED', 'Values read'], ['VALIDATING', 'Checking against the Hub'],
+  ['VALIDATED', 'Checked'], ['TEMPLATE_GENERATED', 'Filling the Duty Payment Request'],
+  ['SAVED', 'Saved and read back'], ['EMAIL_PREPARED', 'Ready (email not sent)']];
+function poAt(state){
+  const i = PO_FLOW.findIndex((x) => x[0] === state);
+  return i < 0 ? null : {i: i, of: PO_FLOW.length - 1, label: PO_FLOW[i][1]};
+}
+const poRunning = (j) => j.kpi === 'processing' || j.kpi === 'pending';
+function poElapsed(iso){
+  const t = Date.parse(iso || ''); if (isNaN(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+}
+function paintPOLive(jobs){
+  const box = $('poLive'); if (!box) return;
+  const live = jobs.filter(poRunning);
+  if (!live.length){ box.hidden = true; return; }
+  const j = live[0], at = poAt(j.state);
+  box.hidden = false;
+  put($('poLiveT'), live.length > 1 ? 'PO Automation is working · ' + live.length + ' jobs'
+                                    : 'PO Automation is working');
+  put($('poLiveS'), (j.reference || j.po_id) + ' · ' + (j.progress || (at ? at.label : j.label || j.state)) +
+    (at ? ' · step ' + (at.i + 1) + ' of ' + (at.of + 1) : ''));
+  $('poLiveBar').style.width = at ? Math.max(6, Math.round((at.i + 0.5) / (at.of + 1) * 100)) + '%' : '12%';
+  $('poLiveE').dataset.since = j.created || '';
+  put($('poLiveE'), poElapsed(j.created));
+}
+setInterval(() => {
+  const e = $('poLiveE');
+  if (e && !$('poLive').hidden && e.dataset.since) put(e, poElapsed(e.dataset.since));
+}, 1000);
 function paintPO(){
   const d = PO.list; if (!d) return;
   const c = d.config || {};
@@ -5134,13 +5240,17 @@ function paintPO(){
     '"><div class="kpi-k"><i></i>' + x[1] + '</div><div class="kpi-v' + (k[x[0]] ? '' : ' nil') + '">' +
     (k[x[0]] || 0) + '</div></div>').join(''));
   const jobs = d.jobs || [];
+  paintPOLive(jobs);
   put($('poN'), jobs.length ? jobs.length + ' job' + (jobs.length === 1 ? '' : 's') : '');
   putHTML($('poRows'), jobs.map((j) => '<tr data-po="' + esc(j.po_id) + '" tabindex="0"' +
     (PO.open === j.po_id ? ' class="sel"' : '') + '>' +
     '<td class="mono">' + esc(j.declaration || '—') + '</td><td class="mono">' + esc(j.reference || '—') + '</td>' +
     '<td>' + esc(j.supplier || '—') + '</td><td class="mono">' + esc(j.identifier || j.number || '—') + '</td>' +
     '<td class="wrap">' + esc(j.document || '—') + '</td>' +
-    '<td>' + poPill(j) + poSource(j) + '</td>' +
+    '<td>' + poPill(j) + poSource(j) + (poRunning(j) && poAt(j.state)
+      ? '<span class="po-bar po-mini" title="' + esc(poAt(j.state).label) + '"><i style="width:' +
+        Math.max(6, Math.round((poAt(j.state).i + 0.5) / (poAt(j.state).of + 1) * 100)) + '%"></i></span>'
+      : '') + '</td>' +
     '<td><span class="pv ' + (j.extraction === 'FAILED' ? 'bad' : j.extraction ? 'ok' : 'none') + '">' +
       esc(j.extraction || '—') + '</span></td>' +
     '<td><span class="pv ' + (j.validation === 'PASSED' ? 'ok' : j.validation === 'FAILED' ? 'bad' : 'none') + '">' +

@@ -580,26 +580,25 @@ def _ms(value):
 
 
 def _answer_greeting(data):
+    """Warm, one line, and instant: a greeting never waits for a model."""
     counters = data.counters
     if data.is_running:
         current = data.in_flight
-        where = ("working on **{0}**".format(current.get("reference"))
-                 if current else "between shipments")
-        return ("Hello. The run is going — {0}, {1} processed so far.\n\n"
-                "Ask me about any shipment, or what has failed.").format(
-                    where, counters.get("processed", 0))
+        where = "I'm on {0}".format(current.get("reference")) if current else \
+            "I'm between shipments"
+        return "Hi! 👋 The run is going: {0}, {1} done so far. What would you like to " \
+               "check?".format(where, counters.get("processed", 0))
     if data.shipments:
-        return ("Hello. Nothing is running at the moment. The last run handled "
-                "{0} shipment(s) — {1} written to the Hub, {2} failed.\n\n"
-                "Ask me about any of them.").format(
-                    counters.get("processed", 0), counters.get("successful", 0),
-                    counters.get("failed", 0))
-    return ("Hello. No run has started yet, so I have nothing to report. "
-            "I will have shipment data the moment one begins.")
+        return "Hi! 👋 Nothing's running right now. The last run handled {0}: {1} written " \
+               "to the Hub, {2} failed. What would you like to check?".format(
+                   "{0} shipment{1}".format(counters.get("processed", 0),
+                                            "" if counters.get("processed") == 1 else "s"),
+                   counters.get("successful", 0), counters.get("failed", 0))
+    return "Hi! 👋 No run has started yet. Once one does, ask me anything about it."
 
 
 def _answer_thanks(data):
-    return "Any time. Ask if you need anything else from this run."
+    return "Any time 😊 Just ask if you need anything else."
 
 
 def _answer_identity(data):

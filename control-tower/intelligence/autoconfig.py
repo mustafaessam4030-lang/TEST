@@ -38,6 +38,16 @@ WARM_TIMEOUT_S = 900
 _started = {"done": False}
 
 
+
+def model_threads(cores=None):
+    """
+    CPU threads for the model, leaving room for Edge (the automation) and the
+    dashboard: at least two cores, or a quarter of them, stay free. Using all
+    but one made the dashboard stutter whenever ATLAS was thinking.
+    """
+    cores = cores or os.cpu_count() or 2
+    return max(1, cores - max(2, cores // 4))
+
 def _get(url, timeout=4):
     with R.open_url(url, timeout) as response:
         return json.loads(response.read().decode("utf-8", "replace"))
@@ -81,7 +91,7 @@ def _use_model(url, model, warm=True):
     os.environ.setdefault("ATLAS_LLM_RETRIES", "0")
     # Leave a core for Edge and the automation: with every core taken, a
     # CPU-only model stalls (measured) and the browser slows.
-    os.environ.setdefault("ATLAS_LLM_THREADS", str(max(1, (os.cpu_count() or 2) - 1)))
+    os.environ.setdefault("ATLAS_LLM_THREADS", str(model_threads()))
     # Loaded once, kept for the working day: reloading takes minutes on a
     # cold disk.
     os.environ.setdefault("ATLAS_LLM_KEEP_ALIVE", "8h")

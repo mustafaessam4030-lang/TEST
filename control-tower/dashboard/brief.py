@@ -43,6 +43,17 @@ WORK_SENTENCE = {
 }
 
 
+def _words(text):
+    text = re.sub(r"\S+://\S+|\burl:", " ", (text or "").lower())
+    return {w for w in re.findall(r"[a-z0-9_=/]+", text) if len(w) > 3}
+
+
+def _adds(error, text):
+    """Whether the recorded reason says something the explanation does not."""
+    said, new = _words(text), _words(error)
+    return bool(new) and len(new & said) / float(len(new)) < 0.6
+
+
 def notices_of(data):
     try:
         from dashboard.assistant import notices
@@ -343,7 +354,7 @@ def concise(question, reply, state, data):
                 text = _sentence(first)
                 error = str(rec.get("error") or "").strip().rstrip(".")
                 if rec.get("state") in ("failed", "skipped", "partial") and error and \
-                        error.lower() not in text.lower():
+                        _adds(error, text):
                     text += " The run recorded: " + _sentence(error)
             else:
                 text = failure(rec)

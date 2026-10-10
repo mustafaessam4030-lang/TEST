@@ -623,7 +623,11 @@ def from_document(store, record, data, config=None):
     bad = {n: f for n, f in fields.items() if f["status"] == X.MALFORMED}
     if bad:
         detail = "; ".join("{0}: {1}".format(f["label"], f.get("note")) for f in bad.values())
-        record = store.transition(record, S.EXTRACTION_FAILED, "A value is malformed", failure(
+        # Say which value and what was printed, not just "malformed".
+        first = next(iter(bad.values()))
+        shown = "Stopped safely: {0} — {1}. Nothing was guessed.".format(
+            first["label"], first.get("note") or "printed but not a well-formed number")[:220]
+        record = store.transition(record, S.EXTRACTION_FAILED, shown, failure(
             "NORMALIZATION_FAILED", "normalization",
             "The Bill of Entry prints values that are not well-formed numbers — nothing is "
             "coerced: " + detail, code="NORMALIZATION_FAILED", fields=sorted(bad),
