@@ -833,8 +833,8 @@ def prepare(store, record, config):
         return record
     doctype = doctypes.get(record["doctype"])
     recipient = config.get("recipient")
-    subject = doctype["email_subject"].format(number=record.get("number"),
-                                              reference=record["reference"])
+    subject = (config.get("subject_prefix") or "") + doctype["email_subject"].format(
+        number=record.get("number"), reference=record["reference"])
     email = {"recipient": recipient, "sender": config.get("sender"), "subject": subject,
              "attachment": record["output"]["filename"], "status": "READY",
              "template_version": record["output"]["template_version"]}
@@ -891,13 +891,35 @@ def email_text(record):
                 record["reference"], record["output"]["template_version"], record["po_id"])
 
 
-def email_preview(store, record):
-    """Exactly what would be sent, and every reason it may not be — nothing is sent."""
-    from . import mail as M
-    email, out = record.get("email") or {}, record.get("output") or {}
-    validation = record.get("validation") or {}
-    fields = record.get("fields") or {}
-    req = record.get("request_fields") or {}
+def _would_be_email(record, recipient):
+    """The email this job would get — computed, nothing written."""
+    from . import sandbox as SB
+    doctype = doctypes.get(record["doctype"])
+    prefix = SB.PREFIX if record.get("sandbox") else ""
+    return {"recipient": recipient, "sender": os.environ.get("PO_MAIL_SENDER") or None,
+            "subject": prefix + doctype["email_subject"].format(
+                number=record.get("number"), reference=record["reference"]),
+            "attachment": (record.get("output") or {}).get("filename"), "status": "PREVIEW",
+            "template_version": (record.get("output") or {}).get("template_version")}
+
+
+def email_preview(store, record, recipient=None):
+    """Exactly what would be sent, and every reason it may not be. READ-ONLY:
+    the job, its audit trail, its authorization and the send ledger are not
+    touched (the checks run on a copy of the record)."""
+    import copy
+    from . import mail as M, sandbox as SB
+    view = copy.deepcopy(record)
+    if recipient and (view.get("email") or {}).get("recipient") != recipient:
+        view["email"] = _would_be_email(view, recipient)
+    if view.get("state") == S.SAVED:
+        view["email"] = (view.get("email") or {}) if (view.get("email") or {}).get(
+            "status") == "PREVIEW" else _would_be_email(view, recipient)
+        view["state"] = S.EMAIL_PREPARED                # as it would be once prepared
+    email, out = view.get("email") or {}, view.get("output") or {}
+    validation = view.get("validation") or {}
+    fields = view.get("fields") or {}
+    req = view.get("request_fields") or {}
 
     def val(name, source=fields):
         f = source.get(name) or {}
@@ -905,10 +927,15 @@ def email_preview(store, record):
     ok, missing = M.configured()
     calc = {c.get("cell"): c.get("result") for c in validation.get("calculations") or []
             if c.get("cell")}
+    blocking = blocked_reasons(store, view) if record.get("state") in (
+        S.SAVED, S.EMAIL_PREPARED, S.EMAIL_FAILED) else [
+        "the job is {0} — only a SAVED job gets an email".format(
+            S.LABELS.get(record.get("state"), record.get("state")))]
     return {
-        "from": os.environ.get("PO_MAIL_SENDER") or None, "to": email.get("recipient"),
+        "mode": SB.mode(), "sandbox_copy": bool(record.get("sandbox")),
+        "from": email.get("sender"), "to": email.get("recipient"),
         "subject": email.get("subject"),
-        "body": email_text(record) if out.get("filename") else None,
+        "body": email_text(view) if out.get("filename") else None,
         "attachment": out.get("filename"), "attachment_sha256": out.get("sha256"),
         "attachment_bytes": Path(out["path"]).stat().st_size if out.get("path") and
         Path(out["path"]).is_file() else None,
@@ -921,9 +948,12 @@ def email_preview(store, record):
                        "checks": len(validation.get("checks") or []),
                        "failed": [c.get("name") for c in validation.get("checks") or []
                                   if c.get("blocking")]},
-        "template_read_back": out.get("verified") and not T.verify_output(record),
+        "template_read_back": bool(out.get("verified")) and not T.verify_output(view),
         "graph_configured": ok, "graph_missing": missing,
-        "blocking": blocked_reasons(store, record)}
+        "sender_mailbox_type": "UNVERIFIED — IT must confirm {0} is a user or shared mailbox "
+                               "(a distribution list or group cannot send)".format(
+                                   email.get("sender") or "the sender"),
+        "blocking": blocking}
 
 
 def prepare_email(store, record, recipient, config=None):
@@ -945,20 +975,36 @@ def prepare_email(store, record, recipient, config=None):
         reasons += T.verify_output(record)
     if not recipient or "@" not in recipient:
         reasons.append("no recipient given")
+    from . import sandbox as SB
+    m = SB.mode()
+    if m == "invalid":
+        reasons.append("PO_EMAIL_MODE is neither 'production' nor 'sandbox'")
+    elif m == "sandbox":
+        reasons += SB.isolation_problems()
+        if not record.get("sandbox") or not SB.is_sandbox_folder(store.folder):
+            reasons.append("sandbox mode prepares only a sandbox copy, in the sandbox folder")
+        if str(recipient or "").strip().lower() not in SB.allowlist():
+            reasons.append("{0} is not on the sandbox recipient allowlist "
+                           "(PO_SANDBOX_RECIPIENTS)".format(recipient))
+    elif record.get("sandbox") or SB.is_sandbox_folder(store.folder):
+        reasons.append("a sandbox copy is not prepared in production mode")
     if reasons:
         store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons)
         return record, reasons
     cfg = dict(config or config_from_env(), email_disabled=False, auto_send=False,
-               recipient=recipient)
+               recipient=recipient, sender=os.environ.get("PO_MAIL_SENDER") or None,
+               subject_prefix=SB.PREFIX if m == "sandbox" else "")
     return prepare(store, record, cfg), []
 
 
-def blocked_reasons(store, record, authorize_resend=False):
-    """Why this record may not be sent now — the gate before any Graph call."""
-    reasons = []
+def blocked_reasons(store, record, authorize_resend=False, mailer=None):
+    """Why this record may not be sent now — the gate before any Graph call.
+    mailer=None judges it as the real Microsoft Graph."""
+    from . import sandbox as SB
+    test = SB.test_bypass(mailer)
+    reasons = SB.send_problems(store, record, mailer)
     prov = record.get("provenance") or {}
-    if prov.get("verification") != "VERIFIED" and \
-            os.environ.get("PO_ALLOW_TEST_SEND") != "1":
+    if prov.get("verification") != "VERIFIED" and not test:
         # A document that was not observed in the real eHub session is never
         # emailed for real. PO_ALLOW_TEST_SEND=1 exists for the test suite's
         # stand-in mailbox only.
@@ -994,7 +1040,7 @@ def blocked_reasons(store, record, authorize_resend=False):
     if email.get("subject") and (str(record.get("number") or "") not in email["subject"] or
                                  str(record.get("reference") or "") not in email["subject"]):
         reasons.append("the prepared subject does not name this job's declaration and shipment")
-    if os.environ.get("PO_ALLOW_TEST_SEND") != "1":
+    if not test:
         # One send, authorized by a named person, for exactly this email.
         from . import authorize as A
         reasons += A.problems(store, record)
@@ -1027,7 +1073,7 @@ def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
     Returns (record, outcome): SENT, CONFIRMED, BLOCKED, FAILED, UNKNOWN or
     MISMATCH.
     """
-    reasons = blocked_reasons(store, record, authorize_resend)
+    reasons = blocked_reasons(store, record, authorize_resend, mailer=mailer)
     if reasons:
         store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons)
         return record, "BLOCKED"
@@ -1065,7 +1111,8 @@ def send(store, record, mailer, by=None, authorize_resend=False, reason=None,
         store.ledger_write(key, {"status": "SENDING", "at": S.now_iso(), "po_id": record["po_id"],
                                  "by": by, "recipient": email["recipient"],
                                  "authorized_resend": True, "resend_reason": reason})
-    if os.environ.get("PO_ALLOW_TEST_SEND") != "1":
+    from . import sandbox as SB
+    if not SB.test_bypass(mailer):
         from . import authorize as A
         A.consume(store, record)                     # used up by this send, whatever happens
     store.milestone(record, "IDEMPOTENCY_CONFIRMED", save=False, ledger_key=key,
@@ -1214,6 +1261,13 @@ def _verify_message(record, found, mailer):
     if message.get("subject") != email.get("subject"):
         mismatches.append("subject {0!r}, prepared {1!r}".format(message.get("subject"),
                                                                email.get("subject")))
+    sender = str(email.get("sender") or getattr(mailer, "sender", None) or "").lower()
+    if sender and str(message.get("from") or "").lower() != sender:
+        mismatches.append("sent from {0}, prepared from {1}".format(message.get("from"), sender))
+    if email.get("attachment_bytes") and names and \
+            int(names[0][1] or 0) < int(email["attachment_bytes"]):
+        mismatches.append("the attachment in Sent Items is {0} bytes, smaller than the {1} "
+                          "bytes attached".format(names[0][1], email["attachment_bytes"]))
     if [n for n, _z in names] != [email.get("attachment")]:
         mismatches.append("attachments {0}, prepared {1}".format([n for n, _z in names],
                                                                  email.get("attachment")))

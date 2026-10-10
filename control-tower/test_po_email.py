@@ -41,6 +41,8 @@ def check(name, ok, detail=""):
 class Mailbox(object):
     """Stand-in Graph mailbox: records every call, keeps what was 'sent'."""
 
+    sender = "ata-sender@example.test"
+
     def __init__(self, deliver=True):
         self.calls, self.sent, self.drafts, self.deliver = [], [], {}, deliver
 

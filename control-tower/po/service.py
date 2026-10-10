@@ -233,7 +233,7 @@ def _email_word(record):
     state, email = record["state"], record.get("email") or {}
     if state in (S.VALIDATION_FAILED, S.IDENTITY_MISMATCH, S.REVIEW_REJECTED):
         return "NOT SENT"               # never sent for a document that failed validation
-    return {S.EMAIL_CONFIRMED: "CONFIRMED", S.EMAIL_SENT: "ACCEPTED (confirming)",
+    return {S.EMAIL_CONFIRMED: "IN SENT ITEMS (not proof of delivery)", S.EMAIL_SENT: "ACCEPTED (confirming)",
             S.EMAIL_RECONCILIATION_FAILED: "SENT — DOES NOT MATCH (check the mailbox)",
             S.EMAIL_SENDING: "SUBMITTED", S.EMAIL_FAILED: "FAILED",
             S.EMAIL_UNKNOWN: "UNKNOWN — reconcile, do not resend",
@@ -597,14 +597,6 @@ class PoService(object):
         if record is None:
             raise KeyError(po_id)
         who = actor.get("work_email") if isinstance(actor, dict) else actor
-        reasons = P.blocked_reasons(self.store, record, authorize_resend)
-        if reasons:
-            self.store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons, by=who)
-            self.audit("PO_EMAIL_BLOCKED", result="BLOCKED", actor=actor, target=po_id,
-                       metadata={"reasons": reasons})
-            return record, "BLOCKED", reasons
-        if authorize_resend and not (reason or "").strip():
-            return record, "BLOCKED", ["a resend needs a reason, recorded in the audit log"]
         from .mail import GraphMailer, configured
         factory = self.mailer_factory or GraphMailer
         if factory is GraphMailer:
@@ -619,11 +611,21 @@ class PoService(object):
                 self.audit("PO_EMAIL_BLOCKED", result="NOT_CONFIGURED", actor=actor,
                            target=po_id, metadata={"missing": missing})
                 return record, "BLOCKED", reasons
+        mailer = factory()
+        reasons = P.blocked_reasons(self.store, record, authorize_resend,
+                                     mailer=mailer)
+        if reasons:
+            self.store.event(record, "EMAIL_BLOCKED", "email", "BLOCKED", reasons=reasons, by=who)
+            self.audit("PO_EMAIL_BLOCKED", result="BLOCKED", actor=actor, target=po_id,
+                       metadata={"reasons": reasons})
+            return record, "BLOCKED", reasons
+        if authorize_resend and not (reason or "").strip():
+            return record, "BLOCKED", ["a resend needs a reason, recorded in the audit log"]
         cfg = self.config()
 
         def run():
             current = self.store.get(po_id)
-            done, outcome = P.send(self.store, current, factory(), by=who,
+            done, outcome = P.send(self.store, current, mailer, by=who,
                                    authorize_resend=authorize_resend, reason=reason,
                                    confirm_wait_s=cfg.get("confirm_wait_s", 45))
             email = done.get("email") or {}

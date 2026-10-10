@@ -7,8 +7,8 @@ by the send it authorizes: the next PO email needs its own. Nothing else
 (auto-send, the dashboard button, the API, ATLAS) can create one — only
 grant(), called by the person on the machine that holds the Graph settings.
 
-The test suite's stand-in mailbox (PO_ALLOW_TEST_SEND=1) is the one
-exception, as for the provenance check.
+The test suite's stand-in mailbox (PO_ALLOW_TEST_SEND=1 with a mailer that
+cannot reach a real mailbox — see sandbox.test_bypass) is the one exception.
 """
 
 import json
@@ -31,7 +31,8 @@ def read(store, po_id):
 
 def _bound(record):
     email, out = record.get("email") or {}, record.get("output") or {}
-    return {"po_id": record["po_id"], "recipient": email.get("recipient"),
+    return {"po_id": record["po_id"], "sender": email.get("sender"),
+            "recipient": email.get("recipient"),
             "subject": email.get("subject"), "attachment": out.get("filename"),
             "attachment_sha256": out.get("sha256")}
 
@@ -48,6 +49,11 @@ def grant(store, record, recipient, by):
     if bound["recipient"] != recipient:
         reasons.append("the prepared recipient is {0}, not {1}".format(bound["recipient"],
                                                                       recipient))
+    import os
+    expected = (os.environ.get("PO_MAIL_SENDER") or "").strip().lower()
+    if not expected or str(bound["sender"] or "").strip().lower() != expected:
+        reasons.append("the prepared sender {0} is not the configured sender {1}".format(
+            bound["sender"], expected or "(PO_MAIL_SENDER not set)"))
     previous = read(store, record["po_id"])
     if previous and previous.get("used_at"):
         reasons.append("this job's authorization was already used on {0} — a new send needs a "
@@ -72,7 +78,7 @@ def problems(store, record):
     if entry.get("used_at"):
         return ["the authorization was already used on {0}".format(entry["used_at"])]
     bound = _bound(record)
-    changed = [k for k in ("recipient", "subject", "attachment", "attachment_sha256")
+    changed = [k for k in ("sender", "recipient", "subject", "attachment", "attachment_sha256")
                if entry.get(k) != bound[k]]
     if changed:
         return ["the email changed after it was authorized ({0})".format(", ".join(changed))]

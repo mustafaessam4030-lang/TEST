@@ -34,3 +34,6 @@ release/
 carrier_profile/
 # Web search installed on the PC by SETUP_WEB_SEARCH.bat (intelligence/searxng_local.py)
 /searxng/
+
+# Sandbox PO email copies (runtime data)
+sandbox/

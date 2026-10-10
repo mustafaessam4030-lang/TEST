@@ -656,10 +656,13 @@ def cmd_send(args):
     return 0 if outcome in ("SENT", "CONFIRMED") else 1
 
 
-def _job_or_report(key):
-    record, folder, searched = find_job(key)
+def _job_or_report(key, sandbox=False):
+    """The job — in sandbox mode ONLY from the sandbox folder."""
+    from po import sandbox as SB
+    folders = [SB.folder()] if sandbox else None
+    record, folder, searched = find_job(key, folders)
     if record is None:
-        print("no PO job for {0}".format(key), file=sys.stderr)
+        print("no {0}PO job for {1}".format("sandbox " if sandbox else "", key), file=sys.stderr)
         for path, count in searched:
             print("  searched {0} — {1} job(s)".format(path, count), file=sys.stderr)
     return record, folder
@@ -667,7 +670,10 @@ def _job_or_report(key):
 
 def _print_preview(preview):
     v = preview["validation"]
+    print("MODE        {0}{1}".format(preview["mode"], " · sandbox copy" if
+                                      preview["sandbox_copy"] else ""))
     print("FROM        {0}".format(preview["from"] or "NOT CONFIGURED (PO_MAIL_SENDER)"))
+    print("            sender mailbox type: " + preview["sender_mailbox_type"])
     print("TO          {0}".format(preview["to"] or "—"))
     print("SUBJECT     {0}".format(preview["subject"] or "—"))
     print("ATTACHMENT  {0} · {1} bytes · sha256 {2}".format(
@@ -687,42 +693,67 @@ def _print_preview(preview):
             print("  - " + r)
 
 
-def cmd_email_preview(args):
-    """Prepare (if needed) and show exactly what would be sent. Sends nothing."""
+def cmd_sandbox_copy(args):
+    """Copy a SAVED production job into the sandbox folder (production is only read)."""
+    from po import sandbox as SB
+    if SB.mode() != "sandbox":
+        print("STOPPED — set PO_EMAIL_MODE=sandbox to make a sandbox copy.")
+        return 1
+    problems = SB.isolation_problems()
+    if problems:
+        print("STOPPED — " + "; ".join(problems))
+        return 1
     record, folder = _job_or_report(args.job)
     if record is None:
         return 2
-    store = S.Store(folder=folder)
-    if record["state"] == S.SAVED:
-        record, reasons = P.prepare_email(store, record, args.to)
-        if reasons:
-            print("STOPPED — the email is not prepared:")
-            for r in reasons:
-                print("  - " + r)
-            return 1
-    elif record["state"] != S.EMAIL_PREPARED:
-        print("STOPPED — the job is {0}: only a SAVED job (validated, template saved and read "
-              "back) gets an email.".format(S.LABELS.get(record["state"], record["state"])))
+    copy, reasons = SB.copy_job(record, folder)
+    if reasons:
+        print("STOPPED — no sandbox copy:")
+        for r in reasons:
+            print("  - " + r)
         return 1
-    elif (record.get("email") or {}).get("recipient") != args.to:
-        print("STOPPED — this job's email is prepared for {0}, not {1}.".format(
-            (record.get("email") or {}).get("recipient"), args.to))
+    print("sandbox copy: {0} in {1} (production job {2} unchanged)".format(
+        copy["po_id"], SB.folder(), record["po_id"]))
+    return 0
+
+
+def cmd_email_preview(args):
+    """Show exactly what would be sent. READ-ONLY: nothing is prepared, written or sent."""
+    from po import sandbox as SB
+    if SB.mode() == "invalid":
+        print("STOPPED — PO_EMAIL_MODE is neither 'production' nor 'sandbox'.")
         return 1
+    sandbox = SB.mode() == "sandbox"
+    if sandbox and SB.isolation_problems():
+        print("STOPPED — " + "; ".join(SB.isolation_problems()))
+        return 1
+    record, folder = _job_or_report(args.job, sandbox=sandbox)
+    if record is None:
+        return 2
     print("job folder: {0}\njob: {1} · {2} · {3}\n".format(folder, record["po_id"],
                                                          record["reference"], record["state"]))
-    _print_preview(P.email_preview(store, record))
-    print("\nNothing was sent.")
+    _print_preview(P.email_preview(S.Store(folder=folder) if not sandbox else SB.store(),
+                                   record, args.to))
+    print("\nRead-only: nothing was prepared, written or sent.")
     return 0
 
 
 def cmd_authorize_send(args):
-    """The named person authorizes this one email — then it is sent and checked."""
-    from po import authorize as A
+    """Sandbox only: a named person authorizes ONE email to an allowlisted
+    recipient; it is sent through Graph and checked in Sent Items."""
+    from po import authorize as A, sandbox as SB
     from po.mail import GraphMailer, configured
-    record, folder = _job_or_report(args.job)
-    if record is None:
-        return 2
-    store = S.Store(folder=folder)
+    if SB.mode() != "sandbox":
+        print("STOPPED — PO email is sent only in sandbox mode for now (PO_EMAIL_MODE=sandbox).")
+        return 1
+    problems = SB.isolation_problems()
+    if problems:
+        print("STOPPED — " + "; ".join(problems))
+        return 1
+    if args.to.strip().lower() not in SB.allowlist():
+        print("STOPPED — {0} is not on the sandbox recipient allowlist (PO_SANDBOX_RECIPIENTS)."
+              .format(args.to))
+        return 1
     ok, missing = configured()
     if not ok:
         print("STOPPED — Microsoft Graph is not configured: missing " + ", ".join(missing))
@@ -730,24 +761,36 @@ def cmd_authorize_send(args):
     if args.confirm != "SEND":
         print("STOPPED — type --confirm SEND to authorize this one email.")
         return 1
+    record, folder = _job_or_report(args.job, sandbox=True)
+    if record is None:
+        return 2
+    store = SB.store()
+    if record["state"] == S.SAVED:
+        record, reasons = P.prepare_email(store, record, args.to)
+        if reasons:
+            print("STOPPED — the email is not prepared:")
+            for r in reasons:
+                print("  - " + r)
+            return 1
+    mailer = GraphMailer()
+    blocking = P.blocked_reasons(store, record, mailer=mailer)
+    if blocking and not (len(blocking) == 1 and "authorized" in blocking[0]):
+        print("STOPPED — the gate refuses the send:")
+        for r in blocking:
+            print("  - " + r)
+        return 1
     granted, reasons = A.grant(store, record, args.to, args.by)
     if not granted:
         print("STOPPED — not authorized:")
         for r in reasons:
             print("  - " + r)
         return 1
-    record = store.get(record["po_id"])
-    blocking = P.blocked_reasons(store, record)
-    if blocking:
-        print("STOPPED — the gate refuses the send:")
-        for r in blocking:
-            print("  - " + r)
-        return 1
-    record, outcome = P.send(store, record, GraphMailer(), by=args.by)
+    record, outcome = P.send(store, store.get(record["po_id"]), mailer, by=args.by)
     email = record.get("email") or {}
-    print("RESULT      {0}".format(outcome))
+    print("RESULT      {0}".format("IN SENT ITEMS and matching (not proof of delivery)"
+                                   if outcome == "CONFIRMED" else outcome))
     print("STATE       {0}".format(record["state"]))
-    print("SENT ITEMS  {0}".format(email.get("confirmation") or email.get("reconciliation") or
+    print("SENT ITEMS  {0}".format(email.get("reconciliation") or email.get("confirmation") or
                                    email.get("reasons") or "not found yet"))
     print("MESSAGE ID  {0}".format(email.get("internet_message_id") or "—"))
     return 0 if outcome == "CONFIRMED" else 1
@@ -811,6 +854,9 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("process")
     p.add_argument("--po-id", required=True)
+    sc = sub.add_parser("sandbox-copy", help="copy a SAVED job into the sandbox folder "
+                                             "(production is only read)")
+    sc.add_argument("job")
     ep = sub.add_parser("email-preview", help="prepare and show exactly what would be "
                                               "emailed (nothing is sent)")
     ep.add_argument("job")
@@ -869,7 +915,7 @@ def main(argv=None):
                    help="print every row of the PDF with its words' positions")
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
-            "email-preview": cmd_email_preview, "authorize-send": cmd_authorize_send,
+            "email-preview": cmd_email_preview, "sandbox-copy": cmd_sandbox_copy, "authorize-send": cmd_authorize_send,
             "ehub-check": cmd_check, "sweep": cmd_sweep,
             "read": cmd_read, "recover": cmd_recover, "explain": cmd_explain, "trace": cmd_trace,
             "quality": cmd_quality, "readiness": cmd_readiness, "supply": cmd_supply,
