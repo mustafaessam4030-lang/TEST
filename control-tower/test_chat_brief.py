@@ -67,9 +67,10 @@ EXPECT = [
     ("What is the ETA for 5271993480?", "5271993480's carrier ETA is 26/08/2026."),
     ("What's the ATA of 1570046231?", "1570046231's carrier ATA is 20/08/2026."),
     ("Why did 8842001173 fail?",
-     "8842001173 (DHL GLOBAL FORWARDING) failed (UNEXPECTED PAGE STATE): Save/Update button was "
-     "not found on the Manage page. Nothing was written to the Hub. It's queued for one retry "
-     "later in this run."),
+     "8842001173 on DHL GLOBAL FORWARDING stopped at looking the shipment up on the carrier site: "
+     "the page was not in the expected state. Nothing was written to the Hub for this shipment; "
+     "it is looked up again next run. The run recorded: Save/Update button was not found on the "
+     "Manage page."),
     ("How many shipments failed?", "1 shipment failed: 8842001173."),
     ("How many shipments were skipped?", "1 shipment was skipped: 1570049117."),
     ("How many shipments were written to the Hub?", "2 shipments were written to the Hub."),

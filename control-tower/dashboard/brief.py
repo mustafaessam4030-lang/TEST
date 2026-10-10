@@ -335,7 +335,18 @@ def concise(question, reply, state, data):
                     question or "", re.I):
             text = shipment(rec)
         elif intent in FAILURE_INTENTS and rec is not None:
-            text = failure(rec)
+            # ATLAS's failure analysis reads more than the record's last line
+            # (a "skip" after a completed verification is an access problem):
+            # its plain-words explanation leads; the recorded reason follows.
+            first = (reply.get("answer") or "").split("\n\n")[0].strip()
+            if reply.get("failure_id") and first and "**" not in first and len(first) <= 450:
+                text = _sentence(first)
+                error = str(rec.get("error") or "").strip().rstrip(".")
+                if rec.get("state") in ("failed", "skipped", "partial") and error and \
+                        error.lower() not in text.lower():
+                    text += " The run recorded: " + _sentence(error)
+            else:
+                text = failure(rec)
             named = re.sub(r"\W", "", str(rec.get("reference") or "")) in re.sub(
                 r"\W", "", question or "")
             same = [r for r in data.failed if r.get("carrier") == rec.get("carrier")]

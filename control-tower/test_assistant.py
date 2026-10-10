@@ -107,7 +107,8 @@ check("Carrier question answers correctly", "QATAR AIRWAYS" in a)
 
 a = ask("Why did 8842001173 fail?", STATE)
 check("Failure reason is the real error", "Save/Update button" in a)
-check("Failure reports the outcome class", "UNEXPECTED PAGE STATE" in a)
+check("Failure reports the outcome class, in words or as the class",
+      "UNEXPECTED PAGE STATE" in a or "not in the expected state" in a, a)
 
 a = ask("How many shipments failed?", STATE)
 check("'How many failed?' answers that, with the reference", a == "1 shipment failed: 8842001173.", a)

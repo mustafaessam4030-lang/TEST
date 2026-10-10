@@ -237,7 +237,7 @@ bare.shipment_started({"bol_awb": "111222333", "carrier": "DHL Express", "provid
 bare.shipment_finished("111222333", "FAILED", "Unexpected page", outcome="UNEXPECTED PAGE STATE")
 a = assistant.answer("Why did 111222333 fail?", bare.snapshot())["answer"]
 check("The short answer states only the recorded reason and class — no steps claimed",
-      "Unexpected page" in a and "UNEXPECTED PAGE STATE" in a and
+      "Unexpected page" in a and "not in the expected state" in a and
       not re.search(r"\b(step|retried|timed out|page load)\b", a, re.I), a)
 a = assistant.answer("Explain why 111222333 failed", bare.snapshot())["answer"]
 check("With no trace recorded, it says so instead of making one up",

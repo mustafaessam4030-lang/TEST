@@ -249,7 +249,14 @@ def ask(question, st=None):
 
 
 why = ask("Why did the error happen?")
-print("\n--- Why did the error happen? ---\n" + why["answer"][:1800] + "\n---")
+check("The short answer: verification got through, the carrier still restricted access, "
+      "nothing written — and the recorded reason with its URL",
+      "human verification" in why["answer"] and "access-restricted" in why["answer"] and
+      "nothing was written to the Hub" in why["answer"] and
+      BASE + "/result?ref=" + RESTRICTED_REF in why["answer"] and "\n" not in why["answer"],
+      why["answer"])
+why = ask("Explain why the error happened")
+print("\n--- Explain why the error happened ---\n" + why["answer"][:1800] + "\n---")
 check("Answered from the run, never 'I don't have that information'",
       NO_INFO not in why["answer"] and why.get("grounded"), why["answer"][:200])
 check("The cause, in the run's words: verification completed, CMA CGM still restricted access, "
@@ -264,7 +271,7 @@ check("...and says what is NOT established (why the carrier restricts)",
       "not established" in why["answer"])
 short = ask("Why the error?")
 check("'Why the error?' — the operator's exact words — is answered the same way",
-      NO_INFO not in short["answer"] and "continued to restrict access" in short["answer"],
+      NO_INFO not in short["answer"] and "access-restricted page" in short["answer"],
       short["answer"][:300])
 nxt = ask("What should I do next?")
 print("\n--- What should I do next? ---\n" + nxt["answer"][:2200] + "\n---")
@@ -311,8 +318,12 @@ print("\n--- the old ending, 'Why the error?' ---\n" + old["answer"][:900] + "\n
 check("A skip after a completed verification with access never confirmed IS a failure",
       F.is_failure(next(r for r in st.snapshot()["shipments"] if r["reference"] == "CMAU7700003")))
 check("ATLAS explains it from the run: verification completed, the shipment page never appeared",
-      NO_INFO not in old["answer"] and "Human verification was completed, but CMA CGM never "
-      "showed the shipment page" in old["answer"], old["answer"][:400])
+      NO_INFO not in old["answer"] and "After the human verification, CMA CGM's shipment page "
+      "never appeared" in old["answer"] and "skipped" not in old["answer"], old["answer"][:400])
+old = assistant.answer("Explain why the error happened", st.snapshot(), {})
+check("...and asked to explain, the full analysis says the same",
+      "Human verification was completed, but CMA CGM never showed the shipment page"
+      in old["answer"], old["answer"][:400])
 check("...classified CARRIER_ACCESS_NOT_CONFIRMED, from the run's access state",
       F.build(st.snapshot())[0]["classification"] == "CARRIER_ACCESS_NOT_CONFIRMED"
       and F.build(st.snapshot())[0]["classification_basis"] == "access")

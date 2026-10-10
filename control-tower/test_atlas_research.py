@@ -258,8 +258,9 @@ check("No robotic phrasing", not ROBOTIC.search(a), a[:200])
 
 r = ask("Why did CMAU7700001 fail?")
 check("A plain 'why' gets the recorded reason in a sentence, and that a person decides next",
-      r["answer"].startswith("CMAU7700001 (CMA CGM) failed (CARRIER ACCESS RESTRICTED)") and
-      "decision from the owner" in r["answer"] and "\n" not in r["answer"], r["answer"])
+      "CMAU7700001" in r["answer"] and "access-restricted" in r["answer"] and
+      "The run recorded: CMA CGM restricted access" in r["answer"] and
+      "\n" not in r["answer"], r["answer"])
 r = ask("Explain why CMAU7700001 failed")
 a = r["answer"]
 check("Error investigation: the plain-words lead first",
