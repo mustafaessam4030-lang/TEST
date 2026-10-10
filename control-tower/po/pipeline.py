@@ -589,6 +589,11 @@ def from_document(store, record, data, config=None):
     # ── EXTRACT ───────────────────────────────────────────────────────────
     t0 = time.monotonic()
     fields = X.extract(read["text"], doctype, read.get("spans"), read.get("words"))
+    # Two printed declaration numbers: settled only by eHub's own number for
+    # this document (exactly one match), otherwise left AMBIGUOUS for review.
+    if "document_number" in fields:
+        fields["document_number"] = X.resolve_by_identifier(fields["document_number"],
+                                                            record.get("identifier"))
     _timed(record, "extraction", t0)
     if not X.looks_like(fields):
         record["fields"] = fields
@@ -618,7 +623,8 @@ def from_document(store, record, data, config=None):
                 found=[n for n, f in fields.items() if f["status"] == X.FOUND],
                 missing=[n for n, f in fields.items() if f["status"] == X.MISSING],
                 ambiguous=[n for n, f in fields.items() if f["status"] == X.AMBIGUOUS],
-                malformed=[n for n, f in fields.items() if f["status"] == X.MALFORMED])
+                malformed=[n for n, f in fields.items() if f["status"] == X.MALFORMED],
+                resolved=[n for n, f in fields.items() if f.get("resolution")])
     # ── NORMALISE: a printed value that is not well-formed stops here ─────
     bad = {n: f for n, f in fields.items() if f["status"] == X.MALFORMED}
     if bad:

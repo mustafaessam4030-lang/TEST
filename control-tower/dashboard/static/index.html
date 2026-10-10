@@ -5330,7 +5330,13 @@ function loadPODetail(force){
 }
 function poVal(f){
   if (!f) return '—';
-  if (f.status === 'AMBIGUOUS') return 'ambiguous: ' + (f.candidates || []).map((c) => esc(c.value)).join(' · ');
+  if (f.status === 'AMBIGUOUS') return 'ambiguous: ' + (f.candidates || []).map((c) => esc(c.value) +
+    (c.page ? ' <span class="hint">(p.' + esc(c.page) + ')</span>' : '')).join(' · ') +
+    (f.note ? '<div class="hint">' + esc(f.note) + '</div>' : '');
+  if (f.status === 'MALFORMED') return '<span class="s-MALFORMED">malformed</span> — ' + esc(f.note || '');
+  if (f.resolution) return esc(f.value) + '<div class="hint">' + esc(f.resolution.rule) + ' (' +
+    esc(f.resolution.identifier) + '); also printed: ' + (f.resolution.rejected || []).map((c) =>
+      esc(c.value) + (c.page ? ' (p.' + esc(c.page) + ')' : '')).join(' · ') + '</div>';
   if (f.status === 'MISSING') return '<span class="s-MISSING">missing</span>' + (f.note ? ' — ' + esc(f.note) : '');
   if (Array.isArray(f.value)) return f.value.map((l) => esc(l.label) + ' ' + Number(l.amount).toLocaleString(undefined, {minimumFractionDigits:2})).join('<br>');
   return esc(typeof f.value === 'number' ? f.value.toLocaleString(undefined, {maximumFractionDigits:4}) : f.value);

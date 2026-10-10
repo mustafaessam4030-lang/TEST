@@ -189,9 +189,11 @@ def icums_boe_pdf(bl="J552493", number="40726534505 / 00", date="15/07/2026",
                   invoice_currency="USD", rate="11.4857", rate_currency="USD",
                   fob_ncy="1,776,621.53", terms=("CPT", "ACCRA"), tax_lines=None,
                   total=TOTAL, reference="2607150575GCH000154", extra_footer=None,
-                  font_scale=1.0, reading_order=False):
+                  font_scale=1.0, reading_order=False, continuation_number=None):
     """reading_order: write the text top to bottom instead (labels and values
-    interleaved); font_scale: print every word larger or smaller."""
+    interleaved); font_scale: print every word larger or smaller;
+    continuation_number: add a page 2 whose header repeats the "Bill of
+    Entry(BOE) No :" label with this number beside it (a second candidate)."""
     o = dict(bl=bl, number=number, date=date, invoice_fcy=invoice_fcy,
              invoice_currency=invoice_currency, rate=rate, rate_currency=rate_currency,
              fob_ncy=fob_ncy, terms=terms, tax_lines=TAX_LINES if tax_lines is None else tax_lines,
@@ -236,4 +238,15 @@ def icums_boe_pdf(bl="J552493", number="40726534505 / 00", date="15/07/2026",
     put.flushing = True
     for y, x, text, size, bold, right in sorted(queue):
         put(x, y, text, size=size, bold=bold, right=right)
+    if continuation_number:
+        more = doc.new_page(width=595, height=842)
+        more.insert_text((447 * SCALE, 108 * SCALE), "Bill of Entry(BOE) No :", fontsize=6.0,
+                         fontname="helv")
+        more.insert_text((557 * SCALE, 108 * SCALE), continuation_number, fontsize=6.5,
+                         fontname="hebo")
+        # A continuation sheet carries item lines (sanitised: no real goods).
+        for i in range(1, 13):
+            more.insert_text((16 * SCALE, (140 + 14 * i) * SCALE),
+                             "Item {0}  TEST GOODS DESCRIPTION LINE  Qty 1  HS 0000000000  "
+                             "Value 0.00".format(i), fontsize=6.0, fontname="helv")
     return doc.tobytes()

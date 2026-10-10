@@ -383,6 +383,46 @@ def _field(name, label, values, normaliser, kind):
                 page=page, method=method, confidence="LOW" if method == "ocr" else "HIGH")
 
 
+def resolve_by_identifier(field, identifier):
+    """
+    An AMBIGUOUS Declaration (BOE) No. settled by evidence from a second
+    source: eHub's own number for this Bill of Entry (the identifier read from
+    its document name). Settled only when EXACTLY ONE printed candidate has
+    that number as its declaration number (the part before any "/ NN"
+    suffix) — then that printed value is used, and every other candidate is
+    kept as evidence. Two candidates with the same number but different
+    suffixes, or none matching, stay AMBIGUOUS: a person decides at review.
+    Nothing is typed in, and a value not printed in the document is never used.
+    """
+    if not isinstance(field, dict) or field.get("status") != AMBIGUOUS:
+        return field
+    wanted = re.sub(r"\D", "", str(identifier or ""))
+    candidates = field.get("candidates") or []
+
+    def number(c):
+        m = DECLARATION_FORM.fullmatch(str(c.get("value") or "").strip())
+        return m.group(1) if m else re.sub(r"\D", "", str(c.get("value") or ""))
+
+    if len(wanted) < 6:
+        return dict(field, note="ambiguous, and eHub gave no document number to check against")
+    matching = [c for c in candidates if number(c) == wanted]
+    if len(matching) != 1:
+        return dict(field, note=(
+            "ambiguous: {0} printed values carry eHub's number {1} with different "
+            "suffixes".format(len(matching), identifier) if matching else
+            "ambiguous: none of the printed values is eHub's number {0}".format(identifier)))
+    chosen = matching[0]
+    method = chosen.get("method")
+    return dict(field, status=FOUND, value=chosen["value"], raw=chosen.get("raw"),
+                evidence=chosen.get("line"), page=chosen.get("page"), method=method,
+                confidence="LOW" if method == "ocr" else "HIGH", candidates=[],
+                resolution={"rule": "the only printed value matching eHub's document number",
+                            "identifier": identifier,
+                            "chosen": {k: chosen.get(k) for k in ("value", "page", "line")},
+                            "rejected": [{k: c.get(k) for k in ("value", "page", "line")}
+                                         for c in candidates if c is not chosen]})
+
+
 def _vat_lines(text, spans=None):
     """
     The VAT / levy lines: for each labelled line, its RIGHTMOST figure (the

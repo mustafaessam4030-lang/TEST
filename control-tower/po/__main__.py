@@ -428,6 +428,60 @@ def cmd_explain(args):
     return 0
 
 
+def trace_lines(record):
+    """Why a job's extraction stopped, field by field: every field that is not
+    a single found value, with each printed candidate, its page and how it was
+    read next to its label. Read-only; only the fields that blocked are shown."""
+    out = ["{0} · {1} · {2}".format(record.get("reference"), record.get("identifier") or "—",
+                                     record["state"])]
+    failure = record.get("failure") or {}
+    if failure.get("detail"):
+        out.append("stopped: " + str(failure["detail"])[:400])
+    doc = record.get("document") or {}
+    if doc.get("filename"):
+        out.append("document: {0} · {1} page(s) · sha256 {2}…".format(
+            doc.get("filename"), doc.get("pages") or "?", str(doc.get("sha256") or "")[:12]))
+    for name, f in sorted((record.get("fields") or {}).items()):
+        if f.get("status") == X.FOUND and not f.get("resolution"):
+            continue
+        out.append("")
+        out.append("{0} ({1}): {2}{3}".format(name, f.get("label"), f.get("status"),
+                                              " — " + f["note"] if f.get("note") else ""))
+        if f.get("resolution"):
+            res = f["resolution"]
+            out.append("  settled: {0} = {1} (page {2}) — {3}".format(
+                res.get("identifier"), (res.get("chosen") or {}).get("value"),
+                (res.get("chosen") or {}).get("page"), res.get("rule")))
+            for c in res.get("rejected") or []:
+                out.append("  also printed: {0} (page {1}) · {2}".format(
+                    c.get("value"), c.get("page"), c.get("line")))
+        for c in f.get("candidates") or []:
+            out.append("  candidate: {0} (page {1}, {2}) · {3}".format(
+                c.get("value") if c.get("value") is not None else repr(c.get("raw")),
+                c.get("page"), c.get("method") or "?", c.get("line")))
+        if isinstance(f.get("value"), list):
+            for line in f["value"]:
+                if isinstance(line, dict) and line.get("malformed"):
+                    out.append("  malformed line: {0} '{1}' · {2}".format(
+                        line.get("label"), line.get("malformed"), line.get("line")))
+    return out
+
+
+def cmd_trace(args):
+    st = S.Store()
+    key = args.job.strip()
+    record = st.get(key) if re.fullmatch(r"[A-Za-z0-9_-]{6,}", key or "") else None
+    if record is None:
+        matches = [r for r in st.all(limit=1000) if key in (r.get("reference"), r.get(
+            "identifier"), r.get("number"), r.get("po_id"))]
+        record = matches[0] if matches else None
+    if record is None:
+        print("no PO job for {0}".format(key), file=sys.stderr)
+        return 2
+    print("\n".join(trace_lines(record)))
+    return 0
+
+
 def cmd_quality(args):
     from po import quality
     print(json.dumps(quality.metrics(S.Store()), indent=2))
@@ -557,6 +611,9 @@ def main(argv=None):
     rc.add_argument("--no-browser", action="store_true")
     ex = sub.add_parser("explain", help="everything that happened to one job")
     ex.add_argument("po_id")
+    tr = sub.add_parser("trace", help="why a job's extraction stopped: each blocking field "
+                                      "and every printed candidate, with its page")
+    tr.add_argument("job", help="the job's po_id, BOL/AWB, Bill of Entry number or identifier")
     sub.add_parser("quality", help="reliability metrics from the recorded jobs")
     sub.add_parser("readiness", help="the production-readiness gate, from evidence")
     su = sub.add_parser("supply", help="choose, for G4, one of the invoice numbers the Bill of "
@@ -588,7 +645,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     return {"process": cmd_process, "send": cmd_send, "ehub-probe": cmd_probe,
             "ehub-check": cmd_check, "sweep": cmd_sweep,
-            "read": cmd_read, "recover": cmd_recover, "explain": cmd_explain,
+            "read": cmd_read, "recover": cmd_recover, "explain": cmd_explain, "trace": cmd_trace,
             "quality": cmd_quality, "readiness": cmd_readiness, "supply": cmd_supply,
             "review": cmd_review, "audit-verify": cmd_audit_verify}[args.cmd](args)
 

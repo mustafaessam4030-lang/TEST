@@ -250,6 +250,68 @@ r, f = read(icums_boe_pdf(date="15/07/2026", total=None))
 check("No Total row printed: the total duty is MISSING, not summed by us",
       f["duty_amount_ghs"]["status"] == X.MISSING, f["duty_amount_ghs"])
 
+# ═════════════════════════════════════════════════════════════════════════
+rule("7. TWO PRINTED DECLARATION NUMBERS (job 41026844263, K284375): AMBIGUOUS, "
+     "SETTLED ONLY BY EVIDENCE")
+# ═════════════════════════════════════════════════════════════════════════
+# A sanitised replica: page 2 repeats the header's "Bill of Entry(BOE) No :"
+# label. No real document content is used.
+from po.__main__ import trace_lines  # noqa: E402
+OTHER = icums_boe_pdf(continuation_number="40726599999 / 00")
+r, fields = read(OTHER)
+dn = fields["document_number"]
+check("Reproduced: the label printed on two pages with two numbers is AMBIGUOUS, "
+      "each candidate with its page",
+      dn["status"] == X.AMBIGUOUS and sorted((c["value"], c["page"]) for c in dn["candidates"])
+      == [("40726534505 / 00", 1), ("40726599999 / 00", 2)], dn.get("candidates"))
+check("...it is still read as an ICUMS Bill of Entry, by position (the right schema)",
+      X.is_icums_form(r["words"]) and X.looks_like(fields))
+same = read(icums_boe_pdf(continuation_number="40726534505 / 00"))[1]["document_number"]
+check("The same number printed again on page 2 is one value, not an ambiguity",
+      same["status"] == X.FOUND and same["value"] == "40726534505 / 00")
+spaced = read(icums_boe_pdf(continuation_number="40726534505/00"))[1]["document_number"]
+check("...nor is the same number with different spacing around '/'",
+      spaced["status"] == X.FOUND and spaced["value"] == "40726534505 / 00")
+j = job(OTHER, identifier="40726534505")
+f = j["fields"]["document_number"]
+check("eHub's own number for the document matches exactly one printed value: that "
+      "printed value is used",
+      f["status"] == X.FOUND and f["value"] == "40726534505 / 00" and f["page"] == 1, f)
+check("...with the rule, eHub's number and the rejected candidate kept as evidence",
+      f["resolution"]["identifier"] == "40726534505" and
+      [c["value"] for c in f["resolution"]["rejected"]] == ["40726599999 / 00"] and
+      f["resolution"]["rejected"][0]["page"] == 2)
+check("...and only then do validation and the template run, to the same end as the "
+      "one-page document", j["state"] == job(EXAMPLE_PDF)["state"] and j.get("output"))
+events = [e for e in S.Store(folder=WORK / "job{0}".format(_n["i"] - 1)).events(j["po_id"])
+          if e["event"] == "FIELDS_EXTRACTED"]
+check("...and the extraction event says the field was settled",
+      events and events[-1]["metadata"].get("resolved") == ["document_number"],
+      events[-1]["metadata"] if events else None)
+for number, ident, why in (("40726534505 / 01", "40726534505", "same number, other suffix"),
+                           ("40726599999 / 00", "40726599990", "no printed value is eHub's")):
+    k = job(icums_boe_pdf(continuation_number=number), identifier=ident)
+    g = k["fields"]["document_number"]
+    req = [c for c in (k.get("validation") or {}).get("checks", [])
+           if c["name"] == "required:document_number"]
+    check("Not settled ({0}): stays AMBIGUOUS, says why, and nothing is chosen".format(why),
+          g["status"] == X.AMBIGUOUS and g.get("value") is None and g.get("note"), g.get("note"))
+    check("...validation blocks it, and no template is generated ({0})".format(why),
+          k["state"] in (S.VALIDATION_FAILED, S.NEEDS_REVIEW) and not k.get("output") and
+          req and req[0]["status"] == "AMBIGUOUS" and req[0]["blocking"],
+          (k["state"], req))
+    if why.startswith("same"):
+        lines = "\n".join(trace_lines(k))
+        check("'python -m po trace' shows the blocking field and both printed candidates "
+              "with their pages", "document_number (Declaration (BOE) No.): AMBIGUOUS" in lines
+              and "40726534505 / 00 (page 1" in lines and "40726534505 / 01 (page 2" in lines,
+              lines)
+check("Without an eHub number nothing is settled",
+      X.resolve_by_identifier(dn, None)["status"] == X.AMBIGUOUS and
+      X.resolve_by_identifier(dn, "")["status"] == X.AMBIGUOUS)
+check("A value never printed in the document is never used, even if eHub has it",
+      X.resolve_by_identifier(dn, "12345678901")["status"] == X.AMBIGUOUS)
+
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
