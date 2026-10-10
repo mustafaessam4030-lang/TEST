@@ -91,6 +91,16 @@ def seed_test_run(bridge):
     s = f = k = 0
     for ship, result, outcome, detail, outcome_class in rows:
         bridge.shipment_started(ship)
+        if outcome == "FAILED":
+            # A recovery that runs out of options: what puts ATLAS in
+            # RECOVERING and plants a potato (intelligence/atlas_state.py).
+            bridge.recovery_plan("UNEXPECTED PAGE STATE", detail,
+                                 ["reload_page", "reopen_manage", "alternate_selector"],
+                                 {}, True)
+            for index, action in enumerate(["reload_page", "reopen_manage",
+                                            "alternate_selector"], 1):
+                bridge.recovery_attempt(index, 3, action, None, "FAILED", False)
+            bridge.recovery_done(False, "No recovery option found the Save/Update button.")
         if result:
             bridge.provider_result(result)
             if result.get("eta"):
@@ -222,6 +232,7 @@ def main():
         # The test run never reaches ATLAS's real learning store.
         os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="atlas_demo_")
         os.environ["ATLAS_DEMO_TEST_DATA"] = "1"
+        bridge.persist_atlas_state()          # the temporary folder above
         seed_test_run(bridge)
         print("  data          TEST DATA — every answer is labelled as such")
         shots = seed_test_captures(Path(os.environ["ATLAS_INTEL_DIR"]) / "demo_captures")

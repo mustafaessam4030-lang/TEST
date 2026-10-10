@@ -224,6 +224,32 @@ input,textarea,select{font-family:inherit}
    existing ATLAS card, the same type roles as everything else, and no colour
    except the semantic ones already defined. */
 .rcv{border-top:1px solid var(--line);padding:12px 14px}
+/* ATLAS STATE + POTATO GARDEN. A simulated status, labelled as one, in the
+   card language already on this page; the garden is gamification and says so. */
+.ml-pill.blu{color:var(--blu)} .ml-pill.blu .d{background:var(--blu)}
+.ml-pill.bad{color:var(--red)} .ml-pill.bad .d{background:var(--red)}
+.as-b{padding:12px 14px;display:grid;gap:10px;border-top:1px solid var(--line)}
+.as-why{font-size:13px;color:var(--ink);line-height:1.45}
+.as-msg{font-size:13px;color:var(--mid);line-height:1.5;padding:9px 11px;border-radius:10px;
+  background:var(--line-2)}
+.as-msg[dir="rtl"]{text-align:right}
+.as-t{display:grid;gap:4px;margin:0;padding:0;list-style:none}
+.as-t li{display:grid;grid-template-columns:auto 1fr;gap:9px;font-size:12px;color:var(--mid);
+  line-height:1.4}
+.as-t time{font-variant-numeric:tabular-nums;color:var(--faint)}
+.as-k{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.pg{display:grid;gap:8px;border-top:1px solid var(--line);padding:12px 14px}
+.pg-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pg-n{font-size:11.5px;color:var(--faint)}
+.pg-row{display:flex;flex-wrap:wrap;gap:6px}
+.pg-p{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--mid);
+  border:1px solid var(--line);border-radius:100px;padding:3px 9px 3px 6px}
+.pg-p b{font-size:15px;line-height:1}
+.pg-p.done{opacity:.7}
+.pg-s{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--mid)}
+.pg-s b{color:var(--ink);font-variant-numeric:tabular-nums}
+.ch-mood{font-size:11px;color:var(--faint);white-space:nowrap}
+.ch-mood::before{content:"·";margin-right:6px}
 .rcv-h{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
 .rcv-k{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
   color:var(--faint)}
@@ -2555,6 +2581,17 @@ td.ref{font-weight:500}
       </div>
       <div class="g2">
         <div class="stack">
+          <!-- ATLAS STATE + POTATO GARDEN (intelligence/atlas_state.py), from
+               S.atlas_state. A simulated status for display, driven only by
+               real run events; it never changes what the run does. -->
+          <div class="card" id="asCard" hidden>
+            <div class="card-h"><div><div class="card-t">ATLAS state</div>
+              <div class="card-s">Simulated status for display, not a feeling · from this run's events</div></div>
+              <div class="sp"></div>
+              <span class="ml-pill" id="asPill"><span class="d"></span><span id="asPillT">—</span></span></div>
+            <div class="as-b" id="asBody"></div>
+            <div class="pg" id="pgBody"></div>
+          </div>
           <!-- FAILURE INTELLIGENCE. Each shipment that did not complete, as
                ATLAS understands it from the run's own records: what happened,
                why it matters, what is known, what is only inferred, the
@@ -2936,7 +2973,7 @@ td.ref{font-weight:500}
     <div class="ch-h">
       <div class="ch-av" id="chAtlas" aria-hidden="true"></div>
       <div class="ch-id"><div class="ch-nm" id="chTitle">ATLAS <span class="ch-sub">Operational Intelligence</span></div>
-        <div class="ch-rl" id="chRole" role="status" aria-live="polite"><i aria-hidden="true"></i><span id="chStatus">Watching this run</span></div>
+        <div class="ch-rl" id="chRole" role="status" aria-live="polite"><i aria-hidden="true"></i><span id="chStatus">Watching this run</span><span class="ch-mood" id="chMood" aria-hidden="true" hidden></span></div>
         <div class="ch-ty sr" id="chTy" aria-live="polite"></div></div>
       <!-- Which run (or shipment) the conversation is about. Opens it. -->
       <button class="ch-ctx" id="chCtx" type="button" hidden><span class="ch-ctx-k" id="chCtxK">Run</span><span class="ch-ctx-v" id="chCtxV"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
@@ -5571,7 +5608,57 @@ function paintDrawer(){
    The analytical view of the engine: what it is diagnosing, how its
    recoveries have gone this run, and what the run state says to do next.
    Every value is read from state; an unanswered one is a dash. */
+const AS_PILL = {IDLE:'', FOCUSED:'on', LEARNING:'blu', FRUSTRATED:'warn', RECOVERING:'bad'};
+const PG_STAGE = {seed:'🌰', sprout:'🌱', leafy:'🌿', flowering:'🌼'};
+function paintAtlasState(){
+  const st = S && S.atlas_state;
+  const card = $('asCard'), mood = $('chMood');
+  if (!st){ card.hidden = true; mood.hidden = true; return; }
+  const human = st.priority === 'human_action';
+  const moodText = human ? 'Human Action first' : st.label;
+  if (mood.textContent !== moodText) mood.textContent = moodText;
+  mood.title = 'ATLAS state (simulated): ' + st.label + ' · ' + (st.reason || '');
+  mood.hidden = st.state === 'IDLE' && !human;
+  const g = st.garden || {};
+  const key = JSON.stringify([st.state, st.reason, st.message, st.priority, st.since,
+    (st.transitions || []).length, (st.transitions || [])[0], g.planted, g.harvests,
+    (g.plants || []).map((p) => p.id + p.stage + (p.harvested_at || '')),
+    st.latest_verified_recovery]);
+  if (!changed('atlasState', key)) return;
+  card.hidden = false;
+  $('asPill').className = 'ml-pill ' + (human ? 'warn' : (AS_PILL[st.state] || ''));
+  $('asPillT').textContent = human ? 'Human Action first' : st.label;
+  const msg = human ? 'A Human Action is waiting, and it comes first.' : st.message;
+  const rtl = /[\u0600-\u06FF]/.test(msg || '');
+  const moves = (st.transitions || []).slice(0, 4).map((t) =>
+    '<li><time>' + esc(String(t.at || '').slice(11)) + '</time><span>' + esc(t.from) + ' → ' +
+    esc(t.to) + ' · ' + esc(t.reason) + '</span></li>').join('');
+  putHTML($('asBody'),
+    '<div class="as-why"><span class="as-k">Why</span> ' + esc(st.reason || '—') + '</div>' +
+    (msg ? '<div class="as-msg"' + (rtl ? ' dir="rtl" lang="ar"' : '') + '>' + esc(msg) + '</div>' : '') +
+    (moves ? '<div><div class="as-k">Recent changes</div><ul class="as-t">' + moves + '</ul></div>' : ''));
+  const plants = (g.plants || []).slice().reverse().map((p) =>
+    '<span class="pg-p' + (p.harvested_at ? ' done' : '') + '" title="' +
+    esc(p.id + ' · planted ' + p.planted_at + ' · ' + (p.reference || '') +
+        (p.harvested_at ? ' · harvested ' + p.harvested_at : '')) + '"><b aria-hidden="true">' +
+    (p.harvested_at ? '🥔' : (PG_STAGE[p.stage_name] || '🌱')) + '</b>' +
+    esc(p.harvested_at ? 'harvested' : p.stage_name) + '</span>').join('');
+  const cur = g.current, lv = st.latest_verified_recovery;
+  putHTML($('pgBody'),
+    '<div class="pg-h"><span class="as-k">Potato Garden 🥔</span><span class="pg-n">' +
+    esc(g.note || 'Gamification only, not an operational metric.') + '</span></div>' +
+    '<div class="pg-s"><span><b>' + (g.planted || 0) + '</b> planted</span><span><b>' +
+    (g.harvests || 0) + '</b> harvested</span><span><b>' + (g.growing || 0) + '</b> growing</span></div>' +
+    (plants ? '<div class="pg-row">' + plants + '</div>'
+            : '<div class="pg-n">Nothing planted. A potato is planted only when a real recovery runs out of options.</div>') +
+    (cur ? '<div class="pg-n">Growing now: ' + esc(cur.id) + ', a ' + esc(cur.stage_name) +
+      ', from ' + esc(cur.reference || 'an incident') + ' · it grows when shipments are verified, ' +
+      'and is harvested when that shipment is.</div>' : '') +
+    '<div class="pg-n">Latest verified recovery: ' + (lv ? esc((lv.solution || 'recovery') + ' on ' +
+      lv.reference + ' (' + (lv.problem || 'error') + '), ' + lv.at) : 'none recorded yet') + '</div>');
+}
 function paintAtlasPage(){
+  paintAtlasState();
   if (activePage === 'atlas' && S.cold_version !== FI.cold) loadFailures(false);
   const rec = S.recovery, a = S.atlas || {}, stats = a.recovery || null;
   const ev = (a.events || [])[0] || null;

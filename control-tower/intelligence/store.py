@@ -85,6 +85,14 @@ def _admitted():
     return marker == mine
 
 
+def admitted():
+    """Whether this process may write to the store (the origin check above)."""
+    try:
+        return _admitted()
+    except Exception:
+        return False
+
+
 def folder():
     path = Path(os.environ.get("ATLAS_INTEL_DIR") or DEFAULT_DIR)
     try:
