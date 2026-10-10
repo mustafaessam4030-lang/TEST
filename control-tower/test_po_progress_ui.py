@@ -98,8 +98,8 @@ try:
           "{0} -> {1}".format(w1, w2))
     NOW.update(state="EMAIL_PREPARED", progress="Ready", kpi="generated")
     page.wait_for_function("() => document.getElementById('poLive').hidden", timeout=10000)
-    check("Nothing running: the banner goes away, and no row bar is left",
-          page.locator("#poRows .po-mini").count() == 0)
+    check("Nothing running: the banner goes away (not displayed), and no row bar is left",
+          page.locator("#poRows .po-mini").count() == 0 and not page.is_visible("#poLive"))
     check("No script errors", not errors, str(errors[:2]))
     css = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
     check("Reduced motion stops the pulse and the sheen",

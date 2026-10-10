@@ -584,6 +584,7 @@ input,textarea,select{font-family:inherit}
 .po-steps span.now{background:var(--blu-wash);color:var(--blu);animation:poNow 1.4s ease-in-out infinite}
 @keyframes poNow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 3px var(--blu-wash)}}
 /* PO is working: a live banner, a real-step progress bar with a moving sheen. */
+.po-live[hidden]{display:none}
 .po-live{display:grid;gap:7px;margin:14px 0 4px;padding:13px 16px;border-radius:14px;
   border:1px solid var(--line);background:var(--surface)}
 .po-live-h{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink)}
