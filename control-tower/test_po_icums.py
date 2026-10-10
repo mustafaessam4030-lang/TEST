@@ -306,6 +306,15 @@ for number, ident, why in (("40726534505 / 01", "40726534505", "same number, oth
               "with their pages", "document_number (Declaration (BOE) No.): AMBIGUOUS" in lines
               and "40726534505 / 00 (page 1" in lines and "40726534505 / 01 (page 2" in lines,
               lines)
+from po.__main__ import find_job  # noqa: E402
+empty_folder, job_folder = WORK / "trace_empty", WORK / "job{0}".format(_n["i"])
+for key in (k["identifier"], k["reference"], k["po_id"]):
+    hit, where, searched = find_job(key, [empty_folder, job_folder])
+    check("'trace {0}' finds the job in whichever folder holds it".format(key),
+          hit is not None and hit["po_id"] == k["po_id"] and where == job_folder, searched)
+miss, _w, searched = find_job("99999999999", [empty_folder, job_folder])
+check("...and when there is none, says which folders it searched and how many jobs each held",
+      miss is None and [n for _p, n in searched] == [0, 1], searched)
 check("Without an eHub number nothing is settled",
       X.resolve_by_identifier(dn, None)["status"] == X.AMBIGUOUS and
       X.resolve_by_identifier(dn, "")["status"] == X.AMBIGUOUS)

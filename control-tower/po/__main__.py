@@ -467,17 +467,57 @@ def trace_lines(record):
     return out
 
 
+def trace_folders():
+    """Every place this install keeps PO jobs: the dashboard's, the worker's
+    (the automatic run beside update_eta), and the server's."""
+    root = Path(__file__).resolve().parent.parent
+    runtime = Path(os.environ.get("ATA_RUNTIME_DIR") or root / "dashboard" / ".runtime")
+    out = []
+    for folder in (os.environ.get("PO_DATA_DIR"), S.DEFAULT_DIR, runtime / "po",
+                   root / "controlplane" / "data" / "po"):
+        if folder and Path(folder).resolve() not in [f.resolve() for f in out]:
+            out.append(Path(folder))
+    return out
+
+
+def find_job(key, folders=None):
+    """(record, folder, searched) — the newest job whose po_id, BOL/AWB, Bill of
+    Entry number or identifier is `key` (digits compared without spaces), or
+    whose document name holds it. `searched` is [(folder, jobs)]."""
+    wanted = key.strip()
+    digits = re.sub(r"\D", "", wanted)
+    searched, found = [], []
+    for folder in folders or trace_folders():
+        if not (folder / "jobs").is_dir():
+            searched.append((folder, 0))
+            continue
+        rows = S.Store(folder=folder).all(limit=5000)
+        searched.append((folder, len(rows)))
+        for r in rows:
+            names = [r.get("po_id"), r.get("reference"), r.get("identifier"), r.get("number"),
+                     ((r.get("fields") or {}).get("document_number") or {}).get("value")]
+            doc = str((r.get("document") or {}).get("filename") or "")
+            hit = wanted in [str(n) for n in names if n] or \
+                (len(digits) >= 6 and (any(re.sub(r"\D", "", str(n or "")) == digits
+                                           for n in names[2:]) or digits in re.sub(r"\D", "", doc)))
+            if hit:
+                found.append((float(r.get("created_epoch") or 0), r, folder))
+    if not found:
+        return None, None, searched
+    found.sort(key=lambda x: -x[0])
+    return found[0][1], found[0][2], searched
+
+
 def cmd_trace(args):
-    st = S.Store()
-    key = args.job.strip()
-    record = st.get(key) if re.fullmatch(r"[A-Za-z0-9_-]{6,}", key or "") else None
+    record, folder, searched = find_job(args.job)
     if record is None:
-        matches = [r for r in st.all(limit=1000) if key in (r.get("reference"), r.get(
-            "identifier"), r.get("number"), r.get("po_id"))]
-        record = matches[0] if matches else None
-    if record is None:
-        print("no PO job for {0}".format(key), file=sys.stderr)
+        print("no PO job for {0}".format(args.job), file=sys.stderr)
+        for path, count in searched:
+            print("  searched {0} — {1} job(s)".format(path, count), file=sys.stderr)
+        print("  If the jobs are elsewhere, set PO_DATA_DIR to that folder and run again.",
+              file=sys.stderr)
         return 2
+    print("job folder: {0}".format(folder))
     print("\n".join(trace_lines(record)))
     return 0
 
