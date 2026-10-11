@@ -60,6 +60,17 @@ def say(text):
 
 # ── install ──────────────────────────────────────────────────────────────
 
+def _freeze_version():
+    """SearXNG reads its version from git when searx/version_frozen.py is
+    missing; a PC without git then fails to start it. Write that file."""
+    target = SRC / "searx" / "version_frozen.py"
+    if (SRC / "searx").is_dir() and not target.exists():
+        target.write_text(
+            'VERSION_STRING = "{0}"\nVERSION_TAG = "{0}"\nDOCKER_TAG = "{0}"\n'
+            'GIT_URL = "https://github.com/searxng/searxng"\nGIT_BRANCH = "master"\n'
+            .format(VERSION[:7]), encoding="utf-8")
+
+
 def install(from_zip=None):
     """Download (or take `from_zip`), unpack, create the environment, install."""
     HOME.mkdir(exist_ok=True)
@@ -80,6 +91,7 @@ def install(from_zip=None):
         if len(top) != 1 or not (top[0] / "searx" / "webapp.py").exists():
             raise RuntimeError("the download is not a SearXNG source archive")
         shutil.move(str(top[0]), str(SRC))
+    _freeze_version()
     if not venv_python().exists():
         say("Creating its own Python environment (searxng\\venv)...")
         subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
@@ -160,6 +172,7 @@ def run():
     os.chdir(SRC)
     sys.path.insert(0, str(SRC))
     import runpy
+    _freeze_version()
     runpy.run_module("searx.webapp", run_name="__main__")
 
 
