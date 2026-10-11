@@ -5561,6 +5561,9 @@ OCEAN_PORTALS = {
         "label": "Ocean Network Express (ONE)",
         "carrier": r"Ocean\s+Network\s+Express|^\s*ONE\s*(?:Line)?\s*$",
         "urls": ["https://www.one-line.com/one-ecom/manage-shipment/cargo-tracking"],
+        # ONE's page: "enter only the last 12 characters of ONE BL number,
+        # without the prefix ONEY" — ONEYANRG20003300 is typed as ANRG20003300.
+        "strip_prefix": "ONEY",
     },
     "HAPAG": {
         "label": "Hapag-Lloyd",
@@ -5588,6 +5591,19 @@ for _key, _carrier in OCEAN_PORTALS.items():
 # ISO 6346: four letters — owner code and category — then six digits and a
 # check digit. HLCU1234567, MSCU1234567, GRIU1234567.
 CONTAINER_NUMBER = re.compile(r"^\s*[A-Z]{4}\s*\d{6}\s*-?\s*\d\s*$", re.I)
+
+
+def portal_reference(tracking_number, config):
+    """The reference as THIS portal takes it: verbatim for a bill of lading
+    (less a prefix the carrier says to leave off), or the air waybill in the
+    carrier's form."""
+    if not config.get("verbatim"):
+        return portal_awb(tracking_number, config.get("dashed", True))
+    ref = str(tracking_number).strip()
+    prefix = config.get("strip_prefix")
+    if prefix and ref.upper().startswith(prefix.upper()) and len(ref) > len(prefix):
+        ref = ref[len(prefix):]
+    return ref
 
 
 def is_container_number(reference):
@@ -8200,8 +8216,7 @@ def submit_portal_awb(page, field, config, tracking_number):
             "form, not to Track a shipment. Nothing was typed and nothing was "
             "submitted.".format(config["label"]))
 
-    formatted = (str(tracking_number).strip() if config.get("verbatim")
-                 else portal_awb(tracking_number, config.get("dashed", True)))
+    formatted = portal_reference(tracking_number, config)
     landed = type_into(field, formatted, f"the {config['label']} air waybill box")
 
     if re.sub(r"\D", "", landed) != re.sub(r"\D", "", formatted):
@@ -9397,8 +9412,7 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             # The carrier takes the reference in the address itself.
             # A bill of lading goes in as the Hub holds it; an air waybill in
             # the carrier's own XXX-XXXXXXXX form.
-            reference = (str(tracking_number).strip() if config.get("verbatim")
-                         else portal_awb(tracking_number, config.get("dashed", True)))
+            reference = portal_reference(tracking_number, config)
             link = config["deep_link"].format(quote(reference, safe=""))
             write_log("{0}: opening the shipment page directly — {1}".format(
                 config["label"], link))
