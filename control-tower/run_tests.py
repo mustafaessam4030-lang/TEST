@@ -40,6 +40,7 @@ SUITES = [
     ("test_carrier_hold_e2e.py", "CMA CGM hold: zero lookups, zero writes"),
     ("test_arrival_events.py",  "ETA/ATA events, guards, adapters, 12-Oct regression"),
     ("test_run_limits.py",      "Run limits: every shipment and every Hub write counted"),
+    ("test_eta_diagnostic.py",  "ATLAS ETA/ATA diagnostic: advisory, evidence, evaluation"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),

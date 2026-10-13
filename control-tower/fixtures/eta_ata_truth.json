@@ -1,0 +1,490 @@
+{
+ "ETHIOPIAN-TRANSIT": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "ETHIOPIAN",
+  "destination": "DAR",
+  "eta": null,
+  "fixture": "ethiopian_transit_delivered.txt",
+  "product": "AIR",
+  "reviewed": true,
+  "status": "UNRESOLVED",
+  "why": "legs BRU-LGG and LGG-ADD DELIVERED (transit); last leg ADD-DAR only SCHEDULED for a departure on 2026-10-15; no estimated or actual arrival at DAR on the page"
+ },
+ "OCT12-01": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "12/10/2026",
+  "fixture": "dhl_oct12/OCT12-01.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-02": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "18/10/2026",
+  "fixture": "dhl_oct12/OCT12-02.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-03": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "11/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-03.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-04": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "13/10/2026",
+  "fixture": "dhl_oct12/OCT12-04.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-05": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "13/10/2026",
+  "fixture": "dhl_oct12/OCT12-05.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-06": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "11/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-06.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-07": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "12/10/2026",
+  "fixture": "dhl_oct12/OCT12-07.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-08": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "12/10/2026",
+  "fixture": "dhl_oct12/OCT12-08.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-09": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "12/10/2026",
+  "fixture": "dhl_oct12/OCT12-09.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-10": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "12/10/2026",
+  "fixture": "dhl_oct12/OCT12-10.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-11": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "13/10/2026",
+  "fixture": "dhl_oct12/OCT12-11.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-12": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "07/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-12.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-13": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "07/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-13.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-14": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": "12/10/2026",
+  "fixture": "dhl_oct12/OCT12-14.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-15": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "10/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-15.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-16": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "10/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-16.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-17": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "07/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-17.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-18": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "06/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-18.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-19": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "07/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-19.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-20": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "06/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-20.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-21": {
+  "arrival_at_destination": "explicit-country",
+  "ata": "03/10/2026",
+  "carrier": "DHL",
+  "destination": "ADDIS ABABA - ETHIOPIA",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-21.txt",
+  "product": "EXPRESS",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-22": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "04/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-22.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-23": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "04/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-23.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-24": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "05/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-24.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-25": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "11/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-25.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-26": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "11/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-26.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-27": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "11/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-27.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-28": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "05/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-28.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-29": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "03/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-29.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-30": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "02/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-30.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-31": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "05/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-31.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-32": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "04/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-32.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-33": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-33.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "UNRESOLVED",
+  "why": "past arrival on the page, but no landing event"
+ },
+ "OCT12-34": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-34.txt",
+  "product": "DGF",
+  "reviewed": true,
+  "status": "UNRESOLVED",
+  "why": "past arrival on the page, but no landing event"
+ },
+ "OCT12-35": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "03/10/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-35.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-36": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "29/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-36.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-37": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "27/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-37.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-38": {
+  "arrival_at_destination": "explicit-country",
+  "ata": "27/09/2026",
+  "carrier": "DHL",
+  "destination": "DAR ES SALAAM - TANZANIA",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-38.txt",
+  "product": "EXPRESS",
+  "reviewed": true,
+  "status": "RESOLVED"
+ },
+ "OCT12-39": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "26/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-39.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-40": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "27/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-40.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-41": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "26/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-41.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-42": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "22/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-42.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-43": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "22/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-43.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "OCT12-44": {
+  "arrival_at_destination": "carrier-label",
+  "ata": "23/09/2026",
+  "carrier": "DHL",
+  "destination": "Accra, Ghana",
+  "eta": null,
+  "fixture": "dhl_oct12/OCT12-44.txt",
+  "product": "DGF",
+  "status": "RESOLVED"
+ },
+ "QATAR-ARRIVED": {
+  "arrival_at_destination": "explicit-station",
+  "ata": "26/09/2026",
+  "carrier": "QATAR",
+  "destination": "DAR",
+  "eta": null,
+  "fixture": "qatar_arrived_destination.txt",
+  "product": "AIR",
+  "reviewed": true,
+  "status": "RESOLVED",
+  "why": "route (BRU - DAR); banner 'Arrived ( DAR) 26-Sep-2026 13:52'"
+ },
+ "QATAR-IN-TRANSIT": {
+  "arrival_at_destination": null,
+  "ata": null,
+  "carrier": "QATAR",
+  "destination": "JRO",
+  "eta": "14/10/2026",
+  "fixture": "qatar_in_transit.txt",
+  "product": "AIR",
+  "reviewed": true,
+  "status": "RESOLVED",
+  "why": "route (JNB - JRO); 'In Transit ( DOH )'; 'Estimated Arrival ( JRO ) 14-Oct-2026 07:35'"
+ }
+}
