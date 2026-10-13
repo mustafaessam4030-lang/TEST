@@ -324,7 +324,7 @@ class HubBoundary(object):
 
     def __init__(self):
         self.held, self.pending, self.opened, self.saves = {}, {}, [], 0
-        self.mode = "persist"            # persist | drop | unreadable
+        self.mode = "persist"   # persist | drop | unreadable | unreadable_after_save
         self.current = None
 
     def install(self):
@@ -364,7 +364,8 @@ class HubBoundary(object):
         A.save_manage_page = save
         A.ensure_filtered_page = lambda *args, **kwargs: None
         A.field_candidates = lambda page, name: (
-            [] if hub.mode == "unreadable" else [(name, Field(name))])
+            [] if hub.mode == "unreadable" or (hub.mode == "unreadable_after_save" and hub.saves)
+            else [(name, Field(name))])
         A.find_field_ignoring_visibility = lambda page, name: None
         A.page_is_settled = lambda page: True
         A.all_scopes = lambda page: [page]
@@ -419,10 +420,24 @@ def ocean_write_chain(pages):
     check("Saved but the Hub reads back something else -> NOT a success",
           dropped is not None and "not verified" in str(dropped), repr(dropped))
 
+    # The Hub's ATA field cannot be read BEFORE an ETA-only write: nothing is
+    # written (the existing ATA check fails closed).
+    hub0 = HubBoundary()
+    hub0.install()
+    hub0.mode = "unreadable"
+    before = None
+    try:
+        A.update_internal_shipment(object(), msc, dict(result))
+    except Exception as error:
+        before = error
+    check("The Hub's ATA cannot be read before an ETA-only write -> HubFieldUnreadable, "
+          "nothing saved", isinstance(before, A.HubFieldUnreadable) and hub0.saves == 0,
+          repr(before))
+
     # The read-back cannot be performed: for an ocean write, NOT a success.
     hub3 = HubBoundary()
     hub3.install()
-    hub3.mode = "unreadable"
+    hub3.mode = "unreadable_after_save"
     unread = None
     try:
         A.update_internal_shipment(object(), msc, dict(result))
@@ -452,7 +467,7 @@ def ocean_write_chain(pages):
     # An air result (no read_back_required) keeps its existing behaviour.
     hub5 = HubBoundary()
     hub5.install()
-    hub5.mode = "unreadable"
+    hub5.mode = "unreadable_after_save"
     air = A.update_internal_shipment(object(), dict(msc, bol_awb="074-46285514"),
                                      {"eta": MSC_ETA, "ata": None})
     check("An air carrier's unreadable read-back is unchanged (saved, unverified)",

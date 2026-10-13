@@ -10873,7 +10873,7 @@ def read_current_date_field(page, field_name):
             field = find_field_ignoring_visibility(page, field_name)
         if field is None:
             return False
-        return (field.input_value(timeout=2000) or "").strip()
+        return (field.input_value() or "").strip()     # exactly as the read-back reads it
     except Exception as error:
         note_suppressed("reading the current {0} before writing".format(field_name), error)
         return False
