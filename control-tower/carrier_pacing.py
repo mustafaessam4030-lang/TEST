@@ -260,6 +260,53 @@ class CarrierGate(object):
                  "shipments are deferred.".format(p))
 
 
+class RunLimits(object):
+    """
+    The run's two hard limits, counted at the source:
+      shipments  every shipment STARTED (counted before its lookup, whatever
+                 it ends as: success, failure, skip, review, parked, partial)
+      writes     every Hub field SAVED (counted the moment the save is
+                 clicked, before the read-back, so a write that later fails
+                 verification or a partial shipment still counts)
+    A limit of 0 or less means no shipment / no write at all.
+    """
+
+    def __init__(self, max_shipments, max_writes):
+        self.max_shipments, self.max_writes = int(max_shipments), int(max_writes)
+        self.started, self.writes = 0, 0
+        self.started_refs, self.written = [], []
+        self._lock = threading.Lock()
+
+    def exhausted(self):
+        """Why no further shipment may start, or None."""
+        if self.started >= self.max_shipments:
+            return "the run's shipment limit ({0}) is reached".format(self.max_shipments)
+        if self.writes >= self.max_writes:
+            return "the run's Hub write limit ({0}) is reached".format(self.max_writes)
+        return None
+
+    def begin_shipment(self, reference):
+        """Count a shipment as started. -> None, or why it may not start."""
+        with self._lock:
+            why = self.exhausted()
+            if why:
+                return why
+            self.started += 1
+            self.started_refs.append(reference)
+            return None
+
+    def write_refusal(self):
+        """Why the next Hub field may not be written, or None."""
+        if self.writes >= self.max_writes:
+            return "the run's Hub write limit ({0}) is reached".format(self.max_writes)
+        return None
+
+    def record_write(self, reference, view, field, value):
+        with self._lock:
+            self.writes += 1
+            self.written.append((reference, view, field, value))
+
+
 def main(argv):
     path = Path(argv[1]) if len(argv) > 1 else DEFAULT_PATH
     queue = DeferredQueue(path)

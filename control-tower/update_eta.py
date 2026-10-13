@@ -161,6 +161,15 @@ COE_VIEW = "COE"
 BU_VIEW = "BU"
 MAX_TABLE_PAGES = 10
 MAX_RECORDS_PER_RUN = 200
+# Hub FIELDS saved per run (an ETA and an ATA are two). Counted at the save,
+# before the read-back. MAX_HUB_WRITES overrides it; set it to 1 or 2 for a
+# limited, authorised verification run.
+try:
+    MAX_HUB_WRITES = int(os.environ.get("MAX_HUB_WRITES", "150"))
+except ValueError:
+    MAX_HUB_WRITES = 0          # an unreadable setting allows no write at all
+# This run's counters (carrier_pacing.RunLimits); set at the start of main().
+RUN_LIMITS = None
 # Playwright delays EVERY action by this much.
 #
 # Restored to the original 150ms. I had lowered this to 60 for speed, but your
@@ -6260,6 +6269,25 @@ def carrier_restriction(page, reference=None):
                                                      "supported browser")]}
 
 
+class HubWriteLimitReached(Exception):
+    """The run's Hub write limit is reached: nothing more is filled or saved."""
+
+    def __init__(self, message):
+        Exception.__init__(self, message)
+        self.failure = {"category": "HUB_WRITE_LIMIT", "stage": "hub_write",
+                        "detail": message}
+
+
+class HubFieldUnreadable(Exception):
+    """A Hub field the write depends on could not be read or parsed: the
+    write stops (fail closed), reported as a verification error."""
+
+    def __init__(self, message):
+        Exception.__init__(self, message)
+        self.failure = {"category": "HUB_READ_FAILED", "stage": "hub_read_before_write",
+                        "detail": message}
+
+
 class NeedsReview(Exception):
     """The carrier's dates cannot be trusted as they are (ambiguous, in
     conflict, unsupported, another shipment's, or the Hub already holds a
@@ -10808,6 +10836,18 @@ def save_manage_page(page):
         write_log(f"Manage page saved successfully ({settled}).")
 
 
+def read_hub_ata(page, shipment):
+    """The BU view's current ATA, read the validated way (same locators as the
+    write and the read-back, same parsing as the overwrite rule).
+    -> (state, value) from arrival_events.hub_date, or ("UNREADABLE", None)."""
+    click_manage_in_view(page, BU_VIEW, shipment["bol_awb"], shipment["table_page"])
+    select_shipment_info_tab(page, BU_VIEW, "ATA")
+    raw = read_current_date_field(page, "ATA")
+    if raw is False:
+        return "UNREADABLE", None
+    return AE.hub_date(raw, normalize_date)
+
+
 def read_current_date_field(page, field_name):
     """The field's value before a write: text ('' when empty), or False when
     it could not be read. Same locators as the write and the read-back."""
@@ -10987,6 +11027,10 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
             except Exception as error:
                 note_suppressed("reopening Manage to recover the panel", error)
 
+        if RUN_LIMITS is not None and RUN_LIMITS.write_refusal():
+            raise HubWriteLimitReached("{0}: {1} not written for {2}.".format(
+                RUN_LIMITS.write_refusal(), field_name, bol_awb))
+
         if field_name == "ATA":
             # An ATA already in the Hub is never replaced automatically -
             # neither by an older nor by a newer date. A person decides.
@@ -10998,7 +11042,7 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
                                    "for {0}; nothing was written.".format(bol_awb))
             # Read the same way as the read-back (normalize_date), so one
             # date in two spellings is never taken for two dates.
-            problem = AE.ata_overwrite_problem(normalize_date(current) or current, date_value)
+            problem = AE.ata_overwrite_problem(current, date_value, normalize_date)
             if problem:
                 raise NeedsReview([problem])
 
@@ -11015,6 +11059,10 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
             return f"DRY RUN - {field_name} {date_value} filled, not saved"
 
         save_manage_page(page)
+        # Counted the moment it is saved: a write that later fails its
+        # read-back, or a shipment that ends PARTIAL, still used the budget.
+        if RUN_LIMITS is not None:
+            RUN_LIMITS.record_write(bol_awb, view_name, field_name, date_value)
 
         if VERIFY_AFTER_SAVE or require_verified:
             verified, detail = verify_saved_date(
@@ -11148,6 +11196,20 @@ def update_internal_shipment(internal_page, shipment, dhl_result):
     dhl_result, _notes = separate_eta_ata(dhl_result)
     for _note in _notes:
         write_log(_note)
+    if dhl_result.get("eta") and not dhl_result.get("ata"):
+        # An ETA alone: first make sure the Hub has not already recorded an
+        # arrival (e.g. a false ATA from an earlier run). Nothing is written
+        # before this check.
+        _state, _value = read_hub_ata(internal_page, shipment)
+        write_log("Hub BU ATA before an ETA-only write for {0}: {1} {2}".format(
+            shipment.get("bol_awb"), _state, _value or ""))
+        if _state not in (AE.HUB_EMPTY, AE.HUB_DATE):
+            raise HubFieldUnreadable(
+                "The Hub's current ATA for {0} could not be read or parsed ({1}); the ETA "
+                "was not written.".format(shipment.get("bol_awb"), _value or _state))
+        _problem = AE.eta_only_problem(_state, _value, dhl_result["eta"])
+        if _problem:
+            raise NeedsReview([_problem])
     actions = {"coe": "", "bu": ""}
 
     # If a BU update follows, it re-navigates to the BU view immediately, so
@@ -11404,7 +11466,10 @@ def main():
     # — training is never triggered by a run, and never will be: a model that
     # retrained itself on the way past would be a different model every time
     # and impossible to hold responsible for anything.
-    global ML_ACTIVE
+    global ML_ACTIVE, RUN_LIMITS
+    RUN_LIMITS = carrier_pacing.RunLimits(MAX_RECORDS_PER_RUN, MAX_HUB_WRITES)
+    write_log("Run limits: at most {0} shipments started and {1} Hub fields saved."
+              .format(MAX_RECORDS_PER_RUN, MAX_HUB_WRITES))
     if ML_AVAILABLE:
         ML_ACTIVE = ml_predictor.initialize(log=write_log)
         write_log("[{0}] Telemetry: {1}".format(
@@ -11485,8 +11550,15 @@ def main():
                 shipment from the Hub list and for one an operator chose
                 from the Human Action queue.
                 """
-                nonlocal successful, failed, skipped, partial, needs_human
+                nonlocal successful, failed, skipped, partial, needs_human, stop_requested
                 bol_awb = shipment["bol_awb"]
+                # Counted BEFORE anything else, whatever this shipment ends as.
+                _limit = RUN_LIMITS.begin_shipment(bol_awb)
+                if _limit:
+                    write_log("Not started {0}: {1}. It is looked up next run.".format(
+                        bol_awb, _limit))
+                    stop_requested = True
+                    return
                 dhl_result = {}
                 _counts_before = (successful, failed, skipped, partial,
                                   needs_human)
@@ -11760,6 +11832,9 @@ def main():
                     if honour_control_requests() == "stop":
                         stop_requested = True
                         break
+                    if RUN_LIMITS.exhausted():
+                        write_log("ATLAS work list stopped: " + RUN_LIMITS.exhausted())
+                        break
                     shipment, page_no = _picked_up[reference]
                     failed = max(0, failed - 1)
                     tower.deferred_retry_started(reference)
@@ -11777,6 +11852,8 @@ def main():
                 back here and its new outcome counted instead.
                 """
                 nonlocal needs_human
+                if RUN_LIMITS.exhausted():
+                    return []           # chosen tasks stay in the queue
                 chosen = human_queue_service()
                 for task, _shipment in chosen:
                     needs_human = max(0, needs_human - 1)
@@ -11787,8 +11864,9 @@ def main():
 
 
             for table_page in range(1, MAX_TABLE_PAGES + 1):
-                if successful + failed + skipped >= MAX_RECORDS_PER_RUN:
-                    write_log(f"Maximum record limit reached: {MAX_RECORDS_PER_RUN}")
+                if RUN_LIMITS.exhausted() or stop_requested:
+                    write_log("Run limit reached: {0}".format(
+                        RUN_LIMITS.exhausted() or "stop requested"))
                     break
 
                 try:
@@ -11863,6 +11941,11 @@ def main():
                     _reruns.discard(bol_awb)
 
                     if honour_control_requests() == "stop":
+                        stop_requested = True
+                        break
+                    if RUN_LIMITS.exhausted():
+                        write_log("Run limit reached before {0}: {1}".format(
+                            bol_awb, RUN_LIMITS.exhausted()))
                         stop_requested = True
                         break
 

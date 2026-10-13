@@ -690,6 +690,7 @@ else:
             rule("9. CARRIERS THAT NEED NO PERSON ARE UNAFFECTED")
             before = len(final["human_events"])
             last = A.HUMAN_STATE["last"]
+            HUB.clear()             # a different shipment: its own, empty Hub record
             kind, result = process(pages, {"bol_awb": MAERSK_GOOD,
                                            "carrier": "Maersk",
                                            "provider": "MAERSK",

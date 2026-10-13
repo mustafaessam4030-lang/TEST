@@ -35,7 +35,8 @@ class Clock(object):
 
 tmp = tempfile.mkdtemp()
 path = os.path.join(tmp, "carrier_deferred.json")
-SHIP = {"bol_awb": "CMAU1234567", "carrier": "CMA CGM", "tracking_reference": "CMAU1234567"}
+SHIP = {"bol_awb": "CMAU1234567", "carrier": "CMA CGM", "tracking_reference": "CMAU1234567",
+        "table_page": 1}
 
 
 def gate(clock, run="run-1", q=None):
@@ -183,6 +184,7 @@ def fake_view(page, shipment, view, field, value, return_to_table=True, require_
 
 real_view = A.update_one_view
 A.update_one_view = fake_view
+A.read_hub_ata = lambda page, shipment: (A.AE.HUB_EMPTY, None)   # an empty Hub ATA
 try:
     A.update_internal_shipment(None, SHIP, {"ata": "12/07/2026", "ata_source": "Carrier: Arrived",
                                             "read_back_required": True})

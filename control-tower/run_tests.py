@@ -39,6 +39,7 @@ SUITES = [
     ("test_carrier_pacing.py",  "Carrier pacing, first-block stop, deferred queue"),
     ("test_carrier_hold_e2e.py", "CMA CGM hold: zero lookups, zero writes"),
     ("test_arrival_events.py",  "ETA/ATA events, guards, adapters, 12-Oct regression"),
+    ("test_run_limits.py",      "Run limits: every shipment and every Hub write counted"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),

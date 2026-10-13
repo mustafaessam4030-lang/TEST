@@ -335,5 +335,58 @@ obs = {"shipment": {"reference": "K000001", "table_page": 1}, "stages": []}
 W._read_fields(None, obs)
 check("Unreadable ATA field: the check is BLOCKED, not passed", obs.get("result") == "BLOCKED", obs)
 
+# ------------------------------------- ETA-only writes protect the ATA
+section("9. ETA-only write: the Hub's existing ATA is read first")
+D = importlib.reload(A)
+D.write_log = lambda *a, **k: None
+VIEWS, WR = [], []
+D.click_manage_in_view = lambda page, view, ref, table_page: VIEWS.append(view) or 1
+D.select_shipment_info_tab = lambda *a, **k: True
+D.update_one_view = lambda page, s, view, field, value, **k: WR.append((field, value)) or \
+    "{0} updated with {1} and saved".format(field, value)
+SHIP_T = {"bol_awb": "OCT12-XX", "tracking_reference": "OCT12-XX", "table_page": 1}
+
+
+def eta_only(raw, eta="20/10/2026"):
+    """Run the ETA-only path against a Hub ATA field holding `raw`."""
+    del VIEWS[:], WR[:]
+    D.read_current_date_field = lambda page, field: raw
+    try:
+        D.update_internal_shipment(None, SHIP_T, {"eta": eta, "eta_source": "Estimated Carrier "
+                                                  "Arrival (Destination)", "ata": None})
+        return "written"
+    except D.NeedsReview:
+        return "review"
+    except D.HubFieldUnreadable:
+        return "unreadable"
+
+
+for raw, want, label in (("", "written", "empty"), ("__/__/____", "written", "masked placeholder"),
+                         ("dd/mm/yyyy", "written", "placeholder text"),
+                         ("05/10/2026", "review", "populated"),
+                         ("5/10/2026", "review", "populated, single-digit day"),
+                         ("05/10/2026 00:00", "review", "populated with a time"),
+                         ("3rd Oct", "unreadable", "digits but no date"),
+                         (False, "unreadable", "field could not be read")):
+    got = eta_only(raw)
+    check("Hub ATA {0} ({1!r}) -> {2}".format(label, raw, want), got == want and
+          (WR == [("ETA", "20/10/2026")] if want == "written" else WR == []) and
+          VIEWS[:1] == [D.BU_VIEW], (got, WR, VIEWS))
+
+# The 10 shipments of 12 Oct that got an ATA though they had NOT arrived:
+# today DHL gives them an estimate only; the Hub still holds the false ATA.
+false_ata = [(p, m) for p, m in sorted(manifest.items())
+             if m["expected_eta"] and not m["expected_ata"] and not m["expected_review"]
+             and m["old_ata"] not in (None, "None")]
+check("The 10 false-ATA shipments are in the fixtures", len(false_ata) == 10, len(false_ata))
+for pseudo, m in false_ata:
+    text = (FIX / "dhl_oct12" / (pseudo + ".txt")).read_text(encoding="utf-8")
+    events, _p, _d = E.dhl_events(text, pseudo)
+    d = E.decide(events, today=OCT12)
+    got = eta_only(m["old_ata"], eta=d["eta"])
+    check("{0}: DHL says not arrived (ETA {1}); Hub holds false ATA {2} -> review, no ETA "
+          "written".format(pseudo, d["eta"], m["old_ata"]),
+          d["eta"] and not d["ata"] and got == "review" and WR == [], (d["eta"], got, WR))
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -336,18 +336,61 @@ def check_before_write(shipment, result, today=None):
     return eta, ata, review, notes
 
 
-def ata_overwrite_problem(current, new):
+HUB_EMPTY, HUB_DATE, HUB_UNPARSEABLE = "EMPTY", "DATE", "UNPARSEABLE"
+
+
+def hub_date(raw, normalizer=None):
+    """
+    What a Hub date field holds, read ONE way everywhere:
+      (EMPTY, None)          blank, or an input mask / placeholder with no
+                             digit in it ("__/__/____", "dd/mm/yyyy")
+      (DATE, "dd/mm/yyyy")   one date: by `normalizer` (update_eta's
+                             normalize_date, as the read-back uses) or by
+                             parse_date / d/m/yyyy, a time part ignored
+      (UNPARSEABLE, raw)     digits that are not one date: never guessed
+    """
+    text = str(raw or "").strip()
+    if not re.search(r"\d", text):
+        return HUB_EMPTY, None
+    if normalizer is not None:
+        try:
+            value = normalizer(text)
+        except Exception:
+            value = None
+        if value and _day(value):
+            return HUB_DATE, value
+    head = re.split(r"\s+\d{1,2}:\d{2}", text)[0]
+    value = parse_date(head)
+    if not value:
+        m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", head)
+        candidate = m and "{0:02d}/{1:02d}/{2}".format(int(m.group(1)), int(m.group(2)),
+                                                        m.group(3))
+        value = candidate if candidate and _day(candidate) else None
+    return (HUB_DATE, value) if value else (HUB_UNPARSEABLE, text)
+
+
+def ata_overwrite_problem(current, new, normalizer=None):
     """The Hub already holds an ATA: a different one is never written over it
     automatically (neither newer nor older); a person decides."""
-    if not re.search(r"\d", str(current or "")):
-        return None             # empty, or an input mask / placeholder with no date in it
-    raw = re.split(r"\s+\d{1,2}:\d{2}", str(current).strip())[0]
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", raw)
-    cur = parse_date(raw) or (m and _day("{0:02d}/{1:02d}/{2}".format(
-        int(m.group(1)), int(m.group(2)), m.group(3))) and "{0:02d}/{1:02d}/{2}".format(
-        int(m.group(1)), int(m.group(2)), m.group(3)))
-    if not cur:
+    state, value = hub_date(current, normalizer)
+    if state == HUB_EMPTY:
+        return None
+    if state == HUB_UNPARSEABLE:
         return "the Hub's current ATA '{0}' cannot be read as a date".format(current)
-    if new and cur != new:
-        return "the Hub already holds ATA {0}; the carrier now gives {1}".format(cur, new)
+    if new and value != new:
+        return "the Hub already holds ATA {0}; the carrier now gives {1}".format(value, new)
     return None
+
+
+def eta_only_problem(hub_ata_state, hub_ata_value, eta):
+    """Before an ETA is written WITHOUT an ATA: an ATA already in the Hub means
+    the shipment was recorded as arrived; an estimate is not written beside it
+    (it may be a false ATA from an earlier run, or the carrier may be out of
+    date). -> None to write, or the reason for review."""
+    if hub_ata_state == HUB_EMPTY:
+        return None
+    if hub_ata_state == HUB_DATE:
+        return ("the Hub already holds ATA {0} but the carrier gives only an estimate "
+                "({1}): the ETA is not written; a person checks the shipment".format(
+                    hub_ata_value, eta))
+    return "the Hub's current ATA could not be read reliably ({0})".format(hub_ata_value)
