@@ -1,0 +1,386 @@
+Tracking Code: OCT12-38
+This shipment is handled by: DHL Express
+Origin: EAST MIDLANDS - UK
+Destination: DAR ES SALAAM - TANZANIA
+Time	Status	Location
+
+
+October 12, 2026
+
+8:55 AM (UTC +03:00)	Delivered
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+October 12, 2026
+
+8:55 AM (UTC +03:00)	Partial delivery of one or more pieces of a multi-piece shipment	DAR ES SALAAM - TANZANIA
+
+
+October 12, 2026
+
+7:48 AM (UTC +03:00)	Shipment is out with courier for delivery
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+October 10, 2026
+
+12:15 PM (UTC +03:00)	Arrived at DHL Delivery Facility DAR ES SALAAM - TANZANIA
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+October 9, 2026
+
+7:02 PM (UTC +03:00)	Arrived at DHL Delivery Facility DAR ES SALAAM - TANZANIA
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+October 8, 2026
+
+6:20 PM (UTC +03:00)	Clearance processing complete at DAR ES SALAAM - TANZANIA
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 8, 2026
+
+5:34 PM (UTC +03:00)	Customs clearance status updated. Note - The Customs clearance process may start while the shipment is in transit to the destination.	DAR ES SALAAM - TANZANIA
+
+
+October 8, 2026
+
+3:58 PM (UTC +03:00)	Customs clearance status updated. Note - The Customs clearance process may start while the shipment is in transit to the destination.	DAR ES SALAAM - TANZANIA
+
+
+October 8, 2026
+
+12:28 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 8, 2026
+
+12:28 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 7, 2026
+
+12:41 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 7, 2026
+
+12:41 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 6, 2026
+
+1:15 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 6, 2026
+
+1:15 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 5, 2026
+
+3:07 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 5, 2026
+
+3:07 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 5, 2026
+
+10:46 AM (UTC +03:00)	Customs clearance status updated. Note - The Customs clearance process may start while the shipment is in transit to the destination.	DAR ES SALAAM - TANZANIA
+
+
+October 2, 2026
+
+2:44 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 2, 2026
+
+2:44 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 1, 2026
+
+2:42 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+October 1, 2026
+
+2:42 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+September 30, 2026
+
+1:16 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+September 30, 2026
+
+1:16 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+September 30, 2026
+
+10:21 AM (UTC +03:00)	Customs clearance status updated. Note - The Customs clearance process may start while the shipment is in transit to the destination.	DAR ES SALAAM - TANZANIA
+
+
+September 29, 2026
+
+3:11 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+September 29, 2026
+
+3:11 PM (UTC +03:00)	Shipment is on hold
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+September 28, 2026
+
+7:39 PM (UTC +03:00)	Processed for clearance at DAR ES SALAAM - TANZANIA
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+September 28, 2026
+
+7:39 PM (UTC +03:00)	Clearance Event
+2 Piece IDs
+	DAR ES SALAAM - TANZANIA
+
+
+September 28, 2026
+
+7:39 PM (UTC +03:00)	Arrived at DHL Sort Facility DAR ES SALAAM - TANZANIA
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+September 28, 2026
+
+6:41 PM (UTC +03:00)	Shipment is on hold
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+September 28, 2026
+
+12:57 PM (UTC +03:00)	Customs clearance status updated. Note - The Customs clearance process may start while the shipment is in transit to the destination.	DAR ES SALAAM - TANZANIA
+
+
+September 28, 2026
+
+6:19 AM (UTC +04:00)	Shipment has departed from a DHL facility DUBAI - UNITED ARAB EMIRATES
+1 Piece ID: XXXXXXXX
+	DUBAI - UNITED ARAB EMIRATES
+
+
+September 28, 2026
+
+6:19 AM (UTC +04:00)	Processed at DUBAI - UNITED ARAB EMIRATES
+1 Piece ID: XXXXXXXX
+	DUBAI - UNITED ARAB EMIRATES
+
+
+September 27, 2026
+
+1:01 PM (UTC +03:00)	Processed for clearance at DAR ES SALAAM - TANZANIA
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+September 27, 2026
+
+1:01 PM (UTC +03:00)	Clearance Event
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+September 27, 2026
+
+12:58 PM (UTC +03:00)	Arrived at DHL Sort Facility DAR ES SALAAM - TANZANIA
+1 Piece ID: XXXXXXXX
+	DAR ES SALAAM - TANZANIA
+
+
+September 25, 2026
+
+2:38 PM (UTC +03:00)	Customs clearance status updated. Note - The Customs clearance process may start while the shipment is in transit to the destination.	DAR ES SALAAM - TANZANIA
+
+
+September 25, 2026
+
+3:09 AM (UTC +04:00)	Arrived at DHL Sort Facility DUBAI - UNITED ARAB EMIRATES
+1 Piece ID: XXXXXXXX
+	DUBAI - UNITED ARAB EMIRATES
+
+
+September 25, 2026
+
+2:15 AM (UTC +01:00)	Shipment has departed from a DHL facility LONDON-HEATHROW - UK
+1 Piece ID: XXXXXXXX
+	LONDON-HEATHROW - UK
+
+
+September 25, 2026
+
+1:41 AM (UTC +01:00)	Processed at LONDON-HEATHROW - UK
+1 Piece ID: XXXXXXXX
+	LONDON-HEATHROW - UK
+
+
+September 24, 2026
+
+2:20 PM (UTC +01:00)	Scheduled to depart on the next planned movement
+1 Piece ID: XXXXXXXX
+	LONDON-HEATHROW - UK
+
+
+September 24, 2026
+
+9:25 AM (UTC +01:00)	Processed at LONDON-HEATHROW - UK
+1 Piece ID: XXXXXXXX
+	LONDON-HEATHROW - UK
+
+
+September 24, 2026
+
+6:46 AM (UTC +02:00)	Shipment has departed from a DHL facility LEIPZIG - GERMANY
+1 Piece ID: XXXXXXXX
+	LEIPZIG - GERMANY
+
+
+September 24, 2026
+
+6:45 AM (UTC +02:00)	Shipment is in transit to destination
+1 Piece ID: XXXXXXXX
+	LEIPZIG - GERMANY
+
+
+September 24, 2026
+
+6:09 AM (UTC +01:00)	Arrived at DHL Sort Facility LONDON-HEATHROW - UK
+1 Piece ID: XXXXXXXX
+	LONDON-HEATHROW - UK
+
+
+September 24, 2026
+
+3:06 AM (UTC +01:00)	Shipment has departed from a DHL facility EAST MIDLANDS - UK
+2 Piece IDs
+	EAST MIDLANDS - UK
+
+
+September 24, 2026
+
+2:59 AM (UTC +01:00)	Processed at EAST MIDLANDS - UK
+2 Piece IDs
+	EAST MIDLANDS - UK
+
+
+September 23, 2026
+
+1:35 PM (UTC +01:00)	Shipment information received	EAST MIDLANDS - UK
+
+If you would prefer to speak to someone personally about the location of your shipment, please contact DHL Express Customer Service
+
+Quick Answers to Common Tracking Questions
+When I track my international DHL Express shipments, why do I sometimes get information for a shipment that is not going to the intended destination?
+I have tracked a shipment and been told to contact DHL. Why is this?
+The tracking results are showing that my shipment is going to a different town or city than it was initially addressed to. Why is this?
+How do I learn who signed for my shipment?
+As an account customer with DHL, is there a tracking solution I can use to receive an overview of all shipments on my account?
+My shipment is showing 'Custom status updated from the destination,' even though the shipment just left the country. What does this mean?
+There were shipments displayed, but mine wasn't listed.
+opens new window
+opens external link
+Stop Tracking the Box. Start Tracking Your Future.
+
+Your career deserves a fast route, too.
+
+Explore open roles (IT, Logistics, Driving, and more) with stability and clear paths for advancement.
+
+Don't wait for your next step - build it!
+
+Unbox Your Potential
+Footer
+Quick Links
+Customer Service
+Customer Portal Logins
+Developer Portal 
+Get a Quote
+Request a Business Account
+DHL for Your Business
+Our Divisions
+DHL Express
+DHL Global Forwarding
+Other Global Divisions
+Industry Sectors
+Auto-Mobility
+Energy
+Aerospace and Industrial Technologies
+Life Sciences and Healthcare
+Retail and Fashion
+Technology
+Company Information
+About DHL
+Delivered 
+Careers 
+Press Center
+Investors 
+Sustainability
+Innovation
+Events
+Brand Partnerships
+Fraud Awareness
+Legal Notice
+Terms of Use
+Privacy Notice
+Additional Information
+Cookie Settings
+Follow Us
+2026 © - all rights reserved
+opens new window
+opens external link

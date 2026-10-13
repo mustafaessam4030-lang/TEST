@@ -143,7 +143,9 @@ FAILED_STATES = ("failed", "partial", "human_timeout")
 # "DEFERRED": a carrier deliberately not asked (blocked earlier, cooling down,
 # per-run cap). The block itself is the failure; the shipments it held back
 # are kept in the deferred queue, not reported as unexplained failures.
-EXPECTED_SKIPS = (None, "", "NO RESULT", "SUCCESS", "DEFERRED")
+# "NEEDS REVIEW": the dates were deliberately not written (arrival_events
+# rules); the reasons are on the record and in the review queue.
+EXPECTED_SKIPS = (None, "", "NO RESULT", "SUCCESS", "DEFERRED", "NEEDS REVIEW")
 
 
 def _first_upper(text):

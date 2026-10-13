@@ -34,6 +34,7 @@ except ImportError:
 import sys as _cp_sys  # noqa: E402
 _cp_sys.path.insert(0, str(Path(__file__).resolve().parent))
 import carrier_pacing  # noqa: E402
+import arrival_events as AE  # noqa: E402
 
 # The remote Human Action session: this run's own tab, shown in an operator's
 # browser through the worker agent while the run waits for them. Optional and
@@ -971,6 +972,8 @@ SUCCESS = "SUCCESS"
 NO_RESULT = "NO RESULT"
 # Not asked on purpose: the carrier is blocked, cooling down, or at its cap.
 CARRIER_DEFERRED = "DEFERRED"
+# The dates were not written: a person reviews them (arrival_events rules).
+NEEDS_REVIEW = "NEEDS REVIEW"
 TIMEOUT = "TIMEOUT"
 TEMPORARY_WEBSITE_ISSUE = "TEMPORARY WEBSITE ISSUE"
 AUTHENTICATION_ISSUE = "AUTHENTICATION ISSUE"
@@ -1000,6 +1003,8 @@ def classify_failure(error):
     # stronger than any reading of the message.
     if isinstance(error, CarrierDeferred):
         return CARRIER_DEFERRED
+    if isinstance(error, NeedsReview):
+        return NEEDS_REVIEW
     declared = (getattr(error, "failure", None) or {}).get("category")
     if declared == "CARRIER_POLICY_BLOCK":
         return WRITE_BLOCKED
@@ -4143,27 +4148,36 @@ def extract_event_log_result(page):
     # accepted: the rules decide which of the dates read may be written.
     timeline_text = _page_text(page) + "\n" + read_dhl_tabs(page)
 
-    # Dates DHL prints against explicit arrival / estimate fields (details,
-    # masterdetails) fill what the Event Log rows did not give.
-    if not latest_ata:
-        latest_ata = dhl_labelled_date(timeline_text, DHL_ATA_LABELS)
-        if latest_ata:
-            write_log(f"DHL ATA from the labelled arrival field: {latest_ata}")
-    if not latest_eta:
-        latest_eta = dhl_labelled_date(timeline_text, DHL_ETA_LABELS)
-        if latest_eta:
-            write_log(f"DHL ETA from the labelled estimate field: {latest_eta}")
+    # The decision is made from the WHOLE timeline, event by event
+    # (arrival_events): each row keeps its code, description, date, time,
+    # timezone and place, and is classified by DHL's own wording for its
+    # product. The rows read above are evidence only; an unrecognised layout
+    # gives no events and therefore no dates.
     status = dhl_shipment_status(timeline_text)
     event_date, event_line = dhl_latest_event(timeline_text)
-    write_log(f"DHL timeline: status={status or 'unknown'}; latest event "
-              f"{event_date or '-'}: {(event_line or '-')[:150]}")
-    latest_eta, latest_ata, note, review = dhl_timeline_decision(
-        latest_eta, latest_ata, timeline_text)
-    if note:
-        write_log(note)
-    if review:
-        raise SkipShipment(note)
-
+    events, product, destination = AE.dhl_events(timeline_text, _dhl_tracking_code(timeline_text))
+    # Explicitly labelled fields (Masterdetails), when DHL prints them.
+    for labels, kind in ((DHL_ATA_LABELS, AE.ACT_ARRIVAL), (DHL_ETA_LABELS, AE.EST_ARRIVAL)):
+        value = dhl_labelled_date(timeline_text, labels)
+        if value:
+            events.append(AE.event(kind, value, "labelled field", "DHL page field",
+                                   _dhl_tracking_code(timeline_text), code="DHL:FIELD"))
+    write_log("DHL timeline: product={0}, destination={1}, {2} events, status={3}; latest "
+              "event {4}: {5}".format(product or "unknown", destination or "-", len(events),
+                                      status or "unknown", event_date or "-",
+                                      (event_line or "-")[:120]))
+    for e in events:
+        if e["type"] != AE.OTHER:
+            write_log("  DHL event {0} {1} {2} ({3}) {4} @ {5} -> {6}".format(
+                e["date"], e["time"] or "", e["tz"] or "", e["code"] or "-", e["description"],
+                e["location"] or "-", e["type"]))
+    decision = AE.decide(events)
+    for note in decision["notes"]:
+        write_log("DHL: " + note)
+    if decision["review"]:
+        raise NeedsReview(["DHL: " + r for r in decision["review"]])
+    latest_eta, latest_ata = decision["eta"], decision["ata"]
+    note = None
     if latest_eta:
         write_log(f"Latest DHL Event Log Estimated Delivery ETA: {latest_eta}")
     if latest_ata:
@@ -4187,7 +4201,18 @@ def extract_event_log_result(page):
         "timeline_status": status,
         "latest_event": {"date": event_date, "text": event_line},
         "eta_note": note,
+        "reference": _dhl_tracking_code(timeline_text),
+        "dhl_product": product,
+        "events": events,
+        "eta_source": decision["eta_event"]["description"] if decision["eta_event"] else None,
+        "ata_source": decision["ata_event"]["description"] if decision["ata_event"] else None,
     }
+
+
+def _dhl_tracking_code(text):
+    """The number DHL says it is showing ('Tracking Code: X'), for the identity check."""
+    m = re.search(r"Tracking Code:\s*([A-Z0-9-]+)", text or "")
+    return m.group(1) if m else None
 
 
 def event_log_ready(page):
@@ -5418,9 +5443,26 @@ def extract_qatar_result(page):
     if not eta and not ata:
         return None
 
+    # The "Arrived ( XXX)" banner counts only at the route's destination
+    # ("157-59781223 (BRU - DAR)"); an arrival at a transit station is not it.
+    try:
+        banner_text = page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        banner_text = ""
+    route = re.search(r"\(\s*([A-Z]{3})\s*-\s*([A-Z]{3})\s*\)", banner_text)
+    station = re.search(r"\bArrived\s*\(\s*([A-Z]{3})\s*\)", banner_text)
+    if ata and not (route and station and station.group(1) == route.group(2)):
+        return {"provider": "Qatar Airways", "tracking_status": "Needs review", "eta": None,
+                "ata": None, "review": ["Qatar shows Arrived at {0}, the route's destination is "
+                                        "{1}: not taken as the arrival".format(
+                                            station and station.group(1),
+                                            route and route.group(2))]}
+
     status = "Arrived" if ata else "Estimated Arrival"
     return {
         "provider": "Qatar Airways",
+        "ata_source": "Arrived ({0})".format(station.group(1)) if ata else None,
+        "eta_source": "Estimated Arrival" if eta else None,
         "tracking_status": status,
         "eta": eta,
         "ata": ata,
@@ -5549,14 +5591,20 @@ TRANSIENT_NAV_ERRORS = (
 
 GENERIC_ETA_LABELS = [
     r"Estimated\s+(?:Time\s+of\s+)?Arrival", r"\bETA\b",
-    r"Estimated\s+Delivery", r"Expected\s+(?:Arrival|Delivery)",
-    r"Scheduled\s+Arrival", r"Planned\s+Arrival", r"Due\s+Date",
+    r"Expected\s+Arrival", r"Scheduled\s+Arrival", r"Planned\s+Arrival",
 ]
+# The label reader does not know which airport is the destination, so only a
+# label that SAYS "actual arrival" gives an ATA. "Arrived", "Received from
+# Flight"/RCF and "Delivered"/DLV can be a transit leg or a delivery: on
+# 12 Oct, Ethiopian 071-62427934 got ATA 10/10 from its FIRST leg's
+# "DELIVERED" (Brussels-Liege) while its last leg to DAR was still scheduled.
 GENERIC_ATA_LABELS = [
     r"Actual\s+(?:Time\s+of\s+)?Arrival", r"\bATA\b",
-    r"\bArrived\b", r"Delivered", r"Received\s+from\s+Flight",
-    r"RCF\b", r"DLV\b",
 ]
+# Wording that shows something arrived somewhere, which the label reader
+# cannot place: with no explicit actual arrival, a person reviews it.
+GENERIC_UNPLACED_ARRIVAL = re.compile(
+    r"\bArrived\b|Received\s+from\s+Flight|\bRCF\b|\bDelivered\b|\bDLV\b", re.I)
 GENERIC_NO_RESULT = [
     r"no\s+(?:result|shipment|record|data)s?\s+(?:found|available)",
     r"could\s+not\s+be\s+found", r"not\s+found",
@@ -6173,6 +6221,21 @@ def carrier_restriction(page, reference=None):
             "excerpt": " ".join(text.split())[:600],
             "page_names": [n for n in found if n in ("mobile hotspot", "proxy server", "VPN",
                                                      "supported browser")]}
+
+
+class NeedsReview(Exception):
+    """The carrier's dates cannot be trusted as they are (ambiguous, in
+    conflict, unsupported, another shipment's, or the Hub already holds a
+    different ATA). Nothing more is written; a person decides. `reasons` says
+    why; `actions` carries anything already written, so it is reported."""
+
+    def __init__(self, reasons, actions=None):
+        self.reasons = list(reasons) if isinstance(reasons, (list, tuple)) else [str(reasons)]
+        Exception.__init__(self, "NEEDS REVIEW: " + "; ".join(self.reasons))
+        self.failure = {"category": "NEEDS_REVIEW", "stage": "date_decision",
+                        "detail": "; ".join(self.reasons)}
+        if actions is not None:
+            self.actions = actions
 
 
 class CarrierDeferred(SkipShipment):
@@ -9595,6 +9658,14 @@ def _read_generic_portal_page(page, provider):
     # Forward-biased: on these layouts the value follows its label.
     eta = extract_date_after_label(text, GENERIC_ETA_LABELS)
     ata = extract_date_after_label(text, GENERIC_ATA_LABELS)
+    unplaced = GENERIC_UNPLACED_ARRIVAL.search(text)
+    if not ata and unplaced:
+        return {"provider": provider, "tracking_status": "Needs review", "eta": None,
+                "ata": None, "review": [
+                    "{0} shows '{1}' but no explicit actual arrival at the destination: the "
+                    "label reader cannot tell a transit leg or a delivery from the arrival"
+                    .format(PORTALS.get(provider, {}).get("label", provider),
+                            unplaced.group(0))]}
     if not eta and not ata:
         return None
 
@@ -9612,7 +9683,9 @@ def _read_generic_portal_page(page, provider):
             status = found.group(0).strip().title()
             break
 
-    return {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata}
+    return {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata,
+            "eta_source": "estimated arrival label" if eta else None,
+            "ata_source": "actual arrival label" if ata else None}
 
 
 def get_portal_result(page, provider, tracking_number, shipment=None):
@@ -10687,6 +10760,22 @@ def save_manage_page(page):
         write_log(f"Manage page saved successfully ({settled}).")
 
 
+def read_current_date_field(page, field_name):
+    """The field's value before a write: text ('' when empty), or False when
+    it could not be read. Same locators as the write and the read-back."""
+    try:
+        field = first_visible(
+            [locator for _name, locator in field_candidates(page, field_name)], 1500)
+        if field is None:
+            field = find_field_ignoring_visibility(page, field_name)
+        if field is None:
+            return False
+        return (field.input_value(timeout=2000) or "").strip()
+    except Exception as error:
+        note_suppressed("reading the current {0} before writing".format(field_name), error)
+        return False
+
+
 def verify_saved_date(page, shipment, view_name, field_name, expected):
     """
     Reopen the shipment and confirm `expected` is what the Hub now holds.
@@ -10850,6 +10939,15 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
             except Exception as error:
                 note_suppressed("reopening Manage to recover the panel", error)
 
+        if field_name == "ATA":
+            # An ATA already in the Hub is never replaced automatically -
+            # neither by an older nor by a newer date. A person decides.
+            current = read_current_date_field(page, field_name)
+            problem = AE.ata_overwrite_problem(current, date_value) if current is not False \
+                else "the Hub's current ATA could not be read before writing"
+            if problem:
+                raise NeedsReview([problem])
+
         fill_date_field(page, field_name, date_value)
 
         if DRY_RUN:
@@ -10985,6 +11083,15 @@ def update_internal_shipment(internal_page, shipment, dhl_result):
       COE -> ETA from provider estimated event
       BU  -> ATA from provider completed arrival event
     """
+    if (dhl_result or {}).get("review"):
+        raise NeedsReview(dhl_result["review"])
+    # The shared, deterministic check for EVERY carrier (arrival_events).
+    _eta, _ata, _review, _notes = AE.check_before_write(shipment, dhl_result)
+    for _note in _notes:
+        write_log(_note)
+    if _review:
+        raise NeedsReview(_review)
+    dhl_result = dict(dhl_result, eta=_eta, ata=_ata)
     dhl_result, _notes = separate_eta_ata(dhl_result)
     for _note in _notes:
         write_log(_note)
@@ -11435,6 +11542,32 @@ def main():
                     tower.shipment_finished(
                         bol_awb, "FAILED" if _lost else "HUMAN_TIMEOUT",
                         str(error), outcome=_human_class)
+                    tower.counters(successful, failed, skipped, partial,
+                                   needs_human=needs_human)
+                    try:
+                        ensure_filtered_page(internal_page, SOURCE_VIEW, table_page)
+                    except Exception as restore_error:
+                        write_log(f"Internal page restore warning: {restore_error}")
+
+                except NeedsReview as error:
+                    # The dates were not trusted: nothing more is written and
+                    # a person decides. Kept in the review/deferred queue with
+                    # the reasons. A field already written before the check
+                    # (actions) is reported as such, never hidden.
+                    needs_human += 1
+                    write_log("NEEDS REVIEW {0}: {1}".format(bol_awb, "; ".join(error.reasons)))
+                    _deferred_queue.defer(shipment, _provider, "NEEDS_REVIEW",
+                                          "; ".join(error.reasons), RUN_ID)
+                    _actions = getattr(error, "actions", None)
+                    _wrote = bool(_actions and any(isinstance(v, str) and "updated with" in v
+                                                   for v in _actions.values()))
+                    if _wrote:
+                        partial += 1
+                    save_result(shipment, dhl_result, _actions or "No update",
+                                "PARTIAL" if _wrote else NEEDS_REVIEW, str(error))
+                    tower.shipment_finished(bol_awb, "PARTIAL" if _wrote else "SKIPPED",
+                                            str(error), outcome=NEEDS_REVIEW,
+                                            failure=error.failure)
                     tower.counters(successful, failed, skipped, partial,
                                    needs_human=needs_human)
                     try:
