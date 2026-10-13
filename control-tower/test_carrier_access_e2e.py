@@ -136,7 +136,11 @@ A.collect_supported_shipments = lambda page, n: [
 # This run's own deferred queue, and no pacing wait in a test.
 A.LOG_FOLDER = WORK
 A.carrier_pacing.MIN_GAP["ocean"] = 0
-A.carrier_pacing.HELD = frozenset()     # this test exercises the CMA CGM restriction itself
+# TEST-ONLY configuration: this run's gates are built with no hold, because
+# the test exercises CMA CGM's restriction itself. The production hold
+# (carrier_pacing.PRODUCTION_HOLD) is not touched and is checked below.
+import functools                                             # noqa: E402
+A.carrier_pacing.CarrierGate = functools.partial(A.carrier_pacing.CarrierGate, held=frozenset())
 
 
 def hub_write(page, shipment, result):
@@ -250,6 +254,9 @@ pending = {r["bol_awb"]: r for r in CP.DeferredQueue(WORK / "carrier_deferred.js
 check("First block: the next CMA CGM shipment was not looked up, only deferred",
       AFTER_BLOCK_REF not in [w[0] for w in WRITES]
       and pending.get(AFTER_BLOCK_REF, {}).get("reason") == CP.REASON_BLOCKED, pending)
+check("The production CMA CGM hold was never lifted by this test",
+      "CMA_CGM" in A.carrier_pacing.PRODUCTION_HOLD
+      and "CMA_CGM" in A.carrier_pacing.held_carriers())
 check("The blocked shipment is in the deferred queue with its run ID and reason",
       pending.get(RESTRICTED_REF, {}).get("reason") == "CARRIER_ACCESS_RESTRICTED"
       and pending[RESTRICTED_REF].get("run_id") == A.RUN_ID, pending.get(RESTRICTED_REF))

@@ -49,9 +49,33 @@ DEFAULT_PATH = Path(r"C:\Automation") / "logs" / "carrier_deferred.json"
 # never looked up. Their shipments go straight to the deferred queue for a
 # person. CMA CGM is held until a permitted channel (API or alert emails) is
 # in place: it blocked access even after a completed human verification.
-# CARRIER_HOLD="" releases every hold; "CMA_CGM,OTHER" sets the list.
-HELD = frozenset(p.strip().upper() for p in
-                 os.environ.get("CARRIER_HOLD", "CMA_CGM").split(",") if p.strip())
+#
+# The production hold is fixed here in the code, so it survives every restart
+# and no missing, empty or mistyped setting can lift it:
+#   CARRIER_HOLD=X,Y          ADDS carriers to the hold (never removes one)
+#   CARRIER_HOLD_RELEASE=X    lifts a production hold, only by naming the
+#                             carrier exactly; the run log says so each run
+PRODUCTION_HOLD = frozenset({"CMA_CGM"})
+
+
+def _names(value):
+    return frozenset(p.strip().upper() for p in str(value or "").split(",") if p.strip())
+
+
+def held_carriers(environ=None):
+    """The hold in effect, read fresh (a restart reads the same code)."""
+    env = os.environ if environ is None else environ
+    released = _names(env.get("CARRIER_HOLD_RELEASE")) & PRODUCTION_HOLD
+    return (PRODUCTION_HOLD - released) | _names(env.get("CARRIER_HOLD"))
+
+
+def hold_report(environ=None):
+    env = os.environ if environ is None else environ
+    released = sorted(_names(env.get("CARRIER_HOLD_RELEASE")) & PRODUCTION_HOLD)
+    line = "Carrier hold in effect: {0}.".format(", ".join(sorted(held_carriers(env))) or "none")
+    if released:
+        line += " RELEASED by CARRIER_HOLD_RELEASE: {0}.".format(", ".join(released))
+    return line
 
 DEFERRED, RESOLVED = "DEFERRED", "RESOLVED"
 REASON_HELD = "CARRIER_ON_HOLD"
@@ -166,8 +190,13 @@ class CarrierGate(object):
     """Per-run pacing for every carrier. One instance per run."""
 
     def __init__(self, queue, run_id, is_ocean=lambda provider: False,
-                 clock=time.monotonic, sleep=time.sleep, log=lambda message: None):
+                 clock=time.monotonic, sleep=time.sleep, log=lambda message: None,
+                 held=None):
         self.queue, self.run_id = queue, run_id
+        # held=None: the production hold. Tests pass their own set.
+        self.held = held_carriers() if held is None else frozenset(held)
+        log(hold_report() if held is None else
+            "Carrier hold (TEST configuration): {0}.".format(", ".join(sorted(self.held)) or "none"))
         self.is_ocean, self.clock, self.sleep, self.log = is_ocean, clock, sleep, log
         self._busy = threading.Lock()          # one lookup at a time
         self._last_end = {}
@@ -180,7 +209,7 @@ class CarrierGate(object):
     def refusal(self, provider):
         """Why this carrier must not be asked now: (reason, detail) or None."""
         p = str(provider or "").upper()
-        if p in HELD:
+        if p in self.held:
             return REASON_HELD, "{0} is on hold: not looked up by the automation until a " \
                                 "permitted channel is in place; a person checks it.".format(p)
         if p in self._blocked:
