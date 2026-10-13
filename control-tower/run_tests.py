@@ -35,6 +35,7 @@ HERE = Path(__file__).resolve().parent
 SUITES = [
     ("test_automation.py",      "carriers, routing, portals"),
     ("test_dhl_data.py",        "DHL event log extraction"),
+    ("test_dhl_api.py",         "DHL tracking API: ETA/ATA from events"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),

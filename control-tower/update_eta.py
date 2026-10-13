@@ -4705,7 +4705,50 @@ def click_dhl_track_again(page, tracking_number):
     )
 
 
+def get_dhl_result_from_api(tracking_number):
+    """
+    DHL's tracking API first, when a key is set (DHL_API_KEY): every event
+    with its own date, so ETA and ATA are never taken from the wrong row.
+    -> result, or None to read the web page instead. Raises SkipShipment when
+    DHL answered but its dates cannot be trusted (no page fallback then).
+    """
+    import dhl_api
+    if not dhl_api.enabled():
+        return None
+    try:
+        payload = dhl_api.fetch(tracking_number)
+    except Exception as error:
+        # Never the key: only the error's type and HTTP status, if any.
+        write_log("DHL API unavailable for {0} ({1} {2}); reading the web page."
+                  .format(tracking_number, type(error).__name__,
+                          getattr(error, "code", "")))
+        return None
+    result, why, stop = dhl_api.interpret(payload, tracking_number)
+    try:
+        (LOG_FOLDER / f"{safe_filename(tracking_number)}_dhl_api.json").write_text(
+            json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")
+    except Exception as error:
+        write_log(f"DHL API evidence save failed: {error}")
+    if result:
+        latest = result.get("latest_event") or {}
+        write_log("DHL API timeline for {0}: status={1}, destination={2}, latest event "
+                  "{3}: {4} -> ETA={5} ATA={6} ({7})".format(
+                      tracking_number, result["timeline_status"],
+                      result["destination_country"], latest.get("date"),
+                      latest.get("text"), result["eta"], result["ata"],
+                      result["ata_source"] or result["eta_source"]))
+        return result
+    write_log(f"DHL API: {why}")
+    if stop:
+        raise SkipShipment(why)
+    return None
+
+
 def get_dhl_result(page, tracking_number):
+    result = get_dhl_result_from_api(tracking_number)
+    if result:
+        return result
+
     direct_url = build_dhl_tracking_url(tracking_number)
 
     write_log(f"Opening direct DHL tracking URL for {tracking_number}")
