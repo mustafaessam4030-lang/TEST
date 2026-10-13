@@ -165,12 +165,9 @@ import update_eta as A
 logs = []
 A.write_log = logs.append
 r, n = A.separate_eta_ata({"eta": "12/07/2026", "ata": "12/07/2026"})
-check("ETA equal to ATA: only the ATA is written", (r["eta"], r["ata"]) == (None, "12/07/2026"), n)
+check("Arrived: the ETA is not written", (r["eta"], r["ata"]) == (None, "12/07/2026"), n)
 r, n = A.separate_eta_ata({"ata": "15/07/2026", "ata_source": "Estimated time of arrival"})
 check("An ATA taken from an estimate is dropped", r["ata"] is None, n)
-r, n = A.separate_eta_ata({"eta": "20/07/2026", "ata": "12/07/2026",
-                           "ata_source": "Discharged from vessel"})
-check("Distinct ETA and real ATA both kept", (r["eta"], r["ata"]) == ("20/07/2026", "12/07/2026"))
 
 print("Write / read-back at the Hub boundary")
 calls = []
@@ -187,20 +184,24 @@ def fake_view(page, shipment, view, field, value, return_to_table=True, require_
 real_view = A.update_one_view
 A.update_one_view = fake_view
 try:
-    A.update_internal_shipment(None, SHIP, {"eta": "20/07/2026", "ata": "12/07/2026",
+    A.update_internal_shipment(None, SHIP, {"ata": "12/07/2026", "ata_source": "Carrier: Arrived",
                                             "read_back_required": True})
     check("A failed read-back is never reported as success", False)
-except A.WriteUnverified as error:
+except A.WriteUnverified:
     check("A failed read-back is never reported as success", True)
-    check("The ETA already written is carried out with the failure (PARTIAL, truthful)",
-          "updated with" in (getattr(error, "actions", {}) or {}).get("coe", ""))
+A.update_internal_shipment(None, SHIP, {"eta": "20/07/2026", "eta_source": "ETA",
+                                        "read_back_required": True})
 check("Read-back is required for every field written",
       [c[2] for c in calls] == [True, True], calls)
 calls.clear()
 fail_ata[0] = False
-A.update_internal_shipment(None, SHIP, {"eta": "12/07/2026", "ata": "12/07/2026",
-                                        "read_back_required": True})
-check("ETA = ATA reaches the Hub as the ATA only", [c[0] for c in calls] == ["ATA"], calls)
+try:
+    A.update_internal_shipment(None, SHIP, {"eta": "12/07/2026", "ata": "12/07/2026",
+                                            "ata_source": "Carrier: Arrived",
+                                            "read_back_required": True})
+    check("ETA = ATA from one read never reaches the Hub", False, calls)
+except A.NeedsReview:
+    check("ETA = ATA from one read never reaches the Hub", calls == [], calls)
 A.update_one_view = real_view
 
 print("Wiring in the run loop")

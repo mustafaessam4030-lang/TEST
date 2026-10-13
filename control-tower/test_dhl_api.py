@@ -98,7 +98,7 @@ check("API down: falls back to the web page", A.get_dhl_result_from_api("1234567
 D.fetch = lambda n: NO_ARRIVAL
 try:
     A.get_dhl_result_from_api("1234567890"); check("Review case stops the shipment", False)
-except A.SkipShipment:
+except A.NeedsReview:
     check("Review case stops the shipment (no page fallback)", True)
 D.fetch = lambda n: DELIVERED
 check("API result used", A.get_dhl_result_from_api("1234567890")["ata"] == "12/07/2026")

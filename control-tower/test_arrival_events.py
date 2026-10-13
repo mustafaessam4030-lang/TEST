@@ -107,8 +107,12 @@ check("Undated arrival -> review", d["review"])
 # ---------------------------------------------------------- the guard
 section("4. Shared guard before every Hub write (all carriers)")
 S = {"bol_awb": "K000001", "tracking_reference": "K000001"}
-g = E.check_before_write(S, {"eta": "12/10/2026", "ata": "12/10/2026"}, today=OCT12)
-check("ETA = ATA: ETA not written", g[:2] == (None, "12/10/2026"), g)
+g = E.check_before_write(S, {"eta": "12/10/2026", "ata": "12/10/2026",
+                             "ata_source": "Carrier: Arrived"}, today=OCT12)
+check("ETA = ATA from one read: review (an estimate may have been read twice)",
+      g[2] and g[1] is None, g)
+g = E.check_before_write(S, {"ata": "12/10/2026"}, today=OCT12)
+check("ATA with no named source: review", g[2] and g[1] is None, g)
 g = E.check_before_write(S, {"ata": "12/10/2026", "ata_source": "Estimated Arrival"}, today=OCT12)
 check("ATA from an estimate label -> review", g[2] and g[1] is None, g)
 g = E.check_before_write(S, {"ata": "10/10/2026", "ata_source": "Delivered"}, today=OCT12)
@@ -123,7 +127,8 @@ g = E.check_before_write(S, {"ata": "30/10/2026"}, today=OCT12)
 check("ATA in the future -> review", g[2], g)
 g = E.check_before_write(S, {"eta": "20/10/2026", "ata": "10/10/2026",
                              "ata_source": "Discharged from vessel"}, today=OCT12)
-check("Distinct ETA and real ATA both pass", g[:2] == ("20/10/2026", "10/10/2026") and not g[2], g)
+check("Arrived: the real ATA passes, the ETA is not written",
+      g[:2] == (None, "10/10/2026") and not g[2], g)
 check("Hub ATA empty: no problem", E.ata_overwrite_problem("", "10/10/2026") is None)
 check("Hub ATA same: no problem", E.ata_overwrite_problem("10/10/2026", "10/10/2026") is None)
 check("Hub ATA older: not replaced, review",
@@ -131,6 +136,10 @@ check("Hub ATA older: not replaced, review",
 check("Hub ATA newer: not replaced, review",
       E.ata_overwrite_problem("15/10/2026", "10/10/2026") is not None)
 check("Hub ATA unreadable: review", E.ata_overwrite_problem("soon", "10/10/2026") is not None)
+check("Hub ATA '1/10/2026' is the same date as 01/10/2026",
+      E.ata_overwrite_problem("1/10/2026", "01/10/2026") is None)
+check("Hub ATA with a time part is the same date",
+      E.ata_overwrite_problem("12/10/2026 00:00", "12/10/2026") is None)
 
 # ------------------------------------------- the 44 shipments of 12 Oct
 section("5. Regression: the 44 shipments of the 12 October run (sanitized)")
@@ -195,6 +204,17 @@ r = A._read_generic_portal_page(Page("Shipment 1\nActual Time of Arrival: 05/10/
                                 "ETHIOPIAN")
 check("Generic reader: an explicit actual-arrival label gives the ATA, with its source",
       r and r["ata"] == "05/10/2026" and r.get("ata_source"), r)
+r = A._read_generic_portal_page(Page("Estimated Time of Arrival: 10/10/2026 14:00\n"
+                                     "Actual Time of Arrival: -\n" + "x" * 200), "ETHIOPIAN")
+check("REVIEWER BLOCKER: an estimate printed before an empty actual field is not the ATA",
+      r and r["eta"] == "10/10/2026" and not r["ata"], r)
+g = E.check_before_write(S, r or {}, today=OCT12)
+check("...and only the ETA can reach the Hub", g[:2] == ("10/10/2026", None) and not g[2], g)
+r = A._read_generic_portal_page(Page("Menu: Arrived | Delivered | In transit\n"
+                                     "Estimated Time of Arrival: 15/10/2026\n" + "x" * 200),
+                                "ETHIOPIAN")
+check("Arrival words without a date (legends, filters) do not block an ETA",
+      r and r["eta"] == "15/10/2026" and not r.get("review"), r)
 r = A._read_generic_portal_page(Page("Estimated Delivery 20/10/2026\n" + "x" * 200), "ETHIOPIAN")
 check("Generic reader: a delivery estimate is not an ETA", r is None or not r.get("eta"), r)
 
@@ -238,9 +258,16 @@ try:
     check("An adapter's review stops the write", False)
 except A.NeedsReview:
     check("An adapter's review stops the write", writes == [])
-A.update_internal_shipment(None, S, {"eta": "12/10/2026", "ata": "12/10/2026",
+try:
+    A.update_internal_shipment(None, S, {"eta": "12/10/2026", "ata": "12/10/2026",
+                                         "ata_source": "Carrier: Arrived"})
+    check("ETA = ATA: review, nothing written", False, writes)
+except A.NeedsReview:
+    check("ETA = ATA: review, nothing written", writes == [], writes)
+A.update_internal_shipment(None, S, {"eta": "20/10/2026", "ata": "12/10/2026",
                                      "ata_source": "Carrier: Arrived"})
-check("ETA = ATA: only the ATA is written", writes == [("ATA", "12/10/2026")], writes)
+check("Arrived: only the ATA is written; the ETA is not (no write before the ATA checks)",
+      writes == [("ATA", "12/10/2026")], writes)
 
 # update_one_view itself: an existing different ATA stops it before the fill.
 import importlib                                             # noqa: E402
@@ -260,9 +287,11 @@ except B.NeedsReview as error:
 B.read_current_date_field = lambda page, field: False
 try:
     B.update_one_view(None, dict(S, table_page=1), "BU", "ATA", "10/10/2026", require_verified=True)
-    check("Unreadable current Hub ATA: fail closed", False, filled)
+    check("Unreadable current Hub ATA: fail closed (a Hub failure, retried as one)", False, filled)
 except B.NeedsReview:
-    check("Unreadable current Hub ATA: fail closed", filled == [])
+    check("Unreadable current Hub ATA: fail closed (a Hub failure, retried as one)", False)
+except RuntimeError:
+    check("Unreadable current Hub ATA: fail closed (a Hub failure, retried as one)", filled == [])
 check("Save -> read-back -> verify sequence still in update_one_view",
       "verify_saved_date(" in __import__("inspect").getsource(B.update_one_view))
 check("CMA CGM production hold untouched", "CMA_CGM" in B.carrier_pacing.held_carriers())

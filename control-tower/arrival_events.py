@@ -223,10 +223,7 @@ def events_from_result(result, reference):
         if not value:
             continue
         label = (result or {}).get(field + "_source")
-        if field == "ata" and not label:
-            kind = ACT_ARRIVAL if (result or {}).get("ata_label_checked") else OTHER
-        else:
-            kind = classify_label(label, field)
+        kind = classify_label(label, field)
         out.append(event(kind, value if _day(value) else None, label or field.upper(),
                          (result or {}).get("provider") or "carrier", reference,
                          code="{0}:{1}".format((result or {}).get("provider"), field.upper())))
@@ -318,19 +315,21 @@ def check_before_write(shipment, result, today=None):
             review.append("{0} '{1}' is not an unambiguous dd/mm/yyyy date".format(name, value))
     if ata and _day(ata) and _day(ata) > today:
         review.append("ATA {0} is in the future".format(ata))
-    kinds = {e["type"] for e in events_from_result(result, shipment.get("bol_awb"))
-             if e.get("code", "").endswith(":ATA")}
-    if ata and kinds and kinds != {ACT_ARRIVAL} and result.get("ata_source"):
-        review.append("ATA {0} comes from '{1}', which is not an actual arrival".format(
-            ata, result.get("ata_source")))
+    if ata and classify_label(result.get("ata_source"), "ata") != ACT_ARRIVAL:
+        review.append("ATA {0} comes from '{1}', which is not named as an actual arrival".format(
+            ata, result.get("ata_source") or "an unnamed source"))
     if eta and result.get("eta_source") and \
             classify_label(result.get("eta_source"), "eta") == EST_DELIVERY:
         notes.append("ETA {0} came from a delivery estimate ('{1}'): not written as the "
                      "ETA".format(eta, result.get("eta_source")))
         eta = None
     if eta and ata and eta == ata:
-        notes.append("ETA {0} equals the ATA: the shipment has arrived, only the ATA is "
-                     "written".format(eta))
+        # The same date read as both is evidence of mis-pairing (an estimate
+        # read twice), not of arrival: a person checks it.
+        review.append("ETA and ATA are the same date ({0}) from one read: the estimate may "
+                      "have been read as the arrival".format(eta))
+    elif eta and ata:
+        notes.append("the shipment has arrived ({0}): the ETA {1} is not written".format(ata, eta))
         eta = None
     if review:
         return None, None, review, notes
@@ -340,9 +339,13 @@ def check_before_write(shipment, result, today=None):
 def ata_overwrite_problem(current, new):
     """The Hub already holds an ATA: a different one is never written over it
     automatically (neither newer nor older); a person decides."""
-    cur = parse_date(current) or (current if _day(current) else None)
     if not str(current or "").strip():
         return None
+    raw = re.split(r"\s+\d{1,2}:\d{2}", str(current).strip())[0]
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", raw)
+    cur = parse_date(raw) or (m and _day("{0:02d}/{1:02d}/{2}".format(
+        int(m.group(1)), int(m.group(2)), m.group(3))) and "{0:02d}/{1:02d}/{2}".format(
+        int(m.group(1)), int(m.group(2)), m.group(3)))
     if not cur:
         return "the Hub's current ATA '{0}' cannot be read as a date".format(current)
     if new and cur != new:

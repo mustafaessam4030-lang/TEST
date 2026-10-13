@@ -2539,6 +2539,30 @@ def extract_date_after_label(text, labels, radius=260):
     return extract_date_near_labels(text, labels, radius)
 
 
+def _own_date(segment):
+    """True when `segment` (the text after an arrival word) carries a date
+    that is not the value of another ETA/ATA label printed in between."""
+    dates = extract_all_dates(segment)
+    if not dates:
+        return False
+    before = segment[:dates[0][0]]
+    return not any(re.search(l, before, re.I) for l in GENERIC_ETA_LABELS + GENERIC_ATA_LABELS)
+
+
+def _date_following_label(text, labels, radius=260):
+    """The nearest date AFTER one of `labels` (within `radius`), or None.
+    No fallback in the other direction."""
+    dates = extract_all_dates(text)
+    best = None
+    for label in labels:
+        for m in re.finditer(label, text, flags=re.I):
+            for position, parsed, _raw in dates:
+                if position >= m.end() and position - m.end() <= radius and \
+                        (best is None or position - m.end() < best[0]):
+                    best = (position - m.end(), parsed)
+    return best[1] if best else None
+
+
 def latest_date(date_values):
     valid_dates = []
 
@@ -4156,11 +4180,16 @@ def extract_event_log_result(page):
     status = dhl_shipment_status(timeline_text)
     event_date, event_line = dhl_latest_event(timeline_text)
     events, product, destination = AE.dhl_events(timeline_text, _dhl_tracking_code(timeline_text))
+    _seen = set()
+    events = [e for e in events if not ((e["date"], e["time"], e["description"], e["location"])
+                                        in _seen or _seen.add((e["date"], e["time"],
+                                                               e["description"], e["location"])))]
     # Explicitly labelled fields (Masterdetails), when DHL prints them.
     for labels, kind in ((DHL_ATA_LABELS, AE.ACT_ARRIVAL), (DHL_ETA_LABELS, AE.EST_ARRIVAL)):
         value = dhl_labelled_date(timeline_text, labels)
         if value:
-            events.append(AE.event(kind, value, "labelled field", "DHL page field",
+            events.append(AE.event(kind, value, "{0} (labelled field)".format(
+                "Actual Arrival" if kind == AE.ACT_ARRIVAL else "Estimated Arrival"), "DHL page field",
                                    _dhl_tracking_code(timeline_text), code="DHL:FIELD"))
     write_log("DHL timeline: product={0}, destination={1}, {2} events, status={3}; latest "
               "event {4}: {5}".format(product or "unknown", destination or "-", len(events),
@@ -4174,7 +4203,15 @@ def extract_event_log_result(page):
     decision = AE.decide(events)
     for note in decision["notes"]:
         write_log("DHL: " + note)
+    if not decision["review"] and not decision["eta"] and not decision["ata"] and \
+            (eta_dates or ata_dates):
+        decision["review"] = ["the Event Log rows carry dates, but no row could be classified "
+                              "(layout not recognised, product {0})".format(product or "unknown")]
     if decision["review"]:
+        try:
+            save_page_text(page, _dhl_tracking_code(timeline_text) or "dhl", "dhl_needs_review")
+        except Exception as error:
+            note_suppressed("saving the DHL page for review", error)
         raise NeedsReview(["DHL: " + r for r in decision["review"]])
     latest_eta, latest_ata = decision["eta"], decision["ata"]
     note = None
@@ -4925,7 +4962,7 @@ def get_dhl_result_from_api(tracking_number):
         return result
     write_log(f"DHL API: {why}")
     if stop:
-        raise SkipShipment(why)
+        raise NeedsReview(["DHL API: " + why])
     return None
 
 
@@ -8834,7 +8871,10 @@ def _read_afkl_milestones(text, provider):
         "status={3} from {4} milestone(s)".format(
             destination or "unknown", eta, ata, status, len(events)))
     return {"provider": provider, "tracking_status": status, "eta": eta,
-            "ata": ata, "flight_leg": leg}
+            "ata": ata, "flight_leg": leg,
+            "eta_source": "AFKL estimated arrival at destination {0}".format(destination)
+            if eta else None,
+            "ata_source": "AFKL arrived at destination {0}".format(destination) if ata else None}
 
 
 def _read_afkl_page(page, provider):
@@ -8974,7 +9014,10 @@ def _read_afkl_page(page, provider):
                 leg["flight"], leg["origin"], leg["destination"],
                 leg["date"]) if leg else ""))
     return {"provider": provider, "tracking_status": status,
-            "eta": eta, "ata": ata, "flight_leg": leg}
+            "eta": eta, "ata": ata, "flight_leg": leg,
+            "eta_source": "AFKL estimated arrival at destination {0}".format(destination)
+            if eta else None,
+            "ata_source": "AFKL arrived at destination {0}".format(destination) if ata else None}
 
 
 # ============================================================
@@ -9657,8 +9700,13 @@ def _read_generic_portal_page(page, provider):
 
     # Forward-biased: on these layouts the value follows its label.
     eta = extract_date_after_label(text, GENERIC_ETA_LABELS)
-    ata = extract_date_after_label(text, GENERIC_ATA_LABELS)
-    unplaced = GENERIC_UNPLACED_ARRIVAL.search(text)
+    # The ATA only from a date that FOLLOWS an actual-arrival label: the
+    # nearest-date fallback could hand back the estimate printed just before.
+    ata = _date_following_label(text, GENERIC_ATA_LABELS)
+    # Arrival wording counts only where it carries a date (an event), not in
+    # legends, filters or navigation text.
+    unplaced = next((m for m in GENERIC_UNPLACED_ARRIVAL.finditer(text)
+                     if _own_date(text[m.end():m.end() + 120])), None)
     if not ata and unplaced:
         return {"provider": provider, "tracking_status": "Needs review", "eta": None,
                 "ata": None, "review": [
@@ -10943,8 +10991,12 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
             # An ATA already in the Hub is never replaced automatically -
             # neither by an older nor by a newer date. A person decides.
             current = read_current_date_field(page, field_name)
-            problem = AE.ata_overwrite_problem(current, date_value) if current is not False \
-                else "the Hub's current ATA could not be read before writing"
+            if current is False:
+                # Fail closed, as a Hub page failure (retried like one), not a
+                # date question for a person.
+                raise RuntimeError("The Hub's current ATA could not be read before writing "
+                                   "for {0}; nothing was written.".format(bol_awb))
+            problem = AE.ata_overwrite_problem(current, date_value)
             if problem:
                 raise NeedsReview([problem])
 
@@ -11070,9 +11122,8 @@ def separate_eta_ata(result):
         notes.append("ATA {0} came from '{1}', an estimate, not an actual arrival: "
                      "not written.".format(out["ata"], out.get("ata_source")))
         out["ata"] = None
-    if out.get("eta") and out.get("ata") and out["eta"] == out["ata"]:
-        notes.append("ETA {0} equals the ATA: the shipment has arrived, so only the "
-                     "ATA is written and COE ETA is left unchanged.".format(out["eta"]))
+    if out.get("eta") and out.get("ata"):
+        notes.append("The shipment has arrived ({0}): the ETA is not written.".format(out["ata"]))
         out["eta"] = None
     return out, notes
 
@@ -11566,8 +11617,7 @@ def main():
                     save_result(shipment, dhl_result, _actions or "No update",
                                 "PARTIAL" if _wrote else NEEDS_REVIEW, str(error))
                     tower.shipment_finished(bol_awb, "PARTIAL" if _wrote else "SKIPPED",
-                                            str(error), outcome=NEEDS_REVIEW,
-                                            failure=error.failure)
+                                            str(error), outcome=NEEDS_REVIEW)
                     tower.counters(successful, failed, skipped, partial,
                                    needs_human=needs_human)
                     try:
