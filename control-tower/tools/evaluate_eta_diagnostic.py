@@ -101,6 +101,17 @@ def truth_class(t):
 
 
 def score(cases, system):
+    """
+    Per field (ETA, ATA), on page-resolved cases:
+      tp         a date proposed and it is the true date
+      wrong      a date proposed that is not the true date
+      missed     the truth has a date, nothing proposed although answering
+      abstained  the truth has a date, the system abstained (review)
+      true_none  the truth has no date and none was proposed
+    Unresolved cases are scored only on abstention. Destination evidence is
+    split: explicit (station / country printed on the page) vs carrier-label
+    (the carrier filed it as the arrival; not independent evidence).
+    """
     s = {"eta": Counter(), "ata": Counter(), "destination": Counter(),
          "abstention_on_unresolved": Counter(), "confusion": Counter(), "mismatches": []}
     for key, (t, p) in cases.items():
@@ -118,19 +129,27 @@ def score(cases, system):
                                         "truth_why": t.get("why")})
             continue
         for field in ("eta", "ata"):
-            if pr["decision"] != ACCEPT:
-                s[field]["abstained"] += 1
-            elif pr[field] == t[field]:
-                s[field]["correct"] += 1
-            else:
+            truth_value = t[field]
+            got = pr[field] if pr["decision"] == ACCEPT else None
+            if got and got == truth_value:
+                s[field]["tp"] += 1
+            elif got:
                 s[field]["wrong"] += 1
                 s["mismatches"].append({"case": key, "issue": field.upper() + " wrong",
-                                        "predicted": pr[field], "truth": t[field],
+                                        "predicted": got, "truth": truth_value,
                                         "evidence": t.get("why") or t["fixture"]})
+            elif truth_value:
+                s[field]["abstained" if pr["decision"] != ACCEPT else "missed"] += 1
+                if pr["decision"] == ACCEPT:
+                    s["mismatches"].append({"case": key, "issue": field.upper() + " missed",
+                                            "truth": truth_value})
+            else:
+                s[field]["true_none"] += 1
         if t.get("ata"):
             if system == "atlas":
-                ok = pr.get("destination") is not None and t.get("arrival_at_destination")
-                s["destination"]["supported" if ok else "not supported"] += 1
+                v = pr.get("destination")
+                s["destination"][("explicit" if v and v.startswith("explicit") else
+                                  "carrier-label only" if v else "none")] += 1
             else:
                 s["destination"]["not reported"] += 1
     return s
@@ -156,8 +175,18 @@ def main(argv=None):
                                                             if t["status"] == "UNRESOLVED"),
                                            sum(1 for t, _ in cases.values() if t.get("reviewed"))),
              ""]
-    for system in ("original", "baseline", "atlas"):
-        s = score(cases, system)
+    reviewed = {k: v for k, v in cases.items() if v[0].get("reviewed")}
+    for label, subset in (("all", cases), ("hand-checked only", reviewed)):
+      for system in ("original", "baseline", "atlas"):
+        s = score(subset, system)
+        if label != "all":
+            lines += ["## {0} ({1}, n={2})".format(system, label, len(subset)), "",
+                      "- ETA: " + as_rate(s["eta"]), "- ATA: " + as_rate(s["ata"]),
+                      "- Abstention on unresolved: " + as_rate(s["abstention_on_unresolved"]), ""]
+            report.setdefault("hand_checked", {})[system] = {
+                "eta": dict(s["eta"]), "ata": dict(s["ata"]),
+                "abstention_on_unresolved": dict(s["abstention_on_unresolved"])}
+            continue
         report[system] = {k: (dict(v) if isinstance(v, Counter) else v) for k, v in s.items()}
         report[system]["confusion"] = {"{0} -> {1}".format(*k): v for k, v in s["confusion"].items()}
         lines += ["## " + system, "",

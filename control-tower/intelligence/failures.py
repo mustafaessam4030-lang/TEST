@@ -36,7 +36,7 @@ CATEGORIES = (
     "NETWORK_FAILURE", "DATA_EXTRACTION_FAILURE", "VALIDATION_FAILURE",
     "HUB_WRITE_FAILURE", "HUB_READBACK_FAILURE", "CARRIER_POLICY_BLOCK",
     "HUMAN_ACTION_REQUIRED", "SECURITY_VERIFICATION_REQUIRED", "CARRIER_ACCESS_RESTRICTED",
-    "CARRIER_ACCESS_NOT_CONFIRMED", "UNKNOWN_FAILURE")
+    "CARRIER_ACCESS_NOT_CONFIRMED", "HUB_WRITE_LIMIT", "HUB_READ_FAILED", "UNKNOWN_FAILURE")
 ACCESS_CATEGORIES = ("CARRIER_ACCESS_RESTRICTED", "CARRIER_ACCESS_NOT_CONFIRMED")
 
 LABELS = {
@@ -55,6 +55,9 @@ LABELS = {
     "CARRIER_ACCESS_RESTRICTED": "the carrier restricted access and showed its restriction page",
     "CARRIER_ACCESS_NOT_CONFIRMED": "after the human verification the carrier never showed the "
                                     "shipment page",
+    "HUB_WRITE_LIMIT": "the run's Hub write limit was reached, so nothing more was written",
+    "HUB_READ_FAILED": "a Hub field needed before the write could not be read, so nothing was "
+                       "written",
     "UNKNOWN_FAILURE": "the cause is not identified",
 }
 
@@ -124,6 +127,7 @@ STAGES = {
     "validation": "validating the dates read",
     "hub_write": "writing to the Hub",
     "hub_readback": "reading the Hub back after the write",
+    "hub_read_before_write": "reading the Hub's current value before writing",
     "unknown": "an unidentified step",
 }
 STAGE_OF = {
@@ -136,6 +140,8 @@ STAGE_OF = {
     "SECURITY_VERIFICATION_REQUIRED": "human_verification",
     "CARRIER_ACCESS_RESTRICTED": "carrier_access",
     "CARRIER_ACCESS_NOT_CONFIRMED": "carrier_access",
+    # No recovery class on purpose: neither is retried automatically.
+    "HUB_WRITE_LIMIT": "hub_write", "HUB_READ_FAILED": "hub_read_before_write",
 }
 FAILED_STATES = ("failed", "partial", "human_timeout")
 # A skip is a failure when the run classified it as one. "No result" — the

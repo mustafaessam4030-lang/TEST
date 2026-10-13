@@ -207,6 +207,15 @@ except A.NeedsReview:
 A.update_one_view = real_view
 
 print("Wiring in the run loop")
+_src = inspect.getsource(A.main)
+check("A Human Action rerun refused at the limit is recorded and still needs a person",
+      "if bol_awb in _rerun_refs:" in _src and "needs_human += 1" in _src
+      and "outcome=RUN_LIMIT" in _src)
+check("Reaching a run limit is reported as such, not as a dashboard stop",
+      "Run ended at its limit" in _src)
+check("Writes outside main() are capped too (limits exist from import)",
+      A.RUN_LIMITS is not None)
+
 src = inspect.getsource(A.main)
 check("Every lookup goes through the gate",
       "with _gate.lookup(_provider):\n                        dhl_result = get_provider_result" in src)

@@ -7,6 +7,13 @@ the operations owner confirmed (October 2026):
   ATA = the date the transport arrived at the DESTINATION airport/port
   ETA = the carrier's estimated arrival at the destination
 A case the page cannot settle is labelled UNRESOLVED, never guessed.
+
+LIMITATION, stated plainly: it applies the SAME operations-confirmed
+definition as arrival_events.py (independent code, not an independent rule),
+so agreement with the baseline on auto-labelled cases measures two
+implementations of one rule, not correctness. Only the hand-checked labels
+("reviewed": true) are independent checks; the evaluation reports them
+separately.
 The output (fixtures/eta_ata_truth.json) is reviewed by hand; cases marked
 "reviewed": true were checked line by line against the page.
 

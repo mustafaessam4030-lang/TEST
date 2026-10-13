@@ -114,6 +114,20 @@ check("Qatar: 'Arrived ( DAR)' on a BRU-DAR route -> ATA 26/09, destination expl
 d = D.diagnose(q.replace("Arrived ( DAR)", "Arrived ( DOH)"), None, "QATAR", today=OCT12)
 check("Qatar: an arrival at a TRANSIT station is not the ATA",
       not d["ata_candidate"] and d["recommendation"] != D.ACCEPT, d)
+d = D.diagnose(q, "157-99999999", "QATAR", today=OCT12)
+check("Qatar: a page for another air waybill -> NEEDS_REVIEW (identity)",
+      d["recommendation"] == D.REVIEW and any("not 157-99999999" in c for c in d["conflicts"]),
+      d["conflicts"])
+two = q.replace("Arrived ( DAR) 26-Sep-2026 13:52",
+                "Arrived ( DOH) 25-Sep-2026 02:10\nArrived ( DAR) 26-Sep-2026 13:52")
+d = D.diagnose(two, "157-00000001", "QATAR", today=OCT12)
+check("Qatar: a transit arrival printed first does not hide the destination arrival",
+      d["ata_candidate"] and d["ata_candidate"]["date"] == "26/09/2026", d["ata_candidate"])
+noid = (FIX / "dhl_oct12" / "OCT12-12.txt").read_text(encoding="utf-8").replace(
+    "Tracking Code: OCT12-12\n", "")
+d = D.diagnose(noid, "OCT12-12", "DHL", today=OCT12)
+check("A candidate on a page that does not show its identity -> NEEDS_REVIEW",
+      d["ata_candidate"] and d["recommendation"] == D.REVIEW, d["missing"])
 d = D.diagnose((FIX / "qatar_in_transit.txt").read_text(encoding="utf-8"), None, "QATAR", today=OCT12)
 check("Qatar in transit: ETA 14/10 to JRO, no ATA",
       d["eta_candidate"]["date"] == "14/10/2026" and not d["ata_candidate"], d)
@@ -153,9 +167,18 @@ check("47 labelled cases, 3 unresolved by the page", len(truth) == 47 and
 check("The 12 Oct run: 40 of 42 ATAs wrong, both unresolved cases answered",
       rep["original"]["ata"].get("wrong") == 40 and
       rep["original"]["abstention_on_unresolved"].get("answered") == 2, rep["original"]["ata"])
-check("ATLAS: no wrong ETA or ATA, abstains on all 3 unresolved",
+check("ATLAS: no wrong or missed ETA/ATA, abstains on all 3 unresolved",
       not rep["atlas"]["eta"].get("wrong") and not rep["atlas"]["ata"].get("wrong")
+      and not rep["atlas"]["ata"].get("missed")
       and rep["atlas"]["abstention_on_unresolved"].get("abstained") == 3, rep["atlas"])
+check("Scores are per class: 33 true ATAs and 11 true ETAs found, None==None counted apart",
+      rep["atlas"]["ata"].get("tp") == 33 and rep["atlas"]["eta"].get("tp") == 11
+      and rep["atlas"]["ata"].get("true_none") == 11, rep["atlas"])
+check("Destination evidence is split: carrier-label is not counted as explicit",
+      rep["atlas"]["destination"].get("explicit") == 3
+      and rep["atlas"]["destination"].get("carrier-label only") == 30, rep["atlas"]["destination"])
+check("Hand-checked subset reported separately",
+      rep["hand_checked"]["atlas"]["ata"].get("tp") == 6, rep.get("hand_checked"))
 check("ATLAS and the deterministic baseline make the same decisions (no accuracy gain claimed)",
       rep["differences"] == [], rep["differences"])
 

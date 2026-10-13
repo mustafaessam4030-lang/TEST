@@ -4,17 +4,23 @@ ATLAS ETA/ATA diagnostic - ADVISORY ONLY.
 For one saved carrier page it explains, event by event, what the page says
 about the estimated and actual arrival, and recommends one of:
 
-    ACCEPT_CANDIDATE    the deterministic validator has a candidate and no
-                        evidence on the page argues against it
+    ACCEPT_CANDIDATE    the deterministic validator has a candidate, it quotes
+                        its page line, nothing is missing (identity,
+                        destination) and no conflict was found. Uncertainty
+                        notes (e.g. a landing far from DHL's own estimate) are
+                        reported, not blocking.
     NEEDS_REVIEW        the validator asks for review, or the evidence does
                         (identity, destination, an estimate that had already
                         passed, conflicting events)
     NO_SUPPORTED_EVENT  the page carries no estimated or actual arrival
 
 Boundaries (enforced by construction, tested):
-  * arrival_events.py is the authority. Event types and candidate dates come
-    from its classify/decide; this module only adds evidence checks, and they
-    can only move a case towards NEEDS_REVIEW, never towards ACCEPT.
+  * arrival_events.py is the authority. DHL event types and candidates come
+    from its classify/decide. For airlines the diagnostic reads the page
+    itself (Qatar banners, Ethiopian legs) into arrival_events event types and
+    runs arrival_events.decide on them; those readers are diagnostic-only and
+    stricter than production (identity, every arrival banner). Its checks can
+    only move a case towards NEEDS_REVIEW, never towards ACCEPT.
   * Nothing is invented: every candidate, destination and finding quotes the
     page line it came from; what the page does not say is reported missing.
   * It imports nothing that writes, opens a browser or contacts a carrier,
@@ -150,15 +156,20 @@ def _qatar(text, reference, today):
     route = re.search(r"\(\s*([A-Z]{3})\s*-\s*([A-Z]{3})\s*\)", text or "")
     dest = route.group(2) if route else None
     out = _base(reference, "QATAR", "AIR", "air", dest)
-    arrived = re.search(r"\bArrived\s*\(\s*([A-Z]{3})\s*\)\s*(\d{1,2}-[A-Za-z]{3}-\d{4})", text or "")
+    arrivals = re.findall(r"\bArrived\s*\(\s*([A-Z]{3})\s*\)\s*(\d{1,2}-[A-Za-z]{3}-\d{4})", text or "")
     estimate = re.search(r"Estimated\s+Arrival\s*\(\s*([A-Z]{3})\s*\)\s*(\d{1,2}-[A-Za-z]{3}-\d{4})",
                          text or "")
     events = []
-    if arrived:
-        kind = E.ACT_ARRIVAL if dest and arrived.group(1) == dest else E.TRANSIT
-        events.append(E.event(kind, E.parse_date(arrived.group(2)), "Arrived ({0})".format(
-            arrived.group(1)), "Qatar page", reference, location=arrived.group(1),
-            code="QR:ARRIVED"))
+    for station, when in arrivals:                       # every banner, not the first
+        kind = E.ACT_ARRIVAL if dest and station == dest else E.TRANSIT
+        events.append(E.event(kind, E.parse_date(when), "Arrived ({0})".format(station),
+                              "Qatar page", reference, location=station, code="QR:ARRIVED"))
+    awb = re.search(r"\b(\d{3})\s*-\s*(\d{8})\s*\(", text or "")
+    if reference and awb and re.sub(r"\D", "", reference) != awb.group(1) + awb.group(2):
+        out["conflicts"].append("the page is for {0}-{1}, not {2}".format(
+            awb.group(1), awb.group(2), reference))
+    if not awb:
+        out["missing"].append("the page names no air waybill (identity not shown)")
     if estimate:
         kind = E.EST_ARRIVAL if dest and estimate.group(1) == dest else E.OTHER
         events.append(E.event(kind, E.parse_date(estimate.group(2)), "Estimated Arrival ({0})"
@@ -194,7 +205,7 @@ def _generic_air(text, reference, carrier, today):
         out["events"].append({"date": E.parse_date(when), "time": None, "tz": None,
                               "code": "LEG:" + status, "description": "{0} {1}-{2} {3}".format(
                                   flight, origin, to, status),
-                              "location": to, "type": E.OTHER, "estimated": status != "DELIVERED",
+                              "location": to, "type": E.OTHER, "estimated": None,
                               "evidence": _line_of(text, flight)})
         if final and status == "DELIVERED":
             out["uncertainty"].append("the last leg to {0} is marked DELIVERED on {1}: a flight "
@@ -220,6 +231,11 @@ def recommend(diag):
         return REVIEW
     if not base.get("eta") and not base.get("ata"):
         return REVIEW if diag["missing"] else NONE
+    if diag["missing"]:
+        return REVIEW            # e.g. identity or destination not shown
+    for key in ("eta_candidate", "ata_candidate"):
+        if diag.get(key) and not diag[key].get("evidence"):
+            return REVIEW        # a candidate that cannot quote its page line
     return ACCEPT
 
 

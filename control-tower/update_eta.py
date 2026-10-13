@@ -168,8 +168,9 @@ try:
     MAX_HUB_WRITES = int(os.environ.get("MAX_HUB_WRITES", "150"))
 except ValueError:
     MAX_HUB_WRITES = 0          # an unreadable setting allows no write at all
-# This run's counters (carrier_pacing.RunLimits); set at the start of main().
-RUN_LIMITS = None
+# This run's counters (carrier_pacing.RunLimits). Present from import, so a
+# write outside main() is capped too; main() starts a fresh one per run.
+RUN_LIMITS = carrier_pacing.RunLimits(MAX_RECORDS_PER_RUN, MAX_HUB_WRITES)
 # Playwright delays EVERY action by this much.
 #
 # Restored to the original 150ms. I had lowered this to 60 for speed, but your
@@ -983,6 +984,8 @@ NO_RESULT = "NO RESULT"
 CARRIER_DEFERRED = "DEFERRED"
 # The dates were not written: a person reviews them (arrival_events rules).
 NEEDS_REVIEW = "NEEDS REVIEW"
+# Not started: the run's shipment or Hub write limit was reached first.
+RUN_LIMIT = "RUN LIMIT"
 TIMEOUT = "TIMEOUT"
 TEMPORARY_WEBSITE_ISSUE = "TEMPORARY WEBSITE ISSUE"
 AUTHENTICATION_ISSUE = "AUTHENTICATION ISSUE"
@@ -1725,7 +1728,12 @@ def _recover_retry_interaction(page, plan):
 
 
 def _recover_retry_save(page, plan):
+    # A save is a Hub write: capped and counted like the run's own.
+    if RUN_LIMITS.write_refusal():
+        return False
     save_manage_page(page)
+    RUN_LIMITS.record_write(plan.get("reference"), plan.get("view"), plan.get("field_name"),
+                            plan.get("value"))
     return True
 
 
@@ -10841,10 +10849,17 @@ def read_hub_ata(page, shipment):
     write and the read-back, same parsing as the overwrite rule).
     -> (state, value) from arrival_events.hub_date, or ("UNREADABLE", None)."""
     click_manage_in_view(page, BU_VIEW, shipment["bol_awb"], shipment["table_page"])
-    select_shipment_info_tab(page, BU_VIEW, "ATA")
+    if not select_shipment_info_tab(page, BU_VIEW, "ATA"):
+        # As update_one_view does: a half-rendered panel recovers on a reload.
+        write_log("The BU panel did not render for {0}; reopening Manage once.".format(
+            shipment["bol_awb"]))
+        click_manage_in_view(page, BU_VIEW, shipment["bol_awb"], shipment["table_page"])
+        if not select_shipment_info_tab(page, BU_VIEW, "ATA"):
+            return "UNREADABLE", "the BU view's ATA panel did not render (BU view not " \
+                                 "offered, or the shipment is not on the BU list)"
     raw = read_current_date_field(page, "ATA")
     if raw is False:
-        return "UNREADABLE", None
+        return "UNREADABLE", "the BU ATA field was not found on the Manage page"
     return AE.hub_date(raw, normalize_date)
 
 
@@ -11027,7 +11042,7 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
             except Exception as error:
                 note_suppressed("reopening Manage to recover the panel", error)
 
-        if RUN_LIMITS is not None and RUN_LIMITS.write_refusal():
+        if RUN_LIMITS.write_refusal():
             raise HubWriteLimitReached("{0}: {1} not written for {2}.".format(
                 RUN_LIMITS.write_refusal(), field_name, bol_awb))
 
@@ -11061,8 +11076,7 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
         save_manage_page(page)
         # Counted the moment it is saved: a write that later fails its
         # read-back, or a shipment that ends PARTIAL, still used the budget.
-        if RUN_LIMITS is not None:
-            RUN_LIMITS.record_write(bol_awb, view_name, field_name, date_value)
+        RUN_LIMITS.record_write(bol_awb, view_name, field_name, date_value)
 
         if VERIFY_AFTER_SAVE or require_verified:
             verified, detail = verify_saved_date(
@@ -11538,6 +11552,7 @@ def main():
             # asked again this run; its shipments wait in the deferred queue.
             _deferred_queue = carrier_pacing.DeferredQueue(
                 LOG_FOLDER / "carrier_deferred.json")
+            _rerun_refs = set()     # shipments taken from the Human Action queue
             _gate = carrier_pacing.CarrierGate(
                 _deferred_queue, RUN_ID,
                 is_ocean=lambda p: bool((PORTALS.get(p) or {}).get("ocean")),
@@ -11557,6 +11572,15 @@ def main():
                 if _limit:
                     write_log("Not started {0}: {1}. It is looked up next run.".format(
                         bol_awb, _limit))
+                    if bol_awb in _rerun_refs:
+                        # Taken from the Human Action queue but never run:
+                        # it still needs a person, and says why.
+                        needs_human += 1
+                        _rerun_refs.discard(bol_awb)
+                    save_result(shipment, {}, "No update", "NOT STARTED",
+                                "Not started: " + _limit)
+                    tower.shipment_finished(bol_awb, "SKIPPED", "Not started: " + _limit,
+                                            outcome=RUN_LIMIT)
                     stop_requested = True
                     return
                 dhl_result = {}
@@ -11853,10 +11877,11 @@ def main():
                 """
                 nonlocal needs_human
                 if RUN_LIMITS.exhausted():
-                    return []           # chosen tasks stay in the queue
+                    return []           # nothing is taken from the queue
                 chosen = human_queue_service()
                 for task, _shipment in chosen:
                     needs_human = max(0, needs_human - 1)
+                    _rerun_refs.add(task["reference"])
                     write_log("Operator chose {0} ({1}) from the Human Action "
                               "queue. Looking it up again now.".format(
                                   task["reference"], task["carrier"]))
@@ -12019,7 +12044,14 @@ def main():
                 )
             report_unsupported()
             report_suppressed()
-            if stop_requested:
+            if stop_requested and RUN_LIMITS.exhausted():
+                write_log(
+                    "Run ended at its limit: {0} ({1} shipments started, {2} Hub fields "
+                    "saved). Everything already written to the Hub stands; the rest is "
+                    "looked up next run.".format(RUN_LIMITS.exhausted(), RUN_LIMITS.started,
+                                                 RUN_LIMITS.writes)
+                )
+            elif stop_requested:
                 write_log(
                     "Run ended early at the dashboard's request. Everything "
                     "already written to the Hub stands."
