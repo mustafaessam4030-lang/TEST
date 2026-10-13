@@ -339,8 +339,8 @@ def check_before_write(shipment, result, today=None):
 def ata_overwrite_problem(current, new):
     """The Hub already holds an ATA: a different one is never written over it
     automatically (neither newer nor older); a person decides."""
-    if not str(current or "").strip():
-        return None
+    if not re.search(r"\d", str(current or "")):
+        return None             # empty, or an input mask / placeholder with no date in it
     raw = re.split(r"\s+\d{1,2}:\d{2}", str(current).strip())[0]
     m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", raw)
     cur = parse_date(raw) or (m and _day("{0:02d}/{1:02d}/{2}".format(

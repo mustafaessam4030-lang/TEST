@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 
 LEVELS = ("TEST", "SIMULATED", "REAL OBSERVED", "REAL VERIFIED", "BLOCKED")
 TEST, SIMULATED, REAL_OBSERVED, REAL_VERIFIED, BLOCKED = LEVELS
-KINDS = ("ehub-connection", "eta-write", "carrier-access", "po-pipeline")
+KINDS = ("ehub-connection", "eta-write", "carrier-access", "po-pipeline", "ehub-ata-read")
 PO_STEPS = "ABCDEFGHIJ"
 DEFAULT_EHUB_HOST = "logisticshub.mantracgroup.com"
 REQUIRED_STATUS = "Under Clearance"

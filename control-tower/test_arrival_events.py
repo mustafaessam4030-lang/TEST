@@ -135,7 +135,9 @@ check("Hub ATA older: not replaced, review",
       E.ata_overwrite_problem("05/10/2026", "10/10/2026") is not None)
 check("Hub ATA newer: not replaced, review",
       E.ata_overwrite_problem("15/10/2026", "10/10/2026") is not None)
-check("Hub ATA unreadable: review", E.ata_overwrite_problem("soon", "10/10/2026") is not None)
+check("Hub ATA unreadable: review", E.ata_overwrite_problem("3rd Oct", "10/10/2026") is not None)
+check("Hub ATA with no digits (empty / input mask) counts as empty",
+      E.ata_overwrite_problem("__/__/____", "10/10/2026") is None)
 check("Hub ATA '1/10/2026' is the same date as 01/10/2026",
       E.ata_overwrite_problem("1/10/2026", "01/10/2026") is None)
 check("Hub ATA with a time part is the same date",
@@ -295,6 +297,43 @@ except RuntimeError:
 check("Save -> read-back -> verify sequence still in update_one_view",
       "verify_saved_date(" in __import__("inspect").getsource(B.update_one_view))
 check("CMA CGM production hold untouched", "CMA_CGM" in B.carrier_pacing.held_carriers())
+
+# ------------------------------------------- read-only Hub field check
+section("8. worker.verify ata-read: read only, field representations")
+from worker import verify as W                              # noqa: E402
+C = importlib.reload(A)
+C.write_log = lambda *a, **k: None
+C.click_manage_in_view = lambda *a, **k: 1
+C.select_shipment_info_tab = lambda *a, **k: True
+for raw, want_empty, want_norm in (("", True, None), ("__/__/____", True, None),
+                                   ("12/10/2026", False, "12/10/2026"),
+                                   ("1/10/2026", False, "01/10/2026"),
+                                   # read-back's normalize_date has no time part: reported as
+                                   # None, so a Hub showing times would fail read-back (safe)
+                                   ("12/10/2026 00:00", False, None)):
+    C.read_current_date_field = lambda page, field, raw=raw: raw
+    obs = {"shipment": {"reference": "K000001", "table_page": 1}, "stages": []}
+    W._read_fields(None, obs)
+    ata = obs["hub_fields"][0]
+    rule = ata.get("overwrite_rule") or {}
+    check("ATA field {0!r}: read, normalised {1}, empty={2}, same date accepted".format(
+        raw, want_norm, want_empty),
+        ata["read"] and ata.get("normalized") == want_norm
+        and rule.get("empty_field_treated_as_empty") == want_empty
+        and (want_empty or rule.get("same_date_is_accepted"))
+        and (want_empty or want_norm is None or rule.get("a_different_date_would_go_to_review")),
+        ata)
+C.read_current_date_field = lambda page, field: C.save_manage_page(page) or "x"
+obs = {"shipment": {"reference": "K000001", "table_page": 1}, "stages": []}
+W._read_fields(None, obs)
+check("ata-read refuses any save attempt and reports it",
+      obs["writes_attempted"] == ["save_manage_page", "save_manage_page"], obs["writes_attempted"])
+check("...and restores the real fill/save afterwards",
+      C.fill_date_field.__name__ == "fill_date_field" and C.save_manage_page.__name__ == "save_manage_page")
+C.read_current_date_field = lambda page, field: False
+obs = {"shipment": {"reference": "K000001", "table_page": 1}, "stages": []}
+W._read_fields(None, obs)
+check("Unreadable ATA field: the check is BLOCKED, not passed", obs.get("result") == "BLOCKED", obs)
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

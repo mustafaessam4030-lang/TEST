@@ -17,6 +17,12 @@ REAL eHub verification — run ON THE WINDOWS WORKER.
         automation's browser on the same page; what the restriction follows,
         only as far as the evidence shows. Nothing is written to eHub.
 
+    python -m worker.verify ata-read [--reference BOL/AWB] [--no-report]
+        READ ONLY. Signs in as `ehub` does, opens the shipment's Manage page
+        in the BU and COE views and reads the ATA and ETA fields: the raw
+        value, how the read-back normalises it, and what the ATA overwrite
+        rule would decide. Filling and saving are disabled while it runs.
+
     python -m worker.verify eta --reference MEDUAHP69377 [--no-report]
         The ETA write path for ONE shipment, by the automation's own main():
         carrier page -> ETA -> identity -> the shipment in eHub -> WRITE ->
@@ -173,7 +179,7 @@ def pick(rows, reference=None):
 # ── ehub: the connection and the list, read-only ───────────────────────────
 
 def observe_ehub(reference=None, credentials=None, launch=None, log=print, continue_with=None,
-                 kind="ehub-connection", downloads=False):
+                 kind="ehub-connection", downloads=False, then=None):
     """
     The observation. `credentials` and `launch` exist for the test suite
     (which marks what it produces TEST); a worker uses neither.
@@ -310,12 +316,74 @@ def observe_ehub(reference=None, credentials=None, launch=None, log=print, conti
                                    found["reference"], found.get("status"), V.REQUIRED_STATUS))
             stage(obs, "status", True, status=found["status"])
             obs["result"] = "OBSERVED"
+            if then is not None:
+                then(page, obs)
             return obs
         finally:
             try:
                 browser.close()
             except Exception:
                 pass
+
+
+# ── ata-read: the Hub's ETA/ATA fields, READ ONLY ──────────────────────────
+
+def _read_fields(page, obs):
+    """Open the shipment's Manage page in each view and READ its date field:
+    the raw value, how the read-back would normalise it, and what the ATA
+    overwrite rule would decide. Fill and save are disabled while this runs."""
+    import update_eta as A
+    import arrival_events as AE
+    blocked_calls = []
+
+    def refuse(name):
+        def _refused(*a, **k):
+            blocked_calls.append(name)
+            raise RuntimeError("ata-read is read-only: {0} refused".format(name))
+        return _refused
+
+    saved = {n: getattr(A, n) for n in ("fill_date_field", "save_manage_page")}
+    A.fill_date_field, A.save_manage_page = refuse("fill_date_field"), refuse("save_manage_page")
+    shipment = obs["shipment"]
+    fields = []
+    try:
+        for view, field in ((A.BU_VIEW, "ATA"), (A.COE_VIEW, "ETA")):
+            entry = {"view": view, "field": field}
+            try:
+                A.click_manage_in_view(page, view, shipment["reference"], shipment["table_page"])
+                entry["panel_rendered"] = bool(A.select_shipment_info_tab(page, view, field))
+                raw = A.read_current_date_field(page, field)
+                entry["read"] = raw is not False
+                if raw is not False:
+                    normal = A.normalize_date(raw) or None
+                    entry.update(raw=raw, raw_length=len(raw), normalized=normal,
+                                 has_digits=any(c.isdigit() for c in raw))
+                    if field == "ATA":
+                        same = AE.ata_overwrite_problem(normal or raw, normal) if normal else None
+                        entry["overwrite_rule"] = {
+                            "empty_field_treated_as_empty": not entry["has_digits"],
+                            "same_date_is_accepted": same is None,
+                            "a_different_date_would_go_to_review": bool(
+                                normal and AE.ata_overwrite_problem(normal, "01/01/2000"))}
+            except Exception as error:
+                entry["error"] = str(error).split("\n")[0][:200]
+            fields.append(entry)
+    finally:
+        A.fill_date_field, A.save_manage_page = saved["fill_date_field"], saved["save_manage_page"]
+    obs["hub_fields"] = fields
+    obs["writes_attempted"] = blocked_calls
+    ata = next((f for f in fields if f["field"] == "ATA"), {})
+    stage(obs, "ata_field", bool(ata.get("read")) and not blocked_calls,
+          raw=ata.get("raw"), normalized=ata.get("normalized"))
+    if not ata.get("read"):
+        blocked(obs, "ata_field", "APPLICATION",
+                ata.get("error") or "the ATA field could not be read")
+
+
+def observe_ata_read(reference=None, log=print):
+    """The read-only Hub field check: sign in, find the shipment, read its
+    ATA (BU) and ETA (COE) fields. Nothing is filled or saved."""
+    return observe_ehub(reference, log=log, kind="ehub-ata-read", then=_read_fields)
 
 
 # ── eta: the real write path for one shipment ──────────────────────────────
@@ -530,6 +598,10 @@ def main(argv=None):
     e = sub.add_parser("ehub", help="the connection, the list, one shipment and its status")
     e.add_argument("--reference")
     e.add_argument("--no-report", action="store_true")
+    r = sub.add_parser("ata-read", help="READ ONLY: one shipment's Hub ATA/ETA fields, raw and "
+                                        "normalised, and what the ATA overwrite rule decides")
+    r.add_argument("--reference")
+    r.add_argument("--no-report", action="store_true")
     t = sub.add_parser("eta", help="the ETA write path for one shipment (writes to eHub)")
     t.add_argument("--reference", required=True)
     t.add_argument("--no-report", action="store_true")
@@ -562,6 +634,11 @@ def main(argv=None):
                                   ip_service=args.ip_service)
         level = finish(obs, send=not args.no_report)
         return 0 if level == V.REAL_OBSERVED else 1
+    if args.cmd == "ata-read":
+        obs = observe_ata_read(args.reference)
+        level = finish(obs, send=not args.no_report)
+        ata = next((f for f in obs.get("hub_fields") or [] if f["field"] == "ATA"), {})
+        return 0 if ata.get("read") and not obs.get("writes_attempted") else 1
     obs = observe_ehub(args.reference) if args.cmd == "ehub" else prove_eta(args.reference)
     level = finish(obs, send=not args.no_report)
     return 0 if level in (V.REAL_OBSERVED, V.REAL_VERIFIED) and \

@@ -5481,7 +5481,7 @@ def extract_qatar_result(page):
         return None
 
     # The "Arrived ( XXX)" banner counts only at the route's destination
-    # ("157-59781223 (BRU - DAR)"); an arrival at a transit station is not it.
+    # (e.g. "157-xxxxxxxx (BRU - DAR)"); an arrival at a transit station is not it.
     try:
         banner_text = page.locator("body").inner_text(timeout=5000)
     except Exception:
@@ -5633,7 +5633,7 @@ GENERIC_ETA_LABELS = [
 # The label reader does not know which airport is the destination, so only a
 # label that SAYS "actual arrival" gives an ATA. "Arrived", "Received from
 # Flight"/RCF and "Delivered"/DLV can be a transit leg or a delivery: on
-# 12 Oct, Ethiopian 071-62427934 got ATA 10/10 from its FIRST leg's
+# 12 Oct, an Ethiopian waybill got ATA 10/10 from its FIRST leg's
 # "DELIVERED" (Brussels-Liege) while its last leg to DAR was still scheduled.
 GENERIC_ATA_LABELS = [
     r"Actual\s+(?:Time\s+of\s+)?Arrival", r"\bATA\b",
@@ -10996,7 +10996,9 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
                 # date question for a person.
                 raise RuntimeError("The Hub's current ATA could not be read before writing "
                                    "for {0}; nothing was written.".format(bol_awb))
-            problem = AE.ata_overwrite_problem(current, date_value)
+            # Read the same way as the read-back (normalize_date), so one
+            # date in two spellings is never taken for two dates.
+            problem = AE.ata_overwrite_problem(normalize_date(current) or current, date_value)
             if problem:
                 raise NeedsReview([problem])
 
