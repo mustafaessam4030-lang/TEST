@@ -140,7 +140,10 @@ STAGE_OF = {
 FAILED_STATES = ("failed", "partial", "human_timeout")
 # A skip is a failure when the run classified it as one. "No result" — the
 # carrier publishes no date yet — is an expected outcome, not a failure.
-EXPECTED_SKIPS = (None, "", "NO RESULT", "SUCCESS")
+# "DEFERRED": a carrier deliberately not asked (blocked earlier, cooling down,
+# per-run cap). The block itself is the failure; the shipments it held back
+# are kept in the deferred queue, not reported as unexplained failures.
+EXPECTED_SKIPS = (None, "", "NO RESULT", "SUCCESS", "DEFERRED")
 
 
 def _first_upper(text):

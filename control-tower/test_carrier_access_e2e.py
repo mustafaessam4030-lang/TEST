@@ -65,6 +65,7 @@ def rule(title):
 
 
 RESTRICTED_REF, OK_REF = "CMAU7700001", "CMAU7700002"
+AFTER_BLOCK_REF = "CMAU7700004"     # same carrier, after the block: deferred
 PORT = int(os.environ.get("ACCESS_E2E_PORT", "9763"))
 BASE = "http://127.0.0.1:{0}".format(PORT)
 SEARCH = ("<!doctype html><html><head><title>Track a shipment</title></head><body>"
@@ -131,7 +132,10 @@ A.ensure_filtered_page = lambda page, view, number: (_ for _ in ()).throw(
     A.SkipShipment("no more pages")) if number > 1 else None
 A.collect_supported_shipments = lambda page, n: [
     {"bol_awb": ref, "carrier": "CMA CGM", "provider": "CMA_CGM", "current_eta": "05/11/2026",
-     "table_page": 1} for ref in (RESTRICTED_REF, OK_REF)]
+     "table_page": 1} for ref in (OK_REF, RESTRICTED_REF, AFTER_BLOCK_REF)]
+# This run's own deferred queue, and no pacing wait in a test.
+A.LOG_FOLDER = WORK
+A.carrier_pacing.MIN_GAP["ocean"] = 0
 
 
 def hub_write(page, shipment, result):
@@ -237,8 +241,17 @@ check("...extracted and written, once, after access was confirmed",
 check("...SUCCESS, and the cleared verification learned as a success only now",
       good.get("state") == "updated" and [m for m in ML if m[2] == OK_REF
                                           and m[0] == "captcha_cleared" and m[1] is True])
-check("The run kept going: 1 written, 1 failed", state["counters"].get("successful") == 1
-      and state["counters"].get("failed") == 1, state["counters"])
+check("The run kept going: 1 written, 1 failed, 1 deferred",
+      state["counters"].get("successful") == 1 and state["counters"].get("failed") == 1
+      and state["counters"].get("skipped") == 1, state["counters"])
+import carrier_pacing as CP                                  # noqa: E402
+pending = {r["bol_awb"]: r for r in CP.DeferredQueue(WORK / "carrier_deferred.json").pending()}
+check("First block: the next CMA CGM shipment was not looked up, only deferred",
+      AFTER_BLOCK_REF not in [w[0] for w in WRITES]
+      and pending.get(AFTER_BLOCK_REF, {}).get("reason") == CP.REASON_BLOCKED, pending)
+check("The blocked shipment is in the deferred queue with its run ID and reason",
+      pending.get(RESTRICTED_REF, {}).get("reason") == "CARRIER_ACCESS_RESTRICTED"
+      and pending[RESTRICTED_REF].get("run_id") == A.RUN_ID, pending.get(RESTRICTED_REF))
 
 rule("3. ATLAS, ON THE RUN main() PRODUCED")
 NO_INFO = "I don't have that information"

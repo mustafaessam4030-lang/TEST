@@ -30,6 +30,11 @@ except ImportError:
     except ImportError:
         hq = None
 
+# Carrier pacing and the deferred queue (carrier_pacing.py, beside this file).
+import sys as _cp_sys  # noqa: E402
+_cp_sys.path.insert(0, str(Path(__file__).resolve().parent))
+import carrier_pacing  # noqa: E402
+
 # The remote Human Action session: this run's own tab, shown in an operator's
 # browser through the worker agent while the run waits for them. Optional and
 # inert unless the worker agent started this run (CT_SESSION_PORT).
@@ -964,6 +969,8 @@ def page_has_content(page):
 
 SUCCESS = "SUCCESS"
 NO_RESULT = "NO RESULT"
+# Not asked on purpose: the carrier is blocked, cooling down, or at its cap.
+CARRIER_DEFERRED = "DEFERRED"
 TIMEOUT = "TIMEOUT"
 TEMPORARY_WEBSITE_ISSUE = "TEMPORARY WEBSITE ISSUE"
 AUTHENTICATION_ISSUE = "AUTHENTICATION ISSUE"
@@ -991,6 +998,8 @@ def classify_failure(error):
     """Map an exception onto one of the named operational outcomes."""
     # The code that raised it may have said exactly what it was. That is
     # stronger than any reading of the message.
+    if isinstance(error, CarrierDeferred):
+        return CARRIER_DEFERRED
     declared = (getattr(error, "failure", None) or {}).get("category")
     if declared == "CARRIER_POLICY_BLOCK":
         return WRITE_BLOCKED
@@ -6166,6 +6175,12 @@ def carrier_restriction(page, reference=None):
                                                      "supported browser")]}
 
 
+class CarrierDeferred(SkipShipment):
+    """The carrier is not asked now (blocked earlier, cooling down, or its
+    per-run cap reached). Nothing was looked up or written; the shipment is
+    kept in the deferred queue for a later run."""
+
+
 class CarrierAccessRestricted(Exception):
     """
     The carrier showed its restriction page: no extraction, no write. A
@@ -10940,12 +10955,39 @@ def update_one_view(page, shipment, view_name, field_name, date_value,
                        read_back=episode_read_back)
 
 
+ESTIMATE_WORDS = re.compile(r"estimat|expect|schedul|planned|forecast|predict|\beta\b", re.I)
+
+
+def separate_eta_ata(result):
+    """
+    The last check before the Hub, for every carrier. ETA and ATA mean
+    different things and are never mixed:
+      - an ATA whose source names an estimate is not an actual arrival: dropped;
+      - an ETA equal to the ATA is the arrival copied, not an estimate: the
+        shipment has arrived, so only the ATA is written.
+    -> (result copy, [notes])
+    """
+    out, notes = dict(result or {}), []
+    if out.get("ata") and ESTIMATE_WORDS.search(str(out.get("ata_source") or "")):
+        notes.append("ATA {0} came from '{1}', an estimate, not an actual arrival: "
+                     "not written.".format(out["ata"], out.get("ata_source")))
+        out["ata"] = None
+    if out.get("eta") and out.get("ata") and out["eta"] == out["ata"]:
+        notes.append("ETA {0} equals the ATA: the shipment has arrived, so only the "
+                     "ATA is written and COE ETA is left unchanged.".format(out["eta"]))
+        out["eta"] = None
+    return out, notes
+
+
 def update_internal_shipment(internal_page, shipment, dhl_result):
     """
     Update both internal views independently:
       COE -> ETA from provider estimated event
       BU  -> ATA from provider completed arrival event
     """
+    dhl_result, _notes = separate_eta_ata(dhl_result)
+    for _note in _notes:
+        write_log(_note)
     actions = {"coe": "", "bu": ""}
 
     # If a BU update follows, it re-navigates to the BU view immediately, so
@@ -11266,6 +11308,16 @@ def main():
             login_internal(internal_page, username, password)
             tower.system_ok("hub", "Signed in")
 
+            # Carrier pacing (carrier_pacing.py): one lookup at a time, spaced
+            # per carrier, capped per run, and a carrier that blocks us is not
+            # asked again this run; its shipments wait in the deferred queue.
+            _deferred_queue = carrier_pacing.DeferredQueue(
+                LOG_FOLDER / "carrier_deferred.json")
+            _gate = carrier_pacing.CarrierGate(
+                _deferred_queue, RUN_ID,
+                is_ocean=lambda p: bool((PORTALS.get(p) or {}).get("ocean")),
+                log=write_log)
+
             def _process_shipment(shipment, table_page):
                 """
                 One shipment, start to finish: look it up, write, read back,
@@ -11278,9 +11330,17 @@ def main():
                 dhl_result = {}
                 _counts_before = (successful, failed, skipped, partial,
                                   needs_human)
+                _provider = shipment.get("provider") or carrier_provider(
+                    shipment.get("carrier", ""),
+                    shipment.get("tracking_reference") or bol_awb)
 
                 try:
                     tower.shipment_started(shipment)
+                    _refusal = _gate.refusal(_provider)
+                    if _refusal:
+                        _deferred_queue.defer(shipment, _provider, _refusal[0],
+                                              _refusal[1], RUN_ID)
+                        raise CarrierDeferred("DEFERRED to a later run: " + _refusal[1])
                     shipment_log(
                         bol_awb,
                         "Opening tracking page (hub page {0}, existing ETA {1})".format(
@@ -11292,7 +11352,8 @@ def main():
                         f"Tracking {bol_awb} on the carrier site",
                         system=shipment.get("provider"),
                     )
-                    dhl_result = get_provider_result(provider_pages, shipment)
+                    with _gate.lookup(_provider):
+                        dhl_result = get_provider_result(provider_pages, shipment)
                     tower.system_ok(
                         shipment.get("provider"),
                         f"Result returned for {bol_awb}",
@@ -11314,6 +11375,7 @@ def main():
                     )
 
                     save_result(shipment, dhl_result, action, "SUCCESS")
+                    _deferred_queue.resolve(bol_awb, _provider, "SUCCESS", RUN_ID)
                     successful += 1
                     tower.shipment_finished(bol_awb, "SUCCESS", "", action)
                     tower.counters(successful, failed, skipped, partial)
@@ -11359,6 +11421,9 @@ def main():
                     needs_human += 1
                     _lost = getattr(error, "reason", "") == "session_lost"
                     _human_class = HUMAN_SESSION_LOST if _lost else HUMAN_TIMEOUT
+                    # Kept for a later run, with the reason a person ended it.
+                    _deferred_queue.defer(shipment, _provider, _human_class,
+                                          str(error), RUN_ID)
                     write_log("HUMAN VERIFICATION REQUIRED for {0}: {1}"
                               .format(bol_awb, error))
                     log_operation_failure(
@@ -11407,6 +11472,10 @@ def main():
                 except SkipShipment as error:
                     skipped += 1
                     write_log(f"SKIPPED {bol_awb}: {error}")
+                    if not isinstance(error, CarrierDeferred):
+                        # The carrier was reached and answered for itself.
+                        _deferred_queue.resolve(bol_awb, _provider,
+                                                "SKIPPED: " + str(error)[:120], RUN_ID)
                     _outcome = classify_failure(error)
                     log_operation_failure(
                         shipment.get("carrier"), bol_awb, "carrier tracking",
@@ -11426,6 +11495,13 @@ def main():
 
                 except Exception as error:
                     failed += 1
+                    if isinstance(error, CarrierAccessRestricted):
+                        # First block: this carrier is not asked again in
+                        # this run, and the shipment waits for a later one.
+                        _gate.blocked(_provider, str(error)[:160])
+                        _deferred_queue.defer(shipment, _provider,
+                                              "CARRIER_ACCESS_RESTRICTED",
+                                              str(error), RUN_ID)
                     take_screenshot(internal_page, bol_awb, "error")
                     write_log(f"ERROR for {bol_awb}: {error}")
                     _outcome = classify_failure(error)
