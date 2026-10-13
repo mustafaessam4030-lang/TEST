@@ -4127,16 +4127,19 @@ def extract_event_log_result(page):
 
     latest_eta = latest_date(eta_dates)
     latest_ata = latest_date(ata_dates)
-    latest_eta, latest_ata, note = reconcile_dhl_dates(latest_eta, latest_ata)
-    if note:
-        write_log(note)
-
-    # Where the shipment is now, from the timeline itself, kept with the result.
+    # Where the shipment is now, from the whole timeline, before any date is
+    # accepted: the rules decide which of the dates read may be written.
     timeline_text = _page_text(page)
     status = dhl_shipment_status(timeline_text)
     event_date, event_line = dhl_latest_event(timeline_text)
     write_log(f"DHL timeline: status={status or 'unknown'}; latest event "
               f"{event_date or '-'}: {(event_line or '-')[:150]}")
+    latest_eta, latest_ata, note, review = dhl_timeline_decision(
+        latest_eta, latest_ata, timeline_text)
+    if note:
+        write_log(note)
+    if review:
+        raise SkipShipment(note)
 
     if latest_eta:
         write_log(f"Latest DHL Event Log Estimated Delivery ETA: {latest_eta}")
@@ -4404,6 +4407,86 @@ def dhl_latest_event(text):
     if best is None:
         return None, None
     return best[1], best[2]
+
+# The shipment's timeline, step by step. An ESTIMATE is a forecast; ARRIVED is
+# the arrival at destination (the ATA); the PAST_ARRIVAL steps can only happen
+# after the shipment has arrived, so their dates are never the arrival date.
+DHL_TIMELINE_STEPS = [
+    ("ESTIMATE", re.compile(r"(estimated|expected|scheduled)\s+delivery", re.I)),
+    ("ARRIVED", re.compile(r"arrived\s+(at\s+)?final\s+destination|"
+                           r"arriv(ed|al)\s+at\s+(the\s+)?destination", re.I)),
+    ("PAST_ARRIVAL", re.compile(r"customs\s+cleared|clearance\s+processing\s+complete|"
+                                r"out\s+for\s+delivery|with\s+delivery\s+courier|"
+                                r"\bdelivered\b|signed\s+for\s+by|handover\s+freight", re.I)),
+]
+
+
+def dhl_timeline_events(text):
+    """
+    Every recognised step of the timeline as (step, date, line).
+
+    A step's date is the date on its own line or, in the grouped layout
+    (a date heading followed by that day's events), the heading above it.
+    """
+    events, current = [], None
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        dates = extract_all_dates(stripped)
+        if dates:
+            current = dates[0][1]
+        for step, pattern in DHL_TIMELINE_STEPS:
+            if pattern.search(stripped):
+                if current:
+                    events.append((step, dates[0][1] if dates else current, stripped[:160]))
+                break
+    return events
+
+
+def _day_key(value):
+    try:
+        return datetime.strptime(value, "%d/%m/%Y")
+    except (TypeError, ValueError):
+        return None
+
+
+def dhl_timeline_decision(eta, ata, text):
+    """
+    Apply the rules to what was read, using the whole timeline:
+      - arrived: the ATA is written, the ETA is not (an estimate is over);
+      - past arrival (cleared / delivered) but no arrival event: nothing is
+        written, a person checks it;
+      - an arrival dated after a later step: inconsistent, nothing is written;
+      - an estimate older than the latest real event is stale: not written.
+    -> (eta, ata, note, review)
+    """
+    events = dhl_timeline_events(text)
+    past = [e for e in events if e[0] == "PAST_ARRIVAL"]
+    arrived = ata or next((e[1] for e in events if e[0] == "ARRIVED"), None)
+    # Any dated line that is not a forecast is a real event (dhl_latest_event
+    # skips estimates), not only the steps recognised above.
+    latest_real = _day_key(dhl_latest_event(text or "")[0])
+
+    if not arrived and past:
+        return None, None, ("DHL timeline shows '{0}' ({1}) but no arrival event: the "
+                            "arrival date is not on the page, so nothing is written."
+                            .format(past[0][2][:80], past[0][1])), True
+    if arrived:
+        first_past = min([d for d in (_day_key(e[1]) for e in past) if d], default=None)
+        if first_past and _day_key(arrived) and _day_key(arrived) > first_past:
+            return None, None, ("DHL arrival {0} is after a later step on {1}: the "
+                                "timeline is inconsistent, so nothing is written."
+                                .format(arrived, first_past.strftime("%d/%m/%Y"))), True
+        note = "DHL shipment has arrived ({0}); ETA not written.".format(arrived) \
+            if eta else None
+        return None, arrived, note, False
+    if eta and latest_real and _day_key(eta) and _day_key(eta) < latest_real:
+        return None, None, ("DHL estimate {0} is older than the latest event on {1}: "
+                            "stale, not written.".format(
+                                eta, latest_real.strftime("%d/%m/%Y"))), False
+    return eta, None, None, False
+
 
 DHL_PROCESSING_PATTERNS = [
     r"your request is being processed",

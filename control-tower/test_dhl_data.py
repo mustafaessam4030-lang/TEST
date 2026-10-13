@@ -268,6 +268,47 @@ check("Different ETA and ATA are both kept",
       A.reconcile_dhl_dates("26/08/2026", "20/08/2026")[:2] == ("26/08/2026", "20/08/2026"))
 check("ETA alone is kept", A.reconcile_dhl_dates("26/08/2026", None)[:2] == ("26/08/2026", None))
 
+print()
+print("=" * 72)
+print("Timeline rules: see where the shipment is before writing a date")
+print("=" * 72)
+GROUPED = """Shipment Delivered
+Last Update: Wednesday, July 22, 2026 at 6:40 PM (UTC), GHTWA
+Shipment Timeline
+Wednesday
+July 22, 2026
+6:40 PM (UTC) | Tarkwa
+Shipment Delivered
+Tuesday
+July 14, 2026
+8:45 PM (UTC) | Accra
+Import Customs Cleared
+11:58 AM (UTC) | Accra
+Handover Freight to Forwarder
+Monday
+July 13, 2026
+02:10 AM (UTC) | Accra
+Arrived at Destination
+"""
+ev = A.dhl_timeline_events(GROUPED)
+check("Grouped layout: each step takes its day heading",
+      ("ARRIVED", "13/07/2026") in [(s, d) for s, d, _ in ev] and
+      ("PAST_ARRIVAL", "22/07/2026") in [(s, d) for s, d, _ in ev], str(ev))
+check("Arrived: ATA = arrival date, not the delivery date; ETA not written",
+      A.dhl_timeline_decision("22/07/2026", None, GROUPED)[:2] == (None, "13/07/2026"))
+NO_ARR = GROUPED.split("Monday")[0]
+r = A.dhl_timeline_decision("22/07/2026", None, NO_ARR)
+check("Delivered/cleared but no arrival event: nothing written, review",
+      r[:2] == (None, None) and r[3] is True, r[2])
+r = A.dhl_timeline_decision(None, "23/07/2026", GROUPED)
+check("Arrival dated after delivery: inconsistent, nothing written", r[3] is True, r[2])
+TRANSIT = "Event Log\n10/07/2026  Departed Facility  BRUSSELS\n15/07/2026  Estimated Delivery  ACCRA\n"
+check("In transit: ETA written, no ATA",
+      A.dhl_timeline_decision("15/07/2026", None, TRANSIT)[:2] == ("15/07/2026", None))
+STALE = "Event Log\n12/07/2026  Departed Facility  BRUSSELS\n09/07/2026  Estimated Delivery  ACCRA\n"
+check("Estimate older than the latest event: stale, not written",
+      A.dhl_timeline_decision("09/07/2026", None, STALE)[:2] == (None, None))
+
 m = A.dhl_data_markers(RESULT)
 print("  shipment details found : {0}".format(m["details"]))
 print("  timeline found         : {0}".format(m["timeline"]))
