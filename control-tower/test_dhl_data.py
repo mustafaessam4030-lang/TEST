@@ -309,6 +309,26 @@ STALE = "Event Log\n12/07/2026  Departed Facility  BRUSSELS\n09/07/2026  Estimat
 check("Estimate older than the latest event: stale, not written",
       A.dhl_timeline_decision("09/07/2026", None, STALE)[:2] == (None, None))
 
+check("ROOT BUG: a 'Shipment Delivered' row is not an Estimated Delivery",
+      A.parse_event_row_text("22/07/2026 18:40 Shipment Delivered Tarkwa", "Estimated Delivery") is None)
+check("ROOT BUG: a 'Shipment Delivered' row is not an Arrived Final Destination",
+      A.parse_event_row_text("22/07/2026 18:40 Shipment Delivered Tarkwa",
+                             "Arrived Final Destination") is None)
+L = A.DHL_ATA_LABELS
+check("Labelled field, date on the same line",
+      A.dhl_labelled_date("Actual Time of Arrival: 13/07/2026 02:10", L) == "13/07/2026")
+check("Labelled field, date on the next line",
+      A.dhl_labelled_date("Actual Arrival\nJuly 13, 2026", L) == "13/07/2026")
+check("Two legs with different arrival dates: no single answer",
+      A.dhl_labelled_date("Actual Arrival: 10/07/2026\nActual Arrival: 13/07/2026", L) is None)
+check("A date two lines away is not the field's value",
+      A.dhl_labelled_date("Actual Arrival\n-\n13/07/2026", L) is None)
+check("An estimate is not read as the actual arrival",
+      A.dhl_labelled_date("Estimated Time of Arrival: 15/07/2026", L) is None)
+check("ETA field read",
+      A.dhl_labelled_date("Estimated Time of Arrival: 15/07/2026", A.DHL_ETA_LABELS)
+      == "15/07/2026")
+
 m = A.dhl_data_markers(RESULT)
 print("  shipment details found : {0}".format(m["details"]))
 print("  timeline found         : {0}".format(m["timeline"]))

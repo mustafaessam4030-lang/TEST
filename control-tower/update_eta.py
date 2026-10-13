@@ -3925,9 +3925,12 @@ def click_event_log(page):
 
 def parse_event_row_text(row_text, event_name):
     """Extract a date only from the same Event Log row as the requested event."""
-    if not re.search(rf"^|\s{re.escape(event_name)}\s|{re.escape(event_name)}$", row_text, re.I):
-        if event_name.casefold() not in row_text.casefold():
-            return None
+    # The row must name THIS event. (The old test began with "^|", which
+    # matches every text, so any dated row - "Shipment Delivered" included -
+    # was read as both Estimated Delivery and Arrived Final Destination.)
+    name = r"\s+".join(re.escape(word) for word in event_name.split())
+    if not re.search(r"(?<![a-z])" + name + r"(?![a-z])", row_text, re.I):
+        return None
 
     dates = extract_all_dates(row_text)
     if not dates:
@@ -4129,7 +4132,18 @@ def extract_event_log_result(page):
     latest_ata = latest_date(ata_dates)
     # Where the shipment is now, from the whole timeline, before any date is
     # accepted: the rules decide which of the dates read may be written.
-    timeline_text = _page_text(page)
+    timeline_text = _page_text(page) + "\n" + read_dhl_tabs(page)
+
+    # Dates DHL prints against explicit arrival / estimate fields (details,
+    # masterdetails) fill what the Event Log rows did not give.
+    if not latest_ata:
+        latest_ata = dhl_labelled_date(timeline_text, DHL_ATA_LABELS)
+        if latest_ata:
+            write_log(f"DHL ATA from the labelled arrival field: {latest_ata}")
+    if not latest_eta:
+        latest_eta = dhl_labelled_date(timeline_text, DHL_ETA_LABELS)
+        if latest_eta:
+            write_log(f"DHL ETA from the labelled estimate field: {latest_eta}")
     status = dhl_shipment_status(timeline_text)
     event_date, event_line = dhl_latest_event(timeline_text)
     write_log(f"DHL timeline: status={status or 'unknown'}; latest event "
@@ -4433,6 +4447,9 @@ def dhl_timeline_events(text):
         stripped = line.strip()
         if not stripped:
             continue
+        if stripped == DHL_TAB_BREAK:    # a new tab's text: no heading carries over
+            current = None
+            continue
         dates = extract_all_dates(stripped)
         if dates:
             current = dates[0][1]
@@ -4449,6 +4466,57 @@ def _day_key(value):
         return datetime.strptime(value, "%d/%m/%Y")
     except (TypeError, ValueError):
         return None
+
+
+DHL_TAB_BREAK = "<<DHL TAB>>"
+DHL_TABS = ("Shipment Details", "Masterdetails", "Master Details", "Shipment Timeline")
+# Explicit field labels only. The date must sit on the label's own line or on
+# the very next line; anything further away is not this field's value.
+DHL_ATA_LABELS = ("actual time of arrival", "actual arrival date", "actual arrival", "ata")
+DHL_ETA_LABELS = ("estimated time of arrival", "estimated arrival date", "estimated arrival",
+                  "eta")
+
+
+def dhl_labelled_date(text, labels):
+    """
+    The date DHL prints against one of `labels`, or None. Several different
+    dates for the same label (e.g. one per transport leg) are not one answer:
+    None, so nothing is guessed.
+    """
+    lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
+    found = set()
+    pattern = re.compile(r"^(?:%s)\b\s*:?\s*(.*)$" % "|".join(
+        re.escape(l) for l in labels), re.I)
+    for i, line in enumerate(lines):
+        m = pattern.match(line)
+        if not m:
+            continue
+        same = extract_all_dates(m.group(1))
+        nxt = extract_all_dates(lines[i + 1]) if i + 1 < len(lines) and not same else []
+        if same or (nxt and not pattern.match(lines[i + 1])):
+            found.add((same or nxt)[0][1])
+    return found.pop() if len(found) == 1 else None
+
+
+def read_dhl_tabs(page):
+    """Open each DHL tab once and return all the text read, tab by tab."""
+    chunks = []
+    for name in DHL_TABS:
+        tab = first_visible([
+            page.get_by_role("tab", name=re.compile(r"^\s*%s\s*$" % re.escape(name), re.I)),
+            page.get_by_role("button", name=re.compile(r"^\s*%s\s*$" % re.escape(name), re.I)),
+            page.get_by_text(re.compile(r"^\s*%s\s*$" % re.escape(name), re.I)),
+        ], 1200)
+        if tab is None:
+            continue
+        try:
+            tab.click(timeout=4000)
+            page.wait_for_timeout(1200)
+            chunks.append(DHL_TAB_BREAK + "\n" + _page_text(page))
+            write_log(f"DHL tab read: {name}")
+        except Exception as error:
+            note_suppressed(f"reading the DHL {name} tab", error)
+    return "\n".join(chunks)
 
 
 def dhl_timeline_decision(eta, ata, text):
