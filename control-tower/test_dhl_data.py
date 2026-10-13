@@ -252,6 +252,22 @@ print()
 print("=" * 72)
 print("EXTRACTED FOR {0}".format(AWB))
 print("=" * 72)
+print()
+print("=" * 72)
+print("ETA and ATA kept apart (an arrival date is never written as the ETA)")
+print("=" * 72)
+check("A row with one date is read",
+      A.parse_event_row_text("26/08/2026  Estimated Delivery  CAIRO", "Estimated Delivery")
+      == "26/08/2026")
+check("A text spanning several events is refused, not the latest date taken",
+      A.parse_event_row_text("26/08/2026 Estimated Delivery\n22/07/2026 Shipment Delivered",
+                             "Estimated Delivery") is None)
+check("ETA equal to ATA is dropped; only ATA is written",
+      A.reconcile_dhl_dates("22/07/2026", "22/07/2026")[:2] == (None, "22/07/2026"))
+check("Different ETA and ATA are both kept",
+      A.reconcile_dhl_dates("26/08/2026", "20/08/2026")[:2] == ("26/08/2026", "20/08/2026"))
+check("ETA alone is kept", A.reconcile_dhl_dates("26/08/2026", None)[:2] == ("26/08/2026", None))
+
 m = A.dhl_data_markers(RESULT)
 print("  shipment details found : {0}".format(m["details"]))
 print("  timeline found         : {0}".format(m["timeline"]))

@@ -3933,9 +3933,29 @@ def parse_event_row_text(row_text, event_name):
     if not dates:
         return None
 
-    # One event row normally contains one date. If DHL adds more, choose the
-    # latest date within that exact row rather than another page-level date.
-    return latest_date([parsed_date for _, parsed_date, _ in dates])
+    # One event row carries one date. A text holding several different dates
+    # spans more than one event (a card or the whole timeline), so its date
+    # cannot be tied to this event: taking the latest one could copy the
+    # arrival date into the ETA. Refuse rather than guess.
+    distinct = {parsed_date for _, parsed_date, _ in dates}
+    if len(distinct) > 1:
+        write_log(f"DHL '{event_name}' text holds {len(distinct)} different dates; "
+                  "not tied to one event, ignored.")
+        return None
+    return distinct.pop()
+
+
+def reconcile_dhl_dates(eta, ata):
+    """
+    ETA is an estimate, ATA is the recorded arrival. When both read as the
+    same day the ETA was taken from the arrival, not from an estimate, so the
+    ETA is dropped and only the ATA is written. -> (eta, ata, note)
+    """
+    if eta and ata and eta == ata:
+        return None, ata, ("DHL ETA {0} is the same day as the ATA; the shipment has "
+                           "arrived, so COE ETA is left unchanged and only BU ATA is "
+                           "written.".format(eta))
+    return eta, ata, None
 
 
 def extract_event_log_rows_from_scope(scope):
@@ -4107,6 +4127,16 @@ def extract_event_log_result(page):
 
     latest_eta = latest_date(eta_dates)
     latest_ata = latest_date(ata_dates)
+    latest_eta, latest_ata, note = reconcile_dhl_dates(latest_eta, latest_ata)
+    if note:
+        write_log(note)
+
+    # Where the shipment is now, from the timeline itself, kept with the result.
+    timeline_text = _page_text(page)
+    status = dhl_shipment_status(timeline_text)
+    event_date, event_line = dhl_latest_event(timeline_text)
+    write_log(f"DHL timeline: status={status or 'unknown'}; latest event "
+              f"{event_date or '-'}: {(event_line or '-')[:150]}")
 
     if latest_eta:
         write_log(f"Latest DHL Event Log Estimated Delivery ETA: {latest_eta}")
@@ -4128,6 +4158,9 @@ def extract_event_log_result(page):
         "event_log_ata": latest_ata,
         "eta": latest_eta,
         "ata": latest_ata,
+        "timeline_status": status,
+        "latest_event": {"date": event_date, "text": event_line},
+        "eta_note": note,
     }
 
 
