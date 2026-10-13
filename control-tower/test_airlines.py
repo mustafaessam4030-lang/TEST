@@ -114,8 +114,9 @@ check("DHL Aviation, Virgin and Emirates take the waybill in the address",
       and "values={0}" in A.PORTALS["EMIRATES"]["deep_link"])
 check("An air waybill in an address is written the carrier's way (615-62308396); "
       "a bill of lading as the Hub holds it",
-      "else portal_awb(tracking_number, config.get(\"dashed\", True)))" in SRC
-      and "str(tracking_number).strip() if config.get(\"verbatim\")" in SRC)
+      A.portal_reference("615-62308396", {"dashed": True})
+      == A.portal_awb("615-62308396", True)
+      and A.portal_reference(" MEDU1234567 ", {"verbatim": True}) == "MEDU1234567")
 check("Virgin and Emirates want the eleven digits without a dash",
       A.portal_awb("932-12345675", A.PORTALS["VIRGIN"]["dashed"]) == "93212345675")
 try:

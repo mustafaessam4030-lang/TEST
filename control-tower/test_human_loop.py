@@ -96,6 +96,8 @@ A.click_manage_in_view = lambda page, view, bol, table_page: 1
 A.select_shipment_info_tab = lambda page, view, field: True
 A.fill_date_field = lambda page, field, value: PENDING.__setitem__(field, value)
 A.save_manage_page = lambda page: HUB.update(PENDING)
+# What the in-memory Hub holds before a write (the ATA overwrite check).
+A.read_current_date_field = lambda page, field: HUB.get(field, "")
 A.ensure_filtered_page = lambda *args, **kwargs: None
 
 
@@ -564,9 +566,11 @@ else:
                   kind == "SUCCESS" and result.get("ata") == "03/10/2026"
                   and result.get("eta") == "02/10/2026",
                   "{0} {1}".format(kind, result))
-            check("9. The existing read-back verification ran for both writes",
-                  ("BU", "ATA", "03/10/2026") in VERIFY_CALLS
-                  and ("COE", "ETA", "02/10/2026") in VERIFY_CALLS,
+            # The shipment has arrived, so only the ATA is written (the
+            # estimate is not, arrival_events rules); read back as always.
+            check("9. The existing read-back verification ran for the ATA write; the ETA "
+                  "was not written once the shipment had arrived",
+                  VERIFY_CALLS == [("BU", "ATA", "03/10/2026")],
                   str(VERIFY_CALLS))
             check("10. Verified writes, and only then, gave SUCCESS",
                   row["state"] == "updated" and names[-1] == "SUCCESS",
