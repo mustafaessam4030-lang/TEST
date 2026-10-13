@@ -136,6 +136,7 @@ A.collect_supported_shipments = lambda page, n: [
 # This run's own deferred queue, and no pacing wait in a test.
 A.LOG_FOLDER = WORK
 A.carrier_pacing.MIN_GAP["ocean"] = 0
+A.carrier_pacing.HELD = frozenset()     # this test exercises the CMA CGM restriction itself
 
 
 def hub_write(page, shipment, result):

@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import carrier_pacing as C
 
 PASS, FAIL = [], []
+DEFAULT_HELD = C.HELD
+C.HELD = frozenset()        # generic tests use CMA_CGM as their ocean example
 
 
 def check(name, ok, detail=""):
@@ -89,6 +91,18 @@ for _ in range(2):
 r = g.refusal("CMA_CGM")
 check("After the cap, the carrier is refused for this run", r and r[0] == C.REASON_CAP, r)
 C.MAX_PER_RUN["ocean"] = saved
+
+print("Carrier on hold")
+C.HELD = DEFAULT_HELD
+check("CMA CGM is on hold by default", "CMA_CGM" in C.HELD)
+ck = Clock()
+g, q = gate(ck)
+r = g.refusal("CMA_CGM")
+check("A held carrier is never looked up: deferred for a person", r and r[0] == C.REASON_HELD, r)
+check("Other carriers are not affected by the hold", g.refusal("MSC") is None)
+held = C.HELD
+C.HELD = frozenset()
+check("Releasing the hold (CARRIER_HOLD=\"\") lets it be asked again", g.refusal("CMA_CGM") is None)
 
 print("First block stops the carrier")
 os.remove(path) if os.path.exists(path) else None

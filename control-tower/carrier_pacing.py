@@ -45,7 +45,16 @@ COOLDOWN_SECONDS = _env_float("CARRIER_BLOCK_COOLDOWN_HOURS", 12) * 3600
 # Beside the run logs (update_eta.LOG_FOLDER).
 DEFAULT_PATH = Path(r"C:\Automation") / "logs" / "carrier_deferred.json"
 
+# Carriers ON HOLD: kept in the automation (configuration, code, history) but
+# never looked up. Their shipments go straight to the deferred queue for a
+# person. CMA CGM is held until a permitted channel (API or alert emails) is
+# in place: it blocked access even after a completed human verification.
+# CARRIER_HOLD="" releases every hold; "CMA_CGM,OTHER" sets the list.
+HELD = frozenset(p.strip().upper() for p in
+                 os.environ.get("CARRIER_HOLD", "CMA_CGM").split(",") if p.strip())
+
 DEFERRED, RESOLVED = "DEFERRED", "RESOLVED"
+REASON_HELD = "CARRIER_ON_HOLD"
 REASON_BLOCKED = "CARRIER_BLOCKED_THIS_RUN"
 REASON_COOLDOWN = "CARRIER_COOLING_DOWN"
 REASON_CAP = "CARRIER_RUN_CAP_REACHED"
@@ -171,6 +180,9 @@ class CarrierGate(object):
     def refusal(self, provider):
         """Why this carrier must not be asked now: (reason, detail) or None."""
         p = str(provider or "").upper()
+        if p in HELD:
+            return REASON_HELD, "{0} is on hold: not looked up by the automation until a " \
+                                "permitted channel is in place; a person checks it.".format(p)
         if p in self._blocked:
             return REASON_BLOCKED, "{0} blocked access earlier in this run ({1}); not asked " \
                                    "again until a later run.".format(p, self._blocked[p])
