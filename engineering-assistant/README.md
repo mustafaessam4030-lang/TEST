@@ -37,7 +37,7 @@ The distributable zip has double-click launchers (`setup.bat`, `start.bat`, `sto
 python scripts/build_release.py --model-cache data/models --wheels win_amd64:3.12,3.13,3.14 --split-mb 25
 ```
 
-Output goes to `dist/`. With `--split-mb`, the model is shipped as `model-partXofY` zips. Setup joins them and checks the SHA-256 (`python -m eka.assemble`). `python -m eka.check` (or `check.bat`) checks an installation.
+Output goes to `dist/`. With `--no-model` the zip is about 2 MB, and setup downloads the model instead (`python -m eka.fetch_model`, 65 MB). This is the single-file delivery. With `--split-mb`, the model is shipped as `model-partXofY` zips. Setup joins them and checks the SHA-256 (`python -m eka.assemble`). `python -m eka.check` (or `check.bat`) checks an installation.
 
 ## PDF folder (phase 1) and SharePoint (phase 2)
 

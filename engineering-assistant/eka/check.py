@@ -46,7 +46,7 @@ def main() -> int:
     try:
         embedder = make_embedder(settings)
         line(OK if embedder.semantic else WARN, "Retrieval", embedder.label +
-             ("" if embedder.semantic else " -- semantic model not found in {0}".format(settings.models_dir)))
+             ("" if embedder.semantic else " -- search model not found in {0}; run setup again to download it".format(settings.models_dir)))
     except Exception as exc:
         line(FAIL, "Retrieval", str(exc))
 

@@ -15,6 +15,7 @@ else
   .venv/bin/python -m pip install --upgrade pip
   .venv/bin/python -m pip install -r requirements.txt -r requirements-optional.txt
 fi
+.venv/bin/python -m eka.fetch_model || true
 .venv/bin/python -m eka.check
 echo
 echo "Setup finished. Run ./start.sh"

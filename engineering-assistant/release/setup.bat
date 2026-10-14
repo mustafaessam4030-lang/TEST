@@ -31,6 +31,9 @@ if exist "wheels\" (
 )
 if errorlevel 1 goto failed
 echo.
+echo Getting the search model ...
+".venv\Scripts\python.exe" -m eka.fetch_model
+echo.
 echo Checking the installation ...
 ".venv\Scripts\python.exe" -m eka.check
 if errorlevel 1 goto failed
