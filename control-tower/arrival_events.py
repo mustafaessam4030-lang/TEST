@@ -297,9 +297,46 @@ def _norm_ref(value):
     return re.sub(r"[\s-]", "", str(value or "")).upper()
 
 
+def basic_check(shipment, result, today=None):
+    """
+    The check EVERY carrier's dates pass before the Hub (the operator's rule,
+    14 Oct: every ETA and ATA is validated). It does not judge how a carrier's
+    page was read - only that what will be written is a sound pair of dates:
+      - the carrier answered for this shipment (when it names one);
+      - each date is an unambiguous dd/mm/yyyy date;
+      - the ATA is not in the future;
+      - ETA = ATA from one read is a person's call (an estimate read twice);
+      - an ATA with a later ETA: the shipment has arrived, only the ATA is written.
+    -> (eta, ata, review_reasons, notes). Non-empty review_reasons: write nothing.
+    """
+    today = today or date.today()
+    result = result or {}
+    review, notes = [], []
+    seen = result.get("reference")
+    if seen and _norm_ref(seen) not in (_norm_ref(shipment.get("bol_awb")),
+                                        _norm_ref(shipment.get("tracking_reference"))):
+        review.append("the carrier answered for {0}, not {1}".format(seen, shipment.get("bol_awb")))
+    eta, ata = result.get("eta"), result.get("ata")
+    for name, value in (("ETA", eta), ("ATA", ata)):
+        if value and not _day(value):
+            review.append("{0} '{1}' is not an unambiguous dd/mm/yyyy date".format(name, value))
+    if ata and _day(ata) and _day(ata) > today:
+        review.append("ATA {0} is in the future".format(ata))
+    if eta and ata and eta == ata:
+        review.append("ETA and ATA are the same date ({0}) from one read: the estimate may "
+                      "have been read as the arrival".format(eta))
+    elif eta and ata:
+        notes.append("the shipment has arrived ({0}): the ETA {1} is not written".format(ata, eta))
+        eta = None
+    if review:
+        return None, None, review, notes
+    return eta, ata, review, notes
+
+
 def check_before_write(shipment, result, today=None):
     """
-    The deterministic check every carrier result passes before the Hub.
+    The stricter check DHL results pass before the Hub (basic_check plus the
+    source of each date).
     -> (eta, ata, review_reasons, notes). Non-empty review_reasons: write nothing.
     """
     today = today or date.today()

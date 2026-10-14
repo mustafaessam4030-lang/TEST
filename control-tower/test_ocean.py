@@ -420,8 +420,9 @@ def ocean_write_chain(pages):
     check("Saved but the Hub reads back something else -> NOT a success",
           dropped is not None and "not verified" in str(dropped), repr(dropped))
 
-    # The Hub's ATA field cannot be read BEFORE an ETA-only write: nothing is
-    # written (the existing ATA check fails closed).
+    # MSC (not DHL): no extra read of the Hub's ATA before an ETA-only write
+    # (12 Oct behaviour, operator's decision 14 Oct). A Hub that cannot be
+    # read is still never reported as a success.
     hub0 = HubBoundary()
     hub0.install()
     hub0.mode = "unreadable"
@@ -430,8 +431,8 @@ def ocean_write_chain(pages):
         A.update_internal_shipment(object(), msc, dict(result))
     except Exception as error:
         before = error
-    check("The Hub's ATA cannot be read before an ETA-only write -> HubFieldUnreadable, "
-          "nothing saved", isinstance(before, A.HubFieldUnreadable) and hub0.saves == 0,
+    check("MSC ETA-only on an unreadable Hub: no pre-read, and NOT a success",
+          isinstance(before, A.WriteUnverified) and ("BU", MSC_REF) not in hub0.opened,
           repr(before))
 
     # The read-back cannot be performed: for an ocean write, NOT a success.

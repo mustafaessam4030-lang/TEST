@@ -86,7 +86,7 @@ use(Scripted(plan("Which shipments failed?"), {
     "answer": "Shipment 8842001173 failed: the Save/Update button was not found.",
     "verified": ["8842001173 failed with UNEXPECTED PAGE STATE"],
     "likely": ["The page was not in the expected state"], "missing": [], "external": []}))
-r = converse.answer("which ones broke?", STATE, {}, assistant._answer_rules)
+r = converse.answer("which failed?", STATE, {}, assistant._answer_rules)
 check("Model answer used", r["llm"]["used"], r["llm"].get("reason"))
 check("Records label added by ATLAS", "**Verified (ELAP records)**" in r["answer"])
 check("Likely label added by ATLAS", "**Likely, not proven**" in r["answer"])
@@ -382,13 +382,26 @@ llm.provider = real_provider
 print("=" * 68)
 print("6d. ONE MODEL CALL WHEN THE RULES ALREADY UNDERSTAND")
 print("=" * 68)
-one = Scripted({"answer": "8842001173 failed.", "verified": ["8842001173 failed"], "likely": [],
-                "missing": [], "external": []})
+one = Scripted({"answer": "Hey there! It sounds like you're feeling a bit stuck.",
+                "verified": [], "likely": [], "missing": [], "external": []})
 use(one)
 r = converse.answer("Why did 8842001173 fail?", STATE, {}, assistant._answer_rules)
-check("A records question the rules recognise: one model call, no 'understand'",
-      r["llm"]["used"] and len(one.prompts) == 1 and r["llm"]["timings"]["route"] == "rules",
-      one.systems)
+check("A records question the rules recognise: the records' answer, no model call at all",
+      not r["llm"]["used"] and r["llm"]["mode"] == "records" and len(one.prompts) == 0
+      and "8842001173" in r["answer"], (one.systems, r["llm"]))
+for q, ctx in (("What should I do next?", {}), ("What should I do next?", {"domain": "po"}),
+               ("which ones broke?", {}), ("What is the status of 8842001173?", {})):
+    r = converse.answer(q, STATE, ctx, assistant._answer_rules)
+    check("'{0}'{1}: answered from the records, never reworded into small talk".format(
+        q, " (PO page)" if ctx else ""),
+        r["llm"]["mode"] == "records" and len(one.prompts) == 0 and "feeling" not in r["answer"],
+        (r.get("intent"), r["llm"], r["answer"][:80]))
+chatty = Scripted({"question_en": "What now with the shipments?", "needs_web": False,
+                   "web_query": "", "chat": True}, {"answer": "Hey there! Feeling stuck?"})
+use(chatty)
+r = converse.answer("ok so what now about my shipments", STATE, {}, assistant._answer_rules)
+check("A work question the model takes for small talk: the records answer instead",
+      r["intent"] != "chat" and "Feeling stuck" not in r["answer"], (r.get("intent"), r["answer"][:80]))
 two = Scripted(plan("What does ERR_HTTP2_PROTOCOL_ERROR mean?", True, "ERR_HTTP2_PROTOCOL_ERROR"),
                {"answer": "No research.", "verified": [], "likely": [], "missing": [],
                 "external": []})
@@ -462,7 +475,7 @@ def burst(n):
     out = {}
 
     def one(i):
-        out[i] = converse.answer("Why did 8842001173 fail? #{0}".format(i), STATE, {},
+        out[i] = converse.answer("which failed? #{0}".format(i), STATE, {},
                                  assistant._answer_rules)
     threads = [_th.Thread(target=one, args=(i,)) for i in range(n)]
     for t in threads:

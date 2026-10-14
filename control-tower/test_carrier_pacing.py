@@ -46,6 +46,16 @@ def gate(clock, run="run-1", q=None):
 
 
 print("Rate limiting")
+check("No wait between lookups by default (operator's decision, 14 Oct)",
+      C.MIN_GAP == {"ocean": 0.0, "other": 0.0}, C.MIN_GAP)
+ck = Clock()
+g, q = gate(ck)
+with g.lookup("MSC"):
+    pass
+with g.lookup("MSC"):
+    pass
+check("...so two MSC lookups in a row do not wait", ck.slept == [], ck.slept)
+C.MIN_GAP["ocean"] = 45.0          # a spacing set by environment still works
 ck = Clock()
 g, q = gate(ck)
 with g.lookup("MSC"):

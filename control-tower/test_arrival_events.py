@@ -199,35 +199,48 @@ class Page(object):
 eth = (FIX / "ethiopian_transit_delivered.txt").read_text(encoding="utf-8")
 A._page_text = lambda page: page.text
 A.PORTALS.setdefault("ETHIOPIAN", {"label": "Ethiopian Airlines"})
+# Non-DHL readers are back to their 12 Oct behaviour (operator's decision,
+# 14 Oct); every date they return still passes basic_check before the Hub.
 r = A._read_generic_portal_page(Page(eth), "ETHIOPIAN")
-check("Generic reader (Ethiopian): transit-leg 'DELIVERED' is NOT an ATA -> review",
-      r and r.get("ata") is None and r.get("review"), r)
+check("Generic reader (Ethiopian) reads as on 12 Oct: 'DELIVERED' date taken as the ATA",
+      r and r.get("ata") == "10/10/2026" and not r.get("review"), r)
 r = A._read_generic_portal_page(Page("Shipment 1\nActual Time of Arrival: 05/10/2026\n" + "x" * 200),
                                 "ETHIOPIAN")
-check("Generic reader: an explicit actual-arrival label gives the ATA, with its source",
-      r and r["ata"] == "05/10/2026" and r.get("ata_source"), r)
+check("Generic reader: an explicit actual-arrival label gives the ATA",
+      r and r["ata"] == "05/10/2026", r)
 r = A._read_generic_portal_page(Page("Estimated Time of Arrival: 10/10/2026 14:00\n"
                                      "Actual Time of Arrival: -\n" + "x" * 200), "ETHIOPIAN")
-check("REVIEWER BLOCKER: an estimate printed before an empty actual field is not the ATA",
-      r and r["eta"] == "10/10/2026" and not r["ata"], r)
-g = E.check_before_write(S, r or {}, today=OCT12)
-check("...and only the ETA can reach the Hub", g[:2] == ("10/10/2026", None) and not g[2], g)
+g = E.basic_check(S, r or {}, today=OCT12)
+check("Generic reader pairs one date as ETA and ATA -> validation sends it to review",
+      g[:2] == (None, None) and g[2], (r, g))
 r = A._read_generic_portal_page(Page("Menu: Arrived | Delivered | In transit\n"
                                      "Estimated Time of Arrival: 15/10/2026\n" + "x" * 200),
                                 "ETHIOPIAN")
 check("Arrival words without a date (legends, filters) do not block an ETA",
       r and r["eta"] == "15/10/2026" and not r.get("review"), r)
-r = A._read_generic_portal_page(Page("Estimated Delivery 20/10/2026\n" + "x" * 200), "ETHIOPIAN")
-check("Generic reader: a delivery estimate is not an ETA", r is None or not r.get("eta"), r)
 
 q = A.extract_qatar_result(Page((FIX / "qatar_arrived_destination.txt").read_text(encoding="utf-8")))
-check("Qatar: 'Arrived ( DAR)' on a BRU-DAR route -> ATA with source",
-      q and q["ata"] == "26/09/2026" and q.get("ata_source") == "Arrived (DAR)", q)
+check("Qatar: 'Arrived ( DAR)' -> ATA (12 Oct reader)", q and q["ata"] == "26/09/2026", q)
 qt = (FIX / "qatar_in_transit.txt").read_text(encoding="utf-8")
 q = A.extract_qatar_result(Page(qt))
 check("Qatar in transit: estimate only", q and q["eta"] and not q["ata"], q)
-q = A.extract_qatar_result(Page(qt.replace("Estimated Arrival ( JRO )", "Arrived ( DOH)")))
-check("Qatar: arrival at a TRANSIT station -> review, no ATA", q and q.get("review") and not q["ata"], q)
+
+section("6b. basic_check: every carrier's dates are validated before the Hub")
+for result, want, label in (
+        ({"eta": "20/10/2026"}, ("20/10/2026", None, False), "a sound ETA passes"),
+        ({"ata": "10/10/2026"}, (None, "10/10/2026", False), "a sound ATA passes"),
+        ({"eta": "20/10/2026", "ata": "10/10/2026"}, (None, "10/10/2026", False),
+         "arrived: only the ATA is kept"),
+        ({"eta": "12/10/2026", "ata": "12/10/2026"}, (None, None, True), "ETA = ATA -> review"),
+        ({"ata": "20/10/2026"}, (None, None, True), "ATA in the future -> review"),
+        ({"eta": "2026-10-20"}, (None, None, True), "not dd/mm/yyyy -> review"),
+        ({"eta": "31/02/2026"}, (None, None, True), "impossible date -> review"),
+        ({"eta": "20/10/2026", "reference": "OTHER123"}, (None, None, True),
+         "carrier answered for another shipment -> review")):
+    g = E.basic_check(S, result, today=OCT12)
+    check("basic_check: " + label, (g[0], g[1], bool(g[2])) == want, g)
+check("basic_check does not judge the page's labels (no source needed)",
+      E.basic_check(S, {"ata": "10/10/2026"}, today=OCT12)[1] == "10/10/2026")
 
 ocean = A.validate_arrival_result({"provider": "MSC", "eta": "20/10/2026", "ata": "10/10/2026",
                                    "eta_source": "ETA", "ata_source": "Discharged"}, "MSC", "M1")
@@ -250,8 +263,9 @@ section("7. Hub write boundary: guard, no ATA overwrite, read-back kept")
 writes = []
 A.update_one_view = lambda page, s, view, field, value, **k: writes.append((field, value)) or \
     "{0} updated with {1} and saved".format(field, value)
+DHL = {"provider": "DHL"}
 try:
-    A.update_internal_shipment(None, S, {"ata": "12/10/2026", "ata_source": "Estimated Arrival"})
+    A.update_internal_shipment(None, S, dict(DHL, ata="12/10/2026", ata_source="Estimated Arrival"))
     check("Estimate-sourced ATA never reaches the Hub", False)
 except A.NeedsReview as error:
     check("Estimate-sourced ATA never reaches the Hub", writes == [], (writes, error))
@@ -261,15 +275,29 @@ try:
 except A.NeedsReview:
     check("An adapter's review stops the write", writes == [])
 try:
-    A.update_internal_shipment(None, S, {"eta": "12/10/2026", "ata": "12/10/2026",
-                                         "ata_source": "Carrier: Arrived"})
+    A.update_internal_shipment(None, S, dict(DHL, eta="12/10/2026", ata="12/10/2026",
+                                             ata_source="Carrier: Arrived"))
     check("ETA = ATA: review, nothing written", False, writes)
 except A.NeedsReview:
     check("ETA = ATA: review, nothing written", writes == [], writes)
-A.update_internal_shipment(None, S, {"eta": "20/10/2026", "ata": "12/10/2026",
-                                     "ata_source": "Carrier: Arrived"})
+A.update_internal_shipment(None, S, dict(DHL, eta="20/10/2026", ata="12/10/2026",
+                                         ata_source="Carrier: Arrived"))
 check("Arrived: only the ATA is written; the ETA is not (no write before the ATA checks)",
       writes == [("ATA", "12/10/2026")], writes)
+# Non-DHL: no source rule, but the dates are still validated.
+del writes[:]
+A.update_internal_shipment(None, S, {"provider": "ETHIOPIAN", "eta": None, "ata": "10/10/2026"})
+check("Non-DHL ATA with no named source is written (12 Oct behaviour)",
+      writes == [("ATA", "10/10/2026")], writes)
+for bad, label in (({"eta": "12/10/2026", "ata": "12/10/2026"}, "ETA = ATA"),
+                   ({"ata": "31/12/2099"}, "future ATA"),
+                   ({"eta": "2026/10/20"}, "unparseable date")):
+    del writes[:]
+    try:
+        A.update_internal_shipment(None, S, dict(bad, provider="QATAR"))
+        check("Non-DHL {0}: review, nothing written".format(label), False, writes)
+    except A.NeedsReview:
+        check("Non-DHL {0}: review, nothing written".format(label), writes == [], writes)
 
 # update_one_view itself: an existing different ATA stops it before the fill.
 import importlib                                             # noqa: E402
@@ -352,7 +380,8 @@ def eta_only(raw, eta="20/10/2026"):
     del VIEWS[:], WR[:]
     D.read_current_date_field = lambda page, field: raw
     try:
-        D.update_internal_shipment(None, SHIP_T, {"eta": eta, "eta_source": "Estimated Carrier "
+        D.update_internal_shipment(None, SHIP_T, {"provider": "DHL", "eta": eta,
+                                                  "eta_source": "Estimated Carrier "
                                                   "Arrival (Destination)", "ata": None})
         return "written"
     except D.NeedsReview:
@@ -373,6 +402,12 @@ for raw, want, label in (("", "written", "empty"), ("__/__/____", "written", "ma
           (WR == [("ETA", "20/10/2026")] if want == "written" else WR == []) and
           VIEWS[:1] == [D.BU_VIEW], (got, WR, VIEWS))
 
+del VIEWS[:], WR[:]
+D.read_current_date_field = lambda page, field: "05/10/2026"
+D.update_internal_shipment(None, SHIP_T, {"provider": "MSC", "eta": "20/10/2026", "ata": None})
+check("Non-DHL ETA-only: no extra Hub ATA read (12 Oct behaviour), ETA written",
+      VIEWS == [] and WR == [("ETA", "20/10/2026")], (VIEWS, WR))
+
 # The 10 shipments of 12 Oct that got an ATA though they had NOT arrived:
 # today DHL gives them an estimate only; the Hub still holds the false ATA.
 false_ata = [(p, m) for p, m in sorted(manifest.items())
@@ -387,35 +422,6 @@ for pseudo, m in false_ata:
     check("{0}: DHL says not arrived (ETA {1}); Hub holds false ATA {2} -> review, no ETA "
           "written".format(pseudo, d["eta"], m["old_ata"]),
           d["eta"] and not d["ata"] and got == "review" and WR == [], (d["eta"], got, WR))
-
-# ------------------------------------------------- MSC rows (14 Oct)
-section("10. MSC, read row by row")
-M = importlib.reload(A)
-M.write_log = lambda *a, **k: None
-arrived = (FIX / "msc_arrived_tema.txt").read_text(encoding="utf-8")
-r = M.read_msc_rows(arrived)
-check("MSC arrived at Tema: ATA 30/09 from 'Import Discharged from Vessel' AT the port of "
-      "discharge (the date was missed by the old reader)",
-      r and r["ata"] == "30/09/2026" and r["eta"] is None and "Tema" in r["ata_source"], r)
-g = E.check_before_write({"bol_awb": "MEDU0000001"}, r)
-check("...passes the shared guard as an actual arrival", g[:2] == (None, "30/09/2026") and not g[2], g)
-tr = (FIX / "msc_transhipment_in_transit.txt").read_text(encoding="utf-8")
-r = M.read_msc_rows(tr)
-check("MSC with a TRANSHIPMENT discharge (Ningbo) and POD ETA: ETA only, no false ATA "
-      "(the old reader wrote ATA 21/09 here)", r and r["eta"] == "29/10/2026" and r["ata"] is None, r)
-two = arrived.replace("Meridian Port Service Limited\n13/09/2026",
-                      "Meridian Port Service Limited\n02/10/2026\nTema, GH\nImport Discharged from "
-                      "Vessel\nMSC FIAMMETTA NY637A\nMeridian Port Service Limited\n13/09/2026")
-r = M.read_msc_rows(two)
-check("Containers discharged at the port on different dates -> review",
-      r and r.get("review") and not r["ata"], r)
-elsewhere = arrived.replace("30/09/2026\nTema, GH\nImport", "30/09/2026\nAntwerp, BE\nImport")
-check("An import discharge NOT at the port of discharge is not the ATA",
-      M.read_msc_rows(elsewhere) is None)
-r = M._read_ocean_page(type("P", (), {"t": arrived})(), "MSC") if False else None
-M._page_text = lambda page: page
-check("The ocean reader routes MSC's layout to the row reader",
-      M._read_ocean_page(arrived + "x" * 50, "MSC")["ata"] == "30/09/2026")
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

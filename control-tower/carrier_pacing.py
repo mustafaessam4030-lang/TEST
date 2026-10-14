@@ -35,9 +35,10 @@ def _env_float(name, default):
         return float(default)
 
 
-# Conservative defaults. Ocean carriers are the ones that have blocked us.
-MIN_GAP = {"ocean": _env_float("CARRIER_MIN_GAP_OCEAN", 45),
-           "other": _env_float("CARRIER_MIN_GAP_OTHER", 15)}
+# No wait between lookups by default (the operator's decision, 14 Oct: the
+# waits slowed every run). Set CARRIER_MIN_GAP_OCEAN / _OTHER to add one.
+MIN_GAP = {"ocean": _env_float("CARRIER_MIN_GAP_OCEAN", 0),
+           "other": _env_float("CARRIER_MIN_GAP_OTHER", 0)}
 MAX_PER_RUN = {"ocean": int(_env_float("CARRIER_MAX_PER_RUN_OCEAN", 30)),
                "other": int(_env_float("CARRIER_MAX_PER_RUN_OTHER", 150))}
 COOLDOWN_SECONDS = _env_float("CARRIER_BLOCK_COOLDOWN_HOURS", 12) * 3600

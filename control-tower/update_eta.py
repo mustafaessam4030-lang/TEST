@@ -2556,30 +2556,6 @@ def extract_date_after_label(text, labels, radius=260):
     return extract_date_near_labels(text, labels, radius)
 
 
-def _own_date(segment):
-    """True when `segment` (the text after an arrival word) carries a date
-    that is not the value of another ETA/ATA label printed in between."""
-    dates = extract_all_dates(segment)
-    if not dates:
-        return False
-    before = segment[:dates[0][0]]
-    return not any(re.search(l, before, re.I) for l in GENERIC_ETA_LABELS + GENERIC_ATA_LABELS)
-
-
-def _date_following_label(text, labels, radius=260):
-    """The nearest date AFTER one of `labels` (within `radius`), or None.
-    No fallback in the other direction."""
-    dates = extract_all_dates(text)
-    best = None
-    for label in labels:
-        for m in re.finditer(label, text, flags=re.I):
-            for position, parsed, _raw in dates:
-                if position >= m.end() and position - m.end() <= radius and \
-                        (best is None or position - m.end() < best[0]):
-                    best = (position - m.end(), parsed)
-    return best[1] if best else None
-
-
 def latest_date(date_values):
     valid_dates = []
 
@@ -5497,26 +5473,9 @@ def extract_qatar_result(page):
     if not eta and not ata:
         return None
 
-    # The "Arrived ( XXX)" banner counts only at the route's destination
-    # (e.g. "157-xxxxxxxx (BRU - DAR)"); an arrival at a transit station is not it.
-    try:
-        banner_text = page.locator("body").inner_text(timeout=5000)
-    except Exception:
-        banner_text = ""
-    route = re.search(r"\(\s*([A-Z]{3})\s*-\s*([A-Z]{3})\s*\)", banner_text)
-    station = re.search(r"\bArrived\s*\(\s*([A-Z]{3})\s*\)", banner_text)
-    if ata and not (route and station and station.group(1) == route.group(2)):
-        return {"provider": "Qatar Airways", "tracking_status": "Needs review", "eta": None,
-                "ata": None, "review": ["Qatar shows Arrived at {0}, the route's destination is "
-                                        "{1}: not taken as the arrival".format(
-                                            station and station.group(1),
-                                            route and route.group(2))]}
-
     status = "Arrived" if ata else "Estimated Arrival"
     return {
         "provider": "Qatar Airways",
-        "ata_source": "Arrived ({0})".format(station.group(1)) if ata else None,
-        "eta_source": "Estimated Arrival" if eta else None,
         "tracking_status": status,
         "eta": eta,
         "ata": ata,
@@ -5645,20 +5604,14 @@ TRANSIENT_NAV_ERRORS = (
 
 GENERIC_ETA_LABELS = [
     r"Estimated\s+(?:Time\s+of\s+)?Arrival", r"\bETA\b",
-    r"Expected\s+Arrival", r"Scheduled\s+Arrival", r"Planned\s+Arrival",
+    r"Estimated\s+Delivery", r"Expected\s+(?:Arrival|Delivery)",
+    r"Scheduled\s+Arrival", r"Planned\s+Arrival", r"Due\s+Date",
 ]
-# The label reader does not know which airport is the destination, so only a
-# label that SAYS "actual arrival" gives an ATA. "Arrived", "Received from
-# Flight"/RCF and "Delivered"/DLV can be a transit leg or a delivery: on
-# 12 Oct, an Ethiopian waybill got ATA 10/10 from its FIRST leg's
-# "DELIVERED" (Brussels-Liege) while its last leg to DAR was still scheduled.
 GENERIC_ATA_LABELS = [
     r"Actual\s+(?:Time\s+of\s+)?Arrival", r"\bATA\b",
+    r"\bArrived\b", r"Delivered", r"Received\s+from\s+Flight",
+    r"RCF\b", r"DLV\b",
 ]
-# Wording that shows something arrived somewhere, which the label reader
-# cannot place: with no explicit actual arrival, a person reviews it.
-GENERIC_UNPLACED_ARRIVAL = re.compile(
-    r"\bArrived\b|Received\s+from\s+Flight|\bRCF\b|\bDelivered\b|\bDLV\b", re.I)
 GENERIC_NO_RESULT = [
     r"no\s+(?:result|shipment|record|data)s?\s+(?:found|available)",
     r"could\s+not\s+be\s+found", r"not\s+found",
@@ -6007,53 +5960,6 @@ def _ocean_dates(text, labels):
     return found
 
 
-MSC_DATE_LINE = re.compile(r"^\d{2}/\d{2}/\d{4}$")
-
-
-def _value_after(lines, label):
-    """The line right after an exact label line (MSC prints label, then value)."""
-    for i, line in enumerate(lines):
-        if line == label and i + 1 < len(lines):
-            return lines[i + 1]
-    return None
-
-
-def read_msc_rows(text, provider="MSC"):
-    """
-    MSC's result, read row by row as MSC prints it: one value per line, each
-    event as date / location / description / vessel / facility.
-      ATA  the date of an "Import Discharged from Vessel" row AT the page's
-           Port of Discharge (the container came off the ship there)
-      ETA  "POD ETA" (MSC's estimated arrival at the port of discharge)
-    Transhipment discharges, loadings and gate moves are never the arrival.
-    Containers discharged at the port on DIFFERENT dates: review.
-    -> result dict, or None when the page shows neither.
-    """
-    lines = [l.strip() for l in str(text or "").replace("\r", "").split("\n") if l.strip()]
-    pod = _value_after(lines, "Port of Discharge")
-    pod_city = (pod or "").split(",")[0].strip().lower()
-    eta_raw = _value_after(lines, "POD ETA")
-    eta = eta_raw if eta_raw and MSC_DATE_LINE.match(eta_raw) else None
-    discharged = []
-    for i, line in enumerate(lines):
-        if MSC_DATE_LINE.match(line) and i + 2 < len(lines) and \
-                lines[i + 2].lower().startswith("import discharged from vessel"):
-            place = lines[i + 1]
-            if pod_city and place.split(",")[0].strip().lower() == pod_city:
-                discharged.append(line)
-    if len(set(discharged)) > 1:
-        return {"provider": provider, "tracking_status": "Needs review", "eta": None,
-                "ata": None, "review": ["MSC shows containers discharged at {0} on different "
-                                        "dates ({1})".format(pod, ", ".join(sorted(set(discharged))))]}
-    ata = discharged[0] if discharged else None
-    if not ata and not eta:
-        return None
-    return {"provider": provider, "tracking_status": "Arrived" if ata else "Estimated arrival",
-            "eta": eta, "ata": ata,
-            "eta_source": "POD ETA" if eta else None,
-            "ata_source": "Import Discharged from Vessel at {0}".format(pod) if ata else None}
-
-
 def _read_ocean_page(page, provider):
     """
     Read an ocean carrier's result, or None.
@@ -6068,11 +5974,6 @@ def _read_ocean_page(page, provider):
     if _matches(text, OCEAN_NO_RESULT):
         return {"provider": provider, "tracking_status": "No result",
                 "eta": None, "ata": None, "no_result": True}
-    if provider == "MSC" and re.search(r"^\s*Port of Discharge\s*$", text, re.M):
-        # MSC's own layout: read by rows. The label-and-window reader took the
-        # NEXT row's date after "Discharged" (false ATAs from transhipment
-        # discharges) or missed the date altogether.
-        return read_msc_rows(text, provider)
 
     etas = _ocean_dates(text, OCEAN_ETA_LABELS)
     atas = _ocean_dates(text, OCEAN_ATA_LABELS)
@@ -9788,20 +9689,7 @@ def _read_generic_portal_page(page, provider):
 
     # Forward-biased: on these layouts the value follows its label.
     eta = extract_date_after_label(text, GENERIC_ETA_LABELS)
-    # The ATA only from a date that FOLLOWS an actual-arrival label: the
-    # nearest-date fallback could hand back the estimate printed just before.
-    ata = _date_following_label(text, GENERIC_ATA_LABELS)
-    # Arrival wording counts only where it carries a date (an event), not in
-    # legends, filters or navigation text.
-    unplaced = next((m for m in GENERIC_UNPLACED_ARRIVAL.finditer(text)
-                     if _own_date(text[m.end():m.end() + 120])), None)
-    if not ata and unplaced:
-        return {"provider": provider, "tracking_status": "Needs review", "eta": None,
-                "ata": None, "review": [
-                    "{0} shows '{1}' but no explicit actual arrival at the destination: the "
-                    "label reader cannot tell a transit leg or a delivery from the arrival"
-                    .format(PORTALS.get(provider, {}).get("label", provider),
-                            unplaced.group(0))]}
+    ata = extract_date_after_label(text, GENERIC_ATA_LABELS)
     if not eta and not ata:
         return None
 
@@ -9819,9 +9707,7 @@ def _read_generic_portal_page(page, provider):
             status = found.group(0).strip().title()
             break
 
-    return {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata,
-            "eta_source": "estimated arrival label" if eta else None,
-            "ata_source": "actual arrival label" if ata else None}
+    return {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata}
 
 
 def get_portal_result(page, provider, tracking_number, shipment=None):
@@ -11226,7 +11112,7 @@ ESTIMATE_WORDS = re.compile(r"estimat|expect|schedul|planned|forecast|predict|\b
 
 def separate_eta_ata(result):
     """
-    The last check before the Hub, for every carrier. ETA and ATA mean
+    The last check before the Hub, for DHL. ETA and ATA mean
     different things and are never mixed:
       - an ATA whose source names an estimate is not an actual arrival: dropped;
       - an ETA equal to the ATA is the arrival copied, not an estimate: the
@@ -11252,17 +11138,24 @@ def update_internal_shipment(internal_page, shipment, dhl_result):
     """
     if (dhl_result or {}).get("review"):
         raise NeedsReview(dhl_result["review"])
-    # The shared, deterministic check for EVERY carrier (arrival_events).
-    _eta, _ata, _review, _notes = AE.check_before_write(shipment, dhl_result)
+    # The strict ETA/ATA rules are for DHL (the operator's rule set, 13 Oct).
+    # Every other carrier reads its page as before; its dates still pass
+    # basic_check, and the Hub's existing ATA is never overwritten
+    # (update_one_view).
+    is_dhl = (dhl_result or {}).get("provider") == "DHL"
+    # Every carrier's dates are validated; DHL's also by their source.
+    _check = AE.check_before_write if is_dhl else AE.basic_check
+    _eta, _ata, _review, _notes = _check(shipment, dhl_result)
     for _note in _notes:
         write_log(_note)
     if _review:
         raise NeedsReview(_review)
     dhl_result = dict(dhl_result, eta=_eta, ata=_ata)
-    dhl_result, _notes = separate_eta_ata(dhl_result)
-    for _note in _notes:
-        write_log(_note)
-    if dhl_result.get("eta") and not dhl_result.get("ata"):
+    if is_dhl:
+        dhl_result, _notes = separate_eta_ata(dhl_result)
+        for _note in _notes:
+            write_log(_note)
+    if is_dhl and dhl_result.get("eta") and not dhl_result.get("ata"):
         # An ETA alone: first make sure the Hub has not already recorded an
         # arrival (e.g. a false ATA from an earlier run). Nothing is written
         # before this check.

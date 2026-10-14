@@ -18,7 +18,8 @@ REFERENCE = re.compile(r"\b[A-Z0-9][A-Z0-9-]{5,}\b")
 URL = re.compile(r"https?://\S+", re.I)
 CLAIMS = re.compile(r"\b(verified|confirmed|succeeded|success|successful(?:ly)?|written|saved|"
                     r"updated|sent|delivered|accepted|completed|resolved|recovered|fixed|"
-                    r"cleared|approved|arrived)\b", re.I)
+                    r"cleared|approved|arrived|found|downloaded|extracted|attached|"
+                    r"uploaded)\b", re.I)
 # The same claim in another form of its verb: inputs saying "the run wrote it
 # to the Hub" affirm "written". Only the verb form changes, never the claim.
 FORMS = {"wrote": "written"}

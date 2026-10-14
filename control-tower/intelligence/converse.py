@@ -366,6 +366,8 @@ def _instant(question, state, context, rules):
             reply["llm"] = {"used": False, "mode": "analysis",
                             "reason": "computed directly from the run's records"}
             return reply
+        if _records_question(reply, question):
+            return _records_reply(question, state, context, rules)
     except Exception:
         pass
     return None
@@ -417,8 +419,11 @@ def _answer(question, state, context, rules):
                          "reason": "a greeting is answered at once, without the model"}
         return direct
     if direct and _records_question(direct, question):
-        plan = {"question_en": question, "needs_web": False, "web_query": "", "chat": False}
-        route = "rules"
+        # A question about the run, a shipment or a PO: the records' own
+        # answer, never reworded. A 4B model rewording it dropped the answer
+        # ("What should I do next?" -> small talk) and changed its meaning
+        # ("Finding PDF" -> "found a PDF"), which the fact guard cannot see.
+        return _records_reply(question, state, context, rules)
     else:
         try:
             R.stage(pid, "Understanding the question…")
@@ -431,11 +436,15 @@ def _answer(question, state, context, rules):
             return fallback("the model's reading of the question failed: {0}".format(error))
     timings["route"] = route
 
+    if plan["chat"] and not plan["needs_web"] and WORK.search(question) and \
+            not PERSONAL.search(question):
+        # The model took a work question for small talk: the rules answer it.
+        return fallback("a work question is answered from the records, not as small talk")
     if plan["chat"] and not plan["needs_web"]:
         return _chat(question, state, inner, rules, lang, plan, timings, started)
 
     R.stage(pid, "Reading ELAP's records…")
-    base = direct if route == "rules" else rules(plan["question_en"], state, inner)
+    base = rules(plan["question_en"], state, inner)
     if base.get("request"):
         # An action is only ever taken from the operator's own words, through
         # the rules and the dashboard's own checks — never from the model's
@@ -654,7 +663,12 @@ RECORD_INTENTS = {
     # ATLAS's own evidence and learning records (dashboard/atlas_learning.py)
     "evidence", "why_recovery_failed", "learn_failure", "monthly_review", "star",
     "how_many_strategies", "what_fixes", "try_next", "plan", "why_recommend",
-    "confidence", "month_compare",
+    "confidence", "month_compare", "keeps_failing", "human_patterns", "learned",
+    # Everything else the rules answer from the run's own records.
+    "counts", "failed", "processing", "latest_event", "logs", "system", "under_clearance",
+    "worst_carrier", "all_of", "download", "ml_recs", "human", "latest_failure",
+    "carrier_access_live", "failure_evidence", "failure_work", "identity", "capabilities",
+    "help", "wait_time",
 }
 WEB_CUE = re.compile(r"\b(web|website|site|internet|online|search|google|news|notice|"
                      r"cloudflare|mean|means|meaning|what\s+is|how\s+(?:do|to|can)|"
@@ -665,10 +679,30 @@ PERSONAL = re.compile(r"\b(sad|tired|stress(?:ed)?|happy|bored|angry|upset|lonel
                       r"حزين|تعبان|زعلان|شكرا|مرحبا|صباح الخير", re.I)
 
 
+def _records_reply(question, state, context, rules):
+    """The rules' answer from the records, as the chat shows it, with no
+    model call. Instant: it never queues behind another question."""
+    reply = rules(question, state, dict(context or {}, _no_phrase=True))
+    reply["llm"] = {"used": False, "mode": "records",
+                    "reason": "answered directly from the records; never reworded by a model"}
+    return reply
+
+
+# "What is the status of PO 9117835?" is about the records, not the web:
+# a reference or a status word keeps a "what is" question with the records.
+STRONG_WEB = re.compile(r"\b(web|website|internet|online|search|google|news|cloudflare|"
+                        r"documentation|docs)\b", re.I)
+ABOUT_RECORDS = re.compile(r"\d{5,}|\b(status|stuck|next|waiting|happen(?:ed|ing)?)\b", re.I)
+
+
 def _records_question(reply, question):
     intent = str(reply.get("intent") or "")
-    return not reply.get("fallback") and not reply.get("request") and \
-        (intent in RECORD_INTENTS or intent.startswith("po_")) and not WEB_CUE.search(question)
+    if reply.get("fallback") or reply.get("request") or \
+            not (intent in RECORD_INTENTS or intent.startswith(("po_", "failure_"))):
+        return False
+    if not WEB_CUE.search(question):
+        return True
+    return not STRONG_WEB.search(question) and bool(ABOUT_RECORDS.search(question))
 
 
 def _kind_if_personal(reply, question, lang):
