@@ -1,0 +1,195 @@
+"""HTTP API and static UI (FastAPI).
+
+    GET    /api/health
+    GET    /api/documents                         library with status and page summary
+    POST   /api/documents?filename=&equipment=&doc_type=   raw PDF body; 202, or 200 if duplicate
+    GET    /api/documents/{id}                    detail with per-page status
+    POST   /api/documents/{id}/reindex
+    DELETE /api/documents/{id}
+    GET    /api/documents/{id}/file               the original PDF (open at #page=N)
+    GET    /api/documents/{id}/pages/{n}/image?chunk=   rendered page, cited passage highlighted
+    POST   /api/chat  {message, conversation_id?, document_ids?}
+
+Uploads are sent as the raw request body so no multipart parser is needed.
+When EKA_API_TOKEN is set every /api call must send it as a Bearer token.
+"""
+from __future__ import annotations
+
+import hmac
+import json
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import pymupdf
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
+from .config import Settings, load_settings
+from .ingest import UploadError
+from .service import Assistant
+
+log = logging.getLogger(__name__)
+STATIC = Path(__file__).parent / "static"
+PUBLIC_DOC_FIELDS = ("id", "filename", "title", "doc_number", "revision", "revision_date", "equipment",
+                     "doc_type", "page_count", "bytes", "status", "error", "progress_done", "progress_total",
+                     "stage", "superseded_by", "created_at", "updated_at")
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    conversation_id: str | None = Field(default=None, max_length=64)
+    document_ids: list[str] | None = Field(default=None, max_length=200)
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or load_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.assistant = Assistant(settings)
+        log.info("Engineering Knowledge Assistant ready: %s", app.state.assistant.health())
+        yield
+        app.state.assistant.close()
+
+    app = FastAPI(title="Engineering Knowledge Assistant", version="0.1.0", lifespan=lifespan,
+                  docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+    def assistant(request: Request) -> Assistant:
+        return request.app.state.assistant
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        path = request.url.path
+        if settings.api_token and path.startswith("/api/") and path not in ("/api/health",):
+            supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip() \
+                or request.query_params.get("token", "")
+            if not hmac.compare_digest(supplied, settings.api_token):
+                return JSONResponse({"detail": "missing or invalid API token"}, status_code=401)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if not path.endswith("/file"):
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        return response
+
+    def public(doc: dict, summary: dict | None = None) -> dict:
+        out = {k: doc[k] for k in PUBLIC_DOC_FIELDS}
+        if summary is not None:
+            out["page_status"] = summary.get(doc["id"], {})
+        return out
+
+    def get_doc(a: Assistant, doc_id: str) -> dict:
+        doc = a.store.document(doc_id)
+        if doc is None:
+            raise HTTPException(404, "document not found")
+        return doc
+
+    @app.get("/api/health")
+    def health(request: Request):
+        return assistant(request).health()
+
+    @app.get("/api/documents")
+    def documents(request: Request):
+        a = assistant(request)
+        summary = a.store.page_summary()
+        return {"documents": [public(d, summary) for d in a.store.documents()]}
+
+    @app.post("/api/documents", status_code=202)
+    async def upload(request: Request, filename: str = "document.pdf", equipment: str = "", doc_type: str = ""):
+        a = assistant(request)
+        limit = settings.max_upload_mb * 1024 * 1024
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > limit:
+            raise HTTPException(413, "the file exceeds the {0} MB upload limit".format(settings.max_upload_mb))
+        body = bytearray()
+        async for part in request.stream():
+            body.extend(part)
+            if len(body) > limit:
+                raise HTTPException(413, "the file exceeds the {0} MB upload limit".format(settings.max_upload_mb))
+        try:
+            doc, duplicate = await run_in_threadpool(
+                a.ingest.submit, bytes(body), filename, {"equipment": equipment, "doc_type": doc_type})
+        except UploadError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+        payload = {"document": public(doc), "duplicate": duplicate}
+        if duplicate:
+            payload["message"] = "This file is already in the library as \"{0}\"; it was not indexed again.".format(
+                doc["title"] or doc["filename"])
+            return JSONResponse(payload, status_code=200)
+        return payload
+
+    @app.get("/api/documents/{doc_id}")
+    def document(doc_id: str, request: Request):
+        a = assistant(request)
+        doc = get_doc(a, doc_id)
+        return {"document": public(doc), "pages": a.store.pages(doc_id)}
+
+    @app.post("/api/documents/{doc_id}/reindex", status_code=202)
+    def reindex(doc_id: str, request: Request):
+        a = assistant(request)
+        get_doc(a, doc_id)
+        return {"document": public(a.ingest.reindex(doc_id))}
+
+    @app.delete("/api/documents/{doc_id}")
+    def delete(doc_id: str, request: Request):
+        a = assistant(request)
+        doc = get_doc(a, doc_id)
+        if doc["status"] in ("queued", "processing"):
+            raise HTTPException(409, "the document is still being processed; delete it when processing ends")
+        a.ingest.delete(doc_id)
+        return {"deleted": doc_id}
+
+    @app.get("/api/documents/{doc_id}/file")
+    def file(doc_id: str, request: Request):
+        a = assistant(request)
+        doc = get_doc(a, doc_id)
+        path = a.ingest.file_path(doc_id)
+        if not path.exists():
+            raise HTTPException(404, "the stored file is missing")
+        return FileResponse(path, media_type="application/pdf", filename=doc["filename"],
+                            content_disposition_type="inline")
+
+    @app.get("/api/documents/{doc_id}/pages/{page_no}/image")
+    def page_image(doc_id: str, page_no: int, request: Request, chunk: str = "", zoom: float = 1.6):
+        a = assistant(request)
+        doc = get_doc(a, doc_id)
+        if not 1 <= page_no <= max(doc["page_count"], 1):
+            raise HTTPException(404, "page {0} does not exist in this document".format(page_no))
+        boxes = []
+        if chunk:
+            row = a.store.chunk(chunk)
+            if row and row["doc_id"] == doc_id and row["page_no"] == page_no:
+                boxes = json.loads(row["bboxes"])
+        try:
+            png = render_page(a.ingest.file_path(doc_id), page_no, boxes, max(0.5, min(zoom, 3.0)))
+        except Exception as exc:
+            raise HTTPException(422, "the page could not be rendered: {0}".format(exc)) from exc
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+    @app.post("/api/chat")
+    async def chat(body: ChatRequest, request: Request):
+        a = assistant(request)
+        return await run_in_threadpool(a.engine.ask, body.message, body.conversation_id, body.document_ids)
+
+    @app.exception_handler(UploadError)
+    async def upload_error(_, exc: UploadError):
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status)
+
+    app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")
+    return app
+
+
+def render_page(path: Path, page_no: int, boxes: list, zoom: float) -> bytes:
+    doc = pymupdf.open(path)
+    try:
+        page = doc[page_no - 1]
+        for box in boxes:
+            rect = pymupdf.Rect(box) + (-3, -2, 3, 2)
+            page.draw_rect(rect, color=(0.95, 0.6, 0.0), fill=(1.0, 0.85, 0.2), fill_opacity=0.28, width=1.2)
+        return page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False).tobytes("png")
+    finally:
+        doc.close()

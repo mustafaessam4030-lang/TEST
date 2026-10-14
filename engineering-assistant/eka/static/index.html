@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Engineering Knowledge Assistant</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="appbar">
+  <button type="button" class="icon-btn only-narrow" id="openLibrary" aria-controls="library" aria-label="Open document library">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+  </button>
+  <h1 class="brand">Engineering Knowledge Assistant</h1>
+  <div class="appbar-status" id="health" role="status" aria-live="polite">Connecting…</div>
+  <button type="button" class="btn ghost" id="newChat">New chat</button>
+</header>
+
+<div class="layout">
+  <dialog id="library" class="panel library" aria-labelledby="libraryTitle">
+    <div class="panel-head">
+      <h2 id="libraryTitle">Documents</h2>
+      <button type="button" class="icon-btn only-narrow" data-close="library" aria-label="Close document library">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple>
+      <span class="dropzone-title">Upload PDFs</span>
+      <span class="dropzone-hint">Drop files here or choose them. Scanned pages are read with OCR.</span>
+    </label>
+    <ul class="uploads" id="uploads" aria-live="polite"></ul>
+    <div class="scope" id="scope"></div>
+    <ul class="doclist" id="doclist" aria-label="Document library"></ul>
+    <p class="empty-note" id="libraryEmpty" hidden>No documents yet. Upload an engineering PDF to start asking questions.</p>
+  </dialog>
+
+  <main class="chat" id="chat">
+    <ol class="log" id="log" aria-live="polite" aria-label="Conversation"></ol>
+    <div class="welcome" id="welcome">
+      <h2>Ask about your engineering documents</h2>
+      <p>Answers quote the documents and cite the page. Click a citation to open that page with the passage highlighted.</p>
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+    <form class="composer" id="composer">
+      <label class="visually-hidden" for="question">Your question</label>
+      <textarea id="question" rows="1" maxlength="4000" placeholder="Ask about a specification, procedure, part number…" required></textarea>
+      <button type="submit" class="btn primary" id="send">Ask</button>
+    </form>
+  </main>
+
+  <dialog id="viewer" class="panel viewer" aria-labelledby="viewerTitle">
+    <div class="panel-head">
+      <div class="viewer-title">
+        <h2 id="viewerTitle">Document</h2>
+        <span id="viewerMeta" class="muted"></span>
+      </div>
+      <button type="button" class="icon-btn" data-close="viewer" aria-label="Close page viewer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="viewer-tools">
+      <button type="button" class="btn small" id="prevPage" aria-label="Previous page">‹ Prev</button>
+      <span id="pageLabel" class="page-label"></span>
+      <button type="button" class="btn small" id="nextPage" aria-label="Next page">Next ›</button>
+      <a class="btn small" id="openOriginal" target="_blank" rel="noopener">Open PDF at this page</a>
+    </div>
+    <blockquote class="viewer-quote" id="viewerQuote" hidden></blockquote>
+    <div class="viewer-page" id="viewerPage">
+      <img id="pageImage" alt="">
+      <p class="viewer-loading" id="pageLoading">Loading page…</p>
+    </div>
+  </dialog>
+</div>
+
+<template id="tplDoc">
+  <li class="doc">
+    <div class="doc-row">
+      <input type="checkbox" class="doc-select" aria-label="Search this document">
+      <div class="doc-main">
+        <span class="doc-title"></span>
+        <span class="doc-meta"></span>
+      </div>
+      <span class="pill"></span>
+    </div>
+    <div class="progress" hidden><span></span></div>
+    <p class="doc-error" hidden></p>
+    <div class="doc-actions">
+      <button type="button" class="link" data-act="view">View</button>
+      <button type="button" class="link" data-act="pages">Page status</button>
+      <button type="button" class="link" data-act="reindex">Re-index</button>
+      <button type="button" class="link danger" data-act="delete">Delete</button>
+    </div>
+    <div class="doc-pages" hidden></div>
+  </li>
+</template>
+
+<script src="app.js" type="module"></script>
+</body>
+</html>

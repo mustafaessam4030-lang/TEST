@@ -1,0 +1,5 @@
+# Runtime dependencies (CPU only, no model downloads).
+pymupdf>=1.24,<2        # PDF text, tables, rendering (AGPL-3.0; see README licensing note)
+numpy>=1.26
+fastapi>=0.110
+uvicorn>=0.29
