@@ -305,8 +305,9 @@ def basic_check(shipment, result, today=None):
       - the carrier answered for this shipment (when it names one);
       - each date is an unambiguous dd/mm/yyyy date;
       - the ATA is not in the future;
-      - ETA = ATA from one read is a person's call (an estimate read twice);
-      - an ATA with a later ETA: the shipment has arrived, only the ATA is written.
+      - ETA = ATA from one read is a person's call (an estimate read twice).
+    An ETA and a different ATA are both written, as before (dropping the ETA
+    once arrived is a DHL rule: separate_eta_ata).
     -> (eta, ata, review_reasons, notes). Non-empty review_reasons: write nothing.
     """
     today = today or date.today()
@@ -325,9 +326,6 @@ def basic_check(shipment, result, today=None):
     if eta and ata and eta == ata:
         review.append("ETA and ATA are the same date ({0}) from one read: the estimate may "
                       "have been read as the arrival".format(eta))
-    elif eta and ata:
-        notes.append("the shipment has arrived ({0}): the ETA {1} is not written".format(ata, eta))
-        eta = None
     if review:
         return None, None, review, notes
     return eta, ata, review, notes

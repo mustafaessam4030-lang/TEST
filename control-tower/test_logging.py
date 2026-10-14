@@ -149,12 +149,15 @@ child = root / "child.py"
 child.write_text(
     "import sys\n"
     "sys.path.insert(0, {root!r})\n"
+    # The patched update_eta.py comes first; its sibling modules
+    # (carrier_pacing, arrival_events, ...) from the project folder.
+    "sys.path.insert(1, {here!r})\n"
     "import update_eta as A\n"
     "A.write_log('unprivileged run wrote this')\n"
     "print('RESOLVED::' + str(A.OUTPUT_FOLDER))\n"
     "print('LOGFILE::' + str(A.LOG_FILE))\n"
     "print('WROTE::' + str('unprivileged run wrote this' in "
-    "A.LOG_FILE.read_text(encoding='utf-8')))\n".format(root=str(root)),
+    "A.LOG_FILE.read_text(encoding='utf-8')))\n".format(root=str(root), here=str(here)),
     encoding="utf-8",
 )
 for path in (root, child, root / "update_eta.py"):

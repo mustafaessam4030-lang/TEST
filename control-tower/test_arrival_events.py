@@ -229,8 +229,8 @@ section("6b. basic_check: every carrier's dates are validated before the Hub")
 for result, want, label in (
         ({"eta": "20/10/2026"}, ("20/10/2026", None, False), "a sound ETA passes"),
         ({"ata": "10/10/2026"}, (None, "10/10/2026", False), "a sound ATA passes"),
-        ({"eta": "20/10/2026", "ata": "10/10/2026"}, (None, "10/10/2026", False),
-         "arrived: only the ATA is kept"),
+        ({"eta": "20/10/2026", "ata": "10/10/2026"}, ("20/10/2026", "10/10/2026", False),
+         "ETA and a different ATA: both kept, as on 12 Oct"),
         ({"eta": "12/10/2026", "ata": "12/10/2026"}, (None, None, True), "ETA = ATA -> review"),
         ({"ata": "20/10/2026"}, (None, None, True), "ATA in the future -> review"),
         ({"eta": "2026-10-20"}, (None, None, True), "not dd/mm/yyyy -> review"),
