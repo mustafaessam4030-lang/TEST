@@ -672,7 +672,7 @@ def verification_on_screen(page):
     except Exception:
         pass
     try:
-        text = page.locator("body").inner_text(timeout=2000) or ""
+        text = _body_text(page, timeout=2000) or ""
         return bool(_VERIFY_SCREEN.search(text[:20000]))
     except Exception:
         return False
@@ -707,7 +707,7 @@ def _register_evidence(page, path, bol_awb, suffix):
         text_path = LOG_FOLDER / f"{safe_filename(bol_awb)}_{suffix}.txt"
         if not text_path.exists():
             try:
-                text = page.locator("body").inner_text(timeout=3000) or ""
+                text = _body_text(page, timeout=3000) or ""
                 if not _VERIFY_SCREEN.search(text):
                     text_path.write_text(redact_secrets(text)[:200000], encoding="utf-8")
             except Exception:
@@ -727,7 +727,7 @@ def _register_evidence(page, path, bol_awb, suffix):
 def save_page_text(page, bol_awb, suffix):
     path = LOG_FOLDER / f"{safe_filename(bol_awb)}_{suffix}.txt"
     try:
-        text = page.locator("body").inner_text(timeout=5000)
+        text = _body_text(page, timeout=5000)
         path.write_text(text, encoding="utf-8")
         write_log(f"Page text saved: {path}")
     except Exception as error:
@@ -969,7 +969,7 @@ def wait_until_settled(page, ready_check, max_seconds=None, poll_ms=250):
 def page_has_content(page):
     """Cheap readiness signal: the body has rendered something substantial."""
     try:
-        return len(page.locator("body").inner_text(timeout=1200).strip()) > 200
+        return len(_body_text(page, timeout=1200).strip()) > 200
     except Exception:
         return False
 
@@ -2955,7 +2955,7 @@ def select_shipments_view(page, view_name):
 
     take_screenshot(page, f"{requested}_view", "option_not_found")
     try:
-        visible_text = page.locator("body").inner_text(timeout=5000)
+        visible_text = _body_text(page, timeout=5000)
         diagnostic_path = LOG_FOLDER / f"{requested}_view_visible_text.txt"
         diagnostic_path.write_text(visible_text, encoding="utf-8")
         write_log(f"Visible page text saved: {diagnostic_path}")
@@ -4129,7 +4129,7 @@ def extract_event_log_result(page):
         scopes = [page] + [frame for frame in page.frames if frame != page.main_frame]
         for scope in scopes:
             try:
-                event_text = scope.locator("body").inner_text(timeout=4000)
+                event_text = _body_text(scope, timeout=4000)
                 all_dates = extract_all_dates(event_text)
 
                 for event_name, target_dates in [
@@ -4699,18 +4699,34 @@ DHL_COOKIE_PATTERNS = [
 ]
 
 
+def _body_text(scope, timeout=2000):
+    """
+    The visible text of a page or frame's <body>. Some carrier sites nest a
+    second <body> inside their page (Lufthansa Cargo's portal, 14 Oct: "strict
+    mode violation: locator('body') resolved to 2 elements"), which made the
+    whole page read as empty; then the outer, first one is read, which holds
+    the nested one's text too.
+    """
+    try:
+        return scope.locator("body").inner_text(timeout=timeout)
+    except Exception as error:
+        if "strict mode violation" not in str(error):
+            raise
+        return scope.locator("body").first.inner_text(timeout=timeout)
+
+
 def _page_text(page):
     """One text snapshot of the main frame plus any tracking iframes."""
     chunks = []
     try:
-        chunks.append(page.locator("body").inner_text(timeout=2000))
+        chunks.append(_body_text(page, timeout=2000))
     except Exception:
         pass
     for frame in page.frames:
         if frame == page.main_frame:
             continue
         try:
-            chunks.append(frame.locator("body").inner_text(timeout=1000))
+            chunks.append(_body_text(frame, timeout=1000))
         except Exception as error:
             note_suppressed("reading an iframe's text", error)
             continue
@@ -5226,7 +5242,7 @@ def qatar_result_date(page, status_name):
 
 def qatar_result_ready(page):
     try:
-        body_text = page.locator("body").inner_text(timeout=3000)
+        body_text = _body_text(page, timeout=3000)
     except Exception:
         return False
 
@@ -5513,7 +5529,7 @@ def extract_qatar_result(page):
     # Text fallback for the visible status banners.
     if not eta or not ata:
         try:
-            body_text = page.locator("body").inner_text(timeout=5000)
+            body_text = _body_text(page, timeout=5000)
         except Exception:
             body_text = ""
 
@@ -10219,7 +10235,7 @@ def describe_manage_fields(page, wanted):
         if shown == 0:
             try:
                 ready = page.evaluate("() => document.readyState")
-                body = len((page.locator("body").inner_text(timeout=1500) or "").strip())
+                body = len((_body_text(page, timeout=1500) or "").strip())
                 total = page.locator("input").count()
             except Exception:
                 ready, body, total = "unknown", 0, -1
