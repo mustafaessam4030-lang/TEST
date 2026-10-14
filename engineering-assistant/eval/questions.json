@@ -1,0 +1,68 @@
+{
+  "description": "Evaluation set over the synthetic sample PDFs in samples/. 'expect' is the required behaviour; must_include strings are checked in the answer's claims (including revision/conflict notes); must_not_include strings are checked in the main claims only. 'pages' lists every page that legitimately supports the answer.",
+  "questions": [
+    {"id": "spec-01", "category": "exact value", "turns": ["What is the rated pressure of the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["350 bar"], "must_not_include": ["320 bar"]},
+    {"id": "spec-02", "category": "exact value", "turns": ["What is the peak pressure of the HX-200 pump and for how long?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["420 bar", "10 s"]},
+    {"id": "spec-03", "category": "exact value", "turns": ["What is the relief valve setting on the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["380 bar"]},
+    {"id": "spec-04", "category": "exact value", "turns": ["What is the displacement of the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["67 cm3/rev"]},
+    {"id": "spec-05", "category": "exact value (paraphrase)", "turns": ["How heavy is the HX-200 pump without fluid?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["48 kg"]},
+    {"id": "spec-06", "category": "exact value", "turns": ["What is the rated flow of the HX-200 and at what speed?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["120 L/min", "1800 rpm"]},
+    {"id": "spec-07", "category": "exact value", "turns": ["What gear ratio does the CV-90 have?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["32:1"]},
+    {"id": "spec-08", "category": "exact value (paraphrase)", "turns": ["How much oil does the CV-90 gearbox hold?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["2.4 L"]},
+    {"id": "spec-09", "category": "exact value", "turns": ["What is the output speed of the CV-90?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["45 rpm"]},
+
+    {"id": "unit-01", "category": "units (paraphrase)", "turns": ["What is the CV-90 input power in horsepower?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["4.7 hp"]},
+    {"id": "unit-02", "category": "units", "turns": ["What is the HX-200 rated pressure in psi?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["5076 psi"], "must_not_include": ["4641"]},
+
+    {"id": "part-01", "category": "part number", "turns": ["What is the part number of the HX-200 shaft seal kit?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2, 3], "must_include": ["4J-5521"]},
+    {"id": "part-02", "category": "part number", "turns": ["Which thread-locking compound should be used on the HX-200 mounting flange bolts?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["9S-3263"]},
+    {"id": "part-03", "category": "part number", "turns": ["What is 1R-0741?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [6], "must_include": ["filter element"]},
+    {"id": "part-04", "category": "part number", "turns": ["Which special tools are needed for the HX-200 shaft seal replacement?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [3], "must_include": ["1U-7650", "5P-3520"]},
+
+    {"id": "proc-01", "category": "procedure + warning", "turns": ["How do I replace the shaft seal on the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [3], "must_include": ["Drain the pump case", "retaining ring", "relieve hydraulic pressure"]},
+    {"id": "proc-02", "category": "safety warning", "turns": ["What should I do before disconnecting a hydraulic line on the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [1], "must_include": ["Relieve all hydraulic pressure"]},
+    {"id": "proc-03", "category": "procedure", "turns": ["How should the HX-200 mounting flange bolts be tightened?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["cross pattern"]},
+    {"id": "proc-04", "category": "troubleshooting (two-column page)", "turns": ["What should I do if the HX-200 pump makes a whining noise?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [4], "must_include": ["suction strainer"]},
+
+    {"id": "table-01", "category": "table", "turns": ["What is the torque for the HX-200 drain plug?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["Torque (N.m): 60"]},
+    {"id": "table-02", "category": "table", "turns": ["What torque is specified for the CV-90 foot mounting bolts?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["350"]},
+    {"id": "table-03", "category": "table", "turns": ["What thread size are the HX-200 port cover bolts?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2, 3], "must_include": ["M10x1.5"]},
+
+    {"id": "ocr-01", "category": "scanned (OCR)", "turns": ["What track sag is allowed on the TL-5?"], "expect": "answer", "doc": "TL-5_Inspection_Checklist_scanned.pdf", "pages": [1], "must_include": ["40-50 mm"]},
+    {"id": "ocr-02", "category": "scanned (OCR)", "turns": ["When should bucket teeth be replaced on the TL-5?"], "expect": "answer", "doc": "TL-5_Inspection_Checklist_scanned.pdf", "pages": [1], "must_include": ["50 percent"]},
+    {"id": "ocr-03", "category": "scanned (OCR)", "turns": ["What must be recorded before starting the shift on the TL-5?"], "expect": "answer", "doc": "TL-5_Inspection_Checklist_scanned.pdf", "pages": [2], "must_include": ["hour meter"]},
+
+    {"id": "multi-01", "category": "multi-document compare", "turns": ["Compare the mounting flange bolt torque for the HX-200 and the CV-90"], "expect": "answer", "docs": ["HX-200_Service_Manual_RevB.pdf", "CV-90_Gearbox_Datasheet.pdf"], "pages": [1, 2], "must_include": ["210", "180"]},
+    {"id": "multi-02", "category": "multi-document", "turns": ["Which oil grades are recommended for the HX-200 and the CV-90?"], "expect": "answer", "docs": ["HX-200_Service_Manual_RevB.pdf", "CV-90_Gearbox_Datasheet.pdf"], "pages": [1, 6], "must_include": ["ISO VG 46", "ISO VG 220"]},
+
+    {"id": "rev-01", "category": "conflicting revisions", "turns": ["How often should the HX-200 filter element be changed?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [6], "must_include": ["500 service hours"], "must_not_include": ["250"]},
+    {"id": "rev-02", "category": "conflicting revisions", "turns": ["What was the rated pressure in revision A of the HX-200 manual?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevA.pdf", "pages": [2], "must_include": ["320 bar"]},
+
+    {"id": "amb-01", "category": "ambiguous equipment", "turns": ["What torque for the mounting flange bolts?"], "expect": "clarify", "must_include": ["180", "210"]},
+    {"id": "amb-02", "category": "ambiguous equipment", "turns": ["What is the oil change interval?"], "expect": "clarify", "must_include": ["2500", "2000"]},
+
+    {"id": "none-01", "category": "unsupported", "turns": ["What is the rated pressure of the HX-300?"], "expect": "abstain"},
+    {"id": "none-02", "category": "unsupported", "turns": ["What is the warranty period for the CV-90?"], "expect": "abstain"},
+    {"id": "none-03", "category": "unsupported", "turns": ["What is the maximum lifting capacity of the TL-5?"], "expect": "abstain"},
+    {"id": "none-04", "category": "unsupported", "turns": ["What is the noise level of the CV-90 in dB?"], "expect": "abstain"},
+    {"id": "none-05", "category": "unsupported", "turns": ["Who manufactures the TL-5 engine?"], "expect": "abstain"},
+
+    {"id": "follow-01", "category": "follow-up", "turns": ["What is the rated pressure of the HX-200?", "And its dry weight?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["48 kg"]},
+    {"id": "follow-02", "category": "follow-up (clarification reply)", "turns": ["What torque for the mounting flange bolts?", "the CV-90 gearbox"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["180"], "must_not_include": ["210"]},
+    {"id": "follow-03", "category": "follow-up (topic change)", "turns": ["What is the input power of the CV-90?", "What is the warranty period?"], "expect": "abstain"},
+
+    {"id": "chat-01", "category": "conversation", "turns": ["Hi, how are you?"], "expect": "smalltalk"},
+    {"id": "chat-02", "category": "conversation", "turns": ["thanks!"], "expect": "smalltalk"}
+  ],
+  "ingestion": [
+    {"file": "HX-200_Service_Manual_RevB.pdf", "status": "ready", "pages": ["ok", "ok", "ok", "ok", "empty", "ok"],
+     "contains": {"2": ["350 bar (5076 psi)", "Torque (N.m)", "M10x1.5"], "3": ["7. Install the retaining ring", "WARNING: Lower all attachments"], "4": ["1R-0750", "0.2 bar"], "6": ["1R-0741"]},
+     "order": {"4": ["clogged suction strainer", "Low output pressure"]}},
+    {"file": "HX-200_Service_Manual_RevA.pdf", "status": "ready", "pages": ["ok", "ok", "ok"], "contains": {"2": ["320 bar (4641 psi)"]}},
+    {"file": "CV-90_Gearbox_Datasheet.pdf", "status": "ready", "pages": ["ok"], "contains": {"1": ["3.5 kW (4.7 hp)", "32:1", "M20x2.5"]}},
+    {"file": "TL-5_Inspection_Checklist_scanned.pdf", "status": "ready", "pages": ["ocr", "ocr"],
+     "contains": {"1": ["40-50 mm", "lift arm support is engaged", "50 percent"], "2": ["hour meter", "site supervisor"]}},
+    {"file": "blank.pdf", "status": "failed", "pages": ["empty"], "contains": {}},
+    {"file": "corrupted.pdf", "status": "failed", "pages": [], "contains": {}}
+  ]
+}

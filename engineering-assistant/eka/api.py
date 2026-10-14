@@ -131,7 +131,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/documents/{doc_id}/reindex", status_code=202)
     def reindex(doc_id: str, request: Request):
         a = assistant(request)
-        get_doc(a, doc_id)
+        if get_doc(a, doc_id)["status"] in ("queued", "processing"):
+            raise HTTPException(409, "the document is already queued or being processed")
         return {"document": public(a.ingest.reindex(doc_id))}
 
     @app.delete("/api/documents/{doc_id}")

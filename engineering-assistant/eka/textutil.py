@@ -30,7 +30,7 @@ nor not of off on once only or other our out over own please same she should so 
 that the their theirs them then there these they this those through to too under until up very
 was we were what when where which while who whom why will with would you your yours tell show
 give find get need know document documents manual say says said according
-compare comparison difference differences differ versus vs between both two each
+compare comparison difference differences differ versus vs between both two each must
 """.split())
 
 
@@ -42,11 +42,23 @@ def normalize(text: str) -> str:
 
 
 def _stem(word: str) -> str:
-    if word.isalpha() and len(word) > 4:
-        if word.endswith("ies"):
-            return word[:-3] + "y"
-        if word.endswith("s") and not word.endswith("ss"):
-            return word[:-1]
+    """Light suffix stripping, applied identically to documents and queries.
+
+    change/changes/changed/changing -> chang, record/recorded -> record,
+    specified/specifies -> specify. Short words and identifiers are untouched.
+    """
+    if not word.isalpha() or len(word) <= 4:
+        return word
+    if word.endswith(("ies", "ied")):
+        return word[:-3] + "y"
+    if word.endswith("s") and not word.endswith("ss"):
+        word = word[:-1]
+    for suffix in ("ing", "ed"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            word = word[: -len(suffix)]
+            break
+    if word.endswith("e") and len(word) > 4:
+        word = word[:-1]
     return word
 
 

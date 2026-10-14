@@ -30,6 +30,8 @@ FOLLOW_UP = re.compile(
     r"|^\s*(and|what about|how about|also|then|so|ok so)\b", re.I)
 COMPARE = re.compile(r"\b(compare|comparison|difference|differences|differ|versus|vs\.?)\b", re.I)
 QUESTION_START = re.compile(r"^\s*(what|which|how|when|where|who|why|is|are|does|do|can|could|should|list|show|give)\b", re.I)
+TROUBLESHOOT = re.compile(r"\b(what (should|do|can) (i|we) do|what to do|how (do i|to|can i) fix|troubleshoot\w*|"
+                          r"symptom|cause[sd]?|why)\b", re.I)
 PROCEDURE = re.compile(r"\b(how (do|to|should) (i|you|we)?|procedure|steps?|replace|install|remove|disassembl\w*|assembl\w*|adjust)\b", re.I)
 
 
@@ -53,6 +55,7 @@ class Route:
     prefer_doc_ids: list[str] = field(default_factory=list)
     compare: bool = False
     procedure: bool = False
+    troubleshoot: bool = False
 
 
 class Conversations:
@@ -103,7 +106,8 @@ def route(message: str, history: list[Turn]) -> Route:
         return Route("smalltalk", "greeting" if GREETING.match(text) or HOW_ARE_YOU.search(text) else "unclear")
 
     r = Route("question", question=stripped, retrieval_query=stripped,
-              compare=bool(COMPARE.search(stripped)), procedure=bool(PROCEDURE.search(stripped)))
+              compare=bool(COMPARE.search(stripped)), troubleshoot=bool(TROUBLESHOOT.search(stripped)))
+    r.procedure = bool(PROCEDURE.search(stripped)) and not r.troubleshoot
     previous = next((t for t in reversed(history) if t.retrieval_query), None)
     if previous is None:
         return r

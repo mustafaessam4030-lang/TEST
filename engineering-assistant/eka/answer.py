@@ -40,7 +40,12 @@ SAFETY_TERMS = re.compile(
     r"rigging|temperature|safety|warning|caution|danger|hazard\w*|relief|injur\w*)\b", re.I)
 STEP_LINE = re.compile(r"^\s*(?:\(continued\)|\d{1,2}[.)]\s)", re.I)
 MIN_EVIDENCE = 0.34        # weighted share of the question's terms a supporting line must cover
-MIN_TOPIC_COVERAGE = 0.5   # ...and of its topic words (identifiers excluded) in the line itself
+MIN_TOPIC_COVERAGE = 0.5   # ...and of its topic words (identifiers excluded), headings at half credit
+MIN_TOPIC_COVERAGE_SEMANTIC = 0.25  # topic coverage still required when the embedder rates a passage strongly similar
+# Words that frame a question ("how *long*", "parts *needed*") rather than name its topic.
+FRAME_WORDS = frozenset(tokens(
+    "long much many often heavy big large small far wide high tall needed required specified recommended "
+    "allowed permitted use used using value values kind type mean means called", keep_stopwords=True))
 MAX_CLAIMS = 4
 
 
@@ -210,7 +215,9 @@ class AnswerEngine:
             if ch.kind == "table_row":
                 lines = ch.text.split("\n")
                 units.append(Unit(cand, lines[-1], " ".join(lines[:-1]) + " " + ch.section))
-            elif ch.kind == "warning" or (r.procedure and sum(bool(STEP_LINE.match(l)) for l in ch.text.split("\n")) >= 2):
+            elif ch.kind == "warning" or r.troubleshoot or (
+                    r.procedure and sum(bool(STEP_LINE.match(l)) for l in ch.text.split("\n")) >= 2):
+                # Warnings, step lists and symptom/cause/remedy blocks are only useful whole.
                 units.append(Unit(cand, ch.text, ch.section))
             else:
                 units.extend(Unit(cand, s, ch.section) for s in sentences(ch.text))
@@ -242,10 +249,19 @@ class AnswerEngine:
         value_q = bool(VALUE_QUESTION.search(r.question)) and not r.procedure
         units = self._units(r, result.selected)
         self._score(units, r.retrieval_query, value_q, set(content_terms(r.question)) if r.follow_up else None)
-        units = [u for u in units if u.score >= MIN_EVIDENCE]
+        # Lexical gates. Strong semantic similarity lowers the bar (it bridges wording such as
+        # "hold" vs "capacity") but never removes it: similar-sounding passages that share none
+        # of the question's specific words are not evidence.
+        strong = self.retriever.min_semantic
         topic = self._topic_terms(r)
-        if topic:
-            units = [u for u in units if self._topic_coverage(u, topic) >= MIN_TOPIC_COVERAGE]
+
+        def passes(u: Unit) -> bool:
+            coverage = self._topic_coverage(u, topic) if topic else 1.0
+            if u.cand.cosine >= strong:
+                return coverage >= MIN_TOPIC_COVERAGE_SEMANTIC
+            return u.score >= MIN_EVIDENCE and coverage >= MIN_TOPIC_COVERAGE
+
+        units = [u for u in units if passes(u)]
         if not units:
             return Draft(status="insufficient_evidence")
         best = max(u.score for u in units)
@@ -286,7 +302,25 @@ class AnswerEngine:
             draft.message = "According to the documents:"
         if result.missing_identifiers:
             draft.unresolved.append("No searched document mentions {0}.".format(", ".join(result.missing_identifiers)))
+        used = list(dict.fromkeys(u.cand.chunk.doc_id for u in keep))
+        if len(used) == 1 and not r.compare and not self._names_equipment(r, docs[used[0]]):
+            others = {compact(d["equipment"] or d["title"]) for d in docs.values()
+                      if d["status"] in cite.SEARCHABLE and d["id"] not in used and not d["superseded_by"]}
+            others.discard(compact(docs[used[0]]["equipment"] or docs[used[0]]["title"]))
+            if others:
+                draft.unresolved.append(
+                    "The question doesn't name the equipment; this answer comes only from {0}. Other equipment in "
+                    "the library may differ, so name the model if you meant another one.".format(
+                        docs[used[0]]["equipment"] or docs[used[0]]["title"]))
         return draft
+
+    @staticmethod
+    def _names_equipment(r: Route, doc: dict) -> bool:
+        text = " ".join((doc["title"], doc["equipment"], doc["doc_number"]))
+        named = {compact(i) for i in identifiers(text)} | {t for t in content_terms(text) if len(t) > 3}
+        asked = {compact(i) for i in identifiers(r.retrieval_query)} | set(content_terms(r.retrieval_query))
+        generic = set(tokens("manual service datasheet checklist document daily inspection"))
+        return bool((named - generic) & asked)
 
     @staticmethod
     def _topic_terms(r: Route) -> list[str]:
@@ -297,7 +331,7 @@ class AnswerEngine:
         the earlier question's topic.
         """
         def plain(text):
-            return [t for t in content_terms(text) if not any(ch.isdigit() for ch in t)]
+            return [t for t in content_terms(text) if not any(ch.isdigit() for ch in t) and t not in FRAME_WORDS]
         own = plain(r.question)
         if r.follow_up and (r.clarification_reply or not own):
             return plain(r.retrieval_query)
@@ -307,7 +341,9 @@ class AnswerEngine:
         """Weighted share of the topic terms present in the evidence text itself (not its headings)."""
         weights = {t: self.retriever.index.idf(t) for t in topic}
         own = set(tokens(u.text))
-        return sum(w for t, w in weights.items() if t in own) / (sum(weights.values()) or 1.0)
+        context = set(tokens(u.context + " " + u.cand.chunk.search_text.split("\n")[0]))
+        got = sum(w if t in own else 0.5 * w if t in context else 0.0 for t, w in weights.items())
+        return got / (sum(weights.values()) or 1.0)
 
     def _claim(self, u: Unit, kind: str) -> dict:
         return {"text": u.text, "kind": kind, "_chunk": u.cand.chunk, "citations": []}

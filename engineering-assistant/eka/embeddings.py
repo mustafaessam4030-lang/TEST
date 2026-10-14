@@ -83,18 +83,20 @@ class HashingEmbedder(Embedder):
 
 
 class FastEmbedEmbedder(Embedder):
-    def __init__(self, model: str = "BAAI/bge-small-en-v1.5"):
+    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", cache_dir: str | None = None):
         try:
             from fastembed import TextEmbedding
         except ImportError as exc:
             raise EmbeddingError("fastembed is not installed: pip install -r requirements-optional.txt") from exc
-        self._model = TextEmbedding(model_name=model)
+        self._model = TextEmbedding(model_name=model, cache_dir=cache_dir)
         self.name = "fastembed:" + model
         self.dim = len(next(iter(self._model.query_embed(["probe"]))))
         self.strong_similarity = 0.80
 
     def embed_documents(self, texts):
-        return _normalise_rows(np.array(list(self._model.passage_embed(texts)), dtype=np.float32))
+        # Small batches: fastembed pads each batch, and its default of 256 passages
+        # measured 3.5 GB peak memory on a 240-page manual; 16 keeps it near 250 MB.
+        return _normalise_rows(np.array(list(self._model.passage_embed(texts, batch_size=16)), dtype=np.float32))
 
     def embed_query(self, text):
         return _normalise_rows(np.array(list(self._model.query_embed([text])), dtype=np.float32))[0]
@@ -140,7 +142,8 @@ def make_embedder(settings: Settings) -> Embedder:
     if kind == "hashing":
         return HashingEmbedder()
     if kind == "fastembed":
-        return FastEmbedEmbedder(settings.embed_model or "BAAI/bge-small-en-v1.5")
+        return FastEmbedEmbedder(settings.embed_model or "BAAI/bge-small-en-v1.5",
+                                 str(settings.data_dir / "models"))
     if kind == "ollama":
         return OllamaEmbedder(settings.ollama_url, settings.embed_model or "nomic-embed-text")
     raise EmbeddingError("unknown EKA_EMBEDDER: " + settings.embedder)

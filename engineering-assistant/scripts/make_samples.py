@@ -115,7 +115,7 @@ class Writer:
         self.y = max(self.y, start)
 
     def save(self, path: Path):
-        self.doc.save(path, garbage=4, deflate=True)
+        self.doc.save(path, garbage=4, deflate=True, no_new_id=True)
 
 
 # ── documents ──────────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ def scanned_checklist(path: Path):
         target = out.new_page(width=W, height=H)
         target.insert_image(target.rect, pixmap=noisy)
     out.set_metadata({"title": "TL-5 Daily Inspection Checklist (scan)"})
-    out.save(path, garbage=4, deflate=True)
+    out.save(path, garbage=4, deflate=True, no_new_id=True)
 
 
 def main(out_dir: Path):
@@ -267,7 +267,7 @@ def main(out_dir: Path):
     (out_dir / "corrupted.pdf").write_bytes(b"%PDF-1.7\n" + bytes(random.Random(7).randrange(256) for _ in range(4000)))
     blank = pymupdf.open()
     blank.new_page(width=W, height=H)
-    blank.save(out_dir / "blank.pdf")
+    blank.save(out_dir / "blank.pdf", no_new_id=True)
     for path in sorted(out_dir.glob("*.pdf")):
         print("{0:45s} {1:>8,d} bytes".format(path.name, path.stat().st_size))
 

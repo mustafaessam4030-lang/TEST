@@ -182,3 +182,27 @@ def test_unsupported_values_detects_invented_numbers_and_parts():
     assert cite.unsupported_values("The rated pressure is 380 bar.", [source]) == ["380"]
     assert cite.unsupported_values("Use seal kit 4J-9999.", [source]) == ["4J-9999"]
     assert numbers("5,076") <= numbers(source) and compact("HX-200") == "hx200"
+
+
+def test_semantic_similarity_lowers_but_never_removes_the_evidence_bar(assistant):
+    """With every passage rated 'strongly similar', unrelated spec rows must still not answer."""
+    from eka.answer import AnswerEngine
+    from eka.conversation import Conversations
+    from eka.retrieval import Retriever
+    lenient = Retriever(assistant.index, min_semantic=-1.0)  # every candidate counts as semantically strong
+    engine = AnswerEngine(assistant.settings, assistant.store, lenient, Conversations())
+    assert engine.ask("What is the HX-200 pump efficiency?")["status"] == "insufficient_evidence"
+    out = engine.ask("How much oil does the CV-90 gearbox hold?")
+    assert out["status"] == "answered" and "2.4 L" in out["answer_text"]
+
+
+def test_why_question_returns_cause_and_remedy(assistant):
+    out = ask(assistant, "Why can't the HX-200 system reach rated pressure?")
+    text = " ".join(c["text"] for c in out["claims"])
+    assert "Cause:" in text and "1R-0750" in text and out["citations"][0]["page"] == 4
+
+
+def test_unnamed_equipment_answer_carries_a_caveat(assistant):
+    out = ask(assistant, "What is the gear ratio?")
+    assert out["status"] == "answered"
+    assert any("doesn't name the equipment" in u for u in out["unresolved"])

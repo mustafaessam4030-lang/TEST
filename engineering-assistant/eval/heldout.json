@@ -1,0 +1,23 @@
+{
+  "description": "Held-out questions written after the system was tuned on questions.json and run without further tuning. Same scoring rules.",
+  "questions": [
+    {"id": "h-01", "category": "exact value", "turns": ["What operating temperature range does the HX-200 support?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["-20 to 80 C"]},
+    {"id": "h-02", "category": "exact value (paraphrase)", "turns": ["How fast does the CV-90 output shaft turn?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["45 rpm"]},
+    {"id": "h-03", "category": "table", "turns": ["Give me the lb.ft torque for the HX-200 port cover bolts"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["36"]},
+    {"id": "h-04", "category": "part number", "turns": ["Which relief valve cartridge fits the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [4], "must_include": ["1R-0750"]},
+    {"id": "h-05", "category": "procedure", "turns": ["What do I do after installing the new shaft seal on the HX-200?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [3], "must_include": ["low idle"]},
+    {"id": "h-06", "category": "safety warning", "turns": ["Is it safe to service the HX-200 pump straight after running it?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [1], "must_include": ["cool"]},
+    {"id": "h-07", "category": "troubleshooting (two-column page)", "turns": ["Why can't the HX-200 system reach rated pressure?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [4], "must_include": ["relief valve cartridge"]},
+    {"id": "h-08", "category": "scanned (OCR)", "turns": ["What should be drained from the fuel water separator on the TL-5?"], "expect": "answer", "doc": "TL-5_Inspection_Checklist_scanned.pdf", "pages": [1], "must_include": ["water"]},
+    {"id": "h-09", "category": "scanned (OCR) safety", "turns": ["Can I work under a raised bucket on the TL-5?"], "expect": "answer", "doc": "TL-5_Inspection_Checklist_scanned.pdf", "pages": [1], "must_include": ["lift arm support"]},
+    {"id": "h-10", "category": "installation", "turns": ["How precisely must the CV-90 output shaft be aligned with the pulley?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["0.1 mm"]},
+    {"id": "h-11", "category": "conflicting revisions", "turns": ["What is the HX-200 peak pressure?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["420 bar"], "must_not_include": ["400 bar"]},
+    {"id": "h-12", "category": "unsupported", "turns": ["What is the recommended tyre pressure for the TL-5?"], "expect": "abstain"},
+    {"id": "h-13", "category": "unsupported", "turns": ["What is the HX-200 pump efficiency?"], "expect": "abstain"},
+    {"id": "h-14", "category": "unsupported", "turns": ["What is the torque for the CV-90 drain plug?"], "expect": "abstain"},
+    {"id": "h-15", "category": "unsupported", "turns": ["What voltage does the CV-90 motor need?"], "expect": "abstain"},
+    {"id": "h-16", "category": "follow-up", "turns": ["What is the gear ratio of the CV-90?", "And its oil capacity?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["2.4 L"]},
+    {"id": "h-17", "category": "conversation", "turns": ["Good morning!"], "expect": "smalltalk"}
+  ],
+  "ingestion": []
+}
