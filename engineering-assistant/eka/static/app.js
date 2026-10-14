@@ -246,6 +246,7 @@ async function loadHealth() {
   $("modelTxt").textContent = `${answers} · ${retrieval}`;
   $("modelRow").dataset.s = hl.generator_ready === false ? "bad" : hl.semantic_search ? "ok" : "kw";
   $("modelRow").title = hl.retrieval_mode;
+  if (!$("viewLib").hidden) renderSources();
 }
 function fillSettings() {
   const hl = S.health || {};
@@ -965,11 +966,52 @@ async function loadDocs() {
   updateAttachments();
   clearTimeout(S.pollTimer);
   if (busy) S.pollTimer = setTimeout(loadDocs, 1200);
-  else { loadHealth(); if (app.classList.contains("is-empty")) loadSuggestions(); }
+  else {
+    const sig = S.docs.map((d) => d.id + d.status).join();
+    if (sig !== S.docSig) {            // only when the library actually changed
+      S.docSig = sig;
+      loadHealth();
+      if (app.classList.contains("is-empty")) loadSuggestions();
+    }
+    // the PDF folder can add documents at any time: look again every 20 s
+    S.pollTimer = setTimeout(loadDocs, 20000);
+  }
 }
 const STATUS_PILL = { ready: ["run", "Ready"], partial: ["wait", "Partial"], failed: ["bad", "Failed"], processing: ["fin", "Processing"], queued: ["fin", "Queued"] };
 const PAGE_LABEL = { ok: "Text", ocr: "OCR", ocr_low_conf: "OCR · low confidence", empty: "Blank", ocr_unavailable: "Not read: needs OCR", ocr_failed: "OCR failed", error: "Error" };
+// ── the watched PDF folder (phase 1 source) ──────────────────────────────
+function renderSources() {
+  const src = ((S.health || {}).sources || [])[0];
+  $("srcBox").hidden = !src;
+  if (!src) return;
+  $("srcLoc").textContent = src.location;
+  const when = src.last_scan ? "checked " + fmtTime(src.last_scan) : "not checked yet";
+  $("srcStat").textContent = src.error ? "" :
+    `${src.pdfs} PDF${src.pdfs === 1 ? "" : "s"} in the folder · ${src.indexed} indexed` +
+    (src.processing ? ` · ${src.processing} processing` : "") + (src.failed ? ` · ${src.failed} failed` : "") +
+    (src.pending ? ` · ${src.pending} still being copied` : "") + ` · ${when}. New PDFs are picked up automatically.`;
+  const notes = $("srcNotes");
+  notes.replaceChildren();
+  if (src.error) notes.append(h("li", "bad", src.error));
+  (src.errors || []).slice(0, 5).forEach((e) => notes.append(h("li", "bad", `${e.name}: ${e.reason}`)));
+  (src.skipped || []).slice(0, 5).forEach((e) => notes.append(h("li", "", `${e.name}: ${e.reason}`)));
+}
+$("srcScan").addEventListener("click", async () => {
+  const b = $("srcScan");
+  b.disabled = true;
+  try {
+    const { sources } = await api("/api/sources/scan", { method: "POST" });
+    if (S.health) S.health.sources = sources;
+    renderSources();
+    const st = sources[0] || {};
+    toast(st.error ? "Folder problem: " + st.error : `Folder checked: ${st.added || 0} new, ${st.updated || 0} updated`);
+    loadDocs();
+  } catch (e) { toast(e.message); }
+  finally { b.disabled = false; }
+});
+
 function renderLibrary() {
+  renderSources();
   const list = $("docs"), f = $("libQ").value.trim().toLowerCase();
   const open = new Set([...list.querySelectorAll(".doc-pages")].map((n) => n.closest(".doc").dataset.id));
   const byId = Object.fromEntries(S.docs.map((d) => [d.id, d]));
@@ -991,7 +1033,7 @@ function renderLibrary() {
     if (d.equipment) meta.push(d.equipment);
     if (d.superseded_by) meta.push("superseded by Rev " + ((byId[d.superseded_by] || {}).revision || "?"));
     if (d.status === "queued" || d.status === "processing") meta.splice(0, meta.length, d.stage || "Waiting to be processed");
-    meta.push(d.filename);
+    meta.push(d.source && d.source.startsWith("folder:") ? "PDF folder: " + d.source.slice(7) : d.filename);
     const s = h("div", "doc-s", meta.join(" · "));
     s.title = meta.join(" · ");
     m.append(t, s);

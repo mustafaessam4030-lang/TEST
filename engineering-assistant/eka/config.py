@@ -12,6 +12,35 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+PATH_KEYS = ("EKA_DATA_DIR", "EKA_INBOX_DIR", "EKA_MODEL_DIR")
+OFF = ("off", "none", "disabled", "0")
+
+
+def load_config_file(path: str | Path | None = None) -> Path | None:
+    """Read ``KEY=VALUE`` lines from config.env into the environment.
+
+    Real environment variables win: a value is only set if it is not already
+    defined. Lines starting with # are comments. Relative folder paths are
+    taken relative to the config file, so the app works from any current
+    directory. Returns the file used, if any.
+    """
+    candidate = Path(path or os.environ.get("EKA_CONFIG") or "config.env")
+    if not candidate.is_file():
+        return None
+    for raw in candidate.read_text(encoding="utf-8-sig").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        if key in PATH_KEYS and value and value.lower() not in OFF and not Path(value).is_absolute():
+            value = str((candidate.parent / value).resolve())
+        if key.startswith("EKA_") and key not in os.environ:
+            os.environ[key] = value
+    return candidate.resolve()
+
+
 def _env(name: str, default: str) -> str:
     value = os.environ.get("EKA_" + name)
     return default if value is None or value.strip() == "" else value.strip()
@@ -38,6 +67,13 @@ class Settings:
     port: int = field(default_factory=lambda: _env_int("PORT", 8765))
     api_token: str = field(default_factory=lambda: _env("API_TOKEN", ""))
     max_upload_mb: int = field(default_factory=lambda: _env_int("MAX_UPLOAD_MB", 100))
+    open_browser: bool = field(default_factory=lambda: _env_bool("OPEN_BROWSER", False))
+
+    # Phase 1 source: a folder of PDFs that is indexed automatically ("off" disables it)
+    inbox_dir: str = field(default_factory=lambda: _env("INBOX_DIR", "pdfs"))
+    inbox_scan_s: float = field(default_factory=lambda: _env_float("INBOX_SCAN_S", 15.0))
+    inbox_settle_s: float = field(default_factory=lambda: _env_float("INBOX_SETTLE_S", 5.0))
+    inbox_remove_deleted: bool = field(default_factory=lambda: _env_bool("INBOX_REMOVE_DELETED", False))
 
     # Extraction
     ocr_enabled: bool = field(default_factory=lambda: _env_bool("OCR_ENABLED", True))
@@ -90,6 +126,12 @@ class Settings:
         return Path(self.model_dir).resolve() if self.model_dir else self.data_dir / "models"
 
     @property
+    def inbox_path(self) -> Path | None:
+        if not self.inbox_dir or self.inbox_dir.lower() in OFF:
+            return None
+        return Path(self.inbox_dir).resolve()
+
+    @property
     def log_path(self) -> Path:
         return self.data_dir / "logs" / "queries.jsonl"
 
@@ -99,6 +141,7 @@ class Settings:
 
 
 def load_settings(**overrides) -> Settings:
+    load_config_file()
     settings = Settings()
     for key, value in overrides.items():
         if not hasattr(settings, key):

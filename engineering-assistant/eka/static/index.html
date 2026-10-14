@@ -128,6 +128,12 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
           <span class="sp"></span>
           <button class="cbtn solid" id="uploadBtn" type="button"><svg><use href="#i-upload"/></svg>Upload PDFs</button>
         </div>
+        <div class="srcbox" id="srcBox" hidden>
+          <span class="drop-ic"><svg><use href="#i-docs"/></svg></span>
+          <div class="srcbox-m"><b>PDF folder</b><span id="srcLoc"></span><span id="srcStat"></span></div>
+          <button class="cbtn sm" id="srcScan" type="button"><svg><use href="#i-retry"/></svg>Check folder now</button>
+          <ul class="srcbox-n" id="srcNotes"></ul>
+        </div>
         <label class="drop" id="drop">
           <input type="file" id="libFile" accept="application/pdf,.pdf" multiple>
           <span class="drop-ic"><svg><use href="#i-upload"/></svg></span>

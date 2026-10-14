@@ -90,7 +90,10 @@ class IngestService:
                 self._queue.task_done()
 
     # ── API ──
-    def submit(self, data: bytes, filename: str, meta: dict | None = None) -> tuple[dict, bool]:
+    def submit(self, data: bytes, filename: str, meta: dict | None = None, source: str = "",
+               source_version: str = "") -> tuple[dict, bool]:
+        """Queue a PDF. ``source`` names where it came from (e.g. "folder:manuals/a.pdf");
+        uploads through the UI have no source."""
         meta = {k: normalize(v)[:200] for k, v in (meta or {}).items() if v}
         filename = safe_filename(filename)
         if not data:
@@ -102,6 +105,10 @@ class IngestService:
         sha = hashlib.sha256(data).hexdigest()
         existing = self.store.document_by_sha(sha)
         if existing:
+            if source and not existing["source"]:
+                # an uploaded copy now also lives in a source: let the source own it
+                self.store.update_document(existing["id"], source=source, source_version=source_version)
+                existing = self.store.document(existing["id"])
             return existing, True
         doc_id = sha[:16]
         path = self.file_path(doc_id)
@@ -109,7 +116,7 @@ class IngestService:
         tmp = path.with_suffix(".tmp")
         tmp.write_bytes(data)
         os.replace(tmp, path)
-        doc = self.store.add_document(doc_id, sha, filename, len(data), meta)
+        doc = self.store.add_document(doc_id, sha, filename, len(data), meta, source, source_version)
         self._queue.put(doc_id)
         return doc, False
 

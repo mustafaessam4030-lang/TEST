@@ -91,6 +91,14 @@ DOC_FIELDS = ("title", "doc_number", "revision", "revision_date", "equipment", "
 
 
 class Store:
+    def _migrate(self):
+        """Additive, in-place schema upgrades for databases created by older versions."""
+        columns = {r[1] for r in self._conn.execute("PRAGMA table_info(documents)")}
+        for name in ("source", "source_version"):
+            if name not in columns:
+                self._conn.execute("ALTER TABLE documents ADD COLUMN {0} TEXT NOT NULL DEFAULT ''".format(name))
+        self._conn.execute("CREATE INDEX IF NOT EXISTS documents_source ON documents(source)")
+
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
@@ -100,6 +108,7 @@ class Store:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(SCHEMA)
+            self._migrate()
 
     def close(self):
         with self._lock:
@@ -126,14 +135,25 @@ class Store:
         return rows[0] if rows else None
 
     # ── documents ──
-    def add_document(self, doc_id: str, sha256: str, filename: str, size: int, meta: dict) -> dict:
+    def add_document(self, doc_id: str, sha256: str, filename: str, size: int, meta: dict,
+                     source: str = "", source_version: str = "") -> dict:
         now = time.time()
         with self.transaction() as conn:
             conn.execute(
-                "INSERT INTO documents (id, sha256, filename, bytes, status, equipment, doc_type, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
-                (doc_id, sha256, filename, size, meta.get("equipment", ""), meta.get("doc_type", ""), now, now))
+                "INSERT INTO documents (id, sha256, filename, bytes, status, equipment, doc_type, source,"
+                " source_version, created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
+                (doc_id, sha256, filename, size, meta.get("equipment", ""), meta.get("doc_type", ""),
+                 source, source_version, now, now))
         return self.document(doc_id)
+
+    def documents_by_source(self, source: str) -> list[dict]:
+        """Documents that came from one source item, newest first."""
+        return self._all("SELECT * FROM documents WHERE source = ? ORDER BY created_at DESC", (source,))
+
+    def documents_with_source_prefix(self, prefix: str) -> list[dict]:
+        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return self._all("SELECT * FROM documents WHERE source LIKE ? ESCAPE '\\' ORDER BY created_at DESC",
+                         (escaped + "%",))
 
     def document(self, doc_id: str) -> dict | None:
         return self._one("SELECT * FROM documents WHERE id = ?", (doc_id,))

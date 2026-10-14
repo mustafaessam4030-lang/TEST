@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import shutil
 import subprocess
 import tempfile
@@ -32,8 +33,24 @@ class OcrResult:
     confidence: float  # mean word confidence, 0-100
 
 
+WINDOWS_DEFAULTS = (r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe")
+
+
 def tesseract_path() -> str | None:
-    return shutil.which("tesseract")
+    """EKA_TESSERACT_CMD, else tesseract on PATH, else the Windows installer's default folders."""
+    configured = os.environ.get("EKA_TESSERACT_CMD", "").strip().strip('"')
+    if configured:
+        return configured if Path(configured).is_file() else None
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    if os.name == "nt":
+        local = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")
+        for candidate in (*WINDOWS_DEFAULTS, local):
+            if Path(candidate).is_file():
+                return candidate
+    return None
 
 
 def available() -> bool:

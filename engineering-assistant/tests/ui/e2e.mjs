@@ -13,6 +13,7 @@ const BASE = process.env.BASE || "http://127.0.0.1:8765";
 const SLOW = process.env.SLOW || "";
 const FX = process.env.FIXTURES || "/tmp/uifx";
 const OUT = process.env.OUT || "/tmp/eka-shots";
+const INBOX = process.env.INBOX || "";
 fs.mkdirSync(OUT, { recursive: true });
 
 const results = [];
@@ -278,6 +279,17 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   await p.locator(".pop button", { hasText: "Re-index" }).click();
   await p.waitForFunction(() => [...document.querySelectorAll(".doc")].some((d) => d.textContent.includes("CV-90") && d.textContent.includes("Ready")), null, { timeout: 60000 });
   check("re-index returns to Ready", true);
+  if (INBOX) {
+    check("library shows the watched PDF folder", (await p.textContent("#srcLoc")) === INBOX);
+    fs.copyFileSync(`${FX}/FX-9_folder_datasheet.pdf`, `${INBOX}/FX-9_folder_datasheet.pdf`);
+    fs.utimesSync(`${INBOX}/FX-9_folder_datasheet.pdf`, new Date(Date.now() - 60000), new Date(Date.now() - 60000));
+    await p.click("#srcScan");
+    await p.waitForFunction(() => [...document.querySelectorAll(".doc")].some((d) =>
+      d.textContent.includes("PDF folder: FX-9_folder_datasheet.pdf") && d.textContent.includes("Ready")), null, { timeout: 60000 });
+    check("a PDF dropped into the folder is indexed (Check folder now)", true);
+    await p.waitForFunction(() => /1 PDF in the folder · 1 indexed/.test(document.getElementById("srcStat").textContent), null, { timeout: 30000 }).catch(() => {});
+    check("folder status counts it", /1 PDF in the folder · 1 indexed/.test(await p.textContent("#srcStat")), await p.textContent("#srcStat"));
+  }
   await shot(p, "after-desktop-library");
   await p.locator(".doc", { hasText: "corrupted" }).locator('button[aria-label="Document options"]').click();
   await p.locator(".pop button", { hasText: "Delete" }).click();
@@ -292,6 +304,10 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
 
   // large table answer
   await p.click("#navChat");
+  if (INBOX) {
+    await ask(p, "What is the maximum flow of the FX-9?");
+    check("a folder document answers questions", (await p.locator(".msg.bot").last().textContent()).includes("85 L/min"));
+  }
   await ask(p, "What is the wear limit of swing bearing bolt 12 on the ZX-7?");
   const zx = p.locator(".msg.bot").last();
   check("wide spec table answer renders", (await zx.locator(".spec th").count()) >= 6, await zx.locator(".spec").count() + " table(s)");

@@ -18,9 +18,11 @@ trap 'EKA_DATA_DIR="$WORK/real" scripts/eka.sh stop >/dev/null 2>&1 || true;
 
 python3 tests/ui/make_ui_fixtures.py "$WORK/fixtures" >/dev/null
 python3 tests/ui/slow_ollama.py 8799 6 & MOCK_PID=$!
-EKA_DATA_DIR="$WORK/real" EKA_PORT=8765 scripts/eka.sh start
-EKA_DATA_DIR="$WORK/slow" EKA_PORT=8766 EKA_GENERATOR=ollama EKA_OLLAMA_URL=http://127.0.0.1:8799 \
-  EKA_LLM_TIMEOUT_S=30 scripts/eka.sh start
+mkdir -p "$WORK/pdfs"
+EKA_CONFIG=/dev/null EKA_DATA_DIR="$WORK/real" EKA_PORT=8765 EKA_INBOX_DIR="$WORK/pdfs" EKA_INBOX_SETTLE_S=1 \
+  scripts/eka.sh start
+EKA_CONFIG=/dev/null EKA_DATA_DIR="$WORK/slow" EKA_PORT=8766 EKA_INBOX_DIR=off EKA_GENERATOR=ollama \
+  EKA_OLLAMA_URL=http://127.0.0.1:8799 EKA_LLM_TIMEOUT_S=30 scripts/eka.sh start
 for port in 8765 8766; do
   for f in samples/*.pdf; do
     curl -s -o /dev/null -X POST "http://127.0.0.1:$port/api/documents?filename=$(basename "$f")" --data-binary @"$f"
@@ -38,4 +40,4 @@ for i in $(seq 1 120); do
 done
 SCRIPT="$(pwd)/tests/ui/e2e.mjs"
 if [ -n "${PLAYWRIGHT_DIR:-}" ]; then cp "$SCRIPT" "$PLAYWRIGHT_DIR/e2e.mjs"; SCRIPT="$PLAYWRIGHT_DIR/e2e.mjs"; fi
-BASE=http://127.0.0.1:8765 SLOW=http://127.0.0.1:8766 FIXTURES="$WORK/fixtures" OUT="$OUT" node "$SCRIPT"
+BASE=http://127.0.0.1:8765 SLOW=http://127.0.0.1:8766 FIXTURES="$WORK/fixtures" INBOX="$WORK/pdfs" OUT="$OUT" node "$SCRIPT"

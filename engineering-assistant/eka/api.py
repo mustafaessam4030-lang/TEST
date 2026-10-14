@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 PUBLIC_DOC_FIELDS = ("id", "filename", "title", "doc_number", "revision", "revision_date", "equipment",
                      "doc_type", "page_count", "bytes", "status", "error", "progress_done", "progress_total",
-                     "stage", "superseded_by", "created_at", "updated_at")
+                     "stage", "superseded_by", "source", "created_at", "updated_at")
 
 
 class ChatRequest(BaseModel):
@@ -236,6 +236,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.get("/api/sources")
+    def sources(request: Request):
+        return {"sources": [sync.snapshot() for sync in assistant(request).sources]}
+
+    @app.post("/api/sources/scan")
+    async def scan_sources(request: Request):
+        """Check every source now (the PDF folder) instead of waiting for the next interval."""
+        a = assistant(request)
+        return {"sources": [await run_in_threadpool(sync.scan) for sync in a.sources]}
 
     @app.get("/api/suggestions")
     async def suggestions(request: Request, limit: int = 4):

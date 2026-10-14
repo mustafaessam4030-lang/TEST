@@ -11,13 +11,14 @@ from .embeddings import make_embedder
 from .generation import OllamaGenerator
 from .ingest import IngestService
 from .retrieval import HybridIndex, Retriever
+from .sources import FolderSource, SourceSync
 from .store import Store
 
 log = logging.getLogger(__name__)
 
 
 class Assistant:
-    def __init__(self, settings: Settings, start_worker: bool = True):
+    def __init__(self, settings: Settings, start_worker: bool = True, start_sources: bool = True):
         settings.ensure_dirs()
         self.settings = settings
         self.store = Store(settings.db_path)
@@ -38,8 +39,16 @@ class Assistant:
         self.conversations = Conversations(self.store)
         self.engine = AnswerEngine(settings, self.store, self.retriever, self.conversations, self.generator)
         self.ingest = IngestService(settings, self.store, self.index, self.embedder)
+        self.sources: list[SourceSync] = []
+        if settings.inbox_path is not None:
+            settings.inbox_path.mkdir(parents=True, exist_ok=True)
+            self.sources.append(SourceSync(FolderSource(settings.inbox_path, settings.inbox_settle_s), self.ingest,
+                                           settings.inbox_scan_s, settings.inbox_remove_deleted))
         if start_worker:
             self.ingest.start()
+            if start_sources:
+                for sync in self.sources:
+                    sync.start()
 
     def health(self) -> dict:
         docs = self.store.documents()
@@ -52,11 +61,14 @@ class Assistant:
                   "embedder": self.embedder.name,
                   "generator": self.generator.name if self.generator else "extractive",
                   "ocr": "tesseract" if ocr.available() and self.settings.ocr_enabled else "unavailable"}
+        status["sources"] = [sync.snapshot() for sync in self.sources]
         if self.generator:
             ok, detail = self.generator.health()
             status["generator_ready"], status["generator_detail"] = ok, detail
         return status
 
     def close(self):
+        for sync in self.sources:
+            sync.stop()
         self.ingest.stop()
         self.store.close()

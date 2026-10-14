@@ -22,10 +22,35 @@ engineering-assistant/
 │   └── static/           web UI in the ATLAS visual family (vanilla JS, no build step)
 ├── samples/              synthetic, non-confidential test PDFs (+ scripts/make_samples.py)
 ├── eval/                 evaluation questions (tuning set + held-out set)
-├── scripts/              make_samples.py, run_eval.py, eka.sh
-├── tests/                90 Python tests + tests/ui (100-check browser end-to-end suite)
+├── scripts/              make_samples.py, run_eval.py, eka.sh, build_release.py
+├── release/              launchers and config.env for the distributable zip (see START_HERE.md)
+├── tests/                Python tests + tests/ui (104-check browser end-to-end suite)
 └── docs/                 ARCHITECTURE.md, EVALUATION.md, UI.md, screenshots/
 ```
+
+## Packaged release (Windows, Linux, macOS)
+
+The distributable zip has double-click launchers (`setup.bat`, `start.bat`, `stop.bat`), a `config.env`, a `pdfs/` folder that is indexed automatically, and the bge-small search model, so nothing is downloaded at run time. Instructions for end users: [START_HERE.md](START_HERE.md). Build it with:
+
+```sh
+python scripts/build_release.py --model-cache data/models \
+    --wheels win_amd64:3.11,3.12,3.13          # optional: offline packages zip for Windows
+```
+
+Output goes to `dist/`. `python -m eka.check` (or `check.bat`) checks an installation.
+
+## PDF folder (phase 1) and SharePoint (phase 2)
+
+Every PDF in the folder `EKA_INBOX_DIR` (default `pdfs/`, sub-folders included) is indexed automatically. The folder is checked every `EKA_INBOX_SCAN_S` seconds, or at once with **Check folder now** in the library.
+
+- New files are indexed.
+- A replaced file is re-indexed, and its old version is removed.
+- Unchanged files are not read again.
+- Files still being copied are left until they stop changing.
+- Deleted files are kept unless `EKA_INBOX_REMOVE_DELETED=1`.
+- Non-PDFs, videos included, are listed as skipped.
+
+The folder is only read, never written. Phase 2 adds a SharePoint list as a second source through the same interface (`eka/sources/`); its design and the information it needs are in [docs/PHASE2_SHAREPOINT.md](docs/PHASE2_SHAREPOINT.md). It is not implemented yet.
 
 ## Quick start
 
@@ -59,7 +84,7 @@ Interrupted ingestion resumes automatically on the next start. Documents, the in
 
 ## Configuration
 
-Everything is set with environment variables (see `.env.example`), and every variable has a safe default.
+Everything is set with environment variables (see `.env.example`), and every variable has a safe default. `python -m eka` also reads `config.env` in the current folder (or the file named by `EKA_CONFIG`). Real environment variables take precedence over it, and relative folder paths in it are relative to the file.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -67,9 +92,14 @@ Everything is set with environment variables (see `.env.example`), and every var
 | `EKA_HOST` / `EKA_PORT` | `127.0.0.1` / `8765` | Bind address. Localhost only by default |
 | `EKA_API_TOKEN` | *(empty)* | When set, every `/api` call needs `Authorization: Bearer <token>`; the UI prompts for it |
 | `EKA_MAX_UPLOAD_MB` | `100` | Upload size limit |
+| `EKA_OPEN_BROWSER` | `0` | Open the browser on start (`1` in the release `config.env`) |
+| `EKA_INBOX_DIR` | `pdfs` | Folder whose PDFs are indexed automatically; `off` disables it |
+| `EKA_INBOX_SCAN_S` / `EKA_INBOX_SETTLE_S` | `15` / `5` | Seconds between folder checks / a file must be unchanged this long before it is read |
+| `EKA_INBOX_REMOVE_DELETED` | `0` | `1`: remove a document when its file is deleted from the folder |
+| `EKA_TESSERACT_CMD` | *(auto)* | Path to tesseract; otherwise PATH and the Windows default install folders are searched |
 | `EKA_EMBEDDER` | `auto` | `auto`: semantic bge-small **if it is already on disk** (never downloads), otherwise keyword-only. `fastembed`: bge-small, downloading it once if needed (65 MB). `hashing`: keyword-only. `ollama`: an Ollama embedding model |
 | `EKA_EMBED_MODEL` | per embedder | e.g. `BAAI/bge-small-en-v1.5`, `nomic-embed-text` |
-| `EKA_MODEL_DIR` | `data/models` | Where embedding models are cached / looked for |
+| `EKA_MODEL_DIR` | `data/models` | Where embedding models are cached / looked for (`models` in the release) |
 | `EKA_GENERATOR` | `extractive` | `extractive` (no LLM) or `ollama` |
 | `EKA_LLM_MODEL` | `qwen2.5:7b-instruct` | Ollama model tag used when `EKA_GENERATOR=ollama` |
 | `EKA_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama server |
@@ -191,12 +221,12 @@ The chat response is the structured answer object: `status`, `message`, `claims`
 
 ```sh
 pip install -r requirements-dev.txt
-python -m pytest                                       # 90 tests, ~16 s
+python -m pytest                                       # 101 tests (2 skipped without the model), ~25 s
 EKA_TEST_MODEL_DIR=data/models python -m pytest        # also runs the real-embedding tests (otherwise skipped)
 python scripts/run_eval.py                             # tuning set, keyword-only
 python scripts/run_eval.py --questions eval/heldout.json --embedder fastembed
 
-# Browser end-to-end (100 checks; starts its own servers on :8765, :8766, :8799)
+# Browser end-to-end (104 checks; starts its own servers on :8765, :8766, :8799)
 npm i playwright && npx playwright install chromium    # once
 PLAYWRIGHT_DIR=$PWD tests/ui/run.sh /tmp/eka-ui        # screenshots + e2e-results.json in /tmp/eka-ui
 ```

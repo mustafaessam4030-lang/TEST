@@ -1,5 +1,10 @@
+import os
 import sys
 from pathlib import Path
+
+# Tests never read a local config.env and never watch the project's pdfs/ folder.
+os.environ["EKA_CONFIG"] = os.devnull
+os.environ["EKA_INBOX_DIR"] = "off"
 
 import pytest
 
