@@ -61,6 +61,8 @@ HUB, PENDING = {}, {}
 A.click_manage_in_view = lambda page, view, bol, table_page: 1
 A.select_shipment_info_tab = lambda page, view, field: True
 A.fill_date_field = lambda page, field, value: PENDING.__setitem__(field, value)
+# The stand-in Hub's current value, read before a write (the existing-ATA check).
+A.read_current_date_field = lambda page, field: HUB.get(field, "")
 A.save_manage_page = lambda page: HUB.update(PENDING)
 A.ensure_filtered_page = lambda *a, **k: None
 A.verify_saved_date = lambda page, shipment, view, field, expected: (
