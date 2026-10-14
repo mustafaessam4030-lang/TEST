@@ -6007,6 +6007,53 @@ def _ocean_dates(text, labels):
     return found
 
 
+MSC_DATE_LINE = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+
+
+def _value_after(lines, label):
+    """The line right after an exact label line (MSC prints label, then value)."""
+    for i, line in enumerate(lines):
+        if line == label and i + 1 < len(lines):
+            return lines[i + 1]
+    return None
+
+
+def read_msc_rows(text, provider="MSC"):
+    """
+    MSC's result, read row by row as MSC prints it: one value per line, each
+    event as date / location / description / vessel / facility.
+      ATA  the date of an "Import Discharged from Vessel" row AT the page's
+           Port of Discharge (the container came off the ship there)
+      ETA  "POD ETA" (MSC's estimated arrival at the port of discharge)
+    Transhipment discharges, loadings and gate moves are never the arrival.
+    Containers discharged at the port on DIFFERENT dates: review.
+    -> result dict, or None when the page shows neither.
+    """
+    lines = [l.strip() for l in str(text or "").replace("\r", "").split("\n") if l.strip()]
+    pod = _value_after(lines, "Port of Discharge")
+    pod_city = (pod or "").split(",")[0].strip().lower()
+    eta_raw = _value_after(lines, "POD ETA")
+    eta = eta_raw if eta_raw and MSC_DATE_LINE.match(eta_raw) else None
+    discharged = []
+    for i, line in enumerate(lines):
+        if MSC_DATE_LINE.match(line) and i + 2 < len(lines) and \
+                lines[i + 2].lower().startswith("import discharged from vessel"):
+            place = lines[i + 1]
+            if pod_city and place.split(",")[0].strip().lower() == pod_city:
+                discharged.append(line)
+    if len(set(discharged)) > 1:
+        return {"provider": provider, "tracking_status": "Needs review", "eta": None,
+                "ata": None, "review": ["MSC shows containers discharged at {0} on different "
+                                        "dates ({1})".format(pod, ", ".join(sorted(set(discharged))))]}
+    ata = discharged[0] if discharged else None
+    if not ata and not eta:
+        return None
+    return {"provider": provider, "tracking_status": "Arrived" if ata else "Estimated arrival",
+            "eta": eta, "ata": ata,
+            "eta_source": "POD ETA" if eta else None,
+            "ata_source": "Import Discharged from Vessel at {0}".format(pod) if ata else None}
+
+
 def _read_ocean_page(page, provider):
     """
     Read an ocean carrier's result, or None.
@@ -6021,6 +6068,11 @@ def _read_ocean_page(page, provider):
     if _matches(text, OCEAN_NO_RESULT):
         return {"provider": provider, "tracking_status": "No result",
                 "eta": None, "ata": None, "no_result": True}
+    if provider == "MSC" and re.search(r"^\s*Port of Discharge\s*$", text, re.M):
+        # MSC's own layout: read by rows. The label-and-window reader took the
+        # NEXT row's date after "Discharged" (false ATAs from transhipment
+        # discharges) or missed the date altogether.
+        return read_msc_rows(text, provider)
 
     etas = _ocean_dates(text, OCEAN_ETA_LABELS)
     atas = _ocean_dates(text, OCEAN_ATA_LABELS)

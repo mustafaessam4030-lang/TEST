@@ -1,0 +1,131 @@
+Search
+Tracking
+EN
+myMSC
+Track a shipment
+Tracking
+Container/Bill of Lading Number
+Booking Number
+BILL OF LADING: XXXU0000000
+Bill of Lading:
+XXXU0000000
+(1 Container )
+Shipped From
+Tianjinxingang, CN
+Port of Load
+Tianjinxingang, CN
+Port of Discharge
+Mombasa, KE
+Shipped To
+Mombasa, KE
+Transhipment
+Ningbo, CN
+Price Calculation Date*
+14/09/2026
+
+* Price calculation date is indicative. Please contact your local MSC office to verify this information.
+
+CONTAINERS
+Container
+XXXU0000000
+Type
+40' HIGH CUBE
+Latest move
+NINGBO, CN
+POD ETA
+29/10/2026
+Date
+Location
+Description
+Empty/Laden/Vessel/Voyage
+Equipment handling facility name
+29/10/2026
+Mombasa, KE
+Estimated Time of Arrival
+MSC LOS ANGELES HI639A
+Kilindini Container Terminal
+Show all*
+06/10/2026
+Ningbo, CN
+Full Transshipment Loaded
+MSC LOS ANGELES HI639A
+Gangji Terminal (Phase Iv)
+04/10/2026
+Ningbo, CN
+Full Transshipment Discharged
+MSC CAMILLE FY638A
+Gangji Terminal (Phase Iv)
+21/09/2026
+Tianjinxingang, CN
+Export Loaded on Vessel
+MSC CAMILLE FY638A
+Tianjin Port Second Container Terminal Co., Ltd
+16/09/2026
+Tianjinxingang, CN
+Export received at CY
+LADEN
+Tianjin Port Second Container Terminal Co., Ltd
+06/09/2026
+Tianjinxingang, CN
+Empty to Shipper
+EMPTY
+Msc (Tianjin) Container Depot Company Limited
+
+Tracking results provided by MSC on 12.10.2026 at 15:38 Central Europe Standard Time
+
+*Show all Intermediate Port Calls.
+If you have any questions regarding the results of your shipment tracking results, please contact your local MSC team at the number below. By using the shipment tracking service you agree to the terms of use of msc.com.
+
+Subscribe to Track & Trace Notifications
+
+Get cargo updates in your inbox about the status of your cargo. Just search for your shipment and click "Notify me" below the results.
+
+SUBSCRIBE NOW!
+Solutions to Simplify your
+Shipping Experience
+
+With an eBusiness area build entirely around your needs and dedicated Digital Business Solutions, we are always by your side, to make shipping easier than ever!
+
+Your eBusiness Area
+
+Read more
+MSC Integration Suite
+
+Read more
+
+COUNTRY-LOCATION / LOCAL OFFICE
+
++49 40302950
+x@example.invalid
+Office details
+
+DOING BUSINESS TOGETHER
+
+Solutions 
+Local information 
+E-Business 
+Sustainability 
+myMSC
+
+GET TO KNOW US
+
+MSC Group 
+Newsroom 
+Events 
+Blog 
+Careers 
+Contact us
+Headquarters: 
++41 227038888
+x@example.invalid
+Chemin Rieu 12, 1208 Geneva
+Switzerland
+Cookie Settings 
+Data Privacy 
+Personal Data Request 
+Terms of Use 
+Carrier's Terms & Conditions 
+EU Commitments 
+Code of Conduct 
+Certifications 
+Speak Up Line

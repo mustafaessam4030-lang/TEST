@@ -1,0 +1,60 @@
+Tracking
+BILL OF LADING: MEDU0000001
+Bill of Lading:
+MEDU0000001
+(1 Container )
+Shipped From
+Rotterdam, NL
+Port of Load
+Rotterdam, NL
+Port of Discharge
+Tema, GH
+Shipped To
+Tema, GH
+Transhipment
+Antwerp, BE
+Price Calculation Date*
+14/09/2026
+CONTAINERS
+Container
+MSMU0000001
+Type
+20' DRY VAN
+Latest move
+TEMA, GH
+Date
+Location
+Description
+Empty/Laden/Vessel/Voyage
+Equipment handling facility name
+30/09/2026
+Tema, GH
+Import Discharged from Vessel
+MSC FIAMMETTA NY637A
+Meridian Port Service Limited
+13/09/2026
+Antwerp, BE
+Export Loaded on Vessel
+MSC FIAMMETTA NY637A
+Mpet K1742 Deurganck Terminal
+11/09/2026
+Antwerp, BE
+Export received at CY
+LADEN
+Mpet K1742 Deurganck Terminal
+10/09/2026
+Rotterdam, NL
+Export Loaded on Barge
+LADEN
+Barge Center Waalhaven Bv
+08/09/2026
+Rotterdam, NL
+Export received at CY
+LADEN
+Barge Center Waalhaven Bv
+08/09/2026
+Rotterdam, NL
+Empty to Shipper
+EMPTY
+Medrepair Waalhaven Terminal
+Tracking results provided by MSC on 14.10.2026

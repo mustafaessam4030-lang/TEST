@@ -388,5 +388,34 @@ for pseudo, m in false_ata:
           "written".format(pseudo, d["eta"], m["old_ata"]),
           d["eta"] and not d["ata"] and got == "review" and WR == [], (d["eta"], got, WR))
 
+# ------------------------------------------------- MSC rows (14 Oct)
+section("10. MSC, read row by row")
+M = importlib.reload(A)
+M.write_log = lambda *a, **k: None
+arrived = (FIX / "msc_arrived_tema.txt").read_text(encoding="utf-8")
+r = M.read_msc_rows(arrived)
+check("MSC arrived at Tema: ATA 30/09 from 'Import Discharged from Vessel' AT the port of "
+      "discharge (the date was missed by the old reader)",
+      r and r["ata"] == "30/09/2026" and r["eta"] is None and "Tema" in r["ata_source"], r)
+g = E.check_before_write({"bol_awb": "MEDU0000001"}, r)
+check("...passes the shared guard as an actual arrival", g[:2] == (None, "30/09/2026") and not g[2], g)
+tr = (FIX / "msc_transhipment_in_transit.txt").read_text(encoding="utf-8")
+r = M.read_msc_rows(tr)
+check("MSC with a TRANSHIPMENT discharge (Ningbo) and POD ETA: ETA only, no false ATA "
+      "(the old reader wrote ATA 21/09 here)", r and r["eta"] == "29/10/2026" and r["ata"] is None, r)
+two = arrived.replace("Meridian Port Service Limited\n13/09/2026",
+                      "Meridian Port Service Limited\n02/10/2026\nTema, GH\nImport Discharged from "
+                      "Vessel\nMSC FIAMMETTA NY637A\nMeridian Port Service Limited\n13/09/2026")
+r = M.read_msc_rows(two)
+check("Containers discharged at the port on different dates -> review",
+      r and r.get("review") and not r["ata"], r)
+elsewhere = arrived.replace("30/09/2026\nTema, GH\nImport", "30/09/2026\nAntwerp, BE\nImport")
+check("An import discharge NOT at the port of discharge is not the ATA",
+      M.read_msc_rows(elsewhere) is None)
+r = M._read_ocean_page(type("P", (), {"t": arrived})(), "MSC") if False else None
+M._page_text = lambda page: page
+check("The ocean reader routes MSC's layout to the row reader",
+      M._read_ocean_page(arrived + "x" * 50, "MSC")["ata"] == "30/09/2026")
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
