@@ -751,13 +751,19 @@ for ref, eta, ata, check_ in (
     dhl.shipment_finished(ref, "SUCCESS", "")
 dhl.shipment_started(dict(bol_awb="K299999", carrier="DHL Global Forwarding", provider="DHL"))
 dhl.shipment_finished("K299999", "NEEDS_REVIEW",
-                      "ATLAS: the rules picked ATA 12/10/2026 but ATLAS reads 11/10/2026")
+                      "NEEDS REVIEW: ATLAS: the rules picked ATA 12/10/2026 but ATLAS reads "
+                      "11/10/2026")
 DS = dhl.snapshot()
 r = assistant._answer_rules("Did ATLAS check the DHL dates?", DS, {"_raw": True})
 check("'Did ATLAS check the DHL dates?': agreed / noted / sent to a person, from the records",
       r.get("intent") == "atlas_checks" and "1 agreed, 1 agreed with a note, 1 sent to a person"
       in r["answer"] and "K299999" in r["answer"] and "no destination" in r["answer"],
       r["answer"][:300])
+for q, want in (("What's the correct ETA for K316521?", "eta"),
+                ("why was the wrong eta written?", "why"),
+                ("re-run the dhl check for K316521", "reprocess")):
+    check("'{0}' is not taken over by the ATLAS-check question".format(q),
+          assistant.detect_intent(q) == want, assistant.detect_intent(q))
 r = assistant._answer_rules("tell me about K316521", DS, {"_raw": True})
 check("A DHL shipment's answer quotes the page line ATLAS checked",
       "ATLAS checked the page and agrees" in r["answer"] and "Carrier: Arrived" in r["answer"],

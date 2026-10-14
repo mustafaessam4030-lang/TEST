@@ -1271,12 +1271,13 @@ class ControlTowerState:
             record["provider_ata_source"] = result.get("ata_source")
             # ATLAS's second reading of the page (DHL), with the line it quoted.
             check = result.get("atlas_check")
+            record.pop("atlas_check", None)
             if isinstance(check, dict):
+                evidence = check.get("evidence") if isinstance(check.get("evidence"), dict) else {}
                 record["atlas_check"] = {
                     "verdict": check.get("verdict"),
                     "notes": [str(x)[:240] for x in (check.get("notes") or [])][:4],
-                    "evidence": {k: str(v)[:200] for k, v in
-                                 (check.get("evidence") or {}).items() if v}}
+                    "evidence": {k: str(v)[:200] for k, v in evidence.items() if v}}
             record["updated"] = _stamp()
             self._mark(
                 "ok",

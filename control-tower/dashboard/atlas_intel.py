@@ -128,6 +128,21 @@ def _carrier_line(record):
     return bits
 
 
+def atlas_check_line(record):
+    """ATLAS's check of the carrier's dates for this shipment, in words."""
+    check = record.get("atlas_check") or {}
+    quoted = "; ".join("{0} from \u201c{1}\u201d".format(k.upper(), v)
+                       for k, v in sorted((check.get("evidence") or {}).items()))
+    if check.get("verdict") == "AGREES":
+        text = "ATLAS checked the page and agrees"
+    elif check.get("verdict") == "AGREES_WITH_NOTES":
+        text = "ATLAS checked the page and agrees, with a note: " + \
+            "; ".join(check.get("notes") or [])
+    else:
+        text = "ATLAS's check: {0}".format(check.get("verdict"))
+    return text + (" (" + quoted + ")." if quoted else ".")
+
+
 def shipment_picture(record):
     """What the run knows about one shipment, said the way a person says it."""
     ref, carrier = record.get("reference"), record.get("carrier") or "the carrier"
@@ -137,8 +152,7 @@ def shipment_picture(record):
     if said:
         parts.append("When the run read it, " + ", ".join(said) + ".")
     if (record.get("atlas_check") or {}).get("verdict"):
-        from dashboard.assistant import _atlas_check_line
-        parts.append(_atlas_check_line(record))
+        parts.append(atlas_check_line(record))
     if record.get("internal_eta"):
         parts.append("The Hub had {0} before the run.".format(record["internal_eta"]))
     verified = record.get("verification") or {}

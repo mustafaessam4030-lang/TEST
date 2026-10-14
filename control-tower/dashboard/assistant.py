@@ -466,9 +466,8 @@ INTENTS = [
                         "common failures"]),
     # ATLAS's own check of the DHL dates the run picked.
     ("atlas_checks",   ["atlas check", "atlas checked", "did atlas check", "atlas flag",
-                        "atlas agree", "check the dhl dates", "dhl dates correct",
-                        "correct ata", "correct eta", "right ata", "right eta",
-                        "wrong ata", "wrong eta", "dhl check"]),
+                        "atlas agree", "check the dhl dates", "checked the dhl dates",
+                        "dhl dates correct", "are the dhl dates"]),
     ("verification",   ["was the ata verified", "was it verified", "verification result",
                         "did the write persist", "was the eta verified",
                         "read back", "read-back"]),
@@ -2015,22 +2014,14 @@ def _facts(record):
 
 
 def _atlas_check_line(record):
-    """ATLAS's check of the carrier's dates for this shipment, in words."""
-    check = record.get("atlas_check") or {}
-    quoted = "; ".join("{0} from “{1}”".format(k.upper(), v)
-                       for k, v in sorted((check.get("evidence") or {}).items()))
-    if check.get("verdict") == "AGREES":
-        text = "ATLAS checked the page and agrees"
-    else:
-        text = "ATLAS checked the page and agrees, with a note: " + \
-            "; ".join(check.get("notes") or [])
-    return text + (" (" + quoted + ")." if quoted else ".")
+    return atlas_intel.atlas_check_line(record)
 
 
 def _answer_atlas_checks(data):
     """Every DHL date ATLAS checked this run: agreed, noted, or sent to a person."""
     checked = [r for r in data.shipments if (r.get("atlas_check") or {}).get("verdict")]
-    blocked = [r for r in data.shipments if "ATLAS:" in str(r.get("error") or "")]
+    blocked = [r for r in data.shipments if r.get("provider") == "DHL" and
+               "NEEDS REVIEW: ATLAS:" in str(r.get("error") or "")]
     if not checked and not blocked:
         return "ATLAS has not checked any DHL dates in this run yet."
     agree = [r for r in checked if r["atlas_check"]["verdict"] == "AGREES"]
