@@ -277,12 +277,21 @@ def self_test():
     line(True if (cores or 0) >= 4 else None, "CPU cores: {0}".format(cores),
          "" if (cores or 0) >= 4 else "answers will be slow with fewer than 4")
     if total is not None:
-        line(True if free >= 4.5 else None, "Memory: {0:.1f} GB total, {1:.1f} GB free".format(
-            total, free), "" if free >= 4.5 else "the model needs about 4 GB free")
+        # The stronger model needs about 19 GB while loaded, the 4B about 4 GB.
+        chosen, _vision = choose_model(os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA)
+        need = 20 if chosen in STRONG_MODELS else 4.5
+        line(True if free >= need else None, "Memory: {0:.1f} GB total, {1:.1f} GB free".format(
+            total, free), "" if free >= need else "{0} needs about {1:.0f} GB free (already "
+            "loaded in Ollama counts as used)".format(chosen, need))
     line(True if disk >= 5 else None, "Free disk here: {0:.0f} GB".format(disk))
 
     m_ok, m_detail, s_ok, s_detail = _probe(warm=False)
     line(m_ok, "Ollama and the model", m_detail)
+    if os.environ.get("ATLAS_LLM_VISION_MODEL"):
+        line(True, "Pictures go to", os.environ["ATLAS_LLM_VISION_MODEL"])
+    elif m_ok and (os.environ.get("ATLAS_LLM_MODEL") or "") in STRONG_MODELS:
+        line(None, "Pictures", "{0} cannot read images: run  ollama pull {1}".format(
+            os.environ["ATLAS_LLM_MODEL"], DEFAULT_MODEL))
     line(s_ok if s_ok else None, "Web search (optional)", s_detail)
     if not m_ok:
         print("\nRESULT: ATLAS AI is NOT ready — fix the FAIL line above, then run this again.")

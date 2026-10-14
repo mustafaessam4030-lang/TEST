@@ -464,6 +464,11 @@ INTENTS = [
     ("failure_cats",   ["failure categories", "what goes wrong", "why do writes fail",
                         "what kind of failures", "failure breakdown",
                         "common failures"]),
+    # ATLAS's own check of the DHL dates the run picked.
+    ("atlas_checks",   ["atlas check", "atlas checked", "did atlas check", "atlas flag",
+                        "atlas agree", "check the dhl dates", "dhl dates correct",
+                        "correct ata", "correct eta", "right ata", "right eta",
+                        "wrong ata", "wrong eta", "dhl check"]),
     ("verification",   ["was the ata verified", "was it verified", "verification result",
                         "did the write persist", "was the eta verified",
                         "read back", "read-back"]),
@@ -1999,11 +2004,53 @@ def _facts(record):
         if _has(record.get("provider_ata")):
             got.append("ATA {0}".format(record["provider_ata"]))
         lines.append("The carrier returned " + ", ".join(got) + ".")
+    check = record.get("atlas_check") or {}
+    if check.get("verdict"):
+        lines.append(_atlas_check_line(record))
     if written:
         lines.append("Written to the Hub: " + "; ".join(written) + ".")
     elif record.get("state") != "partial":
         lines.append("Nothing was written to the Hub.")
     return lines
+
+
+def _atlas_check_line(record):
+    """ATLAS's check of the carrier's dates for this shipment, in words."""
+    check = record.get("atlas_check") or {}
+    quoted = "; ".join("{0} from “{1}”".format(k.upper(), v)
+                       for k, v in sorted((check.get("evidence") or {}).items()))
+    if check.get("verdict") == "AGREES":
+        text = "ATLAS checked the page and agrees"
+    else:
+        text = "ATLAS checked the page and agrees, with a note: " + \
+            "; ".join(check.get("notes") or [])
+    return text + (" (" + quoted + ")." if quoted else ".")
+
+
+def _answer_atlas_checks(data):
+    """Every DHL date ATLAS checked this run: agreed, noted, or sent to a person."""
+    checked = [r for r in data.shipments if (r.get("atlas_check") or {}).get("verdict")]
+    blocked = [r for r in data.shipments if "ATLAS:" in str(r.get("error") or "")]
+    if not checked and not blocked:
+        return "ATLAS has not checked any DHL dates in this run yet."
+    agree = [r for r in checked if r["atlas_check"]["verdict"] == "AGREES"]
+    noted = [r for r in checked if r["atlas_check"]["verdict"] == "AGREES_WITH_NOTES"]
+    lines = ["**ATLAS check of the DHL dates** — {0} agreed, {1} agreed with a note, {2} "
+             "sent to a person.".format(len(agree), len(noted), len(blocked))]
+    if blocked:
+        lines += ["", "**Sent to a person (nothing written)**"]
+        lines += ["• {0} — {1}".format(r.get("reference"), r.get("error")) for r in blocked[:10]]
+    if noted:
+        lines += ["", "**Written, worth a look**"]
+        lines += ["• {0} — {1}".format(r.get("reference"), "; ".join(
+            r["atlas_check"].get("notes") or [])) for r in noted[:10]]
+    if agree:
+        lines += ["", "**Agreed** — " + ", ".join(
+            "{0} ({1})".format(r.get("reference"), " / ".join(
+                x for x in (("ETA " + r["provider_eta"]) if _has(r.get("provider_eta")) else "",
+                            ("ATA " + r["provider_ata"]) if _has(r.get("provider_ata")) else "")
+                if x)) for r in agree[:15])]
+    return "\n".join(lines)
 
 
 def recovery_for(data, reference=None, provider=None):
@@ -3517,6 +3564,7 @@ def _answer_core(question, state, context=None):
             "system": lambda: _answer_system(data, question),
             "latest_event": lambda: _answer_latest_event(data),
             "logs": lambda: _answer_logs(data),
+            "atlas_checks": lambda: _answer_atlas_checks(data),
             # Telemetry-backed. Each returns a counted answer or an explicit
             # "there is nothing measured to answer that from".
             "carrier_timing": lambda: _from_telemetry(

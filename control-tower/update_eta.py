@@ -4221,7 +4221,23 @@ def extract_event_log_result(page):
     else:
         shipment_state = "Estimated Delivery only"
 
+    # ATLAS checks the pick before it can reach the Hub (operator's request,
+    # 14 Oct): it re-reads the same timeline on its own and must find the same
+    # dates, each quoted from a line on the page. A disagreement goes to a
+    # person; its other findings are notes, shown in the chat.
+    atlas = atlas_check_dhl(timeline_text, decision)
+    write_log("ATLAS check (DHL): {0}{1}".format(
+        atlas["verdict"], "; " + "; ".join(atlas["reasons"] + atlas["notes"])
+        if atlas["reasons"] or atlas["notes"] else ""))
+    if atlas["verdict"] == "BLOCK":
+        try:
+            save_page_text(page, _dhl_tracking_code(timeline_text) or "dhl", "dhl_atlas_review")
+        except Exception as error:
+            note_suppressed("saving the DHL page for review", error)
+        raise NeedsReview(["ATLAS: " + r for r in atlas["reasons"]])
+
     return {
+        "atlas_check": atlas,
         "provider": "DHL",
         "tracking_status": shipment_state,
         "event_log_eta": latest_eta,
@@ -4237,6 +4253,55 @@ def extract_event_log_result(page):
         "eta_source": decision["eta_event"]["description"] if decision["eta_event"] else None,
         "ata_source": decision["ata_event"]["description"] if decision["ata_event"] else None,
     }
+
+
+def atlas_check_dhl(timeline_text, decision):
+    """
+    ATLAS's second reading of a DHL timeline (intelligence/eta_diagnostic),
+    beside the rules' pick (`decision` from arrival_events.decide).
+    -> {"verdict": AGREES | AGREES_WITH_NOTES | BLOCK, "reasons": [...],
+        "notes": [...], "evidence": {"eta": line, "ata": line}}
+    BLOCK when ATLAS finds a different date, cannot quote the page line a
+    date came from, or cannot check the page at all (fail closed). Notes
+    (a passed estimate, no destination named, a landing far from DHL's own
+    estimate) never block: they are shown to the operator.
+    """
+    out = {"verdict": "BLOCK", "reasons": [], "notes": [], "evidence": {}}
+    try:
+        from intelligence import eta_diagnostic as D
+        diag = D.diagnose(timeline_text, _dhl_tracking_code(timeline_text), "DHL")
+    except Exception as error:
+        out["reasons"].append("ATLAS could not check this page ({0})".format(
+            type(error).__name__))
+        return out
+    base = diag.get("baseline") or {}
+    for field in ("eta", "ata"):
+        picked, seen = decision.get(field), base.get(field)
+        cand = diag.get(field + "_candidate") or {}
+        if picked and seen and picked != seen:
+            out["reasons"].append("the rules picked {0} {1} but ATLAS reads {2}".format(
+                field.upper(), picked, seen))
+        elif picked and not seen:
+            source = (decision.get(field + "_event") or {}).get("code") or ""
+            if source == "DHL:FIELD":
+                out["notes"].append("{0} {1} comes from DHL's labelled field, not a timeline "
+                                    "row".format(field.upper(), picked))
+            else:
+                out["reasons"].append("ATLAS finds no {0} on the timeline, the rules picked "
+                                      "{1}".format(field.upper(), picked))
+        elif picked:
+            if not cand.get("evidence"):
+                out["reasons"].append("ATLAS cannot quote the page line for {0} {1}".format(
+                    field.upper(), picked))
+            else:
+                out["evidence"][field] = cand["evidence"]
+    for c in diag.get("conflicts") or []:
+        if c not in (base.get("review") or []):
+            out["notes"].append(c)
+    out["notes"] += list(diag.get("missing") or []) + list(diag.get("uncertainty") or [])
+    if not out["reasons"]:
+        out["verdict"] = "AGREES_WITH_NOTES" if out["notes"] else "AGREES"
+    return out
 
 
 def _dhl_tracking_code(text):

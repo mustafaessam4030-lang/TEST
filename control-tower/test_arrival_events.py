@@ -4,6 +4,7 @@ shipments of the 12 October 2026 bug - all from sanitized saved pages, with
 no live carrier request and no Hub.
 """
 import json
+from collections import Counter
 import os
 import sys
 from datetime import date
@@ -422,6 +423,41 @@ for pseudo, m in false_ata:
     check("{0}: DHL says not arrived (ETA {1}); Hub holds false ATA {2} -> review, no ETA "
           "written".format(pseudo, d["eta"], m["old_ata"]),
           d["eta"] and not d["ata"] and got == "review" and WR == [], (d["eta"], got, WR))
+
+# ------------------------------------------- ATLAS checks every DHL pick
+section("10. ATLAS checks each DHL pick before the Hub (second reading)")
+F = importlib.reload(A)
+F.write_log = lambda *a, **k: None
+verdicts = Counter()
+for pseudo, m in sorted(manifest.items()):
+    text = (FIX / "dhl_oct12" / (pseudo + ".txt")).read_text(encoding="utf-8")
+    events, _p, _d = E.dhl_events(text, pseudo)
+    d = E.decide(events)
+    if d["review"] or not (d["eta"] or d["ata"]):
+        continue
+    verdicts[F.atlas_check_dhl(text, d)["verdict"]] += 1
+check("All 42 real DHL pages of 12 Oct: ATLAS agrees with the pick, none blocked",
+      verdicts.get("BLOCK", 0) == 0 and sum(verdicts.values()) == 42, verdicts)
+text = (FIX / "dhl_oct12" / "OCT12-03.txt").read_text(encoding="utf-8")
+events, _p, _d = E.dhl_events(text, "OCT12-03")
+d = E.decide(events)
+r = F.atlas_check_dhl(text, d)
+check("ATLAS quotes the page line each date came from",
+      r["verdict"].startswith("AGREES") and all(r["evidence"].get(k) for k in ("eta", "ata")
+                                                 if d[k]), r)
+bad = dict(d, ata="01/01/2026") if d["ata"] else dict(d, eta="01/01/2026")
+r = F.atlas_check_dhl(text, bad)
+check("A pick ATLAS reads differently is BLOCKED (sent to a person)",
+      r["verdict"] == "BLOCK" and "ATLAS reads" in r["reasons"][0], r)
+import intelligence.eta_diagnostic as _D                    # noqa: E402
+_diag = _D.diagnose
+_D.diagnose = lambda *a, **k: 1 / 0
+r = F.atlas_check_dhl(text, d)
+_D.diagnose = _diag
+check("ATLAS cannot check the page: fail closed (BLOCK), never waved through",
+      r["verdict"] == "BLOCK" and "could not check" in r["reasons"][0], r)
+r = F.atlas_check_dhl(text, dict(d, eta=None, ata=None))
+check("Nothing picked: nothing to disagree with", r["verdict"].startswith("AGREES"), r)
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -670,7 +670,7 @@ RECORD_INTENTS = {
     "counts", "failed", "processing", "latest_event", "logs", "system", "under_clearance",
     "worst_carrier", "all_of", "download", "ml_recs", "human", "latest_failure",
     "carrier_access_live", "failure_evidence", "failure_work", "identity", "capabilities",
-    "help", "wait_time",
+    "help", "wait_time", "atlas_checks",
 }
 WEB_CUE = re.compile(r"\b(web|website|site|internet|online|search|google|news|notice|"
                      r"cloudflare|mean|means|meaning|what\s+is|how\s+(?:do|to|can)|"

@@ -1269,6 +1269,14 @@ class ControlTowerState:
             # "Actual Arrival", "ETA" — shown as the source event.
             record["provider_eta_source"] = result.get("eta_source")
             record["provider_ata_source"] = result.get("ata_source")
+            # ATLAS's second reading of the page (DHL), with the line it quoted.
+            check = result.get("atlas_check")
+            if isinstance(check, dict):
+                record["atlas_check"] = {
+                    "verdict": check.get("verdict"),
+                    "notes": [str(x)[:240] for x in (check.get("notes") or [])][:4],
+                    "evidence": {k: str(v)[:200] for k, v in
+                                 (check.get("evidence") or {}).items() if v}}
             record["updated"] = _stamp()
             self._mark(
                 "ok",

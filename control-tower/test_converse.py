@@ -735,6 +735,34 @@ check("The tower only starts the local search for the default address",
       autoconfig._start_local_search() is False)
 os.environ.pop("ATLAS_SEARCH_URL", None)
 
+print("=" * 68)
+print("9. ATLAS EXPLAINS ITS CHECK OF THE DHL DATES")
+print("=" * 68)
+dhl = ControlTowerState()
+dhl.run_started(dry_run=False, target_status="Under Clearance")
+for ref, eta, ata, check_ in (
+        ("K316521", None, "13/10/2026", {"verdict": "AGREES", "notes": [], "evidence": {
+            "ata": "Carrier: Arrived 13 Oct 2026 06:10 ACCRA"}}),
+        ("K303245", "18/10/2026", None, {"verdict": "AGREES_WITH_NOTES", "notes": [
+            "the page names no destination"], "evidence": {"eta": "Estimated Carrier Arrival "
+                                                           "(Destination) 18 Oct 2026"}})):
+    dhl.shipment_started(dict(bol_awb=ref, carrier="DHL Global Forwarding", provider="DHL"))
+    dhl.provider_result({"provider": "DHL", "eta": eta, "ata": ata, "atlas_check": check_})
+    dhl.shipment_finished(ref, "SUCCESS", "")
+dhl.shipment_started(dict(bol_awb="K299999", carrier="DHL Global Forwarding", provider="DHL"))
+dhl.shipment_finished("K299999", "NEEDS_REVIEW",
+                      "ATLAS: the rules picked ATA 12/10/2026 but ATLAS reads 11/10/2026")
+DS = dhl.snapshot()
+r = assistant._answer_rules("Did ATLAS check the DHL dates?", DS, {"_raw": True})
+check("'Did ATLAS check the DHL dates?': agreed / noted / sent to a person, from the records",
+      r.get("intent") == "atlas_checks" and "1 agreed, 1 agreed with a note, 1 sent to a person"
+      in r["answer"] and "K299999" in r["answer"] and "no destination" in r["answer"],
+      r["answer"][:300])
+r = assistant._answer_rules("tell me about K316521", DS, {"_raw": True})
+check("A DHL shipment's answer quotes the page line ATLAS checked",
+      "ATLAS checked the page and agrees" in r["answer"] and "Carrier: Arrived" in r["answer"],
+      r["answer"][:400])
+
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

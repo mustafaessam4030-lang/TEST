@@ -53,7 +53,7 @@ def _brief_record(record):
         return None
     keep = ("reference", "carrier", "provider", "mode", "state", "outcome", "internal_eta",
             "provider_eta", "provider_ata", "provider_status", "provider_eta_source",
-            "provider_ata_source", "flight", "verification", "coe_action", "bu_action", "message",
+            "provider_ata_source", "atlas_check", "flight", "verification", "coe_action", "bu_action", "message",
             "started_at", "updated", "table_page")
     out = {k: record.get(k) for k in keep if record.get(k) not in (None, "", [], {})}
     access = record.get("carrier_access") or {}
@@ -136,6 +136,9 @@ def shipment_picture(record):
     said = _carrier_line(record)
     if said:
         parts.append("When the run read it, " + ", ".join(said) + ".")
+    if (record.get("atlas_check") or {}).get("verdict"):
+        from dashboard.assistant import _atlas_check_line
+        parts.append(_atlas_check_line(record))
     if record.get("internal_eta"):
         parts.append("The Hub had {0} before the run.".format(record["internal_eta"]))
     verified = record.get("verification") or {}
