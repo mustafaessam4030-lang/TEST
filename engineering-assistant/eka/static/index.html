@@ -2,99 +2,201 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F5F7">
 <title>Engineering Knowledge Assistant</title>
+<!-- Theme before first paint (the ATLAS pattern): Light, Dark or System. -->
+<script>(function(){var c='system';try{c=localStorage.getItem('eka-theme')||'system';}catch(e){}
+var d=c==='dark'||(c!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
+document.documentElement.dataset.theme=d?'dark':'light';document.documentElement.dataset.themeChoice=c;})();</script>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header class="appbar">
-  <button type="button" class="icon-btn only-narrow" id="openLibrary" aria-controls="library" aria-label="Open document library">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
-  </button>
-  <h1 class="brand">Engineering Knowledge Assistant</h1>
-  <div class="appbar-status" id="health" role="status" aria-live="polite">Connecting…</div>
-  <button type="button" class="btn ghost" id="newChat">New chat</button>
-</header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4M9 12.5h6M9 16h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></symbol>
+  <symbol id="i-docs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a1.5 1.5 0 0 1 1.5-1.5H9l2 2h7.5A1.5 1.5 0 0 1 20 7v12.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-side" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-sys" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.4 11.6-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-chevd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-page" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.3 6.4L3 16M3 21v-5h5"/></symbol>
+  <symbol id="i-good" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3zm0 0 4-7a2.5 2.5 0 0 1 3 2.5V9h5.2a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 18 21H7"/></symbol>
+  <symbol id="i-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3zm0 0-4 7a2.5 2.5 0 0 1-3-2.5V15H4.8a2 2 0 0 1-2-2.3l1.3-8A2 2 0 0 1 6 3h11"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+</svg>
 
-<div class="layout">
-  <dialog id="library" class="panel library" aria-labelledby="libraryTitle">
-    <div class="panel-head">
-      <h2 id="libraryTitle">Documents</h2>
-      <button type="button" class="icon-btn only-narrow" data-close="library" aria-label="Close document library">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+<div class="app is-empty" id="app">
+  <aside class="side" id="side" aria-label="Conversations and documents">
+    <div class="side-in">
+      <div class="side-top">
+        <a class="brand" href="#/" id="brandLink">
+          <span class="mark" aria-hidden="true"><svg><use href="#i-mark"/></svg></span>
+          <span class="brand-t"><span class="brand-n">Engineering Knowledge</span><span class="brand-p">Document assistant</span></span>
+        </a>
+        <button class="ibtn sm collapse-side" id="collapseSide" type="button" aria-label="Collapse sidebar" title="Collapse sidebar (Ctrl+.)"><svg><use href="#i-side"/></svg></button>
+      </div>
+      <button class="newchat" id="newChat" type="button"><svg><use href="#i-edit"/></svg>New chat<kbd>Ctrl ⇧ O</kbd></button>
+      <nav class="side-nav" aria-label="Views">
+        <a class="nav-i" id="navChat" href="#/"><svg><use href="#i-chat"/></svg>Chat</a>
+        <a class="nav-i" id="navLib" href="#/library"><svg><use href="#i-docs"/></svg>Document library<span class="nav-c" id="libCount">0</span></a>
+      </nav>
+      <div class="side-search">
+        <svg><use href="#i-search"/></svg>
+        <label class="sr" for="histQ">Search conversations</label>
+        <input class="in" id="histQ" type="search" placeholder="Search conversations" autocomplete="off">
+      </div>
+      <div class="hist" id="hist" aria-label="Conversation history"></div>
+      <div class="side-foot">
+        <button class="model-row" id="modelRow" type="button" title="Models and retrieval"><i></i><span id="modelTxt">Connecting…</span></button>
+        <div class="foot-row">
+          <span class="pf-th" role="group" aria-label="Theme">
+            <button type="button" data-theme-set="light" aria-label="Light theme" title="Light"><svg><use href="#i-sun"/></svg></button>
+            <button type="button" data-theme-set="dark" aria-label="Dark theme" title="Dark"><svg><use href="#i-moon"/></svg></button>
+            <button type="button" data-theme-set="system" aria-label="Follow the device" title="System"><svg><use href="#i-sys"/></svg></button>
+          </span>
+          <span class="sp"></span>
+          <button class="ibtn sm" id="openSettings" type="button" aria-label="Settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <main class="main" id="main">
+    <header class="top">
+      <button class="ibtn sm show-side" id="showSide" type="button" aria-label="Open sidebar"><svg><use href="#i-side"/></svg></button>
+      <h1 class="top-t" id="title">New chat</h1>
+      <span class="sp"></span>
+      <button class="ch-ctx" id="scopeBtn" type="button" aria-haspopup="true" title="Choose which documents to search">
+        <span class="ch-ctx-k">Sources</span><span class="ch-ctx-v" id="scopeTxt">All documents</span><svg><use href="#i-chevd"/></svg>
       </button>
-    </div>
-    <label class="dropzone" id="dropzone">
-      <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple>
-      <span class="dropzone-title">Upload PDFs</span>
-      <span class="dropzone-hint">Drop files here or choose them. Scanned pages are read with OCR.</span>
-    </label>
-    <ul class="uploads" id="uploads" aria-live="polite"></ul>
-    <div class="scope" id="scope"></div>
-    <ul class="doclist" id="doclist" aria-label="Document library"></ul>
-    <p class="empty-note" id="libraryEmpty" hidden>No documents yet. Upload an engineering PDF to start asking questions.</p>
-  </dialog>
+      <button class="ibtn sm" id="newChatTop" type="button" aria-label="New chat" title="New chat"><svg><use href="#i-edit"/></svg></button>
+    </header>
 
-  <main class="chat" id="chat">
-    <ol class="log" id="log" aria-live="polite" aria-label="Conversation"></ol>
-    <div class="welcome" id="welcome">
-      <h2>Ask about your engineering documents</h2>
-      <p>Answers quote the documents and cite the page. Click a citation to open that page with the passage highlighted.</p>
-      <div class="suggestions" id="suggestions"></div>
-    </div>
-    <form class="composer" id="composer">
-      <label class="visually-hidden" for="question">Your question</label>
-      <textarea id="question" rows="1" maxlength="4000" placeholder="Ask about a specification, procedure, part number…" required></textarea>
-      <button type="submit" class="btn primary" id="send">Ask</button>
-    </form>
+    <section class="view" id="viewChat" aria-label="Conversation">
+      <div class="ch-main">
+        <div class="ch-empty" id="empty">
+          <span class="mark ch-e-mark" aria-hidden="true"><svg><use href="#i-mark"/></svg></span>
+          <div class="ch-e-t">What do you need to look up?</div>
+          <p class="ch-e-p" id="emptyP">Ask about specifications, procedures, part numbers or warnings in your engineering PDFs. Every answer cites the page it comes from.</p>
+          <div class="ch-e-sug" id="sugs" aria-label="Suggested questions"></div>
+          <p class="ch-e-n">If the documents don't establish something, I'll say so rather than guess.</p>
+        </div>
+        <div class="ch-b" id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation" tabindex="-1"></div>
+        <button class="ch-jump" id="jump" type="button" hidden><svg><use href="#i-down"/></svg>Latest</button>
+      </div>
+      <div class="ch-f">
+        <div class="atts" id="atts" aria-live="polite"></div>
+        <form class="ch-box" id="composer">
+          <button class="attach" id="attach" type="button" aria-label="Attach PDF" title="Attach a PDF to the library"><svg><use href="#i-clip"/></svg></button>
+          <input type="file" id="attachFile" accept="application/pdf,.pdf" multiple hidden>
+          <label class="sr" for="q">Message</label>
+          <textarea class="ch-ta" id="q" rows="1" maxlength="4000" placeholder="Ask about a specification, procedure or part number…" enterkeyhint="send" autocomplete="off"></textarea>
+          <button class="send" id="send" type="submit" aria-label="Send" title="Send (Enter)" disabled><svg><use href="#i-up"/></svg></button>
+        </form>
+        <div class="ch-hint" aria-hidden="true"><span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</span><span>·</span><span>Answers quote your documents; verify safety-critical values on the cited page.</span></div>
+      </div>
+    </section>
+
+    <section class="view" id="viewLib" aria-label="Document library" hidden>
+      <div class="lib">
+        <div class="lib-h">
+          <div><div class="kick">Library</div><h1>Documents</h1>
+            <p>Engineering PDFs the assistant answers from. Scanned pages are read with OCR; every page's status is recorded.</p></div>
+          <span class="sp"></span>
+          <button class="cbtn solid" id="uploadBtn" type="button"><svg><use href="#i-upload"/></svg>Upload PDFs</button>
+        </div>
+        <label class="drop" id="drop">
+          <input type="file" id="libFile" accept="application/pdf,.pdf" multiple>
+          <span class="drop-ic"><svg><use href="#i-upload"/></svg></span>
+          <span><b>Drop PDFs here, or choose files</b><span>Native and scanned PDFs up to the server's size limit. Duplicates are detected.</span></span>
+        </label>
+        <ul class="uploads" id="uploads" aria-live="polite"></ul>
+        <div class="card">
+          <div class="lib-tools">
+            <label class="sr" for="libQ">Filter documents</label>
+            <input class="in" id="libQ" type="search" placeholder="Filter by title, equipment or file name" autocomplete="off">
+            <span class="cnt" id="libCnt"></span>
+          </div>
+          <ul class="docs" id="docs"></ul>
+          <div class="empty" id="libEmpty" hidden><h3>No documents yet</h3><p>Upload an engineering PDF to start asking questions about it.</p></div>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <dialog id="viewer" class="panel viewer" aria-labelledby="viewerTitle">
-    <div class="panel-head">
-      <div class="viewer-title">
-        <h2 id="viewerTitle">Document</h2>
-        <span id="viewerMeta" class="muted"></span>
+  <aside class="viewer" id="viewer" aria-label="Document viewer" aria-hidden="true">
+    <div class="v-grip" id="grip" role="separator" aria-orientation="vertical" aria-label="Resize document panel" tabindex="0"></div>
+    <div class="v-in">
+      <div class="v-h">
+        <button class="cbtn sm v-back" id="vBack" type="button"><svg><use href="#i-back"/></svg>Chat</button>
+        <div class="v-tt"><b id="vTitle">Document</b><span id="vSub"></span></div>
+        <a class="ibtn sm" id="vOpen" target="_blank" rel="noopener" aria-label="Open the original PDF at this page" title="Open the original PDF at this page"><svg><use href="#i-ext"/></svg></a>
+        <button class="ibtn sm v-x" id="vClose" type="button" aria-label="Close document (Esc)" title="Close (Esc)"><svg><use href="#i-x"/></svg></button>
       </div>
-      <button type="button" class="icon-btn" data-close="viewer" aria-label="Close page viewer">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
+      <div class="v-bar">
+        <span class="v-pg">
+          <button class="ibtn sm" id="vPrev" type="button" aria-label="Previous page"><svg style="transform:rotate(180deg)"><use href="#i-chev"/></svg></button>
+          <label class="sr" for="vPage">Page</label><input class="in" id="vPage" inputmode="numeric" value="1"><span id="vOf">/ 1</span>
+          <button class="ibtn sm" id="vNext" type="button" aria-label="Next page"><svg><use href="#i-chev"/></svg></button>
+        </span>
+        <span class="v-zoom">
+          <button class="ibtn sm" id="vOut" type="button" aria-label="Zoom out"><svg><use href="#i-minus"/></svg></button>
+          <span id="vZoom">100%</span>
+          <button class="ibtn sm" id="vIn" type="button" aria-label="Zoom in"><svg><use href="#i-plus"/></svg></button>
+        </span>
+        <span class="v-search"><svg><use href="#i-search"/></svg><label class="sr" for="vQ">Search in document</label>
+          <input class="in" id="vQ" type="search" placeholder="Search in document" autocomplete="off"></span>
+      </div>
+      <div class="v-hits" id="vHits" hidden></div>
+      <div class="v-quote" id="vQuote" hidden><span class="kick">Cited</span><span id="vQuoteT"></span></div>
+      <div class="v-page" id="vPageBox"><img id="vImg" alt=""><div class="v-load" id="vLoad">Loading page…</div></div>
     </div>
-    <div class="viewer-tools">
-      <button type="button" class="btn small" id="prevPage" aria-label="Previous page">‹ Prev</button>
-      <span id="pageLabel" class="page-label"></span>
-      <button type="button" class="btn small" id="nextPage" aria-label="Next page">Next ›</button>
-      <a class="btn small" id="openOriginal" target="_blank" rel="noopener">Open PDF at this page</a>
-    </div>
-    <blockquote class="viewer-quote" id="viewerQuote" hidden></blockquote>
-    <div class="viewer-page" id="viewerPage">
-      <img id="pageImage" alt="">
-      <p class="viewer-loading" id="pageLoading">Loading page…</p>
-    </div>
-  </dialog>
+  </aside>
 </div>
 
-<template id="tplDoc">
-  <li class="doc">
-    <div class="doc-row">
-      <input type="checkbox" class="doc-select" aria-label="Search this document">
-      <div class="doc-main">
-        <span class="doc-title"></span>
-        <span class="doc-meta"></span>
-      </div>
-      <span class="pill"></span>
-    </div>
-    <div class="progress" hidden><span></span></div>
-    <p class="doc-error" hidden></p>
-    <div class="doc-actions">
-      <button type="button" class="link" data-act="view">View</button>
-      <button type="button" class="link" data-act="pages">Page status</button>
-      <button type="button" class="link" data-act="reindex">Re-index</button>
-      <button type="button" class="link danger" data-act="delete">Delete</button>
-    </div>
-    <div class="doc-pages" hidden></div>
-  </li>
-</template>
+<dialog class="dlg" id="settings" aria-labelledby="setTitle">
+  <div class="dlg-h"><h2 id="setTitle">Settings</h2>
+    <button class="ibtn sm" type="button" data-close-dialog aria-label="Close settings"><svg><use href="#i-x"/></svg></button></div>
+  <div class="dlg-b">
+    <section class="set"><h3>Appearance</h3>
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-theme-set="light"><svg><use href="#i-sun"/></svg>Light</button>
+        <button type="button" data-theme-set="dark"><svg><use href="#i-moon"/></svg>Dark</button>
+        <button type="button" data-theme-set="system"><svg><use href="#i-sys"/></svg>System</button>
+      </div></section>
+    <section class="set"><h3>Answers</h3><dl class="kv" id="setAnswers"></dl><p id="setAnswersNote"></p></section>
+    <section class="set"><h3>Retrieval</h3><dl class="kv" id="setRetrieval"></dl><p id="setRetrievalNote"></p></section>
+    <section class="set"><h3>Library</h3><dl class="kv" id="setLibrary"></dl></section>
+    <section class="set"><h3>Keyboard</h3>
+      <div class="keys"><kbd>Enter</kbd><span>Send</span><kbd>Shift + Enter</kbd><span>New line</span>
+        <kbd>Ctrl + Shift + O</kbd><span>New chat</span><kbd>Ctrl + K</kbd><span>Search conversations</span>
+        <kbd>Ctrl + .</kbd><span>Show or hide the sidebar</span><kbd>/</kbd><span>Focus the message box</span>
+        <kbd>Esc</kbd><span>Close the document or menu</span></div></section>
+  </div>
+</dialog>
 
 <script src="app.js" type="module"></script>
 </body>

@@ -35,7 +35,7 @@ class Assistant:
                 log.warning("LLM generator configured but not ready (%s); answers fall back to extractive", detail)
         elif settings.generator.lower() != "extractive":
             raise ValueError("unknown EKA_GENERATOR: " + settings.generator)
-        self.conversations = Conversations()
+        self.conversations = Conversations(self.store)
         self.engine = AnswerEngine(settings, self.store, self.retriever, self.conversations, self.generator)
         self.ingest = IngestService(settings, self.store, self.index, self.embedder)
         if start_worker:
@@ -44,6 +44,9 @@ class Assistant:
     def health(self) -> dict:
         docs = self.store.documents()
         status = {"documents": len(docs),
+                  "retrieval_mode": self.embedder.label,
+                  "semantic_search": self.embedder.semantic,
+                  "llm_model": self.settings.llm_model if self.generator else "",
                   "searchable_documents": sum(d["status"] in ("ready", "partial") for d in docs),
                   "indexed_passages": len(self.index),
                   "embedder": self.embedder.name,

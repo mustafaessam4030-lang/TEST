@@ -50,9 +50,12 @@ class Settings:
     # Chunking
     chunk_max_chars: int = field(default_factory=lambda: _env_int("CHUNK_MAX_CHARS", 1000))
 
-    # Embeddings: hashing | fastembed | ollama
-    embedder: str = field(default_factory=lambda: _env("EMBEDDER", "hashing"))
+    # Embeddings: auto | hashing | fastembed | ollama.  "auto" uses a real semantic
+    # model (fastembed bge-small) only if it is already in EKA_MODEL_DIR, and never
+    # downloads; otherwise retrieval is keyword-only and says so.
+    embedder: str = field(default_factory=lambda: _env("EMBEDDER", "auto"))
     embed_model: str = field(default_factory=lambda: _env("EMBED_MODEL", ""))
+    model_dir: str = field(default_factory=lambda: _env("MODEL_DIR", ""))
 
     # Generation: extractive | ollama
     generator: str = field(default_factory=lambda: _env("GENERATOR", "extractive"))
@@ -81,6 +84,10 @@ class Settings:
     @property
     def files_dir(self) -> Path:
         return self.data_dir / "documents"
+
+    @property
+    def models_dir(self) -> Path:
+        return Path(self.model_dir).resolve() if self.model_dir else self.data_dir / "models"
 
     @property
     def log_path(self) -> Path:

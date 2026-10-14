@@ -2,7 +2,9 @@
 
 Upload engineering PDFs and ask questions about them. Every factual answer quotes the documents and cites the exact document and page. Click a citation to open that page with the passage highlighted. When the documents don't support an answer, the assistant says so and lists what it searched. It does not fill the gap with a guess.
 
-This is a self-contained application. It does not depend on, or change, anything else in this repository.
+This is a self-contained application. It does not depend on, or change, anything else in this repository. The interface follows the ATLAS visual system (same design tokens and components, see [docs/UI.md](docs/UI.md)) with a ChatGPT-style conversation layout.
+
+![Before and after](docs/screenshots/before-after-desktop.jpg)
 
 ```
 engineering-assistant/
@@ -10,19 +12,19 @@ engineering-assistant/
 │   ├── extract.py        PDF -> pages: text blocks, columns, tables, warnings, OCR fallback, page status
 │   ├── chunking.py       page-bounded chunks with section path; one chunk per table row
 │   ├── ingest.py         upload, duplicate detection, background worker, re-index, revisions
-│   ├── embeddings.py     hashing (default) | fastembed bge-small | Ollama embeddings
+│   ├── embeddings.py     auto (bge-small if installed locally, else keyword) | fastembed | Ollama
 │   ├── retrieval.py      BM25 + vectors, RRF fusion, relevance gating, per-query trace
 │   ├── answer.py         evidence selection, revisions, clarification, validation, answer object
 │   ├── generation.py     optional Ollama (Qwen) generation with JSON claims
 │   ├── citations.py      citation construction and validation
-│   ├── conversation.py   small talk, follow-ups, conversation memory
-│   ├── api.py            FastAPI endpoints + static UI
-│   └── static/           web UI (vanilla JS, no build step)
+│   ├── conversation.py   small talk, follow-ups, conversation memory (persisted in SQLite)
+│   ├── api.py            FastAPI endpoints, server-sent-event streaming, static UI
+│   └── static/           web UI in the ATLAS visual family (vanilla JS, no build step)
 ├── samples/              synthetic, non-confidential test PDFs (+ scripts/make_samples.py)
 ├── eval/                 evaluation questions (tuning set + held-out set)
 ├── scripts/              make_samples.py, run_eval.py, eka.sh
-├── tests/                73 automated tests
-└── docs/                 ARCHITECTURE.md, EVALUATION.md
+├── tests/                90 Python tests + tests/ui (100-check browser end-to-end suite)
+└── docs/                 ARCHITECTURE.md, EVALUATION.md, UI.md, screenshots/
 ```
 
 ## Quick start
@@ -65,8 +67,9 @@ Everything is set with environment variables (see `.env.example`), and every var
 | `EKA_HOST` / `EKA_PORT` | `127.0.0.1` / `8765` | Bind address. Localhost only by default |
 | `EKA_API_TOKEN` | *(empty)* | When set, every `/api` call needs `Authorization: Bearer <token>`; the UI prompts for it |
 | `EKA_MAX_UPLOAD_MB` | `100` | Upload size limit |
-| `EKA_EMBEDDER` | `hashing` | `hashing` (offline, no download), `fastembed` (bge-small, recommended), `ollama` |
+| `EKA_EMBEDDER` | `auto` | `auto`: semantic bge-small **if it is already on disk** (never downloads), otherwise keyword-only. `fastembed`: bge-small, downloading it once if needed (65 MB). `hashing`: keyword-only. `ollama`: an Ollama embedding model |
 | `EKA_EMBED_MODEL` | per embedder | e.g. `BAAI/bge-small-en-v1.5`, `nomic-embed-text` |
+| `EKA_MODEL_DIR` | `data/models` | Where embedding models are cached / looked for |
 | `EKA_GENERATOR` | `extractive` | `extractive` (no LLM) or `ollama` |
 | `EKA_LLM_MODEL` | `qwen2.5:7b-instruct` | Ollama model tag used when `EKA_GENERATOR=ollama` |
 | `EKA_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama server |
@@ -81,18 +84,23 @@ Changing `EKA_EMBEDDER` is safe. On start-up the stored passages are re-embedded
 
 The embedding model and the answer generator are separate, independent choices.
 
-**Embeddings.** Two configurations were measured on the same questions (details in [docs/EVALUATION.md](docs/EVALUATION.md)):
+**Embeddings.** Retrieval is labelled honestly everywhere: `/api/health` (`retrieval_mode`, `semantic_search`), the sidebar ("Keyword search" or "Semantic + keyword") and Settings.
 
-| | `hashing` (default) | `fastembed` bge-small-en-v1.5 (recommended) |
+- **Semantic.** With bge-small, retrieval is hybrid, combining BM25 with real 384-dimension ONNX embeddings. A test checks that it ranks "how much oil does the gearbox hold" to the capacity row by meaning.
+- **Keyword-only.** Without a semantic model, retrieval is keyword-only. The `hashing` back-end is character n-gram overlap, not a semantic embedding, and is never called one.
+
+Measured on the same questions (details in [docs/EVALUATION.md](docs/EVALUATION.md)):
+
+| | keyword-only (`hashing`) | semantic (`fastembed` bge-small-en-v1.5, recommended) |
 |---|---|---|
-| Download | none | ~65 MB on first use (from Hugging Face), cached in `data/models` |
+| Download | none | ~65 MB once (from Hugging Face), cached in `EKA_MODEL_DIR` |
 | Held-out answerable correct | 75.0% | 83.3% |
 | Held-out retrieval recall@k | 75.0% | 100% |
 | Query latency p50 | ~4 ms | ~90 ms |
 | Ingestion, 240-page manual (this 4-vCPU container) | 11 s | 261 s |
 | Peak memory during that ingestion | ~110 MB | ~500 MB |
 
-`hashing` is the default because it needs no download and always works offline. `fastembed` measurably improves answers to paraphrased questions ("how much oil does it hold" vs "oil capacity"), so set `EKA_EMBEDDER=fastembed` (with `pip install -r requirements-optional.txt`) for real use. Both made zero unsupported claims in evaluation.
+The default `auto` never downloads anything. To turn semantic search on, run once with `pip install -r requirements-optional.txt` and `EKA_EMBEDDER=fastembed`; that fetches the model into `EKA_MODEL_DIR`. From then on `auto` uses it offline. Semantic search measurably improves answers to paraphrased questions. Both modes made zero unsupported claims in evaluation.
 
 **Answer generation.** The default `extractive` mode needs no LLM. Answers are sentences, steps and table rows copied from the documents, so a value can only appear if it is printed in a cited passage. This mode produced every result in the evaluation.
 
@@ -109,10 +117,12 @@ Real Ollama was not available where this was built: no Ollama binary, no GPU, 15
 | 16 GB+ RAM or 8 GB+ GPU | `qwen2.5:7b-instruct` (default tag) | 4.7 GB |
 | 32 GB+ RAM or 16 GB+ GPU | `qwen2.5:14b-instruct` | ~9 GB |
 
-To enable it:
+To enable it on a machine that can run it:
 
 ```sh
-ollama pull qwen2.5:7b-instruct                       # you choose when to download
+# 1. install Ollama: Linux `curl -fsSL https://ollama.com/install.sh | sh`; macOS/Windows: installer from ollama.com
+ollama serve &                                        # if it is not already running as a service
+ollama pull qwen2.5:7b-instruct                       # you choose when to download (4.7 GB)
 EKA_GENERATOR=ollama EKA_LLM_MODEL=qwen2.5:7b-instruct python -m eka
 python scripts/run_eval.py --generator ollama --llm-model qwen2.5:7b-instruct   # measure before relying on it
 ```
@@ -123,17 +133,34 @@ python scripts/run_eval.py --generator ollama --llm-model qwen2.5:7b-instruct   
 
 ## Using it
 
-- **Library.** Upload by drag-and-drop or the file picker. Each document shows a status:
+The layout is a collapsible sidebar, a centred conversation and a composer. The document panel is closed until you click a citation. Screenshots for desktop, tablet, phone and dark mode are in [docs/screenshots](docs/screenshots); the design and the tested interactions are in [docs/UI.md](docs/UI.md).
+
+- **Chat.**
+  - Answers stream their real progress ("Searching 4 documents" → "Reading 5 passages…" → "Checking every citation…").
+  - **Stop** cancels an answer, and a stopped answer is not saved.
+  - Each answer has Copy, Retry (latest answer) and helpful/not-helpful.
+  - **Enter** sends, **Shift+Enter** adds a line, **/** focuses the box, **Ctrl+Shift+O** starts a new chat, **Ctrl+K** searches history and **Ctrl+.** toggles the sidebar.
+- **History.**
+  - Conversations are stored on the server, grouped by date, searchable, and can be renamed or deleted.
+  - Follow-ups keep working after a restart.
+- **Sources.** The "Sources" pill restricts a question to chosen documents.
+- **Citations.** A source pill sits beside each claim. Clicking it opens the document panel at the cited page, with the passage highlighted and quoted. The panel offers:
+  - page navigation, zoom and search in the document (scanned pages are searched through their OCR text);
+  - opening the original PDF;
+  - resizing.
+
+  Esc closes it and returns you to the same place in the conversation. On phones it opens full screen with a Back button.
+- **Library.** Upload by drag-and-drop, the Upload button, or the paperclip in the composer; an attachment chip follows processing. Each document shows a status:
   - **Queued** or **Processing**, with page progress;
   - **Ready**;
   - **Partial**: some pages could not be read, and they are listed;
   - **Failed**: with the reason (corrupted, password protected, no text, scanned page without OCR).
 
-  *Page status* shows how each page was read (text, OCR, blank, failed). Re-uploading an identical file is detected and not indexed twice. Tick documents to restrict questions to them.
+  *Page status* shows how each page was read (text, OCR, blank, failed). Re-uploading an identical file is detected and not indexed twice.
 - **Revisions.** Documents sharing a document number (`Document No: …`) are ordered by revision. Older ones are marked *superseded*, answers use the current revision, and a differing value in an older revision is shown as a flagged note.
 - **Answer types.**
   - *From the documents*: quoted claims with citations.
-  - *Needs clarification*: the value depends on equipment the question didn't name. Each option is shown with its citation, and you can click one.
+  - *Needs clarification*: the value depends on equipment the question didn't name. The assistant asks first and shows no values; clicking an equipment option answers from that model's document only.
   - *Sources conflict*: documents disagree and none supersedes the other.
   - *Not established by the documents*: says what was searched and why nothing qualified.
 
@@ -150,16 +177,42 @@ curl localhost:8765/api/documents
 curl -X POST localhost:8765/api/chat -H "Content-Type: application/json" -d '{"message":"What is the rated pressure of the HX-200?"}'
 ```
 
-The chat response is the structured answer object: `status`, `message`, `claims` (each with `kind` and `citations`), `citations` (document, page, section, excerpt, `open_url`, `page_image_url`), `conflicts`, `clarification`, `unresolved`, `safety_notice`, `documents_used`, `searched`, `generator`, `fallback_reason`, `trace` and `latency_ms`.
+Other endpoints:
+
+- `POST /api/chat/stream`: server-sent events, `stage`… then `answer`.
+- `GET /api/conversations?q=`, plus `GET`, `PATCH` and `DELETE /api/conversations/{id}`.
+- `POST /api/messages/{id}/feedback`.
+- `GET /api/documents/{id}/search?q=`.
+- `GET /api/suggestions`, which returns only questions the engine can answer.
+
+The chat response is the structured answer object: `status`, `message`, `claims` (each with `kind` and `citations`), `citations` (document, page, section, excerpt, `open_url`, `page_image_url`), `conflicts`, `clarification`, `unresolved`, `safety_notice`, `documents_used`, `searched`, `generator`, `fallback_reason`, `trace`, `latency_ms`, `message_id` and `conversation_id`. Claims quoting a table row also carry `source_kind`, `caption` and `cells` for table rendering.
 
 ## Tests and evaluation
 
 ```sh
 pip install -r requirements-dev.txt
-python -m pytest                                       # 73 tests, ~12 s (OCR tests skip if tesseract is absent)
-python scripts/run_eval.py                             # tuning set, default config
+python -m pytest                                       # 90 tests, ~16 s
+EKA_TEST_MODEL_DIR=data/models python -m pytest        # also runs the real-embedding tests (otherwise skipped)
+python scripts/run_eval.py                             # tuning set, keyword-only
 python scripts/run_eval.py --questions eval/heldout.json --embedder fastembed
+
+# Browser end-to-end (100 checks; starts its own servers on :8765, :8766, :8799)
+npm i playwright && npx playwright install chromium    # once
+PLAYWRIGHT_DIR=$PWD tests/ui/run.sh /tmp/eka-ui        # screenshots + e2e-results.json in /tmp/eka-ui
 ```
+
+What is real and what is mocked:
+
+| Suite | Real components | Mocked |
+|---|---|---|
+| `tests/test_pdf_pipeline.py`, `test_ingest_and_retrieval.py`, `test_answers.py` | PyMuPDF, tesseract OCR, SQLite, BM25 + vectors, answer engine, citation validator | nothing |
+| `tests/test_api.py`, `test_conversations_api.py` | the FastAPI app in-process (TestClient), streaming, history, search, everything above | nothing |
+| `tests/test_embeddings.py` | the real bge-small ONNX model (skipped unless `EKA_TEST_MODEL_DIR` points at it) | nothing |
+| `tests/test_generation.py` | answer engine, claim validation, fallback | **the Ollama server** (stand-in HTTP server: no real LLM here) |
+| `tests/ui/e2e.mjs`, desktop / tablet / phone / dark | the real server, real documents, real browser (Chromium) | nothing |
+| `tests/ui/e2e.mjs`, "slow model" block | the real server and browser | **the model** (`tests/ui/slow_ollama.py` replies after 6 s) |
+
+The default pytest run uses the keyword-only embedder, for speed and determinism.
 
 Results and methodology: [docs/EVALUATION.md](docs/EVALUATION.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -184,7 +237,9 @@ Results and methodology: [docs/EVALUATION.md](docs/EVALUATION.md). Design: [docs
 - **Diagrams and images** are not interpreted.
 - **Conflict detection** compares numeric values across documents. A disagreement expressed only in words is not flagged.
 - **Access control** is a single shared token plus per-question document scoping. There are no per-user document permissions yet.
-- **Conversation memory** is in-process; it is lost on restart. The UI keeps its transcript in the browser session.
+- **Conversation history** is stored per server, not per user: anyone with access to the server sees the same history.
+- **The UI** was verified in Chromium (desktop, tablet and phone emulation) only. Safari, Firefox, real touch devices and screen readers have not been tested.
+- **Streaming** carries real pipeline stages, not tokens. Answers are shown only after citation validation, so a model's draft is never displayed before it has been checked.
 - **Ollama/Qwen generation has not been evaluated** with a real model.
 - The evaluation uses small synthetic documents written for this project. Expect lower numbers on real manuals. Run `scripts/run_eval.py` with your own question set before relying on it.
 

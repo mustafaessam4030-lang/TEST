@@ -18,7 +18,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from . import citations as cite
@@ -77,13 +79,23 @@ class AnswerEngine:
         self.retriever = retriever
         self.conversations = conversations
         self.generator = generator
+        self._pending: dict[str, tuple] = {}
+        self._local = threading.local()   # per-request progress callback (requests run in parallel)
 
     # ── entry point ──
-    def ask(self, message: str, conversation_id: str | None = None, doc_ids: list[str] | None = None) -> dict:
+    def ask(self, message: str, conversation_id: str | None = None, doc_ids: list[str] | None = None,
+            progress=None, persist: bool = True, use_generator: bool = True) -> dict:
+        """Answer one message. ``progress(text)`` receives real pipeline stages for streaming.
+
+        With ``persist=False`` nothing is recorded until ``commit(answer)`` is called, so a
+        response the user stopped can be discarded.
+        """
         started = time.perf_counter()
         conversation_id = conversation_id or self.conversations.new_id()
         history = self.conversations.history(conversation_id)
         r = route(message, history)
+        self._local.progress = progress
+        self._local.use_generator = use_generator
         try:
             if r.intent == "smalltalk":
                 answer = self._smalltalk(r.smalltalk_kind)
@@ -104,12 +116,80 @@ class AnswerEngine:
             answer["status"] = "error"
             answer["message"] = "No answer could be produced. Please rephrase the question."
         answer["answer_text"] = render_text(answer)
-        self.conversations.add(conversation_id, Turn(
+        answer["message_id"] = uuid.uuid4().hex[:16]
+        answer["question"] = message
+        self._pending[answer["message_id"]] = (r, Turn(
             message, r.retrieval_query if r.intent == "question" else "", answer["status"],
-            [d["doc_id"] for d in answer["documents_used"]], ))
+            [d["doc_id"] for d in answer["documents_used"]]))
+        while len(self._pending) > 200:
+            self._pending.pop(next(iter(self._pending)))
+        if persist:
+            self.commit(answer)
+        return answer
+
+    def suggestions(self, limit: int = 4) -> list[str]:
+        """Example questions built from the indexed documents, each verified to be answerable.
+
+        A suggestion is only offered if the engine answers it from the documents,
+        so a chip can never lead to a refusal.
+        """
+        chunks, *_ = self.retriever.index.snapshot()
+        key = (len(chunks), tuple(sorted((d["id"], d["updated_at"]) for d in self.store.documents())))
+        if getattr(self, "_suggest_key", None) == key:
+            return self._suggest_cache[:limit]
+        docs = [d for d in self.store.documents() if d["status"] in cite.SEARCHABLE and not d["superseded_by"]]
+        per_doc: list[list[str]] = []
+        for doc in docs:
+            ids = sorted(identifiers(" ".join((doc["equipment"], doc["title"]))), key=len)
+            model = ids[0] if ids else (doc["equipment"] or doc["title"])[:40]
+            mine: list[str] = []
+            for c in chunks:
+                if c.doc_id != doc["id"]:
+                    continue
+                if c.kind == "table_row":
+                    first = c.text.split("\n")[-1].split(" | ")[0]
+                    param = first.split(": ", 1)[-1].strip()
+                    if 3 <= len(param) <= 40 and not any(ch.isdigit() for ch in param):
+                        mine.append("What is the {0} of the {1}?".format(param.lower(), model))
+                elif c.kind == "text" and sum(bool(STEP_LINE.match(l)) for l in c.text.split("\n")) >= 3:
+                    topic = re.sub(r"^[\d.\s]+", "", c.section.split(" > ")[-1]).strip().lower()
+                    if topic:
+                        mine.append("What are the steps for {0} on the {1}?".format(topic, model))
+            per_doc.append(list(dict.fromkeys(mine)))
+        ordered = [q for group in zip(*[g[:6] for g in per_doc if g]) for q in group] if per_doc else []
+        ordered += [q for g in per_doc for q in g[6:12]]
+        verified = []
+        for question in ordered:
+            if len(verified) >= 6:
+                break
+            # Answerability is a property of the documents; checking it never needs the model.
+            out = self.ask(question, persist=False, use_generator=False)
+            self._pending.pop(out["message_id"], None)
+            if out["status"] == "answered" and out["citations"]:
+                verified.append(question)
+        self._suggest_key, self._suggest_cache = key, verified
+        return verified[:limit]
+
+    def _progress(self, text: str):
+        callback = getattr(self._local, "progress", None)
+        if callback:
+            try:
+                callback(text)
+            except Exception:  # a disconnected stream must not break answering
+                log.debug("progress callback failed", exc_info=True)
+
+    def commit(self, answer: dict):
+        """Record a delivered answer: conversation memory, persistent history, query log."""
+        pending = self._pending.pop(answer["message_id"], None)
+        if pending is None:
+            return
+        r, turn = pending
+        self.conversations.add(answer["conversation_id"], turn)
+        if self.store is not None and turn.question.strip():
+            self.store.save_turn(answer["conversation_id"], answer["message_id"], turn.question, answer,
+                                 turn.retrieval_query, turn.status, turn.doc_ids)
         if r.intent == "question":
             self._log(answer, r)
-        return answer
 
     # ── conversational turns ──
     def _base(self, status: str, message: str) -> dict:
@@ -176,15 +256,23 @@ class AnswerEngine:
                              "Upload a PDF and wait until it shows Ready, then ask again.")
             return out
         top_k = self.settings.top_k * (2 if r.compare else 1)
+        scope = len(doc_ids) if doc_ids else sum(d["status"] in cite.SEARCHABLE for d in docs.values())
+        self._progress("Searching {0} document{1}".format(scope, "" if scope == 1 else "s"))
         result = self.retriever.search(r.retrieval_query, doc_ids or None, r.prefer_doc_ids, top_k=top_k)
         searched = {"documents": len(result.searched_doc_ids),
                     "titles": [docs[d]["title"] or docs[d]["filename"] for d in result.searched_doc_ids][:12],
                     "missing_identifiers": result.missing_identifiers,
                     "scope": "selected documents" if doc_ids else "all documents"}
 
+        found = {c.chunk.doc_id for c in result.selected}
+        self._progress("Reading {0} passage{1} from {2} document{3}".format(
+            len(result.selected), "" if len(result.selected) == 1 else "s", len(found), "" if len(found) == 1 else "s")
+            if result.selected else "No passage matched closely enough")
         draft = self._extractive(r, result, docs)
         generator_name, fallback = "extractive", ""
-        if self.generator and draft.status != "insufficient_evidence" and result.selected:
+        use_llm = getattr(self._local, "use_generator", True)
+        if self.generator and use_llm and draft.status != "insufficient_evidence" and result.selected:
+            self._progress("Writing the answer with {0}".format(self.generator.model))
             try:
                 llm = self._llm_draft(r, result, docs, history)
                 if llm is not None:
@@ -200,6 +288,7 @@ class AnswerEngine:
         out.update(claims=draft.claims, conflicts=draft.conflicts, clarification=draft.clarification,
                    unresolved=draft.unresolved, generator=generator_name, fallback_reason=fallback,
                    searched=searched, trace=result.trace(), rejected_claims=draft.rejected)
+        self._progress("Checking every citation against its page")
         self._finalise_citations(out, docs)
         if out["status"] == "insufficient_evidence":
             out["message"] = self._insufficient_message(result, docs, searched)
@@ -423,20 +512,23 @@ class AnswerEngine:
             return units  # the documents agree (or state no values): answer from all of them
         equipment = {d: (docs[d]["equipment"] or docs[d]["title"] or docs[d]["filename"]) for d in doc_ids}
         same_equipment = len({compact(e) for e in equipment.values()}) == 1
-        draft.claims = [self._claim(u, "direct") for u in units[: MAX_CLAIMS * 2]]
         if same_equipment:
+            draft.claims = [self._claim(u, "direct") for u in units[: MAX_CLAIMS * 2]]
             draft.status = "conflict"
             draft.message = ("The documents disagree and none of them is marked as superseding the other. "
                              "Each value is shown with its source; check which document is authoritative.")
             draft.conflicts.append({"kind": "source", "summary": "Different values for the same equipment in "
                                     "{0} documents.".format(len(doc_ids)), "claims": []})
         else:
+            # Ask first: no values are shown until the equipment is chosen, so a
+            # reader cannot pick up the wrong model's number by accident.
             draft.status = "needs_clarification"
-            options = [equipment[d] for d in doc_ids]
-            draft.message = ("The answer depends on the equipment, and the question doesn't say which. "
-                             "Here is what each document states:")
-            draft.clarification = {"question": "Which equipment do you mean: {0}?".format(" or ".join(options)),
-                                   "options": options}
+            draft.message = ("The documents give different values for different equipment, and the question "
+                             "doesn't say which one you mean.")
+            draft.clarification = {
+                "question": "Which equipment do you mean?",
+                "options": [{"label": equipment[d], "doc_id": d,
+                             "title": docs[d]["title"] or docs[d]["filename"]} for d in doc_ids]}
         return units
 
     def _attach_warnings(self, draft: Draft, units: list[Unit], docs: dict):
@@ -479,6 +571,7 @@ class AnswerEngine:
         draft.rejected = rejected
         if draft.status == "needs_clarification":
             draft.message = "The answer depends on details the question doesn't give."
+            draft.claims = []
             draft.clarification = {"question": str(data.get("clarifying_question") or
                                                    "Which equipment or document revision do you mean?"), "options": []}
             return draft
@@ -516,6 +609,7 @@ class AnswerEngine:
         for claims in groups:
             for claim in claims:
                 chunks = [claim.pop("_chunk")] + claim.pop("_extra", [])
+                describe_source(claim, chunks[0])
                 claim["citations"] = [register(ch, claim["text"] if claim["kind"] != "inference" else None)
                                       for ch in chunks]
         valid, problems = cite.validate(list(registry.values()), self.store)
@@ -525,7 +619,7 @@ class AnswerEngine:
             claims[:] = [c for c in claims if c["citations"] or c["kind"] == "inference"]
         out["citations"] = valid
         out["rejected_claims"] = out["rejected_claims"] + [{"reason": p} for p in problems]
-        if out["status"] in ("answered", "conflict", "needs_clarification") and not any(
+        if out["status"] in ("answered", "conflict") and not any(
                 c["kind"] in ("direct", "inference") for c in out["claims"]):
             out["status"] = "insufficient_evidence"
         used: dict[str, dict] = {}
@@ -554,8 +648,8 @@ class AnswerEngine:
         return " ".join(parts)
 
     def _safety_notice(self, question: str, out: dict) -> str:
-        if out["status"] in ("insufficient_evidence", "smalltalk"):
-            return ""
+        if out["status"] in ("insufficient_evidence", "smalltalk") or not out["claims"]:
+            return ""   # nothing was stated, so there is nothing to verify yet
         notes = []
         text = question + " " + " ".join(c["text"] for c in out["claims"])
         if SAFETY_TERMS.search(text) or any(c["kind"] == "warning" for c in out["claims"]):
@@ -582,6 +676,16 @@ class AnswerEngine:
 
 
 
+def describe_source(claim: dict, chunk) -> None:
+    """Tell the UI what kind of passage a claim quotes, with table cells for spec rows."""
+    claim["source_kind"] = chunk.kind
+    if chunk.kind == "table_row":
+        lines = chunk.text.split("\n")
+        if claim["text"].strip() == lines[-1].strip():
+            claim["caption"] = lines[0] if len(lines) > 1 else ""
+            claim["cells"] = [cell.split(": ", 1) if ": " in cell else ["", cell] for cell in lines[-1].split(" | ")]
+
+
 def render_text(answer: dict) -> str:
     """Plain-text rendering with [S#] markers, for the API and the evaluation report."""
     lines = [answer["message"]] if answer["message"] else []
@@ -594,7 +698,8 @@ def render_text(answer: dict) -> str:
         for c in conflict["claims"]:
             lines.append("  - {0} {1}".format(c["text"], "".join("[{0}]".format(x) for x in c["citations"])))
     if answer.get("clarification"):
-        lines.append(answer["clarification"]["question"])
+        options = [o["label"] for o in answer["clarification"].get("options", [])]
+        lines.append(answer["clarification"]["question"] + (" " + " / ".join(options) if options else ""))
     for u in answer["unresolved"]:
         lines.append("Unresolved: " + u)
     if answer["citations"]:

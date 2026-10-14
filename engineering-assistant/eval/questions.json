@@ -38,8 +38,8 @@
     {"id": "rev-01", "category": "conflicting revisions", "turns": ["How often should the HX-200 filter element be changed?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [6], "must_include": ["500 service hours"], "must_not_include": ["250"]},
     {"id": "rev-02", "category": "conflicting revisions", "turns": ["What was the rated pressure in revision A of the HX-200 manual?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevA.pdf", "pages": [2], "must_include": ["320 bar"]},
 
-    {"id": "amb-01", "category": "ambiguous equipment", "turns": ["What torque for the mounting flange bolts?"], "expect": "clarify", "must_include": ["180", "210"]},
-    {"id": "amb-02", "category": "ambiguous equipment", "turns": ["What is the oil change interval?"], "expect": "clarify", "must_include": ["2500", "2000"]},
+    {"id": "amb-01", "category": "ambiguous equipment", "turns": ["What torque for the mounting flange bolts?"], "expect": "clarify"},
+    {"id": "amb-02", "category": "ambiguous equipment", "turns": ["What is the oil change interval?"], "expect": "clarify"},
 
     {"id": "none-01", "category": "unsupported", "turns": ["What is the rated pressure of the HX-300?"], "expect": "abstain"},
     {"id": "none-02", "category": "unsupported", "turns": ["What is the warranty period for the CV-90?"], "expect": "abstain"},

@@ -87,7 +87,7 @@ Inspected before any code was written:
 
 4. **Revisions.** Current revisions win. A differing value in a superseded revision is moved to a flagged revision note, with its own citation.
 
-5. **Equipment ambiguity.** When evidence spans documents for different equipment with different values, and the question names none, the answer is `needs_clarification`. Each option is shown with its citation. Same equipment with different values and no supersession gives `conflict`. An answer from one equipment's document, when the question named no equipment and other equipment exists in the library, carries a caveat.
+5. **Equipment ambiguity.** When evidence spans documents for different equipment with different values, and the question names none, the answer is `needs_clarification`. It asks first: no values or citations are shown, so nobody reads the wrong model's number. Each option carries its `doc_id`. Choosing one sends the option as the next message, scoped to that document, and the follow-up keeps the original question's topic. Same equipment with different values and no supersession gives `conflict`. An answer from one equipment's document, when the question named no equipment and other equipment exists in the library, carries a caveat.
 
 6. **Safety.** Warnings in the same document section as the evidence are attached to the answer. Safety-relevant topics get a notice to verify against the controlled document and the responsible engineer. OCR-derived citations and superseded sources are also called out.
 
@@ -127,14 +127,39 @@ Inspected before any code was written:
 }
 ```
 
+### Conversations, streaming and suggestions
+
+- **Persistence.** Every delivered turn is stored in SQLite (`conversations`, `messages`): the question, the full answer object, the retrieval query, the status, the documents used and any feedback. Conversation memory for follow-ups is a cache over that store, so follow-ups work after a restart.
+- **Streaming.** `POST /api/chat/stream` runs the engine in a worker thread and sends server-sent events:
+  - a `stage` for each real pipeline step (searching, reading N passages from M documents, writing with the model, checking citations);
+  - then one `answer`.
+
+  The answer is committed to history only after it has been delivered. If the client disconnects (Stop), nothing is saved. Tokens are not streamed: an answer is displayed only after citation validation.
+- **Retry.** `retry_of` deletes the earlier turn and answers again.
+- **Suggestions.** `GET /api/suggestions` builds questions from indexed table rows and step sections. Each one is run through the engine, extractively and without the LLM, and offered only if it answers with citations.
+- **Document search.** `GET /api/documents/{id}/search` uses the PDF text layer, or the stored OCR text for scanned pages. Page images highlight the matches.
+
+### Embeddings: labelled as what they are
+
+- `auto` (default) loads bge-small with `local_files_only`, so it never downloads, and falls back to the `hashing` back-end.
+- `hashing` is character n-gram overlap, not a semantic embedding. It reports `semantic=False` and labels itself "Keyword only", and the UI and `/api/health` say so.
+- Trace columns read "Semantic" or "Char. overlap" accordingly.
+
 ### Interface (`static/`)
 
-No framework and no build step. All document-derived text is inserted with `textContent`, never as HTML.
+The UI is in the ATLAS visual family. It reuses ATLAS's tokens, type, easing, radii and components; the exact files, lines and values are in [UI.md](UI.md). There is no framework and no build step. All document-derived text is inserted with `textContent`, never as HTML.
 
-- **Wide screens:** three panes, with the library, the chat and a page viewer.
-- **Narrow screens:** the library and the viewer become modal `<dialog>`s.
-- **Viewer:** renders the cited page server-side as a PNG with the passage's bounding boxes highlighted. It also offers "Open PDF at this page" (`#page=N`) in the browser's PDF viewer.
-- **Themes:** light and dark follow `prefers-color-scheme`. Verified in Chromium at 1440 px and 390 px with no console errors and no horizontal overflow.
+- **Layout.** A CSS grid of sidebar | conversation | document panel. The document panel has zero width until a citation opens it.
+  - Above 1180px it sits beside the conversation and is resizable. The sidebar folds if the conversation would drop below 640px.
+  - Between 881 and 1180px it floats over the conversation.
+  - At 880px and below the sidebar becomes a drawer and the document a full-screen view.
+- **Reading position.** The reader's place in the conversation (an anchor message and its offset) is held through opening, resizing and closing the panel.
+- **Answer rendering.**
+  - Quoted evidence is set apart (a rule, monospace identifiers) from the assistant's own sentence.
+  - Spec rows render as a table under their caption, and as labelled records on phones.
+  - Warnings are red blocks; inference and older-revision claims are labelled.
+  - Source pills sit beside the claim they support.
+- **Verification.** `tests/ui/e2e.mjs` checks 100 behaviours in Chromium against real servers; see [UI.md](UI.md).
 
 ## Security and resource notes
 

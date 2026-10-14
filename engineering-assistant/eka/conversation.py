@@ -8,6 +8,7 @@ equipment or identifiers, those win and earlier context is not added.
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -59,23 +60,36 @@ class Route:
 
 
 class Conversations:
-    """In-memory conversation memory, bounded in size and age."""
+    """Conversation memory: a bounded in-memory cache over the persistent store.
 
-    def __init__(self, max_conversations: int = 500, max_turns: int = 20, ttl_s: float = 6 * 3600):
+    With a store, a conversation reopened after a restart still resolves
+    follow-ups from its stored turns. Without one (tests), memory only.
+    """
+
+    def __init__(self, store=None, max_conversations: int = 500, max_turns: int = 20):
         self._items: OrderedDict[str, list[Turn]] = OrderedDict()
         self._lock = threading.Lock()
-        self.max_conversations, self.max_turns, self.ttl_s = max_conversations, max_turns, ttl_s
+        self.store = store
+        self.max_conversations, self.max_turns = max_conversations, max_turns
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:16]
 
     def history(self, conversation_id: str) -> list[Turn]:
         with self._lock:
-            turns = self._items.get(conversation_id, [])
-            if turns and time.time() - turns[-1].at > self.ttl_s:
-                self._items.pop(conversation_id, None)
-                return []
-            return list(turns)
+            if conversation_id in self._items:
+                return list(self._items[conversation_id])
+        if self.store is None:
+            return []
+        turns = [Turn(m["question"], m["retrieval_query"], m["status"], json.loads(m["doc_ids"]), m["created_at"])
+                 for m in self.store.messages(conversation_id)][-self.max_turns:]
+        with self._lock:
+            self._items[conversation_id] = turns
+        return list(turns)
+
+    def forget(self, conversation_id: str):
+        with self._lock:
+            self._items.pop(conversation_id, None)
 
     def add(self, conversation_id: str, turn: Turn):
         with self._lock:

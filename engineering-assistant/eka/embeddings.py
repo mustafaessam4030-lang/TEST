@@ -1,9 +1,12 @@
 """Embedding back-ends behind one small interface.
 
-    hashing    offline, deterministic, no model download. Signed feature hashing
-               of words and character n-grams. It captures spelling-level
-               similarity (plurals, partial identifiers), not meaning. Default,
-               because it always works and needs nothing.
+    auto       (default) fastembed bge-small if the model is ALREADY in the model
+               directory (loaded with local_files_only, never downloaded);
+               otherwise hashing, and retrieval is reported as keyword-only.
+    hashing    NOT a semantic embedding: signed feature hashing of words and
+               character n-grams. It measures spelling-level overlap (plurals,
+               partial identifiers), not meaning, and is labelled "keyword" in
+               the API and UI. Needs no model.
     fastembed  BAAI/bge-small-en-v1.5 through ONNX Runtime on CPU (~67 MB model,
                384 dimensions). Real semantic similarity. Optional dependency.
     ollama     any Ollama embedding model (default nomic-embed-text, 768 dims).
@@ -41,6 +44,8 @@ def _normalise_rows(matrix: np.ndarray) -> np.ndarray:
 class Embedder:
     name: str = ""
     dim: int = 0
+    semantic: bool = False          # True only for a trained embedding model
+    label: str = ""                 # human-readable description for the UI
     # Cosine at which a passage is considered relevant on semantic similarity alone.
     strong_similarity: float = 1.01
 
@@ -55,6 +60,8 @@ class HashingEmbedder(Embedder):
     def __init__(self, dim: int = 1024):
         self.dim = dim
         self.name = "hashing-v1-{0}".format(dim)
+        self.semantic = False
+        self.label = "Keyword only: BM25 + character n-gram overlap (no semantic model)"
         # Hashing similarity tracks shared surface features, not meaning, so it is
         # never trusted on its own to declare a passage relevant.
         self.strong_similarity = 1.01
@@ -83,13 +90,27 @@ class HashingEmbedder(Embedder):
 
 
 class FastEmbedEmbedder(Embedder):
-    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", cache_dir: str | None = None):
+    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", cache_dir: str | None = None,
+                 offline: bool = False):
         try:
             from fastembed import TextEmbedding
         except ImportError as exc:
             raise EmbeddingError("fastembed is not installed: pip install -r requirements-optional.txt") from exc
-        self._model = TextEmbedding(model_name=model, cache_dir=cache_dir)
+        kwargs = {"local_files_only": True} if offline else {}
+        if offline:
+            try:  # a missing cache is an expected outcome of the probe, not an error to log
+                from loguru import logger
+                logger.disable("fastembed")
+            except ImportError:
+                pass
+        try:
+            self._model = TextEmbedding(model_name=model, cache_dir=cache_dir, **kwargs)
+        except Exception as exc:  # fastembed raises ValueError when the model is not cached
+            raise EmbeddingError("embedding model {0} is not available{1}: {2}".format(
+                model, " offline" if offline else "", exc)) from exc
         self.name = "fastembed:" + model
+        self.semantic = True
+        self.label = "Hybrid: BM25 + semantic embeddings ({0}, local CPU)".format(model)
         self.dim = len(next(iter(self._model.query_embed(["probe"]))))
         self.strong_similarity = 0.80
 
@@ -108,6 +129,8 @@ class OllamaEmbedder(Embedder):
         self.model = model
         self.timeout = timeout
         self.name = "ollama:" + model
+        self.semantic = True
+        self.label = "Hybrid: BM25 + semantic embeddings ({0} via Ollama)".format(model)
         # nomic-embed-text is trained with task prefixes.
         self._prefix = ("search_document: ", "search_query: ") if "nomic" in model else ("", "")
         self.dim = len(self._call([self._prefix[1] + "probe"])[0])
@@ -139,11 +162,17 @@ class OllamaEmbedder(Embedder):
 
 def make_embedder(settings: Settings) -> Embedder:
     kind = settings.embedder.lower()
+    if kind == "auto":
+        try:
+            return FastEmbedEmbedder(settings.embed_model or "BAAI/bge-small-en-v1.5",
+                                     str(settings.models_dir), offline=True)
+        except EmbeddingError as exc:
+            log.info("semantic embeddings not available (%s); using keyword-only retrieval", exc)
+            return HashingEmbedder()
     if kind == "hashing":
         return HashingEmbedder()
     if kind == "fastembed":
-        return FastEmbedEmbedder(settings.embed_model or "BAAI/bge-small-en-v1.5",
-                                 str(settings.data_dir / "models"))
+        return FastEmbedEmbedder(settings.embed_model or "BAAI/bge-small-en-v1.5", str(settings.models_dir))
     if kind == "ollama":
         return OllamaEmbedder(settings.ollama_url, settings.embed_model or "nomic-embed-text")
     raise EmbeddingError("unknown EKA_EMBEDDER: " + settings.embedder)

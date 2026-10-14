@@ -106,19 +106,41 @@ def test_missing_model_is_named(assistant):
     assert "HX-300" in out["message"]
 
 
-def test_ambiguous_equipment_asks_for_clarification(assistant):
+def test_ambiguous_equipment_asks_for_clarification_first(assistant, docs):
+    """The question is asked before any value is shown, so no one reads the wrong model's number."""
     out = ask(assistant, "What torque for the mounting flange bolts?")
     assert out["status"] == "needs_clarification"
-    assert len(out["clarification"]["options"]) == 2
-    values = " ".join(c["text"] for c in out["claims"])
-    assert "180" in values and "210" in values
-    assert_grounded(assistant, out)
+    assert out["claims"] == [] and out["citations"] == []
+    assert "180" not in out["answer_text"] and "210" not in out["answer_text"]
+    options = out["clarification"]["options"]
+    assert {o["doc_id"] for o in options} == {docs["HX-200_Service_Manual_RevB.pdf"]["id"],
+                                             docs["CV-90_Gearbox_Datasheet.pdf"]["id"]}
+    assert all(o["label"] for o in options)
 
 
 def test_clarification_reply_resolves(assistant):
     out = ask(assistant, "What torque for the mounting flange bolts?", "the CV-90 gearbox")
     assert out["status"] == "answered"
     assert "180" in out["claims"][0]["text"] and "210" not in out["answer_text"]
+    assert_grounded(assistant, out)
+
+
+def test_clicking_a_clarification_option_answers_for_that_model(assistant, docs):
+    """The UI sends the option label scoped to the option's document."""
+    first = assistant.engine.ask("What torque for the mounting flange bolts?")
+    option = next(o for o in first["clarification"]["options"] if "HX-200" in o["label"])
+    out = assistant.engine.ask(option["label"], first["conversation_id"], [option["doc_id"]])
+    assert out["status"] == "answered"
+    assert "210" in out["claims"][0]["text"] and "180" not in out["answer_text"]
+    assert out["safety_notice"]  # torque stays safety-relevant
+    assert_grounded(assistant, out)
+
+
+def test_spec_rows_carry_table_cells(assistant):
+    out = ask(assistant, "What is the dry weight of the HX-200?")
+    claim = out["claims"][0]
+    assert claim["source_kind"] == "table_row" and claim["caption"].startswith("Table 1")
+    assert ["Value", "48 kg"] in claim["cells"]
 
 
 def test_follow_up_uses_previous_topic(assistant):

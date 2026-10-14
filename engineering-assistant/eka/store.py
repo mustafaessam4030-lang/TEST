@@ -61,6 +61,24 @@ CREATE TABLE IF NOT EXISTS chunks (
     ocr         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS chunks_doc ON chunks(doc_id, page_no);
+CREATE TABLE IF NOT EXISTS conversations (
+    id         TEXT PRIMARY KEY,
+    title      TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    question        TEXT NOT NULL,
+    answer          TEXT NOT NULL,          -- the structured answer object (JSON)
+    retrieval_query TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL,
+    doc_ids         TEXT NOT NULL DEFAULT '[]',
+    feedback        TEXT NOT NULL DEFAULT '',
+    created_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS messages_conv ON messages(conversation_id, created_at);
 CREATE TABLE IF NOT EXISTS vectors (
     chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
     model    TEXT NOT NULL,
@@ -198,3 +216,60 @@ class Store:
             conn.executemany(
                 "INSERT OR REPLACE INTO vectors (chunk_id, model, dim, vec) VALUES (?, ?, ?, ?)",
                 [(cid, model, len(v), v.astype(np.float32).tobytes()) for cid, v in items])
+
+    # ── conversations ──
+    def save_turn(self, conversation_id: str, message_id: str, question: str, answer: dict,
+                  retrieval_query: str, status: str, doc_ids: list[str]):
+        now = time.time()
+        with self.transaction() as conn:
+            conn.execute("INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                         (conversation_id, _title(question), now, now))
+            conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id))
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, question, answer, retrieval_query, status, doc_ids, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (message_id, conversation_id, question, json.dumps(answer), retrieval_query, status,
+                 json.dumps(doc_ids), now))
+
+    def conversations(self, query: str = "", limit: int = 200) -> list[dict]:
+        if query:
+            like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            return self._all(
+                "SELECT c.*, COUNT(m.id) AS turns FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id"
+                " WHERE c.title LIKE ? ESCAPE '\\' OR c.id IN (SELECT conversation_id FROM messages"
+                " WHERE question LIKE ? ESCAPE '\\') GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?",
+                (like, like, limit))
+        return self._all(
+            "SELECT c.*, COUNT(m.id) AS turns FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id"
+            " GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?", (limit,))
+
+    def conversation(self, conversation_id: str) -> dict | None:
+        return self._one("SELECT * FROM conversations WHERE id = ?", (conversation_id,))
+
+    def messages(self, conversation_id: str) -> list[dict]:
+        return self._all("SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at, rowid",
+                         (conversation_id,))
+
+    def message(self, message_id: str) -> dict | None:
+        return self._one("SELECT * FROM messages WHERE id = ?", (message_id,))
+
+    def rename_conversation(self, conversation_id: str, title: str):
+        with self._lock:
+            self._conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (_title(title), conversation_id))
+
+    def delete_conversation(self, conversation_id: str):
+        with self.transaction() as conn:
+            conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
+    def delete_message(self, message_id: str):
+        with self._lock:
+            self._conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+
+    def set_feedback(self, message_id: str, value: str):
+        with self._lock:
+            self._conn.execute("UPDATE messages SET feedback = ? WHERE id = ?", (value, message_id))
+
+
+def _title(text: str) -> str:
+    text = " ".join((text or "").split())
+    return (text[:72].rsplit(" ", 1)[0] + "\u2026") if len(text) > 72 else (text or "New conversation")

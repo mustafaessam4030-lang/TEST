@@ -98,23 +98,39 @@ The 3.5 GB peak came from fastembed's default batch of 256 padded passages, and 
 
 ## Automated tests
 
-`python -m pytest`: **73 passed** in about 12 s. They cover:
+`python -m pytest`: **90 passed**, run with `EKA_TEST_MODEL_DIR` pointing at the local bge-small model. Without it, the run gives 88 passed and 2 skipped, the two skips being the real-embedding tests. Which suites use real components and which use mocks is tabulated in the README ("What is real and what is mocked"); only `test_generation.py` (Ollama) is mocked.
 
-- text utilities: identifier-preserving tokens, number canonicalisation;
-- extraction: tables with headers, captions, two-column order, warnings, blank pages, OCR, OCR disabled, corrupted, non-PDF and encrypted input;
-- chunking: page numbers, section paths, table rows, steps;
-- ingestion: statuses, page records, duplicates, re-index without duplicate chunks, revision supersession;
-- retrieval: table-row recall, document filter before scoring, unknown identifiers, trace reasons;
-- answers: exact values with pages, revision handling, part numbers, stated unit conversions, procedures with warnings, four unsupported questions, the missing-model message, clarification and its reply, follow-ups, topic change, OCR labelling, document scope, comparison, library/help intents, the semantic-gate regression, "why" questions, the unnamed-equipment caveat;
-- the **empty-answer regression**: 9 adversarial inputs, all of which return a status and a non-empty message;
-- citation validation: wrong page, invented excerpt and unknown chunk are all rejected; invented numbers and part numbers are detected;
-- the Ollama path against a stand-in server:
-  - valid claims are accepted, with temperature 0 and a JSON schema sent;
-  - an invented value is dropped;
-  - an invented source id, empty output, non-JSON output, an invalid status, a timeout or an unreachable server all fall back to extractive;
+What the tests cover:
+
+- **Text and extraction:** identifier-preserving tokens and number canonicalisation; tables with headers and captions, two-column order, warnings, blank pages, OCR, OCR disabled, and corrupted, non-PDF or encrypted input.
+- **Chunking and ingestion:** chunk pages, sections, table rows and steps; ingestion statuses, page records, duplicates, re-index without duplicate chunks, and revision supersession.
+- **Retrieval:** table-row recall, the document filter applied before scoring, unknown identifiers, and trace reasons.
+- **Answers:** exact values with pages; revision handling; part numbers; stated unit conversions; procedures with warnings; four unsupported questions; the missing-model message.
+- **Clarification:** clarify-first, with no values and options carrying `doc_id`. Answering through a reply or an option click, and the cells on spec rows.
+- **Conversation behaviour:** follow-ups, topic change, OCR labelling, document scope, comparison, library and help intents. Also the semantic-gate regression, "why" questions and the unnamed-equipment caveat.
+- **Empty-answer regression:** 9 adversarial inputs, all of which return a status and a non-empty message.
+- **Citation validation:** a wrong page, an invented excerpt and an unknown chunk are all rejected; invented numbers and part numbers are detected.
+- **Embeddings:**
+  - `hashing` is labelled keyword-only.
+  - `auto` without a local model falls back without downloading, and offline loading refuses to fetch.
+  - With the real bge-small model, vectors are normalised and 384-dimensional, and it ranks "hold" to "capacity" by meaning.
+- **Ollama path** (stand-in server, **mock**):
+  - valid claims are accepted;
+  - an invented value or source id is rejected;
+  - empty, non-JSON or invalid-status output, a timeout or an unreachable server fall back to extractive;
   - model abstention is respected;
-  - there is no model call when retrieval found nothing;
-- API end to end: upload, processing, duplicate, page status, chat, follow-up, page PNG, PDF file, 415/400/413 errors, corrupted upload, 404s, validation, delete, token enforcement.
+  - there is no model call without evidence.
+- **API end to end:**
+  - upload, processing, duplicates, page status, chat and follow-up, page PNG, PDF file;
+  - 415/400/413 errors, corrupted upload, 404s, validation, delete, token enforcement;
+  - streaming stages and answer;
+  - saved and reloaded history, search, rename, delete, follow-ups after the memory is cleared, retry, feedback;
+  - document search (native and OCR) with highlighted pages;
+  - suggestions that verify as answerable.
+
+`tests/ui/run.sh` runs the browser suite: **100/100 checks pass** in Chromium against fresh real servers, at desktop, tablet and phone sizes in light and dark. A mock model was used only for the slow-response and Stop checks. The interaction list and the defects it found are in [UI.md](UI.md).
+
+Evaluation-set note: `amb-01` and `amb-02` now expect clarify-first behaviour, so no values are shown, and no longer require the values in the answer. Every metric in the results table was re-run after this change and is unchanged.
 
 ## Not tested
 
@@ -123,7 +139,8 @@ The 3.5 GB peak came from fastembed's default batch of 256 padded passages, and 
 - Real engineering manuals: complex layouts, borderless tables, non-English text, very large (1000+ page) documents.
 - Scans at low quality or skewed; the sample scan is clean apart from speckle.
 - Concurrent multi-user load, and long-running stability.
-- Browsers other than Chromium; Windows and macOS hosts.
+- Browsers other than Chromium; Windows and macOS hosts; real touch devices; screen readers.
+- The UI with a real Ollama model: only the 6-second mock model was used for slow-response and Stop.
 - Snowflake: not used.
 
 ## Reproduce
