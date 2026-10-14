@@ -566,11 +566,11 @@ else:
                   kind == "SUCCESS" and result.get("ata") == "03/10/2026"
                   and result.get("eta") == "02/10/2026",
                   "{0} {1}".format(kind, result))
-            # The shipment has arrived, so only the ATA is written (the
-            # estimate is not, arrival_events rules); read back as always.
-            check("9. The existing read-back verification ran for the ATA write; the ETA "
-                  "was not written once the shipment had arrived",
-                  VERIFY_CALLS == [("BU", "ATA", "03/10/2026")],
+            # Grimaldi is not DHL: ETA and ATA are both written, as on 12 Oct
+            # (basic_check); each is read back as always.
+            check("9. The existing read-back verification ran for both writes (COE ETA, "
+                  "BU ATA)",
+                  VERIFY_CALLS == [("COE", "ETA", "02/10/2026"), ("BU", "ATA", "03/10/2026")],
                   str(VERIFY_CALLS))
             check("10. Verified writes, and only then, gave SUCCESS",
                   row["state"] == "updated" and names[-1] == "SUCCESS",
