@@ -584,7 +584,7 @@ threading.Thread(target=stand_in.serve_forever, daemon=True).start()
 BASE = "http://127.0.0.1:{0}".format(stand_in.server_address[1])
 AI_VARS = ("ATLAS_AI", "ATLAS_LLM_PROVIDER", "ATLAS_LLM_URL", "ATLAS_LLM_MODEL",
            "ATLAS_LLM_TIMEOUT_S", "ATLAS_LLM_RETRIES", "ATLAS_LLM_THREADS",
-           "ATLAS_LLM_KEEP_ALIVE", "ATLAS_SEARCH_URL")
+           "ATLAS_LLM_KEEP_ALIVE", "ATLAS_SEARCH_URL", "ATLAS_LLM_VISION_MODEL")
 
 
 def fresh(**env):
@@ -622,6 +622,48 @@ autoconfig.apply(lines.append)
 check("Model not pulled: conversation stays off, and says how to fix it",
       "ATLAS_LLM_PROVIDER" not in os.environ and any("ollama pull" in x for x in lines), lines)
 StandIn.models = ["qwen3.5:4b"]
+
+# The stronger model: used by itself when pulled and the PC has the memory.
+fresh()
+C = autoconfig.choose_model
+check("Stronger model pulled, 32 GB RAM: ATLAS uses it, the 4B kept for pictures",
+      C(BASE, {"qwen3:30b", "qwen3.5:4b"}, 34.3) == ("qwen3:30b", "qwen3.5:4b"))
+check("Stronger model pulled, 16 GB RAM: stays on the 4B (not enough memory)",
+      C(BASE, {"qwen3:30b", "qwen3.5:4b"}, 17.0) == ("qwen3.5:4b", None))
+check("Only the 4B pulled: the 4B", C(BASE, {"qwen3.5:4b"}, 64.0) == ("qwen3.5:4b", None))
+os.environ["ATLAS_LLM_MODEL"] = "llama3.1:8b"
+check("The operator's ATLAS_LLM_MODEL always wins",
+      C(BASE, {"qwen3:30b"}, 64.0) == ("llama3.1:8b", None))
+fresh()
+StandIn.models = ["qwen3:30b", "qwen3.5:4b"]
+_real_machine = autoconfig._machine
+autoconfig._machine = lambda: (4, 34.3, 20.0, 100.0)
+fresh(ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE)
+autoconfig.apply(lambda line: None)
+for _ in range(50):
+    if LOADS:
+        break
+    time.sleep(0.1)
+check("Switched on with the stronger model, loaded in the background",
+      os.environ.get("ATLAS_LLM_MODEL") == "qwen3:30b"
+      and os.environ.get("ATLAS_LLM_VISION_MODEL") == "qwen3.5:4b"
+      and LOADS and LOADS[0].get("model") == "qwen3:30b", (os.environ.get("ATLAS_LLM_MODEL"), LOADS))
+autoconfig._machine = _real_machine
+StandIn.models = ["qwen3.5:4b"]
+
+# A picture goes to the vision model; text to the main one.
+SENT = []
+_real_call, _real_health = llm.OllamaProvider._call, llm.OllamaProvider.health
+llm.OllamaProvider._call = lambda self, m, path, body, timeout: SENT.append(body["model"]) or \
+    {"message": {"content": "{}"}}
+llm.OllamaProvider.health = lambda self: {"ok": True}
+p = llm.OllamaProvider(model="qwen3:30b")
+os.environ["ATLAS_LLM_VISION_MODEL"] = "qwen3.5:4b"
+p.generate("s", "text question")
+p.generate("s", "about this picture", images=["aGk="])
+check("Text to the stronger model, a picture to the vision model",
+      SENT == ["qwen3:30b", "qwen3.5:4b"], SENT)
+llm.OllamaProvider._call, llm.OllamaProvider.health = _real_call, _real_health
 
 fresh(ATLAS_AI="0", ATLAS_LLM_URL=BASE, ATLAS_SEARCH_URL=BASE)
 autoconfig.apply(lambda line: None)

@@ -644,7 +644,9 @@ def _image(question, state, context, inner, rules, lang, timings, started):
     reply.pop("card", None)
     if reply.get("reference") and reply["reference"] not in (question + sections["answer"]):
         reply.pop("reference", None)
-    reply["llm"] = {"used": True, "model": llm.provider().model, "mode": "image",
+    reply["llm"] = {"used": True, "mode": "image",
+                    "model": (os.environ.get("ATLAS_LLM_VISION_MODEL") or "").strip()
+                    or llm.provider().model,
                     "language": lang, "cross_checked": checked,
                     "timings": dict(timings, total_s=round(time.time() - started, 1))}
     return reply

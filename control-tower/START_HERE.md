@@ -683,6 +683,25 @@ START_ATLAS_DEMO.bat                & rem the last real run (or --test-data)
 python atlas_demo_acceptance.py     & rem tests A-F against it
 ```
 
+**A stronger model (PC with 32 GB of RAM or more).** ATLAS switches to
+`qwen3:30b` by itself when it is pulled and the PC has at least 30 GB of RAM:
+a "mixture of experts" model, 30B in all but about 3B working per word, so it
+understands much better than the 4B at roughly the same speed on a CPU. It
+needs about 19 GB of disk and RAM. It cannot read pictures, so keep the 4B
+pulled too: questions about an attached image go to it
+(`ATLAS_LLM_VISION_MODEL`). Run on the automation PC, then restart the tower:
+
+```bat
+ollama pull qwen3:30b
+python -m intelligence.autoconfig --test   & rem shows the model and its answer time
+```
+
+To go back to the 4B: `ollama rm qwen3:30b` (or `set ATLAS_LLM_MODEL=qwen3.5:4b`).
+Not yet measured on the automation PC: check the answer time the self-test
+prints before giving the team access. Run, shipment and PO answers do not use
+the model at all (they come from the records), so the model's size changes
+only conversation, Arabic and web answers.
+
 SearXNG setup, including the untested Windows routes: `deploy/searxng/README.md`.
 
 Rules both layers work under: run facts win over the web (a disagreement is

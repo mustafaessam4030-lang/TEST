@@ -12,6 +12,8 @@ it does without one.
     ATLAS_LLM_PROVIDER      none (default) | ollama
     ATLAS_LLM_URL           default http://127.0.0.1:11434 (Ollama)
     ATLAS_LLM_MODEL         e.g. qwen2.5:7b-instruct  (no default: must be named)
+    ATLAS_LLM_VISION_MODEL  the model for questions with a picture (default:
+                            ATLAS_LLM_MODEL); for a text-only main model
     ATLAS_LLM_TIMEOUT_S     default 20
     ATLAS_LLM_RETRIES       default 1 (with backoff)
     ATLAS_LLM_THREADS       CPU threads for the model (default: Ollama's choice;
@@ -123,6 +125,8 @@ class OllamaProvider(object):
                              {"role": "user", "content": prompt}]}
         if images:
             body["messages"][1]["images"] = list(images)
+            # A text-only main model cannot read a picture: the vision one does.
+            body["model"] = (os.environ.get("ATLAS_LLM_VISION_MODEL") or "").strip() or self.model
         if json_mode:
             body["format"] = "json"
         threads = (os.environ.get("ATLAS_LLM_THREADS") or "").strip()

@@ -7,7 +7,8 @@ ATLAS's local AI, switched on by itself when it is installed on this machine.
 apply() looks for two local services and, when it finds them, turns them on
 for this process only:
 
-    Ollama    http://127.0.0.1:11434 with the model pulled (qwen3.5:4b unless
+    Ollama    http://127.0.0.1:11434 with the model pulled (qwen3:30b when it
+              is pulled and the PC has 30 GB+ of RAM, else qwen3.5:4b, unless
               ATLAS_LLM_MODEL names another)  -> ATLAS talks naturally
     SearXNG   http://127.0.0.1:8888 answering JSON  -> ATLAS can search the web
 
@@ -29,6 +30,13 @@ import urllib.request
 from . import research as R
 
 DEFAULT_MODEL = "qwen3.5:4b"
+# The stronger model, used by itself when it is pulled and the PC has the
+# memory for it: a "mixture of experts" model, 30B in all but ~3B working per
+# word, so it understands far better than the 4B at about the same speed on
+# a CPU. It needs ~19 GB of RAM while loaded. Text only: pictures still go to
+# the 4B (ATLAS_LLM_VISION_MODEL), which reads images.
+STRONG_MODELS = ("qwen3:30b", "qwen3:30b-a3b")
+STRONG_MIN_RAM_GB = 30
 DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_SEARCH = "http://127.0.0.1:8888"
 RETRY_FOR_S = 600
@@ -129,10 +137,36 @@ def _warm(url, model):
     threading.Thread(target=load, name="atlas-model-load", daemon=True).start()
 
 
+def _pulled(url):
+    try:
+        return {m.get("name") for m in _get(url.rstrip("/") + "/api/tags").get("models") or []}
+    except Exception:
+        return set()
+
+
+def choose_model(url, pulled=None, ram_gb=None):
+    """
+    -> (model, vision_model or None). The operator's ATLAS_LLM_MODEL wins.
+    Otherwise the stronger model when it is pulled and the PC has at least
+    STRONG_MIN_RAM_GB of memory, with the 4B kept for pictures; else the 4B.
+    """
+    if os.environ.get("ATLAS_LLM_MODEL"):
+        return os.environ["ATLAS_LLM_MODEL"], None
+    pulled = _pulled(url) if pulled is None else pulled
+    if ram_gb is None:
+        ram_gb = _machine()[1] or 0
+    strong = next((m for m in STRONG_MODELS if m in pulled), None)
+    if strong and ram_gb >= STRONG_MIN_RAM_GB:
+        return strong, (DEFAULT_MODEL if DEFAULT_MODEL in pulled else None)
+    return DEFAULT_MODEL, None
+
+
 def _probe(warm=True):
     """One look. -> (model_ok, model_detail, search_ok, search_detail)"""
     url = os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA
-    model = os.environ.get("ATLAS_LLM_MODEL") or DEFAULT_MODEL
+    model, vision = choose_model(url)
+    if vision:
+        os.environ.setdefault("ATLAS_LLM_VISION_MODEL", vision)
     if (os.environ.get("ATLAS_LLM_PROVIDER") or "").strip().lower() not in ("", "ollama"):
         model_ok, model_detail = False, "set by ATLAS_LLM_PROVIDER"
     else:
