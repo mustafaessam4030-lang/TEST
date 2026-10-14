@@ -40,6 +40,8 @@ def main() -> int:
     line(OK if path else WARN, "OCR (tesseract) for scanned PDFs",
          path or "not found: scanned pages will be reported as unreadable. Install it, or set EKA_TESSERACT_CMD")
 
+    if settings.models_dir.is_dir() and any(settings.models_dir.rglob("*.parts.json")):
+        line(WARN, "Search model", "delivered in parts and not joined yet: extract every model-part zip, then run setup")
     from .embeddings import make_embedder
     try:
         embedder = make_embedder(settings)

@@ -4,6 +4,23 @@ Ask questions about your engineering PDFs and get answers quoted from them,
 with the exact document and page for every statement. Everything runs on
 your computer: no cloud service, no Snowflake, and no AI account is needed.
 
+## The files you receive
+
+| File | Needed? |
+|---|---|
+| `EngineeringKnowledgeAssistant-<version>.zip` | **Yes**: the application |
+| `EngineeringKnowledgeAssistant-<version>-model-part1of3.zip` … `part3of3.zip` | **Yes**: the search model, cut into parts so each file stays small. Setup joins them and checks they are complete |
+| `…-offline-packages-win_amd64-py3.13-part1of3.zip` … | Only for a PC **without internet**: Python packages for 64-bit Windows, one set of 3 zips per Python version (3.12, 3.13, 3.14). Take only the set matching the PC's Python |
+
+If you received a single larger zip that already contains `models/…/model_optimized.onnx`,
+there are no model parts to add.
+
+**Extract every zip into the same place.** Each one contains an
+`EngineeringKnowledgeAssistant` folder, and they merge into one folder. In Windows
+Explorer, right-click each zip, choose **Extract All…**, and enter the same
+destination each time, for example `C:\Apps`. If Windows asks, choose
+**Replace the files** (no file is in more than one zip).
+
 ## What is in this folder
 
 | Item | What it is |
@@ -24,7 +41,7 @@ your computer: no cloud service, no Snowflake, and no AI account is needed.
 ## Requirements
 
 * Windows 10/11, Linux or macOS, 64-bit, about 1 GB free disk and 2 GB RAM.
-* **Python 3.10 – 3.13.** On Windows install it from <https://www.python.org/downloads/>
+* **Python 3.10 – 3.14.** On Windows install it from <https://www.python.org/downloads/>
   and tick **"Add python.exe to PATH"**.
 * Internet access during setup only (about 70 MB of packages), **or** the
   offline packages zip (see below).
@@ -32,8 +49,9 @@ your computer: no cloud service, no Snowflake, and no AI account is needed.
 
 ## Windows
 
-1. Extract the zip, for example to `C:\EngineeringKnowledgeAssistant`.
-   (Extract it — do not run it from inside the zip.)
+1. Extract the app zip and the model-part zips to the same place (see above),
+   giving for example `C:\Apps\EngineeringKnowledgeAssistant`. Do not run anything from
+   inside a zip.
 2. Double-click **`setup.bat`**. It takes 1–3 minutes and ends with a checklist;
    every line should say `OK` (a `WARN` for OCR is fine).
 3. Copy your PDFs into the **`pdfs`** folder (sub-folders are fine).
@@ -93,10 +111,12 @@ If the model is not running, the assistant falls back to quoted answers.
 
 ## Offline installation (no internet on the target PC)
 
-Use **`EngineeringKnowledgeAssistant-<version>-offline-packages-win_amd64.zip`**
-(Python 3.11, 3.12 or 3.13 on 64-bit Windows). Extract it, copy its `wheels`
-folder into this folder (next to `setup.bat`) and run `setup.bat`.
-It then installs from `wheels` without contacting the internet.
+Use the **offline-packages** zips that match the Python on that PC (for example
+`…-offline-packages-win_amd64-py3.13-part1of3.zip` to `part3of3.zip` for Python 3.13;
+check with `py --version`). Extract all of them into the same place as the app,
+so a `wheels` folder appears next to `setup.bat`, then run `setup.bat`. Setup
+then installs from `wheels` and does not contact the internet. Packages for
+other Python versions can be built with `scripts/build_release.py`.
 
 ## Settings (`config.env`)
 
@@ -120,6 +140,7 @@ Real environment variables override `config.env`. Restart after a change.
 
 | Problem | Fix |
 |---|---|
+| "The search model is incomplete" | One or more `model-part` zips were not extracted into the same place; extract all of them and run setup again |
 | "Python 3.10 or newer was not found" | Install Python and tick "Add python.exe to PATH"; open a new window |
 | Setup fails downloading packages | Company proxy: `set HTTPS_PROXY=http://proxy:port` before `setup.bat`, or use the offline packages zip |
 | "Port 8765 already in use" | It is already running (open the browser), or change `EKA_PORT` |

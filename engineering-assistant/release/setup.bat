@@ -13,6 +13,9 @@ if not defined PY goto nopython
 %PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"
 if errorlevel 1 goto nopython
 
+%PY% -m eka.assemble models
+if errorlevel 1 goto modelparts
+
 if not exist ".venv\Scripts\python.exe" (
   echo Creating the Python environment in .venv ...
   %PY% -m venv .venv
@@ -41,6 +44,15 @@ exit /b 0
 echo  Python 3.10 or newer was not found.
 echo  Install it from https://www.python.org/downloads/ and tick
 echo  "Add python.exe to PATH" during installation, then run setup.bat again.
+echo.
+pause
+exit /b 1
+
+:modelparts
+echo.
+echo  The search model is incomplete. Extract EVERY file named
+echo  EngineeringKnowledgeAssistant-...-model-partXofY.zip into the same
+echo  place as the app zip, then run setup.bat again.
 echo.
 pause
 exit /b 1

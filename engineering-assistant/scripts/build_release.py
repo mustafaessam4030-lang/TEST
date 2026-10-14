@@ -1,13 +1,20 @@
 """Build the distributable zip.
 
     python scripts/build_release.py --model-cache <fastembed cache dir> [--out dist]
-                                    [--wheels win_amd64:3.11,3.12,3.13]
+                                    [--wheels win_amd64:3.11,3.12,3.13] [--split-mb 25]
 
 Produces ``dist/EngineeringKnowledgeAssistant-<version>.zip`` with one root
 folder holding the app, launchers, an empty ``pdfs/`` folder, the bundled
 retrieval model and the docs. With ``--wheels`` it also builds a separate
 ``...-offline-packages-<platform>.zip`` whose ``wheels/`` folder the setup
 scripts install from without internet access.
+
+With ``--split-mb N`` no zip is larger than about N MB, for channels with an
+upload limit: the model file is cut into ``.partNN`` pieces shipped in
+``...-model-partXofY.zip`` files (setup re-joins them and checks the SHA-256,
+see ``eka/assemble.py``), and the offline packages are built per Python
+version and spread over several zips. All zips are extracted into the same
+folder.
 
 The model folder is copied with symlinks resolved (Hugging Face caches use
 them; zip files and Windows do not handle them well) and without the blobs
@@ -16,6 +23,8 @@ they point to, so it loads offline as-is.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import stat
@@ -124,10 +133,11 @@ def build_wheels(stage: Path, platform: str, pythons: list[str]):
         subprocess.run(cmd, check=True)
         if platform.startswith("win"):
             add_marker_dependencies(wheels, py, base)
-    (stage / "README.txt").write_text(
+    (stage / "README-offline-packages.txt").write_text(
         "Offline packages for the Engineering Knowledge Assistant ({0}; Python {1}).\n\n"
-        "Unzip this next to the app so the 'wheels' folder sits beside setup.bat / setup.sh,\n"
-        "then run setup. It installs from this folder and needs no internet access.\n".format(platform, ", ".join(pythons)))
+        "Extract this zip into the same place as the app zip, so the 'wheels' folder sits\n"
+        "beside setup.bat / setup.sh, then run setup. It installs from this folder and\n"
+        "needs no internet access.\n".format(platform, ", ".join(pythons)))
 
 
 def _wheel_requirements(wheel: Path) -> list[str]:
@@ -165,6 +175,43 @@ def add_marker_dependencies(wheels: Path, py: str, base_cmd: list[str]):
         subprocess.run(base_cmd + sorted(missing), check=True)
 
 
+def split_large_files(stage: Path, folder: Path, limit: int, tmp: Path) -> list[Path]:
+    """Cut files over ``limit`` bytes into parts; returns one staging folder per part."""
+    part_stages: list[Path] = []
+    for path in sorted(p for p in folder.rglob("*") if p.is_file() and p.stat().st_size > limit):
+        data = path.read_bytes()
+        chunks = [data[i:i + limit] for i in range(0, len(data), limit)]
+        names = ["{0}.part{1:02d}".format(path.name, i + 1) for i in range(len(chunks))]
+        for i, (chunk, name) in enumerate(zip(chunks, names)):
+            if i >= len(part_stages):
+                part_stages.append(tmp / "part{0}".format(i + 1) / NAME)
+            dst = part_stages[i] / path.relative_to(stage).parent / name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(chunk)
+        manifest = {"name": path.name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "parts": names}
+        path.with_name(path.name + ".parts.json").write_text(json.dumps(manifest, indent=1))
+        path.unlink()
+    return part_stages
+
+
+def group_files(files: list[Path], limit: int) -> list[list[Path]]:
+    """First-fit-decreasing: spread files over as few groups of at most ``limit`` bytes as possible."""
+    groups: list[tuple[int, list[Path]]] = []
+    for f in sorted(files, key=lambda f: f.stat().st_size, reverse=True):
+        size = f.stat().st_size
+        for i, (used, members) in enumerate(groups):
+            if used + size <= limit:
+                groups[i] = (used + size, members + [f])
+                break
+        else:
+            groups.append((size, [f]))
+    return [members for _, members in groups]
+
+
+def report(path: Path):
+    print("{0}  {1:.1f} MB".format(path, path.stat().st_size / 1e6))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model-cache", type=Path, help="fastembed cache folder that contains " + MODEL_FOLDER)
@@ -172,6 +219,7 @@ def main():
     ap.add_argument("--out", type=Path, default=ROOT / "dist")
     ap.add_argument("--wheels", action="append", default=[],
                     help="PLATFORM:PY[,PY...] e.g. win_amd64:3.11,3.12,3.13 (repeatable; 'native' = this machine)")
+    ap.add_argument("--split-mb", type=float, default=0, help="keep every zip under about this many MB")
     args = ap.parse_args()
     if not args.no_model and not args.model_cache:
         ap.error("--model-cache is required (or pass --no-model)")
@@ -180,17 +228,41 @@ def main():
         stage = Path(tmp) / NAME
         stage.mkdir()
         build_app(stage, None if args.no_model else args.model_cache)
+        limit = int(args.split_mb * 1e6 * 0.97) if args.split_mb else 0   # leave room for zip headers
+        if limit:
+            parts = split_large_files(stage, stage / "models", limit, Path(tmp) / "model-parts")
+            for i, part in enumerate(parts):
+                pzip = args.out / "{0}-{1}-model-part{2}of{3}.zip".format(NAME, ver, i + 1, len(parts))
+                write_zip(part, pzip, NAME)
+                report(pzip)
         app_zip = args.out / "{0}-{1}.zip".format(NAME, ver)
         write_zip(stage, app_zip, NAME)
-        print("{0}  {1:.1f} MB".format(app_zip, app_zip.stat().st_size / 1e6))
+        report(app_zip)
         for spec in args.wheels:
             platform, _, pys = spec.partition(":")
-            wstage = Path(tmp) / ("wheels-" + platform)
-            build_wheels(wstage, platform, [p for p in pys.split(",") if p] or ["{0}.{1}".format(*sys.version_info[:2])])
-            wzip = args.out / "{0}-{1}-offline-packages-{2}.zip".format(NAME, ver, platform)
-            write_zip(wstage, wzip, NAME)
-            print("{0}  {1:.1f} MB".format(wzip, wzip.stat().st_size / 1e6))
-
+            pythons = [p for p in pys.split(",") if p] or ["{0}.{1}".format(*sys.version_info[:2])]
+            if not limit:
+                wstage = Path(tmp) / ("wheels-" + platform)
+                build_wheels(wstage, platform, pythons)
+                wzip = args.out / "{0}-{1}-offline-packages-{2}.zip".format(NAME, ver, platform)
+                write_zip(wstage, wzip, NAME)
+                report(wzip)
+                continue
+            for py in pythons:      # one set per Python version, spread over zips under the limit
+                wstage = Path(tmp) / "wheels-{0}-{1}".format(platform, py)
+                build_wheels(wstage, platform, [py])
+                groups = group_files(sorted((wstage / "wheels").iterdir()), limit)
+                for i, group in enumerate(groups):
+                    gstage = Path(tmp) / "wheels-{0}-{1}-{2}".format(platform, py, i + 1)
+                    (gstage / "wheels").mkdir(parents=True)
+                    for f in group:
+                        shutil.copy2(f, gstage / "wheels" / f.name)
+                    if i == 0:
+                        shutil.copy2(wstage / "README-offline-packages.txt", gstage / "README-offline-packages.txt")
+                    wzip = args.out / "{0}-{1}-offline-packages-{2}-py{3}-part{4}of{5}.zip".format(
+                        NAME, ver, platform, py, i + 1, len(groups))
+                    write_zip(gstage, wzip, NAME)
+                    report(wzip)
 
 if __name__ == "__main__":
     os.umask(0o022)

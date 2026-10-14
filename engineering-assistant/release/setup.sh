@@ -5,6 +5,8 @@ cd "$(dirname "$0")"
 PY="${PYTHON:-python3}"
 "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || {
   echo "Python 3.10 or newer is required (set PYTHON=/path/to/python3 to choose one)."; exit 1; }
+"$PY" -m eka.assemble models || {
+  echo "The search model is incomplete: extract every ...-model-partXofY.zip into this folder and run setup again."; exit 1; }
 [ -x .venv/bin/python ] || "$PY" -m venv .venv
 if [ -d wheels ]; then
   echo "Installing from the offline packages in ./wheels"

@@ -33,11 +33,11 @@ engineering-assistant/
 The distributable zip has double-click launchers (`setup.bat`, `start.bat`, `stop.bat`), a `config.env`, a `pdfs/` folder that is indexed automatically, and the bge-small search model, so nothing is downloaded at run time. Instructions for end users: [START_HERE.md](START_HERE.md). Build it with:
 
 ```sh
-python scripts/build_release.py --model-cache data/models \
-    --wheels win_amd64:3.11,3.12,3.13          # optional: offline packages zip for Windows
+# --wheels: optional offline packages for Windows; --split-mb: optional, no zip over ~25 MB (model shipped in parts)
+python scripts/build_release.py --model-cache data/models --wheels win_amd64:3.12,3.13,3.14 --split-mb 25
 ```
 
-Output goes to `dist/`. `python -m eka.check` (or `check.bat`) checks an installation.
+Output goes to `dist/`. With `--split-mb`, the model is shipped as `model-partXofY` zips. Setup joins them and checks the SHA-256 (`python -m eka.assemble`). `python -m eka.check` (or `check.bat`) checks an installation.
 
 ## PDF folder (phase 1) and SharePoint (phase 2)
 
