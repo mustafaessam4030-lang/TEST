@@ -5615,6 +5615,7 @@ def get_qatar_result(page, tracking_number):
         while time.time() < end_time:
             result = extract_qatar_result(page)
             if result:
+                result = atlas_transit_veto(_page_text(page), "QATAR", result)
                 write_log(
                     f"Qatar result: status={result['tracking_status']} | "
                     f"ETA={result.get('eta')} | ATA={result.get('ata')}"
@@ -9832,7 +9833,45 @@ def _read_generic_portal_page(page, provider):
             status = found.group(0).strip().title()
             break
 
-    return {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata}
+    result = {"provider": provider, "tracking_status": status, "eta": eta, "ata": ata}
+    if provider == "ETHIOPIAN":
+        result = atlas_transit_veto(text, "ETHIOPIAN", result)
+    return result
+
+
+def atlas_transit_veto(text, carrier, result):
+    """
+    ATLAS's one check on the Qatar and Ethiopian readers (operator, 14 Oct:
+    every ETA/ATA is validated): an ATA whose date is an arrival at a TRANSIT
+    airport on the page — Qatar's "Arrived (DOH)" on a route to JRO, an
+    Ethiopian first leg "DELIVERED" at LGG on its way to DAR — is not the
+    arrival. Then nothing is written and a person checks it. Anything else
+    passes unchanged: ATLAS vetoes only on that explicit evidence.
+    """
+    ata = (result or {}).get("ata")
+    if not ata:
+        return result
+    try:
+        from intelligence import eta_diagnostic as D
+        diag = D.diagnose(text, None, carrier)
+    except Exception as error:
+        note_suppressed("ATLAS's transit check", error)
+        return result
+    dest = diag.get("destination")
+    transit = [e for e in diag.get("events") or []
+               if e.get("date") == ata and e.get("location") and dest and e["location"] != dest
+               and (e.get("type") == "TRANSIT" or e.get("code") == "LEG:DELIVERED")]
+    at_dest = [e for e in diag.get("events") or []
+               if e.get("date") == ata and e.get("location") == dest]
+    if not transit or at_dest:
+        return result
+    e = transit[0]
+    reason = ("ATLAS: the ATA {0} is '{1}' at {2}, a transit airport — the destination on the "
+              "page is {3}; not written as the arrival".format(
+                  ata, e.get("description"), e["location"], dest))
+    write_log(reason)
+    return {"provider": result.get("provider"), "tracking_status": "Needs review",
+            "eta": None, "ata": None, "review": [reason]}
 
 
 def get_portal_result(page, provider, tracking_number, shipment=None):

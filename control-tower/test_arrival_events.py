@@ -203,8 +203,8 @@ A.PORTALS.setdefault("ETHIOPIAN", {"label": "Ethiopian Airlines"})
 # Non-DHL readers are back to their 12 Oct behaviour (operator's decision,
 # 14 Oct); every date they return still passes basic_check before the Hub.
 r = A._read_generic_portal_page(Page(eth), "ETHIOPIAN")
-check("Generic reader (Ethiopian) reads as on 12 Oct: 'DELIVERED' date taken as the ATA",
-      r and r.get("ata") == "10/10/2026" and not r.get("review"), r)
+check("Ethiopian: the first leg's 'DELIVERED' at a transit airport is stopped by ATLAS -> review",
+      r and r.get("ata") is None and r.get("review") and "transit airport" in r["review"][0], r)
 r = A._read_generic_portal_page(Page("Shipment 1\nActual Time of Arrival: 05/10/2026\n" + "x" * 200),
                                 "ETHIOPIAN")
 check("Generic reader: an explicit actual-arrival label gives the ATA",
@@ -225,6 +225,17 @@ check("Qatar: 'Arrived ( DAR)' -> ATA (12 Oct reader)", q and q["ata"] == "26/09
 qt = (FIX / "qatar_in_transit.txt").read_text(encoding="utf-8")
 q = A.extract_qatar_result(Page(qt))
 check("Qatar in transit: estimate only", q and q["eta"] and not q["ata"], q)
+qd = (FIX / "qatar_arrived_destination.txt").read_text(encoding="utf-8")
+q = A.atlas_transit_veto(qd, "QATAR", A.extract_qatar_result(Page(qd)))
+check("Qatar arrived AT the destination: ATLAS lets the ATA through",
+      q and q["ata"] == "26/09/2026" and not q.get("review"), q)
+qx = qt.replace("Estimated Arrival ( JRO )", "Arrived ( DOH)")
+q = A.atlas_transit_veto(qx, "QATAR", A.extract_qatar_result(Page(qx)))
+check("Qatar 'Arrived (DOH)' on a route to another airport: ATLAS stops the ATA -> review",
+      q and q.get("ata") is None and q.get("review") and "DOH" in q["review"][0], q)
+r = A.atlas_transit_veto("Shipment 1\nActual Time of Arrival: 05/10/2026", "ETHIOPIAN",
+                         {"provider": "ETHIOPIAN", "eta": None, "ata": "05/10/2026"})
+check("No transit evidence on the page: ATLAS changes nothing", r["ata"] == "05/10/2026", r)
 
 section("6b. basic_check: every carrier's dates are validated before the Hub")
 for result, want, label in (

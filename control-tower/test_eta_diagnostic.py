@@ -179,13 +179,12 @@ check("Destination evidence is split: carrier-label is not counted as explicit",
       and rep["atlas"]["destination"].get("carrier-label only") == 30, rep["atlas"]["destination"])
 check("Hand-checked subset reported separately",
       rep["hand_checked"]["atlas"]["ata"].get("tp") == 6, rep.get("hand_checked"))
-# Non-DHL readers are back to their 12 Oct behaviour (operator's decision,
-# 14 Oct): the generic reader takes the Ethiopian first leg's DELIVERED date
-# as the ATA again. ATLAS (advisory) flags exactly that one case.
-check("ATLAS and the 12 Oct readers differ on one case only: the Ethiopian transit leg, "
-      "which ATLAS sends to review",
-      [(d["case"], d["baseline"], d["atlas"]) for d in rep["differences"]] ==
-      [("ETHIOPIAN-TRANSIT", "ACCEPT_CANDIDATE", "NEEDS_REVIEW")], rep["differences"])
+# Non-DHL readers are back to their 12 Oct behaviour (operator, 14 Oct), with
+# ATLAS's transit veto on Qatar and Ethiopian: the first leg's DELIVERED at a
+# transit airport is no longer taken as the arrival, so production and ATLAS
+# make the same decision on every case.
+check("ATLAS and production (12 Oct readers + ATLAS's transit veto) make the same decisions",
+      rep["differences"] == [], rep["differences"])
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
