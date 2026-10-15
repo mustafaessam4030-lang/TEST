@@ -256,9 +256,10 @@ class AnswerEngine(ModesMixin):
         if not topic:
             return self._base("help", "Sure. What should I look up? Ask your question and I'll check your documents "
                                       "first; if they don't cover it, I'll give you a web search for it.")
-        out = self._base("web", "Here's a web search for \u201c{0}\u201d; it opens in a new tab.".format(topic))
+        out = self._base("web", "Here's a web search for \u201c{0}\u201d.".format(topic))
         out["web_query"] = topic
         self._general(out, topic, found_nothing=False)
+        out["web_query"] = topic          # asked for explicitly: keep the button prominent
         return out
 
     def _general(self, out: dict, question: str, found_nothing: bool):
@@ -271,11 +272,12 @@ class AnswerEngine(ModesMixin):
         except GenerationError as exc:
             log.warning("general answer failed: %s", exc)
             return
+        # shown as a plain answer; the page adds one quiet line saying it is general knowledge
         out["claims"] = [{"text": text, "kind": "general", "citations": []}]
         out["generator"] = self.generator.name
-        if found_nothing:
-            out["message"] = ("I couldn't find this in your documents, so here's an answer from general engineering "
-                              "knowledge. Check it against an official source before relying on it.")
+        out["status"] = "general"
+        out["message"] = ""
+        out.pop("web_query", None)
 
     def _smalltalk(self, kind: str) -> dict:
         n = len(self._ready_docs())

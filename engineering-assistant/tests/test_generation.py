@@ -163,9 +163,9 @@ def test_general_question_not_in_documents_gets_a_labelled_general_answer(engine
     fake.requests.clear()
     fake.reply = "Electrical power is P = V × I: voltage times current."
     out = engine.ask("What is the power formula?")
-    assert out["status"] == "insufficient_evidence" and out["web_query"]
+    assert out["status"] == "general" and out["message"] == ""
     assert [c["kind"] for c in out["claims"]] == ["general"] and "P = V × I" in out["claims"][0]["text"]
-    assert out["claims"][0]["citations"] == [] and "general engineering knowledge" in out["message"]
+    assert out["claims"][0]["citations"] == []
     assert fake.requests[-1]["messages"][0]["content"].startswith("You are Luma") and "format" not in fake.requests[-1]
 
 

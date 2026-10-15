@@ -762,9 +762,10 @@ function renderClaims(into, claims, pills, leadFirst) {
       continue;
     }
     if (c.kind === "general") {
-      const box = h("div", "gk");
-      box.append(h("div", "gk-h", "General engineering knowledge · not from your documents"));
+      // a plain answer, like any other; one quiet line says it did not come from the PDFs
+      const box = h("div", "gk plain");
       while (i < claims.length && claims[i].kind === "general") box.append(md(claims[i++].text));
+      box.append(h("div", "gk-note", "General knowledge · not from your PDFs"));
       into.append(box);
       continue;
     }
