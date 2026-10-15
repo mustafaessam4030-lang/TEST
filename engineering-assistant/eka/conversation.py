@@ -33,6 +33,22 @@ COMPARE = re.compile(r"\b(compare|comparison|difference|differences|differ|versu
 QUESTION_START = re.compile(r"^\s*(what|which|how|when|where|who|why|is|are|does|do|can|could|should|list|show|give)\b", re.I)
 TROUBLESHOOT = re.compile(r"\b(what (should|do|can) (i|we) do|what to do|how (do i|to|can i) fix|troubleshoot\w*|"
                           r"symptom|cause[sd]?|why)\b", re.I)
+# Answer modes (Luma). Checked in this order; the first match wins.
+SIMPLIFY = re.compile(r"\b(simpler|more simply|plain (english|language|terms|words)|layman'?s? terms|eli5|"
+                      r"in simple (terms|words)|easier to understand)\b", re.I)
+WHERE = re.compile(r"\b(where (is|was|are|were) (that|this|it|these|those)\b|which page|what page|"
+                   r"where (did|does) (that|this|it) come from|(source|reference) for (that|this))", re.I)
+REVISION_DIFF = re.compile(r"\b(what('s| has| have)? changed|changes? (between|from|in (the )?(new|latest|current))|"
+                           r"differences? between (the )?rev|compare (the )?(rev\b|revisions?)|"
+                           r"rev(ision)? \w+ (and|vs\.?|versus|to) rev(ision)?)", re.I)
+DIFFERENCES = re.compile(r"\b(summari[sz]e|list|show|what are) (me )?the (key |main )?differences\b", re.I)
+SUMMARY = re.compile(r"\b(summari[sz]e|summary|overview|key (specs|specifications|points|values|data|ratings)|"
+                     r"main (specs|specifications|points)|(important|key|main|all|the) (safety )?(warnings|cautions)|"
+                     r"safety (warnings|precautions|notes))\b", re.I)
+VISUAL = re.compile(r"\b(picture|photo\w*|image|diagram|schematic|drawing|figure|illustration|circuit|"
+                    r"exploded view|wiring|graph|chart)s?\b", re.I)
+EXPLAIN = re.compile(r"^\s*(explain|why\b|how does|how do (they|these|those|it)|describe|what does .{1,60} mean|"
+                     r"what is the purpose|what's the purpose|tell me (more )?about)|\bin (more )?detail\b", re.I)
 PROCEDURE = re.compile(r"\b(how (do|to|should) (i|you|we)?|procedure|steps?|replace|install|remove|disassembl\w*|assembl\w*|adjust)\b", re.I)
 
 
@@ -57,6 +73,8 @@ class Route:
     compare: bool = False
     procedure: bool = False
     troubleshoot: bool = False
+    mode: str = "direct"        # direct | explain | summary | compare | procedure | visual | where | simplify | revision_diff
+    differences_only: bool = False
 
 
 class Conversations:
@@ -117,18 +135,52 @@ def route(message: str, history: list[Turn]) -> Route:
     if LIBRARY.search(stripped) and len(content_terms(stripped)) <= 4:
         return Route("library")
     if not content_terms(stripped):
-        return Route("smalltalk", "greeting" if GREETING.match(text) or HOW_ARE_YOU.search(text) else "unclear")
+        return Route("smalltalk", "how_are_you" if HOW_ARE_YOU.search(text) else
+                     "greeting" if GREETING.match(text) else "unclear")
 
     r = Route("question", question=stripped, retrieval_query=stripped,
               compare=bool(COMPARE.search(stripped)), troubleshoot=bool(TROUBLESHOOT.search(stripped)))
     r.procedure = bool(PROCEDURE.search(stripped)) and not r.troubleshoot
     previous = next((t for t in reversed(history) if t.retrieval_query), None)
+    r.mode = _mode(stripped, r, previous)
+    if r.mode in ("where", "simplify"):
+        # These act on the previous answer itself, not on a new search.
+        r.follow_up = True
+        if previous is not None:
+            r.retrieval_query = previous.retrieval_query
+            r.prefer_doc_ids = list(previous.doc_ids)
+        return r
+    if r.mode == "compare" and DIFFERENCES.search(stripped):
+        r.differences_only = True
     if previous is None:
         return r
     own_ids = identifiers(stripped)
     # A bare fragment ("the gearbox", "CV-90") continues the topic; a full question does not.
     short = len(content_terms(stripped)) <= 2 and not QUESTION_START.match(stripped)
     after_clarification = previous.status == "needs_clarification"
+    if r.differences_only:
+        # "Summarize the differences": the same comparison again, reported as differences
+        r.follow_up, r.compare, r.mode = True, True, "compare"
+        r.prefer_doc_ids = list(previous.doc_ids)
+        r.retrieval_query = previous.retrieval_query
+        return r
+    if r.compare and FOLLOW_UP.search(stripped) and own_ids:
+        # "Compare it with the CV-90" / "summarize the differences": keep the earlier topic
+        # and its equipment, and add whatever the new message names.
+        r.follow_up = True
+        r.compare = True
+        r.prefer_doc_ids = list(previous.doc_ids)
+        carried = [t for t in content_terms(previous.retrieval_query) if t not in content_terms(stripped)]
+        r.retrieval_query = stripped + " " + " ".join(carried[:10])
+        return r
+    if after_clarification and r.mode == "direct":
+        # the reply picks an option; the mode comes from the question that was asked
+        earlier = _mode(previous.retrieval_query, Route("question", compare=bool(COMPARE.search(
+            previous.retrieval_query)), procedure=bool(PROCEDURE.search(previous.retrieval_query))), None)
+        if earlier in ("compare", "summary", "revision_diff", "procedure", "explain", "visual"):
+            r.mode = earlier
+            r.compare = earlier == "compare"
+            r.procedure = earlier == "procedure"
     if FOLLOW_UP.search(stripped) or short or after_clarification:
         r.follow_up = True
         r.clarification_reply = after_clarification
@@ -140,3 +192,25 @@ def route(message: str, history: list[Turn]) -> Route:
         if after_clarification:
             r.prefer_doc_ids = []  # the reply chooses between documents; do not bias it
     return r
+
+
+def _mode(text: str, r: Route, previous: Turn | None) -> str:
+    if previous is not None and SIMPLIFY.search(text):
+        return "simplify"
+    if previous is not None and WHERE.search(text):
+        return "where"
+    if REVISION_DIFF.search(text):
+        return "revision_diff"
+    if DIFFERENCES.search(text) and previous is not None:
+        return "compare"
+    if SUMMARY.search(text):
+        return "summary"
+    if VISUAL.search(text):
+        return "visual"
+    if r.compare:
+        return "compare"
+    if EXPLAIN.search(text):
+        return "explain"
+    if r.procedure:
+        return "procedure"
+    return "direct"

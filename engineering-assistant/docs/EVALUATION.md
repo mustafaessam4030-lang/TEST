@@ -23,7 +23,9 @@ Measured on 2026-10-14 in the build container: 4 vCPU, 15 GB RAM, no GPU, Python
 
 ## Results
 
-Generator: `extractive` for all runs. An LLM generator was not evaluated (no Ollama available).
+Generator: `extractive` for all runs. The language-model path was tested separately against a real local model (qwen2.5:3b-instruct, `tests/test_llm_live.py`, see [LUMA.md](LUMA.md)); the full evaluation set was not run through a model.
+
+Re-run for Luma (answers now composed as sentences; the HX-200 Rev B sample gained a figure page): behaviour is identical in all four configurations. Citation precision moved from 94.8% / 95.0% to 93.1% / 93.3% (tuning set) because some answers now also cite the new page 7, which repeats the relief valve setting. `table-01` now expects "60 N.m" (the composed sentence) instead of the raw cell text "Torque (N.m): 60".
 
 | Metric | hashing, tuning | hashing, held-out | fastembed, tuning | fastembed, held-out |
 |---|---|---|---|---|
@@ -33,7 +35,7 @@ Generator: `extractive` for all runs. An LLM generator was not evaluated (no Oll
 | Retrieval recall@k | 93.5% | 75.0% | 96.8% | 100.0% |
 | Retrieval MRR | 0.88 | 0.75 | 0.94 | 0.96 |
 | Citation hit (expected doc + page cited) | 90.3% | 75.0% | 93.5% | 83.3% |
-| Citation precision | 94.8% | 100.0% | 95.0% | 100.0% |
+| Citation precision | 93.1% | 100.0% | 93.3% | 100.0% |
 | Invalid citations | 0 | 0 | 0 | 0 |
 | Unsupported-claim rate | 0.0% | 0.0% | 0.0% | 0.0% |
 | Abstention on unanswerable questions | 100% | 100% | 100% | 100% |
@@ -128,7 +130,7 @@ What the tests cover:
   - document search (native and OCR) with highlighted pages;
   - suggestions that verify as answerable.
 
-`tests/ui/run.sh` runs the browser suite: **104/104 checks pass** in Chromium against fresh real servers, at desktop, tablet and phone sizes in light and dark. A mock model was used only for the slow-response and Stop checks. The interaction list and the defects it found are in [UI.md](UI.md).
+`tests/ui/run.sh` runs the browser suite: **128/128 checks pass** in Chromium against fresh real servers, at desktop, tablet and phone sizes in light and dark. A mock model was used only for the slow-response and Stop checks. The interaction list and the defects it found are in [UI.md](UI.md).
 
 Evaluation-set note: `amb-01` and `amb-02` now expect clarify-first behaviour, so no values are shown, and no longer require the values in the answer. Every metric in the results table was re-run after this change and is unchanged.
 

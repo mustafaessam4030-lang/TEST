@@ -133,9 +133,17 @@ def test_timeout_falls_back(engine, fake):
     assert out["claims"]
 
 
-def test_model_abstention_is_respected(engine, fake):
+def test_model_that_declines_does_not_hide_validated_evidence(engine, fake):
+    """Small models sometimes decline answerable questions; the quoted, validated answer is shown instead."""
     fake.reply = {"status": "insufficient_evidence", "claims": []}
     out = engine.ask("What is the rated pressure of the HX-200?")
+    assert fake.requests                                  # the model was asked
+    assert out["status"] == "answered" and out["generator"] == "extractive"
+    assert "350 bar" in out["claims"][0]["text"] and "did not answer" in out["fallback_reason"]
+
+
+def test_model_abstention_stands_when_there_is_no_evidence(engine, fake):
+    out = engine.ask("What is the warranty period of the HX-200?")
     assert out["status"] == "insufficient_evidence" and out["claims"] == []
 
 

@@ -2,6 +2,7 @@
 // No framework and no build step. Every piece of document or user text is
 // inserted with textContent; nothing from the server is parsed as HTML.
 "use strict";
+import { BRAND } from "./brand/brand.js";
 
 const $ = (id) => document.getElementById(id);
 const h = (tag, cls, text) => {
@@ -85,20 +86,24 @@ function askToken() {
 
 // ── theme: Light, Dark, System (the ATLAS mechanism) ─────────────────────
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
-function applyTheme(choice) {
+function applyTheme(choice, animate) {
   const root = document.documentElement;
   const dark = choice === "dark" || (choice === "system" && darkQuery.matches);
+  if (animate && document.startViewTransition && !reduced() && root.dataset.theme !== (dark ? "dark" : "light")) {
+    document.startViewTransition(() => applyTheme(choice, false));
+    return;
+  }
   root.classList.add("theme-switching");
   root.dataset.theme = dark ? "dark" : "light";
   root.dataset.themeChoice = choice;
-  document.querySelector('meta[name="theme-color"]').content = dark ? "#0B0E14" : "#F5F5F7";
+  document.querySelector('meta[name="theme-color"]').content = dark ? BRAND.themeColor.dark : BRAND.themeColor.light;
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
   document.querySelectorAll("[data-theme-set]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === choice)));
   try { localStorage.setItem("eka-theme", choice); } catch { /* ignore */ }
 }
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-theme-set]");
-  if (b) applyTheme(b.dataset.themeSet);
+  if (b) applyTheme(b.dataset.themeSet, true);
 });
 darkQuery.addEventListener("change", () => { if ((document.documentElement.dataset.themeChoice || "system") === "system") applyTheme("system"); });
 applyTheme(document.documentElement.dataset.themeChoice || "system");
@@ -241,9 +246,14 @@ async function loadHealth() {
     return;
   }
   const hl = S.health;
-  const answers = hl.generator === "extractive" ? "Extractive answers" : hl.llm_model || hl.generator;
-  const retrieval = hl.semantic_search ? "Semantic + keyword" : "Keyword search";
+  const answers = hl.generator === "extractive" ? "Quoted answers" : (hl.llm_model || hl.generator) + " (local)";
+  const retrieval = hl.semantic_search ? "semantic search" : "keyword search";
   $("modelTxt").textContent = `${answers} · ${retrieval}`;
+  if (hl.org_logo && $("orgLogo").hidden) {
+    $("orgLogo").src = BRAND.orgLogo;
+    $("orgLogo").alt = BRAND.org;
+    $("orgLogo").hidden = false;
+  }
   $("modelRow").dataset.s = hl.generator_ready === false ? "bad" : hl.semantic_search ? "ok" : "kw";
   $("modelRow").title = hl.retrieval_mode;
   if (!$("viewLib").hidden) renderSources();
@@ -505,22 +515,23 @@ function addUser(text, created) {
   return m;
 }
 function avatar() {
-  const a = h("span", "mark m-av");
+  const a = h("img", "luma-mark m-av");
+  a.src = BRAND.mark;
+  a.alt = "";
   a.setAttribute("aria-hidden", "true");
-  a.append(icon("mark"));
   return a;
 }
 
 // ── answer rendering ─────────────────────────────────────────────────────
 const STATUS = {
   needs_clarification: ["ask", "Needs clarification"],
-  insufficient_evidence: ["none", "Not established by the documents"],
+  insufficient_evidence: ["none", "Not in your documents"],
   conflict: ["conflict", "Sources disagree"],
   error: ["conflict", "Something went wrong"],
 };
 const shortTitle = (c) => c.title || c.filename || "Document";
 function sourcePill(c, n, compact) {
-  const p = h("button", "src" + (compact ? " compact" : ""));
+  const p = h("button", "src cite" + (compact ? " compact" : ""));
   p.type = "button";
   p.append(h("b", "", String(n)));
   const nm = h("span", "nm", shortTitle(c) + (c.revision ? " Rev " + c.revision : ""));
@@ -536,8 +547,9 @@ function renderAnswer(node, a, meta = {}) {
   const bub = h("div", "bub");
   node.append(bub);
   node.dataset.messageId = a.message_id || "";
+  node.dataset.mode = a.mode || "";
   const cites = Object.fromEntries((a.citations || []).map((c, i) => [c.id, { ...c, n: i + 1 }]));
-  const pills = (ids, compact) => ids.filter((id) => cites[id]).map((id) => sourcePill(cites[id], cites[id].n, compact));
+  const pills = (ids, compact) => (ids || []).filter((id) => cites[id]).map((id) => sourcePill(cites[id], cites[id].n, compact));
 
   const st = STATUS[a.status];
   if (st) {
@@ -574,14 +586,25 @@ function renderAnswer(node, a, meta = {}) {
     if (opts.childElementCount) bub.append(opts);
   }
 
-  renderClaims(bub, a.claims || [], pills);
+  // a figure that was asked for comes first; text explains it underneath
+  if (a.mode === "visual" && a.figures && a.figures.length) bub.append(renderFigures(a.figures, cites));
+  // what changed between revisions is the table; the statements and new sections follow it
+  const tableFirst = a.mode === "revision_diff";
+  if (tableFirst && a.table && a.table.rows && a.table.rows.length) bub.append(renderTable(a.table, pills));
+  renderClaims(bub, a.claims || [], pills, !a.message);
+  if (a.mode !== "visual" && a.figures && a.figures.length) bub.append(renderFigures(a.figures, cites));
+  if (!tableFirst && a.table && a.table.rows && a.table.rows.length) bub.append(renderTable(a.table, pills));
+  if (a.visual) {
+    const v = renderVisual(a.visual);
+    if (v) bub.append(v);
+  }
 
   (a.conflicts || []).forEach((c) => {
     const box = h("div", "rev");
     box.append(h("b", "", c.kind === "revision" ? "Older revision differs. " : "Conflict. "), document.createTextNode(c.summary));
     if (c.claims && c.claims.length) {
       const inner = h("div");
-      renderClaims(inner, c.claims, pills);
+      renderClaims(inner, c.claims, pills, false);
       box.append(inner);
     }
     bub.append(box);
@@ -590,6 +613,11 @@ function renderAnswer(node, a, meta = {}) {
     const ul = h("ul", "notes");
     a.unresolved.forEach((u) => ul.append(h("li", "", u)));
     bub.append(ul);
+  }
+  if (a.mode_note) {
+    const n = h("div", "mnote");
+    n.append(icon("spark"), h("span", "", a.mode_note));
+    bub.append(n);
   }
   if (a.safety_notice) {
     const s = h("div", "safety");
@@ -629,20 +657,52 @@ function renderAnswer(node, a, meta = {}) {
   }
   if (a.intent === "question" && a.searched && a.searched.documents !== undefined) bub.append(howFound(a));
   if (a.status !== "error" || a.message_id) bub.append(actions(node, a, meta));
+  if (a.follow_ups && a.follow_ups.length) bub.append(renderFollowUps(a.follow_ups));
+  [...bub.children].forEach((el, i) => el.style.setProperty("--k", Math.min(i, 8)));
 }
-function renderClaims(into, claims, pills) {
+function renderClaims(into, claims, pills, leadFirst) {
   let i = 0;
+  let lead = leadFirst;
   while (i < claims.length) {
     const c = claims[i];
-    if (c.source_kind === "table_row" && c.cells) {
-      // consecutive rows of one table become one specification table
+    if (c.kind === "outline") {
+      const ul = h("ul", "outline");
+      while (i < claims.length && claims[i].kind === "outline") {
+        const o = claims[i++];
+        const li = h("li");
+        if (o.heading) li.append(h("b", "", o.heading));
+        const t = h("span");
+        rich(o.text, t);
+        pills(o.citations).forEach((p) => t.append(p));
+        li.append(t);
+        ul.append(li);
+      }
+      into.append(ul);
+      continue;
+    }
+    if (c.kind === "general") {
+      const box = h("div", "gk");
+      box.append(h("div", "gk-h", "General engineering knowledge · not from your documents"));
+      while (i < claims.length && claims[i].kind === "general") box.append(rich(claims[i++].text, h("p")));
+      into.append(box);
+      continue;
+    }
+    if (c.kind === "location") {
+      const row = h("div", "loc");
+      row.append(h("span", "", c.text));
+      pills(c.citations).forEach((p) => { p.style.marginLeft = "0"; row.append(p); });
+      into.append(row);
+      i++;
+      continue;
+    }
+    if (c.source_kind === "table_row" && c.cells && !c.quote) {
+      // consecutive raw rows of one table become one specification table
       const rows = [c];
-      while (i + 1 < claims.length && claims[i + 1].cells && claims[i + 1].caption === c.caption) rows.push(claims[++i]);
+      while (i + 1 < claims.length && claims[i + 1].cells && !claims[i + 1].quote && claims[i + 1].caption === c.caption) rows.push(claims[++i]);
       const cols = [];
       rows.forEach((r) => r.cells.forEach(([k]) => { if (!cols.includes(k)) cols.push(k); }));
       const spec = h("div", "spec");
-      const head = h("div", "spec-h", c.caption || "Specification");
-      spec.append(head);
+      spec.append(h("div", "spec-h", c.caption || "Specification"));
       const wrap = h("div", "tbl"), t = h("table"), tr = t.createTHead().insertRow();
       cols.forEach((k) => tr.append(h("th", "", k || "")));
       tr.append(h("th", "", "Source"));
@@ -652,14 +712,13 @@ function renderClaims(into, claims, pills) {
         const map = Object.fromEntries(r.cells.map(([k, v]) => [k, v]));
         cols.forEach((k, ci) => {
           const td = row.insertCell();
-          td.dataset.k = k;              // the column name, shown as a label on phones
+          td.dataset.k = k;
           if (ci > 0) td.className = "v";
           rich(map[k] || "", td);
         });
         const s = row.insertCell();
         s.dataset.k = "Source";
         s.className = "s";
-        // inside a table the caption already names the document: number and page suffice
         pills(r.citations, true).forEach((p) => { p.style.marginLeft = "0"; s.append(p); });
       });
       wrap.append(t);
@@ -683,13 +742,13 @@ function renderClaims(into, claims, pills) {
       row.append(h("span", "cl-k", "Inference"), t);
       into.append(row);
     } else {
-      const q = h("div", "q");
-      if (c.kind === "superseded") q.append(h("span", "cl-k old", "Older revision"));
       const lines = c.text.split("\n");
-      const steps = lines.filter((l) => /^\s*\d{1,2}[.)]\s/.test(l));
+      const isStep = (l) => /^\s*\d{1,2}[.)]\s/.test(l);
+      const steps = lines.filter(isStep);
       if (steps.length >= 2) {
-        // keep the document's order: text before the first step, the steps, text after the last
-        const isStep = (l) => /^\s*\d{1,2}[.)]\s/.test(l);
+        // a documented procedure: keep the document's order and every line of it
+        const q = h("div", "q");
+        if (c.label) q.append(h("span", "tag-k" + (c.kind === "superseded" ? " old" : " new"), c.label));
         const first = lines.findIndex(isStep), last = lines.length - 1 - [...lines].reverse().findIndex(isStep);
         const keep = (l) => l.trim() && !/^\(continued\)$/.test(l.trim());
         const pre = lines.slice(0, first).filter(keep), post = lines.slice(last + 1).filter(keep);
@@ -701,16 +760,137 @@ function renderClaims(into, claims, pills) {
         const end = h("div");
         pills(c.citations).forEach((p) => { p.style.marginLeft = "0"; end.append(p); });
         q.append(end);
+        into.append(q);
       } else {
-        const t = h("div", "q-t");
-        rich(c.text, t);
-        pills(c.citations).forEach((p) => t.append(p));
-        q.append(t);
+        // a direct answer: Luma's sentences; consecutive sentences from the same source share one citation
+        const para = h("p", "ans" + (lead ? " lead" : ""));
+        if (c.kind === "superseded") para.append(h("span", "tag-k old", c.label || "Older revision"));
+        else if (c.label) para.append(h("span", "tag-k new", c.label));
+        const key = (x) => (x.citations || []).join(",");
+        const same = (x) => x && x.kind === c.kind && !x.label && !x.source_kind?.startsWith("warn") && key(x) === key(c)
+          && !/^\s*\d{1,2}[.)]\s/m.test(x.text) && ["direct", "superseded"].includes(x.kind);
+        const group = [c];
+        while (!c.label && same(claims[i + 1])) group.push(claims[++i]);
+        group.forEach((g, gi) => {
+          if (gi) para.append(document.createTextNode(" "));
+          const span = rich(g.text, h("span"));
+          if (g.quote && g.quote !== g.text) span.title = "On the page: " + g.quote;
+          para.append(span);
+        });
+        pills(c.citations).forEach((p) => para.append(p));
+        into.append(para);
+        lead = false;
       }
-      into.append(q);
     }
     i++;
   }
+}
+function renderTable(t, pills) {
+  const box = h("div", "dt");
+  const wrap = h("div", "tbl"), table = h("table"), tr = table.createTHead().insertRow();
+  t.columns.forEach((k) => tr.append(h("th", "", k)));
+  const body = table.createTBody();
+  let group = null;
+  t.rows.forEach((r) => {
+    if (r.group && r.group !== group) {
+      group = r.group;
+      const g = body.insertRow();
+      g.className = "dt-g";
+      const td = g.insertCell();
+      td.colSpan = t.columns.length;
+      td.textContent = group;
+    }
+    const row = body.insertRow();
+    r.cells.forEach((v, ci) => {
+      const td = row.insertCell();
+      td.dataset.k = t.columns[ci];
+      if (ci > 0 && /\d/.test(v)) td.className = "v";
+      if (v === "—") td.className = "dim";
+      rich(v, td);
+    });
+    const s = row.insertCell();
+    s.dataset.k = t.columns[t.columns.length - 1];
+    s.className = "s";
+    pills(r.citations, true).forEach((p) => { p.style.marginLeft = "0"; p.style.marginRight = "4px"; s.append(p); });
+  });
+  wrap.append(table);
+  box.append(wrap);
+  return box;
+}
+function renderFigures(figures, cites) {
+  const box = h("div", "figs");
+  figures.forEach((f) => {
+    const fig = h("figure", "fig");
+    const open = h("button", "fig-i");
+    open.type = "button";
+    open.title = `Open page ${f.page} of ${f.document || "the document"}`;
+    const img = h("img");
+    img.src = authed(f.image_url);
+    img.alt = f.caption;
+    img.loading = "lazy";
+    open.append(img);
+    const cite = cites[(f.citations || [])[0]];
+    if (cite) open.addEventListener("click", () => openCitation(cite, open));
+    const cap = h("figcaption");
+    const badge = h("span", "badge");
+    badge.append(icon("image"), document.createTextNode("Original figure"));
+    cap.append(h("b", "", f.caption), badge);
+    if (cite) cap.append(sourcePill(cite, cite.n, false));
+    fig.append(open, cap);
+    box.append(fig);
+  });
+  return box;
+}
+function renderVisual(v) {
+  const box = h("div", "viz");
+  const head = h("div", "viz-h");
+  const badge = h("span", "badge concept");
+  badge.append(icon("spark"), document.createTextNode("Conceptual"));
+  if (v.kind === "bars" && v.items && v.items.length) {
+    head.append(h("b", "", v.title + (v.unit ? ` (${v.unit})` : "")), badge);
+    box.append(head);
+    const max = Math.max(...v.items.map((x) => x.value)) || 1;
+    const bars = h("div", "bars");
+    bars.setAttribute("role", "img");
+    bars.setAttribute("aria-label", v.title + ": " + v.items.map((x) => `${x.name} ${x.text}`).join(", "));
+    const colors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4"];
+    v.items.forEach((x, i) => {
+      const row = h("div", "bar");
+      const track = h("span", "bar-t"), fill = h("i");
+      fill.style.width = Math.max(2, (x.value / max) * 100) + "%";
+      fill.style.setProperty("--bar", `var(${colors[i % colors.length]})`);
+      track.append(fill);
+      row.append(h("span", "bar-n", x.name), track, h("span", "bar-v", x.text));
+      bars.append(row);
+    });
+    box.append(bars);
+  } else if (v.kind === "flow" && v.steps && v.steps.length) {
+    head.append(h("b", "", "Procedure at a glance"), badge);
+    box.append(head);
+    const ol = h("ol", "flow");
+    v.steps.forEach((s) => {
+      const li = h("li"), chip = h("span"), t = h("em", "", s.length > 44 ? s.slice(0, 42).replace(/\s+\S*$/, "") + "…" : s);
+      chip.title = s;
+      chip.append(t);
+      li.append(chip);
+      ol.append(li);
+    });
+    box.append(ol);
+  } else {
+    return null;
+  }
+  box.append(h("div", "viz-n", v.label));
+  return box;
+}
+function renderFollowUps(items) {
+  const box = h("div", "fu");
+  box.setAttribute("aria-label", "Suggested follow-ups");
+  items.forEach((text) => {
+    const b = btn("", text, "spark");
+    b.addEventListener("click", () => ask(text));
+    box.append(b);
+  });
+  return box;
 }
 function howFound(a) {
   const ev = h("details", "evx how");
@@ -935,7 +1115,7 @@ async function loadSuggestions() {
     box.append(up);
     return;
   }
-  $("emptyP").textContent = `Ask about specifications, procedures, part numbers or warnings in your ${ready} document${ready > 1 ? "s" : ""}. Every answer cites the page it comes from.`;
+  $("emptyP").textContent = `Ask about specifications, procedures, part numbers or warnings in your ${ready} document${ready > 1 ? "s" : ""}. I can also compare equipment, summarize a manual and show its figures.`;
   try {
     const { suggestions } = await api("/api/suggestions?limit=4");
     if (seq !== sugSeq) return;
@@ -1434,3 +1614,14 @@ syncComposer();
 loadHealth();
 loadDocs().then(() => { route(); if (!S.cid) loadSuggestions(); });
 loadConversations();
+
+// ── Luma identity and the sidebar upload entry ───────────────────────────
+document.title = `${BRAND.product} · ${BRAND.tagline}`;
+$("brandName").textContent = BRAND.product;
+$("brandTag").textContent = BRAND.tagline;
+$("brandLink").setAttribute("aria-label", `${BRAND.product}, new chat`);
+$("q").placeholder = `Message ${BRAND.product}`;
+$("navUpload").addEventListener("click", () => {
+  closeDrawer();
+  ($("viewLib").hidden ? $("attachFile") : $("libFile")).click();
+});

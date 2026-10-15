@@ -24,9 +24,11 @@ import uuid
 from dataclasses import dataclass, field
 
 from . import citations as cite
+from .compose import question_topic, short_equipment
 from .config import Settings
 from .conversation import Conversations, Route, Turn, route
 from .generation import GenerationError, OllamaGenerator
+from .modes import ModesMixin
 from .retrieval import Candidate, Retriever
 from .store import Store
 from .textutil import content_terms, identifiers, numbers, sentences, tokens, compact
@@ -47,7 +49,8 @@ MIN_TOPIC_COVERAGE_SEMANTIC = 0.25  # topic coverage still required when the emb
 # Words that frame a question ("how *long*", "parts *needed*") rather than name its topic.
 FRAME_WORDS = frozenset(tokens(
     "long much many often heavy big large small far wide high tall needed required specified recommended "
-    "allowed permitted use used using value values kind type mean means called", keep_stopwords=True))
+    "allowed permitted use used using value values kind type mean means called "
+    "compare comparison difference differences versus summarize summary explain describe show tell", keep_stopwords=True))
 MAX_CLAIMS = 4
 
 
@@ -71,7 +74,7 @@ class Draft:
     rejected: list[dict] = field(default_factory=list)
 
 
-class AnswerEngine:
+class AnswerEngine(ModesMixin):
     def __init__(self, settings: Settings, store: Store, retriever: Retriever,
                  conversations: Conversations, generator: OllamaGenerator | None = None):
         self.settings = settings
@@ -96,6 +99,8 @@ class AnswerEngine:
         r = route(message, history)
         self._local.progress = progress
         self._local.use_generator = use_generator
+        self._local.conversation_id = conversation_id
+        self._local.visual_note = ""
         try:
             if r.intent == "smalltalk":
                 answer = self._smalltalk(r.smalltalk_kind)
@@ -111,6 +116,7 @@ class AnswerEngine:
                                 "The documents were not changed; please try again.".format(type(exc).__name__))
         answer["conversation_id"] = conversation_id
         answer["intent"] = r.intent
+        answer.setdefault("mode", r.mode if r.intent == "question" else r.intent)
         answer["latency_ms"] = int((time.perf_counter() - started) * 1000)
         if not answer["message"].strip() and not answer["claims"]:
             answer["status"] = "error"
@@ -158,6 +164,28 @@ class AnswerEngine:
             per_doc.append(list(dict.fromkeys(mine)))
         ordered = [q for group in zip(*[g[:6] for g in per_doc if g]) for q in group] if per_doc else []
         ordered += [q for g in per_doc for q in g[6:12]]
+        # Luma's other abilities, offered only when the library supports them (and verified below)
+        extra = []
+        figures = self.store.figures()
+        shown = next((f for f in figures if f["caption"] and any(d["id"] == f["doc_id"] for d in docs)), None)
+        if shown:
+            topic = re.sub(r"^(figure|fig\.?)\s*\d+[.:]?\s*", "", shown["caption"], flags=re.I)
+            topic = re.sub(r"\(.*?\)", "", topic).strip()
+            if topic:
+                extra.append("Show me the {0}".format(topic[0].lower() + topic[1:] if not topic[:2].isupper() else topic))
+        biggest = max(docs, key=lambda d: d["page_count"], default=None)
+        if biggest is not None and biggest["page_count"] >= 3:
+            ids = sorted(identifiers(" ".join((biggest["equipment"], biggest["title"]))), key=len)
+            extra.append("Summarize the {0} manual".format(ids[0] if ids else biggest["title"]))
+        if any(c.kind == "warning" for c in chunks):
+            extra.append("What are the important safety warnings?")
+        mixed = []
+        for i in range(max(len(ordered), len(extra))):
+            if i < len(ordered):
+                mixed.append(ordered[i])
+            if i < len(extra):
+                mixed.append(extra[i])
+        ordered = mixed
         verified = []
         for question in ordered:
             if len(verified) >= 6:
@@ -196,7 +224,7 @@ class AnswerEngine:
         return {"status": status, "message": message, "claims": [], "citations": [], "conflicts": [],
                 "clarification": None, "safety_notice": "", "documents_used": [], "searched": {},
                 "unresolved": [], "generator": "none", "fallback_reason": "", "rejected_claims": [],
-                "trace": {}}
+                "trace": {}, "table": None, "visual": None, "figures": [], "follow_ups": [], "mode_note": ""}
 
     def _ready_docs(self) -> list[dict]:
         return [d for d in self.store.documents() if d["status"] in cite.SEARCHABLE]
@@ -206,15 +234,20 @@ class AnswerEngine:
         library = ("{0} document{1} indexed".format(n, "" if n == 1 else "s") if n
                    else "no documents indexed yet, so upload a PDF to get started")
         text = {
-            "greeting": "Hello! I'm doing well, thanks for asking. I answer questions about your engineering "
-                        "PDFs and cite the page each answer comes from. There are {0}. What would you like to look up?",
-            "thanks": "You're welcome. Ask me anything else about the documents.",
-            "bye": "Goodbye. Your documents stay indexed for next time.",
-            "capabilities": "I answer questions from the engineering PDFs in your library (there are {0}). "
-                            "Every fact I give cites the document and page it comes from, and you can open that "
-                            "page in the viewer. If the documents don't say something, I will tell you rather than guess.",
-            "unclear": "I'm not sure what you'd like to know. Ask a question about the documents, for example a "
-                       "specification, a procedure or a part number. There are {0}.",
+            "greeting": "Hi, I'm Luma, Mantrac's engineering assistant. I can look up specifications, procedures "
+                        "and warnings, compare equipment, summarize manuals and show figures from your technical "
+                        "library ({0}). What are you working on?",
+            "how_are_you": "I'm doing well, thanks for asking. I'm Luma, Mantrac's engineering assistant: I can "
+                           "look up specifications and procedures, compare equipment and summarize manuals from "
+                           "your technical library ({0}). What can I help you with?",
+            "thanks": "You're welcome. Anything else you'd like to check?",
+            "bye": "Goodbye. Your library stays indexed for next time.",
+            "capabilities": "I'm Luma, Mantrac's engineering assistant. I can answer specification questions, walk "
+                            "through procedures, compare equipment or document revisions, summarize a manual and "
+                            "show its figures, all from your technical library ({0}). Every value links to the "
+                            "page it comes from, and if something isn't covered I'll say so rather than guess.",
+            "unclear": "I'm not sure what you'd like to know. Try a specification, a procedure, a part number, "
+                       "or ask me to summarize a manual. There are {0}.",
         }[kind]
         return self._base("smalltalk", text.format(library))
 
@@ -255,6 +288,23 @@ class AnswerEngine:
             out = self._base("insufficient_evidence", "There are no indexed documents to search yet. "
                              "Upload a PDF and wait until it shows Ready, then ask again.")
             return out
+        # Modes that work on the library or on the previous answer rather than a fresh search.
+        special = None
+        if r.mode == "where":
+            special = self._where(docs)
+        elif r.mode == "simplify":
+            special = self._simplify(r, docs)
+        elif r.mode == "revision_diff":
+            special = self._revision_diff(r, docs)
+        elif r.mode == "summary":
+            special = self._summary(r, docs, doc_ids, history)
+        elif r.mode == "visual":
+            special = self._visual(r, docs, doc_ids)
+        if special is not None:
+            special.setdefault("mode", r.mode)
+            special["follow_ups"] = self._follow_ups(r, special, docs)
+            return special
+
         top_k = self.settings.top_k * (2 if r.compare else 1)
         scope = len(doc_ids) if doc_ids else sum(d["status"] in cite.SEARCHABLE for d in docs.values())
         self._progress("Searching {0} document{1}".format(scope, "" if scope == 1 else "s"))
@@ -269,16 +319,27 @@ class AnswerEngine:
             len(result.selected), "" if len(result.selected) == 1 else "s", len(found), "" if len(found) == 1 else "s")
             if result.selected else "No passage matched closely enough")
         draft = self._extractive(r, result, docs)
+        extra: dict = {}
+        if draft.status == "answered":
+            self._compose(r, draft, docs)
+            if r.compare:
+                self._compose_compare(r, draft, docs, extra)
         generator_name, fallback = "extractive", ""
         use_llm = getattr(self._local, "use_generator", True)
-        if self.generator and use_llm and draft.status != "insufficient_evidence" and result.selected:
+        # The model phrases answers the evidence supports. Clarification stays deterministic (it offers
+        # the equipment as options), and a model that declines never hides a validated quoted answer.
+        if self.generator and use_llm and draft.status in ("answered", "conflict") and result.selected \
+                and not extra.get("table"):
             self._progress("Writing the answer with {0}".format(self.generator.model))
             try:
                 llm = self._llm_draft(r, result, docs, history)
-                if llm is not None:
-                    draft, generator_name = llm, self.generator.name
-                else:
+                if llm is None:
                     fallback = "the model's answer had no claim that passed citation checks"
+                elif llm.status != "answered" and draft.status == "answered":
+                    fallback = "the model did not answer ({0}); the quoted answer is shown".format(
+                        llm.status.replace("_", " "))
+                else:
+                    draft, generator_name = llm, self.generator.name
             except GenerationError as exc:
                 fallback = str(exc)
             if fallback:
@@ -287,14 +348,39 @@ class AnswerEngine:
         out = self._base(draft.status, draft.message)
         out.update(claims=draft.claims, conflicts=draft.conflicts, clarification=draft.clarification,
                    unresolved=draft.unresolved, generator=generator_name, fallback_reason=fallback,
-                   searched=searched, trace=result.trace(), rejected_claims=draft.rejected)
+                   searched=searched, trace=result.trace(), rejected_claims=draft.rejected, mode=r.mode, **extra)
         self._progress("Checking every citation against its page")
-        self._finalise_citations(out, docs)
+        self._finalise_citations_general(out, docs)
         if out["status"] == "insufficient_evidence":
-            out["message"] = self._insufficient_message(result, docs, searched)
-            out["claims"], out["citations"] = [], []
+            out["message"] = self._insufficient_message(r, result, docs, searched)
+            if r.mode == "visual" and getattr(self._local, "visual_note", ""):
+                out["message"] = ("I couldn't find a figure of that in your documents, and their text doesn't cover "
+                                  "it either. Do you have the manual that includes it? Upload it and I'll take a look.")
+                self._local.visual_note = ""
+            out["claims"], out["citations"], out["table"], out["visual"] = [], [], None, None
         out["safety_notice"] = self._safety_notice(r.question, out)
+        if out["status"] == "answered" and r.mode == "procedure":
+            out["visual"] = self._procedure_flow(out)
+        note = getattr(self._local, "visual_note", "")
+        self._local.visual_note = ""
+        if note and r.mode == "visual":
+            out["mode_note"] = note
+        if r.mode == "explain" and generator_name == "extractive" and out["status"] == "answered":
+            out["mode_note"] = ("This is the source text itself. A plain-language explanation needs the local "
+                                "language model, which isn't turned on.")
+        out["follow_ups"] = self._follow_ups(r, out, docs)
         return out
+
+    @staticmethod
+    def _procedure_flow(out: dict) -> dict | None:
+        """A conceptual step flow for a cited procedure (only when it has at least three steps)."""
+        for claim in out["claims"]:
+            steps = [l.strip() for l in claim["text"].split("\n") if STEP_LINE.match(l) and not l.strip().startswith("(")]
+            if len(steps) >= 3:
+                return {"kind": "flow", "label": "Conceptual flow of the cited steps, not a manufacturer drawing. "
+                        "The full wording, warnings and values are in the steps above.",
+                        "steps": [re.sub(r"^\d{1,2}[.)]\s*", "", s_) for s_ in steps], "citations": claim["citations"]}
+        return None
 
     # ── extractive evidence selection ──
     def _units(self, r: Route, cands: list[Candidate]) -> list[Unit]:
@@ -382,13 +468,15 @@ class AnswerEngine:
         if r.compare and len(doc_titles) > 1:
             draft.message = "Here is what each document states, side by side:"
         elif r.compare:
-            draft.message = ("I found relevant passages in only one document ({0}), so there is nothing to "
-                             "compare it against. What it states:").format(doc_titles[0])
-            draft.unresolved.append("Only one document matched; a comparison needs a second source.")
+            used_doc = docs[keep[0].cand.chunk.doc_id]
+            own = {compact(i) for i in identifiers(" ".join((used_doc["title"], used_doc["equipment"])))}
+            others = [i for i in identifiers(r.question) if compact(i) not in own]
+            draft.message = ("I could only find this for the {0}{1}, so there's nothing to compare it with yet:".format(
+                short_equipment(used_doc), "; the {0} documents don't state it".format(" or ".join(others)) if others else ""))
         elif r.procedure:
             draft.message = "The documented procedure:"
         else:
-            draft.message = "According to the documents:"
+            draft.message = ""
         if result.missing_identifiers:
             draft.unresolved.append("No searched document mentions {0}.".format(", ".join(result.missing_identifiers)))
         used = list(dict.fromkeys(u.cand.chunk.doc_id for u in keep))
@@ -422,7 +510,7 @@ class AnswerEngine:
         def plain(text):
             return [t for t in content_terms(text) if not any(ch.isdigit() for ch in t) and t not in FRAME_WORDS]
         own = plain(r.question)
-        if r.follow_up and (r.clarification_reply or not own):
+        if r.follow_up and (r.clarification_reply or r.differences_only or not own):
             return plain(r.retrieval_query)
         return own
 
@@ -547,53 +635,92 @@ class AnswerEngine:
     def _llm_draft(self, r: Route, result, docs: dict, history: list[Turn]) -> Draft | None:
         sources = [("S{0}".format(i + 1), c.chunk, docs[c.chunk.doc_id]) for i, c in enumerate(result.selected)]
         context = history[-1].question if r.follow_up and history else ""
-        data = self.generator.generate(r.question, sources, context)
+        data = self.generator.generate(r.question, sources, context, mode=r.mode)
+        return self._llm_claims(data, sources, docs)
+
+    def _llm_claims(self, data: dict, sources: list, docs: dict) -> Draft | None:
+        """Turn model JSON into claims; anything not grounded in the passages it cites is dropped."""
         by_id = {sid: chunk for sid, chunk, _ in sources}
         draft = Draft(status=data["status"])
         rejected = []
         for claim in data["claims"]:
             text = str(claim.get("text", "")).strip()
-            sids = [s for s in claim.get("sources", []) if s in by_id]
+            if claim.get("kind") == "general":
+                # general knowledge may explain a concept but never carry an equipment-specific value
+                bad = sorted(numbers(text)) + sorted(identifiers(text))
+                if bad:
+                    rejected.append({"text": text, "reason": "general claim states specific values: " + ", ".join(bad)})
+                else:
+                    draft.claims.append({"text": text, "kind": "general", "_chunk": None, "citations": []})
+                continue
+            sids = [s_ for s_ in claim.get("sources", []) if s_ in by_id]
             if not sids:
                 rejected.append({"text": text, "reason": "cites no retrieved passage"})
                 continue
-            bad = cite.unsupported_values(text, [by_id[s].search_text for s in sids])
+            bad = cite.unsupported_values(text, [by_id[s_].search_text for s_ in sids])
             if bad:
                 rejected.append({"text": text, "reason": "values not in cited passages: " + ", ".join(bad)})
                 continue
             kind = "inference" if claim.get("kind") == "inference" else "direct"
-            for i, sid in enumerate(sids):
-                entry = {"text": text if i == 0 else "", "kind": kind, "_chunk": by_id[sid], "citations": []}
-                if i == 0:
-                    draft.claims.append(entry)
-                else:
-                    draft.claims[-1].setdefault("_extra", []).append(by_id[sid])
+            draft.claims.append({"text": text, "kind": kind, "_chunk": by_id[sids[0]],
+                                 "_extra": [by_id[s_] for s_ in sids[1:]], "citations": []})
         draft.rejected = rejected
         if draft.status == "needs_clarification":
-            draft.message = "The answer depends on details the question doesn't give."
+            draft.message = "That depends on which equipment or revision you mean."
             draft.claims = []
             draft.clarification = {"question": str(data.get("clarifying_question") or
                                                    "Which equipment or document revision do you mean?"), "options": []}
             return draft
         if draft.status == "insufficient_evidence":
             return Draft(status="insufficient_evidence")
-        if not draft.claims:
+        if not any(c["kind"] != "general" for c in draft.claims):
             if rejected:
                 log.warning("all %d model claims failed validation", len(rejected))
             return None
-        draft.message = "According to the documents:"
+        # general claims follow the grounded ones, never lead the answer
+        draft.claims = [c for c in draft.claims if c["kind"] != "general"] + \
+                       [c for c in draft.claims if c["kind"] == "general"]
+        draft.message = ""
         draft.unresolved = [str(u) for u in data.get("unresolved") or [] if str(u).strip()][:5]
-        units = [Unit(Candidate(c["_chunk"]), c["text"], "") for c in draft.claims]
+        units = [Unit(Candidate(c["_chunk"]), c["text"], "") for c in draft.claims if c["_chunk"] is not None]
         self._attach_warnings(draft, units, docs)
-        superseded = {c["_chunk"].doc_id for c in draft.claims if docs[c["_chunk"].doc_id]["superseded_by"]}
+        superseded = {c["_chunk"].doc_id for c in draft.claims
+                      if c["_chunk"] is not None and docs[c["_chunk"].doc_id]["superseded_by"]}
         for d in superseded:
             draft.unresolved.append("{0} Rev {1} is superseded; check the current revision.".format(
                 docs[d]["title"], docs[d]["revision"] or "?"))
         return draft
 
+    def _llm_rewrite(self, r: Route, previous: dict, chunks: list, docs: dict) -> dict:
+        """'Explain that in simpler terms': the model rewords the previous answer from its own sources."""
+        sources = [("S{0}".format(i + 1), c, docs[c.doc_id]) for i, c in enumerate(chunks) if c.doc_id in docs]
+        self._progress("Rewording with {0}".format(self.generator.model))
+        try:
+            data = self.generator.generate(r.question, sources, "Previous answer: " + previous.get("answer_text", ""),
+                                           mode="simplify")
+            draft = self._llm_claims(data, sources, docs)
+        except GenerationError as exc:
+            return self._base("help", "I couldn't reach the language model to reword that ({0}). The answer above "
+                              "is quoted exactly from the source.".format(exc))
+        if draft is None or draft.status != "answered":
+            return self._base("help", "I couldn't produce a simpler version that stays faithful to the source, so "
+                              "I'd rather not paraphrase it. The answer above is quoted exactly.")
+        out = self._base("answered", "")
+        out.update(claims=draft.claims, unresolved=draft.unresolved, generator=self.generator.name,
+                   rejected_claims=draft.rejected, mode="simplify")
+        self._finalise_citations_general(out, docs)
+        out["safety_notice"] = self._safety_notice(r.question, out)
+        return out
+
+    def _finalise_citations_general(self, out: dict, docs: dict):
+        general = [c for c in out["claims"] if c["kind"] == "general"]
+        out["claims"] = [c for c in out["claims"] if c["kind"] != "general"]
+        self._finalise_citations(out, docs)
+        out["claims"] += [{**{k: v for k, v in c.items() if not k.startswith("_")}, "citations": []} for c in general]
+
     # ── citations, validation, messages ──
     def _finalise_citations(self, out: dict, docs: dict):
-        """Number citations, validate them against the store, drop claims left without support."""
+        """Number citations, validate them against the store, drop claims and rows left without support."""
         registry: dict[str, dict] = {}
 
         def register(chunk, quote):
@@ -610,17 +737,36 @@ class AnswerEngine:
             for claim in claims:
                 chunks = [claim.pop("_chunk")] + claim.pop("_extra", [])
                 describe_source(claim, chunks[0])
-                claim["citations"] = [register(ch, claim["text"] if claim["kind"] != "inference" else None)
-                                      for ch in chunks]
+                quote = None
+                if claim["kind"] not in ("inference", "general", "location") and not claim.get("composed"):
+                    quote = claim.get("quote") or claim["text"]
+                claim["citations"] = [register(ch, quote) for ch in chunks]
+        table = out.get("table") or {}
+        for row in table.get("rows", []):
+            chunks = row.pop("_chunks", None) or [row.pop("_chunk")]
+            row["citations"] = [register(ch, None) for ch in chunks]
+        for figure in out.get("figures") or []:
+            chunk = figure.pop("_chunk", None)
+            figure["citations"] = [register(chunk, None)] if chunk is not None else []
         valid, problems = cite.validate(list(registry.values()), self.store)
         ok = {c["id"] for c in valid}
         for claims in groups:
             claims[:] = [dict(c, citations=[x for x in c["citations"] if x in ok]) for c in claims]
-            claims[:] = [c for c in claims if c["citations"] or c["kind"] == "inference"]
+            claims[:] = [c for c in claims if c["citations"] or c["kind"] in ("inference", "general")]
+        if table:
+            table["rows"] = [dict(r_, citations=[x for x in r_["citations"] if x in ok]) for r_ in table["rows"]]
+            table["rows"] = [r_ for r_ in table["rows"] if r_["citations"]]
+            if not table["rows"]:
+                out["table"] = None
+        if out.get("figures"):
+            out["figures"] = [dict(f, citations=[x for x in f["citations"] if x in ok]) for f in out["figures"]]
+            out["figures"] = [f for f in out["figures"] if f["citations"]]
         out["citations"] = valid
         out["rejected_claims"] = out["rejected_claims"] + [{"reason": p} for p in problems]
-        if out["status"] in ("answered", "conflict") and not any(
-                c["kind"] in ("direct", "inference") for c in out["claims"]):
+        substantive = any(c["kind"] in ("direct", "inference", "outline", "location") for c in out["claims"]) \
+            or bool(out.get("table")) or bool(out.get("figures")) \
+            or (out.get("mode") == "summary" and any(c["kind"] == "warning" for c in out["claims"]))
+        if out["status"] in ("answered", "conflict") and not substantive:
             out["status"] = "insufficient_evidence"
         used: dict[str, dict] = {}
         for c in valid:
@@ -632,29 +778,32 @@ class AnswerEngine:
             d["pages"].sort()
         out["documents_used"] = list(used.values())
 
-    def _insufficient_message(self, result, docs: dict, searched: dict) -> str:
-        parts = ["The indexed documents don't establish this."]
+    def _insufficient_message(self, r: Route, result, docs: dict, searched: dict) -> str:
+        topic = question_topic(r.question)
+        parts = ["I couldn't verify {0} from the available technical information.".format(topic) if topic
+                 else "I couldn't find that in the available technical information."]
         if result.missing_identifiers:
-            parts.append("No searched document mentions {0}.".format(", ".join(result.missing_identifiers)))
+            parts.append("None of your documents mention {0}.".format(", ".join(result.missing_identifiers)))
         parts.append("I searched {0} document{1}{2}.".format(
             searched["documents"], "" if searched["documents"] == 1 else "s",
             " (" + ", ".join(searched["titles"][:6]) + ")" if searched["titles"] else ""))
         near = [c for c in result.rejected + result.selected if c.chunk.doc_id in docs][:2]
         if near and not result.missing_identifiers:
-            parts.append("The closest passages ({0}) don't answer the question directly.".format("; ".join(
+            parts.append("The closest passages ({0}) don't cover it.".format("; ".join(
                 "{0} p. {1}".format(docs[c.chunk.doc_id]["title"] or docs[c.chunk.doc_id]["filename"], c.chunk.page_no)
                 for c in near)))
-        parts.append("Try the exact term or model the document uses, or upload the document that covers it.")
+        parts.append("Do you have the manual or table that covers it? Upload it and I'll take a look.")
         return " ".join(parts)
 
     def _safety_notice(self, question: str, out: dict) -> str:
-        if out["status"] in ("insufficient_evidence", "smalltalk") or not out["claims"]:
+        if out["status"] in ("insufficient_evidence", "smalltalk") or not (out["claims"] or out.get("table")):
             return ""   # nothing was stated, so there is nothing to verify yet
         notes = []
-        text = question + " " + " ".join(c["text"] for c in out["claims"])
+        text = question + " " + " ".join(c["text"] for c in out["claims"]) + " " + " ".join(
+            " ".join(r_["cells"]) for r_ in (out.get("table") or {}).get("rows", []))
         if SAFETY_TERMS.search(text) or any(c["kind"] == "warning" for c in out["claims"]):
-            notes.append("Safety-relevant: confirm values against the cited page of the controlled document "
-                         "and with the responsible engineer before acting.")
+            notes.append("Safety-relevant: confirm against the cited page of the controlled document and with "
+                         "the responsible engineer before acting.")
         if any(c.get("ocr") for c in out["citations"]):
             notes.append("Some passages were read by OCR from a scanned page; check them against the page image.")
         if any(c.get("superseded") for c in out["citations"]):
@@ -681,7 +830,7 @@ def describe_source(claim: dict, chunk) -> None:
     claim["source_kind"] = chunk.kind
     if chunk.kind == "table_row":
         lines = chunk.text.split("\n")
-        if claim["text"].strip() == lines[-1].strip():
+        if (claim.get("quote") or claim["text"]).strip() == lines[-1].strip():
             claim["caption"] = lines[0] if len(lines) > 1 else ""
             claim["cells"] = [cell.split(": ", 1) if ": " in cell else ["", cell] for cell in lines[-1].split(" | ")]
 
@@ -690,9 +839,20 @@ def render_text(answer: dict) -> str:
     """Plain-text rendering with [S#] markers, for the API and the evaluation report."""
     lines = [answer["message"]] if answer["message"] else []
     for c in answer["claims"]:
-        label = {"warning": "Safety: ", "inference": "Inference (not stated directly): "}.get(c["kind"], "")
+        label = {"warning": "Safety: ", "inference": "Inference (not stated directly): ",
+                 "general": "General engineering knowledge (not from your documents): ",
+                 "superseded": "Older revision: "}.get(c["kind"], "")
+        if c.get("heading"):
+            label = c["heading"] + ": "
         marks = "".join("[{0}]".format(x) for x in c["citations"])
         lines.append("- {0}{1} {2}".format(label, c["text"].replace("\n", "; "), marks).rstrip())
+    table = answer.get("table") or {}
+    if table.get("rows"):
+        lines.append(" | ".join(table["columns"]))
+        for row in table["rows"]:
+            lines.append(" | ".join(row["cells"]) + " " + "".join("[{0}]".format(x) for x in row["citations"]))
+    for figure in answer.get("figures") or []:
+        lines.append("Figure: {0} {1}".format(figure["caption"], "".join("[{0}]".format(x) for x in figure["citations"])))
     for conflict in answer["conflicts"]:
         lines.append("Note: " + conflict["summary"])
         for c in conflict["claims"]:

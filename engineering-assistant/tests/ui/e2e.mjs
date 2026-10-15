@@ -68,8 +68,9 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
 
   await ask(p, "What is the rated pressure of the HX-200?");
   const last = p.locator(".msg.bot").last();
-  check("spec answer renders as a table with its caption", (await last.locator(".spec .spec-h").first().textContent()).includes("Table 1"));
-  check("value shown in the table", (await last.locator(".spec td.v").first().textContent()).includes("350 bar"));
+  const leadText = await last.locator(".ans.lead").first().textContent();
+  check("spec answer is a natural sentence with value and condition", leadText.includes("The HX-200's rated pressure is 350 bar (5076 psi), continuous duty."), leadText);
+  check("no 'according to the documents' preamble", !/according to/i.test(await last.textContent()));
   check("older revision flagged separately", (await last.locator(".rev").count()) === 1 && (await last.locator(".rev").textContent()).includes("320 bar"));
   check("safety note preserved", (await last.locator(".safety").count()) === 1);
   await shot(p, "after-desktop-answer");
@@ -110,7 +111,13 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   const proc = p.locator(".msg.bot").last();
   check("procedure renders as an ordered list of 7 steps", (await proc.locator(".q ol li").count()) === 7);
   check("warning rendered as a warning block", (await proc.locator(".warn").count()) >= 1);
-  const ordered = await proc.locator(".q").nth(1).evaluate((q) => [...q.children].map((c) => c.tagName).join(","));
+  check("procedure warning comes before the steps", await proc.evaluate((m) => {
+    const w = m.querySelector(".warn"), steps = m.querySelector(".q ol");
+    return !!(w && steps && (w.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }));
+  check("procedure has a labelled conceptual flow", (await proc.locator(".viz .flow li").count()) === 7 &&
+    (await proc.locator(".viz .viz-n").textContent()).includes("not a manufacturer drawing"));
+  const ordered = await proc.locator(".q", { has: p.locator("ol") }).first().evaluate((q) => [...q.children].map((c) => c.tagName).join(","));
   check("text after the steps stays after them", /OL,DIV/.test(ordered), ordered);
 
   // citation → panel at the cited page, chat scroll kept
@@ -147,7 +154,7 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   check("zoom out", (await p.textContent("#vZoom")) === "100%");
   await p.fill("#vQ", "relief valve");
   await p.waitForSelector(".v-hit");
-  check("search in document lists matching pages", (await p.locator(".v-hit").count()) === 2);
+  check("search in document lists matching pages", (await p.locator(".v-hit").count()) === 3);   // pp. 2, 4, 7
   await p.locator(".v-hit", { hasText: "p. 4" }).click(); await imgReady(p);
   check("clicking a match opens its page", (await p.inputValue("#vPage")) === "4");
   const gw1 = await p.evaluate(() => document.getElementById("viewer").getBoundingClientRect().width);
@@ -166,7 +173,8 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
 
   // unsupported
   await ask(p, "What is the warranty period of the HX-200?");
-  check("unsupported question says it is not established", (await p.locator(".msg.bot").last().locator(".st").textContent()).includes("Not established"));
+  check("unsupported question says it is not in the documents", (await p.locator(".msg.bot").last().locator(".st").textContent()).includes("Not in your documents")
+    && (await p.locator(".msg.bot").last().textContent()).includes("couldn't verify"));
 
   // scope
   await p.click("#scopeBtn");
@@ -226,6 +234,8 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   check("Ctrl+. toggles the sidebar", await p.evaluate(() => document.getElementById("app").classList.contains("side-closed")));
   await p.keyboard.press("Control+.");
   await p.click('.pf-th [data-theme-set="dark"]');
+  // the theme cross-fades (a view transition), so it settles a frame or two later
+  await p.waitForFunction(() => document.documentElement.dataset.theme === "dark", null, { timeout: 3000 }).catch(() => {});
   check("dark theme", (await p.evaluate(() => document.documentElement.dataset.theme)) === "dark");
   await p.click("#openSettings");
   check("settings open with honest retrieval mode", (await p.textContent("#setRetrieval")).includes("Semantic search"));
@@ -234,6 +244,7 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   check("settings close", !(await p.evaluate(() => document.getElementById("settings").open)));
   await p.click("#openSettings");
   await p.locator('#settings [data-theme-set="system"]').click();
+  await p.waitForFunction(() => document.documentElement.dataset.theme === "light", null, { timeout: 3000 }).catch(() => {});
   await p.keyboard.press("Escape");
   check("Esc closes settings; System theme follows the device (light here)", !(await p.evaluate(() => document.getElementById("settings").open)) && (await p.evaluate(() => document.documentElement.dataset.theme)) === "light");
 
@@ -310,7 +321,8 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   }
   await ask(p, "What is the wear limit of swing bearing bolt 12 on the ZX-7?");
   const zx = p.locator(".msg.bot").last();
-  check("wide spec table answer renders", (await zx.locator(".spec th").count()) >= 6, await zx.locator(".spec").count() + " table(s)");
+  check("value from a 25-row table is answered with its exact value", (await zx.locator(".ans").first().textContent()).includes("30 mm"),
+    await zx.locator(".ans").first().textContent());
   check("no horizontal page overflow with a wide table", await noOverflow(p));
   await shot(p, "after-desktop-widetable");
 
@@ -388,10 +400,12 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
     const y = me.getBoundingClientRect().top - l.getBoundingClientRect().top;
     return y >= 0 && y < 60 && document.getElementById("jump").hidden;
   }));
-  check("phone: spec rows become labelled records", await p.evaluate(() => {
-    const td = document.querySelector(".spec td.v");
+  await ask(p, "Give me the key specifications of the CV-90");
+  check("phone: table rows become labelled records", await p.evaluate(() => {
+    const td = [...document.querySelectorAll(".dt td")].pop()?.closest("tr")?.children[1];
     return td && getComputedStyle(td).display === "block" && getComputedStyle(td, "::before").content.includes("Value");
   }));
+  check("phone: no horizontal overflow with a table", await noOverflow(p));
   await shot(p, "after-mobile-answer");
   await p.locator(".msg.bot").last().locator(".src").first().click();
   await imgReady(p);
@@ -418,6 +432,82 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   check("phone: library fits the screen", await noOverflow(p));
   await shot(p, "after-mobile-library");
   await p.context().close();
+}
+
+// ═════════ LUMA: identity, answer modes, figures, follow-ups ═════════
+{
+  const p = await page(1440, 900);
+  check("Luma: product name and tagline", (await p.textContent("#brandName")) === "Luma" &&
+    (await p.textContent("#brandTag")).includes("Mantrac") && (await p.title()).startsWith("Luma"));
+  check("Luma: no unofficial organisation logo is shown", await p.locator("#orgLogo").isHidden());
+  const sugs = await p.locator("#sugs .ch-chip").allTextContents();
+  check("Luma: suggestions include a figure and a summary", sugs.some((x) => x.startsWith("Show me")) && sugs.some((x) => x.startsWith("Summarize")), sugs.join(" | "));
+
+  await ask(p, "What is the oil capacity of the CV-90?");
+  let last = p.locator(".msg.bot").last();
+  const lead = await last.locator(".ans.lead").textContent();
+  check("Luma: direct answer reads naturally", lead.startsWith("The CV-90's oil capacity is 2.4 L."), lead);
+  check("Luma: the citation sits on the sentence", (await last.locator(".ans.lead .cite").count()) === 1);
+  check("Luma: the source wording is kept for hover", ((await last.locator(".ans.lead span[title]").first().getAttribute("title")) || "").includes("Oil capacity | Value: 2.4 L"));
+  check("Luma: follow-up suggestions offered", (await last.locator(".fu button").count()) >= 2);
+  await last.locator(".fu button", { hasText: "Where is that shown" }).click();
+  await idle(p);
+  last = p.locator(".msg.bot").last();
+  check("Luma: 'where is that shown' points to the page", (await last.locator(".loc").textContent()).includes("Page 1 of the CV-90"));
+  check("Luma: follow-ups shown under the latest answer only", (await p.locator(".msg.bot:not(:last-child) .fu").evaluateAll((els) => els.every((e) => getComputedStyle(e).display === "none"))));
+  await last.locator(".loc .cite").click();
+  await imgReady(p);
+  check("Luma: the location opens the cited page", (await p.inputValue("#vPage")) === "1");
+  await p.click("#vClose");
+
+  await ask(p, "What torque for the mounting flange bolts on the HX-200?");
+  await p.locator(".msg.bot").last().locator(".fu button", { hasText: "Compare it with the CV-90" }).click();
+  await idle(p);
+  last = p.locator(".msg.bot").last();
+  check("Luma: comparison table with both machines", (await last.locator(".dt tbody tr").count()) === 2 &&
+    (await last.locator(".dt").textContent()).includes("210 N.m") && (await last.locator(".dt").textContent()).includes("180 N.m"));
+  check("Luma: comparison sentence keeps both values", /180 N\.m.*while.*210 N\.m/.test(await last.locator(".ans.lead").textContent()));
+  check("Luma: chart labelled conceptual", (await last.locator(".viz .badge.concept").count()) === 1 &&
+    (await last.locator(".viz .viz-n").textContent()).startsWith("Conceptual chart drawn from the cited values"));
+  await shot(p, "luma-desktop-compare");
+
+  await ask(p, "Show me the hydraulic circuit");
+  last = p.locator(".msg.bot").last();
+  await p.waitForFunction(() => { const i = [...document.querySelectorAll(".fig img")].pop(); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 20000 });
+  check("Luma: original figure shown from the page", (await last.locator(".fig figcaption").textContent()).includes("Figure 1 HX-200 hydraulic circuit"));
+  check("Luma: figure marked as original, not generated", (await last.locator(".fig .badge").textContent()).includes("Original figure"));
+  check("Luma: the figure comes before its explanation", await last.evaluate((m) => {
+    const f = m.querySelector(".fig"), t = m.querySelector(".ans");
+    return !!(f && t && (f.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }));
+  await last.locator(".fig-i").click();
+  await imgReady(p);
+  check("Luma: clicking the figure opens its page", (await p.inputValue("#vPage")) === "7");
+  await shot(p, "luma-desktop-figure");
+  await p.click("#vClose");
+
+  await ask(p, "Summarize the HX-200 manual");
+  last = p.locator(".msg.bot").last();
+  check("Luma: summary outlines the manual's sections", (await last.locator(".outline li").count()) >= 6 &&
+    (await last.locator(".outline").textContent()).includes("Hydraulic Circuit"));
+  await ask(p, "What changed between Rev A and Rev B of the HX-200 manual?");
+  last = p.locator(".msg.bot").last();
+  const rev = await last.locator(".dt").textContent();
+  check("Luma: revision changes table", rev.includes("320 bar (4641 psi)") && rev.includes("350 bar (5076 psi)"));
+
+  const [chooser] = await Promise.all([p.waitForEvent("filechooser", { timeout: 5000 }).catch(() => null), p.click("#navUpload")]);
+  check("Luma: 'Upload documents' in the sidebar opens the file picker", !!chooser);
+  await p.context().close();
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+  const p = await ctx.newPage();
+  await p.goto(BASE);
+  await p.waitForSelector("#sugs .ch-chip");
+  await ask(p, "What is the oil capacity of the CV-90?");
+  const dur = await p.evaluate(() => getComputedStyle(document.querySelector(".msg.bot")).animationDuration);
+  check("Luma: reduced motion turns animations off", parseFloat(dur) < 0.05, dur);
+  await ctx.close();
 }
 
 // ═════════ SLOW MODEL (MOCK) ═════════

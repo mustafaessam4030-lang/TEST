@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F5F5F7">
-<title>Engineering Knowledge Assistant</title>
+<meta name="theme-color" content="#F6F7FB">
+<title>Luma · Mantrac Engineering Intelligence</title>
+<link rel="icon" href="brand/luma-mark.svg" type="image/svg+xml">
 <!-- Theme before first paint (the ATLAS pattern): Light, Dark or System. -->
 <script>(function(){var c='system';try{c=localStorage.getItem('eka-theme')||'system';}catch(e){}
 var d=c==='dark'||(c!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
 document.documentElement.dataset.theme=d?'dark':'light';document.documentElement.dataset.themeChoice=c;})();</script>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="brand/brand.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -44,6 +46,8 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
   <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
   <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5c.9 5.4 3.6 8.1 9 9-5.4.9-8.1 3.6-9 9-.9-5.4-3.6-8.1-9-9 5.4-.9 8.1-3.6 9-9z"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-9 9"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></symbol>
 </svg>
 
@@ -51,9 +55,9 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
   <aside class="side" id="side" aria-label="Conversations and documents">
     <div class="side-in">
       <div class="side-top">
-        <a class="brand" href="#/" id="brandLink">
-          <span class="mark" aria-hidden="true"><svg><use href="#i-mark"/></svg></span>
-          <span class="brand-t"><span class="brand-n">Engineering Knowledge</span><span class="brand-p">Document assistant</span></span>
+        <a class="brand" href="#/" id="brandLink" aria-label="Luma, new chat">
+          <img class="luma-mark" src="brand/luma-mark.svg" alt="" width="30" height="30">
+          <span class="brand-t"><span class="brand-n" id="brandName">Luma</span><span class="brand-p" id="brandTag">Mantrac Engineering Intelligence</span></span>
         </a>
         <button class="ibtn sm collapse-side" id="collapseSide" type="button" aria-label="Collapse sidebar" title="Collapse sidebar (Ctrl+.)"><svg><use href="#i-side"/></svg></button>
       </div>
@@ -61,6 +65,7 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
       <nav class="side-nav" aria-label="Views">
         <a class="nav-i" id="navChat" href="#/"><svg><use href="#i-chat"/></svg>Chat</a>
         <a class="nav-i" id="navLib" href="#/library"><svg><use href="#i-docs"/></svg>Document library<span class="nav-c" id="libCount">0</span></a>
+        <button class="nav-i" id="navUpload" type="button"><svg><use href="#i-upload"/></svg>Upload documents</button>
       </nav>
       <div class="side-search">
         <svg><use href="#i-search"/></svg>
@@ -69,6 +74,7 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
       </div>
       <div class="hist" id="hist" aria-label="Conversation history"></div>
       <div class="side-foot">
+        <img class="org-logo" id="orgLogo" alt="" hidden>
         <button class="model-row" id="modelRow" type="button" title="Models and retrieval"><i></i><span id="modelTxt">Connecting…</span></button>
         <div class="foot-row">
           <span class="pf-th" role="group" aria-label="Theme">
@@ -98,11 +104,11 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
     <section class="view" id="viewChat" aria-label="Conversation">
       <div class="ch-main">
         <div class="ch-empty" id="empty">
-          <span class="mark ch-e-mark" aria-hidden="true"><svg><use href="#i-mark"/></svg></span>
-          <div class="ch-e-t">What do you need to look up?</div>
-          <p class="ch-e-p" id="emptyP">Ask about specifications, procedures, part numbers or warnings in your engineering PDFs. Every answer cites the page it comes from.</p>
+          <img class="luma-mark ch-e-mark" src="brand/luma-mark.svg" alt="" width="52" height="52">
+          <div class="ch-e-t" id="greet">How can I help with your equipment today?</div>
+          <p class="ch-e-p" id="emptyP">Ask about specifications, procedures, part numbers or warnings. I can also compare equipment, summarize a manual and show its figures.</p>
           <div class="ch-e-sug" id="sugs" aria-label="Suggested questions"></div>
-          <p class="ch-e-n">If the documents don't establish something, I'll say so rather than guess.</p>
+          <p class="ch-e-n">Every value links to the page it comes from. If something isn't covered, I'll say so rather than guess.</p>
         </div>
         <div class="ch-b" id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation" tabindex="-1"></div>
         <button class="ch-jump" id="jump" type="button" hidden><svg><use href="#i-down"/></svg>Latest</button>
@@ -113,10 +119,10 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
           <button class="attach" id="attach" type="button" aria-label="Attach PDF" title="Attach a PDF to the library"><svg><use href="#i-clip"/></svg></button>
           <input type="file" id="attachFile" accept="application/pdf,.pdf" multiple hidden>
           <label class="sr" for="q">Message</label>
-          <textarea class="ch-ta" id="q" rows="1" maxlength="4000" placeholder="Ask about a specification, procedure or part number…" enterkeyhint="send" autocomplete="off"></textarea>
+          <textarea class="ch-ta" id="q" rows="1" maxlength="4000" placeholder="Message Luma" enterkeyhint="send" autocomplete="off"></textarea>
           <button class="send" id="send" type="submit" aria-label="Send" title="Send (Enter)" disabled><svg><use href="#i-up"/></svg></button>
         </form>
-        <div class="ch-hint" aria-hidden="true"><span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</span><span>·</span><span>Answers quote your documents; verify safety-critical values on the cited page.</span></div>
+        <div class="ch-hint" aria-hidden="true"><span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</span><span>·</span><span>Luma cites every value. Check safety-critical values on the cited page.</span></div>
       </div>
     </section>
 
@@ -124,7 +130,7 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
       <div class="lib">
         <div class="lib-h">
           <div><div class="kick">Library</div><h1>Documents</h1>
-            <p>Engineering PDFs the assistant answers from. Scanned pages are read with OCR; every page's status is recorded.</p></div>
+            <p>The technical documents Luma answers from. Scanned pages are read with OCR, figures are indexed, and every page's status is recorded.</p></div>
           <span class="sp"></span>
           <button class="cbtn solid" id="uploadBtn" type="button"><svg><use href="#i-upload"/></svg>Upload PDFs</button>
         </div>

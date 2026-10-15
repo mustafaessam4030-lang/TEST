@@ -15,7 +15,7 @@ def test_document_statuses(docs):
 
 def test_page_status_is_recorded_for_every_page(assistant, docs):
     pages = assistant.store.pages(docs["HX-200_Service_Manual_RevB.pdf"]["id"])
-    assert [p["page_no"] for p in pages] == [1, 2, 3, 4, 5, 6]
+    assert [p["page_no"] for p in pages] == [1, 2, 3, 4, 5, 6, 7]
     assert pages[4]["status"] == "empty"
 
 

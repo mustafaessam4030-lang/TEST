@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from . import ocr
 from .answer import AnswerEngine
@@ -62,6 +63,9 @@ class Assistant:
                   "generator": self.generator.name if self.generator else "extractive",
                   "ocr": "tesseract" if ocr.available() and self.settings.ocr_enabled else "unavailable"}
         status["sources"] = [sync.snapshot() for sync in self.sources]
+        status["figures"] = len(self.store.figures())
+        # an authorized organisation logo, if one has been placed in static/brand/ (never generated)
+        status["org_logo"] = (Path(__file__).parent / "static" / "brand" / "org-logo.svg").is_file()
         if self.generator:
             ok, detail = self.generator.health()
             status["generator_ready"], status["generator_detail"] = ok, detail

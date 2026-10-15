@@ -36,7 +36,8 @@ class Handler(BaseHTTPRequestHandler):
         time.sleep(DELAY)
         prompt = body["messages"][1]["content"]
         question = set(re.findall(r"[a-z]{4,}", prompt.rsplit("Question:", 1)[-1].lower()))
-        passages = re.findall(r"\[(S\d+)\][^\n]*\n([^\n]+(?:\n[^\n\[]+)*)", prompt.split("Question:")[0])
+        sources = prompt.split("Sources:", 1)[-1].rsplit("Question:", 1)[0]   # skip the prompt's example
+        passages = re.findall(r"\[(S\d+)\][^\n]*\n([^\n]+(?:\n[^\n\[]+)*)", sources)
         # copy the passage whose last line shares most words with the question
         best = max(passages, key=lambda p: len(question & set(re.findall(r"[a-z]{4,}", p[1].splitlines()[-1].lower()))),
                    default=None)

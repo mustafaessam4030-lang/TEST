@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   ENGINEERING KNOWLEDGE ASSISTANT — in the ATLAS visual family
+   LUMA (Mantrac Engineering Intelligence) — built on the ATLAS visual system
 
    Source of truth: the ATLAS Control Tower UI, branch claude/atlas-potato-garden,
    control-tower/dashboard/static/index.html. Reused here, value for value:
@@ -564,6 +564,125 @@ dialog.dlg::backdrop{background:rgba(10,19,32,.38);overflow:hidden;overscroll-be
   color:var(--surface);font-size:13px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.2);animation:chMsg .25s var(--ch-spring) both}
 .scrim{display:none}
 
+/* ═════════ LUMA ═════════
+   The Luma layer: Apple-inspired calm (generous space, soft surfaces, restrained
+   motion) on the ATLAS structure above. Colours come from brand/brand.css. */
+body{font-size:14.5px;letter-spacing:-.006em}
+.luma-mark{width:30px;height:30px;border-radius:9px;flex:none;display:block;box-shadow:0 1px 2px rgba(16,26,51,.18)}
+.brand-n{font-size:15px;font-weight:680;letter-spacing:-.02em}
+.brand-p{font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--faint);overflow:hidden;text-overflow:ellipsis}
+.side{background:var(--bg)}
+.newchat{border-radius:12px;padding:10px 12px}
+.nav-i{border-radius:10px;padding:8px 11px}
+.nav-i.on::before{background:var(--brand)}
+button.nav-i{font:inherit;font-size:13.5px}
+.org-logo{display:block;max-height:22px;max-width:140px;width:auto;margin:2px 10px 4px;opacity:.9}
+.top{backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);
+  background:color-mix(in srgb,var(--surface) 82%,transparent);position:relative;z-index:3}
+.ch-e-mark{width:52px;height:52px;border-radius:16px;box-shadow:0 8px 24px rgba(67,81,216,.22)}
+.ch-e-t{font-size:27px;font-weight:680;letter-spacing:-.028em;margin-top:18px}
+.ch-e-p{font-size:15.5px;max-width:540px}
+.ch-chip{border-radius:14px;padding:10px 16px;font-size:13.5px;box-shadow:var(--shadow)}
+.msg.me .bub{background:var(--ch-me);color:var(--ch-me-ink);border-radius:22px 22px 8px 22px;padding:11px 17px}
+.m-av{width:26px;height:26px;border-radius:8px}
+.msg.bot .bub{font-size:15.5px;line-height:1.72}
+.ch-box{border-radius:24px;box-shadow:var(--float);border-color:var(--line)}
+:root[data-theme="dark"] .ch-box{background:var(--surface-3)}
+.send{background:var(--solid)}
+/* blocks of an answer arrive one after another, quickly */
+.msg.bot .bub > *{animation:chMsg .42s var(--ch-spring) both;animation-delay:calc(var(--k,0) * 45ms)}
+
+/* answer prose: the answer itself, with its citation right after the claim */
+.ans{margin:0 0 10px;color:var(--ink)}
+.bub .id,.msg.me .id{font:inherit;letter-spacing:inherit;font-variant:normal;white-space:nowrap}
+.ans.lead{font-size:16.5px;line-height:1.6;font-weight:450;letter-spacing:-.01em}
+.ans .val{font-weight:620;font-variant-numeric:tabular-nums}
+.cite{display:inline-flex;align-items:center;gap:4px;vertical-align:2px;margin-left:6px;padding:0 7px 0 4px;height:20px;border-radius:999px;
+  background:var(--brand-wash);color:var(--brand);font-size:11.5px;font-weight:600;line-height:20px;white-space:nowrap;max-width:100%;
+  transition:background .16s var(--e),transform .2s var(--ch-spring)}
+.cite b{display:grid;place-items:center;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--brand);color:var(--on-solid);
+  font-size:9.5px;font-weight:700;font-family:var(--s)}
+.cite .nm{max-width:170px;overflow:hidden;text-overflow:ellipsis}
+.cite:hover{background:var(--vio-line)}
+.cite:active{transform:scale(.95)}
+.cite.compact .nm{display:none}
+.tag-k{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:6px;
+  margin-right:8px;vertical-align:1px;background:var(--surface-3);color:var(--mid)}
+.tag-k.new{background:var(--brand-wash);color:var(--brand)}
+.tag-k.old{background:var(--y-wash);color:var(--y)}
+.bub .outline{list-style:none;padding:0;margin:4px 0 12px;display:grid;gap:2px}
+.bub .outline li{margin:0}
+.outline li{padding:9px 12px;border-radius:12px;transition:background .16s var(--e)}
+.outline li:hover{background:var(--surface-2)}
+.outline li > b{display:block;font-size:13.5px;font-weight:650;letter-spacing:-.005em;margin-bottom:1px}
+.outline li span{color:var(--mid);font-size:14.5px}
+.gk{margin:8px 0 12px;padding:10px 14px;border-radius:14px;background:var(--gen-wash)}
+.gk-h{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--gen);margin-bottom:4px}
+.gk p{margin:0 0 4px;font-size:14.5px;color:var(--ink)}
+.mnote{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--mid);margin:6px 0 4px}
+.mnote svg{width:14px;height:14px;margin-top:2px;color:var(--faint)}
+.loc{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px;padding:10px 14px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2)}
+.loc span{flex:1;min-width:200px}
+
+/* data tables: comparisons, key specifications, revision changes */
+.dt{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:4px 0 12px;background:var(--surface)}
+.dt .tbl{border:0;border-radius:0;margin:0}
+.dt table{font-size:14px}
+.dt th{background:var(--surface-2)}
+.dt td{padding:10px 12px}
+.dt tbody tr{transition:background .14s var(--e)}
+.dt tbody tr:hover{background:var(--surface-2)}
+.dt td.v{font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+.dt td.s{white-space:nowrap;width:1%}
+.dt td.dim{color:var(--faint)}
+.dt-g td{font:var(--t-label);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--surface-2);padding:7px 12px}
+
+/* figures: original figures from the document, cropped from the page */
+.figs{display:grid;gap:12px;margin:4px 0 14px}
+.fig{margin:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
+.fig-i{display:block;width:100%;padding:14px;background:#fff;cursor:zoom-in;border:0;border-bottom:1px solid var(--line-2)}
+.fig-i img{display:block;max-width:100%;max-height:420px;margin:0 auto;height:auto}
+.fig figcaption{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;font-size:13.5px}
+.fig figcaption > b{font-weight:620;flex:1;min-width:180px}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650;letter-spacing:.02em;padding:3px 9px;border-radius:999px;
+  background:var(--grn-wash);color:var(--grn);white-space:nowrap}
+.badge svg{width:12px;height:12px}
+.badge.concept{background:var(--y-wash);color:var(--y)}
+
+/* conceptual visuals drawn from cited values (always labelled) */
+.viz{margin:4px 0 14px;padding:14px 16px 12px;border:1px dashed var(--line-hi);border-radius:16px;background:var(--surface-2)}
+.viz-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.viz-h b{font-size:13.5px;font-weight:650;flex:1}
+.viz-n{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.45}
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:minmax(70px,auto) 1fr auto;gap:12px;align-items:center;font-size:13px}
+.bar-n{font-weight:600}
+.bar-t{height:12px;border-radius:6px;background:var(--surface-3);overflow:hidden}
+.bar-t i{display:block;height:100%;border-radius:6px;background:var(--bar,var(--chart-1));transform-origin:left;
+  animation:barIn .7s var(--e) both}
+@keyframes barIn{from{transform:scaleX(0)}to{transform:none}}
+.bar-v{font-variant-numeric:tabular-nums;color:var(--mid);white-space:nowrap}
+.flow{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;padding:0;margin:0;counter-reset:fl}
+.flow li{display:flex;min-width:0;font-size:12.5px;color:var(--ink)}
+.flow li span{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:7px 11px 7px 7px;border-radius:12px;background:var(--surface);
+  border:1px solid var(--line)}
+.flow li span::before{counter-increment:fl;content:counter(fl);display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:50%;
+  background:var(--brand);color:var(--on-solid);font-size:11px;font-weight:700}
+.flow li span em{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+
+/* suggested follow-ups: under the latest answer only */
+.fu{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.fu button{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);
+  font-size:13px;font-weight:500;color:var(--ink);transition:background .16s var(--e),border-color .16s,transform .2s var(--ch-spring)}
+.fu button:hover{background:var(--brand-wash);border-color:var(--vio-line)}
+.fu button:active{transform:scale(.96)}
+.fu svg{width:13px;height:13px;color:var(--brand)}
+.msg.bot:not(:last-child) .fu{display:none}
+
+/* theme changes cross-fade where the browser supports view transitions */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.28s;animation-timing-function:cubic-bezier(.23,1,.32,1)}
+
 /* ═════════ RESPONSIVE ═════════ */
 /* Tablet / narrow laptop: the document panel floats over the conversation
    instead of squeezing it. */
@@ -624,10 +743,25 @@ dialog.dlg::backdrop{background:rgba(10,19,32,.38);overflow:hidden;overscroll-be
   .spec td:first-child{padding-left:0;font-weight:600}
   .spec td:first-child::before{display:none}
   .spec td.s{padding-top:6px;width:auto;white-space:normal}
+  .dt table,.dt tbody,.dt tr,.dt td{display:block;width:auto}
+  .dt thead{display:none}
+  .dt tbody tr{padding:10px 12px;border-bottom:1px solid var(--line-2)}
+  .dt tbody tr:last-child{border-bottom:0}
+  .dt td{position:relative;padding:3px 0 3px 112px;border:0;min-height:22px}
+  .dt td::before{content:attr(data-k);position:absolute;left:0;top:3px;width:104px;font:400 12px/1.5 var(--s);color:var(--faint)}
+  .dt td:first-child{padding-left:0;font-weight:600}
+  .dt td:first-child::before{display:none}
+  .dt td.s{padding-top:6px;width:auto;white-space:normal}
+  .dt-g td{padding:6px 0}
+  .bar{grid-template-columns:64px 1fr;gap:4px 10px}
+  .bar-v{grid-column:2}
+  .flow{grid-template-columns:1fr;gap:6px}
+  .ans.lead{font-size:16px}
   .newchat kbd{display:none}
 }
 @media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  ::view-transition-old(root),::view-transition-new(root){animation:none}
   .th-label{background:none;-webkit-text-fill-color:currentColor;color:var(--mid)}
   .th-dots span{opacity:.6}
 }

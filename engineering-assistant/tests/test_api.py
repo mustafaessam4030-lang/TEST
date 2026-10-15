@@ -31,7 +31,8 @@ def wait_ready(client, doc_id, timeout=60):
 
 
 def test_ui_and_health(client):
-    assert "Engineering Knowledge Assistant" in client.get("/").text
+    page = client.get("/").text
+    assert "<title>Luma" in page and "Mantrac Engineering Intelligence" in page
     health = client.get("/api/health").json()
     assert health["generator"] == "extractive" and health["embedder"].startswith("hashing")
 

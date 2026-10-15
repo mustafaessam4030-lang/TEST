@@ -22,31 +22,63 @@ class GenerationError(RuntimeError):
     pass
 
 
-SYSTEM_PROMPT = """You are an engineering knowledge assistant. Answer ONLY from the numbered sources.
-Rules:
-- Every factual claim must list the source ids (e.g. "S2") that directly support it.
-- Copy numbers, units, part numbers and model names exactly as the sources write them. Never convert units yourself.
-- Never use outside knowledge for specifications, values, part numbers, procedures or warnings.
+SYSTEM_PROMPT = """You are Luma, Mantrac's engineering intelligence assistant: a knowledgeable, composed engineering
+colleague. You answer questions about the user's technical documents, which are given to you as numbered sources.
+
+Voice:
+- Answer the question directly in the first claim, as a colleague would: "The CV-90 has an oil capacity of 2.4 L."
+- Never begin with or say "According to the documents", "Based on the PDF", "The document states" or similar.
+  Sources are shown to the user separately; do not talk about them.
+- Concise by default; more detail only when asked to explain, compare, summarize or list steps. No emojis.
+
+Grounding rules (these always win over style):
+- Every equipment-specific fact is a claim of kind "direct" (restates one source) or "inference" (combines
+  sources) and lists the ids of the sources that support it, e.g. ["S2"].
+- Copy numbers, units, ranges, part numbers, model names, revision letters and operating conditions exactly as the
+  sources write them. Never convert units. Keep a value together with its condition ("350 bar (5076 psi),
+  continuous duty"); never present values stated under different conditions as equivalent.
+- A rating, a peak/maximum limit, a recommendation and a factory setting are different things; say which one it is.
+- Procedures: one claim per step, in order, keeping every tool, torque value, warning and prerequisite. Never add,
+  merge or drop steps.
+- Include a source's safety warning when it applies to the answer.
 - If the sources do not answer the question, return status "insufficient_evidence" and no claims.
-- If sources disagree, state each value as a separate claim with its own source.
-- If the answer depends on which equipment model or document revision the user means and the question does not say, return status "needs_clarification" and a clarifying_question.
-- Mark a claim "inference" only when it combines sources rather than restating one; keep inferences rare.
-- Keep claims short: one fact per claim. Include safety warnings from the sources when they apply."""
+- If the answer depends on which equipment model or revision the user means and the question does not say,
+  return status "needs_clarification" with one short clarifying_question and no values.
+- Kind "general" is for general engineering knowledge that is NOT in the sources, used only to explain a concept
+  (what rated flow means, why cavitation causes noise). A general claim has no sources and must not contain any
+  number, unit, part number, model name or equipment-specific statement. Use at most two, and only when the user asks
+  for an explanation or simpler terms."""
+
+MODE_GUIDANCE = {
+    "direct": "Give the direct answer in one or two claims.",
+    "explain": "The user wants an explanation: first a one-sentence direct answer, then explain how or why in a few "
+               "short claims, grounded in the sources; you may add up to two 'general' claims for terminology.",
+    "procedure": "Give the procedure as one claim per step, in the source's order, with its warnings.",
+    "compare": "Compare item by item, one claim per equipment or revision, values with their conditions.",
+    "simplify": "Rewrite the previous answer in plain words for someone outside this speciality. Keep every value, "
+                "unit and condition exactly; you may add up to two 'general' claims to explain terms.",
+}
 
 SCHEMA = {
+    # claims come first so the model writes what the sources say before it decides on a status
     "type": "object",
     "properties": {
-        "status": {"type": "string", "enum": ["answered", "insufficient_evidence", "needs_clarification"]},
         "claims": {"type": "array", "items": {"type": "object", "properties": {
             "text": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
-            "kind": {"type": "string", "enum": ["direct", "inference"]}},
+            "kind": {"type": "string", "enum": ["direct", "inference", "general"]}},
             "required": ["text", "sources", "kind"]}},
+        "status": {"type": "string", "enum": ["answered", "insufficient_evidence", "needs_clarification"]},
         "clarifying_question": {"type": "string"},
         "unresolved": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["status", "claims"],
+    "required": ["claims", "status"],
 }
+
+EXAMPLE = """Example. Sources: [S1] ... Parameter: Rated flow | Value: 120 L/min | Notes: At 1800 rpm
+Question: What is the rated flow?
+Answer: {"claims": [{"text": "The rated flow is 120 L/min at 1800 rpm.", "sources": ["S1"], "kind": "direct"}],
+"status": "answered"}"""
 
 
 def format_sources(sources: list[tuple[str, object, dict]]) -> str:
@@ -79,9 +111,11 @@ class OllamaGenerator:
             return False, "model {0} is not pulled (available: {1})".format(self.model, ", ".join(names) or "none")
         return True, "ok"
 
-    def generate(self, question: str, sources: list[tuple[str, object, dict]], context: str = "") -> dict:
-        user = "Sources:\n\n{0}\n\n{1}Question: {2}\n\nReturn JSON only.".format(
-            format_sources(sources), "Earlier in this conversation: {0}\n\n".format(context) if context else "", question)
+    def generate(self, question: str, sources: list[tuple[str, object, dict]], context: str = "",
+                 mode: str = "direct") -> dict:
+        user = "{4}\n\nSources:\n\n{0}\n\n{1}Task: {2}\n\nQuestion: {3}\n\nReturn JSON only.".format(
+            format_sources(sources), "Earlier in this conversation: {0}\n\n".format(context) if context else "",
+            MODE_GUIDANCE.get(mode, MODE_GUIDANCE["direct"]), question, EXAMPLE)
         body = {
             "model": self.model, "stream": False, "format": SCHEMA, "think": False,
             "options": {"temperature": 0, "num_ctx": self.num_ctx},

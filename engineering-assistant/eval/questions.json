@@ -24,7 +24,7 @@
     {"id": "proc-03", "category": "procedure", "turns": ["How should the HX-200 mounting flange bolts be tightened?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["cross pattern"]},
     {"id": "proc-04", "category": "troubleshooting (two-column page)", "turns": ["What should I do if the HX-200 pump makes a whining noise?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [4], "must_include": ["suction strainer"]},
 
-    {"id": "table-01", "category": "table", "turns": ["What is the torque for the HX-200 drain plug?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["Torque (N.m): 60"]},
+    {"id": "table-01", "category": "table", "turns": ["What is the torque for the HX-200 drain plug?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2], "must_include": ["60 N.m"]},
     {"id": "table-02", "category": "table", "turns": ["What torque is specified for the CV-90 foot mounting bolts?"], "expect": "answer", "doc": "CV-90_Gearbox_Datasheet.pdf", "pages": [1], "must_include": ["350"]},
     {"id": "table-03", "category": "table", "turns": ["What thread size are the HX-200 port cover bolts?"], "expect": "answer", "doc": "HX-200_Service_Manual_RevB.pdf", "pages": [2, 3], "must_include": ["M10x1.5"]},
 

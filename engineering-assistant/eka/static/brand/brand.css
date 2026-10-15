@@ -1,0 +1,36 @@
+/* Luma brand palette: refined navy / indigo. All colour decisions live here;
+   app.css uses these tokens only. Replace this file to rebrand. */
+:root{
+  --bg:#F6F7FB; --surface:#FFFFFF; --surface-2:#F8F9FC; --surface-3:#EDF0F6;
+  --ink:#101A33; --mid:#46506A; --faint:#636D84;
+  --line:rgba(16,26,51,.09); --line-2:rgba(16,26,51,.06); --line-hi:rgba(16,26,51,.14);
+  --brand:#4351D8; --brand-hi:#3440BF; --brand-wash:rgba(67,81,216,.08);
+  --navy:#16245C;
+  --solid:#3C4AD1; --on-solid:#FFFFFF;
+  --vio:#4351D8; --vio-wash:rgba(67,81,216,.08); --vio-line:rgba(67,81,216,.26);
+  --nav-on:#FFFFFF; --on-nav:#101A33;
+  --card-edge:rgba(16,26,51,.07);
+  --shadow:0 1px 2px rgba(16,26,51,.04);
+  --lift:0 1px 2px rgba(16,26,51,.06),0 0 0 .5px rgba(16,26,51,.05);
+  --float:0 1px 2px rgba(16,26,51,.05),0 12px 32px rgba(16,26,51,.08);
+  --ch-me:#EBEEF7; --ch-me-ink:#101A33;
+  --gen:#0E7490; --gen-wash:rgba(14,116,144,.08);
+  --chart-1:#4351D8; --chart-2:#0E9F8E; --chart-3:#C2410C; --chart-4:#7C3AED;
+}
+:root[data-theme="dark"]{
+  --bg:#090E1A; --surface:#0E1525; --surface-2:#0B1120; --surface-3:#172036;
+  --ink:#EDF1FA; --mid:#A8B3C8; --faint:#7E8AA2;
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.05); --line-hi:rgba(255,255,255,.14);
+  --brand:#8E9BFF; --brand-hi:#7381F8; --brand-wash:rgba(142,155,255,.13);
+  --navy:#C9D1FF;
+  --solid:#5666EE; --on-solid:#FFFFFF;
+  --vio:#9AA6FF; --vio-wash:rgba(154,166,255,.12); --vio-line:rgba(154,166,255,.32);
+  --nav-on:rgba(255,255,255,.08); --on-nav:#FFFFFF;
+  --card-edge:rgba(255,255,255,.07);
+  --shadow:0 1px 2px rgba(0,0,0,.45);
+  --lift:0 1px 2px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.06);
+  --float:0 1px 2px rgba(0,0,0,.4),0 14px 36px rgba(0,0,0,.35);
+  --ch-me:#1A2442; --ch-me-ink:#EDF1FA;
+  --gen:#5CC8DD; --gen-wash:rgba(92,200,221,.10);
+  --chart-1:#8E9BFF; --chart-2:#3DD6C2; --chart-3:#FB923C; --chart-4:#C4A5FF;
+}

@@ -1,4 +1,4 @@
-# Engineering Knowledge Assistant — start here
+# Luma (Mantrac Engineering Intelligence Assistant) — start here
 
 Ask questions about your engineering PDFs and get answers quoted from them,
 with the exact document and page for every statement. Everything runs on
@@ -86,8 +86,9 @@ The PDFs are only read, never moved, changed or uploaded anywhere.
 By default answers are quoted directly from the PDFs (no AI model). To have
 answers phrased by a local model (still grounded and still cited):
 
-1. Install Ollama from <https://ollama.com> and run `ollama pull qwen2.5:7b-instruct`
-   (a 4.7 GB download; 8 GB RAM recommended).
+1. Install Ollama from <https://ollama.com> and pull an approved model, e.g. `ollama pull qwen2.5:7b-instruct`
+   (a 4.7 GB download; 8 GB RAM recommended; on a laptop CPU expect 10–40 s per answer).
+   The integration was tested with the smaller `qwen2.5:3b-instruct` (1.9 GB); see docs/LUMA.md.
 2. In `config.env` set `EKA_GENERATOR=ollama`, then restart.
 
 If the model is not running, the assistant falls back to quoted answers.

@@ -1,10 +1,13 @@
-# Engineering Knowledge Assistant
+# Luma — Mantrac Engineering Intelligence Assistant
+
+*(the Engineering Knowledge Assistant engine, as the Luma product; see [docs/LUMA.md](docs/LUMA.md) for answer modes, the language-model integration, figures and what is implemented vs planned)*
+
 
 Upload engineering PDFs and ask questions about them. Every factual answer quotes the documents and cites the exact document and page. Click a citation to open that page with the passage highlighted. When the documents don't support an answer, the assistant says so and lists what it searched. It does not fill the gap with a guess.
 
 This is a self-contained application. It does not depend on, or change, anything else in this repository. The interface follows the ATLAS visual system (same design tokens and components, see [docs/UI.md](docs/UI.md)) with a ChatGPT-style conversation layout.
 
-![Before and after](docs/screenshots/before-after-desktop.jpg)
+![Luma](docs/screenshots/luma/desktop-compare.jpg)
 
 ```
 engineering-assistant/
@@ -15,6 +18,9 @@ engineering-assistant/
 │   ├── embeddings.py     auto (bge-small if installed locally, else keyword) | fastembed | Ollama
 │   ├── retrieval.py      BM25 + vectors, RRF fusion, relevance gating, per-query trace
 │   ├── answer.py         evidence selection, revisions, clarification, validation, answer object
+│   ├── modes.py          Luma answer modes: compare, summary, revision diff, where, simplify, visual, follow-ups
+│   ├── compose.py        natural sentences built only from source values
+│   ├── figures.py        figures (images, vector drawings) found at ingest, searched and cropped from the page
 │   ├── generation.py     optional Ollama (Qwen) generation with JSON claims
 │   ├── citations.py      citation construction and validation
 │   ├── conversation.py   small talk, follow-ups, conversation memory (persisted in SQLite)
@@ -24,7 +30,7 @@ engineering-assistant/
 ├── eval/                 evaluation questions (tuning set + held-out set)
 ├── scripts/              make_samples.py, run_eval.py, eka.sh, build_release.py
 ├── release/              launchers and config.env for the distributable zip (see START_HERE.md)
-├── tests/                Python tests + tests/ui (104-check browser end-to-end suite)
+├── tests/                133 Python tests (incl. live-model tests) + tests/ui (128-check browser suite)
 └── docs/                 ARCHITECTURE.md, EVALUATION.md, UI.md, screenshots/
 ```
 
@@ -221,12 +227,13 @@ The chat response is the structured answer object: `status`, `message`, `claims`
 
 ```sh
 pip install -r requirements-dev.txt
-python -m pytest                                       # 101 tests (2 skipped without the model), ~25 s
+python -m pytest                                       # 133 tests; 7 skip without a model/embedder configured
+EKA_TEST_OLLAMA_MODEL=qwen2.5:3b-instruct python -m pytest tests/test_llm_live.py   # against a REAL local model
 EKA_TEST_MODEL_DIR=data/models python -m pytest        # also runs the real-embedding tests (otherwise skipped)
 python scripts/run_eval.py                             # tuning set, keyword-only
 python scripts/run_eval.py --questions eval/heldout.json --embedder fastembed
 
-# Browser end-to-end (104 checks; starts its own servers on :8765, :8766, :8799)
+# Browser end-to-end (128 checks; starts its own servers on :8765, :8766, :8799)
 npm i playwright && npx playwright install chromium    # once
 PLAYWRIGHT_DIR=$PWD tests/ui/run.sh /tmp/eka-ui        # screenshots + e2e-results.json in /tmp/eka-ui
 ```

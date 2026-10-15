@@ -118,7 +118,7 @@ def test_clarification_options_scope_the_follow_up(client):
 def test_document_search_native_and_ocr(client):
     hx = doc_id(client, "HX-200_Service_Manual_RevB")
     results = client.get("/api/documents/{0}/search".format(hx), params={"q": "relief valve"}).json()["results"]
-    assert {r["page"] for r in results} == {2, 4}
+    assert {r["page"] for r in results} == {2, 4, 7}   # specs, troubleshooting, hydraulic circuit
     assert all(r["hits"] >= 1 and "elief valve" in r["snippet"] for r in results)
     tl5 = doc_id(client, "TL-5")
     ocr = client.get("/api/documents/{0}/search".format(tl5), params={"q": "track sag"}).json()["results"]

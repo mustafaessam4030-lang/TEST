@@ -8,6 +8,8 @@
     DELETE /api/documents/{id}
     GET    /api/documents/{id}/file               the original PDF (open at #page=N)
     GET    /api/documents/{id}/pages/{n}/image?chunk=   rendered page, cited passage highlighted
+    GET    /api/documents/{id}/figures              figures found in the document (images and drawings)
+    GET    /api/figures/{figure_id}/image          a figure, cropped from its original page
     POST   /api/chat  {message, conversation_id?, document_ids?}
 
 Uploads are sent as the raw request body so no multipart parser is needed.
@@ -30,6 +32,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .config import Settings, load_settings
+from .figures import render as render_figure
 from .ingest import UploadError
 from .service import Assistant
 
@@ -38,6 +41,12 @@ STATIC = Path(__file__).parent / "static"
 PUBLIC_DOC_FIELDS = ("id", "filename", "title", "doc_number", "revision", "revision_date", "equipment",
                      "doc_type", "page_count", "bytes", "status", "error", "progress_done", "progress_total",
                      "stage", "superseded_by", "source", "created_at", "updated_at")
+
+
+def figure_public(f: dict) -> dict:
+    return {"id": f["id"], "doc_id": f["doc_id"], "page": f["page_no"], "kind": f["kind"], "caption": f["caption"],
+            "section": f["section"], "image_url": "/api/figures/{0}/image".format(f["id"]),
+            "open_url": "/api/documents/{0}/file#page={1}".format(f["doc_id"], f["page_no"])}
 
 
 class ChatRequest(BaseModel):
@@ -106,7 +115,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def documents(request: Request):
         a = assistant(request)
         summary = a.store.page_summary()
-        return {"documents": [public(d, summary) for d in a.store.documents()]}
+        counts: dict[str, int] = {}
+        for f in a.store.figures():
+            counts[f["doc_id"]] = counts.get(f["doc_id"], 0) + 1
+        return {"documents": [dict(public(d, summary), figure_count=counts.get(d["id"], 0))
+                              for d in a.store.documents()]}
+
+    @app.get("/api/documents/{doc_id}/figures")
+    def document_figures(doc_id: str, request: Request):
+        a = assistant(request)
+        get_doc(a, doc_id)
+        return {"figures": [figure_public(f) for f in a.store.figures(doc_id)]}
+
+    @app.get("/api/figures/{figure_id}/image")
+    def figure_image(figure_id: str, request: Request):
+        a = assistant(request)
+        figure = a.store.figure(figure_id)
+        if figure is None:
+            raise HTTPException(404, "figure not found")
+        get_doc(a, figure["doc_id"])
+        try:
+            png = render_figure(a.ingest.file_path(figure["doc_id"]), figure["page_no"], figure["bbox"])
+        except Exception as exc:
+            raise HTTPException(422, "the figure could not be rendered: {0}".format(exc)) from exc
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
     @app.post("/api/documents", status_code=202)
     async def upload(request: Request, filename: str = "document.pdf", equipment: str = "", doc_type: str = ""):

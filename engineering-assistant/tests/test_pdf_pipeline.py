@@ -27,8 +27,8 @@ def test_numbers_ignore_digits_inside_identifiers():
 # ── extraction ──
 def test_native_pdf_pages_tables_and_metadata(samples, settings):
     ex = extract((samples / "HX-200_Service_Manual_RevB.pdf").read_bytes(), settings)
-    assert ex.page_count == 6
-    assert [p.page_no for p in ex.pages] == [1, 2, 3, 4, 5, 6]
+    assert ex.page_count == 7
+    assert [p.page_no for p in ex.pages] == [1, 2, 3, 4, 5, 6, 7]
     assert ex.metadata["doc_number"] == "HX-200-SM" and ex.metadata["revision"] == "B"
     tables = [e for e in ex.pages[1].elements if e.kind == "table"]
     assert tables[0].header == ["Parameter", "Value", "Notes"]
@@ -101,4 +101,4 @@ def test_chunks_keep_page_section_and_table_headers(samples, settings):
     assert steps.page_no == 3 and "7. Install the retaining ring" in steps.text
     assert all(c.page_no != 5 for c in chunks)  # the blank page yields no chunks
     # every chunk has a single real page number
-    assert {c.page_no for c in chunks} <= {1, 2, 3, 4, 6}
+    assert {c.page_no for c in chunks} <= {1, 2, 3, 4, 6, 7}

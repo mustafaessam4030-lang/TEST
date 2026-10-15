@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Luma">
+  <!-- The Luma product mark (original artwork, placeholder until a final mark is approved). -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B2A6B"/>
+      <stop offset="1" stop-color="#4C5BE8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#g)"/>
+  <path d="M32 13c1.6 9.7 6.3 14.4 16 16-9.7 1.6-14.4 6.3-16 16-1.6-9.7-6.3-14.4-16-16 9.7-1.6 14.4-6.3 16-16z" fill="#fff"/>
+  <circle cx="46" cy="46" r="3.2" fill="#fff" fill-opacity=".72"/>
+</svg>

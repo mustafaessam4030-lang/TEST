@@ -98,7 +98,8 @@ def test_unsupported_questions_abstain(assistant, question):
     out = ask(assistant, question)
     assert out["status"] == "insufficient_evidence", out["answer_text"]
     assert out["claims"] == [] and out["citations"] == []
-    assert "don't establish" in out["message"] and "searched" in out["message"]
+    assert "couldn't verify" in out["message"] or "couldn't find" in out["message"]
+    assert "searched" in out["message"]
 
 
 def test_missing_model_is_named(assistant):

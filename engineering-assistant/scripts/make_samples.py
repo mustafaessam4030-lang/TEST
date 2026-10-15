@@ -202,7 +202,92 @@ def hx200(rev: str) -> Writer:
                500 if new else 250))
     if not new:
         w.text("This revision is superseded when a later revision of HX-200-SM is issued.")
+    else:
+        w.new_page()
+        w.heading("7 Hydraulic Circuit")
+        w.text("Figure 1 shows the HX-200 in a typical open-loop circuit. Oil is drawn from the tank through the "
+               "suction strainer, delivered by the pump to the directional control valve and returned to the tank "
+               "through return filter 1R-0741.")
+        w.text("The relief valve protects the circuit and is factory set to 380 bar.")
+        hydraulic_schematic(w)
+        pump_illustration(w)
     return w
+
+
+def hydraulic_schematic(w: Writer):
+    """Figure 1: a vector schematic (frame, symbols, lines, labels), as drawing programs export them."""
+    page, top = w.page, w.y + 6
+    frame = pymupdf.Rect(MARGIN, top, W - MARGIN, top + 250)
+    page.draw_rect(frame, color=(0.3, 0.3, 0.3), width=0.8)
+    blue = (0.1, 0.25, 0.55)
+
+    def box(x, y, bw, bh, label, sub=""):
+        r = pymupdf.Rect(x, y, x + bw, y + bh)
+        page.draw_rect(r, color=blue, width=1.2)
+        page.insert_text((x + 4, y + bh + 11), label, fontsize=8, fontname="helv")
+        if sub:
+            page.insert_text((x + 4, y + bh + 21), sub, fontsize=8, fontname="helv")
+        return r
+
+    tank = box(MARGIN + 20, top + 170, 70, 40, "Tank")
+    page.draw_line((tank.x0, tank.y0 + 12), (tank.x1, tank.y0 + 12), color=blue, width=0.8)   # fluid level
+    strainer = pymupdf.Rect(MARGIN + 105, top + 100, MARGIN + 125, top + 120)
+    page.draw_quad(pymupdf.Quad((strainer.x0 + 10, strainer.y0), (strainer.x1, strainer.y0 + 10),
+                                (strainer.x0, strainer.y0 + 10), (strainer.x0 + 10, strainer.y1)), color=blue, width=1.2)
+    page.insert_text((strainer.x0 - 18, strainer.y1 + 11), "Suction strainer", fontsize=8, fontname="helv")
+    pump_c = (MARGIN + 175, top + 70)
+    page.draw_circle(pump_c, 22, color=blue, width=1.4)
+    page.draw_polyline([(pump_c[0] - 9, pump_c[1] + 8), (pump_c[0], pump_c[1] - 12), (pump_c[0] + 9, pump_c[1] + 8),
+                        (pump_c[0] - 9, pump_c[1] + 8)], color=blue, fill=blue, width=0.8)
+    page.insert_text((pump_c[0] - 26, pump_c[1] + 36), "HX-200 pump", fontsize=8, fontname="helv")
+    relief = box(MARGIN + 245, top + 140, 56, 30, "Relief valve", "380 bar")
+    page.draw_polyline([(relief.x0 + 8, relief.y0 + 15), (relief.x0 + 16, relief.y0 + 7), (relief.x0 + 24, relief.y0 + 23),
+                        (relief.x0 + 32, relief.y0 + 7), (relief.x0 + 40, relief.y0 + 23), (relief.x0 + 48, relief.y0 + 15)],
+                       color=blue, width=0.9)                                                   # spring
+    dcv = box(MARGIN + 260, top + 40, 90, 36, "Directional control valve")
+    for i in (1, 2):
+        page.draw_line((dcv.x0 + 30 * i, dcv.y0), (dcv.x0 + 30 * i, dcv.y1), color=blue, width=0.8)
+    cyl = box(MARGIN + 395, top + 30, 70, 30, "Cylinder")
+    page.draw_line((cyl.x0 + 28, cyl.y0 + 3), (cyl.x0 + 28, cyl.y1 - 3), color=blue, width=2)   # piston
+    page.draw_line((cyl.x0 + 28, cyl.y0 + 15), (cyl.x1 + 18, cyl.y0 + 15), color=blue, width=2) # rod
+    ret = pymupdf.Rect(MARGIN + 395, top + 160, MARGIN + 415, top + 180)
+    page.draw_quad(pymupdf.Quad((ret.x0 + 10, ret.y0), (ret.x1, ret.y0 + 10), (ret.x0, ret.y0 + 10), (ret.x0 + 10, ret.y1)),
+                   color=blue, width=1.2)
+    page.insert_text((ret.x0 - 20, ret.y1 + 11), "Return filter 1R-0741", fontsize=8, fontname="helv")
+    lines = [
+        [(tank.x1 - 20, tank.y0), (tank.x1 - 20, strainer.y1), (strainer.x0 + 10, strainer.y1)],        # suction
+        [(strainer.x0 + 10, strainer.y0), (strainer.x0 + 10, pump_c[1]), (pump_c[0] - 22, pump_c[1])],
+        [(pump_c[0] + 22, pump_c[1]), (dcv.x0, pump_c[1])],                                               # pressure
+        [(pump_c[0] + 40, pump_c[1]), (pump_c[0] + 40, relief.y0 + 15), (relief.x0, relief.y0 + 15)],
+        [(dcv.x1, dcv.y0 + 10), (cyl.x0, dcv.y0 + 10)],
+        [(dcv.x1, dcv.y1 - 10), (cyl.x0 + 50, dcv.y1 - 10), (cyl.x0 + 50, cyl.y1)],
+        [(dcv.x0 + 45, dcv.y1), (dcv.x0 + 45, ret.y0 + 10), (ret.x0, ret.y0 + 10)],                        # return
+        [(ret.x1, ret.y0 + 10), (ret.x1 + 30, ret.y0 + 10), (ret.x1 + 30, tank.y1 + 6), (tank.x0 + 35, tank.y1 + 6),
+         (tank.x0 + 35, tank.y1)],
+        [(relief.x1, relief.y0 + 15), (relief.x1 + 20, relief.y0 + 15), (relief.x1 + 20, ret.y0 + 10)],
+    ]
+    for pts in lines:
+        page.draw_polyline(pts, color=(0.15, 0.15, 0.15), width=1)
+    w.y = frame.y1 + 6
+    w.text("Figure 1 HX-200 hydraulic circuit (open loop)", size=9, font="hebo", gap=12)
+
+
+def pump_illustration(w: Writer):
+    """Figure 2: an embedded raster image, rendered from shapes (a synthetic stand-in for a photograph)."""
+    art = pymupdf.open()
+    pg = art.new_page(width=300, height=150)
+    pg.draw_rect(pg.rect, color=None, fill=(0.93, 0.94, 0.96))
+    pg.draw_rect(pymupdf.Rect(70, 40, 200, 110), color=(0.2, 0.2, 0.25), fill=(0.55, 0.6, 0.68), width=1.5, radius=0.15)
+    pg.draw_rect(pymupdf.Rect(200, 55, 230, 95), color=(0.2, 0.2, 0.25), fill=(0.45, 0.48, 0.55), width=1.5)
+    pg.draw_rect(pymupdf.Rect(230, 70, 270, 80), color=(0.2, 0.2, 0.25), fill=(0.7, 0.72, 0.75), width=1)
+    pg.draw_circle((100, 75), 12, color=(0.2, 0.2, 0.25), fill=(0.35, 0.38, 0.45))
+    pg.insert_text((8, 142), "SYNTHETIC ILLUSTRATION", fontsize=7, color=(0.4, 0.4, 0.4))
+    pix = pg.get_pixmap(dpi=144)
+    w._ensure(170)
+    rect = pymupdf.Rect(MARGIN, w.y + 4, MARGIN + 300, w.y + 154)
+    w.page.insert_image(rect, pixmap=pix)
+    w.y = rect.y1 + 4
+    w.text("Figure 2 HX-200 pump, drive end (synthetic illustration)", size=9, font="hebo", gap=8)
 
 
 def cv90() -> Writer:

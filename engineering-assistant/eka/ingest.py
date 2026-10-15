@@ -27,6 +27,7 @@ from .chunking import chunk_pages
 from .config import Settings
 from .embeddings import Embedder
 from .extract import ExtractionError, extract
+from .figures import find_figures
 from .retrieval import HybridIndex
 from .store import Store
 from .textutil import normalize
@@ -197,7 +198,12 @@ class IngestService:
         pages = [{"page_no": p.page_no, "status": p.status, "method": p.method, "chars": p.chars,
                   "images": p.images, "ocr_confidence": p.ocr_confidence, "reason": p.reason}
                  for p in extraction.pages]
-        self.store.replace_content(doc_id, pages, rows, vectors, self.embedder.name, fields)
+        self.store.update_document(doc_id, stage="finding figures")
+        figures = find_figures(data)
+        for f in figures:   # the section a figure sits in: the last passage that starts above it on its page
+            above = [r for r in rows if r["page_no"] == f["page_no"] and r["bboxes"] and r["bboxes"][0][1] <= f["bbox"][1]]
+            f["section"] = max(above, key=lambda r: r["bboxes"][0][1])["section"] if above else ""
+        self.store.replace_content(doc_id, pages, rows, vectors, self.embedder.name, fields, figures)
         self._update_supersession()
         self.index.rebuild()
         log.info("indexed document %s: %s, %d pages, %d chunks, %.1fs", doc_id, status,

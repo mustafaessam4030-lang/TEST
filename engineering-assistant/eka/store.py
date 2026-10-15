@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at      REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_conv ON messages(conversation_id, created_at);
+CREATE TABLE IF NOT EXISTS figures (
+    id       TEXT PRIMARY KEY,
+    doc_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    page_no  INTEGER NOT NULL,
+    seq      INTEGER NOT NULL,
+    kind     TEXT NOT NULL,                  -- image | drawing
+    bbox     TEXT NOT NULL,                  -- [x0, y0, x1, y1] in PDF points
+    caption  TEXT NOT NULL DEFAULT '',
+    labels   TEXT NOT NULL DEFAULT '',
+    section  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS figures_doc ON figures(doc_id, page_no);
 CREATE TABLE IF NOT EXISTS vectors (
     chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
     model    TEXT NOT NULL,
@@ -189,9 +201,15 @@ class Store:
 
     # ── index content ──
     def replace_content(self, doc_id: str, pages: list[dict], chunks: list[dict],
-                        vectors: np.ndarray, model: str, doc_fields: dict):
-        """Atomically replace a document's pages, chunks and vectors (re-index safe)."""
+                        vectors: np.ndarray, model: str, doc_fields: dict, figures: list[dict] | None = None):
+        """Atomically replace a document's pages, chunks, vectors and figures (re-index safe)."""
         with self.transaction() as conn:
+            conn.execute("DELETE FROM figures WHERE doc_id = ?", (doc_id,))
+            conn.executemany(
+                "INSERT INTO figures (id, doc_id, page_no, seq, kind, bbox, caption, labels, section)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [("{0}:{1}:f{2}".format(doc_id, f["page_no"], f["seq"]), doc_id, f["page_no"], f["seq"], f["kind"],
+                  json.dumps(f["bbox"]), f["caption"], f["labels"], f.get("section", "")) for f in figures or []])
             conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
             conn.execute("DELETE FROM pages WHERE doc_id = ?", (doc_id,))
             conn.executemany(
@@ -211,6 +229,19 @@ class Store:
             fields = dict(doc_fields, updated_at=time.time())
             columns = ", ".join("{0} = ?".format(k) for k in fields)
             conn.execute("UPDATE documents SET {0} WHERE id = ?".format(columns), (*fields.values(), doc_id))
+
+    def figures(self, doc_id: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM figures" + (" WHERE doc_id = ?" if doc_id else "") + " ORDER BY doc_id, page_no, seq"
+        rows = self._all(sql, (doc_id,) if doc_id else ())
+        for r in rows:
+            r["bbox"] = json.loads(r["bbox"])
+        return rows
+
+    def figure(self, figure_id: str) -> dict | None:
+        row = self._one("SELECT * FROM figures WHERE id = ?", (figure_id,))
+        if row:
+            row["bbox"] = json.loads(row["bbox"])
+        return row
 
     def chunk(self, chunk_id: str) -> dict | None:
         return self._one("SELECT * FROM chunks WHERE id = ?", (chunk_id,))
