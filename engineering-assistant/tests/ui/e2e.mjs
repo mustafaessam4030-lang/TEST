@@ -442,6 +442,19 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   const p = await page(1440, 900);
   check("Luma: product name and tagline", (await p.textContent("#brandName")) === "Luma" &&
     (await p.textContent("#brandTag")).includes("Mantrac") && (await p.title()).startsWith("Luma"));
+  {
+    const icon = await p.evaluate(async () => {
+      const mark = document.getElementById("brandMark");
+      const links = [...document.querySelectorAll("link[rel~=icon],link[rel=apple-touch-icon],link[rel=manifest]")].map((l) => l.getAttribute("href"));
+      const manifest = await (await fetch("manifest.webmanifest")).json();
+      const urls = [...links, ...manifest.icons.map((i) => i.src)];
+      const codes = await Promise.all(urls.map((u) => fetch(u).then((r) => r.status)));
+      return { mark: mark && mark.complete && mark.naturalWidth > 0 && mark.getAttribute("src"), links, codes, name: manifest.short_name };
+    });
+    check("Luma: app icon in the sidebar, browser tab and app manifest", icon.mark === "luma/luma-icon.svg" &&
+      icon.links[0] === "luma/luma-icon.svg" && icon.links.includes("favicon.ico") && icon.name === "Luma" &&
+      icon.codes.every((c) => c === 200), JSON.stringify(icon));
+  }
   check("Luma: no unofficial organisation logo is shown", await p.locator("#orgLogo").isHidden());
   const sugs = await p.locator("#sugs .ch-chip").allTextContents();
   check("Luma: suggestions include a figure and a summary", sugs.some((x) => x.startsWith("Show me")) && sugs.some((x) => x.startsWith("Summarize")), sugs.join(" | "));

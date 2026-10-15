@@ -1652,9 +1652,8 @@ $("navUpload").addEventListener("click", () => {
   ($("viewLib").hidden ? $("attachFile") : $("libFile")).click();
 });
 
-// ── Luma on the welcome screen and in the sidebar ───────────────────────
+// ── Luma on the welcome screen ──────────────────────────────────────────
 {
   const hero = new LumaMascot({ size: 88, state: "idle", rest: "idle", cls: "ch-e-luma" });
   $("emptyLuma").replaceWith(hero.el);
-  $("brandMark").replaceWith(staticMascot(32, "brand-luma"));
 }

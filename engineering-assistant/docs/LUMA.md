@@ -116,6 +116,7 @@ file exists. No brand approval is claimed.
 |---|---|
 | States, as observed in the running app | ![Light](screenshots/luma-mascot/states-observed-light.jpg) ![Dark](screenshots/luma-mascot/states-observed-dark.jpg) |
 | Welcome screen | ![Idle](screenshots/luma-mascot/desktop-idle.jpg) |
+| App icon | ![Sidebar](screenshots/luma-mascot/icon-desktop-light.jpg) ![Dark](screenshots/luma-mascot/icon-desktop-dark.jpg) ![Phone](screenshots/luma-mascot/icon-phone-sidebar.jpg) |
 | Phone | ![Phone](screenshots/luma-mascot/phone.jpg) |
 | Recording | [`recording-idle-to-done.mp4`](screenshots/luma-mascot/recording-idle-to-done.mp4): idle → thinking → searching → reading → writing → checking → done → at rest |
 
@@ -130,6 +131,10 @@ file exists. No brand approval is claimed.
 * As a plain `<img>`, the file shows the neutral pose. It is used that way for the favicon, the sidebar
   brand mark and the avatar beside finished answers. It is also the fallback until the animated copy has
   loaded.
+* `eka/static/luma/luma-icon.svg` is the app icon: Luma's head on a navy tile, readable at 16 px. It is the
+  sidebar mark, the browser-tab icon (`favicon.ico` for older browsers) and the installed-app icon
+  (`manifest.webmanifest`, 192 and 512 px PNGs, 180 px for iOS home screens).
+  ![Icon sizes](screenshots/luma-mascot/icon-sizes.jpg)
 * To replace the artwork, keep the group class names (`lm-fig`, `lm-p-search`, `lm-eyes-happy` and so on)
   that the mascot section of `eka/static/app.css` targets.
 
@@ -235,7 +240,7 @@ The server streams a `stage` event, with a `phase`, at each real step of the pip
   * conditions, ambiguity and abstention;
   * comparisons, summaries, revision differences and "where";
   * follow-ups, figures, the figure API and the general-claim validation.
-* `tests/ui/run.sh`: **142/142 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
+* `tests/ui/run.sh`: **143/143 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
   reduced motion). These include the 24 Luma checks and the mascot checks below.
 * `scripts/run_eval.py`: behaviour is unchanged from the previous release in all four configurations (see
   [EVALUATION.md](EVALUATION.md)). There are 0 unsupported claims and 0 invalid citations.

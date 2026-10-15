@@ -6,7 +6,10 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F6F7FB">
 <title>Luma · Mantrac Engineering Intelligence</title>
-<link rel="icon" href="luma/luma-mascot.svg" type="image/svg+xml">
+<link rel="icon" href="luma/luma-icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="luma/luma-icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
 <!-- Theme before first paint (the ATLAS pattern): Light, Dark or System. -->
 <script>(function(){var c='system';try{c=localStorage.getItem('eka-theme')||'system';}catch(e){}
 var d=c==='dark'||(c!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
@@ -56,7 +59,7 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
     <div class="side-in">
       <div class="side-top">
         <a class="brand" href="#/" id="brandLink" aria-label="Luma, new chat">
-          <img id="brandMark" src="luma/luma-mascot.svg" alt="" width="32" height="32">
+          <img id="brandMark" class="brand-ic" src="luma/luma-icon.svg" alt="" width="32" height="32">
           <span class="brand-t"><span class="brand-n" id="brandName">Luma</span><span class="brand-p" id="brandTag">Mantrac Engineering Intelligence</span></span>
         </a>
         <button class="ibtn sm collapse-side" id="collapseSide" type="button" aria-label="Collapse sidebar" title="Collapse sidebar (Ctrl+.)"><svg><use href="#i-side"/></svg></button>

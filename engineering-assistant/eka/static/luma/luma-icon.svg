@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Luma">
+  <!-- Luma app icon: the mascot's head (from luma-mascot.svg) on a brand-navy tile.
+       Used for the browser tab, home-screen and app icons. Original artwork, not the Mantrac logo. -->
+  <defs>
+    <radialGradient id="li-body" cx=".4" cy=".34" r=".78">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset=".58" stop-color="#FBF4EE"/>
+      <stop offset="1" stop-color="#EAD9CC"/>
+    </radialGradient>
+    <linearGradient id="li-helm" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34343B"/>
+      <stop offset=".55" stop-color="#16161A"/>
+      <stop offset="1" stop-color="#0C0C0F"/>
+    </linearGradient>
+    <linearGradient id="li-cup" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2C2C33"/>
+      <stop offset="1" stop-color="#0D0D10"/>
+    </linearGradient>
+        <linearGradient id="li-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3E4FC2"/>
+      <stop offset="1" stop-color="#16245C"/>
+    </linearGradient>
+    <radialGradient id="li-glow" cx=".5" cy=".3" r=".6">
+      <stop offset="0" stop-color="#FF8A3D" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#FF8A3D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#li-tile)"/>
+  <rect width="64" height="64" rx="14" fill="url(#li-glow)"/>
+  <g transform="translate(32 33) scale(1.06) translate(-32 -31.25)">
+    <g class="lm-head">
+      <path class="lm-body" fill="url(#li-body)" d="M12 31C12 19.4 21 11 32 11S52 19.4 52 31V47c0 3.3-2.2 5.5-5 5.5-2.4 0-3.6-1.9-5-1.9-1.5 0-2.4 2.9-5 2.9-2.4 0-3.4-2.5-5-2.5s-2.6 2.5-5 2.5c-2.6 0-3.5-2.9-5-2.9-1.4 0-2.6 1.9-5 1.9-2.8 0-5-2.2-5-5.5Z"/>
+      <path class="lm-rim" fill="none" stroke="#FF8A3D" stroke-opacity=".22" stroke-width=".8" d="M52 33V47c0 3.3-2.2 5.5-5 5.5-2.4 0-3.6-1.9-5-1.9-1.5 0-2.4 2.9-5 2.9"/>
+
+      <g class="lm-eyes lm-eyes-open" fill="#121216">
+        <ellipse cx="26" cy="37.6" rx="2.6" ry="4"/>
+        <ellipse cx="38" cy="37.6" rx="2.6" ry="4"/>
+      </g>
+      <g class="lm-helmet">
+        <path fill="url(#li-helm)" stroke="#FFFFFF" stroke-opacity=".38" stroke-width=".8" d="M10.8 27.6C10.6 16.2 20 8 32 8s21.4 8.2 21.2 19.6c0 1.3-1.1 2.1-2.4 1.8-5.2-1.4-10.4-4.8-18.8-4.8s-13.6 3.4-18.8 4.8c-1.3.3-2.4-.5-2.4-1.8Z"/>
+        <path class="lm-helm-edge" fill="none" stroke="#FFFFFF" stroke-opacity=".1" stroke-width=".7" d="M13.2 29.4c5.2-1.4 10.4-4.8 18.8-4.8s13.6 3.4 18.8 4.8"/>
+        <path fill="#26262D" d="M27.8 8.6c1.4-.4 7-.4 8.4 0v7.8c0 1.2-.8 2-2 2h-4.4c-1.2 0-2-.8-2-2Z"/>
+        <rect class="lm-led-glow lm-led" x="28.7" y="14.8" width="6.6" height="2.8" rx="1.45" fill="#FF7A1A" opacity=".28"/>
+        <rect class="lm-led" x="29.4" y="15.45" width="5.2" height="1.5" rx=".75" fill="#FF7A1A"/>
+      </g>
+      <g class="lm-cups">
+        <rect x="6.4" y="21.8" width="8.2" height="13" rx="3.6" fill="url(#li-cup)"/>
+        <rect x="7.6" y="23" width="5.8" height="10.6" rx="2.8" fill="none" stroke="#3A3A42" stroke-width=".6"/>
+        <rect class="lm-led" x="9.6" y="25.1" width="1.8" height="6" rx=".9" fill="#FF7A1A"/>
+        <rect x="49.4" y="21.8" width="8.2" height="13" rx="3.6" fill="url(#li-cup)"/>
+        <rect x="50.6" y="23" width="5.8" height="10.6" rx="2.8" fill="none" stroke="#3A3A42" stroke-width=".6"/>
+        <rect class="lm-led" x="52.6" y="25.1" width="1.8" height="6" rx=".9" fill="#FF7A1A"/>
+      </g>
+    </g>
+  </g>
+</svg>

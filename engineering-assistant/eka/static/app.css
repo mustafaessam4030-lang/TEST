@@ -150,6 +150,7 @@ svg{flex:none}
 .app.side-closed .side-in{opacity:0;transform:translateX(-12px);pointer-events:none}
 .side-top{display:flex;align-items:center;gap:10px;padding:12px 10px 8px 16px;min-height:var(--barh)}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1;text-decoration:none;color:inherit}
+.brand-ic{width:32px;height:32px;flex:none;border-radius:8px;box-shadow:0 1px 2px rgba(10,16,40,.18)}
 .mark{width:30px;height:30px;border-radius:9px;background:var(--ink);color:var(--surface);display:grid;place-items:center;flex:none}
 :root[data-theme="dark"] .mark{background:var(--surface-3);color:var(--ink);box-shadow:inset 0 0 0 .5px var(--line-hi)}
 .mark svg{width:17px;height:17px}
@@ -757,7 +758,6 @@ button.nav-i{font:inherit;font-size:13.5px}
 .luma[data-paused] .luma-m,.luma[data-paused] .luma-m *{animation-play-state:paused!important}
 
 /* where Luma appears */
-.side-top .luma{--ls:32px}
 .ch-e-luma{--ls:96px;margin-bottom:2px}
 .m-av.luma{--ls:32px;margin:-3px 0 0 -2px;border-radius:0;box-shadow:none}
 .msg.think{align-items:center}
