@@ -252,7 +252,7 @@ async function loadHealth() {
   const retrieval = hl.semantic_search ? "semantic search" : "keyword search";
   $("modelTxt").textContent = `${answers} · ${retrieval}`;
   if (hl.org_logo && $("orgLogo").hidden) {
-    $("orgLogo").src = BRAND.orgLogo;
+    $("orgLogo").src = typeof hl.org_logo === "string" ? hl.org_logo : BRAND.orgLogo;
     $("orgLogo").alt = BRAND.org;
     $("orgLogo").hidden = false;
   }

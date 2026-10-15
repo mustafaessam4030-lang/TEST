@@ -454,8 +454,17 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
     check("Luma: app icon in the sidebar, browser tab and app manifest", icon.mark === "luma/luma-icon.svg" &&
       icon.links[0] === "luma/luma-icon.svg" && icon.links.includes("favicon.ico") && icon.name === "Luma" &&
       icon.codes.every((c) => c === 200), JSON.stringify(icon));
+    await p.waitForSelector("#orgLogo:not([hidden])", { timeout: 10000 }).catch(() => {});
+    const logo = await p.evaluate(() => {
+      const i = document.getElementById("orgLogo"), r = i.getBoundingClientRect();
+      return { shown: !i.hidden && i.complete && i.naturalWidth > 0, alt: i.alt, src: i.getAttribute("src"),
+        ratio: r.width / r.height, natural: i.naturalWidth / i.naturalHeight, w: r.width };
+    });
+    check("Mantrac logo in the sidebar, at its own proportions", logo.shown && logo.alt === "Mantrac" &&
+      logo.src === "brand/org-logo.png" && Math.abs(logo.ratio - logo.natural) < 0.05 && logo.w >= 140, JSON.stringify(logo));
   }
-  check("Luma: no unofficial organisation logo is shown", await p.locator("#orgLogo").isHidden());
+  check("Luma: the supplied logo file is the only organisation logo on the page",
+    (await p.locator("img[src*='logo'], svg[aria-label*='Mantrac' i]").count()) === 1);
   const sugs = await p.locator("#sugs .ch-chip").allTextContents();
   check("Luma: suggestions include a figure and a summary", sugs.some((x) => x.startsWith("Show me")) && sugs.some((x) => x.startsWith("Summarize")), sugs.join(" | "));
 

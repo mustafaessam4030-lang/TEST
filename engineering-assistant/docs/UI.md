@@ -77,7 +77,7 @@ The theme mechanism is the ATLAS one: Light / Dark / System, applied before firs
 
 ## Interactions verified in a real browser
 
-`tests/ui/run.sh` starts fresh servers and runs `tests/ui/e2e.mjs`, Playwright on Chromium. All **143 checks pass** (25 Luma checks and 14 mascot checks; see [LUMA.md](LUMA.md)). They cover the following, grouped by area.
+`tests/ui/run.sh` starts fresh servers and runs `tests/ui/e2e.mjs`, Playwright on Chromium. All **144 checks pass** (26 Luma checks and 14 mascot checks; see [LUMA.md](LUMA.md)). They cover the following, grouped by area.
 
 **Desktop (1440×900)**
 - **Composer:** suggestions; streamed stages; Shift+Enter.

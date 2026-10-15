@@ -106,9 +106,13 @@ answer: "Compare it with the CV-90" appears only if the CV-90's documents have t
 `eka/static/brand/` holds the product name and tagline (`brand.js`), the navy/indigo palette for both themes
 (`brand.css`). The Luma mascot (`eka/static/luma/`) is the product mark, see below.
 
-No authorized Mantrac logo was found in the repository. None was drawn or approximated. To show the
-official logo, put the authorized file at `eka/static/brand/org-logo.svg`; the sidebar shows it only when the
-file exists. No brand approval is claimed.
+The Mantrac logo (the Mantrac and CAT dealer lockup) is `eka/static/brand/org-logo.png`, the file supplied by
+the project owner. It is used unmodified; only its empty white margin was trimmed. It sits at the foot of the
+sidebar at its own proportions, the same in light and dark themes. Nothing was drawn or approximated. To
+change it, replace that file with another authorized one. Formal approval from Mantrac's brand team (and for
+the CAT mark, which belongs to Caterpillar) has not been checked here.
+
+![Mantrac logo in the sidebar](screenshots/luma/logo-desktop-light.jpg)
 
 ## Luma, the mascot
 
@@ -240,7 +244,7 @@ The server streams a `stage` event, with a `phase`, at each real step of the pip
   * conditions, ambiguity and abstention;
   * comparisons, summaries, revision differences and "where";
   * follow-ups, figures, the figure API and the general-claim validation.
-* `tests/ui/run.sh`: **143/143 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
+* `tests/ui/run.sh`: **144/144 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
   reduced motion). These include the 24 Luma checks and the mascot checks below.
 * `scripts/run_eval.py`: behaviour is unchanged from the previous release in all four configurations (see
   [EVALUATION.md](EVALUATION.md)). There are 0 unsupported claims and 0 invalid citations.
