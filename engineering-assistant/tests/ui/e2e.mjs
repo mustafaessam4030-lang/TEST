@@ -261,10 +261,13 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   await p.route("**/api/chat/stream", (r) => r.abort());
   await ask(p, "What is the output speed of the CV-90?");
   check("network failure shows an error with Try again", (await p.locator(".err-b").count()) === 1);
+  check("Luma: a failed request shows the error state, with the message visible", (await p.locator(".msg.bot:has(.err-b) .luma[data-state='error']").count()) === 1
+    && (await p.locator(".err-b").isVisible()));
   await p.unroute("**/api/chat/stream");
   await p.locator(".err-b button").click();
   await idle(p);
   check("Try again recovers", (await p.locator(".msg.bot").last().textContent()).includes("45 rpm"));
+  check("Luma: the retried answer does not inherit the error state", (await p.locator(".msg.bot .luma[data-state='error']").count()) === 0);
 
   // library
   await p.click("#navLib");
@@ -505,6 +508,8 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   await p.goto(BASE);
   await p.waitForSelector("#sugs .ch-chip");
   await ask(p, "What is the oil capacity of the CV-90?");
+  const heroAnim = await p.evaluate(() => getComputedStyle(document.querySelector(".ch-e-luma .lm-fig")).animationName);
+  check("Luma: reduced motion stops the mascot's motion", heroAnim === "none", heroAnim);
   const dur = await p.evaluate(() => getComputedStyle(document.querySelector(".msg.bot")).animationDuration);
   check("Luma: reduced motion turns animations off", parseFloat(dur) < 0.05, dur);
   await ctx.close();
@@ -529,6 +534,94 @@ if (SLOW) {
   check("slow model: answer arrives after the wait, cited", (await a.locator(".src").count()) >= 1 && (await a.textContent()).includes("48 kg"));
   await a.locator("details.how summary").click();
   check("slow model: method shows the model used", (await a.locator(".how").textContent()).includes("ollama:qwen2.5:7b-instruct"));
+  await p.context().close();
+}
+
+// ═════════ LUMA, THE MASCOT: states follow the real request ═════════
+// SLOW runs the mock model (6 s) and EKA_DEBUG_STAGE_DELAY_MS=600, so every stage is long
+// enough to observe. States are recorded from the DOM as they change.
+if (SLOW) {
+  const p = await page(1440, 900, { base: SLOW });
+  const record = () => p.evaluate(() => {
+    window.__luma = []; window.__labels = []; window.__doneAfterAnswer = null;
+    const log = document.getElementById("log");
+    window.__obs?.disconnect();
+    window.__obs = new MutationObserver((ms) => {
+      // rebuild every state each live mascot passed through, even several within one batch:
+      // a record's new value is the next record's old value (or the current value for the last)
+      const push = (s, el) => {
+        if (!s || s === window.__luma[window.__luma.length - 1]) return;
+        window.__luma.push(s);
+        if (s === "done") window.__doneAfterAnswer = !!el.closest(".msg.bot:not(.think)")?.querySelector(".bub .fb");
+      };
+      const attrs = ms.filter((m) => m.type === "attributes" && m.target.classList?.contains("luma-live"));
+      for (const m of ms) {
+        if (m.type === "childList") m.addedNodes.forEach((n) => {
+          if (n.nodeType !== 1) return;
+          const l = n.matches(".luma-live") ? n : n.querySelector(".luma-live");
+          if (!l) return;
+          const firstChange = attrs.find((x) => x.target === l);
+          push(firstChange ? firstChange.oldValue : l.dataset.state, l);
+        });
+      }
+      attrs.forEach((m, i) => {
+        const next = attrs.slice(i + 1).find((x) => x.target === m.target);
+        push(next ? next.oldValue : m.target.dataset.state, m.target);
+      });
+      const lab = document.querySelector(".msg.think .th-label");
+      if (lab && lab.textContent !== window.__labels[window.__labels.length - 1]) window.__labels.push(lab.textContent);
+    });
+    window.__obs.observe(log, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ["data-state"] });
+  });
+  const hero = p.locator(".ch-e-luma");
+  check("Luma: idle on the welcome screen, floating", (await hero.getAttribute("data-state")) === "idle" &&
+    (await hero.locator(".lm-fig").evaluate((e) => getComputedStyle(e).animationName)) === "lmFloat");
+  await record();
+  await p.fill("#q", "What is the dry weight of the HX-200?");
+  await p.press("#q", "Enter");
+  await p.waitForSelector(".msg.think .luma[data-state='searching']", { timeout: 10000 });
+  await shot(p, "luma-state-searching");
+  await p.waitForSelector(".msg.think .luma[data-state='writing']", { timeout: 15000 });
+  await p.waitForFunction(() => /Writing the answer/.test(document.querySelector(".th-label")?.textContent || ""), null, { timeout: 15000 });
+  await shot(p, "luma-state-writing");
+  await idle(p);
+  await p.waitForTimeout(1300);   // "done" plays once (0.95 s), then rests
+  const seq = await p.evaluate(() => window.__luma);
+  check("Luma: states follow the real pipeline, in order",
+    JSON.stringify(seq) === JSON.stringify(["waiting", "thinking", "searching", "reading", "writing", "analyzing", "done", "static"]), seq.join(" → "));
+  const labels = await p.evaluate(() => window.__labels);
+  check("Luma: each state comes with the server's own status label", ["Searching", "Reading", "Preparing your answer", "Writing the answer with", "Checking every citation"]
+    .every((x) => labels.some((l) => l.startsWith(x))), labels.join(" | "));
+  check("Luma: 'done' only after the answer was on screen", (await p.evaluate(() => window.__doneAfterAnswer)) === true);
+  check("Luma: rests as a still beside the finished answer", (await p.locator(".msg.bot").last().locator(".m-av.luma").getAttribute("data-state")) === "static");
+  check("Luma: the welcome mascot is paused while hidden", await hero.evaluate((e) => e.hasAttribute("data-paused")));
+
+  // a follow-up starts fresh: nothing from the previous request carries over
+  await record();
+  await p.fill("#q", "And its rated flow?");
+  await p.press("#q", "Enter");
+  await p.waitForSelector(".msg.think .luma", { timeout: 5000 });
+  const first = (await p.evaluate(() => window.__luma))[0];
+  check("Luma: a follow-up starts from 'waiting', not a stale state", first === "waiting", first);
+  await idle(p);
+  await p.waitForTimeout(1300);
+  check("Luma: every finished answer has Luma beside it", await p.evaluate(() =>
+    [...document.querySelectorAll(".msg.bot")].every((m) => m.querySelector(".m-av.luma"))));
+  check("Luma: no mascot left mid-task after the answers", (await p.locator("#log .luma-live:not([data-state='static'])").count()) === 0);
+
+  // cancelling: the working mascot goes away with the cancelled request
+  await p.fill("#q", "What is the displacement of the HX-200?");
+  await p.press("#q", "Enter");
+  await p.waitForSelector(".msg.think .luma[data-state='writing']", { timeout: 15000 });
+  await p.click("#send");
+  await p.waitForSelector(".ch-done");
+  check("Luma: Stop removes the working mascot", (await p.locator("#log .msg.think").count()) === 0 &&
+    (await p.locator("#log .luma-live:not([data-state='static'])").count()) === 0);
+  // citations still work with Luma beside the answer
+  await p.locator(".msg.bot").first().locator(".cite").first().click();
+  await imgReady(p);
+  check("Luma: citation clicks still open the page", (await p.inputValue("#vPage")) === "2");
+  await p.keyboard.press("Escape");
   await p.context().close();
 }
 

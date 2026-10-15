@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F6F7FB">
 <title>Luma · Mantrac Engineering Intelligence</title>
-<link rel="icon" href="brand/luma-mark.svg" type="image/svg+xml">
+<link rel="icon" href="luma/luma-mascot.svg" type="image/svg+xml">
 <!-- Theme before first paint (the ATLAS pattern): Light, Dark or System. -->
 <script>(function(){var c='system';try{c=localStorage.getItem('eka-theme')||'system';}catch(e){}
 var d=c==='dark'||(c!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
@@ -56,7 +56,7 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
     <div class="side-in">
       <div class="side-top">
         <a class="brand" href="#/" id="brandLink" aria-label="Luma, new chat">
-          <img class="luma-mark" src="brand/luma-mark.svg" alt="" width="30" height="30">
+          <img id="brandMark" src="luma/luma-mascot.svg" alt="" width="32" height="32">
           <span class="brand-t"><span class="brand-n" id="brandName">Luma</span><span class="brand-p" id="brandTag">Mantrac Engineering Intelligence</span></span>
         </a>
         <button class="ibtn sm collapse-side" id="collapseSide" type="button" aria-label="Collapse sidebar" title="Collapse sidebar (Ctrl+.)"><svg><use href="#i-side"/></svg></button>
@@ -104,8 +104,8 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
     <section class="view" id="viewChat" aria-label="Conversation">
       <div class="ch-main">
         <div class="ch-empty" id="empty">
-          <img class="luma-mark ch-e-mark" src="brand/luma-mark.svg" alt="" width="52" height="52">
-          <div class="ch-e-t" id="greet">How can I help with your equipment today?</div>
+          <img id="emptyLuma" src="luma/luma-mascot.svg" alt="" width="88" height="88">
+          <div class="ch-e-t" id="greet">Hi, I’m Luma. How can I help with your equipment today?</div>
           <p class="ch-e-p" id="emptyP">Ask about specifications, procedures, part numbers or warnings. I can also compare equipment, summarize a manual and show its figures.</p>
           <div class="ch-e-sug" id="sugs" aria-label="Suggested questions"></div>
           <p class="ch-e-n">Every value links to the page it comes from. If something isn't covered, I'll say so rather than guess.</p>

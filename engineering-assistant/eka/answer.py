@@ -96,8 +96,9 @@ class AnswerEngine(ModesMixin):
         started = time.perf_counter()
         conversation_id = conversation_id or self.conversations.new_id()
         history = self.conversations.history(conversation_id)
-        r = route(message, history)
         self._local.progress = progress
+        self._progress("Understanding the question", "understanding")
+        r = route(message, history)
         self._local.use_generator = use_generator
         self._local.conversation_id = conversation_id
         self._local.visual_note = ""
@@ -198,13 +199,22 @@ class AnswerEngine(ModesMixin):
         self._suggest_key, self._suggest_cache = key, verified
         return verified[:limit]
 
-    def _progress(self, text: str):
+    # Pipeline phases reported with each progress stage. The UI (Luma's mascot) follows these;
+    # each is sent only when that step actually starts.
+    PHASES = ("understanding", "searching", "reading", "analyzing", "writing", "checking")
+
+    def _progress(self, text: str, phase: str):
         callback = getattr(self._local, "progress", None)
         if callback:
             try:
-                callback(text)
+                try:
+                    callback(text, phase)
+                except TypeError:          # an older callback that takes only the text
+                    callback(text)
             except Exception:  # a disconnected stream must not break answering
                 log.debug("progress callback failed", exc_info=True)
+            if self.settings.debug_stage_delay_ms > 0:
+                time.sleep(self.settings.debug_stage_delay_ms / 1000)
 
     def commit(self, answer: dict):
         """Record a delivered answer: conversation memory, persistent history, query log."""
@@ -290,6 +300,13 @@ class AnswerEngine(ModesMixin):
             return out
         # Modes that work on the library or on the previous answer rather than a fresh search.
         special = None
+        stage = {"where": ("Finding where that is shown", "reading"),
+                 "simplify": ("Reading the previous answer's sources", "reading"),
+                 "revision_diff": ("Comparing the document revisions", "analyzing"),
+                 "summary": ("Reading the document to summarize it", "reading"),
+                 "visual": ("Looking for figures in your documents", "searching")}.get(r.mode)
+        if stage:
+            self._progress(*stage)
         if r.mode == "where":
             special = self._where(docs)
         elif r.mode == "simplify":
@@ -307,7 +324,7 @@ class AnswerEngine(ModesMixin):
 
         top_k = self.settings.top_k * (2 if r.compare else 1)
         scope = len(doc_ids) if doc_ids else sum(d["status"] in cite.SEARCHABLE for d in docs.values())
-        self._progress("Searching {0} document{1}".format(scope, "" if scope == 1 else "s"))
+        self._progress("Searching {0} document{1}".format(scope, "" if scope == 1 else "s"), "searching")
         result = self.retriever.search(r.retrieval_query, doc_ids or None, r.prefer_doc_ids, top_k=top_k)
         searched = {"documents": len(result.searched_doc_ids),
                     "titles": [docs[d]["title"] or docs[d]["filename"] for d in result.searched_doc_ids][:12],
@@ -317,10 +334,13 @@ class AnswerEngine(ModesMixin):
         found = {c.chunk.doc_id for c in result.selected}
         self._progress("Reading {0} passage{1} from {2} document{3}".format(
             len(result.selected), "" if len(result.selected) == 1 else "s", len(found), "" if len(found) == 1 else "s")
-            if result.selected else "No passage matched closely enough")
+            if result.selected else "No passage matched closely enough", "reading")
         draft = self._extractive(r, result, docs)
         extra: dict = {}
         if draft.status == "answered":
+            if r.compare:
+                self._progress("Comparing values across documents", "analyzing")
+            self._progress("Preparing your answer", "writing")
             self._compose(r, draft, docs)
             if r.compare:
                 self._compose_compare(r, draft, docs, extra)
@@ -330,7 +350,7 @@ class AnswerEngine(ModesMixin):
         # the equipment as options), and a model that declines never hides a validated quoted answer.
         if self.generator and use_llm and draft.status in ("answered", "conflict") and result.selected \
                 and not extra.get("table"):
-            self._progress("Writing the answer with {0}".format(self.generator.model))
+            self._progress("Writing the answer with {0}".format(self.generator.model), "writing")
             try:
                 llm = self._llm_draft(r, result, docs, history)
                 if llm is None:
@@ -349,7 +369,7 @@ class AnswerEngine(ModesMixin):
         out.update(claims=draft.claims, conflicts=draft.conflicts, clarification=draft.clarification,
                    unresolved=draft.unresolved, generator=generator_name, fallback_reason=fallback,
                    searched=searched, trace=result.trace(), rejected_claims=draft.rejected, mode=r.mode, **extra)
-        self._progress("Checking every citation against its page")
+        self._progress("Checking every citation against its page", "checking")
         self._finalise_citations_general(out, docs)
         if out["status"] == "insufficient_evidence":
             out["message"] = self._insufficient_message(r, result, docs, searched)
@@ -694,7 +714,7 @@ class AnswerEngine(ModesMixin):
     def _llm_rewrite(self, r: Route, previous: dict, chunks: list, docs: dict) -> dict:
         """'Explain that in simpler terms': the model rewords the previous answer from its own sources."""
         sources = [("S{0}".format(i + 1), c, docs[c.doc_id]) for i, c in enumerate(chunks) if c.doc_id in docs]
-        self._progress("Rewording with {0}".format(self.generator.model))
+        self._progress("Rewording with {0}".format(self.generator.model), "writing")
         try:
             data = self.generator.generate(r.question, sources, "Previous answer: " + previous.get("answer_text", ""),
                                            mode="simplify")

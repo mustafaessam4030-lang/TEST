@@ -7,6 +7,6 @@ export const BRAND = {
   tagline: "Mantrac Engineering Intelligence",
   org: "Mantrac",
   orgLogo: "brand/org-logo.svg",
-  mark: "brand/luma-mark.svg",
+  mark: "luma/luma-mascot.svg",
   themeColor: { light: "#F6F7FB", dark: "#0A0F1C" },
 };

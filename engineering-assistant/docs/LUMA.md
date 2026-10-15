@@ -104,11 +104,109 @@ answer: "Compare it with the CV-90" appears only if the CV-90's documents have t
 ## Branding
 
 `eka/static/brand/` holds the product name and tagline (`brand.js`), the navy/indigo palette for both themes
-(`brand.css`) and the Luma mark (`luma-mark.svg`, original placeholder artwork).
+(`brand.css`). The Luma mascot (`eka/static/luma/`) is the product mark, see below.
 
 No authorized Mantrac logo was found in the repository. None was drawn or approximated. To show the
 official logo, put the authorized file at `eka/static/brand/org-logo.svg`; the sidebar shows it only when the
 file exists. No brand approval is claimed.
+
+## Luma, the mascot
+
+| | |
+|---|---|
+| States, as observed in the running app | ![Light](screenshots/luma-mascot/states-observed-light.jpg) ![Dark](screenshots/luma-mascot/states-observed-dark.jpg) |
+| Welcome screen | ![Idle](screenshots/luma-mascot/desktop-idle.jpg) |
+| Phone | ![Phone](screenshots/luma-mascot/phone.jpg) |
+| Recording | [`recording-idle-to-done.mp4`](screenshots/luma-mascot/recording-idle-to-done.mp4): idle → thinking → searching → reading → writing → checking → done → at rest |
+
+### Asset
+
+* `eka/static/luma/luma-mascot.svg` is the only asset: an original vector drawing made from the approved concept
+  images (kept for reference in `docs/luma-mascot/`). The concept images have opaque dark backgrounds, so
+  they are not used directly. Cutting them out would leave halos.
+* One file holds every state. Each state is a group (eyes, helmet LED, ear-cup LEDs, and a prop such as a
+  magnifier, pages, bars, a laptop, sparks or a warning sign). CSS shows the group for the current
+  `data-state`. The file has a transparent background and is readable at 22–24 px.
+* As a plain `<img>`, the file shows the neutral pose. It is used that way for the favicon, the sidebar
+  brand mark and the avatar beside finished answers. It is also the fallback until the animated copy has
+  loaded.
+* To replace the artwork, keep the group class names (`lm-fig`, `lm-p-search`, `lm-eyes-happy` and so on)
+  that the mascot section of `eka/static/app.css` targets.
+
+### Component
+
+`eka/static/luma/mascot.js` exports `LumaMascot` and `staticMascot()`:
+
+* `new LumaMascot({ size, state, rest })` builds an inline copy of the SVG. Ids are made unique so two
+  copies never share gradients.
+* `.set(state)` changes the state. `done` plays once (about 1 s), then settles to `rest`.
+* `.destroy()` removes it.
+* An IntersectionObserver pauses the animation while the mascot is off screen.
+
+### States are driven by real events only
+
+The server streams a `stage` event, with a `phase`, at each real step of the pipeline (`eka/answer.py`,
+`eka/modes.py`). The UI maps each phase to a state; there are no timers that invent progress.
+
+| Real event | Label (examples) | State |
+|---|---|---|
+| Request sent, nothing received yet | "Sending your question" | WAITING |
+| `understanding`: routing the question | "Understanding the question" | THINKING |
+| `searching`: hybrid retrieval, figure search | "Searching 4 documents" | SEARCHING |
+| `reading`: evidence selected, document opened | "Reading 2 passages from 1 document" | READING |
+| `analyzing`: comparing, building a summary or revision diff | "Comparing values across documents" | ANALYZING |
+| `writing`: composing, or the local model writing | "Writing the answer with qwen2.5:3b-instruct" | WRITING |
+| `checking`: every citation validated against its page | "Checking every citation against its page" | ANALYZING |
+| The answer is rendered on screen | | DONE, then at rest |
+| The request failed (network or server) | the error and "Try again" | ERROR |
+| Stop pressed | | removed |
+| Library: a document queued or being indexed | | WAITING / READING |
+
+* A step only appears if it actually ran. "hello" shows only THINKING. A summary goes from THINKING to
+  READING to ANALYZING with no SEARCHING.
+* Every request gets its own mascot. A follow-up starts again at WAITING and never inherits the previous
+  state. The finished answer keeps a still avatar.
+* The welcome screen shows a larger mascot in IDLE (a slow float, blink and LED breathing).
+
+### Animation, accessibility and performance
+
+* Only `transform` and `opacity` are animated, with CSS keyframes. There is no layout work and no JavaScript
+  animation loop.
+* `prefers-reduced-motion`: every mascot animation is off. The state is still shown by the pose and prop,
+  and the text label always says what is happening.
+* The mascot is decorative (`aria-hidden`). The text label beside it says what is happening; the label
+  is in the conversation log, as before.
+* Sizes: 32 px in the sidebar and beside answers, 44 px while working (38 px on phones), 88 px on the
+  welcome screen (72 px on phones). Light and dark themes are both checked.
+
+### Verification
+
+* `tests/test_conversations_api.py`: the stream's phases follow the real pipeline for a direct answer,
+  a greeting, an abstention, a summary and a comparison. The demo delay is off by default.
+* `tests/ui/e2e.mjs`, observed in Chromium with a MutationObserver:
+  * the exact state sequence for a model answer (`waiting → thinking → searching → reading → writing →
+    analyzing → done → static`) and the matching labels;
+  * DONE only after the answer is on screen;
+  * at rest afterwards, a follow-up starting fresh, Stop removing the mascot;
+  * the ERROR state on a network failure, cleared by "Try again";
+  * IDLE on the welcome screen, paused while hidden;
+  * no animation under reduced motion.
+* The screenshots and recording above come from the running app with the local qwen2.5:3b model on CPU.
+  * Every state was observed: IDLE, WAITING, THINKING, SEARCHING, READING, ANALYZING, WRITING, DONE,
+    at rest and ERROR.
+  * WAITING was captured by holding the request for 2 s in the browser test. ERROR was captured with a
+    real network failure caused by the browser test.
+
+### Limitations
+
+* **Demo delay.** Without a language model, the steps take milliseconds, so the states flash by. That is
+  correct, because nothing is slowed down to look busy. For the screenshots, the recording and the UI
+  tests, `EKA_DEBUG_STAGE_DELAY_MS` (off by default; for demos and tests only) paused 0.6–0.9 s at each
+  step. The recording also shows the writing step 6× faster, and is labelled as such.
+* **Artwork.** The mascot is a vector recreation of the concept, not the concept image itself. It has
+  not been reviewed or approved by Mantrac's brand team.
+* **No streaming progress.** WRITING lasts as long as the model takes. There is no token-by-token
+  progress, because the answer is validated as a whole before it is shown.
 
 ## Interface
 
@@ -130,15 +228,15 @@ file exists. No brand approval is claimed.
 
 ## Verification
 
-* `python -m pytest`: **133 passed**, with `EKA_TEST_MODEL_DIR` (real embeddings) and
-  `EKA_TEST_OLLAMA_MODEL=qwen2.5:3b-instruct` (real LLM). Without them, 126 pass and 7 are skipped.
+* `python -m pytest`: **135 passed**, with `EKA_TEST_MODEL_DIR` (real embeddings) and
+  `EKA_TEST_OLLAMA_MODEL=qwen2.5:3b-instruct` (real LLM). Without them, 128 pass and 7 are skipped.
   `tests/test_luma.py` holds 23 tests for:
   * natural answers that keep exact values (checked over every table row in the library);
   * conditions, ambiguity and abstention;
   * comparisons, summaries, revision differences and "where";
   * follow-ups, figures, the figure API and the general-claim validation.
-* `tests/ui/run.sh`: **128/128 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
-  reduced motion). These include the 24 new Luma checks.
+* `tests/ui/run.sh`: **142/142 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
+  reduced motion). These include the 24 Luma checks and the mascot checks below.
 * `scripts/run_eval.py`: behaviour is unchanged from the previous release in all four configurations (see
   [EVALUATION.md](EVALUATION.md)). There are 0 unsupported claims and 0 invalid citations.
 

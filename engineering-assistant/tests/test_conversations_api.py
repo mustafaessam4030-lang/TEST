@@ -98,6 +98,30 @@ def test_retry_replaces_the_answer(client):
     assert bad.status_code == 404
 
 
+def phases(events):
+    return [d["phase"] for k, d in events if k == "stage"]
+
+
+def test_stream_phases_follow_the_real_pipeline(client):
+    """Luma's mascot follows these phases; each must come from the step that actually ran, in order."""
+    assert phases(stream(client, message="What is the oil capacity of the CV-90?")) == \
+        ["understanding", "searching", "reading", "writing", "checking"]
+    # nothing to search for: no search or writing phase is claimed
+    assert phases(stream(client, message="hello")) == ["understanding"]
+    # an unanswerable question searches and reads, then stops: it never claims to write an answer
+    assert phases(stream(client, message="What is the warranty period of the HX-200?")) == \
+        ["understanding", "searching", "reading", "checking"]
+    assert phases(stream(client, message="Summarize the CV-90 datasheet")) == ["understanding", "reading", "analyzing"]
+    every = {p for p in phases(stream(client, message="Compare the mounting flange bolt torque of the HX-200 "
+                                                        "and the CV-90"))}
+    assert "analyzing" in every and set(every) <= {"understanding", "searching", "reading", "analyzing", "writing",
+                                                     "checking"}
+
+
+def test_stage_delay_is_off_by_default(settings):
+    assert settings.debug_stage_delay_ms == 0
+
+
 def test_feedback(client):
     answer = stream(client, message="What is the output speed of the CV-90?")[-1][1]
     assert client.post("/api/messages/{0}/feedback".format(answer["message_id"]), json={"value": "down"}).status_code == 200

@@ -247,7 +247,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def work():
             try:
                 put("answer", a.engine.ask(body.message, body.conversation_id, body.document_ids,
-                                           progress=lambda text: put("stage", {"text": text}), persist=False))
+                                           progress=lambda text, phase: put("stage", {"text": text, "phase": phase}),
+                                           persist=False))
             except Exception as exc:  # the engine already turns its own failures into answers
                 log.exception("chat stream failed")
                 put("error", {"detail": "The answer could not be produced ({0}).".format(type(exc).__name__)})
@@ -255,7 +256,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         loop.run_in_executor(None, work)
 
         async def events():
-            yield "event: stage\ndata: {0}\n\n".format(json.dumps({"text": "Understanding the question"}))
             while True:
                 kind, data = await queue.get()
                 yield "event: {0}\ndata: {1}\n\n".format(kind, json.dumps(data))

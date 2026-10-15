@@ -3,6 +3,8 @@
 // inserted with textContent; nothing from the server is parsed as HTML.
 "use strict";
 import { BRAND } from "./brand/brand.js";
+import { LumaMascot, preloadMascot, staticMascot } from "./luma/mascot.js";
+preloadMascot();
 
 const $ = (id) => document.getElementById(id);
 const h = (tag, cls, text) => {
@@ -515,12 +517,14 @@ function addUser(text, created) {
   return m;
 }
 function avatar() {
-  const a = h("img", "luma-mark m-av");
-  a.src = BRAND.mark;
-  a.alt = "";
-  a.setAttribute("aria-hidden", "true");
-  return a;
+  return staticMascot(32, "m-av");     // beside finished answers Luma is a still image
 }
+// Luma's state follows the real request lifecycle: each server stage names the pipeline
+// step that has just started (eka/answer.py, PHASES). Nothing is simulated on a timer.
+const PHASE_STATE = {
+  understanding: "thinking", searching: "searching", reading: "reading",
+  analyzing: "analyzing", writing: "writing", checking: "analyzing",
+};
 
 // ── answer rendering ─────────────────────────────────────────────────────
 const STATUS = {
@@ -543,7 +547,10 @@ function sourcePill(c, n, compact) {
 }
 function renderAnswer(node, a, meta = {}) {
   node.className = "msg bot";
-  node.replaceChildren(avatar());
+  // a live answer keeps the mascot that worked on it: it reacts once, then rests as a still
+  const live = meta.mascot;
+  node.replaceChildren(live ? live.size(32).el : avatar());
+  if (live) live.el.classList.add("m-av");
   const bub = h("div", "bub");
   node.append(bub);
   node.dataset.messageId = a.message_id || "";
@@ -659,6 +666,9 @@ function renderAnswer(node, a, meta = {}) {
   if (a.status !== "error" || a.message_id) bub.append(actions(node, a, meta));
   if (a.follow_ups && a.follow_ups.length) bub.append(renderFollowUps(a.follow_ups));
   [...bub.children].forEach((el, i) => el.style.setProperty("--k", Math.min(i, 8)));
+  // only now, with the whole answer on screen, does Luma react: a small bounce for an answer,
+  // concern for an error, and simply rest for a clarification or a "not found"
+  if (live) live.set(a.status === "error" ? "error" : a.status === "answered" ? "done" : "static");
 }
 function renderClaims(into, claims, pills, leadFirst) {
   let i = 0;
@@ -1017,12 +1027,13 @@ async function ask(text, opts = {}) {
   S.followScroll = true;
   const user = addUser(text);
   const node = h("div", "msg bot think");
-  const label = h("span", "th-label", "Understanding the question");
-  const dots = h("span", "th-dots");
-  dots.append(h("span"), h("span"), h("span"));
+  // until the server's first stage arrives, the question is genuinely in flight
+  const luma = new LumaMascot({ size: 44, state: "waiting", rest: "static", cls: "m-av" });
+  node.dataset.luma = "live";
+  const label = h("span", "th-label", "Sending your question");
   const th = h("div", "th");
-  th.append(label, dots);
-  node.append(avatar(), th);
+  th.append(label);
+  node.append(luma.el, th);
   log.append(node);
   toEnd(true, true);
   const controller = new AbortController();
@@ -1060,7 +1071,10 @@ async function ask(text, opts = {}) {
         const data = (raw.match(/^data: (.*)$/m) || [])[1];
         if (!ev || !data) continue;
         const payload = JSON.parse(data);
-        if (ev === "stage") label.textContent = payload.text;
+        if (ev === "stage") {
+          label.textContent = payload.text;
+          if (PHASE_STATE[payload.phase]) luma.set(PHASE_STATE[payload.phase]);
+        }
         else if (ev === "answer") answer = payload;
         else if (ev === "error") throw new Error(payload.detail);
       }
@@ -1069,17 +1083,19 @@ async function ask(text, opts = {}) {
     const isNew = !S.cid;
     S.cid = answer.conversation_id;
     if (S.scope.size) store.set("eka-scope-" + S.cid, [...S.scope]);
-    renderAnswer(node, answer, { created: Date.now() / 1000 });
+    renderAnswer(node, answer, { created: Date.now() / 1000, mascot: luma });
     showFrom(user, askedAt);
     if (isNew) history.replaceState(null, "", "#/c/" + S.cid);
     await loadConversations();
     $("title").textContent = currentTitle() || "New chat";
   } catch (e) {
     if (e.name === "AbortError") {
+      luma.destroy();
       node.replaceWith(h("div", "ch-done", "Stopped. This answer was not saved."));
     } else {
       node.className = "msg bot";
-      node.replaceChildren(avatar());
+      node.replaceChildren(luma.size(32).el);
+      luma.set("error");
       const b = h("div", "bub");
       const err = h("div", "err-b", e.message);
       const again = btn("cbtn sm", "Try again", "retry");
@@ -1202,8 +1218,18 @@ function renderLibrary() {
   for (const d of shown) {
     const li = h("li", "doc" + (d.superseded_by ? " old" : ""));
     li.dataset.id = d.id;
-    const ic = h("span", "doc-ic");
-    ic.append(icon("page"));
+    let ic;
+    if (d.status === "queued" || d.status === "processing") {
+      // Luma reads the PDF while it is genuinely being processed; one mascot per document, reused
+      S.readers = S.readers || new Map();
+      if (!S.readers.has(d.id)) S.readers.set(d.id, new LumaMascot({ size: 36, state: d.status === "queued" ? "waiting" : "reading", cls: "doc-ic" }));
+      const reader = S.readers.get(d.id).set(d.status === "queued" ? "waiting" : "reading");
+      ic = reader.el;
+    } else {
+      if (S.readers && S.readers.has(d.id)) { S.readers.get(d.id).destroy(); S.readers.delete(d.id); }
+      ic = h("span", "doc-ic");
+      ic.append(icon("page"));
+    }
     const m = h("div", "doc-m");
     const t = h("div", "doc-t", docTitle(d));
     t.title = docTitle(d);
@@ -1625,3 +1651,10 @@ $("navUpload").addEventListener("click", () => {
   closeDrawer();
   ($("viewLib").hidden ? $("attachFile") : $("libFile")).click();
 });
+
+// ── Luma on the welcome screen and in the sidebar ───────────────────────
+{
+  const hero = new LumaMascot({ size: 88, state: "idle", rest: "idle", cls: "ch-e-luma" });
+  $("emptyLuma").replaceWith(hero.el);
+  $("brandMark").replaceWith(staticMascot(32, "brand-luma"));
+}

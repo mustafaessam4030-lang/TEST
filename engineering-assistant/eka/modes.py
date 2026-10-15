@@ -196,6 +196,7 @@ class ModesMixin:
             return out
         chunks = self._chunks()
         mine = {d["id"]: [c for c in chunks if c.doc_id == d["id"]] for d in targets}
+        self._progress("Building the summary", "analyzing")
         out = self._base("answered", "")
         out["mode"] = "summary"
         claims: list[dict] = []
@@ -503,6 +504,7 @@ class ModesMixin:
                         claims.append({"text": sentence, "kind": "direct", "_chunk": c, "citations": []})
         if not shown:
             return None
+        self._progress("Reading the figure's page", "reading")
         first = shown[0]
         out["message"] = "Here's {0} from the {1}, page {2}.".format(
             _figure_phrase(first["caption"]), first["document"], first["page"])

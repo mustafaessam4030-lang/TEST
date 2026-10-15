@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 -2 64 63" class="luma-m" role="img" aria-label="Luma">
+  <!-- Luma, Mantrac's engineering assistant. Original vector artwork drawn from the approved mascot concept
+       (docs/luma-mascot/). One drawing for every state: the app shows a state's prop and expression by setting
+       data-state on the root; used as a plain image (no state) it shows the idle pose. -->
+  <style>.lm-prop,.lm-alt{display:none}</style>
+  <defs>
+    <radialGradient id="lm-body" cx=".4" cy=".34" r=".78">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset=".58" stop-color="#FBF4EE"/>
+      <stop offset="1" stop-color="#EAD9CC"/>
+    </radialGradient>
+    <linearGradient id="lm-helm" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34343B"/>
+      <stop offset=".55" stop-color="#16161A"/>
+      <stop offset="1" stop-color="#0C0C0F"/>
+    </linearGradient>
+    <linearGradient id="lm-cup" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2C2C33"/>
+      <stop offset="1" stop-color="#0D0D10"/>
+    </linearGradient>
+    <clipPath id="lm-glass"><circle cx="50" cy="41" r="6.1"/></clipPath>
+  </defs>
+
+  <ellipse class="lm-shadow" cx="32" cy="57.4" rx="12" ry="1.8" fill="#0B1020" opacity=".13"/>
+
+  <g class="lm-fig">
+    <g class="lm-head">
+      <path class="lm-body" fill="url(#lm-body)" d="M12 31C12 19.4 21 11 32 11S52 19.4 52 31V47c0 3.3-2.2 5.5-5 5.5-2.4 0-3.6-1.9-5-1.9-1.5 0-2.4 2.9-5 2.9-2.4 0-3.4-2.5-5-2.5s-2.6 2.5-5 2.5c-2.6 0-3.5-2.9-5-2.9-1.4 0-2.6 1.9-5 1.9-2.8 0-5-2.2-5-5.5Z"/>
+      <path class="lm-rim" fill="none" stroke="#FF8A3D" stroke-opacity=".22" stroke-width=".8" d="M52 33V47c0 3.3-2.2 5.5-5 5.5-2.4 0-3.6-1.9-5-1.9-1.5 0-2.4 2.9-5 2.9"/>
+
+      <g class="lm-eyes lm-eyes-open" fill="#121216">
+        <ellipse cx="26" cy="37.6" rx="2.6" ry="4"/>
+        <ellipse cx="38" cy="37.6" rx="2.6" ry="4"/>
+      </g>
+      <g class="lm-eyes lm-eyes-happy lm-alt" fill="none" stroke="#121216" stroke-width="2" stroke-linecap="round">
+        <path d="M23.2 38.8q2.8-3.9 5.6 0"/><path d="M35.2 38.8q2.8-3.9 5.6 0"/>
+      </g>
+      <g class="lm-eyes lm-eyes-worried lm-alt" fill="#121216">
+        <ellipse cx="26" cy="38.2" rx="2.2" ry="3"/><ellipse cx="38" cy="38.2" rx="2.2" ry="3"/>
+        <path d="M29.4 45.6q2.6-1.9 5.2 0" fill="none" stroke="#121216" stroke-width="1.4" stroke-linecap="round"/>
+      </g>
+
+      <g class="lm-helmet">
+        <path fill="url(#lm-helm)" stroke="#FFFFFF" stroke-opacity=".13" stroke-width=".6" d="M10.8 27.6C10.6 16.2 20 8 32 8s21.4 8.2 21.2 19.6c0 1.3-1.1 2.1-2.4 1.8-5.2-1.4-10.4-4.8-18.8-4.8s-13.6 3.4-18.8 4.8c-1.3.3-2.4-.5-2.4-1.8Z"/>
+        <path class="lm-helm-edge" fill="none" stroke="#FFFFFF" stroke-opacity=".1" stroke-width=".7" d="M13.2 29.4c5.2-1.4 10.4-4.8 18.8-4.8s13.6 3.4 18.8 4.8"/>
+        <path fill="#26262D" d="M27.8 8.6c1.4-.4 7-.4 8.4 0v7.8c0 1.2-.8 2-2 2h-4.4c-1.2 0-2-.8-2-2Z"/>
+        <rect class="lm-led-glow lm-led" x="28.7" y="14.8" width="6.6" height="2.8" rx="1.45" fill="#FF7A1A" opacity=".28"/>
+        <rect class="lm-led" x="29.4" y="15.45" width="5.2" height="1.5" rx=".75" fill="#FF7A1A"/>
+      </g>
+      <g class="lm-cups">
+        <rect x="6.4" y="21.8" width="8.2" height="13" rx="3.6" fill="url(#lm-cup)"/>
+        <rect x="7.6" y="23" width="5.8" height="10.6" rx="2.8" fill="none" stroke="#3A3A42" stroke-width=".6"/>
+        <rect class="lm-led" x="9.6" y="25.1" width="1.8" height="6" rx=".9" fill="#FF7A1A"/>
+        <rect x="49.4" y="21.8" width="8.2" height="13" rx="3.6" fill="url(#lm-cup)"/>
+        <rect x="50.6" y="23" width="5.8" height="10.6" rx="2.8" fill="none" stroke="#3A3A42" stroke-width=".6"/>
+        <rect class="lm-led" x="52.6" y="25.1" width="1.8" height="6" rx=".9" fill="#FF7A1A"/>
+      </g>
+    </g>
+
+    <!-- props: one per state, hidden unless that state is set -->
+    <g class="lm-prop lm-p-think" fill="none" stroke="#FF7A1A" stroke-width="2.1" stroke-linecap="round">
+      <path d="M53.6 3.6c0-2.5 2-4.1 4.3-4.1s4.2 1.6 4.2 3.8c0 2.9-3.6 3.1-3.6 6.1"/>
+      <circle cx="58.5" cy="13.2" r="1.2" fill="#FF7A1A" stroke="none"/>
+      <circle class="lm-dot" cx="50.2" cy="9.6" r=".95" fill="#FF7A1A" stroke="none"/>
+    </g>
+    <g class="lm-prop lm-p-search">
+      <g class="lm-lens">
+        <line x1="55" y1="46" x2="60.4" y2="51.4" stroke="#4A4A54" stroke-width="3.4" stroke-linecap="round"/>
+        <circle cx="50" cy="41" r="7.1" fill="#FF7A1A" fill-opacity=".13" stroke="#FF7A1A" stroke-width="2.1"/>
+        <g clip-path="url(#lm-glass)"><rect class="lm-scan" x="43.5" y="40.3" width="13" height="1.4" rx=".7" fill="#FF7A1A" opacity=".85"/></g>
+      </g>
+    </g>
+    <g class="lm-prop lm-p-read">
+      <rect class="lm-page-back" x="45.6" y="33.4" width="14" height="18" rx="2" fill="#FFE9D8" stroke="#FF8A3D" stroke-width="1.1" opacity=".75" transform="rotate(9 52.6 42.4)"/>
+      <g class="lm-page">
+        <rect x="42.2" y="36.6" width="14" height="18" rx="2" fill="#FFF6EE" stroke="#FF7A1A" stroke-width="1.3"/>
+        <rect x="44.6" y="40.6" width="9.2" height="1.3" rx=".65" fill="#FF7A1A" opacity=".85"/>
+        <rect x="44.6" y="43.8" width="9.2" height="1.3" rx=".65" fill="#FF7A1A" opacity=".55"/>
+        <rect x="44.6" y="47" width="6" height="1.3" rx=".65" fill="#FF7A1A" opacity=".55"/>
+      </g>
+    </g>
+    <g class="lm-prop lm-p-analyze">
+      <rect x="41" y="34.6" width="20.4" height="15.4" rx="2.4" fill="#1A1A20" stroke="#FF7A1A" stroke-width="1.2"/>
+      <rect class="lm-bar lm-b1" x="44.6" y="42.6" width="2.8" height="4.4" rx=".6" fill="#FF7A1A"/>
+      <rect class="lm-bar lm-b2" x="49.8" y="39.8" width="2.8" height="7.2" rx=".6" fill="#FF7A1A"/>
+      <rect class="lm-bar lm-b3" x="55" y="37.6" width="2.8" height="9.4" rx=".6" fill="#FF7A1A"/>
+    </g>
+    <g class="lm-prop lm-p-write">
+      <rect x="20.6" y="43.6" width="22.8" height="12" rx="2" fill="#18181D" stroke="#33333B" stroke-width=".6"/>
+      <circle class="lm-logo" cx="32" cy="49.6" r="1.4" fill="#FF7A1A"/>
+      <rect x="18.2" y="55.2" width="27.6" height="2.6" rx="1.3" fill="#2A2A31"/>
+      <ellipse class="lm-paw lm-paw-l" cx="24.6" cy="44" rx="3.1" ry="2.2" fill="#F8EFE8"/>
+      <ellipse class="lm-paw lm-paw-r" cx="39.4" cy="44" rx="3.1" ry="2.2" fill="#F8EFE8"/>
+    </g>
+    <g class="lm-prop lm-p-done" fill="#FF7A1A">
+      <path class="lm-spark lm-s1" d="M56 1.2c.6 3.1 1.9 4.4 5 5-3.1.6-4.4 1.9-5 5-.6-3.1-1.9-4.4-5-5 3.1-.6 4.4-1.9 5-5Z"/>
+      <path class="lm-spark lm-s2" d="M8.4 4.2c.4 2.1 1.3 3 3.4 3.4-2.1.4-3 1.3-3.4 3.4-.4-2.1-1.3-3-3.4-3.4 2.1-.4 3-1.3 3.4-3.4Z"/>
+      <path class="lm-spark lm-s3" d="M61.6 17.4c.3 1.6 1 2.3 2.6 2.6-1.6.3-2.3 1-2.6 2.6-.3-1.6-1-2.3-2.6-2.6 1.6-.3 2.3-1 2.6-2.6Z"/>
+    </g>
+    <g class="lm-prop lm-p-error">
+      <path d="M57 -.8 64.6 12.2H49.4Z" fill="#FF7A1A" fill-opacity=".14" stroke="#FF7A1A" stroke-width="1.8" stroke-linejoin="round"/>
+      <line x1="57" y1="3.6" x2="57" y2="7.4" stroke="#FF7A1A" stroke-width="1.9" stroke-linecap="round"/>
+      <circle cx="57" cy="9.8" r="1.05" fill="#FF7A1A"/>
+    </g>
+    <g class="lm-prop lm-p-wait" fill="none" stroke="#FF7A1A" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="57.2" cy="5.6" r="6"/>
+      <line class="lm-hand" x1="57.2" y1="5.6" x2="57.2" y2="1.6"/>
+      <line x1="57.2" y1="5.6" x2="59.9" y2="5.6"/>
+    </g>
+  </g>
+</svg>

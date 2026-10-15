@@ -683,6 +683,89 @@ button.nav-i{font:inherit;font-size:13.5px}
 /* theme changes cross-fade where the browser supports view transitions */
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.28s;animation-timing-function:cubic-bezier(.23,1,.32,1)}
 
+/* ═════════ LUMA, THE MASCOT (static/luma/) ═════════
+   One drawing; data-state shows a state's prop and expression. Motion is transform and
+   opacity only, loops are slow, "done" and "error" play once, and nothing animates under
+   reduced motion or while scrolled out of view. Message avatars are plain images. */
+.luma{display:inline-grid;place-items:center;width:var(--ls,28px);height:var(--ls,28px);flex:none;position:relative;
+  transition:width .25s var(--e),height .25s var(--e)}
+.luma > svg,.luma > img{width:100%;height:100%;display:block;overflow:visible}
+.luma-m .lm-fig,.luma-m .lm-head,.luma-m .lm-eyes,.luma-m .lm-prop,.luma-m .lm-prop *{transform-box:fill-box;transform-origin:center}
+.luma-m .lm-head{transform-origin:50% 100%;transition:transform .32s var(--e)}
+.luma-m .lm-eyes-open{transition:transform .26s var(--e)}
+:root[data-theme="dark"] .luma > img,:root[data-theme="dark"] .luma > svg{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))}
+
+.luma-m[data-state="thinking"] .lm-p-think,.luma-m[data-state="searching"] .lm-p-search,
+.luma-m[data-state="reading"] .lm-p-read,.luma-m[data-state="analyzing"] .lm-p-analyze,
+.luma-m[data-state="writing"] .lm-p-write,.luma-m[data-state="done"] .lm-p-done,
+.luma-m[data-state="error"] .lm-p-error,.luma-m[data-state="waiting"] .lm-p-wait{display:inline;animation:lmIn .28s var(--e) both}
+.luma-m[data-state="done"] .lm-eyes-open,.luma-m[data-state="error"] .lm-eyes-open{display:none}
+.luma-m[data-state="done"] .lm-eyes-happy,.luma-m[data-state="error"] .lm-eyes-worried{display:inline}
+
+@keyframes lmIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+@keyframes lmFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.6px)}}
+@keyframes lmBreathe{0%,100%{opacity:.68}50%{opacity:1}}
+@keyframes lmBlink{0%,94%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.12)}}
+@keyframes lmPulse{0%,100%{opacity:.4}50%{opacity:1}}
+@keyframes lmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.3px)}}
+@keyframes lmSway{0%,100%{transform:translateX(-1.8px)}50%{transform:translateX(1.4px)}}
+@keyframes lmScan{from{transform:translateY(-4.6px)}to{transform:translateY(4.6px)}}
+@keyframes lmPage{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-1.1px) rotate(-2.5deg)}}
+@keyframes lmBar{0%,100%{opacity:.3}25%,55%{opacity:1}}
+@keyframes lmType{0%,100%{transform:translateY(0)}50%{transform:translateY(1.4px)}}
+@keyframes lmBounce{0%{transform:translateY(0) scale(1)}35%{transform:translateY(-4.5px) scale(1.04)}70%{transform:translateY(.5px) scale(.985)}100%{transform:none}}
+@keyframes lmSpark{0%{transform:scale(0);opacity:0}40%{transform:scale(1.15);opacity:1}100%{transform:scale(.85);opacity:0}}
+@keyframes lmShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-1.6px)}75%{transform:translateX(1.6px)}}
+@keyframes lmSpin{to{transform:rotate(360deg)}}
+
+/* idle: waiting calmly (the welcome screen only) */
+.luma-m[data-state="idle"] .lm-fig{animation:lmFloat 3.6s ease-in-out infinite}
+.luma-m[data-state="idle"] .lm-led{animation:lmBreathe 3.6s ease-in-out infinite}
+.luma-m[data-state="idle"] .lm-eyes-open{animation:lmBlink 6s infinite}
+/* waiting for the server's first reply */
+.luma-m[data-state="waiting"] .lm-hand{transform-origin:50% 100%;animation:lmSpin 2.4s linear infinite}
+.luma-m[data-state="waiting"] .lm-led{animation:lmBreathe 2.4s ease-in-out infinite}
+/* thinking: a small tilt, the LED pulses, a question mark */
+.luma-m[data-state="thinking"] .lm-head{transform:rotate(-7deg)}
+.luma-m[data-state="thinking"] .lm-led{animation:lmPulse 1.5s ease-in-out infinite}
+.luma-m[data-state="thinking"] .lm-p-think{animation:lmIn .28s var(--e) both,lmBob 2.6s ease-in-out .3s infinite}
+/* searching the index: a magnifier sweeps, its scan line moves */
+.luma-m[data-state="searching"] .lm-eyes-open{transform:translateX(2.2px)}
+.luma-m[data-state="searching"] .lm-lens{animation:lmSway 1.9s ease-in-out infinite}
+.luma-m[data-state="searching"] .lm-scan{animation:lmScan 1.1s ease-in-out infinite alternate}
+/* reading passages: a page in hand */
+.luma-m[data-state="reading"] .lm-head{transform:rotate(4deg)}
+.luma-m[data-state="reading"] .lm-eyes-open{transform:translate(2px,1px)}
+.luma-m[data-state="reading"] .lm-page{animation:lmPage 2.4s ease-in-out infinite}
+/* analyzing (comparing, building a summary, checking citations): bars light in turn */
+.luma-m[data-state="analyzing"] .lm-eyes-open{transform:translateX(2.2px)}
+.luma-m[data-state="analyzing"] .lm-bar{animation:lmBar 1.6s ease-in-out infinite}
+.luma-m[data-state="analyzing"] .lm-b2{animation-delay:.26s}
+.luma-m[data-state="analyzing"] .lm-b3{animation-delay:.52s}
+/* writing the answer: typing on a small laptop */
+.luma-m[data-state="writing"] .lm-eyes-open{transform:translateY(1.6px)}
+.luma-m[data-state="writing"] .lm-paw-l{animation:lmType .44s ease-in-out infinite}
+.luma-m[data-state="writing"] .lm-paw-r{animation:lmType .44s ease-in-out .22s infinite}
+.luma-m[data-state="writing"] .lm-logo{animation:lmPulse 1.3s ease-in-out infinite}
+/* done: one small bounce and a smile, then rest */
+.luma-m[data-state="done"] .lm-fig{animation:lmBounce .6s var(--ch-spring) 1}
+.luma-m[data-state="done"] .lm-spark{animation:lmSpark .9s ease-out 1 both}
+.luma-m[data-state="done"] .lm-s2{animation-delay:.08s}
+.luma-m[data-state="done"] .lm-s3{animation-delay:.16s}
+/* error: concerned, a short shake, a warning sign; the message itself says what failed */
+.luma-m[data-state="error"] .lm-fig{animation:lmShake .3s ease-in-out 2}
+.luma[data-paused] .luma-m,.luma[data-paused] .luma-m *{animation-play-state:paused!important}
+
+/* where Luma appears */
+.side-top .luma{--ls:32px}
+.ch-e-luma{--ls:96px;margin-bottom:2px}
+.m-av.luma{--ls:32px;margin:-3px 0 0 -2px;border-radius:0;box-shadow:none}
+.msg.think{align-items:center}
+.msg.think .luma{--ls:44px;margin:-6px 0 -6px -8px}
+.th{gap:8px}
+.th-label{font-size:14.5px}
+.doc-ic.luma{--ls:36px;background:none}
+
 /* ═════════ RESPONSIVE ═════════ */
 /* Tablet / narrow laptop: the document panel floats over the conversation
    instead of squeezing it. */
@@ -715,7 +798,10 @@ button.nav-i{font:inherit;font-size:13.5px}
 @media(max-width:640px){
   .ch-b{padding:14px 14px 20px;gap:22px}
   .msg.me{max-width:88%}
-  .msg.bot .m-av{display:none}
+  .msg.bot .m-av{--ls:22px}
+  .msg.bot{gap:8px}
+  .msg.think .luma{--ls:38px;margin-left:-4px}
+  .ch-e-luma{--ls:72px}
   .ch-f{padding:4px 10px calc(10px + env(safe-area-inset-bottom))}
   .ch-ta{font-size:16px}                /* 16px stops iOS zooming into the field */
   .ch-hint{display:none}
@@ -760,6 +846,7 @@ button.nav-i{font:inherit;font-size:13.5px}
   .newchat kbd{display:none}
 }
 @media(prefers-reduced-motion:reduce){
+  .luma,.luma-m,.luma-m *{animation:none!important;transition:none!important}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
   ::view-transition-old(root),::view-transition-new(root){animation:none}
   .th-label{background:none;-webkit-text-fill-color:currentColor;color:var(--mid)}

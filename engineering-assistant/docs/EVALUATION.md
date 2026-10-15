@@ -130,7 +130,7 @@ What the tests cover:
   - document search (native and OCR) with highlighted pages;
   - suggestions that verify as answerable.
 
-`tests/ui/run.sh` runs the browser suite: **128/128 checks pass** in Chromium against fresh real servers, at desktop, tablet and phone sizes in light and dark. A mock model was used only for the slow-response and Stop checks. The interaction list and the defects it found are in [UI.md](UI.md).
+`tests/ui/run.sh` runs the browser suite: **142/142 checks pass** in Chromium against fresh real servers, at desktop, tablet and phone sizes in light and dark. A mock model was used only for the slow-response and Stop checks. The interaction list and the defects it found are in [UI.md](UI.md).
 
 Evaluation-set note: `amb-01` and `amb-02` now expect clarify-first behaviour, so no values are shown, and no longer require the values in the answer. Every metric in the results table was re-run after this change and is unchanged.
 

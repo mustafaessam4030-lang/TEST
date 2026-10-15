@@ -112,6 +112,9 @@ class Settings:
     # Logging
     log_level: str = field(default_factory=lambda: _env("LOG_LEVEL", "INFO"))
     log_query_text: bool = field(default_factory=lambda: _env_bool("LOG_QUERY_TEXT", False))
+    # Demonstrations and UI tests only: pause this long at each pipeline stage so every stage is visible.
+    # 0 (the default) never delays anything.
+    debug_stage_delay_ms: int = field(default_factory=lambda: _env_int("DEBUG_STAGE_DELAY_MS", 0))
 
     @property
     def db_path(self) -> Path:
