@@ -4638,14 +4638,42 @@ def read_dhl_tabs(page):
         ], 1200)
         if tab is None:
             continue
+        if not _click_dhl_tab(page, tab, name):
+            continue
         try:
-            tab.click(timeout=4000)
             page.wait_for_timeout(1200)
             chunks.append(DHL_TAB_BREAK + "\n" + _page_text(page))
             write_log(f"DHL tab read: {name}")
         except Exception as error:
             note_suppressed(f"reading the DHL {name} tab", error)
     return "\n".join(chunks)
+
+
+def _click_dhl_tab(page, tab, name):
+    """
+    Click one of DHL's own result tabs (public tracking page). On 14 Oct a
+    DHL Express result (3242667190) could not be clicked in 4 s — something
+    on the page lay over the tabs — so no event row was read and the shipment
+    went to review. Then: close the overlay (Escape), scroll the tab into
+    view and click again; last, a direct click on the element.
+    -> True when the tab was clicked.
+    """
+    tries = (("click", lambda: tab.click(timeout=4000)),
+             ("Escape, scroll and click", lambda: (page.keyboard.press("Escape"),
+                                                  tab.scroll_into_view_if_needed(timeout=3000),
+                                                  tab.click(timeout=6000))),
+             ("direct click", lambda: tab.evaluate("el => el.click()")))
+    last = None
+    for label, attempt in tries:
+        try:
+            attempt()
+            if label != "click":
+                write_log("DHL {0} tab opened on retry ({1}).".format(name, label))
+            return True
+        except Exception as error:
+            last = error
+    note_suppressed(f"reading the DHL {name} tab", last)
+    return False
 
 
 def dhl_timeline_decision(eta, ata, text):
@@ -5658,6 +5686,11 @@ AFKL_DETAIL_READY_MS = 30000
 # needed — rather than for a lifecycle event a stalled third-party request
 # can hold hostage.
 PORTAL_FORM_READY_MS = 45000
+# Once in a run a portal's box has been found only by the general search, the
+# strict wait for it is this short (the page has its box; it just does not
+# match the named patterns).
+CATCHALL_KNOWN_WAIT_MS = 8000
+_CATCHALL_BOX_OK = set()
 
 # Chromium raises these against some carrier servers on a rapid second
 # navigation. They mean "the transport had a bad moment", not "the page is
@@ -8417,7 +8450,10 @@ def open_portal(page, config, tracking_number):
         # budget is spent, consult the catch-all — so a page that never shows
         # an AWB box still falls back the way it always did, and a page that
         # is merely slow is not mistaken for one that has the wrong form.
-        wait_for_any(
+        # A portal whose box only the last-resort search finds (MSC, 14 Oct:
+        # 11 of 11 lookups waited the full 45 s first) waits a short while
+        # once that search has worked for it earlier in this run.
+        strict_found = wait_for_any(
             page,
             [("the air waybill box",
               lambda: find_portal_input(page, config["placeholder"],
@@ -8425,7 +8461,8 @@ def open_portal(page, config, tracking_number):
                                         label=config.get("box_label"),
                                         css=config.get("box_css"))
               is not None)],
-            PORTAL_FORM_READY_MS,
+            CATCHALL_KNOWN_WAIT_MS if config["label"] in _CATCHALL_BOX_OK
+            else PORTAL_FORM_READY_MS,
             reason="the {0} air waybill box".format(config["label"]))
         # A page with a security-code box never gets the catch-all: "any
         # visible text box" there could be the code box, and the run must
@@ -8435,6 +8472,13 @@ def open_portal(page, config, tracking_number):
                                   label=config.get("box_label"),
                                   css=config.get("box_css"))
         if field is not None:
+            if strict_found is None and not config.get("needs_person") and \
+                    config["label"] not in _CATCHALL_BOX_OK:
+                _CATCHALL_BOX_OK.add(config["label"])
+                write_log("{0}: its box was found only by the general search; later "
+                          "lookups this run wait {1}s for it, not {2}s.".format(
+                              config["label"], CATCHALL_KNOWN_WAIT_MS // 1000,
+                              PORTAL_FORM_READY_MS // 1000))
             if url != config["urls"][0]:
                 write_log(f"{config['label']}: used the fallback entry point {url}")
             checker = _pagecheck_store()

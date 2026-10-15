@@ -42,6 +42,8 @@ SUITES = [
     ("test_run_limits.py",      "Run limits: every shipment and every Hub write counted"),
     ("test_eta_diagnostic.py",  "ATLAS ETA/ATA diagnostic: advisory, evidence, evaluation"),
     ("test_nested_body.py",     "Carrier page with two <body> elements (Lufthansa)"),
+    ("test_dhl_tabs.py",        "DHL result tabs under an overlay (Express)"),
+    ("test_portal_box_wait.py", "Portal box found by the general search: short wait after (MSC)"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),
