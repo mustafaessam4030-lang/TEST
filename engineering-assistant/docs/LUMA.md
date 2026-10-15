@@ -78,6 +78,10 @@ answer: "Compare it with the CV-90" appears only if the CV-90's documents have t
     clogged strainer leads to "higher pressure"; it lowers inlet pressure. That is exactly why general claims
     are labelled as not coming from the documents. **qwen2.5:7b-instruct** (4.7 GB, 8 GB RAM recommended) is
     the recommended model, but it was not tested here. Check the hardware and get approval before pulling it.
+* In the packaged app (screenshot `screenshots/luma/desktop-llm-explain.jpg`), with qwen2.5:3b on CPU, the
+  answer below took 41 s. Its grounded claim is cited, and its two general-knowledge sentences sit in the
+  labelled block; one of them is wrong (see the limitation above). For "Explain that in simpler terms", the 3B
+  model's rewrite failed validation, so Luma declined to paraphrase instead of showing an unverified version.
 * Without a model, Luma is fully usable in **quoted mode**: natural sentences for table values, exact source
   sentences otherwise, and a clear note where an explanation would need the model.
 
