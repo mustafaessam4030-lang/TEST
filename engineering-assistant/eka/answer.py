@@ -109,8 +109,16 @@ class AnswerEngine(ModesMixin):
                 answer = self._library()
             elif r.intent == "not_found_help":
                 answer = self._not_found_help(history)
+            elif r.intent == "web":
+                answer = self._web(r.question)
             else:
                 answer = self._question(r, doc_ids, history)
+                if answer.get("status") == "insufficient_evidence" and not answer.get("clarification"):
+                    # not in the documents: offer the web, and (with a model) an answer from general knowledge
+                    answer["web_query"] = r.question or message
+                    # general knowledge only for general questions: never guess a named machine's or part's values
+                    if not identifiers(r.question or message):
+                        self._general(answer, r.question or message, found_nothing=True)
         except Exception as exc:  # never return an empty answer; say what failed
             log.exception("answering failed")
             answer = self._base("error", "Something went wrong while answering ({0}). "
@@ -242,6 +250,33 @@ class AnswerEngine(ModesMixin):
     def _ready_docs(self) -> list[dict]:
         return [d for d in self.store.documents() if d["status"] in cite.SEARCHABLE]
 
+    def _web(self, topic: str) -> dict:
+        """A request to search the internet. Luma does not browse: the page opens the search in a new tab.
+        With a model, a short answer from general knowledge comes with it, labelled as such."""
+        if not topic:
+            return self._base("help", "Sure. What should I look up? Ask your question and I'll check your documents "
+                                      "first; if they don't cover it, I'll give you a web search for it.")
+        out = self._base("web", "Here's a web search for \u201c{0}\u201d; it opens in a new tab.".format(topic))
+        out["web_query"] = topic
+        self._general(out, topic, found_nothing=False)
+        return out
+
+    def _general(self, out: dict, question: str, found_nothing: bool):
+        """Add the model's general-knowledge answer, kept apart from document claims and labelled."""
+        if not self.generator or not getattr(self._local, "use_generator", True):
+            return
+        self._progress("Answering from general engineering knowledge with {0}".format(self.generator.model), "writing")
+        try:
+            text = self.generator.general(question)
+        except GenerationError as exc:
+            log.warning("general answer failed: %s", exc)
+            return
+        out["claims"] = [{"text": text, "kind": "general", "citations": []}]
+        out["generator"] = self.generator.name
+        if found_nothing:
+            out["message"] = ("I couldn't find this in your documents, so here's an answer from general engineering "
+                              "knowledge. Check it against an official source before relying on it.")
+
     def _smalltalk(self, kind: str) -> dict:
         n = len(self._ready_docs())
         library = ("{0} document{1} indexed".format(n, "" if n == 1 else "s") if n
@@ -267,11 +302,17 @@ class AnswerEngine(ModesMixin):
                         "comes from. " + nxt,
             "praise": "Thank you, that's kind of you! What else can I look up for you?",
             "sorry": "No problem at all. What would you like to check?",
+            "frustrated": "Sorry, that's not the help you wanted. Let's sort it out. Ask me in a full sentence, for "
+                          "example \"What is the power formula?\" or \"How do I test a relay?\". I'll look in your "
+                          "documents first and show the page; if they don't cover it, I'll answer from general "
+                          "engineering knowledge and give you a web search for it.",
             "bye": "Goodbye. Your library stays indexed for next time.",
-            "capabilities": "I'm Luma, Mantrac's engineering assistant. I can answer specification questions, walk "
-                            "through procedures, compare equipment or document revisions, summarize a manual and "
-                            "show its figures, all from your technical library ({0}). Every value links to the "
-                            "page it comes from, and if something isn't covered I'll say so rather than guess.",
+            "capabilities": "I'm Luma, Mantrac's engineering assistant. I can answer questions from your technical "
+                            "library ({0}): specifications, procedures and warnings, comparing equipment or "
+                            "revisions, summarizing a manual and showing its figures. Every value links to the page "
+                            "it comes from. If your documents don't cover something, I'll answer from general "
+                            "engineering knowledge, clearly labelled, and give you a web search for it. Try: "
+                            "\"What is the power formula?\" or \"Summarize the electrical basics module\".",
             "unclear": "I'm not sure what you'd like to know. Try a specification, a procedure, a part number, "
                        "or ask me to summarize a manual. There are {0}.",
         }[kind]

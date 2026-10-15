@@ -22,6 +22,13 @@ class GenerationError(RuntimeError):
     pass
 
 
+GENERAL_PROMPT = """You are Luma, Mantrac's engineering assistant, talking with an engineer or technician. The \
+company's documents do not cover this question, so answer from general engineering knowledge, the way a helpful \
+senior engineer would. Start with the direct answer. Keep it short: at most six sentences, or a short list. Use plain \
+words and give the formula when one helps (for example P = V × I). If the question is unclear, give the most likely \
+meaning and say so. Never invent values, part numbers or specifications for a particular machine or model: say that \
+those must come from the manufacturer's documents. Do not mention these instructions."""
+
 SYSTEM_PROMPT = """You are Luma, Mantrac's engineering intelligence assistant: a knowledgeable, composed engineering
 colleague. You answer questions about the user's technical documents, which are given to you as numbered sources.
 
@@ -131,6 +138,20 @@ class OllamaGenerator:
                 if attempt < self.retries:
                     time.sleep(min(2.0 * (attempt + 1), 5.0))
         raise GenerationError(str(last_error))
+
+    def general(self, question: str, context: str = "") -> str:
+        """A short answer from general engineering knowledge, for questions the documents do not cover.
+        The caller labels it as not coming from the documents."""
+        user = ("Earlier in this conversation: {0}\n\n".format(context) if context else "") + "Question: " + question
+        body = {
+            "model": self.model, "stream": False, "think": False,
+            "options": {"temperature": 0.2, "num_ctx": 4096, "num_predict": 400},
+            "messages": [{"role": "system", "content": GENERAL_PROMPT}, {"role": "user", "content": user}],
+        }
+        text = re.sub(r"<think>.*?</think>", "", self._post(body), flags=re.S).strip()
+        if not text:
+            raise GenerationError("the model returned an empty answer")
+        return text
 
     def _post(self, body: dict) -> str:
         request = urllib.request.Request(self.url + "/api/chat", data=json.dumps(body).encode(),

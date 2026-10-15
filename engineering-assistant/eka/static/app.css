@@ -886,6 +886,7 @@ button.nav-i{font:inherit;font-size:13.5px}
 
 /* internet search: opens a browser tab; nothing from the web enters an answer */
 .web-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0 4px;font-size:13px;color:var(--faint)}
+button.web svg{width:14px;height:14px;flex:none}
 .fb button.web.cta,.web-row .web.cta{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:999px;
   background:var(--solid);color:var(--on-solid);font-size:13px;font-weight:600;border:0}
 .web-row .web.cta:hover{filter:brightness(1.08)}

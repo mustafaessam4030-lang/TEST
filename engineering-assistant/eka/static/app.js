@@ -665,13 +665,11 @@ function renderAnswer(node, a, meta = {}) {
   } else if (a.message) {
     bub.append(md(a.message));
   }
-  if (a.status === "insufficient_evidence" && a.intent === "question") {
-    const q = a.question || (node.previousElementSibling && node.previousElementSibling.textContent) || "";
-    if (q.trim()) {
-      const row = h("div", "web-row");
-      row.append(webButton(q, "cta"), h("span", "", "Not in your documents? Look it up on the internet (opens a new tab)."));
-      bub.append(row);
-    }
+  // web search offered by the server: when the documents don't cover it, or when asked for
+  if (a.web_query) {
+    const row = h("div", "web-row");
+    row.append(webButton(a.web_query, "cta"));
+    bub.append(row);
   }
 
   if (a.clarification) {
@@ -766,7 +764,7 @@ function renderClaims(into, claims, pills, leadFirst) {
     if (c.kind === "general") {
       const box = h("div", "gk");
       box.append(h("div", "gk-h", "General engineering knowledge · not from your documents"));
-      while (i < claims.length && claims[i].kind === "general") box.append(rich(claims[i++].text, h("p")));
+      while (i < claims.length && claims[i].kind === "general") box.append(md(claims[i++].text));
       into.append(box);
       continue;
     }
@@ -1076,7 +1074,7 @@ function actions(node, a, meta) {
   // Internet search: opens the question in a new browser tab. Luma sends nothing to the web itself,
   // and web results are never mixed into answers from the documents.
   const asked = a.question || (node.previousElementSibling && node.previousElementSibling.textContent) || "";
-  if (asked.trim() && a.intent !== "smalltalk") fb.append(webButton(asked));
+  if (asked.trim() && a.intent !== "smalltalk" && !a.web_query) fb.append(webButton(asked));
   if (a.message_id) {
     const retry = btn("retry", "Retry", "retry", "Ask again");
     retry.addEventListener("click", () => {

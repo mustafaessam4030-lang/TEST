@@ -157,3 +157,27 @@ def test_unreachable_ollama_falls_back(assistant):
     engine = AnswerEngine(assistant.settings, assistant.store, assistant.retriever, Conversations(), generator)
     out = engine.ask("What is the dry weight of the HX-200?")
     assert out["generator"] == "extractive" and "48 kg" in out["answer_text"]
+
+
+def test_general_question_not_in_documents_gets_a_labelled_general_answer(engine, fake):
+    fake.requests.clear()
+    fake.reply = "Electrical power is P = V × I: voltage times current."
+    out = engine.ask("What is the power formula?")
+    assert out["status"] == "insufficient_evidence" and out["web_query"]
+    assert [c["kind"] for c in out["claims"]] == ["general"] and "P = V × I" in out["claims"][0]["text"]
+    assert out["claims"][0]["citations"] == [] and "general engineering knowledge" in out["message"]
+    assert fake.requests[-1]["messages"][0]["content"].startswith("You are Luma") and "format" not in fake.requests[-1]
+
+
+def test_a_named_machine_that_is_not_documented_is_never_guessed(engine, fake):
+    fake.requests.clear()
+    out = engine.ask("What is the rated pressure of the HX-300?")
+    assert out["claims"] == [] and fake.requests == [] and out["web_query"]
+
+
+def test_asking_to_search_the_web_uses_the_previous_question(engine, fake):
+    fake.reply = "Cavitation is vapour bubbles collapsing in low-pressure zones."
+    first = engine.ask("What causes pump cavitation?")
+    out = engine.ask("can you search on the internet?", first["conversation_id"])
+    assert out["intent"] == "web" and out["web_query"] == "What causes pump cavitation?"
+    assert out["claims"][0]["kind"] == "general"

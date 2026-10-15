@@ -22,8 +22,21 @@ GREETING = re.compile(r"^\s*(hi|hello|hey|hiya|good (morning|afternoon|evening)|
 HOW_ARE_YOU = re.compile(r"\b(how are you|how's it going|how are things|how do you do)\b[\s,!.?]*", re.I)
 THANKS = re.compile(r"^\s*(thanks|thank you|thx|cheers|great,? thanks|perfect|ok(ay)?,? thanks?)\b[\s,!.]*$", re.I)
 BYE = re.compile(r"^\s*(bye|goodbye|see you|that's all|thats all)\b[\s,!.]*$", re.I)
-CAPABILITIES = re.compile(r"^\s*(what can you do|who are you|what are you|help|how do (i|you) use (this|you))\b[\s?!.]*$", re.I)
+CAPABILITIES = re.compile(r"^\s*(what can you do|who are you|what are you|help|how do (i|you) use (this|you)|"
+                          r"how (can|could|do|will) (you|u) help( me| us)?|what can (you|u) help( me| us)? with|"
+                          r"what do (you|u) do|what (can|should) i ask( you)?|what do (you|u) know)\b[\s?!.]*$", re.I)
+# frustration: answered with an apology and a way forward, never with a document search
+FRUSTRATED = re.compile(r"^\s*(shit|damn|dammit|wtf|ugh+|argh+|f+u+c+k\w*|crap|useless|stupid|this (is )?(useless|stupid|bad|"
+                        r"not working|annoying)|(you('re| are)|u r) (useless|stupid|bad|dumb|slow)|not working|nothing works|"
+                        r"you don'?t understand( me)?|you are not helping)\b[\s,!.?]*$", re.I)
 LIBRARY = re.compile(r"\b(what|which|list)\b.*\b(documents?|files?|pdfs?|manuals?)\b.*\b(have|indexed|uploaded|available|loaded|know)\b", re.I)
+# "search the internet for ...": the request is for a web search, with or without a topic
+WEB = re.compile(r"\b(search|look\s+(it\s+|this\s+|that\s+)?up|google|browse|check|find)\b[^.?!]{0,40}?\b(internet|web|online|google|bing)\b"
+                 r"|^\s*google\b", re.I)
+WEB_PHRASE = re.compile(r"^\s*(and\s+|so\s+|ok\s+)?(please\s+)?((can|could|would|will)\s+(you|u)\s+)?(please\s+)?"
+                        r"(search|look\s+(it\s+|this\s+|that\s+)?up|google|browse|check|find)\s*(it|this|that)?\s*"
+                        r"((on|in)\s+)?(the\s+)?(internet|web|online|google|bing)?\s*(for|about)?\s*"
+                        r"|\s*(on|in)\s+(the\s+)?(internet|web|online|google)\s*$", re.I)
 # everyday conversation, answered like a colleague would
 WELLBEING = re.compile(r"^\s*((are|r) (you|u) (good|ok(ay)?|fine|alright|there|awake|alive|working|ready|online)|"
                        r"(you|u) (good|ok(ay)?|there)|how('?s| is) (it going|your day|everything)|what'?s up|sup|wassup)\b[\s?!.]*$", re.I)
@@ -135,7 +148,13 @@ def route(message: str, history: list[Turn]) -> Route:
     text = normalize(message)
     if THANKS.match(text):
         return Route("smalltalk", "thanks")
-    for pattern, kind in ((WELLBEING, "how_are_you"), (ACK, "ack"), (NEED_HELP, "help"), (IDENTITY, "identity"),
+    if WEB.search(text):
+        topic = WEB_PHRASE.sub(" ", text).strip(" ,.!?")
+        if not content_terms(topic):
+            # "can you search the internet?" means: the last question
+            topic = next((t.question for t in reversed(history) if t.retrieval_query), "")
+        return Route("web", question=topic)
+    for pattern, kind in ((FRUSTRATED, "frustrated"), (WELLBEING, "how_are_you"), (ACK, "ack"), (NEED_HELP, "help"), (IDENTITY, "identity"),
                           (PRAISE, "praise"), (SORRY, "sorry")):
         if pattern.match(text):
             return Route("smalltalk", kind)

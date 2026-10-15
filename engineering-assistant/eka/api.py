@@ -95,6 +95,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["Referrer-Policy"] = "no-referrer"
         if not path.endswith("/file"):
             response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        if not path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-cache"   # an updated app is picked up on the next load
         return response
 
     def public(doc: dict, summary: dict | None = None) -> dict:
