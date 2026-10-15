@@ -27,8 +27,8 @@ def client(samples, tmp_path_factory):
         yield c
 
 
-def stream(client, **body):
-    with client.stream("POST", "/api/chat/stream", json=body) as r:
+def stream(client, headers=None, **body):
+    with client.stream("POST", "/api/chat/stream", json=body, headers=headers or {}) as r:
         assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
         lines = list(r.iter_lines())
     events = []
@@ -167,3 +167,37 @@ def test_suggestions_are_answerable(client):
     for s in suggestions:
         answer = client.post("/api/chat", json={"message": s}).json()
         assert answer["status"] == "answered" and answer["citations"], s
+
+
+# ── a server shared with the team: each browser keeps its own conversations ──
+ANNA, BEN = {"X-EKA-Client": "anna-browser-1"}, {"X-EKA-Client": "ben-browser-22"}
+
+
+def test_each_browser_sees_only_its_own_conversations(client):
+    mine = stream(client, ANNA, message="What is the oil capacity of the CV-90?")[-1][1]
+    cid, mid = mine["conversation_id"], mine["message_id"]
+    listed = lambda h: {c["id"] for c in client.get("/api/conversations", headers=h).json()["conversations"]}
+    assert cid in listed(ANNA) and cid not in listed(BEN) and cid not in listed({})
+    assert cid not in {c["id"] for c in client.get("/api/conversations", params={"q": "oil"}, headers=BEN).json()["conversations"]}
+    # another browser can neither read, rename, delete, continue nor rate it
+    assert client.get("/api/conversations/" + cid, headers=BEN).status_code == 404
+    assert client.patch("/api/conversations/" + cid, json={"title": "x"}, headers=BEN).status_code == 404
+    assert client.delete("/api/conversations/" + cid, headers=BEN).status_code == 404
+    assert client.post("/api/chat", json={"message": "and its speed?", "conversation_id": cid}, headers=BEN).status_code == 404
+    assert client.post("/api/messages/{0}/feedback".format(mid), json={"value": "up"}, headers=BEN).status_code == 404
+    # its owner still can
+    assert client.get("/api/conversations/" + cid, headers=ANNA).json()["turns"][0]["question"].startswith("What is the oil")
+    assert client.post("/api/chat", json={"message": "And its output speed?", "conversation_id": cid}, headers=ANNA).status_code == 200
+    assert client.delete("/api/conversations/" + cid, headers=ANNA).status_code == 200
+
+
+def test_conversations_from_before_sharing_stay_visible_to_everyone(client):
+    old = stream(client, message="What is the rated flow of the HX-200?")[-1][1]["conversation_id"]   # no browser id
+    for who in (ANNA, BEN, {}):
+        assert old in {c["id"] for c in client.get("/api/conversations", headers=who).json()["conversations"]}
+        assert client.get("/api/conversations/" + old, headers=who).status_code == 200
+
+
+def test_a_malformed_browser_id_is_ignored(client):
+    cid = stream(client, {"X-EKA-Client": "x"}, message="What is the input power of the CV-90?")[-1][1]["conversation_id"]
+    assert cid in {c["id"] for c in client.get("/api/conversations", headers=BEN).json()["conversations"]}

@@ -39,7 +39,7 @@ const store = {
 };
 
 const S = {
-  token: sessionStorage.getItem("eka-token") || "",
+  token: teamKey(),
   health: null,
   docs: [],
   convs: [],
@@ -54,13 +54,34 @@ const S = {
 };
 
 // ── API ──────────────────────────────────────────────────────────────────
+// A shared team link carries its key after "#key=" (never sent to the server). It is kept in this
+// browser and removed from the address bar, so the address can be bookmarked or shown safely.
+function teamKey() {
+  const m = location.hash.match(/^#key=([^&]+)/);
+  if (m) {
+    const key = decodeURIComponent(m[1]);
+    store.set("eka-key", key);
+    history.replaceState(null, "", location.pathname + location.search + "#/");
+    return key;
+  }
+  return store.get("eka-key", "") || sessionStorage.getItem("eka-token") || "";
+}
+// This browser's id: on a shared server each person's conversations stay in their own list.
+function clientId() {
+  let id = store.get("eka-client", "");
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)).replace(/[^A-Za-z0-9_-]/g, "");
+    store.set("eka-client", id);
+  }
+  return id;
+}
 function authed(url) {
   if (!S.token) return url;
   const [path, hash] = url.split("#");
   return path + (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(S.token) + (hash ? "#" + hash : "");
 }
 async function api(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
+  const headers = { "X-EKA-Client": clientId(), ...(options.headers || {}) };
   if (S.token) headers.Authorization = "Bearer " + S.token;
   let res;
   try {
@@ -79,10 +100,10 @@ async function api(path, options = {}) {
   return data;
 }
 function askToken() {
-  const t = prompt("This assistant requires an access token:");
+  const t = prompt("Enter the team key (it is in the link you were given):");
   if (!t) return false;
   S.token = t.trim();
-  sessionStorage.setItem("eka-token", S.token);
+  store.set("eka-key", S.token);
   return true;
 }
 
@@ -1152,7 +1173,7 @@ async function ask(text, opts = {}) {
   };
   let answer = null;
   try {
-    const headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json", "X-EKA-Client": clientId() };
     if (S.token) headers.Authorization = "Bearer " + S.token;
     const res = await fetch("/api/chat/stream", { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal });
     if (res.status === 401 && askToken()) { S.busy = false; user.remove(); node.remove(); return ask(text, opts); }

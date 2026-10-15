@@ -9,7 +9,8 @@ your computer: no cloud service, no Snowflake, and no AI account is needed.
 | Item | What it is |
 |---|---|
 | `setup.bat` / `setup.sh` | One-time install: creates `.venv`, installs the packages, downloads the search model |
-| `start.bat` / `start.sh` | Starts the assistant and opens it in the browser |
+| `start.bat` / `start.sh` | Starts the assistant for this computer only and opens it in the browser |
+| `share.bat` / `share.sh` | Starts it **for the team**: prints a link colleagues open in their browsers |
 | `stop.bat` / `stop.sh` | Stops it |
 | `check.bat` / `check.sh` | Checks the installation and lists what is missing |
 | `run-tests.bat` / `run-tests.sh` | Runs the automated tests |
@@ -43,6 +44,40 @@ your computer: no cloud service, no Snowflake, and no AI account is needed.
 5. Ask a question. Open **Document library** to see each PDF's status;
    new PDFs appear within about 15 seconds, or press **Check folder now**.
 6. To stop: close the black window, or double-click **`stop.bat`**.
+
+## Share with your team (one link for everyone)
+
+One computer runs Luma; colleagues only need a browser. Nothing is installed on their PCs.
+
+1. On the computer that will host it (a PC that stays on, on the company network), do steps 1–3 above.
+2. Double-click **`share.bat`** (Linux/macOS: `./share.sh`). The window prints the team link, for example:
+
+   ```
+   Luma team link (copy one into any browser on the company network):
+     http://ENG-PC-07:8765/#key=janreZV3agHY
+     http://10.20.30.40:8765/#key=janreZV3agHY
+   ```
+
+   The same text is saved in `data\team-link.txt`.
+3. Send one of those links to the team (email, Teams). They paste it into Chrome or Edge — that's all.
+   If the name link does not open on their PC, use the number (IP) link.
+4. The first time, Windows may ask whether Python may use the network: choose **Private networks → Allow**.
+   If colleagues still cannot connect, IT needs to allow incoming connections on port 8765 on that PC.
+5. Keep the window open while the team is testing. Close it (or run `stop.bat`) to stop sharing.
+
+Good to know:
+
+* **The key.** The part after `#key=` is the team key. Anyone opening the address without it is asked for it.
+  It is created once and kept in `data\team-key.txt`; delete that file to make a new key (and a new link), or set
+  your own with `EKA_API_TOKEN=` in `config.env`. The key is never sent in a way that ends up in the logs.
+* **PDFs.** Add them to the host's `pdfs` folder (or point `EKA_INBOX_DIR` at a shared network folder). Teammates
+  can also upload PDFs from the page; every upload goes into the one shared library.
+* **Each person's conversations stay in their own list** (kept per browser). This separates people; it is not a
+  login, so do not rely on it for confidential questions.
+* **Outside the office network.** The link works on the company network (or VPN). Do not publish it on the internet
+  with a public tunnel service: the documents are confidential. Ask IT for VPN access or an internal web address.
+* Answers use the host's model and hardware. With a local language model, several people asking at the same time
+  may wait for each other; quoted answers (the default) stay fast.
 
 ## Linux / macOS
 
@@ -103,7 +138,7 @@ package: it carries the Python packages and the model so setup works offline.
 | Setting | Default | Meaning |
 |---|---|---|
 | `EKA_PORT` | 8765 | Browser address port |
-| `EKA_HOST` | 127.0.0.1 | `0.0.0.0` makes it reachable from other PCs — set `EKA_API_TOKEN` first |
+| `EKA_HOST` | 127.0.0.1 | Only this computer. `share.bat` uses the network instead, with a team key |
 | `EKA_OPEN_BROWSER` | 1 | Open the browser on start |
 | `EKA_INBOX_DIR` | pdfs | PDF folder (`off` disables it) |
 | `EKA_INBOX_SCAN_S` | 15 | Seconds between folder checks |
@@ -112,7 +147,7 @@ package: it carries the Python packages and the model so setup works offline.
 | `EKA_EMBEDDER` | auto | Semantic search with the model in `models/`; keyword-only if it is missing |
 | `EKA_GENERATOR` | extractive | `ollama` for phrased answers (see above) |
 | `EKA_TESSERACT_CMD` | (auto) | Full path to `tesseract.exe` |
-| `EKA_API_TOKEN` | (none) | Require this token to use the assistant |
+| `EKA_API_TOKEN` | (none) | Require this key; `share.bat` uses it as the team key (or creates one) |
 
 Real environment variables override `config.env`. Restart after a change.
 
@@ -123,6 +158,8 @@ Real environment variables override `config.env`. Restart after a change.
 | "Python 3.10 or newer was not found" | Install Python and tick "Add python.exe to PATH"; open a new window |
 | Setup fails downloading packages or the model | Company proxy: run `set HTTPS_PROXY=http://proxy:port`, then `setup.bat` in the same window |
 | "Port 8765 already in use" | It is already running (open the browser), or change `EKA_PORT` |
+| Colleagues cannot open the team link | Same network or VPN? Try the IP link; allow Python in Windows Firewall (Private networks) or ask IT to open port 8765 |
+| Asked for a "team key" | Paste the part after `#key=` from the link (also in `data\team-link.txt`) |
 | A PDF shows "Failed" | Open the library: the reason is shown (damaged file, password protected, …) |
 | Scanned pages say "needs OCR" | Install Tesseract (step 4) and re-index |
 | Search says "Keyword only" | The search model was not downloaded: run `setup.bat` again |

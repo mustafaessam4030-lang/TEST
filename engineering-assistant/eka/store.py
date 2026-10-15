@@ -110,6 +110,9 @@ class Store:
             if name not in columns:
                 self._conn.execute("ALTER TABLE documents ADD COLUMN {0} TEXT NOT NULL DEFAULT ''".format(name))
         self._conn.execute("CREATE INDEX IF NOT EXISTS documents_source ON documents(source)")
+        # who started a conversation (a browser's id), so teammates sharing one server each see their own
+        if "owner" not in {r[1] for r in self._conn.execute("PRAGMA table_info(conversations)")}:
+            self._conn.execute("ALTER TABLE conversations ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
 
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,11 +273,11 @@ class Store:
 
     # ── conversations ──
     def save_turn(self, conversation_id: str, message_id: str, question: str, answer: dict,
-                  retrieval_query: str, status: str, doc_ids: list[str]):
+                  retrieval_query: str, status: str, doc_ids: list[str], owner: str = ""):
         now = time.time()
         with self.transaction() as conn:
-            conn.execute("INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                         (conversation_id, _title(question), now, now))
+            conn.execute("INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at, owner) VALUES (?, ?, ?, ?, ?)",
+                         (conversation_id, _title(question), now, now, owner))
             conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id))
             conn.execute(
                 "INSERT INTO messages (id, conversation_id, question, answer, retrieval_query, status, doc_ids, created_at)"
@@ -282,17 +285,19 @@ class Store:
                 (message_id, conversation_id, question, json.dumps(answer), retrieval_query, status,
                  json.dumps(doc_ids), now))
 
-    def conversations(self, query: str = "", limit: int = 200) -> list[dict]:
+    def conversations(self, query: str = "", limit: int = 200, owner: str = "") -> list[dict]:
+        """The conversations ``owner`` may see: their own, and those with no owner (from before sharing)."""
+        mine = "(c.owner = ? OR c.owner = '')"
         if query:
             like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
             return self._all(
                 "SELECT c.*, COUNT(m.id) AS turns FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id"
-                " WHERE c.title LIKE ? ESCAPE '\\' OR c.id IN (SELECT conversation_id FROM messages"
-                " WHERE question LIKE ? ESCAPE '\\') GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?",
-                (like, like, limit))
+                " WHERE " + mine + " AND (c.title LIKE ? ESCAPE '\\' OR c.id IN (SELECT conversation_id FROM messages"
+                " WHERE question LIKE ? ESCAPE '\\')) GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?",
+                (owner, like, like, limit))
         return self._all(
             "SELECT c.*, COUNT(m.id) AS turns FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id"
-            " GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?", (limit,))
+            " WHERE " + mine + " GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?", (owner, limit))
 
     def conversation(self, conversation_id: str) -> dict | None:
         return self._one("SELECT * FROM conversations WHERE id = ?", (conversation_id,))

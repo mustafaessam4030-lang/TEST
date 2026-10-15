@@ -40,8 +40,9 @@ def main():
     if settings.open_browser:
         threading.Timer(2.0, lambda: webbrowser.open(url)).start()
     try:
+        # no per-request access log: page and PDF links can carry the team key as ?token=
         uvicorn.run(create_app(settings), host=settings.host, port=settings.port,
-                    log_level=settings.log_level.lower())
+                    log_level=settings.log_level.lower(), access_log=False)
     finally:
         try:
             if pid_file.read_text().strip() == str(os.getpid()):

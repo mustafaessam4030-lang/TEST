@@ -36,7 +36,7 @@ engineering-assistant/
 
 ## Packaged release (Windows, Linux, macOS)
 
-The distributable zip has double-click launchers (`setup.bat`, `start.bat`, `stop.bat`), a `config.env`, a `pdfs/` folder that is indexed automatically, and the bge-small search model, so nothing is downloaded at run time. Instructions for end users: [START_HERE.md](START_HERE.md). Build it with:
+The distributable zip has double-click launchers (`setup.bat`, `start.bat`, `share.bat`, `stop.bat`), a `config.env`, a `pdfs/` folder that is indexed automatically, and the bge-small search model, so nothing is downloaded at run time. Instructions for end users: [START_HERE.md](START_HERE.md). Build it with:
 
 ```sh
 # --wheels: optional offline packages for Windows; --split-mb: optional, no zip over ~25 MB (model shipped in parts)
@@ -44,6 +44,16 @@ python scripts/build_release.py --model-cache data/models --wheels win_amd64:3.1
 ```
 
 Output goes to `dist/`. With `--no-model` the zip is about 2 MB, and setup downloads the model instead (`python -m eka.fetch_model`, 65 MB). This is the single-file delivery. With `--split-mb`, the model is shipped as `model-partXofY` zips. Setup joins them and checks the SHA-256 (`python -m eka.assemble`). `python -m eka.check` (or `check.bat`) checks an installation.
+
+## Sharing with a team
+
+`share.bat` / `share.sh` (`python -m eka.share`) runs the same server on the network (`0.0.0.0`) with a team key, and
+prints a link such as `http://ENG-PC-07:8765/#key=…` for colleagues' browsers. The key is `EKA_API_TOKEN`, or one is
+created once in `data/team-key.txt`. It travels in the URL fragment, which browsers never send, and the browser keeps
+it and removes it from the address bar. Uvicorn's per-request access log is off, because page and PDF links can carry
+the key as `?token=`. Each browser sends an id (`X-EKA-Client`); conversations are stored under it, and other browsers
+get 404 for them. Conversations created before this (no owner) stay visible to everyone. See START_HERE.md for the
+steps, firewall and network notes.
 
 ## PDF folder (phase 1) and SharePoint (phase 2)
 
@@ -273,11 +283,13 @@ Results and methodology: [docs/EVALUATION.md](docs/EVALUATION.md). Design: [docs
 - **Layout**: two-column pages are handled by a geometric heuristic. Complex layouts (side-bars, callouts over images) may be read out of order.
 - **Diagrams and images** are not interpreted.
 - **Conflict detection** compares numeric values across documents. A disagreement expressed only in words is not flagged.
-- **Access control** is a single shared token plus per-question document scoping. There are no per-user document permissions yet.
-- **Conversation history** is stored per server, not per user: anyone with access to the server sees the same history.
+- **Access control** is a single shared team key plus per-question document scoping. There are no user accounts or
+  per-user document permissions yet.
+- **Conversation history** is kept per browser (an id the browser sends), not per signed-in user. It separates
+  teammates on a shared server, but it is not authentication. Clearing the browser's storage starts a new list.
 - **The UI** was verified in Chromium (desktop, tablet and phone emulation) only. Safari, Firefox, real touch devices and screen readers have not been tested.
 - **Streaming** carries real pipeline stages, not tokens. Answers are shown only after citation validation, so a model's draft is never displayed before it has been checked.
-- **Ollama/Qwen generation has not been evaluated** with a real model.
+- **Ollama/Qwen generation** was tested with qwen2.5:3b-instruct (see docs/LUMA.md), not with the recommended 7B model.
 - The evaluation uses small synthetic documents written for this project. Expect lower numbers on real manuals. Run `scripts/run_eval.py` with your own question set before relying on it.
 
 ## Snowflake

@@ -218,8 +218,9 @@ class AnswerEngine(ModesMixin):
             if self.settings.debug_stage_delay_ms > 0:
                 time.sleep(self.settings.debug_stage_delay_ms / 1000)
 
-    def commit(self, answer: dict):
-        """Record a delivered answer: conversation memory, persistent history, query log."""
+    def commit(self, answer: dict, owner: str = ""):
+        """Record a delivered answer: conversation memory, persistent history (under ``owner``, the
+        browser that asked), query log."""
         pending = self._pending.pop(answer["message_id"], None)
         if pending is None:
             return
@@ -227,7 +228,7 @@ class AnswerEngine(ModesMixin):
         self.conversations.add(answer["conversation_id"], turn)
         if self.store is not None and turn.question.strip():
             self.store.save_turn(answer["conversation_id"], answer["message_id"], turn.question, answer,
-                                 turn.retrieval_query, turn.status, turn.doc_ids)
+                                 turn.retrieval_query, turn.status, turn.doc_ids, owner)
         if r.intent == "question":
             self._log(answer, r)
 

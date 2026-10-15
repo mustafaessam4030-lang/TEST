@@ -21,6 +21,7 @@ import asyncio
 import hmac
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -38,6 +39,7 @@ from .service import Assistant
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
+CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")   # a browser's id, sent as X-EKA-Client
 PUBLIC_DOC_FIELDS = ("id", "filename", "title", "doc_number", "revision", "revision_date", "equipment",
                      "doc_type", "page_count", "bytes", "status", "error", "progress_done", "progress_total",
                      "stage", "superseded_by", "source", "created_at", "updated_at")
@@ -214,6 +216,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "the page could not be rendered: {0}".format(exc)) from exc
         return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
 
+    def client(request: Request) -> str:
+        """The asking browser's id (X-EKA-Client). It keeps each teammate's history separate on a shared
+        server. It is a label, not a login: the team key (EKA_API_TOKEN) is what controls access."""
+        value = request.headers.get("x-eka-client", "")
+        return value if CLIENT_ID.fullmatch(value) else ""
+
+    def own(a: Assistant, conversation_id: str | None, request: Request, missing_ok: bool = False):
+        """404 unless this browser may use the conversation (its own, or one from before sharing)."""
+        if not conversation_id:
+            return
+        conv = a.store.conversation(conversation_id)
+        if conv is None:
+            if missing_ok:
+                return
+            raise HTTPException(404, "conversation not found")
+        if conv.get("owner") and conv["owner"] != client(request):
+            raise HTTPException(404, "conversation not found")
+
     def apply_retry(a: Assistant, body: ChatRequest):
         if not body.retry_of:
             return
@@ -226,8 +246,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/chat")
     async def chat(body: ChatRequest, request: Request):
         a = assistant(request)
+        own(a, body.conversation_id, request, missing_ok=True)
         apply_retry(a, body)
-        return await run_in_threadpool(a.engine.ask, body.message, body.conversation_id, body.document_ids)
+        out = await run_in_threadpool(a.engine.ask, body.message, body.conversation_id, body.document_ids,
+                                      persist=False)
+        a.engine.commit(out, client(request))
+        return out
 
     @app.post("/api/chat/stream")
     async def chat_stream(body: ChatRequest, request: Request):
@@ -237,7 +261,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         stops the response (disconnects) leaves nothing in the history.
         """
         a = assistant(request)
+        own(a, body.conversation_id, request, missing_ok=True)
         apply_retry(a, body)
+        owner = client(request)
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
 
@@ -261,7 +287,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 yield "event: {0}\ndata: {1}\n\n".format(kind, json.dumps(data))
                 if kind == "answer":
                     if not await request.is_disconnected():
-                        a.engine.commit(data)
+                        a.engine.commit(data, owner)
                     return
                 if kind == "error":
                     return
@@ -287,14 +313,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ── conversation history ──
     @app.get("/api/conversations")
     def conversations(request: Request, q: str = ""):
-        return {"conversations": assistant(request).store.conversations(q.strip()[:200])}
+        return {"conversations": assistant(request).store.conversations(q.strip()[:200], owner=client(request))}
 
     @app.get("/api/conversations/{conversation_id}")
     def conversation(conversation_id: str, request: Request):
         a = assistant(request)
+        own(a, conversation_id, request)
         conv = a.store.conversation(conversation_id)
-        if conv is None:
-            raise HTTPException(404, "conversation not found")
         turns = [{"message_id": m["id"], "question": m["question"], "answer": json.loads(m["answer"]),
                   "feedback": m["feedback"], "created_at": m["created_at"]} for m in a.store.messages(conversation_id)]
         return {"conversation": conv, "turns": turns}
@@ -302,16 +327,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.patch("/api/conversations/{conversation_id}")
     def rename(conversation_id: str, body: Rename, request: Request):
         a = assistant(request)
-        if a.store.conversation(conversation_id) is None:
-            raise HTTPException(404, "conversation not found")
+        own(a, conversation_id, request)
         a.store.rename_conversation(conversation_id, body.title)
         return {"conversation": a.store.conversation(conversation_id)}
 
     @app.delete("/api/conversations/{conversation_id}")
     def delete_conversation(conversation_id: str, request: Request):
         a = assistant(request)
-        if a.store.conversation(conversation_id) is None:
-            raise HTTPException(404, "conversation not found")
+        own(a, conversation_id, request)
         a.store.delete_conversation(conversation_id)
         a.conversations.forget(conversation_id)
         return {"deleted": conversation_id}
@@ -319,8 +342,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/messages/{message_id}/feedback")
     def feedback(message_id: str, body: Feedback, request: Request):
         a = assistant(request)
-        if a.store.message(message_id) is None:
+        msg = a.store.message(message_id)
+        if msg is None:
             raise HTTPException(404, "message not found")
+        own(a, msg["conversation_id"], request)
         a.store.set_feedback(message_id, body.value)
         return {"message_id": message_id, "feedback": body.value}
 
