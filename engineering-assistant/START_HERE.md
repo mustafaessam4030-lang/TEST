@@ -156,6 +156,8 @@ Real environment variables override `config.env`. Restart after a change.
 | Problem | Fix |
 |---|---|
 | "Python 3.10 or newer was not found" | Install Python and tick "Add python.exe to PATH"; open a new window |
+| Setup says "semantic search could not be installed" (e.g. Python 3.15) | Luma still works, with keyword search. For better search install Python 3.13, delete `.venv`, run `setup.bat` again |
+| `start.bat` says `No module named 'uvicorn'` | Setup did not finish. In this folder run `.venv\Scripts\python.exe -m pip install -r requirements.txt`, then `start.bat` |
 | Setup fails downloading packages or the model | Company proxy: run `set HTTPS_PROXY=http://proxy:port`, then `setup.bat` in the same window |
 | "Port 8765 already in use" | It is already running (open the browser), or change `EKA_PORT` |
 | Colleagues cannot open the team link | Same network or VPN? Try the IP link; allow Python in Windows Firewall (Private networks) or ask IT to open port 8765 |
