@@ -246,14 +246,27 @@ class AnswerEngine(ModesMixin):
         n = len(self._ready_docs())
         library = ("{0} document{1} indexed".format(n, "" if n == 1 else "s") if n
                    else "no documents indexed yet, so upload a PDF to get started")
+        # what to do next, said plainly: with an empty library, how to give Luma something to read
+        nxt = ("Ask me about a specification, a procedure or a part number, or say \"summarize\" and a manual's name."
+               if n else "I don't have any documents yet: put PDFs in the pdfs folder or press Upload documents, "
+                         "and I'll read them within a few seconds.")
         text = {
             "greeting": "Hi, I'm Luma, Mantrac's engineering assistant. I can look up specifications, procedures "
                         "and warnings, compare equipment, summarize manuals and show figures from your technical "
                         "library ({0}). What are you working on?",
-            "how_are_you": "I'm doing well, thanks for asking. I'm Luma, Mantrac's engineering assistant: I can "
-                           "look up specifications and procedures, compare equipment and summarize manuals from "
-                           "your technical library ({0}). What can I help you with?",
+            "how_are_you": "I'm doing well, thanks for asking, and ready to help. " + nxt,
             "thanks": "You're welcome. Anything else you'd like to check?",
+            "ack": "Great. Whenever you're ready, I'm here. " + nxt,
+            "help": "Of course, happy to help. " + ("Tell me what you're working on, the machine and what you need "
+                    "(a value, a procedure, a warning), and I'll find it in the manuals and show you the page. "
+                    "For example: \"What is the rated pressure of the HX-200?\"" if n else nxt +
+                    " Then ask me anything about them, for example a rated pressure, a torque value or a "
+                    "maintenance procedure."),
+            "identity": "I'm Luma, Mantrac's engineering assistant, an AI that reads your technical documents. I'm not "
+                        "a person, but I'll answer like a colleague would, and I'll always show you the page an answer "
+                        "comes from. " + nxt,
+            "praise": "Thank you, that's kind of you! What else can I look up for you?",
+            "sorry": "No problem at all. What would you like to check?",
             "bye": "Goodbye. Your library stays indexed for next time.",
             "capabilities": "I'm Luma, Mantrac's engineering assistant. I can answer specification questions, walk "
                             "through procedures, compare equipment or document revisions, summarize a manual and "
@@ -298,8 +311,9 @@ class AnswerEngine(ModesMixin):
         if doc_ids:
             doc_ids = [d for d in doc_ids if d in docs]
         if not any(d["status"] in cite.SEARCHABLE for d in docs.values()):
-            out = self._base("insufficient_evidence", "There are no indexed documents to search yet. "
-                             "Upload a PDF and wait until it shows Ready, then ask again.")
+            out = self._base("insufficient_evidence", "I'd love to help with that, but I don't have any documents to "
+                             "look in yet. Put your PDFs in the pdfs folder (or press Upload documents) and I'll "
+                             "read them within a few seconds, then ask me again.")
             return out
         # Modes that work on the library or on the previous answer rather than a fresh search.
         special = None

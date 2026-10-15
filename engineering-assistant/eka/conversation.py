@@ -24,6 +24,18 @@ THANKS = re.compile(r"^\s*(thanks|thank you|thx|cheers|great,? thanks|perfect|ok
 BYE = re.compile(r"^\s*(bye|goodbye|see you|that's all|thats all)\b[\s,!.]*$", re.I)
 CAPABILITIES = re.compile(r"^\s*(what can you do|who are you|what are you|help|how do (i|you) use (this|you))\b[\s?!.]*$", re.I)
 LIBRARY = re.compile(r"\b(what|which|list)\b.*\b(documents?|files?|pdfs?|manuals?)\b.*\b(have|indexed|uploaded|available|loaded|know)\b", re.I)
+# everyday conversation, answered like a colleague would
+WELLBEING = re.compile(r"^\s*((are|r) (you|u) (good|ok(ay)?|fine|alright|there|awake|alive|working|ready|online)|"
+                       r"(you|u) (good|ok(ay)?|there)|how('?s| is) (it going|your day|everything)|what'?s up|sup|wassup)\b[\s?!.]*$", re.I)
+ACK = re.compile(r"^\s*(ok(ay)?|k|kk|cool|great|nice|good|fine|alright|all right|got it|sure|yes|yeah|yep|no|nope|"
+                 r"understood|i see|makes sense|right|hmm+|ah+|oh)\b[\s,!.]*$", re.I)
+NEED_HELP = re.compile(r"^\s*((i )?(need|want) (some )?help|help( me)?( please)?|please help|can you help( me)?|"
+                       r"could you help( me)?|i('m| am) (stuck|lost|confused)|where do i start|how do i start)\b[\s?!.]*$", re.I)
+IDENTITY = re.compile(r"^\s*(what'?s your name|what is your name|your name|who (made|built|created) you|"
+                      r"are you (a )?(human|bot|robot|ai|real))\b[\s?!.]*$", re.I)
+PRAISE = re.compile(r"^\s*(good job|well done|nice work|great work|amazing|awesome|excellent|you('re| are) (great|good|"
+                    r"amazing|awesome|smart|helpful))\b[\s,!.]*$", re.I)
+SORRY = re.compile(r"^\s*(sorry|my bad|oops)\b[\s,!.]*$", re.I)
 NOT_FOUND_COMPLAINT = re.compile(r"^\s*(i (can(no|')t|could(n't| not)) find (the|an|this|that)? ?answer|that'?s not (right|it)|not helpful)\b", re.I)
 
 FOLLOW_UP = re.compile(
@@ -123,6 +135,10 @@ def route(message: str, history: list[Turn]) -> Route:
     text = normalize(message)
     if THANKS.match(text):
         return Route("smalltalk", "thanks")
+    for pattern, kind in ((WELLBEING, "how_are_you"), (ACK, "ack"), (NEED_HELP, "help"), (IDENTITY, "identity"),
+                          (PRAISE, "praise"), (SORRY, "sorry")):
+        if pattern.match(text):
+            return Route("smalltalk", kind)
     if BYE.match(text):
         return Route("smalltalk", "bye")
     if CAPABILITIES.match(text):
