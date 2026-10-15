@@ -69,14 +69,29 @@ with sync_playwright() as p:
           any("found only by the general search" in x for x in LOG), LOG[-3:])
     check("Second lookup: the box wait is the short one (the other page steps take the same time)",
           second is not None and first_s - second_s >= 5, (round(first_s, 1), round(second_s, 1), LOG[-6:]))
+    # The named box shows up only after the wait ran out (a slow page): the
+    # final search finds it by name, so the portal is NOT marked for the short
+    # wait — the general search was not what found it.
     A._CATCHALL_BOX_OK.clear()
-    gc = dict(config, label="Stub human", needs_person=True)
-    try:
-        A.open_portal(page, gc, "S330000001")
-    except Exception:
-        pass
-    check("A portal with a person's security step is never remembered this way",
-          "Stub human" not in A._CATCHALL_BOX_OK)
+    A.PORTAL_FORM_READY_MS = 500
+    real_find, state = A.find_portal_input, {"late": False}
+
+    def slow_named_box(page_, placeholder, strict=False, **k):
+        if strict and not state["late"]:
+            return None
+        return page_.locator("input").first
+    A.find_portal_input = slow_named_box
+    _wait = A.wait_for_any
+
+    def wait_then_render(*a, **k):
+        found = _wait(*a, **k)
+        state["late"] = True              # the box renders just after the deadline
+        return found
+    A.wait_for_any = wait_then_render
+    A.open_portal(page, dict(config, label="Stub slow"), "MEDU1111111")
+    A.find_portal_input, A.wait_for_any = real_find, _wait
+    check("A named box that was merely slow is not mistaken for a general-search portal",
+          not any(k[0] == "Stub slow" for k in A._CATCHALL_BOX_OK), A._CATCHALL_BOX_OK)
     browser.close()
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))

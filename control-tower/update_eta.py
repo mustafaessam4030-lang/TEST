@@ -4662,7 +4662,11 @@ def _click_dhl_tab(page, tab, name):
              ("Escape, scroll and click", lambda: (page.keyboard.press("Escape"),
                                                   tab.scroll_into_view_if_needed(timeout=3000),
                                                   tab.click(timeout=6000))),
-             ("direct click", lambda: tab.evaluate("el => el.click()")))
+             # Only on a real tab or button: never a heading or link that
+             # merely carries the same words.
+             ("direct click", lambda: tab.evaluate(
+                 "el => { const t = el.closest('[role=tab],[role=button],button');"
+                 " if (!t) throw new Error('not a tab'); t.click(); }")))
     last = None
     for label, attempt in tries:
         try:
@@ -8462,7 +8466,7 @@ def open_portal(page, config, tracking_number):
                                         label=config.get("box_label"),
                                         css=config.get("box_css"))
               is not None)],
-            CATCHALL_KNOWN_WAIT_MS if config["label"] in _CATCHALL_BOX_OK
+            CATCHALL_KNOWN_WAIT_MS if (config["label"], url) in _CATCHALL_BOX_OK
             else PORTAL_FORM_READY_MS,
             reason="the {0} air waybill box".format(config["label"]))
         # A page with a security-code box never gets the catch-all: "any
@@ -8474,8 +8478,11 @@ def open_portal(page, config, tracking_number):
                                   css=config.get("box_css"))
         if field is not None:
             if strict_found is None and not config.get("needs_person") and \
-                    config["label"] not in _CATCHALL_BOX_OK:
-                _CATCHALL_BOX_OK.add(config["label"])
+                    (config["label"], url) not in _CATCHALL_BOX_OK and \
+                    find_portal_input(page, config["placeholder"], strict=True, timeout_ms=250,
+                                      label=config.get("box_label"),
+                                      css=config.get("box_css")) is None:
+                _CATCHALL_BOX_OK.add((config["label"], url))
                 write_log("{0}: its box was found only by the general search; later "
                           "lookups this run wait {1}s for it, not {2}s.".format(
                               config["label"], CATCHALL_KNOWN_WAIT_MS // 1000,
