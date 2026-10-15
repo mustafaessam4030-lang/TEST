@@ -88,7 +88,7 @@ class AnswerEngine(ModesMixin):
     # ── entry point ──
     def ask(self, message: str, conversation_id: str | None = None, doc_ids: list[str] | None = None,
             progress=None, persist: bool = True, use_generator: bool = True) -> dict:
-        """Answer one message. ``progress(text)`` receives real pipeline stages for streaming.
+        """Answer one message. ``progress(text, phase, docs)`` receives real pipeline stages for streaming.
 
         With ``persist=False`` nothing is recorded until ``commit(answer)`` is called, so a
         response the user stopped can be discarded.
@@ -203,12 +203,14 @@ class AnswerEngine(ModesMixin):
     # each is sent only when that step actually starts.
     PHASES = ("understanding", "searching", "reading", "analyzing", "writing", "checking")
 
-    def _progress(self, text: str, phase: str):
+    def _progress(self, text: str, phase: str, docs: list | None = None):
+        """Report a pipeline step that has just started. ``docs`` names the documents the step opened
+        (titles with revisions), so the UI can show exactly what was read."""
         callback = getattr(self._local, "progress", None)
         if callback:
             try:
                 try:
-                    callback(text, phase)
+                    callback(text, phase, docs or [])
                 except TypeError:          # an older callback that takes only the text
                     callback(text)
             except Exception:  # a disconnected stream must not break answering
@@ -334,7 +336,8 @@ class AnswerEngine(ModesMixin):
         found = {c.chunk.doc_id for c in result.selected}
         self._progress("Reading {0} passage{1} from {2} document{3}".format(
             len(result.selected), "" if len(result.selected) == 1 else "s", len(found), "" if len(found) == 1 else "s")
-            if result.selected else "No passage matched closely enough", "reading")
+            if result.selected else "No passage matched closely enough", "reading",
+            [_doc_label(docs[d]) for d in dict.fromkeys(c.chunk.doc_id for c in result.selected) if d in docs])
         draft = self._extractive(r, result, docs)
         extra: dict = {}
         if draft.status == "answered":
@@ -843,6 +846,12 @@ class AnswerEngine(ModesMixin):
         except OSError as exc:
             log.warning("could not write query log: %s", exc)
 
+
+
+def _doc_label(doc: dict) -> str:
+    """A document as the UI names it: its title (or file name) and revision."""
+    name = doc.get("title") or doc.get("filename") or "Document"
+    return name + (" Rev " + doc["revision"] if doc.get("revision") else "")
 
 
 def describe_source(claim: dict, chunk) -> None:

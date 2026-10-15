@@ -217,6 +217,34 @@ The server streams a `stage` event, with a `phase`, at each real step of the pip
 * **No streaming progress.** WRITING lasts as long as the model takes. There is no token-by-token
   progress, because the answer is validated as a whole before it is shown.
 
+## The chat
+
+| | |
+|---|---|
+| While Luma works | ![Working](screenshots/chat/working-dark.jpg) |
+| The answer | ![Answer, dark](screenshots/chat/answer-dark.jpg) ![Answer, light](screenshots/chat/answer-light.jpg) |
+| Its steps, opened | ![Steps](screenshots/chat/steps-dark.jpg) |
+| Limited to one document | ![Composer](screenshots/chat/composer-dark.jpg) |
+| Phone | ![Phone](screenshots/chat/phone-dark.jpg) |
+
+* **Activity trail.** While Luma works, each step appears as the server starts it: understanding,
+  searching, reading, analyzing, writing and checking. The current step has a turning ring. The reading step
+  shows a chip for each document whose passages were read; the server sends these names, they are not
+  guessed. There is no "thinking" text: the models used do not expose their reasoning, so none is shown.
+* **One line above the answer.** When the answer arrives, the trail folds into "Searched 4 documents · used 1 ·
+  1.2 s". Opened, it lists each step with how long it took (measured in the browser) and the retrieval details:
+  the documents used, the answer method and the passage scores. Reopened conversations show the retrieval
+  details; step timings exist only for answers given in the current session.
+* **Sources.** Under the answer, a numbered list matches the citation chips. Each row opens its page, the icon
+  opens the PDF, and the quoted passage sits underneath. Lists longer than three fold, with "Show all".
+* **Composer.** One card holds everything. Documents the question is limited to appear as removable chips.
+  The toolbar has "+" (add a PDF to the library), the document scope, the model that will write the answer
+  (or "Quoted answers") and Send/Stop. A question limited to documents shows them above it.
+* **Top bar.** The conversation title opens Rename and Delete. "Private" means the documents and
+  conversations are stored on this Luma server.
+* **Dark theme.** Neutral graphite with indigo accents, as in the reference design. The light theme keeps the
+  same layout.
+
 ## Interface
 
 * Built on the ATLAS design system's structure and tokens (see [UI.md](UI.md)), with a Luma layer in
@@ -237,14 +265,14 @@ The server streams a `stage` event, with a `phase`, at each real step of the pip
 
 ## Verification
 
-* `python -m pytest`: **135 passed**, with `EKA_TEST_MODEL_DIR` (real embeddings) and
-  `EKA_TEST_OLLAMA_MODEL=qwen2.5:3b-instruct` (real LLM). Without them, 128 pass and 7 are skipped.
+* `python -m pytest`: **136 passed**, with `EKA_TEST_MODEL_DIR` (real embeddings) and
+  `EKA_TEST_OLLAMA_MODEL=qwen2.5:3b-instruct` (real LLM). Without them, 129 pass and 7 are skipped.
   `tests/test_luma.py` holds 23 tests for:
   * natural answers that keep exact values (checked over every table row in the library);
   * conditions, ambiguity and abstention;
   * comparisons, summaries, revision differences and "where";
   * follow-ups, figures, the figure API and the general-claim validation.
-* `tests/ui/run.sh`: **144/144 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
+* `tests/ui/run.sh`: **152/152 browser checks pass** (Chromium; desktop, tablet and phone; light and dark;
   reduced motion). These include the 24 Luma checks and the mascot checks below.
 * `scripts/run_eval.py`: behaviour is unchanged from the previous release in all four configurations (see
   [EVALUATION.md](EVALUATION.md)). There are 0 unsupported claims and 0 invalid citations.

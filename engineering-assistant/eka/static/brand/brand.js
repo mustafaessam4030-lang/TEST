@@ -8,5 +8,5 @@ export const BRAND = {
   org: "Mantrac",
   orgLogo: "brand/org-logo.png",
   mark: "luma/luma-icon.svg",
-  themeColor: { light: "#F6F7FB", dark: "#0A0F1C" },
+  themeColor: { light: "#F6F7FB", dark: "#161618" },
 };

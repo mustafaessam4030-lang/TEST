@@ -118,6 +118,15 @@ def test_stream_phases_follow_the_real_pipeline(client):
                                                      "checking"}
 
 
+def test_reading_stage_names_the_documents_actually_read(client):
+    """The UI shows these as "Read" chips: they must be the documents the cited passages came from."""
+    events = stream(client, message="What is the oil capacity of the CV-90?")
+    reading = next(d for k, d in events if k == "stage" and d["phase"] == "reading")
+    cited = {c["title"] + (" Rev " + c["revision"] if c.get("revision") else "") for c in events[-1][1]["citations"]}
+    assert reading["docs"] and cited <= set(reading["docs"])
+    assert all(d["docs"] == [] for k, d in events if k == "stage" and d["phase"] != "reading")
+
+
 def test_stage_delay_is_off_by_default(settings):
     assert settings.debug_stage_delay_ms == 0
 

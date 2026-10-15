@@ -18,19 +18,19 @@
   --chart-1:#4351D8; --chart-2:#0E9F8E; --chart-3:#C2410C; --chart-4:#7C3AED;
 }
 :root[data-theme="dark"]{
-  --bg:#090E1A; --surface:#0E1525; --surface-2:#0B1120; --surface-3:#172036;
-  --ink:#EDF1FA; --mid:#A8B3C8; --faint:#7E8AA2;
+  --bg:#161618; --surface:#1E1E20; --surface-2:#1A1A1C; --surface-3:#2A2A2D;
+  --ink:#ECECEF; --mid:#ABABB3; --faint:#8A8A93;
   --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.05); --line-hi:rgba(255,255,255,.14);
   --brand:#8E9BFF; --brand-hi:#7381F8; --brand-wash:rgba(142,155,255,.13);
   --navy:#C9D1FF;
-  --solid:#5666EE; --on-solid:#FFFFFF;
+  --solid:#5B5FEF; --on-solid:#FFFFFF;
   --vio:#9AA6FF; --vio-wash:rgba(154,166,255,.12); --vio-line:rgba(154,166,255,.32);
   --nav-on:rgba(255,255,255,.08); --on-nav:#FFFFFF;
   --card-edge:rgba(255,255,255,.07);
   --shadow:0 1px 2px rgba(0,0,0,.45);
   --lift:0 1px 2px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.06);
   --float:0 1px 2px rgba(0,0,0,.4),0 14px 36px rgba(0,0,0,.35);
-  --ch-me:#1A2442; --ch-me-ink:#EDF1FA;
+  --ch-me:#323236; --ch-me-ink:#ECECEF;
   --gen:#5CC8DD; --gen-wash:rgba(92,200,221,.10);
   --chart-1:#8E9BFF; --chart-2:#3DD6C2; --chart-3:#FB923C; --chart-4:#C4A5FF;
 }

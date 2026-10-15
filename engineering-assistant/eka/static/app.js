@@ -243,8 +243,8 @@ async function loadHealth() {
   try {
     S.health = await api("/api/health");
   } catch (e) {
-    $("modelTxt").textContent = e.message;
-    $("modelRow").dataset.s = "bad";
+    $("modelTxt").textContent = $("modelPillTxt").textContent = e.message;
+    $("modelRow").dataset.s = $("modelPill").dataset.s = "bad";
     return;
   }
   const hl = S.health;
@@ -256,8 +256,11 @@ async function loadHealth() {
     $("orgLogo").alt = BRAND.org;
     $("orgLogo").hidden = false;
   }
-  $("modelRow").dataset.s = hl.generator_ready === false ? "bad" : hl.semantic_search ? "ok" : "kw";
+  $("modelRow").dataset.s = $("modelPill").dataset.s = hl.generator_ready === false ? "bad" : hl.semantic_search ? "ok" : "kw";
   $("modelRow").title = hl.retrieval_mode;
+  // the composer names what will write the answer: the local model, or quoted answers without one
+  $("modelPillTxt").textContent = hl.generator === "extractive" ? "Quoted answers" : hl.llm_model || hl.generator;
+  $("modelPill").title = `Answers: ${answers}. Retrieval: ${hl.retrieval_mode}`;
   if (!$("viewLib").hidden) renderSources();
 }
 function fillSettings() {
@@ -296,6 +299,7 @@ function openSettings() {
 }
 $("openSettings").addEventListener("click", openSettings);
 $("modelRow").addEventListener("click", openSettings);
+$("modelPill").addEventListener("click", openSettings);
 document.querySelectorAll("[data-close-dialog]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
 $("settings").addEventListener("click", (e) => { if (e.target === $("settings")) $("settings").close(); });
 
@@ -329,6 +333,7 @@ function showView(which) {
   $("navChat").classList.toggle("on", which === "chat");
   $("navLib").classList.toggle("on", which === "lib");
   $("scopeBtn").hidden = which !== "chat";
+  $("titleBtn").hidden = which !== "chat" || !S.cid;
   $("title").textContent = which === "lib" ? "Document library" : (currentTitle() || "New chat");
   if (which === "lib") renderLibrary();
   else setTimeout(() => !phone() && $("q").focus({ preventScroll: true }), 0);
@@ -359,6 +364,7 @@ function dayGroup(ts) {
 function renderHistory() {
   const box = $("hist");
   box.replaceChildren();
+  $("titleBtn").hidden = !S.cid || !$("viewLib").hidden;
   if (!S.convs.length) {
     box.append(h("div", "hist-empty", $("histQ").value.trim() ? "No conversations match." : "Your conversations will appear here."));
     return;
@@ -397,6 +403,12 @@ function convMenu(owner, conv, link) {
     pop.append(rename, del);
   }, "right");
 }
+// the conversation's title in the top bar opens the same menu as its row in the sidebar
+$("titleBtn").addEventListener("click", () => {
+  const conv = S.convs.find((c) => c.id === S.cid);
+  if (conv) convMenu($("titleBtn"), conv, $("title"));
+});
+$("title").addEventListener("click", () => { if (!$("titleBtn").hidden) $("titleBtn").click(); });
 function renameInline(conv, link) {
   const input = h("input", "in");
   input.value = conv.title;
@@ -414,6 +426,7 @@ function renameInline(conv, link) {
       catch (e) { toast(e.message); }
     }
     await loadConversations();
+    if (input.isConnected) input.replaceWith(link);    // the top bar keeps its own title element
     if (conv.id === S.cid) $("title").textContent = currentTitle() || "New chat";
   };
   input.addEventListener("keydown", (e) => {
@@ -507,10 +520,16 @@ function showFrom(el, since) {
 }
 function clearLog() { placeSeq++; log.replaceChildren(); $("jump").hidden = true; S.followScroll = true; }
 function setEmpty(on) { app.classList.toggle("is-empty", on); }
-function addUser(text, created) {
+function addUser(text, created, context) {
   const m = h("div", "msg me");
   const b = h("div", "bub");
   rich(text, b);
+  // what the question was limited to, as the reader chose it
+  if (context && context.length) {
+    const c = h("div", "me-ctx");
+    context.forEach((t) => { const k = h("span", "me-k"); k.append(icon("page"), docName(t)); c.append(k); });
+    m.append(c);
+  }
   m.append(b);
   if (created) m.dataset.created = created;
   log.append(m);
@@ -525,6 +544,58 @@ const PHASE_STATE = {
   understanding: "thinking", searching: "searching", reading: "reading",
   analyzing: "analyzing", writing: "writing", checking: "analyzing",
 };
+
+// ── the activity trail: the request's real steps, as the server reported them ─
+const PHASE_ICON = { waiting: "up", understanding: "spark", searching: "search", reading: "page",
+  analyzing: "chart", writing: "edit", checking: "shield" };
+const fmtDur = (ms) => (ms < 1000 ? Math.max(1, Math.round(ms)) + " ms" : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + " s");
+// a document's name shortens from its end, but its revision always stays readable (Rev A vs Rev B)
+function docName(title, cls) {
+  const [, name, rev] = title.match(/^(.*?)( Rev \S+)?$/);
+  const s = h("span", cls);
+  s.append(h("span", "dn", name));
+  if (rev) s.append(h("span", "dr", rev));
+  return s;
+}
+function docChip(title) {
+  const c = h("span", "tr-doc");
+  c.append(icon("page"), docName(title));
+  return c;
+}
+function stepRow(step, dur) {
+  const row = h("div", "tr-s");
+  row.dataset.phase = step.phase;
+  const ic = h("span", "tr-i");
+  ic.append(icon(PHASE_ICON[step.phase] || "spark"), h("i", "tr-spin"));
+  row.append(ic, h("span", "tr-t", step.text));
+  if (step.docs && step.docs.length) {
+    const d = h("span", "tr-docs");
+    step.docs.forEach((t) => d.append(docChip(t)));
+    row.append(d);
+  }
+  if (dur !== undefined) row.append(h("span", "tr-d", fmtDur(dur)));
+  return row;
+}
+class Trail {
+  constructor() { this.el = h("div", "trail"); this.steps = []; }
+  add(text, phase, docs) {
+    const now = performance.now();
+    // "Sending" is the browser waiting for the server, not a step of the answer: it goes once one starts
+    if (this.steps.length === 1 && this.steps[0].phase === "waiting") { this.steps = []; this.el.replaceChildren(); }
+    const prev = this.el.querySelector(".tr-s.now");
+    if (prev) { prev.classList.remove("now"); prev.querySelector(".th-label")?.classList.remove("th-label"); }
+    const step = { text, phase, docs: docs || [], at: now };
+    this.steps.push(step);
+    const row = stepRow(step);
+    row.classList.add("now");
+    row.querySelector(".tr-t").classList.add("th-label");
+    this.el.append(row);
+  }
+  // each step lasted until the next began; the last until the answer arrived
+  timed(end) {
+    return this.steps.filter((s) => s.phase !== "waiting").map((s, i, all) => ({ ...s, ms: (all[i + 1] ? all[i + 1].at : end) - s.at }));
+  }
+}
 
 // ── answer rendering ─────────────────────────────────────────────────────
 const STATUS = {
@@ -558,6 +629,9 @@ function renderAnswer(node, a, meta = {}) {
   const cites = Object.fromEntries((a.citations || []).map((c, i) => [c.id, { ...c, n: i + 1 }]));
   const pills = (ids, compact) => (ids || []).filter((id) => cites[id]).map((id) => sourcePill(cites[id], cites[id].n, compact));
 
+  // how the answer was made comes first, folded into one line (the steps it took, what it searched)
+  const how = trailSummary(a, meta.steps, meta.elapsed);
+  if (how) bub.append(how);
   const st = STATUS[a.status];
   if (st) {
     const line = h("div", "st " + st[0]);
@@ -632,37 +706,7 @@ function renderAnswer(node, a, meta = {}) {
     bub.append(s);
   }
 
-  if (a.citations && a.citations.length) {
-    const docsUsed = [...new Set(a.citations.map((c) => shortTitle(c) + (c.revision ? " Rev " + c.revision : "")))];
-    const ev = h("details", "evx");
-    const sum = h("summary");
-    sum.append(icon("chev"), document.createTextNode(`${a.citations.length} source${a.citations.length > 1 ? "s" : ""}`), h("em", "", docsUsed.join(" · ")));
-    ev.append(sum);
-    const body = h("div", "evx-b srcs");
-    a.citations.forEach((c, i) => {
-      const card = h("div", "sc");
-      const head = h("div", "sc-h");
-      head.append(h("b", "", `[${i + 1}] ${c.title}${c.revision ? " Rev " + c.revision : ""}`), h("span", "p", `page ${c.page}${c.section ? " · " + c.section : ""}`));
-      if (c.ocr) head.append(h("span", "tag y", "OCR"));
-      if (c.superseded) head.append(h("span", "tag y", "Superseded revision"));
-      const ex = h("p", "sc-x");
-      rich("“" + c.excerpt + "”", ex);
-      const act = h("div", "sc-a");
-      const view = btn("cbtn sm", "View page " + c.page, "page");
-      view.addEventListener("click", () => openCitation(c, view));
-      const pdf = h("a", "cbtn sm");
-      pdf.href = authed(c.open_url);
-      pdf.target = "_blank";
-      pdf.rel = "noopener";
-      pdf.append(icon("ext"), document.createTextNode("Open PDF"));
-      act.append(view, pdf);
-      card.append(head, ex, act);
-      body.append(card);
-    });
-    ev.append(body);
-    bub.append(ev);
-  }
-  if (a.intent === "question" && a.searched && a.searched.documents !== undefined) bub.append(howFound(a));
+  if (a.citations && a.citations.length) bub.append(sourceList(a.citations));
   if (a.status !== "error" || a.message_id) bub.append(actions(node, a, meta));
   if (a.follow_ups && a.follow_ups.length) bub.append(renderFollowUps(a.follow_ups));
   [...bub.children].forEach((el, i) => el.style.setProperty("--k", Math.min(i, 8)));
@@ -902,14 +946,74 @@ function renderFollowUps(items) {
   });
   return box;
 }
-function howFound(a) {
-  const ev = h("details", "evx how");
+// The sources an answer cites, numbered as its citation chips are. Each opens its page.
+function sourceList(cs) {
+  const box = h("div", "res");
+  box.append(h("div", "res-h", `${cs.length} source${cs.length > 1 ? "s" : ""}`));
+  const ul = h("ul", "srcs");
+  cs.forEach((c, i) => {
+    const li = h("li", "sc");
+    const open = h("button", "sc-o");
+    open.type = "button";
+    open.append(h("span", "sc-n", String(i + 1)), icon("page"),
+      docName(`${c.title}${c.revision ? " Rev " + c.revision : ""}`, "sc-t"), h("span", "sc-p", `p. ${c.page}`));
+    if (c.ocr) open.append(h("span", "tag y", "OCR"));
+    if (c.superseded) open.append(h("span", "tag y", "Superseded"));
+    open.title = `View page ${c.page}${c.section ? " · " + c.section : ""}`;
+    open.addEventListener("click", () => openCitation(c, open));
+    const pdf = h("a", "sc-pdf");
+    pdf.href = authed(c.open_url);
+    pdf.target = "_blank";
+    pdf.rel = "noopener";
+    pdf.title = "Open the PDF";
+    pdf.setAttribute("aria-label", `Open ${c.title} (PDF)`);
+    pdf.append(icon("ext"));
+    const ex = h("p", "sc-x");
+    rich("“" + c.excerpt + "”", ex);
+    li.append(open, pdf, ex);
+    ul.append(li);
+  });
+  box.append(ul);
+  if (cs.length > 3) {
+    box.classList.add("clip");
+    const more = btn("res-more", `Show all ${cs.length}`, "chevd");
+    more.addEventListener("click", () => { box.classList.remove("clip"); more.remove(); });
+    box.append(more);
+  }
+  return box;
+}
+// One line above the answer: what was searched and how long it took. Opened, it lists the steps
+// as they happened (live answers) and the retrieval details (every answer).
+function trailSummary(a, steps, elapsed) {
+  const searched = a.intent === "question" && a.searched && a.searched.documents !== undefined;
+  steps = steps || [];
+  if (!searched && steps.length < 2) return null;
+  const ev = h("details", "trail-x how");
   const sum = h("summary");
-  const used = (a.documents_used || []).length;
-  sum.append(icon("chev"), document.createTextNode("How this answer was found"),
-    h("em", "", `${a.searched.documents} searched · ${used} used · ${a.latency_ms} ms`));
+  const parts = [];
+  if (searched) {
+    const n = a.searched.documents, used = (a.documents_used || []).length;
+    parts.push(`Searched ${n} document${n === 1 ? "" : "s"}`);
+    if (used) parts.push(`used ${used}`);
+  } else {
+    parts.push(`${steps.length} steps`);
+  }
+  const ms = elapsed !== undefined ? elapsed : a.latency_ms;
+  if (ms !== undefined && ms !== null) parts.push(fmtDur(ms));
+  sum.append(icon("spark"), h("span", "", parts.join(" · ")), icon("chev"));
   ev.append(sum);
   const b = h("div", "evx-b");
+  if (steps.length) {
+    const list = h("div", "trail done");
+    steps.forEach((s) => list.append(stepRow(s, s.ms)));
+    b.append(list);
+  }
+  if (searched) howBody(a, b);
+  ev.append(b);
+  return ev;
+}
+function howBody(a, b) {
+  const used = (a.documents_used || []).length;
   b.append(h("p", "", `Searched ${a.searched.documents} document${a.searched.documents === 1 ? "" : "s"} (${a.searched.scope}).`));
   if (used) b.append(h("p", "", "Used: " + a.documents_used.map((d) => `${d.title}${d.revision ? " Rev " + d.revision : ""} (p. ${d.pages.join(", ")})`).join("; ") + "."));
   if (a.searched.missing_identifiers && a.searched.missing_identifiers.length)
@@ -932,8 +1036,6 @@ function howFound(a) {
     w.append(t);
     b.append(w);
   }
-  ev.append(b);
-  return ev;
 }
 function actions(node, a, meta) {
   const fb = h("div", "fb");
@@ -1025,14 +1127,16 @@ async function ask(text, opts = {}) {
   syncComposer();
   setEmpty(false);
   S.followScroll = true;
-  const user = addUser(text);
+  const scoped = opts.docIds || (S.scope.size ? [...S.scope] : null);
+  const user = addUser(text, null, scoped && S.docs.filter((d) => scoped.includes(d.id)).map((d) => docTitle(d) + (d.revision ? " Rev " + d.revision : "")));
   const node = h("div", "msg bot think");
   // until the server's first stage arrives, the question is genuinely in flight
   const luma = new LumaMascot({ size: 44, state: "waiting", rest: "static", cls: "m-av" });
   node.dataset.luma = "live";
-  const label = h("span", "th-label", "Sending your question");
+  const trail = new Trail();
+  trail.add("Sending your question", "waiting");
   const th = h("div", "th");
-  th.append(label);
+  th.append(trail.el);
   node.append(luma.el, th);
   log.append(node);
   toEnd(true, true);
@@ -1043,7 +1147,7 @@ async function ask(text, opts = {}) {
   const body = {
     message: text,
     conversation_id: S.cid,
-    document_ids: opts.docIds || (S.scope.size ? [...S.scope] : null),
+    document_ids: scoped,
     retry_of: opts.retryOf || null,
   };
   let answer = null;
@@ -1072,7 +1176,7 @@ async function ask(text, opts = {}) {
         if (!ev || !data) continue;
         const payload = JSON.parse(data);
         if (ev === "stage") {
-          label.textContent = payload.text;
+          trail.add(payload.text, payload.phase, payload.docs);
           if (PHASE_STATE[payload.phase]) luma.set(PHASE_STATE[payload.phase]);
         }
         else if (ev === "answer") answer = payload;
@@ -1083,7 +1187,8 @@ async function ask(text, opts = {}) {
     const isNew = !S.cid;
     S.cid = answer.conversation_id;
     if (S.scope.size) store.set("eka-scope-" + S.cid, [...S.scope]);
-    renderAnswer(node, answer, { created: Date.now() / 1000, mascot: luma });
+    const end = performance.now();
+    renderAnswer(node, answer, { created: Date.now() / 1000, mascot: luma, steps: trail.timed(end), elapsed: end - askedAt });
     showFrom(user, askedAt);
     if (isNew) history.replaceState(null, "", "#/c/" + S.cid);
     await loadConversations();
@@ -1394,7 +1499,19 @@ function updateAttachments() {
 function renderScope() {
   const ready = S.docs.filter(searchable);
   $("scopeTxt").textContent = !S.scope.size ? `All documents${ready.length ? " (" + ready.length + ")" : ""}`
-    : S.scope.size === 1 ? docTitle(S.docs.find((d) => S.scope.has(d.id))) : `${S.scope.size} documents`;
+    : `${S.scope.size} document${S.scope.size > 1 ? "s" : ""}`;     // which ones: the chips beside it
+  // the documents a question is limited to sit in the composer, each removable
+  const chips = $("ctxChips");
+  chips.replaceChildren();
+  S.docs.filter((d) => S.scope.has(d.id)).forEach((d) => {
+    const c = h("span", "cb-chip");
+    const x = btn("x", "", "x", "Search all documents again");
+    x.title = "Remove";
+    x.addEventListener("click", () => { S.scope.delete(d.id); saveScope(); $("q").focus(); });
+    c.append(icon("page"), docName(docTitle(d) + (d.revision ? " Rev " + d.revision : ""), "nm"), x);
+    chips.append(c);
+  });
+  chips.hidden = !chips.childElementCount;
 }
 $("scopeBtn").addEventListener("click", () => openPop($("scopeBtn"), (pop) => {
   pop.append(h("div", "ph", "Search in"));
@@ -1646,7 +1763,7 @@ document.title = `${BRAND.product} · ${BRAND.tagline}`;
 $("brandName").textContent = BRAND.product;
 $("brandTag").textContent = BRAND.tagline;
 $("brandLink").setAttribute("aria-label", `${BRAND.product}, new chat`);
-$("q").placeholder = `Message ${BRAND.product}`;
+$("q").placeholder = `Ask ${BRAND.product} anything`;
 $("navUpload").addEventListener("click", () => {
   closeDrawer();
   ($("viewLib").hidden ? $("attachFile") : $("libFile")).click();

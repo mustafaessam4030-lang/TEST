@@ -247,7 +247,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def work():
             try:
                 put("answer", a.engine.ask(body.message, body.conversation_id, body.document_ids,
-                                           progress=lambda text, phase: put("stage", {"text": text, "phase": phase}),
+                                           progress=lambda text, phase, docs: put("stage", {"text": text, "phase": phase, "docs": docs}),
                                            persist=False))
             except Exception as exc:  # the engine already turns its own failures into answers
                 log.exception("chat stream failed")

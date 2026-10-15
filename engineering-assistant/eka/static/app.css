@@ -221,15 +221,6 @@ kbd{font-family:var(--mono);font-size:10.5px;padding:1px 5px;border:1px solid va
 .top .sp{flex:1}
 .top .show-side{display:none}
 .app.side-closed .top .show-side{display:grid}
-/* ATLAS .ch-ctx: what the conversation is about — here, which documents it searches */
-.ch-ctx{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:46%;padding:7px 13px;border-radius:999px;
-  border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:12px;line-height:1.2;
-  transition:background .18s var(--e),border-color .18s var(--e),transform .25s var(--ch-spring)}
-.ch-ctx:hover{background:var(--surface-3);border-color:var(--line-hi)}
-.ch-ctx:active{transform:scale(.97)}
-.ch-ctx-k{flex:none;font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
-.ch-ctx-v{min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ch-ctx svg{width:12px;height:12px;color:var(--faint)}
 .view{flex:1;min-height:0;display:flex;flex-direction:column}
 
 /* ═════════ THE CONVERSATION (ATLAS #chat, as a page) ═════════ */
@@ -766,6 +757,133 @@ button.nav-i{font:inherit;font-size:13.5px}
 .th-label{font-size:14.5px}
 .doc-ic.luma{--ls:36px;background:none}
 
+/* ═════════ CHAT EXPERIENCE: activity trail, sources, composer toolbar ═════════
+   Calm and compact: what Luma did is one quiet line above the answer, the sources a short
+   numbered list under it, and the composer a card with its context and controls inside. */
+/* top bar: the conversation's title (a menu) and where its data lives */
+.top-tw{display:flex;align-items:center;gap:2px;min-width:0}
+.top-tw:has(.top-cv:not([hidden])) .top-t{cursor:pointer}
+.top-cv{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;color:var(--faint);flex:none}
+.top-cv:hover,.top-cv[aria-expanded="true"]{background:var(--surface-3);color:var(--ink)}
+.top-cv svg{width:12px;height:12px}
+.priv{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px 2px 6px;border-radius:999px;
+  border:1px solid var(--line);font-size:11px;font-weight:550;color:var(--faint);white-space:nowrap;flex:none}
+.priv svg{width:11px;height:11px}
+
+/* the question, with the documents it was limited to above it */
+.msg.me{flex-direction:column;align-items:flex-end;gap:6px}
+.me-ctx{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:100%}
+.me-k{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 10px 3px 8px;border-radius:8px;
+  background:var(--vio-wash);color:var(--vio);font-size:12.5px;font-weight:560}
+.me-k svg{width:13px;height:13px;flex:none}
+.me-k > span{display:inline-flex;min-width:0;white-space:nowrap}
+
+/* the activity trail while Luma works: one row per real step; the current one turns */
+.msg.think{align-items:flex-start}
+.msg.think .th{display:block;padding-top:7px;min-width:0;flex:1}
+.trail{display:grid;gap:9px}
+.tr-s{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;font-size:13.5px;line-height:1.4;color:var(--faint);
+  animation:chMsg .32s var(--e) both}
+.tr-i{width:18px;height:18px;display:grid;place-items:center;flex:none}
+.tr-i svg{width:15px;height:15px}
+.tr-spin{display:none}
+.tr-s.now{color:var(--mid)}
+.tr-s.now .tr-i svg{display:none}
+.tr-s.now .tr-spin{display:block;width:14px;height:14px;border-radius:50%;border:1.6px dashed currentColor;opacity:.8;
+  animation:trSpin 1.8s linear infinite}
+@keyframes trSpin{to{transform:rotate(360deg)}}
+.tr-t{min-width:0}
+.tr-docs{display:inline-flex;flex-wrap:wrap;gap:6px;min-width:0}
+.tr-doc{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:300px;padding:3px 10px 3px 8px;border-radius:8px;
+  background:var(--surface-3);color:var(--ink);font-size:12.5px;font-weight:560}
+.tr-doc svg{width:13px;height:13px;color:var(--brand);flex:none}
+.tr-doc > span,.sc-t{display:inline-flex;min-width:0;white-space:nowrap}
+.dn{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dr{flex:none;white-space:pre}
+.tr-d{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+/* after the answer: the trail folds into one line above it */
+.trail-x{margin:0 0 8px}
+.trail-x > summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;padding:2px 0;
+  font-size:13px;color:var(--faint);transition:color .16s var(--e)}
+.trail-x > summary::-webkit-details-marker{display:none}
+.trail-x > summary:hover,.trail-x[open] > summary{color:var(--ink)}
+.trail-x > summary svg{width:14px;height:14px;flex:none}
+.trail-x > summary svg:last-child{width:11px;height:11px;transition:transform .22s var(--e)}
+.trail-x[open] > summary svg:last-child{transform:rotate(90deg)}
+.trail-x .evx-b{margin:8px 0 6px;padding:12px 14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line-2);
+  display:grid;gap:8px;font-size:13px;line-height:1.55;color:var(--mid)}
+.trail-x .evx-b p{margin:0}
+.trail.done{gap:7px;padding-bottom:10px;border-bottom:1px solid var(--line-2)}
+.trail.done .tr-s{animation:none;font-size:13px}
+.trail.done .tr-s:last-child{color:var(--mid)}
+
+/* citation chips: small, numbered like the source list under the answer */
+.src{gap:4px;padding:0 7px 0 5px;border-color:transparent;background:var(--surface-3);color:var(--mid);font-size:11px;line-height:1.75}
+.src b{font-size:10px}
+.src .nm{max-width:150px}
+
+/* the sources: a short numbered list; each row opens its page, the icon opens the PDF */
+.res{position:relative;margin-top:14px}
+.res-h{font-size:12px;color:var(--faint);margin:0 0 4px 2px}
+.bub .srcs{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.res .sc{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:2px;margin:0;padding:0;
+  border:0;border-radius:10px;background:none}
+.res .sc:hover{background:var(--surface-2)}
+.sc-o{display:flex;align-items:center;gap:8px;min-width:0;padding:6px 8px;border-radius:9px;text-align:left;
+  font-size:13.5px;line-height:1.4;color:var(--ink)}
+.sc-n{font-family:var(--mono);font-size:10.5px;color:var(--faint);min-width:12px;text-align:center;flex:none}
+.sc-o svg{width:15px;height:15px;color:var(--faint);flex:none}
+.sc-o:hover svg{color:var(--brand)}
+.sc-t{font-weight:560}
+.sc-p{color:var(--faint);font-size:12.5px;white-space:nowrap;flex:none}
+.sc-o .tag{flex:none}
+.sc-pdf{width:28px;height:28px;margin-right:4px;border-radius:8px;display:grid;place-items:center;color:var(--faint)}
+.sc-pdf:hover{background:var(--surface-3);color:var(--ink)}
+.sc-pdf svg{width:13px;height:13px}
+.res .sc-x{grid-column:1 / -1;margin:-4px 12px 6px 51px;font-size:12.5px;line-height:1.5;color:var(--faint);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.res.clip .srcs{max-height:236px;overflow:hidden;-webkit-mask-image:linear-gradient(#000 62%,transparent);mask-image:linear-gradient(#000 62%,transparent)}
+.res-more{display:flex;align-items:center;gap:6px;margin:2px auto 0;padding:5px 12px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);font-size:12px;font-weight:560;color:var(--mid)}
+.res-more:hover{color:var(--ink);border-color:var(--line-hi)}
+.res-more svg{width:12px;height:12px}
+
+/* the composer: a card holding the context chips, the message and a toolbar */
+.ch-box{flex-direction:column;align-items:stretch;gap:0;padding:10px 10px 9px;border-radius:22px}
+.ch-box .atts{margin:0 2px 6px}
+.ch-box .atts:empty{display:none}
+.cb-ctx{display:flex;flex-wrap:wrap;gap:6px;margin:0 2px 6px}
+.cb-ctx[hidden]{display:none}
+.cb-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:2px 3px 2px 9px;border-radius:9px;
+  border:1px dashed var(--line-hi);background:var(--surface-2);font-size:12.5px;font-weight:560;color:var(--ink)}
+.cb-chip svg{width:13px;height:13px;color:var(--brand);flex:none}
+.cb-chip .nm{display:inline-flex;min-width:0;white-space:nowrap;max-width:300px}
+.cb-chip .x{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--faint)}
+.cb-chip .x svg{width:11px;height:11px;color:inherit}
+.cb-chip .x:hover{background:var(--surface-3);color:var(--ink)}
+.ch-box .ch-ta{padding:5px 8px 12px;min-height:44px}
+.cb-bar{display:flex;align-items:center;gap:6px;min-width:0}
+.cb-bar .sp{flex:1}
+.ch-box .attach{width:34px;height:34px;border:1px solid var(--line)}
+.ch-box .attach svg{width:17px;height:17px}
+.cb-pill{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:230px;height:32px;padding:0 11px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface-2);font-size:12.5px;font-weight:560;color:var(--ink);white-space:nowrap;
+  transition:background .16s var(--e),border-color .16s}
+.cb-pill:hover,.cb-pill[aria-expanded="true"]{border-color:var(--line-hi);background:var(--surface-3)}
+.cb-pill:active{transform:scale(.97)}
+.cb-pill svg{width:14px;height:14px;color:var(--brand);flex:none}
+.cb-pill .cv{width:10px;height:10px;color:var(--faint)}
+.cb-pill span{overflow:hidden;text-overflow:ellipsis}
+.cb-pill.model i{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+.cb-pill.model[data-s="ok"] i{background:var(--grn-dot)} .cb-pill.model[data-s="kw"] i{background:var(--y-dot)}
+.cb-pill.model[data-s="bad"] i{background:var(--red)}
+.ch-box .send{width:34px;height:34px}
+.ch-box .send svg{width:16px;height:16px}
+.ch-hint{margin-top:9px;font-size:11.5px}
+.ch-jump{width:36px;height:36px;padding:0;justify-content:center;border-radius:50%;bottom:14px}
+.ch-jump svg{width:16px;height:16px}
+
 /* ═════════ RESPONSIVE ═════════ */
 /* Tablet / narrow laptop: the document panel floats over the conversation
    instead of squeezing it. */
@@ -804,9 +922,14 @@ button.nav-i{font:inherit;font-size:13.5px}
   .ch-e-luma{--ls:72px}
   .ch-f{padding:4px 10px calc(10px + env(safe-area-inset-bottom))}
   .ch-ta{font-size:16px}                /* 16px stops iOS zooming into the field */
-  .ch-hint{display:none}
-  .ch-ctx{max-width:52%;padding:6px 10px}
-  .ch-ctx-k{display:none}
+  .ch-hint{margin-top:6px;font-size:11px}
+  .priv{display:none}
+  .res .sc-x{margin-left:12px}
+  .bub .src .nm{display:none}           /* on a phone a citation is its number and page; the list below names it */
+  .cb-pill.model span{display:none}     /* the model's name is in its tooltip and in Settings */
+  .cb-pill.model{padding:0 12px}
+  .cb-pill{max-width:190px}
+  .tr-d{display:none}
   .ch-e-t{font-size:21px}
   .ch-e-p{font-size:15px}
   .lib{padding:8px 14px 40px}
@@ -851,4 +974,5 @@ button.nav-i{font:inherit;font-size:13.5px}
   ::view-transition-old(root),::view-transition-new(root){animation:none}
   .th-label{background:none;-webkit-text-fill-color:currentColor;color:var(--mid)}
   .th-dots span{opacity:.6}
+  .tr-s.now .tr-spin{animation:none}
 }

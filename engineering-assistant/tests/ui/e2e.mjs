@@ -86,12 +86,19 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   await idle(p);
   check("Retry replaces the last answer", (await p.locator(".msg.bot").count()) === botsBefore);
 
-  await last.locator("details.evx").first().locator("summary").click();
-  check("sources disclosure lists source cards", (await p.locator(".msg.bot").last().locator(".sc").count()) >= 1);
-  const pdfHref = await p.locator(".msg.bot").last().locator(".sc a.cbtn").first().getAttribute("href");
+  const srcRows = p.locator(".msg.bot").last().locator(".res .sc");
+  check("sources are listed under the answer, numbered like its citations", (await srcRows.count()) >= 1 &&
+    (await srcRows.first().locator(".sc-n").textContent()) === "1" && (await srcRows.first().locator(".sc-x").textContent()).startsWith("“"));
+  const pdfHref = await srcRows.first().locator("a.sc-pdf").getAttribute("href");
   check("Open PDF links to the cited page", /\/api\/documents\/[0-9a-f]+\/file#page=2$/.test(pdfHref), pdfHref);
+  const howSum = await p.locator(".msg.bot").last().locator("details.how summary").textContent();
+  check("the answer opens with one line of what was searched", /^Searched \d+ documents? · used \d+ · [\d.]+ (ms|s)$/.test(howSum.trim()), howSum);
   await p.locator(".msg.bot").last().locator("details.how summary").click();
-  check("How this answer was found shows the retrieval trace", (await p.locator(".msg.bot").last().locator(".trace tbody tr").count()) >= 1);
+  check("that line opens to the retrieval trace", (await p.locator(".msg.bot").last().locator(".trace tbody tr").count()) >= 1);
+  await srcRows.first().locator(".sc-o").click();
+  await imgReady(p);
+  check("a source row opens its page", (await p.inputValue("#vPage")) === "2");
+  await p.keyboard.press("Escape");
 
   // clarification first, then options
   await ask(p, "What torque for the mounting flange bolts?");
@@ -180,13 +187,20 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   await p.click("#scopeBtn");
   await p.locator(".pop label.mi", { hasText: "CV-90" }).click();
   await p.keyboard.press("Escape");
-  check("scope selector narrows to one document", (await p.textContent("#scopeTxt")).includes("CV-90"));
+  check("scope selector narrows to one document", (await p.textContent("#scopeTxt")) === "1 document" &&
+    (await p.locator("#ctxChips .cb-chip").count()) === 1 && (await p.textContent("#ctxChips")).includes("CV-90"));
   await ask(p, "What torque for the mounting flange bolts?");
   check("scoped question answers from that document only", (await p.locator(".msg.bot").last().textContent()).includes("180"));
+  check("the question shows the document it was limited to", (await p.locator(".msg.me").last().locator(".me-k").textContent()).includes("CV-90"));
   await p.click("#scopeBtn");
   await p.locator(".pop label.mi", { hasText: "All documents" }).click();
   await p.keyboard.press("Escape");
   check("scope back to all documents", (await p.textContent("#scopeTxt")).startsWith("All documents"));
+  check("scope chips leave the composer with the scope", (await p.locator("#ctxChips .cb-chip").count()) === 0);
+  await p.click("#titleBtn");
+  check("the title opens the conversation's menu", (await p.locator(".pop .mi").allTextContents()).join(",") === "Rename,Delete");
+  await p.click("#titleBtn");
+  check("the menu closes again", (await p.locator(".pop").count()) === 0);
 
   // history: new chat, reopen, search, rename, delete
   const turns = await p.locator(".msg.me").count();
@@ -253,8 +267,9 @@ const imgReady = (p) => p.waitForFunction(() => { const i = document.querySelect
   await p.keyboard.press("/");
   check("/ focuses the message box", await p.evaluate(() => document.activeElement.id === "q"));
   await p.fill("#q", "x");
-  await p.keyboard.press("Tab");
-  check("Tab moves from the message box to Send", await p.evaluate(() => document.activeElement.id === "send"));
+  const order = [];
+  for (let i = 0; i < 4; i++) { await p.keyboard.press("Tab"); order.push(await p.evaluate(() => document.activeElement.id)); }
+  check("Tab moves from the message box through the toolbar to Send", order.join(",") === "attach,scopeBtn,modelPill,send", order.join(","));
   await p.fill("#q", "");
 
   // network failure → error state with Try again
@@ -615,6 +630,18 @@ if (SLOW) {
   check("Luma: each state comes with the server's own status label", ["Searching", "Reading", "Preparing your answer", "Writing the answer with", "Checking every citation"]
     .every((x) => labels.some((l) => l.startsWith(x))), labels.join(" | "));
   check("Luma: 'done' only after the answer was on screen", (await p.evaluate(() => window.__doneAfterAnswer)) === true);
+  // the trail folded above the answer keeps the steps that happened, timed, and what was read
+  const ans = p.locator(".msg.bot").last();
+  await ans.locator("details.how summary").click();
+  const steps = await ans.locator(".trail.done .tr-s").evaluateAll((rows) => rows.map((r) => ({
+    phase: r.dataset.phase, docs: [...r.querySelectorAll(".tr-doc")].map((d) => d.textContent), dur: r.querySelector(".tr-d")?.textContent })));
+  const cited = await ans.locator(".res .sc-t").allTextContents();
+  check("trail: the steps that ran, in order, each timed",
+    steps.map((s) => s.phase).join(",") === "understanding,searching,reading,writing,writing,checking" && steps.every((s) => /\d (ms|s)$/.test(s.dur || "")),
+    JSON.stringify(steps.map((s) => s.phase + " " + s.dur)));
+  check("trail: 'reading' names the documents actually cited", cited.length > 0 && cited.every((t) => steps[2].docs.includes(t)),
+    JSON.stringify({ read: steps[2].docs, cited }));
+  await ans.locator("details.how summary").click();
   check("Luma: rests as a still beside the finished answer", (await p.locator(".msg.bot").last().locator(".m-av.luma").getAttribute("data-state")) === "static");
   check("Luma: the welcome mascot is paused while hidden", await hero.evaluate((e) => e.hasAttribute("data-paused")));
 

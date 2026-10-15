@@ -504,7 +504,7 @@ class ModesMixin:
                         claims.append({"text": sentence, "kind": "direct", "_chunk": c, "citations": []})
         if not shown:
             return None
-        self._progress("Reading the figure's page", "reading")
+        self._progress("Reading the figure's page", "reading", [shown[0]["document"]] if shown[0].get("document") else None)
         first = shown[0]
         out["message"] = "Here's {0} from the {1}, page {2}.".format(
             _figure_phrase(first["caption"]), first["document"], first["page"])
