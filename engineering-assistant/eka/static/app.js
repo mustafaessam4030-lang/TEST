@@ -665,6 +665,14 @@ function renderAnswer(node, a, meta = {}) {
   } else if (a.message) {
     bub.append(md(a.message));
   }
+  if (a.status === "insufficient_evidence" && a.intent === "question") {
+    const q = a.question || (node.previousElementSibling && node.previousElementSibling.textContent) || "";
+    if (q.trim()) {
+      const row = h("div", "web-row");
+      row.append(webButton(q, "cta"), h("span", "", "Not in your documents? Look it up on the internet (opens a new tab)."));
+      bub.append(row);
+    }
+  }
 
   if (a.clarification) {
     const q = h("p");
@@ -1065,6 +1073,10 @@ function actions(node, a, meta) {
   const copy = btn("", "Copy", "copy", "Copy answer");
   copy.addEventListener("click", () => copyText(a.answer_text || a.message || ""));
   fb.append(copy);
+  // Internet search: opens the question in a new browser tab. Luma sends nothing to the web itself,
+  // and web results are never mixed into answers from the documents.
+  const asked = a.question || (node.previousElementSibling && node.previousElementSibling.textContent) || "";
+  if (asked.trim() && a.intent !== "smalltalk") fb.append(webButton(asked));
   if (a.message_id) {
     const retry = btn("retry", "Retry", "retry", "Ask again");
     retry.addEventListener("click", () => {
@@ -1099,6 +1111,11 @@ function actions(node, a, meta) {
     log.querySelectorAll(".fb .retry").forEach((r) => { r.hidden = r.closest(".msg") !== log.querySelector(".msg.bot:last-of-type"); });
   });
   return fb;
+}
+function webButton(question, cls = "") {
+  const b = btn("web " + cls, "Search the web", "ext", "Search the internet for this question (opens a new tab)");
+  b.addEventListener("click", () => window.open("https://www.bing.com/search?q=" + encodeURIComponent(question.trim()), "_blank", "noopener"));
+  return b;
 }
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); }

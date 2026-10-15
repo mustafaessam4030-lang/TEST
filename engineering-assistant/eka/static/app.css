@@ -884,6 +884,13 @@ button.nav-i{font:inherit;font-size:13.5px}
 .ch-jump{width:36px;height:36px;padding:0;justify-content:center;border-radius:50%;bottom:14px}
 .ch-jump svg{width:16px;height:16px}
 
+/* internet search: opens a browser tab; nothing from the web enters an answer */
+.web-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0 4px;font-size:13px;color:var(--faint)}
+.fb button.web.cta,.web-row .web.cta{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:999px;
+  background:var(--solid);color:var(--on-solid);font-size:13px;font-weight:600;border:0}
+.web-row .web.cta:hover{filter:brightness(1.08)}
+.web-row .web.cta svg{width:13px;height:13px}
+
 /* ═════════ RESPONSIVE ═════════ */
 /* Tablet / narrow laptop: the document panel floats over the conversation
    instead of squeezing it. */
