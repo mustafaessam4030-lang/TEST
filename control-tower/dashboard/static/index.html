@@ -2313,6 +2313,34 @@ td.ref{font-weight:500}
   .cbtn,.btn,.chip,.share,.ibtn{transition:background-color .18s ease,color .18s ease,border-color .18s ease}
   .cbtn:active:not(:disabled),.btn:active,.chip:active,.share:active,.ibtn:active{transform:none}
 }
+
+/* ── Chat spacing per size (operator, 16 Oct: too much empty space) ──
+   L uses most of its width; messages sit closer; S/M wrap their suggestion
+   buttons instead of cutting them off at the edge. */
+#chat[data-size="l"]{--ch-col:min(980px, calc(100% - 72px))}
+#chat .ch-b{gap:16px;padding-top:16px}
+#chat[data-size="s"] .ch-b,#chat[data-size="m"] .ch-b{gap:12px;padding-top:12px}
+#chat[data-size="s"] .msg.bot .bub > .ch-meta + p,#chat[data-size="m"] .msg.bot .bub > .ch-meta + p,
+#chat[data-size="s"] .msg.bot .bub > p:first-child,#chat[data-size="m"] .msg.bot .bub > p:first-child{
+  font-size:14.5px;line-height:1.45}
+#chat[data-size="s"] .ax-voice,#chat[data-size="m"] .ax-voice{font-size:13.5px}
+#chat .msg.bot .bub > :last-child{margin-bottom:0}
+
+/* ── ATLAS reacts when its figure is clicked ── */
+.ax-poke{position:fixed;z-index:9999;pointer-events:none;max-width:220px;padding:7px 12px;
+  border-radius:14px 14px 14px 4px;background:var(--ink,#0B1F33);color:#fff;font-size:13px;
+  font-weight:600;line-height:1.3;box-shadow:0 6px 20px rgba(0,0,0,.18);
+  animation:axPokeIn .22s cubic-bezier(.2,.9,.24,1.2) both}
+.ax-poke.out{animation:axPokeOut .25s ease both}
+@keyframes axPokeIn{from{opacity:0;transform:translateY(6px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes axPokeOut{to{opacity:0;transform:translateY(-4px)}}
+.atlas.poked .atlas-fig{animation:axHop .45s cubic-bezier(.2,.9,.24,1.3) 1}
+.atlas.poked-stop .atlas-fig{animation:axShake .5s ease 1}
+@keyframes axHop{40%{transform:translateY(-8px) rotate(-4deg)}70%{transform:translateY(1px)}}
+@keyframes axShake{20%,60%{transform:translateX(-5px) rotate(-6deg)}40%,80%{transform:translateX(5px) rotate(6deg)}}
+.atlas .atlas-fig{cursor:pointer}
+@media(prefers-reduced-motion:reduce){.ax-poke,.ax-poke.out,.atlas.poked .atlas-fig,
+  .atlas.poked-stop .atlas-fig{animation:none}}
 </style>
 </head>
 <body>
@@ -7535,6 +7563,43 @@ document.addEventListener('click', (e) => {
   };
 })();
 
+
+/* ATLAS reacts when its figure is clicked: a hello, then an invitation to the
+   chat, then — clicked again and again — "Stooop!". Display only: it never
+   opens, sends or changes anything. Not on message avatars or inside buttons
+   (the Ask ATLAS button keeps doing what it does). */
+(function atlasPokes(){
+  const SAY = ['Hey 👋 what do you need?', 'Meet me in the chat 💬', 'Stooop! 😵‍💫'];
+  let count = 0, last = 0, bubble = null, timer = null;
+  document.addEventListener('click', function(ev){
+    const fig = ev.target.closest && ev.target.closest('.atlas-fig');
+    if (!fig) return;
+    const host = fig.closest('.atlas');
+    if (!host || fig.closest('button, a, .m-av')) return;
+    const now = Date.now();
+    count = now - last > 4000 ? 1 : count + 1;
+    last = now;
+    const line = SAY[Math.min(count, SAY.length) - 1];
+    host.classList.remove('poked', 'poked-stop'); void host.offsetWidth;
+    host.classList.add(count >= SAY.length ? 'poked-stop' : 'poked');
+    if (bubble) bubble.remove();
+    bubble = document.createElement('div');
+    bubble.className = 'ax-poke'; bubble.setAttribute('role', 'status');
+    bubble.textContent = line;
+    document.body.appendChild(bubble);
+    const r = fig.getBoundingClientRect();
+    const w = bubble.offsetWidth;
+    bubble.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - 10)) + 'px';
+    bubble.style.top = Math.max(8, r.top - bubble.offsetHeight + 6) + 'px';
+    clearTimeout(timer);
+    const mine = bubble;
+    timer = setTimeout(function(){
+      mine.classList.add('out');
+      setTimeout(function(){ mine.remove(); if (bubble === mine) bubble = null; }, 260);
+      host.classList.remove('poked', 'poked-stop');
+    }, 1800);
+  });
+})();
 </script>
 </body>
 </html>
