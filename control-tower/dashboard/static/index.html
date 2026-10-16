@@ -1127,8 +1127,8 @@ a.cbtn{text-decoration:none}
 .route-g{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,1fr)}
 .route-map{padding:16px 0 16px 16px;align-self:start}
 .route-map svg{display:block;width:100%;height:auto;border-radius:14px}
-.route-side{padding:16px 20px 18px;display:flex;flex-direction:column;gap:12px;min-width:0;
-  min-height:540px}
+.route-side{padding:16px 20px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+@media(min-width:761px){.route-side{min-height:540px}}
 /* Its button stays at the bottom, whatever the event list holds: the card
    keeps one height from shipment to shipment. */
 .route-side .sc-open{margin-top:auto}
@@ -1197,7 +1197,7 @@ a.cbtn{text-decoration:none}
 .t-art.moving .t-smoke circle:nth-child(2){animation-delay:.9s}
 .t-art.moving .t-smoke circle:nth-child(3){animation-delay:1.8s}
 @keyframes tRock{0%,100%{transform:rotate(-.9deg) translateY(0)}50%{transform:rotate(.9deg) translateY(-2px)}}
-@keyframes tRoll{to{transform:translateX(20px)}}
+@keyframes tRoll{to{transform:translateX(40px)}}
 @keyframes tPuff{0%{opacity:0;transform:translate(0,6px) scale(.5)}25%{opacity:.85}
   100%{opacity:0;transform:translate(-6px,-6px) scale(1.4)}}
 :root[data-theme="dark"] .t-smoke{fill:#3A4A5E}
@@ -2370,7 +2370,7 @@ body.first-load .kpi:nth-child(4){animation-delay:.15s}body.first-load .kpi:nth-
 body.first-load main .card:nth-of-type(2){animation-delay:.12s}
 body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
-.btn,.chip,.sc-open,.ch-size button{transition:background-color .2s ease,color .2s ease,box-shadow .2s ease,transform .15s ease}
+.btn,.chip,.sc-open,.ch-size button{transition:background-color .2s ease,border-color .2s ease,color .2s ease,box-shadow .2s ease,transform .15s ease}
 .btn:active:not(:disabled),.chip:active,.sc-open:active,.ch-size button:active{transform:scale(.97)}
 @media(prefers-reduced-motion:reduce){.roll,body.first-load main .card,body.first-load .kpi{animation:none}
   .btn:active:not(:disabled),.chip:active,.sc-open:active,.ch-size button:active{transform:none}}
@@ -3948,12 +3948,33 @@ function morphChildren(to, from){
       continue;
     }
     if (o.nodeType !== 1) continue;
+    // A panel the user opened stays open only while it is still the same item.
+    const sum = x => ((x.querySelector(':scope > summary') || {}).textContent || '');
+    const keepOpen = o.nodeName === 'DETAILS' && sum(o) === sum(n);
+    // A focused row whose content changes is no longer the row the user was
+    // on: drop the focus, so Enter cannot open a different shipment.
+    const ctl = /^(INPUT|TEXTAREA|SELECT)$/.test(o.nodeName);
+    if (!ctl && o === document.activeElement && o.outerHTML !== n.outerHTML) o.blur();
     for (const a of Array.from(o.attributes)){
-      if (!n.hasAttribute(a.name) && !(a.name === 'open' && o.nodeName === 'DETAILS'))
+      if (!n.hasAttribute(a.name) && !(a.name === 'open' && keepOpen))
         o.removeAttribute(a.name);
     }
     for (const a of Array.from(n.attributes)){
       if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value);
+    }
+    if (ctl && (o.nodeName === 'SELECT' || o !== document.activeElement)){
+      // Form controls show what the server sent, not a stale earlier choice
+      // or reason (a rebuilt field did the same before).
+      morphChildren(o, n);
+      if (o.nodeName === 'SELECT'){
+        const pick = n.querySelector('option[selected]') || n.querySelector('option');
+        if (pick && o.value !== pick.value) o.value = pick.value;
+      } else if (o.nodeName === 'TEXTAREA'){
+        if (o.value !== n.textContent) o.value = n.textContent;
+      } else if (o.type === 'checkbox' || o.type === 'radio'){
+        o.checked = n.hasAttribute('checked');
+      } else if (o.value !== (n.getAttribute('value') || '')) o.value = n.getAttribute('value') || '';
+      continue;
     }
     if (o.nodeName === 'svg' || o.nodeName === 'SVG') {
       if (o.innerHTML !== n.innerHTML) o.innerHTML = n.innerHTML;
@@ -5088,6 +5109,7 @@ function modeChip(mode){
   return '<span class="mode m-' + mode + '">' + modeIcon(mode, 14) + MODES[mode].label + '</span>';
 }
 
+TransportIllustration.n = 0;
 function TransportIllustration(mode, moving){
   const SH = '<ellipse cx="130" cy="118" rx="96" ry="4.5" fill="rgba(11,31,51,.07)"/>';
   const BODY = 'fill="url(#tBody)" stroke="#D8DEE6" stroke-width="1.2"';
@@ -5121,8 +5143,9 @@ function TransportIllustration(mode, moving){
     }
     // Waves are drawn wider than the picture so they can roll by seamlessly;
     // the ship rocks on them and its funnel puffs while it is under way.
-    art = '<defs><clipPath id="tSea"><rect x="0" y="100" width="260" height="30"/></clipPath></defs>' +
-      '<g clip-path="url(#tSea)"><g class="t-waves" stroke="var(--ocean)" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none">' +
+    const sea = 'tSea' + (++TransportIllustration.n);
+    art = '<defs><clipPath id="' + sea + '"><rect x="0" y="100" width="260" height="30"/></clipPath></defs>' +
+      '<g clip-path="url(#' + sea + ')"><g class="t-waves" stroke="var(--ocean)" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none">' +
         '<path d="M-26 110 q10 -5 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>' +
         '<path class="t-wave2" d="M-20 119 q10 -4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/></g></g>' +
       '<g class="t-smoke"><circle cx="44" cy="28" r="3.2"/><circle cx="40" cy="22" r="4.2"/><circle cx="35" cy="15" r="5"/></g>' +
