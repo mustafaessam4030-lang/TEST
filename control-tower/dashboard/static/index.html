@@ -178,6 +178,10 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
 /* Switching theme changes every colour at once; nothing animates through
    the change, so there is no flash of half-themed surfaces. */
 .theme-switching *,.theme-switching *::before,.theme-switching *::after{transition:none!important}
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){animation:vtReveal .62s cubic-bezier(.32,.72,0,1)}
+@keyframes vtReveal{from{clip-path:circle(0 at var(--vt-x,50%) var(--vt-y,0))}
+  to{clip-path:circle(var(--vt-r,150vmax) at var(--vt-x,50%) var(--vt-y,0))}}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden}
 body{
@@ -1121,9 +1125,17 @@ a.cbtn{text-decoration:none}
   margin-bottom:18px;align-items:start}
 .ov-vis-r{display:grid;gap:18px}
 .route-g{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,1fr)}
-.route-map{padding:16px 0 16px 16px;align-self:center}
+.route-map{padding:16px 0 16px 16px;align-self:start}
 .route-map svg{display:block;width:100%;height:auto;border-radius:14px}
-.route-side{padding:16px 20px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.route-side{padding:16px 20px 18px;display:flex;flex-direction:column;gap:12px;min-width:0;
+  min-height:540px}
+/* Its button stays at the bottom, whatever the event list holds: the card
+   keeps one height from shipment to shipment. */
+.route-side .sc-open{margin-top:auto}
+.route-side .sc-t{min-height:150px}
+/* The tag beside the title changes text with every shipment: a fixed line
+   height so the card never moves under it. */
+#routeTag{display:inline-flex;align-items:center;min-height:24px}
 .rt-ref{font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--ink);
   overflow-wrap:anywhere}
 .rt-ev{display:grid;grid-template-columns:12px 1fr;gap:3px 10px}
@@ -1172,7 +1184,24 @@ a.cbtn{text-decoration:none}
 .t-art svg{display:block;width:100%;height:auto;overflow:visible}
 /* Motion only while the shipment is actually moving: a slow, composited
    bob for air and sea, a wheel turn for road and rail. */
-.t-art.moving.t-air svg,.t-art.moving.t-ocean svg{animation:tBob 4.6s ease-in-out infinite;will-change:transform}
+.t-art.moving.t-air svg{animation:tBob 4.6s ease-in-out infinite;will-change:transform}
+/* The ship: rocks gently on the water always; under way, the waves roll by and
+   the funnel puffs. Transform and opacity only, so it stays smooth. */
+.t-art .t-ship{transform-box:fill-box;transform-origin:50% 95%;animation:tRock 5.2s ease-in-out infinite}
+.t-art.moving .t-waves{animation:tRoll 3.2s linear infinite}
+.t-art.moving .t-wave2{animation:tRoll 4.4s linear infinite reverse}
+.t-smoke{fill:#C5CED9;opacity:0}
+.t-smoke circle{transform-box:fill-box;transform-origin:center}
+.t-art.moving .t-smoke{opacity:1}
+.t-art.moving .t-smoke circle{animation:tPuff 2.8s ease-out infinite}
+.t-art.moving .t-smoke circle:nth-child(2){animation-delay:.9s}
+.t-art.moving .t-smoke circle:nth-child(3){animation-delay:1.8s}
+@keyframes tRock{0%,100%{transform:rotate(-.9deg) translateY(0)}50%{transform:rotate(.9deg) translateY(-2px)}}
+@keyframes tRoll{to{transform:translateX(20px)}}
+@keyframes tPuff{0%{opacity:0;transform:translate(0,6px) scale(.5)}25%{opacity:.85}
+  100%{opacity:0;transform:translate(-6px,-6px) scale(1.4)}}
+:root[data-theme="dark"] .t-smoke{fill:#3A4A5E}
+@media(prefers-reduced-motion:reduce){.t-art .t-ship,.t-art .t-waves,.t-art .t-wave2,.t-art .t-smoke circle{animation:none}}
 @keyframes tBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 .t-wheel{transform-box:fill-box;transform-origin:center}
 .t-art.moving .t-wheel{animation:tkSpin 1.3s linear infinite}
@@ -2326,6 +2355,29 @@ td.ref{font-weight:500}
 #chat[data-size="s"] .ax-voice,#chat[data-size="m"] .ax-voice{font-size:13.5px}
 #chat .msg.bot .bub > :last-child{margin-bottom:0}
 
+/* ── Premium motion (operator, 16 Oct: smoother, Apple-like) ──
+   Figures roll in when they change; cards rise in once on load and answer
+   the pointer with a soft shadow; nothing moves position on its own. */
+.roll{display:inline-block;animation:numRoll .5s cubic-bezier(.2,.9,.24,1) both}
+@keyframes numRoll{from{opacity:0;transform:translateY(45%)}to{opacity:1;transform:none}}
+.card{transition:box-shadow .35s cubic-bezier(.2,.8,.2,1),border-color .35s ease}
+.card:hover{box-shadow:0 1px 2px rgba(11,31,51,.04),0 12px 32px -8px rgba(11,31,51,.14)}
+:root[data-theme="dark"] .card:hover{box-shadow:0 1px 2px rgba(0,0,0,.3),0 14px 36px -10px rgba(0,0,0,.6)}
+.kpi{transition:background-color .35s ease}
+body.first-load main .card,body.first-load .kpi{animation:cardIn .7s cubic-bezier(.2,.8,.2,1) both}
+body.first-load .kpi:nth-child(2){animation-delay:.05s}body.first-load .kpi:nth-child(3){animation-delay:.1s}
+body.first-load .kpi:nth-child(4){animation-delay:.15s}body.first-load .kpi:nth-child(5){animation-delay:.2s}
+body.first-load main .card:nth-of-type(2){animation-delay:.12s}
+body.first-load main .card:nth-of-type(3){animation-delay:.2s}
+@keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+.btn,.chip,.sc-open,.ch-size button{transition:background-color .2s ease,color .2s ease,box-shadow .2s ease,transform .15s ease}
+.btn:active:not(:disabled),.chip:active,.sc-open:active,.ch-size button:active{transform:scale(.97)}
+@media(prefers-reduced-motion:reduce){.roll,body.first-load main .card,body.first-load .kpi{animation:none}
+  .btn:active:not(:disabled),.chip:active,.sc-open:active,.ch-size button:active{transform:none}}
+
+.atlas-fig.swap{animation:axSwap .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes axSwap{from{opacity:.35;transform:scale(.94)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.atlas-fig.swap{animation:none}}
 /* ── ATLAS reacts when its figure is clicked ── */
 .ax-rx,.ax-steam{display:none}
 .atlas[class*=" r-"] .ax-eyes{opacity:0}
@@ -3202,7 +3254,19 @@ function applyTheme(choice, save){
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-theme-set]');
-  if (b) applyTheme(b.dataset.themeSet, true);
+  if (!b) return;
+  const choice = b.dataset.themeSet;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!document.startViewTransition || reduce || choice === themeChoice()){
+    applyTheme(choice, true); return;
+  }
+  // The new theme grows out of the button that was pressed, as one smooth
+  // circle over the old one (View Transitions; browsers without it switch at once).
+  const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const far = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const st = document.documentElement.style;
+  st.setProperty('--vt-x', x + 'px'); st.setProperty('--vt-y', y + 'px'); st.setProperty('--vt-r', far + 'px');
+  document.startViewTransition(() => applyTheme(choice, true));
 });
 if (darkQuery && darkQuery.addEventListener)
   darkQuery.addEventListener('change', () => { if (themeChoice() === 'system') applyTheme('system', false); });
@@ -3845,7 +3909,58 @@ function stampRowLabels(tb){
     for (let i = 0; i < tr.cells.length; i++)
       if (heads[i]) tr.cells[i].setAttribute('data-k', heads[i]);
 }
-function putHTML(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; stampRowLabels(el); } }
+function putHTML(el, h){
+  if (!el || el._h === h) return;
+  const first = el._h === undefined && !el.firstChild;
+  el._h = h;
+  if (first) el.innerHTML = h; else morphHTML(el, h);
+  stampRowLabels(el);
+}
+/* Update a live panel IN PLACE: only the text, attributes and elements that
+   changed are touched. Replacing the whole panel on every change restarted its
+   animations, dropped hover states and made it flicker as a run went on
+   (timeline, KPIs, route panel). A <details> someone opened stays open. */
+const _morphTpl = document.createElement('template');
+function morphHTML(el, h){
+  _morphTpl.innerHTML = h;
+  morphChildren(el, _morphTpl.content);
+  _morphTpl.innerHTML = '';
+}
+function morphChildren(to, from){
+  const want = Array.from(from.childNodes);
+  let i = 0;
+  for (; i < want.length; i++){
+    const n = want[i], o = to.childNodes[i];
+    if (!o){ to.appendChild(n.cloneNode(true)); continue; }
+    if (o.nodeType !== n.nodeType || o.nodeName !== n.nodeName ||
+        (o.nodeType === 1 && (o.id || '') !== (n.id || ''))){
+      to.replaceChild(n.cloneNode(true), o); continue;
+    }
+    if (o.nodeType === 3 || o.nodeType === 8){
+      if (o.nodeValue !== n.nodeValue){
+        o.nodeValue = n.nodeValue;
+        // A changed figure rolls in instead of snapping (KPIs and the like).
+        const host = o.parentElement;
+        if (host && host.matches && host.matches('.kpi-v, [data-roll]')){
+          host.classList.remove('roll'); void host.offsetWidth; host.classList.add('roll');
+        }
+      }
+      continue;
+    }
+    if (o.nodeType !== 1) continue;
+    for (const a of Array.from(o.attributes)){
+      if (!n.hasAttribute(a.name) && !(a.name === 'open' && o.nodeName === 'DETAILS'))
+        o.removeAttribute(a.name);
+    }
+    for (const a of Array.from(n.attributes)){
+      if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value);
+    }
+    if (o.nodeName === 'svg' || o.nodeName === 'SVG') {
+      if (o.innerHTML !== n.innerHTML) o.innerHTML = n.innerHTML;
+    } else morphChildren(o, n);
+  }
+  while (to.childNodes.length > want.length) to.removeChild(to.lastChild);
+}
 /* Crossing the breakpoint has to label rows that were rendered while the
    wide layout was in force. One listener, registered once. */
 stackQ.addEventListener('change', () => document.querySelectorAll('.tw tbody').forEach(stampRowLabels));
@@ -4640,9 +4755,12 @@ function Atlas(el, o){
       fig.className = 'atlas-fig'; fig.setAttribute('aria-hidden', 'true');
       el.insertBefore(fig, el.firstChild);
     }
+    const had = !!fig.firstChild;
     fig.innerHTML = '<div class="atlas-float">' + (atlasRaster[st]
       ? '<img src="' + esc(atlasRaster[st]) + '" alt="" decoding="async">'
       : atlasFigure(st)) + '</div>';
+    // A change of state eases the new figure in instead of snapping to it.
+    if (had){ fig.classList.remove('swap'); void fig.offsetWidth; fig.classList.add('swap'); }
   }
   const message = o.message === undefined ? ATLAS[st].say : o.message;
   const words = o.text === false ? '' :
@@ -5001,16 +5119,20 @@ function TransportIllustration(mode, moving){
       if (i !== 2 && i !== 5)
         boxes += '<rect x="' + (64 + i * 24) + '" y="56" width="22" height="12" rx="1.5" fill="' + C[(i + 3) % 6] + '" opacity=".85"/>';
     }
-    art = '<g stroke="var(--ocean)" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none">' +
-        '<path d="M14 110 q10 -5 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>' +
-        '<path d="M40 119 q10 -4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/></g>' +
-      boxes +
+    // Waves are drawn wider than the picture so they can roll by seamlessly;
+    // the ship rocks on them and its funnel puffs while it is under way.
+    art = '<defs><clipPath id="tSea"><rect x="0" y="100" width="260" height="30"/></clipPath></defs>' +
+      '<g clip-path="url(#tSea)"><g class="t-waves" stroke="var(--ocean)" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none">' +
+        '<path d="M-26 110 q10 -5 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>' +
+        '<path class="t-wave2" d="M-20 119 q10 -4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/></g></g>' +
+      '<g class="t-smoke"><circle cx="44" cy="28" r="3.2"/><circle cx="40" cy="22" r="4.2"/><circle cx="35" cy="15" r="5"/></g>' +
+      '<g class="t-ship">' + boxes +
       '<path d="M26 82 H236 L244 74 V82 L224 104 H46 Z" fill="#0B1F33"/>' +
       '<path d="M37 95 H230 L226 99 H41 Z" fill="var(--ocean)"/>' +
       '<rect x="32" y="44" width="24" height="38" rx="3" ' + BODY + '/>' +
       '<rect x="36" y="49" width="16" height="5" rx="1.5" fill="#1E293B"/>' +
       '<rect x="40" y="33" width="9" height="11" rx="2" fill="var(--brand)"/>' +
-      '<path d="M226 82 V64" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round"/>';
+      '<path d="M226 82 V64" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round"/></g>';
   } else if (mode === 'road'){
     art = SH +
       '<rect x="18" y="28" width="160" height="68" rx="9" ' + BODY + '/>' +
@@ -6175,7 +6297,8 @@ function paintRoute(){
   if (j.k === 'failed') nodes += svgText(at.x + 26, at.y - 22, 'Exception — stopped here', {size:10.5, weight:600, fill:'#DC2626', anchor:'start'});
   if (j.k === 'human') nodes += svgText(at.x + 26, at.y - 22, 'Waiting for a person', {size:10.5, anchor:'start', fill:'#B45309'});
   if (j.k === 'processing') nodes += svgText(at.x + 26, at.y - 22, 'Tracking in progress', {size:10.5, anchor:'start', fill:'#2563EB'});
-  $('rtNodes').innerHTML = r ? nodes : '';
+  const rtn = $('rtNodes'), want = r ? nodes : '';
+  if (rtn._h !== want){ rtn._h = want; rtn.innerHTML = want; }
 
   putHTML($('routeTag'), r ? jpill(j) : '');
   if (!r){
@@ -7662,6 +7785,10 @@ document.addEventListener('click', (e) => {
     }, count >= STEPS.length ? 3200 : 2200);
   });
 })();
+
+/* Cards rise in once, on the first paint only. */
+document.body.classList.add('first-load');
+setTimeout(() => document.body.classList.remove('first-load'), 1400);
 </script>
 </body>
 </html>
