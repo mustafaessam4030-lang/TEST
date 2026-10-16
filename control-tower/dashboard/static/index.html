@@ -2378,6 +2378,26 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 .atlas-fig.swap{animation:axSwap .45s cubic-bezier(.2,.8,.2,1)}
 @keyframes axSwap{from{opacity:.35;transform:scale(.94)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.atlas-fig.swap{animation:none}}
+/* ── Sliding selection: the pill glides to the chosen option (segmented
+   controls, theme switch, chat size), like Apple's own selectors. ── */
+.glide-g{position:relative;isolation:isolate}
+.glide-g > .glide{position:absolute;left:0;top:0;width:0;height:0;z-index:0;pointer-events:none;
+  background:var(--surface);border-radius:8px;box-shadow:var(--lift);opacity:0;
+  transition:transform .5s cubic-bezier(.32,.72,0,1),width .5s cubic-bezier(.32,.72,0,1),
+    height .5s cubic-bezier(.32,.72,0,1),opacity .2s ease}
+.glide-g:not(.glide-ready) > .glide{transition:none}
+.glide-g > button{position:relative;z-index:1}
+.glide-g.glide-ready > button.on,.glide-g.glide-ready > button[aria-pressed="true"]{background:transparent;box-shadow:none}
+.pf-th > .glide{border-radius:100px;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.ch-size > .glide{background:var(--card);border-radius:7px;box-shadow:0 1px 2px rgba(11,31,51,.12)}
+:root[data-theme="dark"] .glide-g > .glide{background:rgba(255,255,255,.13);
+  box-shadow:0 1px 2px rgba(0,0,0,.45),inset 0 .5px 0 rgba(255,255,255,.08)}
+.seg button:active,.pf-th button:active{transform:scale(.96)}
+.seg button,.pf-th button{transition:color .2s ease,transform .15s ease}
+.tnav-ind{transition:transform .5s cubic-bezier(.32,.72,0,1),width .5s cubic-bezier(.32,.72,0,1)}
+@media(prefers-reduced-motion:reduce){.glide-g > .glide,.tnav-ind{transition:none}
+  .seg button:active,.pf-th button:active{transform:none}}
+
 /* ── ATLAS reacts when its figure is clicked ── */
 .ax-rx,.ax-steam{display:none}
 .atlas[class*=" r-"] .ax-eyes{opacity:0}
@@ -7812,6 +7832,51 @@ document.addEventListener('click', (e) => {
 /* Cards rise in once, on the first paint only. */
 document.body.classList.add('first-load');
 setTimeout(() => document.body.classList.remove('first-load'), 1400);
+</script>
+<script>
+/* Sliding selection pill for the segmented controls. Hidden groups (other
+   pages) are placed when they appear; the Analysis / Exceptions / Activity
+   log tabs slide from the tab that was left, as one control. */
+(function glide(){
+  if (!window.ResizeObserver || !window.MutationObserver) return;
+  let segFrom = null;
+  const pick = (g) => g.querySelector(':scope > button.on, :scope > button[aria-pressed="true"]');
+  const btns = (g) => Array.from(g.querySelectorAll(':scope > button'));
+  function put(g, b){
+    const p = g._glide;
+    if (!b || !b.offsetWidth){ p.style.opacity = '0'; return; }
+    p.style.opacity = '1';
+    p.style.width = b.offsetWidth + 'px'; p.style.height = b.offsetHeight + 'px';
+    p.style.transform = 'translate(' + b.offsetLeft + 'px,' + b.offsetTop + 'px)';
+  }
+  function jump(g, b){ g.classList.remove('glide-ready'); put(g, b); void g.offsetWidth; g.classList.add('glide-ready'); }
+  document.querySelectorAll('.seg, .pf-th, .ch-size').forEach((g) => {
+    const p = document.createElement('i');
+    p.className = 'glide'; p.setAttribute('aria-hidden', 'true');
+    g.insertBefore(p, g.firstChild); g._glide = p; g.classList.add('glide-g');
+    g._w = 0;
+    new ResizeObserver(() => {
+      const w = g.offsetWidth, was = g._w; g._w = w;
+      if (!w) return;
+      if (!was){
+        const from = g.classList.contains('seg') && segFrom != null ? btns(g)[segFrom] : null;
+        jump(g, from || pick(g));
+        if (from && from !== pick(g)) requestAnimationFrame(() => put(g, pick(g)));
+      } else jump(g, pick(g));
+    }).observe(g);
+    // A theme switch turns transitions off for a moment: slide once it is back.
+    const later = () => document.documentElement.classList.contains('theme-switching')
+      ? requestAnimationFrame(later) : put(g, pick(g));
+    new MutationObserver(later)
+      .observe(g, {subtree: true, attributes: true, attributeFilter: ['class', 'aria-pressed']});
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('.seg > button');
+    if (!b) return;
+    const g = b.parentElement, on = pick(g);
+    segFrom = btns(g).indexOf(on || b);
+  }, true);
+})();
 </script>
 </body>
 </html>
