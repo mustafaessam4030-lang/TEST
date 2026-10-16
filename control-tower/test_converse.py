@@ -767,6 +767,12 @@ for q, want in (("What's the correct ETA for K316521?", "eta"),
                 ("re-run the dhl check for K316521", "reprocess")):
     check("'{0}' is not taken over by the ATLAS-check question".format(q),
           assistant.detect_intent(q) == want, assistant.detect_intent(q))
+r = assistant._answer_rules("Did ATLAS check the DHL dates?", DS,
+                            {"_raw": True, "reference": "K303245"})
+check("Asked from a shipment's tab: the run-wide check, not that shipment's story, no web",
+      r.get("intent") == "atlas_checks" and not r.get("reference")
+      and "went through cleanly" not in r["answer"] and not r.get("web_sources")
+      and r["answer"].startswith("**ATLAS check of the DHL dates**"), r["answer"][:200])
 r = assistant._answer_rules("tell me about K316521", DS, {"_raw": True})
 check("A DHL shipment's answer quotes the page line ATLAS checked",
       "ATLAS checked the page and agrees" in r["answer"] and "Carrier: Arrived" in r["answer"],

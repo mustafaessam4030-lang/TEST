@@ -915,6 +915,9 @@ def _answer_duration(data):
     return text
 
 
+# Run-wide answers shown exactly as built: no shipment lead, no web section.
+RUN_WIDE_FINAL = ("atlas_checks", "review_list", "arrived", "run_control")
+
 RUN_CONTROL_ANSWER = ("Runs are started and stopped with the run controls on the dashboard, "
                       "not from the chat: use **Start** on the Control Tower (or Start PO on "
                       "the PO page), and **Stop** next to it while a run is going. I can tell you how the "
@@ -3751,6 +3754,12 @@ def _answer_core(question, state, context=None):
                 extras = {k: v for k, v in produced.items() if k != "text"}
             else:
                 text, sources = produced, ["bridge.snapshot"]
+            if intent in RUN_WIDE_FINAL:
+                # A run-wide list: not about the shipment the tab looked at
+                # last, and nothing for web research to add.
+                return dict({"answer": text, "card": None, "reference": None,
+                             "grounded": True, "sources": sources, "intent": intent,
+                             "final": True}, **extras)
             return dict({"answer": text, "card": None,
                          "reference": context.get("reference"), "grounded": True,
                          "sources": sources, "intent": intent}, **extras)
