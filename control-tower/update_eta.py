@@ -6070,6 +6070,13 @@ OCEAN_NO_RESULT = GENERIC_NO_RESULT + [
 ]
 
 
+# Grimaldi GNET: "Shipment ETS/ETA / Departure: ANTWERP 14/10/2026 04:12:00 /
+# Arrival: TAKORADI 31/10/2026 01:23:00" (operator's screenshot, 16 Oct).
+GRIMALDI_ETS_ETA = re.compile(
+    r"Shipment\s+ETS\s*/\s*ETA[\s\S]{0,200}?\bArrival\s*:\s*([A-Za-z][A-Za-z .'()-]*?)\s+"
+    r"(\d{2}/\d{2}/\d{4})", re.I)
+
+
 def _ocean_dates(text, labels):
     """[(position, date, label)] — the first date within 60 characters after
     each occurrence of each label."""
@@ -6096,12 +6103,21 @@ def _read_ocean_page(page, provider):
     text = _page_text(page)
     if len(text.strip()) < 120:
         return None
-    if _matches(text, OCEAN_NO_RESULT):
+    grimaldi = GRIMALDI_ETS_ETA.search(text) if provider == "GRIMALDI" else None
+    # A dated ETS/ETA block is a result, whatever an empty table elsewhere on
+    # the page says ("No records found" under the container list).
+    if not grimaldi and _matches(text, OCEAN_NO_RESULT):
         return {"provider": provider, "tracking_status": "No result",
                 "eta": None, "ata": None, "no_result": True}
 
     etas = _ocean_dates(text, OCEAN_ETA_LABELS)
     atas = _ocean_dates(text, OCEAN_ATA_LABELS)
+    if grimaldi:
+        # GNET's "Shipment ETS/ETA" block: both lines are estimates. The ETA is
+        # its "Arrival:" line (port of discharge), never the "Departure:" date
+        # that the bare word ETA in the heading would otherwise pick up.
+        port, day = grimaldi.group(1).strip(), grimaldi.group(2)
+        etas = [(grimaldi.start(), day, "Shipment ETS/ETA - Arrival {0}".format(port))]
 
     def at_final_port(found):
         for position, date, label in found:
@@ -7375,8 +7391,21 @@ def awb_on_page(page, tracking_number):
         # digits alone would match any page carrying 123456, so it has to be
         # found as written, ignoring only spacing and dashes.
         wanted = re.sub(r"[\s\-/]", "", reference).upper()
-        return wanted in re.sub(r"[\s\-/]", "", text).upper()
+        if wanted in re.sub(r"[\s\-/]", "", text).upper():
+            return True
+        # Some result pages (Grimaldi GNET) keep the searched number only in
+        # the search box above the result, not in the page text.
+        return wanted in [re.sub(r"[\s\-/]", "", v).upper() for v in _input_values(page)]
     return digits in re.sub(r"\D", "", text)
+
+
+def _input_values(page):
+    """The values typed into the page's visible text boxes (main frame), or []."""
+    try:
+        return [str(v or "") for v in page.locator("input:visible").evaluate_all(
+            "els => els.map(e => e.value)")]
+    except Exception:
+        return []
 
 
 # The furniture of a real shipment page. This used to be six phrases taken
