@@ -16,6 +16,8 @@ import re
 NUMBER = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w])")
 REFERENCE = re.compile(r"\b[A-Z0-9][A-Z0-9-]{5,}\b")
 URL = re.compile(r"https?://\S+", re.I)
+# A clock time: its two-digit parts pass as "small counts", so it is checked whole.
+TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])")
 CLAIMS = re.compile(r"\b(verified|confirmed|succeeded|success|successful(?:ly)?|written|saved|"
                     r"updated|sent|delivered|accepted|completed|resolved|recovered|fixed|"
                     r"cleared|approved|arrived|found|downloaded|extracted|attached|"
@@ -66,6 +68,10 @@ def check(phrased, inputs):
     for ref in REFERENCE.findall((phrased or "").upper()):
         if re.search(r"\d", ref) and len(ref) >= 6 and re.sub(r"[^A-Z0-9]", "", ref) not in src_flat:
             violations.append("reference {0}".format(ref))
+    src_times = {(int(h), m) for h, m in TIME.findall(source)}
+    for h, m in TIME.findall(phrased or ""):
+        if (int(h), m) not in src_times:
+            violations.append("time {0}:{1}".format(h, m))
     for url in URL.findall(phrased or ""):
         if url.rstrip(".,);") not in source:
             violations.append("link {0}".format(url[:60]))

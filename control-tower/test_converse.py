@@ -292,6 +292,9 @@ check("Fact guard: 'never wrote it' still blocks 'was written'",
                     ["Nothing was written. The run never wrote 1570046231."])[0])
 check("Fact guard: 'success' still needs the records to say it",
       not _FG.check("It was a success.", ["2 written to the Hub"])[0])
+check("Fact guard: an invented clock time is refused (its parts are small numbers)",
+      not _FG.check("It failed at 14:05.", ["8842001173 failed"])[0]
+      and _FG.check("Landed 9:30 local.", ["ARRIVED 09:30 ACC"])[0])
 
 print("=" * 68)
 print("6e. ANALYSIS WITH CHARTS, FROM THE RUN'S OWN NUMBERS")

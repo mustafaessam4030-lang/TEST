@@ -379,11 +379,18 @@ INTENTS = [
     # anything else can match it.
     ("code_request", ["solve the code", "solve the security", "enter the code",
                       "type the code", "read the code", "fill the code", "fill in the code",
-                      "bypass", "captcha", "security code for me", "do the verification",
+                      "bypass", "solve the captcha", "solve captcha", "the captcha for me",
+                      "type the captcha", "enter the captcha", "read the captcha",
+                      "fill the captcha", "captcha code", "captcha solver",
+                      "security code for me", "do the verification",
                       "what is the code", "what's the code", "whats the code", " ocr ",
                       "solve it for me", "type it for me", "enter it for me",
                       "solve the verification", "read the security", "anti-bot",
                       "anti bot", "defeat the"]),
+    # Starting or stopping a run is done on the dashboard, never from chat.
+    ("run_control", ["start the run", "start a run", "start the automation", "start tower",
+                     "run the automation", "stop the run", "stop the automation",
+                     "pause the automation", "restart the run", "cancel the run"]),
     # Operational: ask the run to bring a parked shipment back to its
     # verification step. Before "attention" so "resume the waiting one" is
     # a request, not a question.
@@ -392,7 +399,7 @@ INTENTS = [
                       "i'm ready to verify", "i am ready to verify", "ready to verify",
                       "i'm available", "i am available", "let me verify",
                       "start the verification", "handle the waiting", "let me handle"]),
-    ("next_step",   ["what should i do", "what do i do next", "next step", "what now",
+    ("next_step",   ["محتاج مني", "المطلوب مني", "اعمل ايه", "أعمل ايه", "اعمل ايش", "what should i do", "what do i do next", "next step", "what now",
                      "what's next", "whats next", "what to do next"]),
     ("wait_time",   ["been waiting", "was it waiting", "is it waiting", "did it wait",
                      "waiting for how long", "how long did it wait", "how long was it",
@@ -413,7 +420,11 @@ INTENTS = [
                      "what do i need to do", "requires attention", "what needs",
                      "need to handle", "needs me", "need me", "anything for me",
                      "what's going wrong", "whats going wrong", "what is going wrong"]),
-    ("human",       ["human action", "waiting for human", "waiting for a person",
+    ("review_list", ["need review", "needs review", "need a review", "to review",
+                     "for review", "under review", "review list", "needs checking",
+                     "need checking"]),
+    ("human",       ["captcha waiting", "any captcha", "a captcha", "is there a captcha", "captcha pending", "waiting captcha",
+                     "captchas", "human action", "waiting for human", "waiting for a person",
                      "waiting shipments", "show waiting", "needs a person",
                      "human verification", "shipments waiting", "what's waiting",
                      "whats waiting", "what is waiting", "the queue", "human task",
@@ -421,7 +432,8 @@ INTENTS = [
     ("latest_failure", ["latest failure", "last failure", "most recent failure",
                         "why did the latest", "why did the last", "latest error",
                         "last error", "most recent error"]),
-    ("summary",     ["summarize", "summarise", "sum up", "summary of this run",
+    ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "summary", "quick update",
+                     "give me an update", "update me", "where are we", "summary of this run",
                      "summary of the run", "summarize this run",
                      "summary of the last run", "summary of the latest run",
                      "summarize the last run", "summarize the latest run"]),
@@ -486,6 +498,8 @@ INTENTS = [
                      "which carrier is faster", "which carrier is worse",
                      "carrier performance", "carriers doing"]),
     ("duration",    ["how long has", "how long is", "runtime", "running for",
+                     "how long will", "how much longer", "time left", "time remaining",
+                     "when will the run", "when will it finish", "run take",
                      "how long did the run"]),
     ("health",      ["how is it going", "how are we doing", "everything ok",
                      "everything okay", "is it healthy", "any problems",
@@ -499,6 +513,7 @@ INTENTS = [
                      "check again"]),
     ("help",        ["help", "what can you", "how do i use", "what do you know"]),
     ("run",         ["run status", "latest run", "how is the run", "run summary",
+                     "status of the run", "the run's status", "how's the run",
                      "what happened during", "overall run", "how is it going"]),
     ("under_clearance", ["under clearance", "clearance"]),
     ("worst_carrier", ["most failures", "worst carrier", "which carrier has",
@@ -508,7 +523,7 @@ INTENTS = [
     ("system",      ["is dhl", "is qatar", "dhl currently", "qatar currently",
                      "what happened with", "status of dhl", "status of qatar",
                      "system status", "integration", "how is dhl", "how is qatar"]),
-    ("failed",      ["which shipments failed", "failed shipments", "failures",
+    ("failed",      ["فيها مشكلة", "الشحنات الفاشلة", "اللي فشلت", "فشلت", "which shipments failed", "failed shipments", "failures",
                      "what failed", "list failed", "show me the failures"]),
     ("skipped",     ["skipped", "no eta or ata"]),
     ("no_eta",      ["no eta", "without eta", "missing eta", "no date"]),
@@ -517,13 +532,19 @@ INTENTS = [
     ("logs",        ["logs", "log lines", "raw log", "show the log"]),
     ("latest_event", ["latest event", "last event", "recent event",
                       "what just happened", "latest activity", "recent activity"]),
-    ("counts",      ["how many", "count", "total", "numbers", "statistics"]),
-    ("why",         ["why did", "why was", "why is", "reason", "what went wrong",
+    ("counts",      ["كم شحنة", "كام شحنة", "عدد الشحنات", "how many", "count", "total", "numbers", "statistics"]),
+    ("why",         ["ليه", "ليش", "لماذا", "سبب", "why did", "why was", "why is", "reason", "what went wrong",
                      "whats wrong", "what's wrong", "cause of"]),
-    ("eta",         ["eta", "arrival", "when will", "when does", "delivery date"]),
+    ("arrived",     ["which shipments arrived", "what arrived", "arrived today",
+                     "shipments that arrived", "have arrived", "has arrived", "got an ata",
+                     "with an ata", "arrivals"]),
+    ("eta",         ["eta", "arrival", "when will", "when does", "delivery date",
+                     "when did", "arrive", "landed"]),
     ("carrier",     ["which carrier", "who is handling", "what carrier",
                      "carrier for", "carrier is handling"]),
     ("shipment",    ["where is", "status of shipment", "tell me about", "look up",
+                     "did the automation update", "update the hub for", "did you write",
+                     "did you update", "was it written", "what did you write",
                      "show me shipment", "what happened to", "details for",
                      "status of"]),
 ]
@@ -856,8 +877,59 @@ def _answer_duration(data):
     if data.runtime is None:
         return "No run has started, so there is nothing running yet."
     state = "so far" if data.is_running else "in total"
-    return "The run has been going **{0}** {1}, processing {2} shipment(s).".format(
+    text = "The run has been going **{0}** {1}, processing {2} shipment(s).".format(
         data.runtime, state, data.counters.get("processed", 0))
+    if data.is_running:
+        # A forecast needs a measured pace and a known total; without both,
+        # none is given.
+        progress, done = data.progress, data.counters.get("processed", 0)
+        total = progress.get("total") or progress.get("target")
+        timed = [r.get("duration_ms") for r in data.shipments if r.get("duration_ms")]
+        if total and done and timed and total > done:
+            left = (total - done) * (sum(timed) / len(timed)) / 60000.0
+            text += " At its average pace so far ({0:.1f} min per shipment), the {1} left " \
+                    "would take about **{2:.0f} min**.".format(
+                        sum(timed) / len(timed) / 60000.0, total - done, left)
+        else:
+            text += " There is not enough measured yet to say how long the rest will take."
+    return text
+
+
+RUN_CONTROL_ANSWER = ("Runs are started and stopped with the run controls on the dashboard, "
+                      "not from the chat: use **Start** on the Control Tower (or Start PO on "
+                      "the PO page), and **Stop** next to it while a run is going. I can tell you how the "
+                      "current run is doing — ask “how is the run?”.")
+
+
+def _answer_review_list(data):
+    """Shipments sent to a person to check: nothing was written for them."""
+    rows = [r for r in data.shipments if str(r.get("outcome") or "").upper().replace("_", " ")
+            == "NEEDS REVIEW"]
+    if not rows:
+        return "No shipment needs review in this run."
+    lines = ["**{0} shipment(s) need review** — nothing was written for them; a person "
+             "checks each one:".format(len(rows)), ""]
+    for r in rows[:15]:
+        reason = str(r.get("error") or "").replace("NEEDS REVIEW: ", "")
+        lines.append("• {0} ({1}) — {2}".format(r.get("reference"), _show(r.get("carrier")),
+                                                reason[:200] or "no reason recorded"))
+    if len(rows) > 15:
+        lines.append("…and {0} more. Download the CSV for the full list.".format(len(rows) - 15))
+    return "\n".join(lines)
+
+
+def _answer_arrived(data):
+    """Shipments whose carrier gave an actual arrival in this run."""
+    rows = [r for r in data.shipments if _has(r.get("provider_ata"))]
+    if not rows:
+        return "No shipment in this run has an actual arrival (ATA) from its carrier."
+    lines = ["**{0} shipment(s) arrived** (the carrier gave an ATA):".format(len(rows)), ""]
+    for r in rows[:15]:
+        written = "written to the Hub" if r.get("state") == "updated" else \
+            "not written ({0})".format(STATE_WORDS.get(r.get("state"), r.get("state")))
+        lines.append("• {0} ({1}) — ATA {2}, {3}".format(
+            r.get("reference"), _show(r.get("carrier")), r["provider_ata"], written))
+    return "\n".join(lines)
 
 
 def _answer_health(data):
@@ -2486,9 +2558,41 @@ def _answer_next(data):
     return "\n".join(numbered), buttons[:4]
 
 
+KNOWN_CARRIER_WORDS = (
+    "emirates", "lufthansa", "qatar", "ethiopian", "klm", "air france", "afkl", "brussels",
+    "turkish", "saudia", "egyptair", "rwandair", "virgin", "astral", "kenya airways",
+    "south african", "saa", "maersk", "msc", "cma", "hapag", "grimaldi", "cosco", "one",
+    "dhl", "aviation")
+
+
+PROBLEM_WORDS = re.compile(r"\b(why|fail\w*|not working|problem\w*|issue\w*|error\w*|"
+                           r"broken|wrong|stuck)\b", re.I)
+
+
+def _absent_carrier(data, question):
+    """The carrier a problem question names when it has no shipment in this run, or None."""
+    q = question or ""
+    if not PROBLEM_WORDS.search(q) or re.search(r"\d{5,}", q) or carrier_named(data, q):
+        return None
+    lowered = q.casefold()
+    word = next((w for w in KNOWN_CARRIER_WORDS
+                 if re.search(r"\b" + re.escape(w) + r"\b", lowered)), None)
+    if not word:
+        return None
+    return word.title() if len(word) > 3 else word.upper()
+
+
 def _why_carrier(data, question):
     name, rows = _carrier_records(data, question)
     if not name:
+        lowered = question.casefold()
+        named = next((w for w in KNOWN_CARRIER_WORDS
+                      if re.search(r"\b" + re.escape(w) + r"\b", lowered)), None)
+        if named:
+            return _reply("No {0} shipment is in this run, so I have nothing recorded about "
+                          "it this time. Ask me after a run that includes one, or ask about a "
+                          "shipment by its reference.".format(named.title() if len(named) > 3
+                                                              else named.upper()), data, "why")
         return None
     bad = [r for r in rows if r.get("state") in ("failed", "partial", "human_timeout", "skipped")]
     if not bad:
@@ -3361,6 +3465,27 @@ def _answer_core(question, state, context=None):
             if produced is not None:
                 return produced
 
+        # "What does NEEDS REVIEW mean?": the automation's own words, defined.
+        try:
+            from intelligence import knowledge as _K
+            defined = _K.glossary(question)
+        except Exception:
+            defined = None
+        if defined and defined[0] in _K.OPERATIONS_TITLES:
+            return {"answer": "**{0}** — {1}".format(*defined), "card": None,
+                    "reference": None, "grounded": True, "intent": "glossary",
+                    "final": True}
+
+        # "Why is Emirates failing?" when no Emirates shipment is in this run:
+        # say so, rather than explain some other carrier's failure.
+        absent = _absent_carrier(data, question)
+        if absent:
+            return {"answer": "No {0} shipment is in this run, so I have nothing recorded "
+                              "about it this time. Ask me after a run that includes one, or "
+                              "ask about a shipment by its reference.".format(absent),
+                    "card": None, "reference": None, "grounded": True, "intent": "why",
+                    "final": True}
+
         # -- what ATLAS has learned, its evidence, its evaluation ----------
         # From the intelligence stores, read-only. Checked before the run's
         # own answers so "which recovery strategy works best" is about the
@@ -3556,6 +3681,9 @@ def _answer_core(question, state, context=None):
             "latest_event": lambda: _answer_latest_event(data),
             "logs": lambda: _answer_logs(data),
             "atlas_checks": lambda: _answer_atlas_checks(data),
+            "review_list": lambda: _answer_review_list(data),
+            "arrived": lambda: _answer_arrived(data),
+            "run_control": lambda: RUN_CONTROL_ANSWER,
             # Telemetry-backed. Each returns a counted answer or an explicit
             # "there is nothing measured to answer that from".
             "carrier_timing": lambda: _from_telemetry(

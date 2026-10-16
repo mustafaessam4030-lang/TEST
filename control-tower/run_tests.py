@@ -45,6 +45,8 @@ SUITES = [
     ("test_dhl_tabs.py",        "DHL result tabs under an overlay (Express)"),
     ("test_portal_box_wait.py", "Portal box found by the general search: short wait after (MSC)"),
     ("test_deep_link_retry.py", "Shipment page whose connection drops is tried again (DHL Aviation)"),
+    ("test_atlas_understanding.py", "ATLAS: the questions operators ask, EN and AR, answered from records"),
+    ("test_model_bench.py",     "ATLAS model benchmark (stand-in Ollama)"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),

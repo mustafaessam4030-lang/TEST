@@ -696,6 +696,17 @@ ollama pull qwen3:30b
 python -m intelligence.autoconfig --test   & rem shows the model and its answer time
 ```
 
+**Which model is best on THIS PC?** Pull the candidates, then compare them on the same
+ATLAS tasks (reading an English, Arabic and casual question; answering from records under
+the fact guard). It prints each answer time, what was right, and a recommendation:
+
+```bat
+ollama pull qwen3:30b
+ollama pull gpt-oss:20b                    & rem optional second candidate (~14 GB)
+python -m intelligence.autoconfig --bench
+set ATLAS_LLM_MODEL=gpt-oss:20b            & rem only if the bench recommends it
+```
+
 To go back to the 4B: `ollama rm qwen3:30b` (or `set ATLAS_LLM_MODEL=qwen3.5:4b`).
 Not yet measured on the automation PC: check the answer time the self-test
 prints before giving the team access. Run, shipment and PO answers do not use

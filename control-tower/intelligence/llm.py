@@ -118,7 +118,9 @@ class OllamaProvider(object):
         Reasoning ("thinking") is switched off: an operator is waiting."""
         if not self.health()["ok"]:
             raise LLMError(self.health()["detail"])
-        body = {"model": self.model, "stream": False, "think": False,
+        # gpt-oss takes a reasoning level, not on/off: the lowest, an operator waits.
+        body = {"model": self.model, "stream": False,
+                "think": "low" if str(self.model or "").startswith("gpt-oss") else False,
                 "keep_alive": os.environ.get("ATLAS_LLM_KEEP_ALIVE") or "30m",
                 "options": {"temperature": 0.2, "num_predict": int(max_tokens)},
                 "messages": [{"role": "system", "content": system},

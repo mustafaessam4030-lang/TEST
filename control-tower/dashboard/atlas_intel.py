@@ -214,7 +214,7 @@ def _failure_for(data, record, question, context, run_failures, pick):
 
 def _enrich(question, context, reply, data, run_failures, pick_failure):
     if reply.get("conduct") or reply.get("intent") in ("code_request", "greeting", "thanks") \
-            or (context.get("domain") == "po"):
+            or (context.get("domain") == "po") or reply.get("final"):
         return reply
     record = _subject(data, question, reply, context)
     failure = _failure_for(data, record, question, context, run_failures, pick_failure)

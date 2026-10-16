@@ -150,9 +150,12 @@ def choose_model(url, pulled=None, ram_gb=None):
     Otherwise the stronger model when it is pulled and the PC has at least
     STRONG_MIN_RAM_GB of memory, with the 4B kept for pictures; else the 4B.
     """
-    if os.environ.get("ATLAS_LLM_MODEL"):
-        return os.environ["ATLAS_LLM_MODEL"], None
     pulled = _pulled(url) if pulled is None else pulled
+    if os.environ.get("ATLAS_LLM_MODEL"):
+        chosen = os.environ["ATLAS_LLM_MODEL"]
+        # A text-only model named by the operator still has pictures read by the 4B.
+        text_only = chosen in STRONG_MODELS or chosen.startswith("gpt-oss")
+        return chosen, (DEFAULT_MODEL if text_only and DEFAULT_MODEL in pulled else None)
     if ram_gb is None:
         ram_gb = _machine()[1] or 0
     strong = next((m for m in STRONG_MODELS if m in pulled), None)
@@ -344,10 +347,112 @@ def self_test():
     return 1
 
 
+# The models worth comparing on a CPU-only PC (python -m intelligence.autoconfig
+# --bench). Only those already pulled are tried; nothing is downloaded.
+BENCH_MODELS = (DEFAULT_MODEL,) + STRONG_MODELS + ("gpt-oss:20b",)
+BENCH_TASKS = (
+    ("understand (English)", "understand", "why did 8842001173 fail yesterday?"),
+    ("understand (Arabic)", "understand", "ليه الشحنة 8842001173 فشلت؟"),
+    ("understand (casual)", "understand", "ok what should we look at first today"),
+    ("answer from records", "compose",
+     "OPERATOR'S QUESTION: why did 8842001173 fail?\n\nRECORDS (ELAP, authoritative):\n"
+     "8842001173 on DHL GLOBAL FORWARDING stopped at the Hub write: the Save/Update button "
+     "was not found on the Manage page. Nothing was written to the Hub. Likely cause: the "
+     "Manage page had not finished loading.\n\nWEB:\n(none)"),
+)
+
+
+def bench(models=None, log=print):
+    """
+    python -m intelligence.autoconfig --bench [model ...]
+
+    Times each pulled model on the same four ATLAS tasks — reading a question
+    (English, Arabic, casual) and writing an answer from records — and checks
+    each reply: valid JSON, and for the answer, the fact guard (nothing added
+    that the records do not hold). Prints a table and a recommendation.
+    Reads nothing from the Hub, changes nothing, downloads nothing.
+    """
+    from . import converse as CV, factguard as FG, llm as L
+    url = os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA
+    pulled = _pulled(url)
+    if not pulled:
+        log("Ollama is not answering at {0}: start it, then run this again.".format(url))
+        return 1
+    wanted = [m for m in (models or BENCH_MODELS) if m in pulled]
+    if not wanted:
+        log("None of {0} is pulled. Pulled here: {1}".format(", ".join(models or BENCH_MODELS),
+                                                            ", ".join(sorted(pulled))))
+        return 1
+    cores, total, free, _disk = _machine()
+    log("ATLAS model benchmark — {0} CPU cores, {1} GB RAM ({2} GB free)".format(
+        cores, round(total or 0), round(free or 0)))
+    threads = int(os.environ.get("ATLAS_LLM_THREADS") or model_threads())
+    rows = []
+    for model in wanted:
+        log("\n{0}: loading (the first load can take minutes)…".format(model))
+        t = time.time()
+        try:
+            req = urllib.request.Request(url.rstrip("/") + "/api/generate", data=json.dumps(
+                {"model": model, "keep_alive": "10m", "options": {"num_thread": threads}}).encode(),
+                headers={"Content-Type": "application/json"})
+            with R.open_url(req, WARM_TIMEOUT_S) as response:
+                response.read()
+        except Exception as error:
+            log("  could not load: {0}".format(str(error)[:120]))
+            continue
+        load_s = time.time() - t
+        provider = L.OllamaProvider(url=url, model=model, timeout=300, retries=0)
+        times, good = [], 0
+        for label, kind, prompt in BENCH_TASKS:
+            t = time.time()
+            ok, note = False, ""
+            try:
+                if kind == "understand":
+                    text = provider.generate(CV.UNDERSTAND, "Question: " + prompt,
+                                             json_mode=True, max_tokens=160)
+                    data = CV._json(text) or {}
+                    ok = bool(data.get("question_en")) and ("8842001173" in data["question_en"]
+                                                            or "8842001173" not in prompt)
+                    note = (data.get("question_en") or text or "")[:60]
+                else:
+                    text = provider.generate(CV.COMPOSE.format(language="English"), prompt,
+                                             json_mode=True, max_tokens=450)
+                    data = CV._json(text) or {}
+                    guard_ok, bad = FG.check(str(data.get("answer") or ""), [prompt])
+                    ok = bool(data.get("answer")) and guard_ok
+                    note = (data.get("answer") or "")[:60] if guard_ok else "guard: " + "; ".join(bad)
+            except Exception as error:
+                note = str(error)[:60]
+            took = time.time() - t
+            times.append(took)
+            good += ok
+            log("  {0:<22} {1:>6.1f} s  {2}  {3}".format(label, took, "OK  " if ok else "FAIL", note))
+        rows.append((model, load_s, sum(times) / len(times), max(times), good, len(BENCH_TASKS)))
+    if not rows:
+        return 1
+    log("\n{0:<22} {1:>8} {2:>10} {3:>8} {4:>8}".format("model", "load s", "avg answer", "slowest",
+                                                        "correct"))
+    for m, load_s, avg, worst, good, n in rows:
+        log("{0:<22} {1:>8.0f} {2:>9.1f}s {3:>7.1f}s {4:>5}/{5}".format(m, load_s, avg, worst, good, n))
+    usable = [r for r in rows if r[4] == r[5] and r[3] <= 90]
+    if usable:
+        # The strongest model that got every task right within 90 s per answer.
+        rank = {m: i for i, m in enumerate(BENCH_MODELS)}
+        best = max(usable, key=lambda r: rank.get(r[0], -1))
+        log("\nRecommended here: {0} (every task right, slowest answer {1:.0f} s).".format(
+            best[0], best[3]))
+    else:
+        log("\nNo model got every task right within 90 s here; keep {0}.".format(DEFAULT_MODEL))
+    return 0
+
+
 if __name__ == "__main__":
     import sys
     if "--test" in sys.argv:
         sys.exit(self_test())
+    if "--bench" in sys.argv:
+        sys.exit(bench([a for a in sys.argv[sys.argv.index("--bench") + 1:]
+                        if not a.startswith("-")] or None))
     # python -m intelligence.autoconfig  — what this machine has, nothing changed.
     m_ok, m_detail, s_ok, s_detail = _probe(warm=False)
     print("ATLAS conversation: {0}".format(("READY — " if m_ok else "OFF — ") + m_detail))

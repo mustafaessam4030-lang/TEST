@@ -27,7 +27,38 @@ ORDER = {CONFIRMED: 0, LIKELY: 1, POSSIBLE: 2, UNKNOWN: 3}
 
 # ── glossary ──────────────────────────────────────────────────────────────
 # (pattern, title, answer). Patterns match the term as an operator writes it.
-GLOSSARY = [
+# The automation's own words, as the dashboard and ATLAS use them.
+OPERATIONS_GLOSSARY = [
+    (r"needs?\s+review|need\s+a\s+review", "Needs review",
+     "NEEDS REVIEW means the automation did not trust the carrier's dates enough to write "
+     "them, so it wrote nothing for that shipment and a person checks it. Typical reasons: "
+     "the Hub already holds a different ATA, the estimate and the arrival are the same date, "
+     "the arrival was at a transit airport, or ATLAS read the page differently."),
+    (r"\bpartial\b", "Partial",
+     "PARTIAL means one date was written and the other was not — for example the ETA was "
+     "saved, then the ATA was stopped by a check. What was written is shown on the shipment."),
+    (r"\bskipped\b", "Skipped",
+     "SKIPPED means nothing was written because the carrier gave no usable date (no result, "
+     "no ETA or ATA on the page) or the page could not be read. The reason is on the shipment."),
+    (r"human\s+action|waiting\s+for\s+(?:a\s+)?(?:human|person)", "Human action",
+     "HUMAN ACTION means the carrier site asks for a person — a security check (CAPTCHA) or a "
+     "code. The automation never solves these; it waits for someone to complete it in the "
+     "browser, then continues the same shipment."),
+    (r"read-?\s?back|verified", "Read-back",
+     "Read-back is how a write is proven: after saving, the automation reopens the shipment "
+     "in the Hub and reads the field. It counts as SUCCESS only when the Hub holds the date "
+     "it wrote."),
+    (r"\bheld\b|\bhold\b|deferred", "Held / deferred",
+     "HELD or DEFERRED means the automation did not contact that carrier on purpose — CMA "
+     "CGM is held until a safe way to read it is agreed. Nothing is looked up or written."),
+    (r"atlas\s+check", "ATLAS check",
+     "The ATLAS check is ATLAS's second reading of a DHL timeline before anything is written: "
+     "it must find the same dates on the page, each with the line it came from. If it reads "
+     "something different, nothing is written and the shipment goes to a person."),
+]
+OPERATIONS_TITLES = {t for _p, t, _a in OPERATIONS_GLOSSARY}
+
+GLOSSARY = OPERATIONS_GLOSSARY + [
     (r"trans-?shipment", "Transshipment",
      "Transshipment is when cargo is unloaded from one vessel at an intermediate port and "
      "loaded onto another vessel to continue to its destination — typical at hub ports where "

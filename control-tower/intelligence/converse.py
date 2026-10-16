@@ -670,7 +670,7 @@ RECORD_INTENTS = {
     "counts", "failed", "processing", "latest_event", "logs", "system", "under_clearance",
     "worst_carrier", "all_of", "download", "ml_recs", "human", "latest_failure",
     "carrier_access_live", "failure_evidence", "failure_work", "identity", "capabilities",
-    "help", "wait_time", "atlas_checks",
+    "help", "wait_time", "atlas_checks", "review_list", "arrived", "run_control", "glossary",
 }
 WEB_CUE = re.compile(r"\b(web|website|site|internet|online|search|google|news|notice|"
                      r"cloudflare|mean|means|meaning|what\s+is|how\s+(?:do|to|can)|"
@@ -702,7 +702,7 @@ def _records_question(reply, question):
     if reply.get("fallback") or reply.get("request") or \
             not (intent in RECORD_INTENTS or intent.startswith(("po_", "failure_"))):
         return False
-    if not WEB_CUE.search(question):
+    if intent == "glossary" or not WEB_CUE.search(question):
         return True
     return not STRONG_WEB.search(question) and bool(ABOUT_RECORDS.search(question))
 
