@@ -2437,6 +2437,10 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
   font-weight:600;line-height:1.3;box-shadow:0 6px 20px rgba(0,0,0,.18);
   animation:axPokeIn .22s cubic-bezier(.2,.9,.24,1.2) both}
 .ax-poke.out{animation:axPokeOut .25s ease both}
+/* --ink turns light in dark mode: the bubble keeps readable text either way. */
+.ax-poke:not(.mad){background:#0B1F33;color:#FFFFFF}
+:root[data-theme="dark"] .ax-poke:not(.mad){background:#F2F4F7;color:#0B1F33;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+.ax-poke.mad{color:#FFFFFF}
 @keyframes axPokeIn{from{opacity:0;transform:translateY(6px) scale(.9)}to{opacity:1;transform:none}}
 @keyframes axPokeOut{to{opacity:0;transform:translateY(-4px)}}
 @keyframes axShake{20%,60%{transform:translateX(-5px) rotate(-6deg)}40%,80%{transform:translateX(5px) rotate(6deg)}}
