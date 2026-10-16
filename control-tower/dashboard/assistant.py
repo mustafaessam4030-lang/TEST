@@ -432,7 +432,7 @@ INTENTS = [
     ("latest_failure", ["latest failure", "last failure", "most recent failure",
                         "why did the latest", "why did the last", "latest error",
                         "last error", "most recent error"]),
-    ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "give me a summary", "quick update",
+    ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "give me a summary", "show me the summary", "daily summary", "quick update",
                      "give me an update", "update me", "where are we", "summary of this run",
                      "summary of the run", "summarize this run",
                      "summary of the last run", "summary of the latest run",
@@ -523,7 +523,7 @@ INTENTS = [
     ("system",      ["is dhl", "is qatar", "dhl currently", "qatar currently",
                      "what happened with", "status of dhl", "status of qatar",
                      "system status", "integration", "how is dhl", "how is qatar"]),
-    ("failed",      ["فيها مشكلة", "الشحنات الفاشلة", "اللي فشلت", "which shipments failed", "failed shipments", "failures",
+    ("failed",      ["فيها مشكلة", "الشحنات الفاشلة", "اللي فشلت", "شحنات فشلت", "which shipments failed", "failed shipments", "failures",
                      "what failed", "list failed", "show me the failures"]),
     ("skipped",     ["skipped", "no eta or ata"]),
     ("no_eta",      ["no eta", "without eta", "missing eta", "no date"]),
@@ -560,14 +560,23 @@ TYPOS = {
 }
 
 
+# Asking ATLAS to get through a security check. Two shapes, both refused:
+#   a solving verb at a CAPTCHA ("solve this captcha", "type captcha");
+#   a request aimed at ATLAS ("can you complete the verification").
+# Not refused: questions about the queue or a shipment ("did 8842001173 pass
+# verification?", "do we have any captchas?", "what type of challenge is waiting").
 SOLVE_REQUEST = re.compile(
-    r"\b(solve|solving|crack|bypass|type|enter|fill|read|pass|complete|break|do|beat|"
-    r"get past|get through)\b[^.?!]{0,30}\b(captchas?|security codes?|verification|"
-    r"the code|this code|that code|challenge|turnstile|recaptcha)\b")
+    r"\b(solve|solving|crack|bypass|beat|break|get past|get through|fill(?: in)?|type|enter|"
+    r"read)\b[^.?!]{0,30}\b(captchas?|recaptcha|turnstile|security codes?|verification codes?)\b"
+    r"|\b(solve|crack|bypass|beat|get past|get through)\b[^.?!]{0,20}\b(challenge|verification|"
+    r"security check)\b"
+    r"|\b(can you|could you|would you|will you|please|for me)\b[^.?!]{0,15}\b(do|pass|"
+    r"complete|read|solve|type|enter|fill|handle|clear)\b[^.?!]{0,30}\b(captchas?|"
+    r"security codes?|verification|the code|this code|that code|challenge)\b")
 
 
 def normalise(question):
-    lowered = " {0} ".format(question.casefold().strip())
+    lowered = " {0} ".format(question.casefold().strip().replace("\u2019", "'"))
     for wrong, right in TYPOS.items():
         lowered = lowered.replace(wrong, right)
     return lowered
@@ -2580,7 +2589,8 @@ KNOWN_CARRIER_WORDS = (
 # skipped", "what is a partial". Not "what are the shipments that need review".
 DEFINE_ASK = re.compile(r"\b(mean|means|meaning|define|definition|stands? for)\b|"
                         r"^\s*what(?:'s| is)\s+(?:a|an|the)?\s*[\w\s-]{2,25}\??\s*$", re.I)
-NOT_A_DEFINITION = re.compile(r"\d{5,}|\b(shipments?|which|list|show|how many|why)\b", re.I)
+NOT_A_DEFINITION = re.compile(r"\d{5,}|\b(which|show|how many|why)\b|"
+                              r"\b(the|are|all)\s+(?:\w+\s+)?shipments?\b", re.I)
 
 PROBLEM_WORDS = re.compile(r"\b(why|fail\w*|not working|problem\w*|issue\w*|error\w*|"
                            r"broken|wrong|stuck)\b", re.I)
@@ -2598,8 +2608,9 @@ def _absent_carrier(data, question):
     if not word:
         return None
     # Present under another name (a DHL row whose carrier field is empty)?
-    if any(word in " ".join(str(r.get(k) or "") for k in ("carrier", "provider")).casefold()
-           .replace("_", " ") for r in data.shipments):
+    if any(re.search(r"\b" + re.escape(word) + r"\b", " ".join(
+            str(r.get(k) or "") for k in ("carrier", "provider")).casefold().replace("_", " "))
+           for r in data.shipments):
         return None
     return word.title() if len(word) > 3 else word.upper()
 
@@ -3493,7 +3504,8 @@ def _answer_core(question, state, context=None):
             defined = _K.operations_term(question)
         except Exception:
             defined = None
-        if defined and DEFINE_ASK.search(question) and not NOT_A_DEFINITION.search(question):
+        _q = (question or "").replace("\u2019", "'").rstrip("?! ") + "?"
+        if defined and DEFINE_ASK.search(_q) and not NOT_A_DEFINITION.search(_q):
             return {"answer": "**{0}** — {1}".format(*defined), "card": None,
                     "reference": None, "grounded": True, "intent": "glossary",
                     "final": True}

@@ -46,8 +46,8 @@ class Ollama(BaseHTTPRequestHandler):
             self.send_response(200); self.end_headers()
             if Ollama.fail_pull:
                 self.wfile.write(b'{"error":"registry unreachable"}\n'); return
-            for done in (0, 5, 10):
-                self.wfile.write(json.dumps({"status": "pulling", "total": 10,
+            for done in (0, 9e9, 18e9):
+                self.wfile.write(json.dumps({"status": "pulling", "total": 18e9,
                                              "completed": done}).encode() + b"\n")
                 self.wfile.flush()
             Ollama.models = Ollama.models + [body["model"]]
@@ -71,7 +71,9 @@ def fresh(models, ram=34.3, disk=200.0, **env):
     os.environ.update(dict(ATLAS_LLM_URL=URL, ATLAS_SEARCH_URL="http://127.0.0.1:9"), **env)
     Ollama.models, Ollama.fail_pull = list(models), False
     AC._started.clear(); AC._started["done"] = False
-    AC._auto.update(operator_model=None, pulling=False, timeouts=0, fell_back=False)
+    AC._auto.update(operator_model=None, operator_vision=None, pulling=False, timeouts=0,
+                    fell_back=False)
+    AC._fallback_file().unlink() if AC._fallback_file().exists() else None
     AC._machine = lambda: (4, ram, 20.0, 100.0)
     AC._ollama_disk_free = lambda: disk
     del PULLS[:]
@@ -98,6 +100,13 @@ check("The log says each step", any("download 100%" in x or "download 50%" in x 
       and any("now qwen3:30b" in x for x in LOG), LOG)
 
 print("2. Back to the small model when the strong one keeps timing out")
+check("It was loaded into memory before the switch", AC._started.get("warm_done") is True)
+AC._started["warm_done"] = False
+for _ in range(5):
+    L._report(False, "qwen3:30b", "the local model is not reachable (timed out)")
+check("Timeouts while it is still loading from disk do not count",
+      os.environ["ATLAS_LLM_MODEL"] == "qwen3:30b" and AC._auto["timeouts"] == 0)
+AC._started["warm_done"] = True
 for _ in range(2):
     L._report(False, "qwen3:30b", "the local model is not reachable (timed out)")
 check("Two timeouts: still on the strong model", os.environ["ATLAS_LLM_MODEL"] == "qwen3:30b")
@@ -110,6 +119,11 @@ check("Three in a row: back to the 4B, pictures too",
       os.environ["ATLAS_LLM_MODEL"] == "qwen3.5:4b" and "ATLAS_LLM_VISION_MODEL" not in os.environ,
       LOG[-2:])
 check("Other errors never switch the model", AC._watch_model(False, "qwen3:30b", "HTTP 500") is None)
+check("The fallback is remembered on this PC", AC.fell_back_here() == "qwen3:30b")
+check("...so after a restart ATLAS stays on the 4B and does not download again",
+      AC.choose_model(URL, {"qwen3.5:4b", "qwen3:30b"}, 34.3) == ("qwen3.5:4b", None)
+      and "too slow on this PC before" in AC.auto_upgrade(URL))
+AC._fallback_file().unlink()
 
 print("3. When it does not upgrade")
 fresh(["qwen3.5:4b"], ram=16.0)
@@ -130,6 +144,9 @@ AC.apply(LOG.append)
 time.sleep(0.3)
 check("A model the operator named is kept", PULLS == [] and
       os.environ["ATLAS_LLM_MODEL"] == "qwen3.5:4b" and any("operator chose" in x for x in LOG), LOG)
+fresh(["qwen3.5:4b"], ATLAS_LLM_URL="http://10.9.9.9:11434")
+check("Ollama on another machine: its models are not managed from here",
+      "another machine" in AC.auto_upgrade("http://10.9.9.9:11434"))
 fresh(["qwen3.5:4b"], ATLAS_AUTO_UPGRADE="0")
 LOG = []
 AC.apply(LOG.append)

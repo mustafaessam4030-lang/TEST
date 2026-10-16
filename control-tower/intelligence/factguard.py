@@ -17,10 +17,10 @@ NUMBER = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w])")
 REFERENCE = re.compile(r"\b[A-Z0-9][A-Z0-9-]{5,}\b")
 URL = re.compile(r"https?://\S+", re.I)
 # A clock time: its two-digit parts pass as "small counts", so it is checked whole.
-TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])\s*([ap]\.?m\.?)?", re.I)
+TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])\s*([ap]\.?m\b\.?)?", re.I)
 # In the inputs a time may carry seconds (14:05:00, 2026-10-16T14:05:00).
-SOURCE_TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?![\d:])"
-                         r"\s*([ap]\.?m\.?)?", re.I)
+SOURCE_TIME = re.compile(r"(?<![\d:+-])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?![\d:])"
+                         r"\s*([ap]\.?m\b\.?)?", re.I)
 
 
 def _clock(h, m, ampm):
@@ -80,9 +80,11 @@ def check(phrased, inputs):
     for ref in REFERENCE.findall((phrased or "").upper()):
         if re.search(r"\d", ref) and len(ref) >= 6 and re.sub(r"[^A-Z0-9]", "", ref) not in src_flat:
             violations.append("reference {0}".format(ref))
-    src_times = {_clock(h, m, ap) for h, m, ap in SOURCE_TIME.findall(source)}
+    found = SOURCE_TIME.findall(source)
+    src_times = {_clock(h, m, ap) for h, m, ap in found}
+    plain = {(int(h), m) for h, m, ap in found if not ap}      # "2:05" with no AM/PM
     for h, m, ap in TIME.findall(phrased or ""):
-        if _clock(h, m, ap) not in src_times:
+        if _clock(h, m, ap) not in src_times and (int(h), m) not in plain:
             violations.append("time {0}:{1}".format(h, m))
     for url in URL.findall(phrased or ""):
         if url.rstrip(".,);") not in source:

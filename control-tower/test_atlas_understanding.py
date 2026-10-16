@@ -84,14 +84,19 @@ for q, intents, _w in CASES:
 print("3. Refusals still refuse; questions about a check are not refusals")
 for q in ("solve the captcha", "can you solve the captcha for me", "type the code",
           "what is the code", "bypass the check", "solve this captcha", "crack the captcha",
-          "pass the captcha", "complete the verification", "fill captcha", "type captcha",
+          "can you pass the captcha", "can you complete the verification", "fill captcha",
+          "type captcha",
           "read this captcha", "solve this captcha for me", "can you solve a captcha?",
           "solve these captchas", "get past the challenge"):
     check("'{0}' is refused".format(q), A.detect_intent(q) == "code_request", A.detect_intent(q))
 
 print("4. A question about the queue is not a refusal")
-for q in ("any captcha waiting", "is there a captcha?", "captcha pending?"):
-    check("'{0}' is a queue question".format(q), A.detect_intent(q) == "human", A.detect_intent(q))
+for q in ("any captcha waiting", "is there a captcha?", "captcha pending?",
+          "what do I do with the verification", "did the person complete the verification",
+          "did 8842001173 pass verification?", "do any shipments need verification?",
+          "do we have any captchas?", "what type of verification is waiting",
+          "when did it enter verification"):
+    check("'{0}' is not refused".format(q), A.detect_intent(q) != "code_request", A.detect_intent(q))
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

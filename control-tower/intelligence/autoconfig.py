@@ -138,6 +138,7 @@ def _warm(url, model):
         try:
             with R.open_url(request, WARM_TIMEOUT_S) as response:
                 response.read()
+            _started["warm_done"] = True            # from now on, slowness is the model's
         except Exception:
             _started["warming"] = False             # a later look tries again
 
@@ -165,7 +166,8 @@ def choose_model(url, pulled=None, ram_gb=None):
         return chosen, (DEFAULT_MODEL if text_only and DEFAULT_MODEL in pulled else None)
     if ram_gb is None:
         ram_gb = _machine()[1] or 0
-    strong = next((m for m in STRONG_MODELS if m in pulled), None)
+    gave_up = fell_back_here()
+    strong = next((m for m in STRONG_MODELS if m in pulled and m != gave_up), None)
     if strong and ram_gb >= STRONG_MIN_RAM_GB:
         return strong, (DEFAULT_MODEL if DEFAULT_MODEL in pulled else None)
     return DEFAULT_MODEL, None
@@ -220,12 +222,57 @@ def _ollama_disk_free():
 
 
 def _switch_to(model, vision, why):
+    # The picture model first, so no picture is ever sent to a text-only model;
+    # one the operator set is left alone.
+    if not _auto.get("operator_vision"):
+        if vision:
+            os.environ["ATLAS_LLM_VISION_MODEL"] = vision
+        else:
+            os.environ.pop("ATLAS_LLM_VISION_MODEL", None)
     os.environ["ATLAS_LLM_MODEL"] = model          # llm.provider() follows at once
-    if vision:
-        os.environ["ATLAS_LLM_VISION_MODEL"] = vision
-    else:
-        os.environ.pop("ATLAS_LLM_VISION_MODEL", None)
     _auto["log"]("ATLAS model: now {0} — {1}".format(model, why))
+
+
+def _fallback_file():
+    from pathlib import Path
+    return Path(os.environ.get("ATLAS_INTEL_DIR") or Path(__file__).resolve().parent.parent
+                / "ml" / "data" / "intelligence") / "model_fallback.json"
+
+
+def fell_back_here():
+    """The strong model ATLAS gave up on on this PC, or None (kept across restarts;
+    delete ml/data/intelligence/model_fallback.json to try it again)."""
+    try:
+        return json.loads(_fallback_file().read_text(encoding="utf-8")).get("model")
+    except Exception:
+        return None
+
+
+def _load_now(url, model, timeout=WARM_TIMEOUT_S):
+    """Load `model` into memory and wait for it. -> True when loaded."""
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/api/generate", data=json.dumps(
+            {"model": model, "keep_alive": os.environ.get("ATLAS_LLM_KEEP_ALIVE") or "8h",
+             "options": {"num_thread": int(os.environ.get("ATLAS_LLM_THREADS") or
+                                           model_threads())}}).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        with R.open_url(req, timeout) as response:
+            response.read()
+        return True
+    except Exception:
+        return False
+
+
+def _unload(url, model):
+    """Free a model's memory now (Ollama keep_alive 0)."""
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/api/generate", data=json.dumps(
+            {"model": model, "keep_alive": 0}).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        with R.open_url(req, 30) as response:
+            response.read()
+    except Exception:
+        pass
 
 
 def auto_upgrade(url, log=None):
@@ -238,6 +285,12 @@ def auto_upgrade(url, log=None):
         return "automatic upgrade is off (ATLAS_AUTO_UPGRADE=0)"
     if _auto["operator_model"]:
         return "the operator chose {0}; it is kept".format(_auto["operator_model"])
+    from urllib.parse import urlparse
+    if (urlparse(url).hostname or "") not in ("127.0.0.1", "localhost", "::1"):
+        return "Ollama runs on another machine ({0}); its models are managed there".format(url)
+    if fell_back_here():
+        return "{0} was too slow on this PC before, so ATLAS stays on {1}".format(
+            fell_back_here(), DEFAULT_MODEL)
     pulled = _pulled(url)
     if any(m in pulled for m in STRONG_MODELS):
         return "a stronger model is already here"
@@ -262,7 +315,7 @@ def auto_upgrade(url, log=None):
         try:
             req = urllib.request.Request(
                 url.rstrip("/") + "/api/pull",
-                data=json.dumps({"model": model, "stream": True}).encode("utf-8"),
+                data=json.dumps({"model": model, "name": model, "stream": True}).encode("utf-8"),
                 headers={"Content-Type": "application/json"})
             shown, status = -10, ""
             with R.open_url(req, 6 * 3600) as response:
@@ -275,7 +328,7 @@ def auto_upgrade(url, log=None):
                         raise RuntimeError(line["error"])
                     status = line.get("status") or status
                     total_b, done_b = line.get("total"), line.get("completed")
-                    if total_b and done_b:
+                    if total_b and total_b > 1e9 and done_b:     # the model itself, not small layers
                         pct = int(100 * done_b / total_b)
                         if pct >= shown + 10:
                             shown = pct
@@ -290,9 +343,16 @@ def auto_upgrade(url, log=None):
         _auto["pulling"] = False
         if _auto["operator_model"] or _auto["fell_back"]:
             return
-        _switch_to(model, DEFAULT_MODEL, "downloaded; pictures still go to " + DEFAULT_MODEL)
-        _started["warming"] = False
-        _warm(url, model)
+        # Switch only once it is in memory: the questions asked meanwhile are
+        # answered by the 4B, and a cold load never counts as the model's fault.
+        log("ATLAS model: {0} downloaded; loading it into memory…".format(model))
+        if not _load_now(url, model):
+            log("ATLAS model: {0} could not be loaded; ATLAS stays on {1}".format(
+                model, DEFAULT_MODEL))
+            return
+        _started["warm_done"] = True
+        _switch_to(model, DEFAULT_MODEL, "downloaded and loaded; pictures still go to " +
+                   DEFAULT_MODEL)
 
     threading.Thread(target=pull, name="atlas-model-download", daemon=True).start()
     return "downloading {0} in the background".format(AUTO_UPGRADE_MODEL)
@@ -307,12 +367,24 @@ def _watch_model(ok, model, error):
         return
     if "timed out" not in str(error or "").lower():
         return
+    if not _started.get("warm_done"):
+        return                   # still loading from disk: not the model's speed
     _auto["timeouts"] += 1
     if _auto["timeouts"] >= FALLBACK_AFTER_TIMEOUTS:
         _auto["fell_back"] = True
         _switch_to(DEFAULT_MODEL, None, "{0} timed out {1} answers in a row on this PC, so "
-                   "ATLAS went back to the faster small model".format(
+                   "ATLAS went back to the faster small model (remembered)".format(
                        model, FALLBACK_AFTER_TIMEOUTS))
+        try:
+            path = _fallback_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"model": model, "at": time.strftime("%Y-%m-%d %H:%M"),
+                                        "reason": "timed out {0} answers in a row".format(
+                                            FALLBACK_AFTER_TIMEOUTS)}), encoding="utf-8")
+        except OSError:
+            pass
+        url = os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA
+        threading.Thread(target=_unload, args=(url, model), daemon=True).start()
 
 
 def apply(log=print):
@@ -322,6 +394,7 @@ def apply(log=print):
     _started["done"] = True
     _auto["log"] = log
     _auto["operator_model"] = os.environ.get("ATLAS_LLM_MODEL") or None
+    _auto["operator_vision"] = os.environ.get("ATLAS_LLM_VISION_MODEL") or None
     from . import llm as _llm
     if _watch_model not in _llm.WATCHERS:
         _llm.WATCHERS.append(_watch_model)
