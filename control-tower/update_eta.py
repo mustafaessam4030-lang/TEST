@@ -5691,6 +5691,10 @@ AFKL_DETAIL_READY_MS = 30000
 # needed — rather than for a lifecycle event a stalled third-party request
 # can hold hostage.
 PORTAL_FORM_READY_MS = 45000
+# Network errors that say the connection dropped, not that the page is wrong.
+TRANSIENT_CONNECTION = re.compile(
+    r"ERR_CONNECTION_(?:RESET|CLOSED|ABORTED)|ERR_NETWORK_CHANGED|ERR_HTTP2_PROTOCOL_ERROR|"
+    r"ERR_EMPTY_RESPONSE|ECONNRESET", re.I)
 # Once in a run a portal's box has been found only by the general search, the
 # strict wait for it is this short (the page has its box; it just does not
 # match the named patterns).
@@ -9846,6 +9850,31 @@ def _read_generic_portal_page(page, provider):
     return result
 
 
+def open_deep_link(page, config, link):
+    """
+    Open a carrier's own shipment page. A dropped connection is transport,
+    not the site (DHL Aviation, 14 Oct: ERR_CONNECTION_RESET, then the home
+    page had no box to fall back on), so it is tried once more first.
+    -> True when the page opened.
+    """
+    for deep_try in (1, 2):
+        try:
+            page.goto(link, wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
+            wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
+            accept_cookie_banner(page, config["label"])
+            return True
+        except Exception as error:
+            message = str(error).split("\n")[0][:120]
+            write_log("{0}: could not open {1} — {2}".format(config["label"], link, message))
+            if deep_try == 1 and TRANSIENT_CONNECTION.search(message):
+                write_log("{0}: the connection dropped; trying the shipment page again "
+                          "in 3s.".format(config["label"]))
+                page.wait_for_timeout(3000)
+                continue
+            return False
+    return False
+
+
 def atlas_transit_veto(text, carrier, result):
     """
     ATLAS's one check on the Qatar and Ethiopian readers (operator, 14 Oct:
@@ -9924,16 +9953,7 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             link = config["deep_link"].format(quote(reference, safe=""))
             write_log("{0}: opening the shipment page directly — {1}".format(
                 config["label"], link))
-            try:
-                page.goto(link, wait_until="commit",
-                          timeout=NAVIGATION_TIMEOUT_MS)
-                wait_until_settled(page, page_has_content,
-                                   PAGE_SETTLE_MAX_SECONDS)
-                accept_cookie_banner(page, config["label"])
-                direct = True
-            except Exception as error:
-                write_log("{0}: could not open {1} — {2}".format(
-                    config["label"], link, str(error).split("\n")[0][:120]))
+            direct = open_deep_link(page, config, link)
 
         if not direct:
             if config.get("detail_url"):
