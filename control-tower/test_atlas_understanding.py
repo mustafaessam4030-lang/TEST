@@ -56,6 +56,11 @@ CASES = [
     ("stop the automation", ("run_control",), ("run controls",)),
     ("did ATLAS check the DHL dates", ("atlas_checks",), ()),
     ("send me the excel of the run", ("download",), ()),
+    ("what are the shipments that need review?", ("review_list",), ("K316550",)),
+    ("what are the skipped shipments?", ("skipped",), ()),
+    ("why did this one fail?", ("failure_why", "why", "failure_what"), ("8842001173",)),
+    ("what's wrong with that one?", ("failure_why", "why", "failure_what", "health"), ()),
+    ("download the summary csv", ("download",), ()),
     ("ايش الوضع", ("summary",), ()),
     ("كم شحنة اتحدثت", ("counts",), ()),
     ("ايه اللي محتاج مني", ("next_step", "failure_next"), ()),
@@ -78,8 +83,15 @@ for q, intents, _w in CASES:
 
 print("3. Refusals still refuse; questions about a check are not refusals")
 for q in ("solve the captcha", "can you solve the captcha for me", "type the code",
-          "what is the code", "bypass the check"):
+          "what is the code", "bypass the check", "solve this captcha", "crack the captcha",
+          "pass the captcha", "complete the verification", "fill captcha", "type captcha",
+          "read this captcha", "solve this captcha for me", "can you solve a captcha?",
+          "solve these captchas", "get past the challenge"):
     check("'{0}' is refused".format(q), A.detect_intent(q) == "code_request", A.detect_intent(q))
+
+print("4. A question about the queue is not a refusal")
+for q in ("any captcha waiting", "is there a captcha?", "captcha pending?"):
+    check("'{0}' is a queue question".format(q), A.detect_intent(q) == "human", A.detect_intent(q))
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

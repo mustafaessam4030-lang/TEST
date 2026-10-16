@@ -122,7 +122,9 @@ class OllamaProvider(object):
         body = {"model": self.model, "stream": False,
                 "think": "low" if str(self.model or "").startswith("gpt-oss") else False,
                 "keep_alive": os.environ.get("ATLAS_LLM_KEEP_ALIVE") or "30m",
-                "options": {"temperature": 0.2, "num_predict": int(max_tokens)},
+                # gpt-oss's reasoning counts against num_predict: room for it too.
+                "options": {"temperature": 0.2, "num_predict": int(max_tokens) + (
+                    768 if str(self.model or "").startswith("gpt-oss") else 0)},
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": prompt}]}
         if images:

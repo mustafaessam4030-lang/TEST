@@ -389,7 +389,7 @@ INTENTS = [
                       "anti bot", "defeat the"]),
     # Starting or stopping a run is done on the dashboard, never from chat.
     ("run_control", ["start the run", "start a run", "start the automation", "start tower",
-                     "run the automation", "stop the run", "stop the automation",
+                     "stop the run", "stop the automation",
                      "pause the automation", "restart the run", "cancel the run"]),
     # Operational: ask the run to bring a parked shipment back to its
     # verification step. Before "attention" so "resume the waiting one" is
@@ -420,10 +420,10 @@ INTENTS = [
                      "what do i need to do", "requires attention", "what needs",
                      "need to handle", "needs me", "need me", "anything for me",
                      "what's going wrong", "whats going wrong", "what is going wrong"]),
-    ("review_list", ["need review", "needs review", "need a review", "to review",
-                     "for review", "under review", "review list", "needs checking",
+    ("review_list", ["need review", "needs review", "need a review",
+                     "under review", "review list", "needs checking",
                      "need checking"]),
-    ("human",       ["captcha waiting", "any captcha", "a captcha", "is there a captcha", "captcha pending", "waiting captcha",
+    ("human",       ["captcha waiting", "any captcha", "is there a captcha", "captcha pending", "waiting captcha",
                      "captchas", "human action", "waiting for human", "waiting for a person",
                      "waiting shipments", "show waiting", "needs a person",
                      "human verification", "shipments waiting", "what's waiting",
@@ -432,7 +432,7 @@ INTENTS = [
     ("latest_failure", ["latest failure", "last failure", "most recent failure",
                         "why did the latest", "why did the last", "latest error",
                         "last error", "most recent error"]),
-    ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "summary", "quick update",
+    ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "give me a summary", "quick update",
                      "give me an update", "update me", "where are we", "summary of this run",
                      "summary of the run", "summarize this run",
                      "summary of the last run", "summary of the latest run",
@@ -523,7 +523,7 @@ INTENTS = [
     ("system",      ["is dhl", "is qatar", "dhl currently", "qatar currently",
                      "what happened with", "status of dhl", "status of qatar",
                      "system status", "integration", "how is dhl", "how is qatar"]),
-    ("failed",      ["فيها مشكلة", "الشحنات الفاشلة", "اللي فشلت", "فشلت", "which shipments failed", "failed shipments", "failures",
+    ("failed",      ["فيها مشكلة", "الشحنات الفاشلة", "اللي فشلت", "which shipments failed", "failed shipments", "failures",
                      "what failed", "list failed", "show me the failures"]),
     ("skipped",     ["skipped", "no eta or ata"]),
     ("no_eta",      ["no eta", "without eta", "missing eta", "no date"]),
@@ -539,7 +539,7 @@ INTENTS = [
                      "shipments that arrived", "have arrived", "has arrived", "got an ata",
                      "with an ata", "arrivals"]),
     ("eta",         ["eta", "arrival", "when will", "when does", "delivery date",
-                     "when did", "arrive", "landed"]),
+                     "arrive", "landed"]),
     ("carrier",     ["which carrier", "who is handling", "what carrier",
                      "carrier for", "carrier is handling"]),
     ("shipment",    ["where is", "status of shipment", "tell me about", "look up",
@@ -558,6 +558,12 @@ TYPOS = {
     "etaa": "eta", "reprocces": "reprocess", "donwload": "download",
     "csvv": "csv", "analize": "analyse", "analyze": "analyse",
 }
+
+
+SOLVE_REQUEST = re.compile(
+    r"\b(solve|solving|crack|bypass|type|enter|fill|read|pass|complete|break|do|beat|"
+    r"get past|get through)\b[^.?!]{0,30}\b(captchas?|security codes?|verification|"
+    r"the code|this code|that code|challenge|turnstile|recaptcha)\b")
 
 
 def normalise(question):
@@ -584,6 +590,11 @@ def detect_intent(question):
     """
     lowered = normalise(question)
     words = len(lowered.split())
+    # Asking ATLAS to do a security check is refused, however it is worded.
+    if SOLVE_REQUEST.search(lowered):
+        return "code_request"
+    if lowered.strip(" ?.!") in ("summary", "summary please", "a summary"):
+        return "summary"
 
     for name, phrases in INTENTS:
         if not any(_phrase_in(phrase, lowered) for phrase in phrases):
@@ -2561,9 +2572,15 @@ def _answer_next(data):
 KNOWN_CARRIER_WORDS = (
     "emirates", "lufthansa", "qatar", "ethiopian", "klm", "air france", "afkl", "brussels",
     "turkish", "saudia", "egyptair", "rwandair", "virgin", "astral", "kenya airways",
-    "south african", "saa", "maersk", "msc", "cma", "hapag", "grimaldi", "cosco", "one",
-    "dhl", "aviation")
+    "south african", "saa", "maersk", "msc", "cma", "hapag", "grimaldi", "cosco",
+    "ocean network express", "one line", "dhl", "dhl aviation")
 
+
+# A definition question, and only that: "what does NEEDS REVIEW mean", "define
+# skipped", "what is a partial". Not "what are the shipments that need review".
+DEFINE_ASK = re.compile(r"\b(mean|means|meaning|define|definition|stands? for)\b|"
+                        r"^\s*what(?:'s| is)\s+(?:a|an|the)?\s*[\w\s-]{2,25}\??\s*$", re.I)
+NOT_A_DEFINITION = re.compile(r"\d{5,}|\b(shipments?|which|list|show|how many|why)\b", re.I)
 
 PROBLEM_WORDS = re.compile(r"\b(why|fail\w*|not working|problem\w*|issue\w*|error\w*|"
                            r"broken|wrong|stuck)\b", re.I)
@@ -2572,12 +2589,17 @@ PROBLEM_WORDS = re.compile(r"\b(why|fail\w*|not working|problem\w*|issue\w*|erro
 def _absent_carrier(data, question):
     """The carrier a problem question names when it has no shipment in this run, or None."""
     q = question or ""
-    if not PROBLEM_WORDS.search(q) or re.search(r"\d{5,}", q) or carrier_named(data, q):
+    if not PROBLEM_WORDS.search(q) or re.search(r"\d{5,}", q) or carrier_named(data, q) \
+            or detect_intent(q) == "carrier_timing":
         return None
     lowered = q.casefold()
     word = next((w for w in KNOWN_CARRIER_WORDS
                  if re.search(r"\b" + re.escape(w) + r"\b", lowered)), None)
     if not word:
+        return None
+    # Present under another name (a DHL row whose carrier field is empty)?
+    if any(word in " ".join(str(r.get(k) or "") for k in ("carrier", "provider")).casefold()
+           .replace("_", " ") for r in data.shipments):
         return None
     return word.title() if len(word) > 3 else word.upper()
 
@@ -3468,10 +3490,10 @@ def _answer_core(question, state, context=None):
         # "What does NEEDS REVIEW mean?": the automation's own words, defined.
         try:
             from intelligence import knowledge as _K
-            defined = _K.glossary(question)
+            defined = _K.operations_term(question)
         except Exception:
             defined = None
-        if defined and defined[0] in _K.OPERATIONS_TITLES:
+        if defined and DEFINE_ASK.search(question) and not NOT_A_DEFINITION.search(question):
             return {"answer": "**{0}** — {1}".format(*defined), "card": None,
                     "reference": None, "grounded": True, "intent": "glossary",
                     "final": True}

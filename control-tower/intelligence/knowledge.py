@@ -58,7 +58,7 @@ OPERATIONS_GLOSSARY = [
 ]
 OPERATIONS_TITLES = {t for _p, t, _a in OPERATIONS_GLOSSARY}
 
-GLOSSARY = OPERATIONS_GLOSSARY + [
+GLOSSARY = [
     (r"trans-?shipment", "Transshipment",
      "Transshipment is when cargo is unloaded from one vessel at an intermediate port and "
      "loaded onto another vessel to continue to its destination — typical at hub ports where "
@@ -145,6 +145,15 @@ GLOSSARY = OPERATIONS_GLOSSARY + [
 GENERAL_ASK = re.compile(
     r"^\s*(what('?s| is| are| does| do)|define|explain|meaning of|how does|how do|why do|"
     r"difference between|tell me what)\b", re.I)
+
+
+def operations_term(question):
+    """(title, answer) when the question names one of the automation's own terms."""
+    text = " ".join(str(question or "").split())
+    for pattern, title, answer in OPERATIONS_GLOSSARY:
+        if re.search(pattern, text, re.I):
+            return title, answer
+    return None
 
 
 def glossary(question):

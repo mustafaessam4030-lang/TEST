@@ -17,7 +17,19 @@ NUMBER = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w])")
 REFERENCE = re.compile(r"\b[A-Z0-9][A-Z0-9-]{5,}\b")
 URL = re.compile(r"https?://\S+", re.I)
 # A clock time: its two-digit parts pass as "small counts", so it is checked whole.
-TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])")
+TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])\s*([ap]\.?m\.?)?", re.I)
+# In the inputs a time may carry seconds (14:05:00, 2026-10-16T14:05:00).
+SOURCE_TIME = re.compile(r"(?<![\d:])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?![\d:])"
+                         r"\s*([ap]\.?m\.?)?", re.I)
+
+
+def _clock(h, m, ampm):
+    """(hour 0-23, minute) for a time, with AM/PM read when given."""
+    h = int(h)
+    if ampm:
+        pm = ampm.lower().startswith("p")
+        h = (h % 12) + (12 if pm else 0)
+    return h, m
 CLAIMS = re.compile(r"\b(verified|confirmed|succeeded|success|successful(?:ly)?|written|saved|"
                     r"updated|sent|delivered|accepted|completed|resolved|recovered|fixed|"
                     r"cleared|approved|arrived|found|downloaded|extracted|attached|"
@@ -68,9 +80,9 @@ def check(phrased, inputs):
     for ref in REFERENCE.findall((phrased or "").upper()):
         if re.search(r"\d", ref) and len(ref) >= 6 and re.sub(r"[^A-Z0-9]", "", ref) not in src_flat:
             violations.append("reference {0}".format(ref))
-    src_times = {(int(h), m) for h, m in TIME.findall(source)}
-    for h, m in TIME.findall(phrased or ""):
-        if (int(h), m) not in src_times:
+    src_times = {_clock(h, m, ap) for h, m, ap in SOURCE_TIME.findall(source)}
+    for h, m, ap in TIME.findall(phrased or ""):
+        if _clock(h, m, ap) not in src_times:
             violations.append("time {0}:{1}".format(h, m))
     for url in URL.findall(phrased or ""):
         if url.rstrip(".,);") not in source:
