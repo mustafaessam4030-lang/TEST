@@ -47,6 +47,7 @@ SUITES = [
     ("test_deep_link_retry.py", "Shipment page whose connection drops is tried again (DHL Aviation)"),
     ("test_atlas_understanding.py", "ATLAS: the questions operators ask, EN and AR, answered from records"),
     ("test_model_bench.py",     "ATLAS model benchmark (stand-in Ollama)"),
+    ("test_model_auto.py",      "ATLAS model chosen automatically: download, switch, fall back"),
     ("test_afkl_page.py",       "AFKL myCargo result page"),
     ("test_afkl_navigation.py", "AFKL direct shipment URL"),
     ("test_afkl_nav_ladder.py", "AFKL navigation fallback ladder"),

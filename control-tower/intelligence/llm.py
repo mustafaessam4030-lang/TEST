@@ -143,12 +143,29 @@ class OllamaProvider(object):
                 text = ((answer.get("message") or {}).get("content") or "").strip()
                 if not text:
                     raise LLMError("the local model returned no text")
+                if not images:
+                    _report(True, body["model"], None)
                 return text
             except LLMError as error:
                 last = error
                 if attempt < self.retries:
                     time.sleep(0.5 * (2 ** attempt))
+        if not images:
+            _report(False, body["model"], str(last))
         raise last
+
+
+# How each text answer went, for autoconfig's automatic model choice: it moves
+# ATLAS back to the small model when the strong one keeps timing out.
+WATCHERS = []
+
+
+def _report(ok, model, error):
+    for watch in list(WATCHERS):
+        try:
+            watch(ok, model, error)
+        except Exception:
+            pass
 
 
 _provider = {"key": None, "obj": None}

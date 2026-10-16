@@ -683,6 +683,14 @@ START_ATLAS_DEMO.bat                & rem the last real run (or --test-data)
 python atlas_demo_acceptance.py     & rem tests A-F against it
 ```
 
+**The model is chosen automatically — nothing to type.** When the small model works
+and the PC has 30 GB+ RAM and 25 GB+ free disk, ATLAS downloads `qwen3:30b` once in the
+background (about 19 GB, through Ollama) and switches to it as soon as it is ready, with
+no restart; pictures stay with the 4B. If the bigger model times out three answers in a
+row on this PC, ATLAS goes back to the 4B by itself. The startup log says each step
+("ATLAS model choice: …", "download 40%", "now qwen3:30b"). `ATLAS_AUTO_UPGRADE=0` turns it
+off; a model set in `ATLAS_LLM_MODEL` is never changed.
+
 **A stronger model (PC with 32 GB of RAM or more).** ATLAS switches to
 `qwen3:30b` by itself when it is pulled and the PC has at least 30 GB of RAM:
 a "mixture of experts" model, 30B in all but about 3B working per word, so it

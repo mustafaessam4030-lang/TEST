@@ -13,8 +13,15 @@ for this process only:
     SearXNG   http://127.0.0.1:8888 answering JSON  -> ATLAS can search the web
 
 Neither is required: without them ATLAS answers with its rules, as before.
-It never installs, downloads or writes anything, and a setting the operator
-has already made wins. When a service is not up yet (it may start after the
+A setting the operator has already made wins.
+
+THE MODEL IS CHOSEN AUTOMATICALLY. On a PC with the memory and disk for it
+(30 GB+ RAM, 25 GB+ free disk) and the 4B already working, the stronger model
+(qwen3:30b) is downloaded once in the background through Ollama; when it is
+ready ATLAS switches to it without a restart, and keeps the 4B for pictures.
+If the strong model then times out three answers in a row on this PC, ATLAS
+goes back to the 4B by itself. ATLAS_AUTO_UPGRADE=0 turns this off; a model the
+operator names in ATLAS_LLM_MODEL is never changed. When a service is not up yet (it may start after the
 tower at sign-in), it keeps looking in the background for a few minutes.
 
     ATLAS_AI=0      do not look; ATLAS stays rule-based
@@ -35,7 +42,7 @@ DEFAULT_MODEL = "qwen3.5:4b"
 # word, so it understands far better than the 4B at about the same speed on
 # a CPU. It needs ~19 GB of RAM while loaded. Text only: pictures still go to
 # the 4B (ATLAS_LLM_VISION_MODEL), which reads images.
-STRONG_MODELS = ("qwen3:30b", "qwen3:30b-a3b")
+STRONG_MODELS = ("qwen3:30b", "qwen3:30b-a3b", "gpt-oss:20b")
 STRONG_MIN_RAM_GB = 30
 DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_SEARCH = "http://127.0.0.1:8888"
@@ -195,12 +202,133 @@ def _start_local_search():
         return False
 
 
+AUTO_UPGRADE_MODEL = "qwen3:30b"
+AUTO_UPGRADE_DISK_GB = 25
+FALLBACK_AFTER_TIMEOUTS = 3
+_auto = {"operator_model": None, "pulling": False, "timeouts": 0, "fell_back": False,
+         "log": print}
+
+
+def _ollama_disk_free():
+    """Free GB where Ollama keeps its models (OLLAMA_MODELS, else the home folder)."""
+    import shutil
+    where = os.environ.get("OLLAMA_MODELS") or os.path.expanduser("~")
+    try:
+        return shutil.disk_usage(where).free / 1e9
+    except OSError:
+        return 0
+
+
+def _switch_to(model, vision, why):
+    os.environ["ATLAS_LLM_MODEL"] = model          # llm.provider() follows at once
+    if vision:
+        os.environ["ATLAS_LLM_VISION_MODEL"] = vision
+    else:
+        os.environ.pop("ATLAS_LLM_VISION_MODEL", None)
+    _auto["log"]("ATLAS model: now {0} — {1}".format(model, why))
+
+
+def auto_upgrade(url, log=None):
+    """
+    Download the stronger model once, in the background, when this PC can run
+    it; switch to it when ready. -> a sentence saying what was decided.
+    """
+    log = log or _auto["log"]
+    if (os.environ.get("ATLAS_AUTO_UPGRADE") or "").strip() == "0":
+        return "automatic upgrade is off (ATLAS_AUTO_UPGRADE=0)"
+    if _auto["operator_model"]:
+        return "the operator chose {0}; it is kept".format(_auto["operator_model"])
+    pulled = _pulled(url)
+    if any(m in pulled for m in STRONG_MODELS):
+        return "a stronger model is already here"
+    if DEFAULT_MODEL not in pulled:
+        return "the small model is not working yet; no upgrade before it is"
+    _cores, total, _free, _disk = _machine()
+    if (total or 0) < STRONG_MIN_RAM_GB:
+        return "this PC has {0:.0f} GB of RAM; the stronger model needs {1}".format(
+            total or 0, STRONG_MIN_RAM_GB)
+    disk = _ollama_disk_free()
+    if disk < AUTO_UPGRADE_DISK_GB:
+        return "only {0:.0f} GB free disk; the stronger model needs {1}".format(
+            disk, AUTO_UPGRADE_DISK_GB)
+    if _auto["pulling"]:
+        return "already downloading {0}".format(AUTO_UPGRADE_MODEL)
+    _auto["pulling"] = True
+
+    def pull():
+        model = AUTO_UPGRADE_MODEL
+        log("ATLAS model: downloading {0} (about 19 GB) in the background; ATLAS keeps "
+            "answering with {1} meanwhile".format(model, DEFAULT_MODEL))
+        try:
+            req = urllib.request.Request(
+                url.rstrip("/") + "/api/pull",
+                data=json.dumps({"model": model, "stream": True}).encode("utf-8"),
+                headers={"Content-Type": "application/json"})
+            shown, status = -10, ""
+            with R.open_url(req, 6 * 3600) as response:
+                for raw in response:
+                    try:
+                        line = json.loads(raw.decode("utf-8", "replace") or "{}")
+                    except ValueError:
+                        continue
+                    if line.get("error"):
+                        raise RuntimeError(line["error"])
+                    status = line.get("status") or status
+                    total_b, done_b = line.get("total"), line.get("completed")
+                    if total_b and done_b:
+                        pct = int(100 * done_b / total_b)
+                        if pct >= shown + 10:
+                            shown = pct
+                            log("ATLAS model: {0} download {1}%".format(model, pct))
+            if status != "success" and model not in _pulled(url):
+                raise RuntimeError("the download did not finish ({0})".format(status or "no status"))
+        except Exception as error:
+            log("ATLAS model: the download of {0} stopped ({1}); ATLAS stays on {2} and "
+                "tries again at the next start".format(model, str(error)[:120], DEFAULT_MODEL))
+            _auto["pulling"] = False
+            return
+        _auto["pulling"] = False
+        if _auto["operator_model"] or _auto["fell_back"]:
+            return
+        _switch_to(model, DEFAULT_MODEL, "downloaded; pictures still go to " + DEFAULT_MODEL)
+        _started["warming"] = False
+        _warm(url, model)
+
+    threading.Thread(target=pull, name="atlas-model-download", daemon=True).start()
+    return "downloading {0} in the background".format(AUTO_UPGRADE_MODEL)
+
+
+def _watch_model(ok, model, error):
+    """Back to the small model when the strong one keeps timing out here."""
+    if ok:
+        _auto["timeouts"] = 0
+        return
+    if model not in STRONG_MODELS or _auto["operator_model"] or _auto["fell_back"]:
+        return
+    if "timed out" not in str(error or "").lower():
+        return
+    _auto["timeouts"] += 1
+    if _auto["timeouts"] >= FALLBACK_AFTER_TIMEOUTS:
+        _auto["fell_back"] = True
+        _switch_to(DEFAULT_MODEL, None, "{0} timed out {1} answers in a row on this PC, so "
+                   "ATLAS went back to the faster small model".format(
+                       model, FALLBACK_AFTER_TIMEOUTS))
+
+
 def apply(log=print):
     """Turn on what is installed; keep looking a while for what is not yet up."""
     if _started["done"] or (os.environ.get("ATLAS_AI") or "").strip() == "0":
         return
     _started["done"] = True
+    _auto["log"] = log
+    _auto["operator_model"] = os.environ.get("ATLAS_LLM_MODEL") or None
+    from . import llm as _llm
+    if _watch_model not in _llm.WATCHERS:
+        _llm.WATCHERS.append(_watch_model)
     model_ok, model_detail, search_ok, search_detail = _probe()
+    if model_ok:
+        log("ATLAS model choice: " + auto_upgrade(
+            os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA, log))
     log("ATLAS conversation: {0}".format(
         "ON — " + model_detail if model_ok else "off — " + model_detail))
     if not search_ok and _start_local_search():
@@ -221,6 +349,8 @@ def apply(log=print):
             if m_ok and not found_model:
                 found_model = True
                 log("ATLAS conversation: ON — " + m_detail)
+                log("ATLAS model choice: " + auto_upgrade(
+                    os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA, log))
             if s_ok and not found_search:
                 found_search = True
                 log("ATLAS web research: ON — " + s_detail)
@@ -349,7 +479,7 @@ def self_test():
 
 # The models worth comparing on a CPU-only PC (python -m intelligence.autoconfig
 # --bench). Only those already pulled are tried; nothing is downloaded.
-BENCH_MODELS = (DEFAULT_MODEL,) + STRONG_MODELS + ("gpt-oss:20b",)
+BENCH_MODELS = (DEFAULT_MODEL,) + STRONG_MODELS
 BENCH_TASKS = (
     ("understand (English)", "understand", "why did 8842001173 fail yesterday?"),
     ("understand (Arabic)", "understand", "ليه الشحنة 8842001173 فشلت؟"),
