@@ -1,0 +1,242 @@
+"""Phase 1: carrier pacing, first-block stop, deferral, queue persistence,
+ETA/ATA separation and write/read-back at the Hub boundary."""
+import inspect
+import json
+import os
+import sys
+import tempfile
+import threading
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import carrier_pacing as C
+
+PASS, FAIL = [], []
+TEST_OCEAN = "MSC"          # generic tests never use the held carrier
+
+
+def check(name, ok, detail=""):
+    (PASS if ok else FAIL).append(name)
+    print("  [{0}] {1}{2}".format("PASS" if ok else "FAIL", name, " - " + str(detail) if detail else ""))
+
+
+class Clock(object):
+    def __init__(self):
+        self.t = 1000.0
+        self.slept = []
+
+    def __call__(self):
+        return self.t
+
+    def sleep(self, s):
+        self.slept.append(round(s, 1))
+        self.t += s
+
+
+tmp = tempfile.mkdtemp()
+path = os.path.join(tmp, "carrier_deferred.json")
+SHIP = {"bol_awb": "CMAU1234567", "carrier": "CMA CGM", "tracking_reference": "CMAU1234567",
+        "table_page": 1}
+
+
+def gate(clock, run="run-1", q=None):
+    q = q or C.DeferredQueue(path, clock=clock)
+    return C.CarrierGate(q, run, is_ocean=lambda p: p in ("MSC", "CMA_CGM"), clock=clock,
+                         sleep=clock.sleep), q
+
+
+print("Rate limiting")
+check("No wait between lookups by default (operator's decision, 14 Oct)",
+      C.MIN_GAP == {"ocean": 0.0, "other": 0.0}, C.MIN_GAP)
+ck = Clock()
+g, q = gate(ck)
+with g.lookup("MSC"):
+    pass
+with g.lookup("MSC"):
+    pass
+check("...so two MSC lookups in a row do not wait", ck.slept == [], ck.slept)
+C.MIN_GAP["ocean"] = 45.0          # a spacing set by environment still works
+ck = Clock()
+g, q = gate(ck)
+with g.lookup("MSC"):
+    ck.t += 10                                 # the lookup took 10 s
+with g.lookup("MSC"):
+    pass
+check("Same ocean carrier: waits the rest of 45 s after the previous lookup ended",
+      ck.slept == [45.0], ck.slept)
+with g.lookup("DHL"):
+    pass
+check("Another carrier is not held up by MSC's spacing", ck.slept == [45.0], ck.slept)
+ck.t += 100
+with g.lookup("MSC"):
+    pass
+check("No wait once the gap has already passed", ck.slept == [45.0], ck.slept)
+
+print("One lookup at a time")
+g2, _ = C.CarrierGate(C.DeferredQueue(os.path.join(tmp, "x.json")), "r",
+                      clock=time.monotonic, sleep=time.sleep), None
+inside, peak = [0], [0]
+
+
+def work():
+    with g2.lookup("P{0}".format(threading.get_ident() % 7)):
+        inside[0] += 1
+        peak[0] = max(peak[0], inside[0])
+        time.sleep(0.05)
+        inside[0] -= 1
+
+
+threads = [threading.Thread(target=work) for _ in range(5)]
+[t.start() for t in threads]
+[t.join() for t in threads]
+check("Never two lookups at once", peak[0] == 1, peak[0])
+
+print("Per-run cap")
+ck = Clock()
+g, q = gate(ck)
+C.MAX_PER_RUN["ocean"], saved = 2, C.MAX_PER_RUN["ocean"]
+for _ in range(2):
+    with g.lookup("MSC"):
+        pass
+r = g.refusal("MSC")
+check("After the cap, the carrier is refused for this run", r and r[0] == C.REASON_CAP, r)
+C.MAX_PER_RUN["ocean"] = saved
+
+print("Carrier on hold (production configuration)")
+check("CMA CGM is on hold in the production configuration", "CMA_CGM" in C.held_carriers())
+check("An empty CARRIER_HOLD does not lift it", "CMA_CGM" in C.held_carriers({"CARRIER_HOLD": ""}))
+check("CARRIER_HOLD only adds carriers",
+      C.held_carriers({"CARRIER_HOLD": "GRIMALDI"}) == {"CMA_CGM", "GRIMALDI"})
+check("A mistyped release does not lift it",
+      "CMA_CGM" in C.held_carriers({"CARRIER_HOLD_RELEASE": "CMA CGM"}))
+check("Only naming it exactly in CARRIER_HOLD_RELEASE lifts it, and the log says so",
+      "CMA_CGM" not in C.held_carriers({"CARRIER_HOLD_RELEASE": "CMA_CGM"})
+      and "RELEASED" in C.hold_report({"CARRIER_HOLD_RELEASE": "CMA_CGM"}))
+ck = Clock()
+prod = C.CarrierGate(C.DeferredQueue(os.path.join(tmp, "prod.json")), "r", clock=ck,
+                     sleep=ck.sleep)
+r = prod.refusal("CMA_CGM")
+check("A gate with the production hold refuses CMA CGM", r and r[0] == C.REASON_HELD, r)
+check("...and only CMA CGM", prod.refusal("MSC") is None)
+import subprocess
+out = subprocess.run([sys.executable, "-c", "import carrier_pacing as c; print(sorted(c.held_carriers()))"],
+                     cwd=os.path.dirname(os.path.abspath(__file__)), capture_output=True, text=True,
+                     env=dict(os.environ, CARRIER_HOLD="")).stdout.strip()
+check("The hold persists across a restart (fresh process, empty CARRIER_HOLD)",
+      out == "['CMA_CGM']", out)
+
+print("First block stops the carrier")
+os.remove(path) if os.path.exists(path) else None
+ck = Clock()
+g, q = gate(ck)
+check("Before a block the carrier is asked", g.refusal("MSC") is None)
+g.blocked("MSC", "Access is temporarily restricted")
+r = g.refusal("MSC")
+check("After the first block it is not asked again in this run",
+      r and r[0] == C.REASON_BLOCKED, r)
+check("Other carriers carry on", g.refusal("MAERSK") is None)
+ck.t += 3600
+g_next, _ = gate(ck, run="run-2")
+r = g_next.refusal("MSC")
+check("A later run inside the cooldown leaves it alone too", r and r[0] == C.REASON_COOLDOWN, r)
+ck.t += C.COOLDOWN_SECONDS
+g_later, _ = gate(ck, run="run-3")
+check("After the cooldown a later run asks again", g_later.refusal("MSC") is None)
+
+print("Deferral and queue persistence")
+os.remove(path)
+ck = Clock()
+q = C.DeferredQueue(path, clock=ck)
+q.defer(SHIP, "MSC", "CARRIER_ACCESS_RESTRICTED", "restriction page", "run-1")
+q2 = C.DeferredQueue(path, clock=ck)             # a new run reads the file
+rows = q2.pending()
+need = ("bol_awb", "carrier", "provider", "reason", "detail", "deferred_at", "run_id")
+check("Deferred shipment survives into the next run", len(rows) == 1)
+check("It carries identity, carrier, reason, time and run ID",
+      rows and all(rows[0].get(k) for k in need), {k: rows[0].get(k) for k in need})
+q2.defer(SHIP, "MSC", C.REASON_COOLDOWN, "still cooling down", "run-2")
+check("Deferring again counts the attempt, keeps one record",
+      len(q2.pending()) == 1 and q2.pending()[0]["attempts"] == 2)
+check("Resolved when a later run reaches the carrier",
+      q2.resolve("CMAU1234567", "MSC", "SUCCESS", "run-3") and not q2.pending())
+check("Resolution and history kept on disk",
+      json.load(open(path))["shipments"]["MSC|CMAU1234567"]["resolved_run_id"] == "run-3")
+try:
+    q2.defer({"carrier": "X"}, "X", "R", "", "run")
+    check("A record without Hub identity is refused", False)
+except ValueError:
+    check("A record without Hub identity is refused", True)
+open(path, "w").write("{broken")
+q3 = C.DeferredQueue(path)
+check("A damaged file is set aside, not silently overwritten",
+      os.path.exists(path + ".damaged") and q3.pending() == [])
+
+print("ETA / ATA separation at the Hub boundary")
+import update_eta as A
+logs = []
+A.write_log = logs.append
+r, n = A.separate_eta_ata({"eta": "12/07/2026", "ata": "12/07/2026"})
+check("Arrived: the ETA is not written", (r["eta"], r["ata"]) == (None, "12/07/2026"), n)
+r, n = A.separate_eta_ata({"ata": "15/07/2026", "ata_source": "Estimated time of arrival"})
+check("An ATA taken from an estimate is dropped", r["ata"] is None, n)
+
+print("Write / read-back at the Hub boundary")
+calls = []
+fail_ata = [True]
+
+
+def fake_view(page, shipment, view, field, value, return_to_table=True, require_verified=False):
+    calls.append((field, value, require_verified))
+    if field == "ATA" and fail_ata[0]:
+        raise A.WriteUnverified("read-back shows a different value", {"category": "WRITE_UNVERIFIED"})
+    return "{0} updated with {1}".format(field, value)
+
+
+real_view = A.update_one_view
+A.update_one_view = fake_view
+A.read_hub_ata = lambda page, shipment: (A.AE.HUB_EMPTY, None)   # an empty Hub ATA
+try:
+    A.update_internal_shipment(None, SHIP, {"ata": "12/07/2026", "ata_source": "Carrier: Arrived",
+                                            "read_back_required": True})
+    check("A failed read-back is never reported as success", False)
+except A.WriteUnverified:
+    check("A failed read-back is never reported as success", True)
+A.update_internal_shipment(None, SHIP, {"eta": "20/07/2026", "eta_source": "ETA",
+                                        "read_back_required": True})
+check("Read-back is required for every field written",
+      [c[2] for c in calls] == [True, True], calls)
+calls.clear()
+fail_ata[0] = False
+try:
+    A.update_internal_shipment(None, SHIP, {"eta": "12/07/2026", "ata": "12/07/2026",
+                                            "ata_source": "Carrier: Arrived",
+                                            "read_back_required": True})
+    check("ETA = ATA from one read never reaches the Hub", False, calls)
+except A.NeedsReview:
+    check("ETA = ATA from one read never reaches the Hub", calls == [], calls)
+A.update_one_view = real_view
+
+print("Wiring in the run loop")
+_src = inspect.getsource(A.main)
+check("A Human Action rerun refused at the limit is recorded and still needs a person",
+      "if bol_awb in _rerun_refs:" in _src and "needs_human += 1" in _src
+      and "outcome=RUN_LIMIT" in _src)
+check("Reaching a run limit is reported as such, not as a dashboard stop",
+      "Run ended at its limit" in _src)
+check("Writes outside main() are capped too (limits exist from import)",
+      A.RUN_LIMITS is not None)
+
+src = inspect.getsource(A.main)
+check("Every lookup goes through the gate",
+      "with _gate.lookup(_provider):\n                        dhl_result = get_provider_result" in src)
+check("A refused carrier is deferred before any lookup",
+      src.index("_gate.refusal(_provider)") < src.index("with _gate.lookup(_provider)"))
+check("A restriction page stops the carrier and defers the shipment",
+      "_gate.blocked(_provider" in src and '"CARRIER_ACCESS_RESTRICTED"' in src)
+check("CAPTCHA stays human-in-the-loop (queue flow untouched)",
+      'getattr(error, "reason", "") == "queued"' in src)
+check("Deferred is a skip with nothing written, not a failure",
+      issubclass(A.CarrierDeferred, A.SkipShipment))
+
+print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
+sys.exit(1 if FAIL else 0)
