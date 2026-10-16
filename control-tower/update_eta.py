@@ -5692,6 +5692,8 @@ AFKL_DETAIL_READY_MS = 30000
 # can hold hostage.
 PORTAL_FORM_READY_MS = 45000
 # Network errors that say the connection dropped, not that the page is wrong.
+# Timeouts are left out on purpose (TRANSIENT_NAV_ERRORS has them): a 60 s
+# timeout tried twice would double the wait.
 TRANSIENT_CONNECTION = re.compile(
     r"ERR_CONNECTION_(?:RESET|CLOSED|ABORTED)|ERR_NETWORK_CHANGED|ERR_HTTP2_PROTOCOL_ERROR|"
     r"ERR_EMPTY_RESPONSE|ECONNRESET", re.I)
@@ -9866,10 +9868,16 @@ def open_deep_link(page, config, link):
         except Exception as error:
             message = str(error).split("\n")[0][:120]
             write_log("{0}: could not open {1} — {2}".format(config["label"], link, message))
-            if deep_try == 1 and TRANSIENT_CONNECTION.search(message):
+            # Not for ocean carriers: a dropped connection there can be their
+            # bot protection refusing us, and a second request would not help.
+            if deep_try == 1 and not config.get("ocean") and \
+                    TRANSIENT_CONNECTION.search(message):
                 write_log("{0}: the connection dropped; trying the shipment page again "
                           "in 3s.".format(config["label"]))
-                page.wait_for_timeout(3000)
+                try:
+                    page.wait_for_timeout(3000)
+                except Exception:
+                    return False
                 continue
             return False
     return False

@@ -70,6 +70,10 @@ with sync_playwright() as p:
     ok = A.open_deep_link(page, config, "http://127.0.0.1:9/never")
     check("A refused connection is not retried (not a dropped one)",
           not ok and sum("could not open" in x for x in LOG) == 1, LOG)
+    del LOG[:]
+    ok = A.open_deep_link(page, dict(config, ocean=True), BASE + "/always/MAEU1")
+    check("An ocean carrier is not asked twice (its refusal may be bot protection)",
+          not ok and sum("could not open" in x for x in LOG) == 1, LOG)
     browser.close()
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
