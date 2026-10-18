@@ -202,3 +202,11 @@ def test_general_knowledge_claims_cannot_carry_specific_values(assistant, text, 
     draft = assistant.engine._llm_claims(data, [("S1", row, docs[row.doc_id])], docs)
     general = [c for c in draft.claims if c["kind"] == "general"]
     assert (len(general) == 1) is ok
+
+
+def test_a_request_for_photos_without_a_subject_shows_the_library_figures(assistant):
+    out = ask(assistant, "can you give me some photos?")
+    assert out["status"] == "answered" and out["mode"] == "visual"
+    assert len(out["figures"]) == 2 and {f["kind"] for f in out["figures"]} == {"image", "drawing"}
+    assert out["figures"][0]["kind"] == "image"          # photos were asked for, so the photo comes first
+    assert all(f["citations"] for f in out["figures"]) and "Show me" in out["message"]

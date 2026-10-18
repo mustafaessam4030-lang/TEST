@@ -443,11 +443,17 @@ class ModesMixin:
         Returns None when no figure matches, so the question is answered from the text instead
         (and the answer says that no figure was found)."""
         figures = self.store.figures()
-        if not figures:
-            self._local.visual_note = "Your documents don't contain any figures I could find, so here is the text."
-            return None
         topic = [t for t in content_terms(r.retrieval_query) if t not in VISUAL_TERMS and not any(ch.isdigit() for ch in t)]
         asked_ids = {compact(i) for i in identifiers(r.retrieval_query)}
+        # "can you give me some photos?": no subject, so show what the library has
+        gallery = not topic and not asked_ids
+        if not figures:
+            if gallery:
+                return self._base("help", "I couldn't find any photos or drawings in your documents. When a PDF contains "
+                                          "pictures or diagrams, ask me for them, for example \"Show me the wiring "
+                                          "diagram\", and I'll show the original from its page.")
+            self._local.visual_note = "Your documents don't contain any figures I could find, so here is the text."
+            return None
         scored = []
         for f in figures:
             doc = docs.get(f["doc_id"])
@@ -462,7 +468,7 @@ class ModesMixin:
             weights = {t: self.retriever.index.idf(t) for t in topic}
             total = sum(weights.values())
             score = (sum(w * max((fw for terms, fw in fields if t in terms), default=0.0) for t, w in weights.items())
-                     / total) if total else (1.0 if asked_ids else 0.0)
+                     / total) if total else (1.0 if asked_ids else 0.6 if gallery else 0.0)
             if PHOTO_WORDS.search(r.question):
                 score += 0.25 if f["kind"] == "image" else -0.1
             elif DRAWING_WORDS.search(r.question):
@@ -475,7 +481,7 @@ class ModesMixin:
             self._local.visual_note = "I couldn't find a figure of that in your documents, so here is the text."
             return None
         best = scored[0][0]
-        chosen = [x for x in scored if x[0] >= best * 0.85][:2]
+        chosen = scored[:6] if gallery else [x for x in scored if x[0] >= best * 0.85][:2]
         chunks = self._chunks()
         out = self._base("answered", "")
         out["mode"] = "visual"
@@ -492,6 +498,8 @@ class ModesMixin:
                           "image_url": "/api/figures/{0}/image".format(f["id"]),
                           "document": self._doc_label(doc), "origin": "Original figure from the document",
                           "_chunk": caption_chunk})
+            if gallery:
+                continue          # a gallery shows the figures; the text comes when one is asked about
             # what the document says about this figure: sentences in its section that share its words
             terms = figure_terms(f, doc)
             for c in page_chunks:
@@ -506,8 +514,14 @@ class ModesMixin:
             return None
         self._progress("Reading the figure's page", "reading", [shown[0]["document"]] if shown[0].get("document") else None)
         first = shown[0]
-        out["message"] = "Here's {0} from the {1}, page {2}.".format(
-            _figure_phrase(first["caption"]), first["document"], first["page"])
+        if gallery:
+            out["message"] = ("Here {0} from your documents. Ask about any of them, for example \"Show me {1}\", and "
+                              "I'll explain it.".format("is a figure" if len(shown) == 1 else
+                                                         "are {0} figures".format(len(shown)),
+                                                         "the " + _figure_topic(first["caption"])))
+        else:
+            out["message"] = "Here's {0} from the {1}, page {2}.".format(
+                _figure_phrase(first["caption"]), first["document"], first["page"])
         out["figures"] = shown
         out["claims"] = claims
         self._finalise_citations(out, docs)

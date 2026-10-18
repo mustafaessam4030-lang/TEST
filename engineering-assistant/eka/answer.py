@@ -117,7 +117,7 @@ class AnswerEngine(ModesMixin):
                     # not in the documents: offer the web, and (with a model) an answer from general knowledge
                     answer["web_query"] = r.question or message
                     # general knowledge only for general questions: never guess a named machine's or part's values
-                    if not identifiers(r.question or message):
+                    if not identifiers(r.question or message) and r.mode != "visual":
                         self._general(answer, r.question or message, found_nothing=True)
         except Exception as exc:  # never return an empty answer; say what failed
             log.exception("answering failed")
