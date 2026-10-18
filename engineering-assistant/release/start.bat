@@ -2,7 +2,13 @@
 cd /d "%~dp0"
 title Engineering Knowledge Assistant
 if not exist ".venv\Scripts\python.exe" (
-  echo Run setup.bat first.
+  echo.
+  echo  First start in this folder: installing Luma once ^(3-5 minutes^) ...
+  set "EKA_SETUP_NO_PAUSE=1"
+  call setup.bat
+)
+if not exist ".venv\Scripts\python.exe" (
+  echo  The installation did not finish. Run setup.bat and read its message.
   pause
   exit /b 1
 )

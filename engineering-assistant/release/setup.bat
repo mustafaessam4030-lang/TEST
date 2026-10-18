@@ -58,7 +58,7 @@ if errorlevel 1 goto failed
 echo.
 echo  Setup finished. Double-click start.bat to run the assistant.
 echo.
-pause
+if not defined EKA_SETUP_NO_PAUSE pause
 exit /b 0
 
 :nopython
