@@ -26,12 +26,30 @@ LOG = []
 PAGE = b"<html><body>AWB 615-62310555 Arrived ACC 12 Oct 2026</body></html>"
 
 
+# A single-page app that reads its "#" address ONCE, when it loads, and does
+# not search again when only the "#" changes (Emirates, 17 Oct). Its result
+# keeps its dates behind "Show Details".
+APP = (b"<html><body><div id=r></div><script>"
+       b"var v=(location.hash.split('values=')[1]||'');"
+       b"document.getElementById('r').innerHTML='Doc. No.: '+v+"
+       b"' <button onclick=\"this.insertAdjacentHTML(\\'afterend\\',\\'<p>Arrived 12 Oct 2026</p>\\')\">"
+       b"Show Details</button>';"
+       b"</script></body></html>")
+
+
 class Site(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
     def do_GET(self):
         HITS["n"] += 1
+        if self.path.startswith("/app"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(APP)))
+            self.end_headers()
+            self.wfile.write(APP)
+            return
         retried = any("trying the shipment page again" in x for x in LOG)
         if self.path.startswith("/drop-once") and not retried or self.path.startswith("/always"):
             # Close the connection without an answer: Chromium reports
@@ -74,6 +92,20 @@ with sync_playwright() as p:
     ok = A.open_deep_link(page, dict(config, ocean=True), BASE + "/always/MAEU1")
     check("An ocean carrier is not asked twice (its refusal may be bot protection)",
           not ok and sum("could not open" in x for x in LOG) == 1, LOG)
+    del LOG[:]
+    app = browser.new_page()
+    A.open_deep_link(app, config, BASE + "/app/#/shipments/list?type=D&values=17667221652")
+    first = A._page_text(app)
+    A.open_deep_link(app, config, BASE + "/app/#/shipments/list?type=D&values=17667342376")
+    second = A._page_text(app)
+    check("A single-page app searches for the NEW reference, not the previous one",
+          "17667221652" in first and "17667342376" in second and "17667221652" not in second,
+          (first[:60], second[:60]))
+    check("...because it is reloaded, and the log says so",
+          any("reloading so the page searches" in x for x in LOG), LOG)
+    clicked = A.expand_details(app, {"label": "Stub Emirates", "expand": r"^\s*Show\s+Details\s*$"})
+    check("'Show Details' is opened so the dates can be read",
+          clicked and "Arrived 12 Oct 2026" in A._page_text(app), A._page_text(app)[:120])
     browser.close()
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))

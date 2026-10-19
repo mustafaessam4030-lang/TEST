@@ -5854,6 +5854,7 @@ PORTALS = {
                       "#/shipments/list?type=D&values={0}"),
         "placeholder": r"Doc\.?\s*No", "button": r"^\s*Search\s*$", "dashed": False,
         "no_result": [r"No\s+matching\s+records\s+found"],
+        "expand": r"^\s*Show\s+Details\s*$",
     },
     "EMIRATES": {
         # The same Accelya platform as Virgin (skycargo.com's Track links go
@@ -5865,6 +5866,10 @@ PORTALS = {
                       "#/shipments/list?type=D&values={0}"),
         "placeholder": r"Doc\.?\s*No", "button": r"^\s*Search\s*$", "dashed": False,
         "no_result": [r"No\s+matching\s+records\s+found"],
+        # The result list shows the route and the latest status ("Agent has
+        # been Notified of arrival of Shipment at EBB"); the dates are under
+        # "Show Details" (17 Oct page text).
+        "expand": r"^\s*Show\s+Details\s*$",
     },
     "ASTRAL": {
         "label": "Astral Aviation",
@@ -7881,7 +7886,11 @@ def open_afkl_by_search(page, config, tracking_number):
         write_log("{0}: the search opened {1} new tab(s): {2}".format(
             label, len(opened), ", ".join(
                 (tab.url or "?")[:100] for tab in opened)))
-    return opened[-1] if opened else page
+    # Only a tab that reached a real address is read. A blank one (17 Oct,
+    # 074-06179891: "new tab(s): ?" while the network was down) held the run
+    # for 16 minutes on checks that wait for the page to answer.
+    loaded = [tab for tab in opened if str(tab.url or "").startswith(("http://", "https://"))]
+    return loaded[-1] if loaded else page
 
 
 def open_afkl_detail(page, config, tracking_number):
@@ -9881,6 +9890,32 @@ def _read_generic_portal_page(page, provider):
     return result
 
 
+def expand_details(page, config):
+    """Click the carrier's own "Show Details" control once, if it is there.
+    -> True when it was clicked (or nothing more can be done)."""
+    pattern = re.compile(config["expand"], re.I)
+    for role in ("button", "link"):
+        try:
+            control = page.get_by_role(role, name=pattern)
+            if control.count():
+                control.first.click(timeout=5000)
+                page.wait_for_timeout(2500)
+                write_log("{0}: opened 'Show Details' to read the dates.".format(config["label"]))
+                return True
+        except Exception:
+            pass
+    try:
+        control = page.get_by_text(pattern)
+        if control.count():
+            control.first.click(timeout=5000)
+            page.wait_for_timeout(2500)
+            write_log("{0}: opened 'Show Details' to read the dates.".format(config["label"]))
+            return True
+    except Exception as error:
+        note_suppressed("opening a carrier's Show Details", error)
+    return False
+
+
 def open_deep_link(page, config, link):
     """
     Open a carrier's own shipment page. A dropped connection is transport,
@@ -9888,9 +9923,21 @@ def open_deep_link(page, config, link):
     page had no box to fall back on), so it is tried once more first.
     -> True when the page opened.
     """
+    # A single-page app (Emirates, Virgin: ".../#/shipments/list?values=…")
+    # that is already open only changes its "#" part on goto and keeps showing
+    # the previous search (17 Oct: the page for 176-67342376 still showed
+    # 176-67221652). Reloading makes it search for this reference.
+    try:
+        same_app = "#" in link and str(page.url or "").split("#")[0] == link.split("#")[0]
+    except Exception:
+        same_app = False
     for deep_try in (1, 2):
         try:
             page.goto(link, wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
+            if same_app:
+                write_log("{0}: reloading so the page searches for this reference, not the "
+                          "previous one.".format(config["label"]))
+                page.reload(wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
             wait_until_settled(page, page_has_content, PAGE_SETTLE_MAX_SECONDS)
             accept_cookie_banner(page, config["label"])
             return True
@@ -10013,6 +10060,7 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
 
         end_time = time.time() + config.get("wait", 40)
         identity_required = bool(config.get("verify_identity"))
+        expanded = False
         while time.time() < end_time:
             # CARRIER ACCESS, once a person has completed a verification: the
             # carrier may still refuse. Checked first, so a restriction page
@@ -10041,11 +10089,16 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
             if restricted:
                 carrier_access_restricted(page, config["label"], tracking_number,
                                           restricted, after_human)
+            if config.get("expand") and not expanded and awb_on_page(page, tracking_number):
+                # The dates sit behind a "Show Details" control on THIS
+                # shipment's result: opened once, then read as usual.
+                expanded = expand_details(page, config)
             result = extract_portal_result(page, provider)
             if result and result.get("no_result"):
                 save_page_text(page, tracking_number, slug + "_no_result")
                 raise SkipShipment(
-                    f"{airline} reported no information for this air waybill.")
+                    "{0} reported no information for this {1}.".format(
+                        airline, "bill of lading" if config.get("ocean") else "air waybill"))
             # IDENTITY. A result is only this shipment's if the page carries
             # this air waybill. The direct-URL path already proved it via
             # page_is_afkl_detail(); this covers the search-form fallback,

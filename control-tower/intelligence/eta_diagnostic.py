@@ -195,11 +195,19 @@ def _qatar(text, reference, today):
 
 def _generic_air(text, reference, carrier, today):
     """Airlines read by label (e.g. Ethiopian): legs and their status only."""
-    route_codes = re.findall(r"^([A-Z]{3})$", text or "", re.M)
-    dest = route_codes[-1] if route_codes else None
-    out = _base(reference, carrier, "AIR", "air", dest)
     legs = re.findall(r"([A-Z]{3})\s*→\s*([A-Z]{3})\s*\n\s*(\S+)\s*•\s*(\d{4}-\d{2}-\d{2})\s*\n\s*"
                       r"([A-Z]+)", text or "")
+    # The destination is the page's own "Destination" field; failing that, the
+    # last leg's arrival, then the route list printed before the flight
+    # schedule. Never just the last three-letter line on the page: the
+    # shipment history below has status codes such as "DEP" (17 Oct, 071-
+    # 62757085 to ACC was read as going to "DEP" and its arrival vetoed).
+    labelled = re.search(r"\bDestination\s*\n\s*([A-Z]{3})\s*$", text or "", re.M)
+    head = re.split(r"\bFlight Schedule\b|\bShipment History\b", text or "")[0]
+    route_codes = re.findall(r"^([A-Z]{3})$", head, re.M)
+    dest = (labelled.group(1) if labelled else legs[-1][1] if legs else
+            route_codes[-1] if route_codes else None)
+    out = _base(reference, carrier, "AIR", "air", dest)
     for origin, to, flight, when, status in legs:
         final = to == dest
         out["events"].append({"date": E.parse_date(when), "time": None, "tz": None,
