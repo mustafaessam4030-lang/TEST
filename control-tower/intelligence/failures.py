@@ -218,6 +218,12 @@ def _stage(record, category):
     declared = (record.get("failure") or {}).get("stage")
     if declared in STAGES:
         return declared
+    # The category only guesses the step. The run's own message naming the
+    # Hub's Manage page (update_eta's Manage control, field and Save/Update
+    # errors) says the stop was on the Hub side, never the carrier site.
+    text = str(record.get("error") or "").casefold()
+    if "manage page" in text or "manage control" in text:
+        return "hub_write"
     if category in STAGE_OF:
         return STAGE_OF[category]
     if record.get("coe_action") or record.get("bu_action"):

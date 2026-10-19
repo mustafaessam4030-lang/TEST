@@ -5017,12 +5017,27 @@ function atlasRun(){
         'Hub read-back confirmed for ' + last.reference + '.'};
     return {state:'monitoring', message:'All operations are running normally.'};
   }
-  if (run.status === 'finished')
-    return (c.failed || 0) === 0 && (c.successful || 0) > 0
-      ? {state:'success', message:'Run complete. ' + c.successful +
-          ' Hub record' + (c.successful === 1 ? '' : 's') + ' written and verified.'}
-      : {state:'idle', message:'Run complete: ' + (c.successful || 0) + ' written, ' +
-          (c.failed || 0) + ' failed.'};
+  if (run.status === 'finished'){
+    /* "Verified" comes from each shipment's own read-back verdicts — true
+       read back and matched, false read back DIFFERENT, anything else not
+       read back — never from the success counter alone. */
+    const ok = c.successful || 0, bad = c.failed || 0;
+    const reads = (S.shipments || []).map((r) => ({updated:r.state === 'updated',
+      v:r.verification ? Object.keys(r.verification).map((k) => r.verification[k]) : []}));
+    const confirmed = reads.filter((x) => x.updated && x.v.length &&
+      x.v.every((y) => y === true)).length;
+    const different = reads.filter((x) => x.v.some((y) => y === false)).length;
+    if (bad === 0 && ok > 0 && different === 0 && confirmed >= ok)
+      return {state:'success', message:'Run complete. ' + ok +
+        ' Hub record' + (ok === 1 ? '' : 's') + ' written and verified.'};
+    const readback = different ? ' ' + different + ' read back different from what was written.'
+      : !ok ? ''
+      : confirmed >= ok ? ' Hub read-back confirmed for all ' + ok + '.'
+      : confirmed ? ' Hub read-back confirmed for ' + confirmed + ' of ' + ok + '.'
+      : ' Hub read-back not confirmed.';
+    return {state:different ? 'analyzing' : 'idle', message:'Run complete: ' + ok +
+      ' written, ' + bad + ' failed.' + readback};
+  }
   return {state:'idle', message:'Standing by. No run in progress.'};
 }
 /* ...and about one shipment, from its own record. */

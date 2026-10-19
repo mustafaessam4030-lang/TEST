@@ -89,6 +89,7 @@ SUITES = [
     ("test_carrier_access.py",  "carrier access: verification is not access; restriction stops, diagnosed"),
     ("test_carrier_access_e2e.py", "verification completed, carrier still restricted: main() + ATLAS"),
     ("test_ui.py",              "intro, ML panel, assistant, feedback"),
+    ("test_overview_verification.py", "Overview card: verified only from Hub read-backs"),
     ("test_atlas_research.py",  "ATLAS research: shipment intelligence, error investigation, sources"),
     ("test_converse.py",        "ATLAS conversation: any language, grounded, labelled web, fail closed"),
     ("test_chat_ui.py",         "ATLAS conversation in a real browser: open, think, answer, a11y, mobile"),

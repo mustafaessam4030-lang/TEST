@@ -67,7 +67,7 @@ EXPECT = [
     ("What is the ETA for 5271993480?", "5271993480's carrier ETA is 26/08/2026."),
     ("What's the ATA of 1570046231?", "1570046231's carrier ATA is 20/08/2026."),
     ("Why did 8842001173 fail?",
-     "8842001173 on DHL GLOBAL FORWARDING stopped at looking the shipment up on the carrier site: "
+     "8842001173 on DHL GLOBAL FORWARDING stopped at writing to the hub: "
      "the page was not in the expected state. Nothing was written to the Hub for this shipment; "
      "it is looked up again next run. The run recorded: Save/Update button was not found on the "
      "Manage page."),
