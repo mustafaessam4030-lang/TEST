@@ -80,12 +80,11 @@ Under Clearance shipment's status is read. Save the JSON it writes beside the ru
    ```bat
    cd /d <the folder>
    set CT_DRY_RUN=1
-   set MAX_HUB_WRITES=0
    set PO_AUTO=0
    START_TOWER.bat
    ```
    - `CT_DRY_RUN=1` can only turn dry run on.
-   - `MAX_HUB_WRITES=0` allows no Hub save even if dry run were off.
+   - Do **not** set `MAX_HUB_WRITES=0`: the run treats a cap of 0 as already reached and starts no shipment at all (`carrier_pacing.RunLimits.exhausted`).
    - `PO_AUTO=0` stops the supervisor's automatic PO sweep (its own eHub browser and PO jobs) from starting beside the run.
    - To limit the run to one shipment, set `MAX_RECORDS_PER_RUN = 1` in `update_eta.py`. Do that only in the **clone (B)**, never in the stable copy.
 3. Confirm the header shows **"Dry run — nothing is saved"** before you press **Start run**.
