@@ -66,6 +66,7 @@ SUITES = [
     ("test_hub_waits.py",       "wait and readiness logic"),
     ("test_logging.py",         "logging and redaction"),
     ("test_dashboard_access.py", "dashboard access key: never hardcoded, always off loopback"),
+    ("test_domain_proxy.py",    "dashboard behind a company domain: key required, real client address"),
     ("test_release.py",         "release hygiene: compiles, imports, no secrets / paid AI / runtime state"),
     ("test_assistant.py",       "dashboard assistant"),
     ("test_atlas_copilot.py",  "ATLAS copilot: grounded answers, insights, safe UI actions"),

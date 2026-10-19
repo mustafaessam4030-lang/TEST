@@ -98,6 +98,85 @@ Restart the task. From then on the access key no longer opens the dashboard.
   check): the shipment parks in **Human Action**, and **Open & Continue** lets you do it from your browser.
 - CMA CGM is on hold in this build (carrier restricts access).
 
+## 8. Publish at a company domain (e.g. https://ata.mantrac.com)
+
+The dashboard stays on this server. IIS on the same server answers
+`https://ata.mantrac.com` and forwards to the tower at `http://127.0.0.1:8787`.
+Nothing is uploaded anywhere. **The IIS settings below are what the code needs;
+they were written from the code and not tried on an IIS server. IT should check them.**
+
+**Order matters:** do step 7 (personal sign-in) first. The domain is for
+signed-in people only.
+
+### What IT does (once)
+
+1. **DNS:** an internal A record `ata.mantrac.com` → this server's internal IP.
+   Company network / VPN only; don't publish it to the internet.
+2. **Certificate:** a certificate for `ata.mantrac.com` (company CA or public),
+   installed on this server.
+3. **IIS** with the **URL Rewrite** and **Application Request Routing (ARR)**
+   modules. A site bound to **https / 443** with that certificate (and http/80
+   only to redirect to https).
+4. **ARR proxy settings.** All four matter:
+   ```bat
+   %windir%\system32\inetsrv\appcmd.exe set config -section:system.webServer/proxy /enabled:"True" /preserveHostHeader:"True" /reverseRewriteHostInResponseHeaders:"False" /timeout:"00:30:00" /responseBufferLimit:"0" /commit:apphost
+   ```
+   - `preserveHostHeader` **True**: the tower checks the browser's Origin
+     against the Host it receives. Without the original Host, every button
+     press is refused ("This request did not come from the Control Tower page").
+   - `responseBufferLimit` **0**: the live updates are a server-sent event
+     stream (`/api/stream`). Buffered, the page stops updating.
+   - `timeout` **30 min**: the stream is long-lived; the page reconnects by
+     itself if it's cut.
+   - ARR adds `X-Forwarded-For` by default. Keep it: the tower uses it for
+     sign-in rate limits and the audit trail.
+5. **web.config** in the site's folder:
+   ```xml
+   <configuration>
+     <system.webServer>
+       <rewrite>
+         <rules>
+           <rule name="ATA Control Tower" stopProcessing="true">
+             <match url="(.*)" />
+             <action type="Rewrite" url="http://127.0.0.1:8787/{R:1}" />
+           </rule>
+         </rules>
+       </rewrite>
+     </system.webServer>
+   </configuration>
+   ```
+
+### What you set on the server (once)
+
+In an Administrator Command Prompt, then sign out and in (the scheduled task
+restarts the tower with them):
+```bat
+setx ATA_PUBLIC_URL https://ata.mantrac.com /M
+setx ATA_TRUST_PROXY 1 /M
+```
+- `ATA_PUBLIC_URL` makes the sign-in cookie **Secure** and makes the links
+  the tower prints and emails (set-password links) use the domain.
+- `ATA_TRUST_PROXY` makes the tower take each person's address from the proxy's
+  `X-Forwarded-For`. It's believed only from this machine. Without it, all
+  sign-ins share the proxy's one address and its rate limit (20 attempts in 10 minutes).
+- With either set, the tower always requires its access key or a sign-in,
+  even on 127.0.0.1, so the domain can never serve the dashboard to someone
+  who hasn't signed in.
+
+### Check it
+
+1. `https://ata.mantrac.com` → the sign-in page, with a valid certificate (padlock).
+2. Sign in → the Overview, and its counters update live during a dry run.
+3. Press **Start dry run** → accepted. A refusal mentioning "did not come from
+   the Control Tower page" means preserveHostHeader is off.
+4. **Settings → Access** audit log → your sign-in shows **your PC's** address,
+   not 127.0.0.1. If it shows 127.0.0.1, `ATA_TRUST_PROXY` isn't set.
+
+Once the domain works, colleagues should use only the domain. To stop direct
+`http://<server>:8787` access, remove the Windows Firewall rule "Mantrac
+Control Tower". Note that `START_TOWER.bat` and `INSTALL_SERVER.bat` add it
+again when they run.
+
 ## Rollback (2 min)
 
 End the task, rename `C:\MantracTower` → `C:\MantracTower_failed`, rename
