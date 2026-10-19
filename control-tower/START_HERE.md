@@ -446,8 +446,10 @@ which shipments failed?             download the data
 re-run 157-49568713                 how long has it been running?
 ```
 
-It has no language model behind it, deliberately: it cannot invent an ETA, a
-carrier or a status. If the automation did not collect something, it says so.
+Its answers come from the run's records. An optional local language model
+(§10a) may reword them, behind a fact guard that rejects any value the records
+do not hold, so it cannot invent an ETA, a carrier or a status. If the
+automation did not collect something, it says so.
 
 ---
 
@@ -466,8 +468,10 @@ All near the top of `update_eta.py`:
 
 `START_TOWER.bat` enables control regardless — that is its purpose.
 
-**Anyone with the link can Start and Stop the run.** There is no viewer-only
-role. Bear that in mind before sharing widely.
+**With the shared access key, anyone with the link can Start and Stop the
+run.** Turn on personal sign-in (`CREATE_ADMIN.bat`) to give people the Viewer
+level, which sees everything but cannot start or stop. **Start dry run** beside
+Start run reads every carrier and saves nothing to the Hub.
 
 ---
 

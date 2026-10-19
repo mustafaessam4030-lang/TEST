@@ -2555,6 +2555,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
       <a class="cbtn" href="/api/export.csv?state=all" title="Every shipment this run, as CSV">Export CSV</a>
       <span class="ctlbar" id="ctlbar">
         <button class="cbtn go" id="btnStart">Start run</button>
+        <button class="cbtn" id="btnDry" title="Reads every carrier and saves nothing to the Hub">Start dry run</button>
         <button class="cbtn warn" id="btnPause">Pause</button>
         <button class="cbtn stop" id="btnStop">Stop after this shipment</button>
       </span>
@@ -5017,12 +5018,27 @@ function atlasRun(){
         'Hub read-back confirmed for ' + last.reference + '.'};
     return {state:'monitoring', message:'All operations are running normally.'};
   }
-  if (run.status === 'finished')
-    return (c.failed || 0) === 0 && (c.successful || 0) > 0
-      ? {state:'success', message:'Run complete. ' + c.successful +
-          ' Hub record' + (c.successful === 1 ? '' : 's') + ' written and verified.'}
-      : {state:'idle', message:'Run complete: ' + (c.successful || 0) + ' written, ' +
-          (c.failed || 0) + ' failed.'};
+  if (run.status === 'finished'){
+    /* "Verified" comes from each shipment's own read-back verdicts — true
+       read back and matched, false read back DIFFERENT, anything else not
+       read back — never from the success counter alone. */
+    const ok = c.successful || 0, bad = c.failed || 0;
+    const reads = (S.shipments || []).map((r) => ({updated:r.state === 'updated',
+      v:r.verification ? Object.keys(r.verification).map((k) => r.verification[k]) : []}));
+    const confirmed = reads.filter((x) => x.updated && x.v.length &&
+      x.v.every((y) => y === true)).length;
+    const different = reads.filter((x) => x.v.some((y) => y === false)).length;
+    if (bad === 0 && ok > 0 && different === 0 && confirmed >= ok)
+      return {state:'success', message:'Run complete. ' + ok +
+        ' Hub record' + (ok === 1 ? '' : 's') + ' written and verified.'};
+    const readback = different ? ' ' + different + ' read back different from what was written.'
+      : !ok ? ''
+      : confirmed >= ok ? ' Hub read-back confirmed for all ' + ok + '.'
+      : confirmed ? ' Hub read-back confirmed for ' + confirmed + ' of ' + ok + '.'
+      : ' Hub read-back not confirmed.';
+    return {state:different ? 'analyzing' : 'idle', message:'Run complete: ' + ok +
+      ' written, ' + bad + ' failed.' + readback};
+  }
   return {state:'idle', message:'Standing by. No run in progress.'};
 }
 /* ...and about one shipment, from its own record. */
@@ -5140,8 +5156,14 @@ function pipeline(r){
   const first = list.findIndex((x) => x.st === 'todo');
   if (first >= 0 && !list.some((x) => x.st === 'wait' || x.st === 'fail')){
     if (open){ list[first].st = 'now'; list[first].note = r.step || list[first].note; }
-    else if (stopped){ list[first].st = 'fail';
-      list[first].note = r.error || r.outcome || TAGS[r.state] || 'Stopped here'; }
+    else if (stopped){
+      // The run's own message naming the Hub's Manage page places the stop
+      // at the Hub write, not at the first step that has no data.
+      const hub = /manage (page|control)/i.test(r.error || '')
+        ? list.findIndex((x) => x.t === 'Hub write' && x.st === 'todo') : -1;
+      const at = hub >= 0 ? hub : first;
+      list[at].st = 'fail';
+      list[at].note = r.error || r.outcome || TAGS[r.state] || 'Stopped here'; }
   }
   return list;
 }
@@ -6621,6 +6643,8 @@ function paintControl(){
   $('btnStart').disabled = running || (c.remote && !c.can_start);
   put($('btnStart'), running ? 'Running' : (c.remote ? 'Start automation' : 'Start run'));
   $('btnStart').title = c.remote && !running && !c.can_start ? 'Automation worker unavailable.' : '';
+  // The local tower's dry run (the remote platform starts its own dry runs).
+  $('btnDry').style.display = supervised && !c.remote && !running && PF.can('runs.start') ? '' : 'none';
   if (c.remote){
     const stoppable = PF.can('runs.stop');
     $('btnPause').hidden = $('btnStop').hidden = !stoppable;
@@ -6639,6 +6663,14 @@ function paintControl(){
 $('btnStart').addEventListener('click', () => {
   put($('btnStart'), 'Starting…');
   sendControl('start').then((r) => {
+    if (!r.accepted) window.alert(r.message);
+    paintControl();
+  });
+});
+$('btnDry').addEventListener('click', () => {
+  put($('btnDry'), 'Starting…');
+  sendControl('start_dry').then((r) => {
+    put($('btnDry'), 'Start dry run');
     if (!r.accepted) window.alert(r.message);
     paintControl();
   });

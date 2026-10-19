@@ -374,7 +374,7 @@ function valid(v) {
   if (!v) return false;
   // ACCEPTED null models the strictest card there is: it refuses every
   // typed format and accepts only what its own picker writes.
-  if (ACCEPTED === null) return /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (ACCEPTED === null) return /^\\d{4}-\\d{2}-\\d{2}$/.test(v);
   return v === ACCEPTED;
 }
 function checkflight(e) {

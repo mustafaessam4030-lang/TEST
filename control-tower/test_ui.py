@@ -922,6 +922,49 @@ check("Looked up again from the queue: one row, not two",
 
 print()
 print("=" * 72)
+print("REPLAY — a finished run rebuilt from its log and results file")
+print("=" * 72)
+# run_dashboard.bat, share_dashboard.bat and --replay all go through
+# server.replay(). It runs in a child process so the module-level bridge the
+# rest of this file reads is never touched.
+import subprocess as _subprocess                              # noqa: E402
+_rbase = Path(tempfile.mkdtemp(prefix="ct_replay_"))
+(_rbase / "logs").mkdir()
+(_rbase / "logs" / "run_20261019_100000.log").write_text(
+    "[2026-10-19 10:00:00] Replay probe: run started\n"
+    "a line without a timestamp\n", encoding="utf-8")
+(_rbase / "tracking_results.csv").write_text(
+    "Run_Time,Table_Page,BOL_AWB,Carrier,Provider,Existing_ETA,Provider_Status,"
+    "Provider_ETA,Provider_ATA,COE_ETA_Action,BU_ATA_Action,Internal_Action,"
+    "Result,Details\n"
+    "2026-10-19 10:01:00,1,157-49568713,Qatar Airways,Qatar Airways,,Arrived,"
+    "18/10/2026,19/10/2026,saved,saved,,SUCCESS,\n", encoding="utf-8")
+_rchild = (
+    "import json, sys\n"
+    "sys.path.insert(0, {here!r})\n"
+    "from dashboard import server\n"
+    "server.replay({base!r})\n"
+    "snap = server.bridge.snapshot()\n"
+    "print('REPLAY::' + json.dumps({{\n"
+    "    'logs': [l['message'] for l in snap['logs']],\n"
+    "    'shipments': [s['reference'] for s in snap['shipments']]}}))\n"
+).format(here=str(HERE), base=str(_rbase))
+_rres = _subprocess.run([sys.executable, "-c", _rchild],
+                        capture_output=True, text=True, timeout=120)
+_rout = [l for l in _rres.stdout.splitlines() if l.startswith("REPLAY::")]
+_rdata = json.loads(_rout[0][len("REPLAY::"):]) if _rout else {}
+check("Replay of a finished run with a run log does not crash",
+      _rres.returncode == 0 and bool(_rout),
+      (_rres.stderr.strip().splitlines() or ["no output"])[-1])
+check("...the run log's timestamped lines reach the dashboard log",
+      "Replay probe: run started" in _rdata.get("logs", []), _rdata.get("logs"))
+check("...a line without a timestamp is not replayed",
+      "a line without a timestamp" not in _rdata.get("logs", []))
+check("...and the results file's shipments are rebuilt",
+      _rdata.get("shipments") == ["157-49568713"], _rdata.get("shipments"))
+
+print()
+print("=" * 72)
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 print("=" * 72)
 sys.exit(1 if FAIL else 0)

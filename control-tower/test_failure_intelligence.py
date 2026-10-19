@@ -646,6 +646,21 @@ browser.close()
 playwright.stop()
 server.shutdown()
 
+# The stage is a guess from the category unless the run's own message says
+# where it stopped: a Manage page error is the Hub's, not the carrier site's.
+check("A Manage page error is placed on the Hub side, not the carrier site",
+      F._stage({"error": "Save/Update button was not found on the Manage page."},
+               "PAGE_NOT_READY") == "hub_write")
+check("...the Manage control error too",
+      F._stage({"error": "Manage control was not found for X1 in BU view."},
+               "PAGE_NOT_READY") == "hub_write")
+check("...while the same class from a carrier page stays a carrier lookup",
+      F._stage({"error": "the tracking box did not render"}, "PAGE_NOT_READY")
+      == "carrier_lookup")
+check("...and a stage the run declared still wins",
+      F._stage({"error": "x on the Manage page", "failure": {"stage": "validation"}},
+               "PAGE_NOT_READY") == "validation")
+
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

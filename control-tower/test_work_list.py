@@ -353,6 +353,52 @@ SRC = (HERE / "update_eta.py").read_text(encoding="utf-8")
 check("A broken retry pass can never end the run (it is guarded)",
       "note_suppressed(\"the deferred retry pass\"" in SRC)
 
+# A re-run asked for from the dashboard, for a shipment on a LATER hub page:
+# kept until its page is reached (then it goes first), never dropped; one
+# that is on no page is reported as not done, never as "will be picked up".
+class _Control(object):
+    def __init__(self, refs):
+        self.refs = list(refs)
+
+    def take_reprocess(self):
+        return self.refs.pop(0) if self.refs else None
+
+    def should_stop(self):
+        return False
+
+    def is_paused(self):
+        return False
+
+    def __getattr__(self, _name):          # configure, human requests, ...: inert
+        return lambda *a, **k: None
+
+
+PAGES ={1: ["P1A", "P1B"], 2: ["P2A", "P2B"]}
+LOG = []
+LOOKUPS.clear()
+A.ATLAS_DEFERRED_RETRY = False
+A.ensure_filtered_page = lambda page, view, number: (
+    None if number in PAGES else (_ for _ in ()).throw(A.SkipShipment("no more pages")))
+A.collect_supported_shipments = lambda page, n: [
+    {"bol_awb": ref, "carrier": "DHL Express", "provider": "DHL", "current_eta": "",
+     "table_page": n} for ref in PAGES.get(n, [])]
+A.write_log = lambda message, *a, **k: LOG.append(str(message))
+saved_control = A.tower_control
+A.tower_control = _Control(["P2B", "ZZ9"])
+os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="ct_worklist_rerun_")
+try:
+    A.main()
+finally:
+    A.tower_control = saved_control
+check("A re-run for a shipment on a later page is kept, and goes first on that page",
+      LOOKUPS == ["P1A", "P1B", "P2B", "P2A"], str(LOOKUPS))
+check("...the log no longer promises a pick-up it would not do",
+      not any("will be picked up when its page is reached" in m for m in LOG)
+      and any("P2B" in m and "stays queued" in m for m in LOG))
+check("A re-run for a shipment on no page is reported as not done",
+      any("ZZ9" in m and "was not done" in m for m in LOG),
+      [m for m in LOG if "ZZ9" in m])
+
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -107,6 +107,13 @@ _shared_host = False       # True once bound to something other than loopback
 _shared_port = 8787   # overwritten by start()
 
 
+def _trust_proxy():
+    """ATA_TRUST_PROXY=1: an HTTPS reverse proxy on this machine fronts the
+    dashboard at a company domain (DEPLOY_SERVER.md)."""
+    return (os.environ.get("ATA_TRUST_PROXY") or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 FIREWALL_RULE = "Mantrac Control Tower"
 
 
@@ -431,7 +438,17 @@ class Handler(BaseHTTPRequestHandler):
         return {"Set-Cookie": "; ".join(attrs)}
 
     def _acc_ip(self):
-        return self.client_address[0] if self.client_address else None
+        peer = self.client_address[0] if self.client_address else None
+        # Behind an HTTPS reverse proxy on this machine (ATA_TRUST_PROXY=1, the
+        # control plane's setting), every request comes from the proxy, so the
+        # person's address is the entry the proxy added to X-Forwarded-For —
+        # the last one. Believed only from a loopback peer, so nobody on the
+        # network can claim another address (sign-in rate limits, audit).
+        if peer in ("127.0.0.1", "::1") and _trust_proxy():
+            forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+            if forwarded:
+                return forwarded.split(":")[0] if forwarded.count(":") == 1 else forwarded[:64]
+        return peer
 
     def _acc_json(self, limit=4096):
         length = int(self.headers.get("Content-Length") or 0)
@@ -1318,6 +1335,13 @@ FILM_SLOTS = [
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 
 
+# ============================================================
+# REPLAY — rebuild state from a real finished run
+# ============================================================
+
+LOG_LINE = re.compile(r"^\[(?P<ts>[\d\-: ]+)\]\s(?P<msg>.*)$")
+
+
 def replay(base_folder):
     base = Path(base_folder)
     results = base / "tracking_results.csv"
@@ -1423,7 +1447,10 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
     """
     global _server, ACCESS_KEY, _shared_host, _shared_port
     ACCESS_KEY = access_key or None
-    if not ACCESS_KEY and host not in ("127.0.0.1", "localhost"):
+    # Behind a domain (ATA_PUBLIC_URL / ATA_TRUST_PROXY) a proxy on this
+    # machine forwards the network to loopback: shared, whatever the bind.
+    behind_proxy = bool((os.environ.get("ATA_PUBLIC_URL") or "").strip()) or _trust_proxy()
+    if not ACCESS_KEY and (host not in ("127.0.0.1", "localhost") or behind_proxy):
         # Never serve run data to the network without a key.
         try:
             from dashboard import access as _access

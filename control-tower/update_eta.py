@@ -12114,6 +12114,9 @@ def main():
                 return [s for _task, s in chosen]
 
 
+            # Re-runs asked for from the dashboard and not yet found on a page:
+            # kept until their page is reached, never dropped silently.
+            _pending_reruns = []
             for table_page in range(1, MAX_TABLE_PAGES + 1):
                 if RUN_LIMITS.exhausted() or stop_requested:
                     write_log("Run limit reached: {0}".format(
@@ -12157,16 +12160,20 @@ def main():
                 # this page, so the operator sees the answer without waiting
                 # for the whole list.
                 for _requested in iter(tower_control.take_reprocess, None):
+                    if _requested not in _pending_reruns:
+                        _pending_reruns.append(_requested)
+                for _requested in list(_pending_reruns):
                     match = next(
                         (s for s in shipments if s["bol_awb"] == _requested), None
                     )
                     if match is None:
                         write_log(
                             f"Re-run requested for {_requested}, but it is not on "
-                            f"hub page {table_page}. It will be picked up when its "
-                            "page is reached."
+                            f"hub page {table_page}. It stays queued for the next "
+                            "pages of this run."
                         )
                         continue
+                    _pending_reruns.remove(_requested)
                     write_log(f"Re-run requested from the dashboard: {_requested}")
                     processed_bols.discard(_requested)
                     shipments = [match] + [s for s in shipments
@@ -12204,6 +12211,13 @@ def main():
                     _picked_up[bol_awb] = (shipment, table_page)
                     _process_shipment(shipment, table_page)
                     wait_between_shipments()
+
+            for _requested in _pending_reruns:
+                write_log(
+                    f"Re-run requested for {_requested} was not done: it was not on "
+                    "any hub page this run reached after the request. Ask again in "
+                    "the next run."
+                )
 
             # ATLAS's work list, worked in this run: the transient failures,
             # retried once each, after every other shipment.

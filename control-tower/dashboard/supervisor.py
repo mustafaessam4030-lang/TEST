@@ -177,6 +177,13 @@ class Supervisor:
     def request(self, action, reference=None):
         if action == "start":
             return self.start()
+        if action == "start_dry":
+            # A dry run from the dashboard: the run reads every carrier and
+            # saves nothing (CT_DRY_RUN can only turn dry-run on). Nothing
+            # else starts beside it — the PO automatic run is not a dry run.
+            accepted, message = self.start(extra_env={"CT_DRY_RUN": "1"}, po_sweep=False)
+            return accepted, ("Dry run started: carriers are read, nothing is saved to "
+                              "the Hub." if accepted else message)
         if action == "stop":
             return self.stop()
         if action == "kill":

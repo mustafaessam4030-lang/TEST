@@ -176,10 +176,15 @@ assistant accepts `Re-run 157-49568713`.
 **Requests are never applied mid-shipment.** A click appends to a queue; the
 automation reads that queue *between* shipments. A pause or stop can never
 split a write to the Hub, and everything already written is kept. A re-run
-jumps the queue for the current hub page so you see the answer quickly.
+jumps the queue on the hub page that shipment is on, so you see the answer
+quickly; one asked for a later page waits for that page, and one that is on
+no page the run reaches is reported in the log as not done.
 
-Note that anyone with the dashboard link gets these controls — there is no
-separate viewer role. Leave it off if you are sharing the link widely.
+With the shared access key, anyone with the dashboard link gets these
+controls. Personal sign-in (`CREATE_ADMIN.bat`, then Settings → Access levels)
+gives each person a level: Viewer (see, ask ATLAS, export), Operator (also
+start and stop runs, Human Actions) or Admin. Without sign-in, leave control
+off if you are sharing the link widely.
 
 ## Partly updated shipments
 
@@ -216,9 +221,12 @@ moment DHL is actually done.
 
 ## The chatbot
 
-Bottom-right of the dashboard. It has no language model, deliberately: every
-sentence is assembled from fields in the live state, so it has no mechanism for
-producing a value the automation did not collect. Ask it for a destination and
+Bottom-right of the dashboard. Every answer is built from fields in the live
+state. An optional local language model (Ollama, set up with
+`SETUP_ATLAS_AI.bat`) may reword it, but a deterministic fact guard
+(`intelligence/factguard.py`) rejects any wording that adds a value the records
+do not hold, and without the model ATLAS answers from its rules alone. Either
+way it has no mechanism for producing a value the automation did not collect. Ask it for a destination and
 it tells you the automation never reads destinations. Ask about a shipment this
 run has not touched and it says it has no record rather than guessing.
 
