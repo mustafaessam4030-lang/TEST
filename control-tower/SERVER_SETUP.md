@@ -25,6 +25,11 @@ Desktop.
    password encrypted; the installer never asks for it.
 6. Sign out and in again (or restart): the tower starts by itself. The
    window prints the link to send colleagues.
+7. **Personal sign-in:** double-click **`CREATE_ADMIN.bat`**, enter your name
+   and work email, and open the link it prints to set your password. Then add
+   the team in **Settings → Access levels** (Viewer, Operator or Admin). From
+   then on colleagues sign in at `http://<server-name>:8787/login`; the access
+   key no longer opens the dashboard.
 
 ## Leaving Remote Desktop
 

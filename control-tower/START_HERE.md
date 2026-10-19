@@ -6,6 +6,21 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · Personal sign-in and access levels.** Instead of one shared key, each
+person signs in with their own account at `http://<tower PC>:8787/login` and
+has one of three levels: **Viewer** (see everything, ask ATLAS, export),
+**Operator** (also run the automation, Human Actions, screenshots, POs) or
+**Admin** (also users, levels and the audit log). To turn it on, double-click
+**CREATE_ADMIN.bat** once on the tower PC: it creates the first Admin and
+prints a one-time link to set the password. The Admin then adds the team in
+**Settings → Access levels**. Every request is checked on the server; every
+sign-in, refusal and level change is in the audit log (Access page).
+`DASHBOARD_ACCOUNTS=0` turns sign-in off again (the access key returns).
+Locked out: `python -m dashboard.accounts reset --email <admin email>`.
+Over plain http the session cookie can't be marked Secure; HTTPS
+(`ATA_PUBLIC_URL=https://…`) is better when IT can provide a certificate.
+Tests: `python test_office_signin.py`.
+
 **New · ATLAS skills: validate, PDF reports, screenshots, web search, and the
 whole system explained.** Ask ATLAS:
 

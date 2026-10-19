@@ -47,6 +47,7 @@ SUITES = [
     ("test_deep_link_retry.py", "Shipment page whose connection drops is tried again (DHL Aviation)"),
     ("test_atlas_understanding.py", "ATLAS: the questions operators ask, EN and AR, answered from records"),
     ("test_atlas_skills.py", "ATLAS skills: validate, PDF reports, screenshots, web search, handbook"),
+    ("test_office_signin.py", "Office sign-in: login page, access levels, user admin, audit"),
     ("test_model_bench.py",     "ATLAS model benchmark (stand-in Ollama)"),
     ("test_model_auto.py",      "ATLAS model chosen automatically: download, switch, fall back"),
     ("test_grimaldi_result.py", "Grimaldi GNET ETS/ETA block: ETA from Arrival, never the departure"),
@@ -119,6 +120,11 @@ def _suite_env():
     return dict(os.environ, ATLAS_INTEL_DIR=tempfile.mkdtemp(prefix="ct_atlas_intel_"),
                 ATLAS_DATA_ORIGIN="test",
                 PO_DATA_DIR=tempfile.mkdtemp(prefix="ct_po_"),
+                # The office dashboard's real accounts are never used by a
+                # suite: sign-in is off, and test_office_signin uses its own.
+                DASHBOARD_ACCOUNTS="0",
+                DASHBOARD_ACCOUNTS_DB=os.path.join(tempfile.mkdtemp(prefix="ct_acc_"),
+                                                   "accounts.db"),
                 # A run started by a suite never starts the PO automatic run
                 # against the real eHub; the suites that test it set it.
                 PO_AUTO=os.environ.get("PO_AUTO_IN_TESTS", "0"),

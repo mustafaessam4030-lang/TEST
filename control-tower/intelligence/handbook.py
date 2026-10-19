@@ -241,8 +241,9 @@ TOPICS = [
      "Actions, open screenshots, attach images in chat, and process and send POs.\n"
      "• **Admin:** everything, plus users, roles, settings, the audit log, approving ATLAS "
      "proposals and authorising a PO re-send.\n\n"
-     "Everyone has their own account and every action is logged by name. On the shared "
-     "office set-up, colleagues open the dashboard with the access key instead."),
+     "Everyone has their own account and every action is logged by name. An Admin adds "
+     "people and changes their level in **Settings → Access levels**; a level change ends "
+     "that person's sessions so it applies at once."),
     ("po_flow", "How PO Automation works",
      r"\bhow (does|do|is|are) (the )?(po|p\.o\.|purchase order|duty (payment )?request)s?( automation| process)? "
      r"(work|made|created|generated|prepared|done)\b|\bpo (process|flow|steps|automation works?)\b|"
@@ -386,11 +387,26 @@ TOPICS = [
     ("share", "Giving colleagues access",
      r"\baccess key\b|\bshare (the )?(dashboard|tower|link)\b|\bgive (someone|colleagues|the team|people|them) access\b|"
      r"\bhow (do|can) (others|colleagues|people|the team) (open|see|access|use)\b",
-     "• **Shared office set-up:** colleagues open **http://<machine-name>:8787** with the "
-     "access key. A new key: delete dashboard\\.runtime\\access_key and restart; everyone then "
-     "needs the new link.\n"
-     "• **Platform set-up:** an Admin creates each person's account (Viewer, Operator or "
-     "Admin) under Access; they get a one-time link to set their password."),
+     "• **Personal sign-in (recommended):** run **CREATE_ADMIN.bat** once on the tower PC to "
+     "create the first Admin. Then the Admin adds each person in **Settings → Access levels** "
+     "(Viewer, Operator or Admin); each gets a one-time link to set their own password and signs "
+     "in at **http://<machine-name>:8787/login**.\n"
+     "• **Without sign-in:** colleagues open http://<machine-name>:8787 with the access key. A "
+     "new key: delete dashboard\\.runtime\\access_key and restart."),
+    ("signin", "Signing in",
+     r"\b(sign|log) ?in\b|\blogin\b|\b(forgot|forgotten|reset|lost|change) (my |the )?password\b|"
+     r"\blocked out\b|\baccount (is )?locked\b|\bset (my |a )?password\b",
+     "**Signing in:** open **http://<machine-name>:8787/login** and use your work email and "
+     "password.\n\n"
+     "• **New here?** An Admin adds you in Settings → Access levels and sends you a one-time link "
+     "(valid 72 hours) to set your password: at least 12 characters, mixing three of lower case, "
+     "upper case, digits and symbols.\n"
+     "• **Forgot your password?** Ask an Admin to press **Reset access** next to your name; you "
+     "get a new link.\n"
+     "• **Locked out?** Five wrong passwords lock the account for 15 minutes.\n"
+     "• Sessions end after 30 minutes without activity, or 12 hours in all.\n"
+     "• If nobody can sign in, on the tower PC run `python -m dashboard.accounts reset --email "
+     "<admin email>` to get a new link."),
     ("needs_review_fix", "What to do with a NEEDS REVIEW shipment",
      r"\bwhat (do|should) (i|we) do (with|about) (a )?(needs review|review|flagged)\b|"
      r"\bhow (do|can|should) (i|we) (fix|resolve|handle|clear) (a )?(needs review|review)\b",

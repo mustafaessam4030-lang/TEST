@@ -54,6 +54,11 @@ else:
     from . import mlstatus
     from . import live_view
 
+ROOT = Path(__file__).resolve().parent
+if str(ROOT.parent) not in sys.path:
+    sys.path.insert(0, str(ROOT.parent))
+from dashboard import accounts as _accounts      # noqa: E402  personal sign-in
+
 # An iPhone ringtone (.m4r) is plain AAC in an MP4 container — the same bytes
 # a browser happily plays as .m4a — but Python's mimetypes has never heard of
 # the extension, so it went out as application/octet-stream and was refused.
@@ -401,6 +406,283 @@ class Handler(BaseHTTPRequestHandler):
                 return True
         return False
 
+    # -- personal accounts: sign-in and access levels (dashboard/accounts.py) --
+    user = None
+    session = None
+
+    def _acc_cookie_name(self):
+        return "__Host-ata_session" if _accounts.store().settings.secure_cookies else "ata_session"
+
+    def _acc_token(self):
+        name = self._acc_cookie_name()
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == name:
+                return value
+        return None
+
+    def _acc_cookie(self, token, max_age=None):
+        acc = _accounts.store()
+        attrs = ["{0}={1}".format(self._acc_cookie_name(), token), "Path=/", "HttpOnly",
+                 "SameSite=Lax", "Max-Age={0}".format(acc.settings.session_max_s
+                                                      if max_age is None else max_age)]
+        if acc.settings.secure_cookies:
+            attrs.append("Secure")
+        return {"Set-Cookie": "; ".join(attrs)}
+
+    def _acc_ip(self):
+        return self.client_address[0] if self.client_address else None
+
+    def _acc_json(self, limit=4096):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length < 0 or length > limit:
+            raise ValueError("body too large")
+        return json.loads(self.rfile.read(length) or b"{}") if length else {}
+
+    def _acc_origin_ok(self):
+        origin = self.headers.get("Origin")
+        if not origin:
+            return self.headers.get("Sec-Fetch-Site") in (None, "same-origin")
+        host = (self.headers.get("Host") or "").lower()
+        return origin.lower().rstrip("/") in ("http://" + host, "https://" + host)
+
+    def _acc_base(self):
+        return (os.environ.get("ATA_PUBLIC_URL") or
+                "http://{0}".format(self.headers.get("Host") or "localhost")).rstrip("/")
+
+    def _gate(self, method, route):
+        """
+        True when the request may go on to its handler. Without accounts, the
+        access key decides, as before. With accounts, a signed-in person whose
+        role holds the route's permission; the sign-in page and its own routes
+        are answered here.
+        """
+        if not _accounts.enabled():
+            if self._authorised():
+                return True
+            self._deny()
+            return False
+        from controlplane import rbac
+        acc = _accounts.store()
+        try:
+            if route in _accounts.PUBLIC_ROUTES or route.startswith(_accounts.PUBLIC_PREFIXES):
+                self._acc_public(acc, method, route)
+                return False
+            user, session, why = acc.users.resolve(self._acc_token())
+            if user is None:
+                extra = {}
+                if why == "expired":
+                    acc.audit.record("SESSION_EXPIRED", result="EXPIRED", ip=self._acc_ip())
+                    extra = self._acc_cookie("", 0)
+                if route.startswith("/api/"):
+                    self._send(401, json.dumps({
+                        "error": "session_expired" if why == "expired" else "not_signed_in",
+                        "message": "Your session has expired. Sign in again." if why == "expired"
+                        else "Sign in to continue."}), extra=extra)
+                else:
+                    from urllib.parse import quote
+                    extra["Location"] = "/login?next={0}{1}".format(
+                        quote(self.path if self.path.startswith("/") else "/"),
+                        "&expired=1" if why == "expired" else "")
+                    self._send(302, b"", "text/plain", extra=extra)
+                return False
+            self.user, self.session = user, session
+            if method not in ("GET", "HEAD") and not (
+                    self._acc_origin_ok() and hmac.compare_digest(
+                        str(self.headers.get("X-CSRF-Token") or ""), str(session["csrf"]))):
+                self._send(403, json.dumps({"error": "csrf", "message": "This request did not "
+                                            "come from the Control Tower page. Reload and try "
+                                            "again."}))
+                return False
+            if self._acc_own(acc, method, route):
+                return False
+            permission = _accounts.permission_for(method, route)
+            if permission is None or not rbac.allowed(user, permission):
+                acc.audit.record("ACCESS_DENIED", result="FORBIDDEN", user=user,
+                                 target_type="permission", target_id=permission or "none",
+                                 ip=self._acc_ip(), metadata={"route": route, "method": method})
+                self._send(403, json.dumps({
+                    "error": "forbidden", "permission": permission,
+                    "message": "Your access level ({0}) does not allow this.".format(
+                        rbac.ROLE_LABELS.get(user.get("role"), "none"))}))
+                return False
+            return True
+        except ValueError:
+            self._send(400, json.dumps({"error": "bad_request"}))
+            return False
+
+    def _acc_can(self, permission):
+        """With accounts on, whether the signed-in person may; without, True."""
+        if self.user is None:
+            return True
+        from controlplane import rbac
+        return rbac.allowed(self.user, permission)
+
+    def _acc_audit(self, action, result="SUCCESS", target_type=None, target_id=None,
+                   metadata=None):
+        if self.user is None:
+            return
+        try:
+            _accounts.store().audit.record(action, result=result, user=self.user,
+                                           target_type=target_type, target_id=target_id,
+                                           ip=self._acc_ip(), metadata=metadata)
+        except Exception:
+            pass
+
+    def _acc_public(self, acc, method, route):
+        from controlplane.users import AccessError, public as public_user
+        if route in ("/login", "/set-password") and method in ("GET", "HEAD"):
+            self._send_file(ROOT.parent / "controlplane" / "static" / "login.html")
+            return
+        if route.startswith("/static/login/") and method in ("GET", "HEAD"):
+            base = (ROOT.parent / "controlplane" / "static").resolve()
+            candidate = (base / route[len("/static/"):]).resolve()
+            if base in candidate.parents:
+                self._send_file(candidate)
+            else:
+                self._send(404, json.dumps({"error": "not_found"}))
+            return
+        if route.startswith("/static/brand/") and method in ("GET", "HEAD"):
+            candidate = (STATIC_DIR / route[len("/static/"):]).resolve()
+            if STATIC_DIR.resolve() in candidate.parents:
+                self._send_file(candidate)
+            else:
+                self._send(404, json.dumps({"error": "not_found"}))
+            return
+        if route == "/api/auth/config":
+            self._send(200, json.dumps({"local": True, "sso": False,
+                                        "sso_label": "Sign in with Microsoft"}))
+            return
+        ip = self._acc_ip() or ""
+        if route == "/api/auth/login" and method == "POST":
+            if not self._acc_origin_ok():
+                self._send(403, json.dumps({"error": "csrf"}))
+                return
+            data = self._acc_json()
+            email = str(data.get("email") or "").strip().lower()[:254]
+            if not acc.limiter.hit("login-ip:" + ip, 20, 600) or \
+                    not acc.limiter.hit("login-email:" + email, 10, 600):
+                acc.audit.record("LOGIN_FAILED", result="RATE_LIMITED", ip=ip,
+                                 metadata={"email": email})
+                self._send(429, json.dumps({"ok": False, "message": "Too many sign-in "
+                                            "attempts. Wait ten minutes and try again."}))
+                return
+            user, reason = acc.users.authenticate(email, data.get("password"), ip)
+            if user is None:
+                acc.audit.record("LOGIN_FAILED", result="DENIED", ip=ip,
+                                 metadata={"email": email, "reason": reason})
+                self._send(401, json.dumps({"ok": False, "message": "That email or password "
+                                                                    "is not right."}))
+                return
+            token, csrf = acc.users.start_session(user, ip, self.headers.get("User-Agent"))
+            acc.audit.record("LOGIN", user=user, ip=ip, metadata={"method": "password"})
+            self._send(200, json.dumps({"ok": True, "csrf": csrf, "user": public_user(
+                acc.users.get(user["user_id"]))}, default=str), extra=self._acc_cookie(token))
+            return
+        if route == "/api/auth/set-password" and method == "POST":
+            if not self._acc_origin_ok():
+                self._send(403, json.dumps({"error": "csrf"}))
+                return
+            data = self._acc_json()
+            if not acc.limiter.hit("setpw:" + ip, 10, 600):
+                self._send(429, json.dumps({"error": "too_many_requests"}))
+                return
+            try:
+                user = acc.users.set_password(str(data.get("token") or ""),
+                                              str(data.get("password") or ""), ip=ip)
+            except AccessError as error:
+                self._send(400, json.dumps({"ok": False, "message": str(error)}))
+                return
+            self._send(200, json.dumps({"ok": True, "email": user["work_email"]}))
+            return
+        self._send(404, json.dumps({"error": "not_found"}))
+
+    def _acc_own(self, acc, method, route):
+        """The signed-in person's own routes and user management. True if handled."""
+        from controlplane import rbac
+        from controlplane.users import AccessError, public as public_user
+        user, ip = self.user, self._acc_ip()
+        if route == "/api/auth/me" and method == "GET":
+            self._send(200, json.dumps({
+                "user": public_user(user), "permissions": rbac.permissions_of(user),
+                "csrf": self.session["csrf"], "mode": "accounts",
+                "session": {"expires_at": self.session["expires_at"],
+                            "idle_s": acc.settings.session_idle_s}}, default=str))
+            return True
+        if route == "/api/auth/logout" and method == "POST":
+            acc.users.end_session(self._acc_token())
+            acc.audit.record("LOGOUT", user=user, ip=ip)
+            self._send(200, json.dumps({"ok": True}), extra=self._acc_cookie("", 0))
+            return True
+        if route == "/api/me/prefs" and method in ("POST", "PUT"):
+            try:
+                prefs = acc.users.set_prefs(user["user_id"], self._acc_json(2048))
+            except AccessError as error:
+                self._send(400, json.dumps({"ok": False, "message": str(error)}))
+                return True
+            self._send(200, json.dumps({"ok": True, "prefs": prefs}, default=str))
+            return True
+        if route == "/api/admin/rbac" and method == "GET":
+            self._send(200, json.dumps({"roles": [{"role": r, "label": rbac.ROLE_LABELS[r]}
+                                                  for r in rbac.ROLES],
+                                        "matrix": rbac.matrix()}))
+            return True
+        if not route.startswith("/api/admin/"):
+            return False
+        need = "audit.view" if route.startswith("/api/admin/audit") else "users.manage"
+        if not rbac.allowed(user, need):
+            return False                      # the gate refuses it, and audits that
+        if route == "/api/admin/audit" and method == "GET":
+            from urllib.parse import urlparse, parse_qs
+            q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            self._send(200, json.dumps({"events": acc.audit.list(
+                limit=min(int(q.get("limit") or 200), 500), action=q.get("action") or None,
+                user_email=q.get("user") or None)}, default=str))
+            return True
+        try:
+            if route == "/api/admin/users" and method == "GET":
+                self._send(200, json.dumps({"users": acc.users.list(), "roles": list(rbac.ROLES)},
+                                           default=str))
+                return True
+            if route == "/api/admin/users" and method == "POST":
+                data = self._acc_json()
+                created, invite = acc.users.create(data.get("email"), data.get("display_name"),
+                                                   data.get("role"), by=user, ip=ip)
+                self._send(200, json.dumps({"ok": True, "user": public_user(created),
+                                            "invite_link": _accounts.link(self._acc_base(), invite)},
+                                           default=str))
+                return True
+            parts = route.split("/")
+            uid = parts[4] if len(parts) > 4 else ""
+            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", uid):
+                self._send(404, json.dumps({"error": "not_found"}))
+                return True
+            if len(parts) == 5 and method == "PATCH":
+                data = self._acc_json(2048)
+                changed = acc.users.update(uid, user, role=data.get("role"),
+                                           active=data.get("active") if "active" in data else None,
+                                           display_name=data.get("display_name"), ip=ip)
+                self._send(200, json.dumps({"ok": True, "user": public_user(changed)}, default=str))
+                return True
+            if len(parts) == 6 and parts[5] == "reset" and method == "POST":
+                invite = acc.users.reset_access(uid, user, ip=ip)
+                self._send(200, json.dumps({
+                    "ok": True, "invite_link": _accounts.link(self._acc_base(), invite),
+                    "message": "Signed out everywhere." + (
+                        " Share the new link so they can set a password." if invite else "")}))
+                return True
+            if len(parts) == 6 and parts[5] == "revoke" and method == "POST":
+                ended = acc.users.revoke_sessions(uid)
+                acc.audit.record("REVOKE_SESSIONS", user=user, target_type="user", target_id=uid,
+                                 ip=ip, metadata={"sessions_ended": ended})
+                self._send(200, json.dumps({"ok": True, "sessions_ended": ended}))
+                return True
+        except AccessError as error:
+            self._send(400, json.dumps({"ok": False, "message": str(error)}))
+            return True
+        self._send(404, json.dumps({"error": "not_found"}))
+        return True
+
     def _deny(self):
         body = (
             "<!doctype html><meta charset=utf-8>"
@@ -455,10 +737,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, json.dumps({"error": "not_found"}))
 
     def do_GET(self):
-        if not self._authorised():
-            self._deny()
-            return
         route = self.path.split("?")[0].rstrip("/") or "/"
+        if not self._gate("GET", route):
+            return
 
         if route == "/":
             self._send_file(STATIC_DIR / "index.html")
@@ -564,11 +845,15 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send(404, json.dumps({"error": "not found"}))
 
-    def do_POST(self):
-        if not self._authorised():
-            self._deny()
-            return
+    def do_PATCH(self):
         route = self.path.split("?")[0].rstrip("/") or "/"
+        if self._gate("PATCH", route):
+            self._send(404, json.dumps({"error": "not found"}))
+
+    def do_POST(self):
+        route = self.path.split("?")[0].rstrip("/") or "/"
+        if not self._gate("POST", route):
+            return
 
         if route == "/api/control":
             try:
@@ -579,7 +864,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._send(400, json.dumps({"error": "bad request"}))
                 return
+            if action in ("stop", "pause", "cancel") and not self._acc_can("runs.stop"):
+                self._send(403, json.dumps({"error": "forbidden", "permission": "runs.stop"}))
+                return
             accepted, message = control.request(action, reference)
+            self._acc_audit({"start": "START_RUN", "stop": "STOP_RUN", "pause": "PAUSE_RUN",
+                             "resume": "RESUME_RUN", "reprocess": "REPROCESS"}.get(
+                                 action, "START_RUN"), "SUCCESS" if accepted else "REFUSED",
+                            "run", reference or None, {"action": action})
             self._send(200, json.dumps({"accepted": accepted, "message": message}))
             return
 
@@ -605,6 +897,9 @@ class Handler(BaseHTTPRequestHandler):
                 accepted, message = False, "Human actions are not available."
             else:
                 accepted, message = handler(op, run_id, action_id, client_id)
+            self._acc_audit("OPEN_HUMAN_ACTION" if op == "open" else "CONTINUE_HUMAN_ACTION",
+                            "SUCCESS" if accepted else "REFUSED", "human_action", action_id,
+                            {"run_id": run_id, "op": op})
             live = False
             if accepted and op == "open" and live_view.available():
                 # The paused tab, in this operator's own browser (live_view).
@@ -699,6 +994,9 @@ class Handler(BaseHTTPRequestHandler):
         # Untrimmed: the assistant should see the whole run, not the wire view.
         from intelligence import research as _research
         _research.progress_start(context.get("progress_id"))
+        if self.user is not None:
+            # ATLAS answers about PO jobs only for a role that may see them.
+            context["po"] = "1" if self._acc_can("po.view") else "0"
         try:
             reply = assistant.answer(question, _assistant_state(), context)
         finally:
@@ -720,11 +1018,27 @@ class Handler(BaseHTTPRequestHandler):
         # request goes through the same control channel and the same enabled
         # check as the dashboard buttons.
         wanted = reply.pop("request", None)
-        if wanted:
+        if wanted and not self._acc_can("runs.start"):
+            reply["answer"] = ("Your access level can't start a re-run. Someone with Operator "
+                               "or Admin access can.")
+            reply["accepted"] = False
+        elif wanted:
             accepted, message = control.request(
                 wanted.get("action"), wanted.get("reference"))
+            self._acc_audit("REPROCESS", "SUCCESS" if accepted else "REFUSED", "shipment",
+                            wanted.get("reference"))
             reply["answer"] = message
             reply["accepted"] = accepted
+        if not self._acc_can("human.act"):
+            if reply.pop("operation", None):
+                reply["answer"] = (reply.get("answer") or "") + (
+                    "\n\nYour access level can't open Human Actions; an Operator can.")
+            reply["buttons"] = [b for b in reply.get("buttons") or []
+                                if (b.get("action") or {}).get("type") != "human_open"]
+        if not self._acc_can("evidence.view") and reply.get("evidence"):
+            reply["evidence"] = []
+            reply["answer"] = (reply.get("answer") or "") + (
+                "\n\nScreenshots are shown to Operators and Admins.")
 
         self._send(200, json.dumps(reply))
 
@@ -748,8 +1062,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": "bad request"}))
                 return
         from po import service as po_service, web as po_web
+        actor = self.user["work_email"] if self.user else "local operator"
         kind, status, payload = po_web.handle(po_service.local(), method, route, body,
-                                              "local operator", lambda permission: True)
+                                              actor, self._acc_can)
         if kind == "file":
             data, content_type, name = payload
             self.send_response(200)
@@ -1165,8 +1480,17 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
 
         threading.Thread(target=pulse, daemon=True).start()
 
-        suffix = "?key={0}".format(ACCESS_KEY) if ACCESS_KEY else ""
+        signin = False
+        try:
+            signin = _accounts.enabled()
+        except Exception:
+            pass
+        # With personal sign-in on, the link is the sign-in page; the key is not used.
+        suffix = "login" if signin else ("?key={0}".format(ACCESS_KEY) if ACCESS_KEY else "")
         local = "http://127.0.0.1:{0}/{1}".format(port, suffix)
+        if signin:
+            print("  Personal sign-in is ON: everyone signs in with their own account "
+                  "(Settings -> Access levels).", flush=True)
 
         if host not in ("127.0.0.1", "localhost"):
             firewall = ensure_firewall_rule(port)
@@ -1189,7 +1513,7 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
             print("", flush=True)
         else:
             print("Control Tower running at {0}".format(local), flush=True)
-            if not ACCESS_KEY:
+            if not ACCESS_KEY and not signin:
                 print(
                     "  NOTE: no access key is set, so anyone who can reach this "
                     "port can read the run. Set the DASHBOARD_ACCESS_KEY environment "

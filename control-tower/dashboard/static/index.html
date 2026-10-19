@@ -1523,6 +1523,10 @@ td.car{color:var(--ink);font-weight:500}
 /* Admin-only page: drawn only for someone whose role has it. */
 .adm{display:none!important}
 .can-admin .adm{display:inline-flex!important}
+.ac-matrix td:not(:first-child),.ac-matrix th:not(:first-child){text-align:center;width:92px}
+.ac-matrix .yes{color:var(--grn-dot);font-weight:700}.ac-matrix .no{color:var(--faint)}
+.ac-mine{font-size:12.5px;color:var(--mid)}.ac-mine b{color:var(--ink)}
+.ac-off{padding:12px 14px;border-radius:10px;background:var(--surface-2);margin:4px 0 14px;line-height:1.55}
 .can-admin .nav-i.adm{display:flex!important}
 .no-human .hq-go,.no-human #hOpen,.no-human #hResume{display:none!important}
 
@@ -2969,6 +2973,23 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 
     <!-- ═══ SETTINGS ═══ -->
     <section class="page" data-p="settings">
+      <div class="card" id="acLevels">
+        <div class="card-h"><div class="card-t">Access levels</div><div class="sp"></div>
+          <span class="ac-mine" id="acMine"></span></div>
+        <div class="card-b">
+          <p class="hint" id="acLevelsNote">Each person has their own sign-in and one of three access levels.
+            The server checks the level on every request; a hidden button is only a courtesy.</p>
+          <div class="ac-off" id="acOff" hidden>
+            <b>Sign-in is off.</b> Today anyone with the dashboard link and key can see and start
+            everything. To turn on personal sign-in, run <span class="mono">CREATE_ADMIN.bat</span>
+            on the tower PC once: it creates the first Admin and prints a link to set the password.
+            Then add the team here.
+          </div>
+          <div class="tw"><table class="ac-matrix"><thead><tr><th>What it allows</th><th>Viewer</th>
+            <th>Operator</th><th>Admin</th></tr></thead><tbody id="acMatrix"></tbody></table></div>
+        </div>
+      </div>
+      <div id="acUsersSlot" style="margin-top:18px;margin-bottom:18px"></div>
       <div class="card"><div class="card-h"><div class="card-t">Run configuration</div></div>
         <div class="card-b" id="settings"></div></div>
       <div class="card" style="margin-top:18px">
@@ -3198,7 +3219,7 @@ const $ = (id) => document.getElementById(id);
    their role decides which controls are drawn — the server decides what is
    allowed — and every state-changing request carries the session's CSRF
    token. A signed-out or expired session goes back to the sign-in page. */
-const PF = {on:false, user:null, perms:[], csrf:null,
+const PF = {on:false, remote:false, user:null, perms:[], csrf:null,
             can(p){ return !this.on || this.perms.indexOf(p) >= 0; }};
 const _fetch = window.fetch.bind(window);
 window.fetch = function(input, init){
@@ -3223,10 +3244,12 @@ const platformReady = _fetch('/api/auth/me', {credentials:'same-origin'}).then((
   if (r.status === 401){ signedOut(false); return new Promise(() => {}); }
   return r.status === 200 ? r.json() : null;
 }).then((me) => {
-  if (!me || me.mode !== 'remote') return;
-  PF.on = true; PF.user = me.user; PF.perms = me.permissions || []; PF.csrf = me.csrf;
+  if (!me || (me.mode !== 'remote' && me.mode !== 'accounts')) return;
+  PF.on = true; PF.remote = me.mode === 'remote';
+  PF.user = me.user; PF.perms = me.permissions || []; PF.csrf = me.csrf;
   hClient = me.user.user_id;
-  document.body.classList.add('remote');
+  document.body.classList.add('signed-in');
+  if (PF.remote) document.body.classList.add('remote');
   document.body.classList.toggle('can-admin', PF.can('users.manage') || PF.can('audit.view'));
   document.body.classList.toggle('no-human', !PF.can('human.act'));
   const u = me.user;
@@ -3323,7 +3346,7 @@ function sysDot(v){
   return good ? 'ok' : warn ? 'warn' : /^(None|COMPLETED|STOPPED)$/.test(String(v)) ? 'idle' : 'bad';
 }
 function paintPlatform(){
-  if (!PF.on || !S) return;
+  if (!PF.remote || !S) return;
   const p = S.platform || {}, h = p.health, run = p.run;
   const atlasState = typeof atlasRun === 'function' ? atlasRun() : null;
   if (changed('pfAx', atlasState ? atlasState.state + '|' + (ATLAS[atlasState.state] || {}).label : '')){
@@ -3376,7 +3399,7 @@ function lvlBadge(level){
     esc(level === 'BLOCKED' ? 'REAL VERIFICATION BLOCKED' : level) + '</span>';
 }
 async function paintVerify(){
-  if (!PF.on || !(PF.perms || []).includes('health.view')) return;
+  if (!PF.remote || !(PF.perms || []).includes('health.view')) return;
   let data;
   try { const r = await fetch('/api/observations?limit=20'); if (!r.ok) return; data = await r.json(); }
   catch (e) { return; }
@@ -3422,14 +3445,45 @@ document.addEventListener('click', (e) => {
     () => put(b, 'Copied'), () => { try { document.execCommand('copy'); put(b, 'Copied'); } catch (x) {} });
 });
 function loadAccess(){
-  if (!PF.on || activePage !== 'access') return;
+  if (!PF.on || (activePage !== 'access' && activePage !== 'settings')) return;
   if (PF.can('users.manage')) fetch('/api/admin/users').then((r) => r.json()).then(paintUsers).catch(() => {});
   $('acUsers').hidden = !PF.can('users.manage');
   $('acAuditCard').hidden = !PF.can('audit.view');
-  $('acWorkersCard').hidden = !PF.can('settings.manage');
+  $('acWorkersCard').hidden = !PF.remote || !PF.can('settings.manage');
+  if (activePage !== 'access') return;
   if (PF.can('audit.view')) fetch('/api/admin/audit?limit=150' + ($('acAuditAct').value ? '&action=' + $('acAuditAct').value : ''))
     .then((r) => r.json()).then((d) => { acAudit = d.events || []; paintAudit(); }).catch(() => {});
-  if (PF.can('settings.manage')) fetch('/api/admin/workers').then((r) => r.json()).then(paintWorkers).catch(() => {});
+  if (PF.remote && PF.can('settings.manage')) fetch('/api/admin/workers').then((r) => r.json()).then(paintWorkers).catch(() => {});
+}
+/* Settings → Access levels: what each level allows, the person's own level,
+   and (for an Admin) the users table, moved here from the Access page. */
+const LEVELS_FALLBACK = [
+  ['See the dashboard, shipments, PO status; ask ATLAS; export CSV and PDF', 1, 1, 1],
+  ['Start and stop runs; complete Human Actions', 0, 1, 1],
+  ['Open screenshots and evidence; attach images in chat', 0, 1, 1],
+  ['Process and send POs', 0, 1, 1],
+  ['Authorise a PO re-send; approve ATLAS proposals', 0, 0, 1],
+  ['Add users, change access levels, read the audit log', 0, 0, 1]];
+function paintLevels(rows){
+  putHTML($('acMatrix'), rows.map((r) => '<tr><td>' + esc(r[0]) + '</td>' + [1, 2, 3].map((i) =>
+    '<td class="' + (r[i] ? 'yes' : 'no') + '">' + (r[i] ? '✓<span class="sr"> allowed</span>' : '—<span class="sr"> not allowed</span>') + '</td>').join('') + '</tr>').join(''));
+}
+function loadLevels(){
+  $('acOff').hidden = PF.on;
+  put($('acMine'), '');
+  if (PF.on && PF.user){
+    $('acMine').innerHTML = 'Your level: <b>' + esc(PF.user.role_label || PF.user.role) + '</b>';
+  }
+  paintLevels(LEVELS_FALLBACK);
+  if (PF.on) fetch('/api/admin/rbac').then((r) => r.ok ? r.json() : null).then((d) => {
+    if (!d || !d.matrix) return;
+    paintLevels(d.matrix.map((m) => [m.meaning, m.roles.indexOf('VIEWER') >= 0,
+      m.roles.indexOf('OPERATOR') >= 0, m.roles.indexOf('ADMIN') >= 0]));
+  }).catch(() => {});
+  if (PF.on && PF.can('users.manage')){
+    $('acUsersSlot').appendChild($('acUsers'));
+    loadAccess();
+  }
 }
 setInterval(() => { if (activePage === 'access' && !document.hidden) loadAccess(); }, 15000);
 function paintUsers(d){
@@ -4099,7 +4153,12 @@ function navFor(id){
 function go(id){
   activePage = id;
   if (id === 'atlas') setTimeout(() => { loadLearning(true); loadFailures(true); }, 0);
-  if (id === 'access') setTimeout(loadAccess, 0);
+  if (id === 'access'){
+    const pg = document.querySelector('.page[data-p="access"]');
+    if (pg && $('acUsers').parentNode !== pg) pg.insertBefore($('acUsers'), pg.firstChild);
+    setTimeout(loadAccess, 0);
+  }
+  if (id === 'settings') setTimeout(loadLevels, 0);
   if (id === 'po') setTimeout(() => loadPO(true), 0);
   const lit = navFor(id);
   document.querySelectorAll('.nav-i,.tnav-i').forEach((n) => n.classList.toggle('on', n.dataset.nav === lit));
@@ -6165,7 +6224,7 @@ function paintLearning(m, l){
     '</span>' + esc(p.change) + '<small>' + esc(p.evidence.best.name) + ' ' + p.evidence.best.successes + '/' +
     p.evidence.best.decided + ' verified vs ' + esc(p.evidence.current.name) + ' ' + p.evidence.current.successes + '/' +
     p.evidence.current.decided + ' \u00b7 confidence ' + esc(p.confidence) + ' \u00b7 ' + esc(p.deploys) + '</small>' +
-    (PF.on && PF.can('atlas.approve') && p.status === 'PROPOSED'
+    (PF.remote && PF.can('atlas.approve') && p.status === 'PROPOSED'
       ? '<span class="lrn-dec"><button class="cbtn" data-prop="' + esc(p.id) + '" data-dec="approve">Approve</button>' +
         '<button class="cbtn" data-prop="' + esc(p.id) + '" data-dec="reject">Reject</button></span>' : '') +
     (p.decided_by ? '<small>' + esc(p.status.toLowerCase()) + ' by ' + esc(p.decided_by) + ' \u00b7 ' + esc(p.decided_at || '') + '</small>' : '') +
@@ -6558,7 +6617,7 @@ function paintControl(){
   const running = supervised ? !!c.running : (S.run.status === 'running');
   const pausing = !!c.paused, stopping = !!c.stopping;
 
-  $('btnStart').style.display = supervised && (!c.remote || PF.can('runs.start')) ? '' : 'none';
+  $('btnStart').style.display = supervised && PF.can('runs.start') ? '' : 'none';
   $('btnStart').disabled = running || (c.remote && !c.can_start);
   put($('btnStart'), running ? 'Running' : (c.remote ? 'Start automation' : 'Start run'));
   $('btnStart').title = c.remote && !running && !c.can_start ? 'Automation worker unavailable.' : '';
@@ -6649,7 +6708,7 @@ function paintHuman(){
   put($('hWaitE'), waiting ? 'now' : (a.closed_at ? a.closed_at.slice(11) : ''));
   put($('hDeadline'), a.deadline ? a.deadline.slice(11) : '—');
   const mine = !a.claimed_by || a.claimed_by === hClient;
-  const live = PF.on || (S && S.live_view);
+  const live = PF.remote || (S && S.live_view);
   put($('hHow'), waiting ? (a.instructions || '') +
     (live ? ' Open Session shows the paused carrier page here, in your browser — do the step in it.'
           : ' Open Session brings the paused tab to the front of the automation\u2019s Edge window' +
@@ -6672,7 +6731,7 @@ function sendHuman(op){
     body: JSON.stringify({op: op, run_id: a.run_id, action_id: a.action_id, client_id: hClient})
   }).then((r) => r.json()).then((r) => {
     hNote = r.message || '';
-    if (r.accepted && op === 'open' && (PF.on || r.live)) openViewer(a.action_id);
+    if (r.accepted && op === 'open' && (PF.remote || r.live)) openViewer(a.action_id);
     paintHuman();
     setTimeout(() => { hNote = ''; paintHuman(); }, 6000);
   }).catch(() => { hNote = 'Could not reach the dashboard server.'; paintHuman(); });
@@ -6701,7 +6760,7 @@ function hqClock(epoch){
 let hqNote = '';
 function hqRow(t){
   const end = HQ_END[t.status], wait = t.status === 'WAITING_FOR_HUMAN';
-  const held = PF.on ? ((S.platform || {}).claims || []).find((c) => c.action_id === t.action_id) : null;
+  const held = PF.remote ? ((S.platform || {}).claims || []).find((c) => c.action_id === t.action_id) : null;
   const mine = held ? held.mine : (!t.claimed_by || t.claimed_by === hClient);
   const idx = t.status === 'HUMAN_COMPLETED' ? 2 : HQ_STEPS.indexOf(t.status);
   const prog = !wait && !end && idx >= 0 ? '<span class="hq-p" aria-hidden="true">' +
@@ -6820,7 +6879,7 @@ function hqOpen(actionId){
   }).then((r) => r.json()).then((r) => {
     hqNote = r.message || ''; paintQueue();
     if (r.accepted) hqWatch(t);
-    if (r.accepted && (PF.on || r.live)) openViewer(t.action_id);
+    if (r.accepted && (PF.remote || r.live)) openViewer(t.action_id);
     return r;
   }).catch(() => {
     hqNote = 'Could not reach the dashboard server.'; paintQueue();
