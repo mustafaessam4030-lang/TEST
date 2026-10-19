@@ -24,10 +24,16 @@ robocopy C:\Automation C:\Automation_backup_20261020 /E /XD carrier_profile
 | Choice | How | Consequences |
 |---|---|---|
 | **A. Stable copy as is (`ba390cb`)** | Nothing to change | `START_ATLAS_DEMO.bat` (no arguments), `run_dashboard.bat` and `share_dashboard.bat` **crash** if `logs\` has a run log. Use only `START_TOWER.bat` and `START_ATLAS_DEMO.bat --test-data`. The Overview card can say "written and verified" without a read-back: **don't present it** |
-| **B. Review branch with the fixes** | Into a **separate folder**, not over the stable copy: `git clone -b claude/atlas-verify-label https://github.com/mustafaessam4030-lang/TEST C:\ATA_demo_fix`, then copy `credentials.txt` into `C:\ATA_demo_fix\control-tower\` (never commit it) | Replay launchers work; card shows real read-back state. **Requires the branch to be pushed, which needs your approval. Today only `claude/atlas-demo-stabilize` (`c59e89d`, replay fix only) is on GitHub** |
+| **B. Review branch with the fixes** (pushed: `claude/atlas-verify-label` @ `2b0b646`) | Into a **separate folder**, never over the stable copy: `git clone --branch claude/atlas-verify-label --single-branch https://github.com/mustafaessam4030-lang/TEST.git C:\ATA_review`, then `cd /d C:\ATA_review` and `git log -1 --oneline` must print `2b0b646`. Without Git: download `https://github.com/mustafaessam4030-lang/TEST/archive/refs/heads/claude/atlas-verify-label.zip` and extract to `C:\ATA_review` | Replay launchers work; card shows real read-back state; failure wording names the Hub for Manage-page errors |
+
+**Important for B:** the clone's code still uses `C:\Automation` for data. `update_eta.py` hard-codes
+`BASE_FOLDER = C:\Automation`, so it **reads `C:\Automation\credentials.txt`** and **writes logs,
+`tracking_results.csv` and screenshots into `C:\Automation`**. It falls back to another folder only
+if that one isn't writable. Don't copy credentials into the clone. Step 0's backup protects the
+stable copy's data. The clone keeps its own ATLAS learning store under `C:\ATA_review\control-tower\ml\data\`.
 
 The rest of these steps apply to whichever folder you chose. "the folder" below means
-`C:\Automation` (A) or `C:\ATA_demo_fix\control-tower` (B).
+`C:\Automation` (A) or `C:\ATA_review\control-tower` (B).
 
 ## 2. Offline checks (10 min, no network to eHub or carriers)
 
@@ -37,7 +43,7 @@ run_tests.bat
 ```
 
 **Pass:** the last line reads `N suites, N passed, 0 failed, …, 0 suite(s) with problems`.
-- Expected on this PC for B: 72 suites, 0 failed. Skips allowed only for Tesseract / PostgreSQL / real eHub.
+- Expected for B (as measured here on Linux at `2b0b646`: 72 suites, 4,626 passed, 0 failed, 6 skipped): 0 failed. Skips allowed only for Tesseract / PostgreSQL / real eHub / PowerShell. First time on a PC: `pip install -r requirements.txt` and `python -m playwright install chromium`.
 - For A, `test_atlas_skills.py` reports 3 failures (the known test-isolation bug, not a product fault).
 
 Save `test_results.json`.
@@ -70,8 +76,19 @@ Under Clearance shipment's status is read. Save the JSON it writes beside the ru
 
 1. Pick **one** shipment approved by operations, not customer-sensitive, carrier DHL or Qatar
    (not CMA CGM, which is held; not Grimaldi unless a person is ready for the security code).
-2. In `update_eta.py` set `DRY_RUN = True` and `MAX_RECORDS_PER_RUN = 1`. Or start a dry run from the web if you use the platform.
-3. `START_TOWER.bat` → **Start run**.
+2. Force a dry run and keep the run to one shipment and no PO activity, **without editing code**, in the same Command Prompt:
+   ```bat
+   cd /d <the folder>
+   set CT_DRY_RUN=1
+   set MAX_HUB_WRITES=0
+   set PO_AUTO=0
+   START_TOWER.bat
+   ```
+   - `CT_DRY_RUN=1` can only turn dry run on.
+   - `MAX_HUB_WRITES=0` allows no Hub save even if dry run were off.
+   - `PO_AUTO=0` stops the supervisor's automatic PO sweep (its own eHub browser and PO jobs) from starting beside the run.
+   - To limit the run to one shipment, set `MAX_RECORDS_PER_RUN = 1` in `update_eta.py`. Do that only in the **clone (B)**, never in the stable copy.
+3. Confirm the header shows **"Dry run — nothing is saved"** before you press **Start run**.
 4. Watch on the dashboard: Started → Carrier selected → Tracking opened → Data extracted → ATA
    validated. In a dry run the Hub write shows as DRY RUN and **no read-back happens**.
 5. **Pass:** the shipment ends with the carrier's ETA/ATA shown. `logs\run_*.log` has the carrier
