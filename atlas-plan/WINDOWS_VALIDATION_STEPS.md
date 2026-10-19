@@ -76,7 +76,7 @@ Under Clearance shipment's status is read. Save the JSON it writes beside the ru
 
 1. Pick **one** shipment approved by operations, not customer-sensitive, carrier DHL or Qatar
    (not CMA CGM, which is held; not Grimaldi unless a person is ready for the security code).
-2. Force a dry run and keep the run to one shipment and no PO activity, **without editing code**, in the same Command Prompt:
+2. Force a dry run and no PO activity, **without editing code**, in a Command Prompt opened **as Administrator** (Start → type cmd → right-click → Run as administrator). START_TOWER.bat re-launches itself through the Windows permission prompt when the console is not elevated, and that new window does NOT keep variables set before it, so the dry run would be silently lost:
    ```bat
    cd /d <the folder>
    set CT_DRY_RUN=1
