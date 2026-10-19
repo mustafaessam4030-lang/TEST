@@ -6,7 +6,8 @@ Each run is built through the bridge exactly as a run builds it (view_updated
 with the read-back verdict update_one_view recorded, shipment_finished,
 counters, run_finished), served by the real dashboard server, and read off
 the real page in a real browser: what atlasRun() says and what the Overview
-shows.
+shows. And the shipment timeline: a stop is drawn where the run's own
+message says it happened (a Hub Manage-page error at Hub write).
 
     python test_overview_verification.py
 """
@@ -164,6 +165,27 @@ run("20261019-100000-eeeeee",
 ax, body = card(page)
 check("A mismatch on a shipment counted successful still blocks the verified claim",
       "verified" not in ax["message"] and "read back different" in ax["message"], ax)
+
+print()
+print("=" * 72)
+print("4. THE SHIPMENT TIMELINE PUTS A STOP WHERE THE RUN SAYS IT HAPPENED")
+print("=" * 72)
+steps = page.evaluate("""() => {
+  const at = (r) => pipeline(r).filter((x) => x.st === 'fail').map((x) => x.t);
+  return {
+    hub: at({reference: 'T1', state: 'failed', provider: 'DHL',
+             error: 'Save/Update button was not found on the Manage page.'}),
+    hubWithData: at({reference: 'T2', state: 'failed', provider: 'DHL',
+             provider_status: 'Arrived', provider_ata: '19/10/2026',
+             error: 'Manage control was not found for T2 in BU view.'}),
+    carrier: at({reference: 'T3', state: 'failed', provider: 'DHL',
+             error: 'the tracking box did not render'})};
+}""")
+check("A Hub Manage-page error is drawn at Hub write, not at the first step without data",
+      steps["hub"] == ["Hub write"], steps)
+check("...also when the carrier data was read", steps["hubWithData"] == ["Hub write"], steps)
+check("...while a carrier-side error still stops at the first step without data",
+      steps["carrier"] == ["Tracking opened"], steps)
 
 context.close()
 browser.close()
