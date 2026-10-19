@@ -186,5 +186,48 @@ check("Hand-checked subset reported separately",
 check("ATLAS and production (12 Oct readers + ATLAS's transit veto) make the same decisions",
       rep["differences"] == [], rep["differences"])
 
+# 17 Oct, 071-62757085 (LHR -> ADD -> ACC): the shipment history lists status
+# codes such as "DEP" on lines of their own; the destination was read as "DEP"
+# and the real arrival at ACC was vetoed as a "transit airport".
+ET_ACC = """AWB No : 62757085
+
+Origin
+
+LHR
+
+Destination
+
+ACC
+
+LHR
+ADD
+ACC
+Flight Schedule
+LHR \u2192 ADD
+ET701 \u2022 2026-10-09
+DELIVERED
+ADD \u2192 ACC
+ET921 \u2022 2026-10-13
+DELIVERED
+Shipment History
+DEP
+1/10 Pcs | 0.39 m 3 | 66.1 Kg | from ADD to ACC
+14-Oct-26 13:00:00
+Departed on Flight
+"""
+d = D.diagnose(ET_ACC, None, "ETHIOPIAN")
+check("Ethiopian: the destination is the page's Destination field (ACC), not a history code",
+      d.get("destination") == "ACC", d.get("destination"))
+check("Ethiopian: the last leg to ACC is not called a transit stop",
+      not any("transit station (ACC)" in c for c in d.get("conflicts") or []), d.get("conflicts"))
+import update_eta as U                                          # noqa: E402
+kept = U.atlas_transit_veto(ET_ACC, "ETHIOPIAN", {"provider": "ETHIOPIAN", "ata": "13/10/2026"})
+check("ATLAS's transit check lets the arrival at the destination through",
+      kept.get("ata") == "13/10/2026", kept)
+ET_DAR = ET_ACC.replace("Destination\n\nACC", "Destination\n\nDAR").replace(
+    "ADD \u2192 ACC\nET921 \u2022 2026-10-13", "ADD \u2192 DAR\nET3805 \u2022 2026-10-16")
+held = U.atlas_transit_veto(ET_DAR, "ETHIOPIAN", {"provider": "ETHIOPIAN", "ata": "09/10/2026"})
+check("...and still stops a first-leg date on a route to DAR", held.get("ata") is None, held)
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
