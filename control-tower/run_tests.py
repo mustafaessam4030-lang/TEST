@@ -46,6 +46,7 @@ SUITES = [
     ("test_portal_box_wait.py", "Portal box found by the general search: short wait after (MSC)"),
     ("test_deep_link_retry.py", "Shipment page whose connection drops is tried again (DHL Aviation)"),
     ("test_atlas_understanding.py", "ATLAS: the questions operators ask, EN and AR, answered from records"),
+    ("test_atlas_skills.py", "ATLAS skills: validate, PDF reports, screenshots, web search, handbook"),
     ("test_model_bench.py",     "ATLAS model benchmark (stand-in Ollama)"),
     ("test_model_auto.py",      "ATLAS model chosen automatically: download, switch, fall back"),
     ("test_grimaldi_result.py", "Grimaldi GNET ETS/ETA block: ETA from Arrival, never the departure"),

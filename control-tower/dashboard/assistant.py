@@ -662,6 +662,15 @@ def _answer_capabilities(data):
             "• Slowest and fastest shipments, average processing time\n"
             "• System status for DHL, Qatar Airways and the Hub\n"
             "• A CSV of any of it\n\n"
+            "And I can do things:\n\n"
+            "• **Validate** a shipment's dates, the whole run, or a date you type "
+            "(\u201cvalidate MEDUAHP69377\u201d, \u201cis 31/10/2026 a valid ATA?\u201d)\n"
+            "• Make a **PDF report** (\u201cPDF report of the run\u201d, \u201cPDF for <shipment>\u201d)\n"
+            "• Show the **screenshots** the run captured (\u201cscreenshot for <shipment>\u201d)\n"
+            "• **Read a photo** or screenshot you attach with the paperclip\n"
+            "• **Search the web** and carrier sites (\u201csearch MSC website for advisories\u201d)\n"
+            "• Explain **how anything here works** (\u201chow does the PO process work?\u201d, "
+            "\u201cwhich carriers do you support?\u201d)\n\n"
             "I can also re-run a shipment: say \u201cre-run 157-49568713\u201d.")
 
 
@@ -1362,7 +1371,9 @@ def _help(data):
         "• Which shipments failed?\n"
         "• How many are still processing?\n"
         "• Which carrier has the most failures?\n"
-        "• Is DHL currently processing?\n\n"
+        "• Is DHL currently processing?\n"
+        "• Validate the run's dates · PDF report of the run · screenshot for <shipment>\n"
+        "• How does the PO process work? · Which carriers do you support?\n\n"
         "The automation never reads origin, destination, route or order numbers, "
         "so I can't answer those. If I don't have something, I'll say so."
     )
@@ -3436,7 +3447,9 @@ def _answer_rules(question, state, context=None):
         reply["suggestions"] = (follow_ups(data, record, intent)
                                 if record is not None and not run_level
                                 else suggestions(data)[:4])
-        reply["downloads"] = downloads_for(data, intent, record)
+        own = reply.get("downloads") or []           # a skill's own (a PDF)
+        reply["downloads"] = (own + [d for d in downloads_for(data, intent, record)
+                                     if all(d["url"] != o["url"] for o in own)])[:4]
         preset_b = reply.pop("preset_buttons", None) or []
         preset_a = reply.pop("preset_actions", None) or []
         buttons, actions = ui_actions(data, question, reply, reply.get("intent"))
@@ -3491,6 +3504,33 @@ def _answer_core(question, state, context=None):
             return {"answer": _answer_code_request(data), "card": None,
                     "reference": context.get("reference"), "grounded": True,
                     "intent": intent}
+
+        # -- ATLAS's skills: validate, PDF report, screenshots, web search ---
+        # Things ATLAS does on request, all read-only (dashboard/atlas_skills.py).
+        try:
+            from dashboard import atlas_skills
+            skill = atlas_skills.detect(question, data, context)
+            if skill:
+                produced = atlas_skills.answer(skill, question, data, context)
+                if produced is not None:
+                    return produced
+        except Exception:
+            pass
+
+        # -- the handbook: how the Control Tower itself works ---------------
+        # "How does the PO process work?", "which carriers do you support?":
+        # what the system does, not a run fact. Never for a question that names
+        # one of this run's shipments.
+        if not any(data.find(c) is not None for c in data.references_in(question)):
+            try:
+                from intelligence import handbook as _HB
+                hb = _HB.answer(question)
+            except Exception:
+                hb = None
+            if hb:
+                return {"answer": hb["answer"], "card": None, "reference": None,
+                        "grounded": True, "intent": "handbook", "topic": hb["topic"],
+                        "final": True, "sources": ["handbook"]}
 
         # -- PO Automation: the same ATLAS, another domain ------------------
         # A question about PO work — or one asked from the PO page — is
@@ -3791,6 +3831,26 @@ def _answer_core(question, state, context=None):
             live = _live_access_answer(data)
             if live is not None:
                 return dict(live, reference=context.get("reference"))
+
+        # Something about the system rather than the run: the handbook without
+        # the how/what wording, then the project's own guides.
+        try:
+            from intelligence import handbook as _HB
+            hb = _HB.answer(question, how_required=False)
+            guide = None if hb or not _HB.asks_how(question) else _HB.from_guides(question)
+        except Exception:
+            hb = guide = None
+        if hb:
+            return {"answer": hb["answer"], "card": None, "reference": None,
+                    "grounded": True, "intent": "handbook", "topic": hb["topic"],
+                    "final": True, "sources": ["handbook"]}
+        if guide:
+            # The closest section of the project's guides: shown as it is
+            # without a model, but not final, so a question about the outside
+            # world (an error message, say) can still be researched.
+            return {"answer": guide["answer"], "card": None, "reference": None,
+                    "grounded": True, "intent": "handbook_guide", "topic": guide["topic"],
+                    "sources": ["handbook"]}
 
         # Rather than shrugging, say where the run stands and point at the
         # nearest useful thing.

@@ -60,6 +60,10 @@ OFFICIAL_CARRIERS = (
 OFFICIAL_PORTS = ("ghanaports.gov.gh", "gpha.gov.gh", "apmterminals.com", "dpworld.com")
 OFFICIAL_DOCS = ("playwright.dev", "learn.microsoft.com", "developer.mozilla.org",
                  "docs.python.org", "chromium.org", "support.microsoft.com")
+# Standards and customs bodies operators look things up on (HS codes,
+# Incoterms, air cargo and shipping rules, Ghana customs and ports).
+OFFICIAL_BODIES = ("wcoomd.org", "iccwbo.org", "iata.org", "imo.org", "gra.gov.gh",
+                   "unece.org", "wto.org", "unctad.org")
 PORT_HINTS = ("port", "harbour", "harbor", "terminal")
 INDUSTRY_HINTS = ("lloydslist", "joc.com", "splash247", "seatrade", "porttechnology", "drewry",
                   "sea-intelligence", "theloadstar", "aircargonews")
@@ -198,6 +202,8 @@ def publisher(url):
         return host, "Port / terminal"
     if _domain_in(host, OFFICIAL_DOCS):
         return host, "Official documentation"
+    if _domain_in(host, OFFICIAL_BODIES):
+        return host, "Industry body"
     if host.endswith(".gov") or ".gov." in host:
         return host, "Government"
     if any(h in host for h in INDUSTRY_HINTS):
@@ -213,7 +219,8 @@ def fetch_allowed(url):
         host = host[4:]
     extra = tuple(d.strip().lower() for d in (os.environ.get("ATLAS_FETCH_ALLOW") or "").split(",")
                   if d.strip())
-    allowed = _domain_in(host, OFFICIAL_CARRIERS + OFFICIAL_PORTS + OFFICIAL_DOCS + extra) or \
+    allowed = _domain_in(host, OFFICIAL_CARRIERS + OFFICIAL_PORTS + OFFICIAL_DOCS +
+                         OFFICIAL_BODIES + extra) or \
         host.endswith(".gov") or ".gov." in host
     return allowed and parsed.scheme in ("http", "https") and \
         not NEVER_FETCH.search(parsed.path + "?" + parsed.query)

@@ -69,6 +69,7 @@ ROUTE_PERMISSIONS = {
     ("GET", "/api/ml"): "dashboard.view",
     ("GET", "/api/runs"): "runs.view",
     ("GET", "/api/export.csv"): "runs.view",
+    ("GET", "/api/report.pdf"): "runs.view",
     ("GET", "/api/health"): "health.view",
     ("GET", "/api/observations"): "health.view",
     ("GET", "/api/evidence"): "evidence.view",
@@ -836,6 +837,8 @@ class Handler(tower_server.Handler):
             tower_server.Handler.do_GET(self)
         elif route == "/api/export.csv":
             self._export()
+        elif route == "/api/report.pdf":
+            self._report_pdf()
         elif route == "/api/admin/users" and method == "GET":
             self._send(200, {"users": app.users.list(), "roles": list(rbac.ROLES)})
         elif route == "/api/admin/users" and method == "POST":
@@ -1302,6 +1305,26 @@ class Handler(tower_server.Handler):
         name = "control_tower_{0}_{1:%Y%m%d_%H%M%S}.csv".format(wanted, datetime.now())
         self._send(200, body, "text/csv; charset=utf-8",
                    extra={"Content-Disposition": 'attachment; filename="{0}"'.format(name)})
+
+    def _report_pdf(self):
+        """A PDF report ATLAS offered in the chat, from the authoritative state.
+        Screenshots go in only for a role that may open evidence."""
+        import re as _re
+        from intelligence import pdf_report
+        q = self._query()
+        kind = q.get("kind") or "run"
+        ref = _re.sub(r"[^A-Za-z0-9 _/-]", "", q.get("ref") or "")[:60] or None
+        try:
+            body, name = pdf_report.build(kind, self.app.payload(self.user), ref,
+                                          images=rbac.allowed(self.user, "evidence.view"))
+        except Exception as error:
+            body, name = None, "the report could not be made: {0}".format(str(error)[:160])
+        if body is None:
+            self._send(404 if kind == "shipment" else 503, {"error": name})
+            return
+        self._send(200, body, "application/pdf",
+                   extra={"Content-Disposition": 'attachment; filename="{0}"'.format(name),
+                          "Cache-Control": "no-store"})
 
     # -- the worker API ------------------------------------------------------
 

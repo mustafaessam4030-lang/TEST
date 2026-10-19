@@ -6,6 +6,26 @@ Mantrac Logistics — Shipment ETA Automation and Control Tower.
 
 ## What changed in this build
 
+**New · ATLAS skills: validate, PDF reports, screenshots, web search, and the
+whole system explained.** Ask ATLAS:
+
+```
+validate MEDUAHP69377               check all the dates
+is 31/10/2026 a valid ATA?          PDF report of the run
+PDF for K358403                     PDF of the failed shipments
+screenshot for 1570046231           search MSC website for advisories
+how does the PO process work?       which carriers do you support?
+what checks does it do?             I can't open the dashboard
+```
+
+Validation re-runs the automation's own date rules on what the run recorded
+and lists each check as PASS, FAIL or INFO; nothing is written. PDFs are made
+from the run records (with the screenshots the run captured, for roles that
+may see them). Web search needs SETUP_WEB_SEARCH.bat once; without it ATLAS
+gives the official links. "How does…" questions are answered from ATLAS's
+handbook (`intelligence/handbook.py`) and, failing that, from these guides.
+Tests: `python test_atlas_skills.py`.
+
 **New · ATLAS: morning briefing, carrier health, carrier page changes.** Ask
 ATLAS "morning briefing" or "has any carrier website changed?", or run
 `python -m intelligence.briefing`. Everything is counted from recorded

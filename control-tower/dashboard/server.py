@@ -485,6 +485,10 @@ class Handler(BaseHTTPRequestHandler):
             self._export_csv()
             return
 
+        if route == "/api/report.pdf":
+            self._report_pdf()
+            return
+
         # The ATLAS film on its own page. /film stays so older links work.
         if route in ("/intro", "/film"):
             self._send_file(STATIC_DIR / "intro" / "index.html")
@@ -875,6 +879,34 @@ class Handler(BaseHTTPRequestHandler):
         ("started_at", "Started"),
         ("updated", "Last_Updated"),
     ]
+
+    def _report_pdf(self):
+        """
+        A PDF report ATLAS offered in the chat, made now from the live state:
+        ?kind=run|failed|review|shipment&ref=<reference>. Read-only.
+        """
+        from urllib.parse import urlparse, parse_qs
+        from intelligence import pdf_report
+
+        q = parse_qs(urlparse(self.path).query)
+        kind = (q.get("kind") or ["run"])[0]
+        ref = re.sub(r"[^A-Za-z0-9 _/-]", "", (q.get("ref") or [""])[0])[:60] or None
+        try:
+            body, name = pdf_report.build(kind, bridge.snapshot(), ref)
+        except Exception as error:
+            body, name = None, "the report could not be made: {0}".format(str(error)[:160])
+        if body is None:
+            self._send(404 if kind == "shipment" else 503, json.dumps({"error": name}))
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", 'attachment; filename="{0}"'.format(name))
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self._maybe_set_cookie()
+        self.end_headers()
+        self.wfile.write(body)
 
     def _export_csv(self):
         """

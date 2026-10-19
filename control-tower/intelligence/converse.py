@@ -407,6 +407,13 @@ def _answer(question, state, context, rules):
         direct["llm"] = {"used": False, "mode": "potato",
                          "reason": "read directly from Potato Mode"}
         return direct
+    if direct and direct.get("intent") in SKILL_INTENTS:
+        # ATLAS's own skills and handbook: a PDF button, a checklist, web
+        # results with their sources, the system explained. Exact as built;
+        # a rewording would drop the button or the PASS/FAIL lines.
+        direct["llm"] = {"used": False, "mode": "skill",
+                         "reason": "built directly by ATLAS's skills and handbook"}
+        return direct
     if direct and direct.get("intent") in ("analysis", "report") and direct.get("charts"):
         # Counts and charts computed from the run: exact, instant, nothing
         # for a model to add (live, its rewording was refused 3 times of 3).
@@ -651,6 +658,10 @@ def _image(question, state, context, inner, rules, lang, timings, started):
                     "timings": dict(timings, total_s=round(time.time() - started, 1))}
     return reply
 
+
+# Answers ATLAS's skills and handbook build (dashboard/atlas_skills.py,
+# intelligence/handbook.py): returned as built, never reworded.
+SKILL_INTENTS = {"skill_pdf", "skill_validate", "skill_web", "handbook"}
 
 # Intents the rules answer from the run's records. "general_knowledge" and
 # "filter" are left to the model: they may need the web.
