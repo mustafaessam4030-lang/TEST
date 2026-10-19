@@ -21,6 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="atlas_skills_")
 os.environ["ATLAS_DATA_ORIGIN"] = "test"
 os.environ.pop("ATLAS_SEARCH_URL", None)
+# run_tests.py sets ATLAS_SEARCH=0 for every suite; this one brings its own
+# stand-in search service, so it starts with search neither off nor pointed.
+os.environ.pop("ATLAS_SEARCH", None)
 
 import atlas_demo                                            # noqa: E402
 from dashboard import assistant as A                         # noqa: E402

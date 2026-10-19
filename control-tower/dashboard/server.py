@@ -1318,6 +1318,13 @@ FILM_SLOTS = [
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 
 
+# ============================================================
+# REPLAY — rebuild state from a real finished run
+# ============================================================
+
+LOG_LINE = re.compile(r"^\[(?P<ts>[\d\-: ]+)\]\s(?P<msg>.*)$")
+
+
 def replay(base_folder):
     base = Path(base_folder)
     results = base / "tracking_results.csv"
