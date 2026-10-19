@@ -1,0 +1,29 @@
+# The automation's only third-party dependency.
+#
+# The learning layer in ml/ deliberately adds nothing here: it is standard
+# library only, so upgrading the Control Tower does not mean installing a
+# toolchain on the machine that runs it.
+playwright>=1.40
+
+# PO Automation (po/): reading the PDF and filling the approved Excel
+# template. Not needed by the ETA automation itself.
+openpyxl>=3.1
+pymupdf>=1.24
+
+# After installing, fetch the browser once:
+#     python -m playwright install chromium
+
+# Optional: Tesseract OCR lets ATLAS read text from screenshots operators
+# upload. Not a Python package — install the program (Windows: the UB Mannheim
+# build) or point TESSERACT_CMD at tesseract.exe. Without it ATLAS says it
+# cannot read uploaded images; captured screenshots are read from the page
+# text saved with them.
+
+# Optional: psutil adds CPU / memory figures to the dashboard's machine
+# health and to why_slow.py. Without it those figures are simply left out.
+#     pip install psutil
+
+# Remote Control Tower (controlplane/) only, and only with PostgreSQL:
+#     pip install "psycopg[binary]>=3.1,<4"
+# The worker agent (worker/) needs nothing beyond the automation's own
+# dependency above.

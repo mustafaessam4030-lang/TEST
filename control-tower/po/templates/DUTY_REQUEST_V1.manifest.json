@@ -1,0 +1,33 @@
+{
+  "version": "DUTY_REQUEST_V1",
+  "doctype": "DUTY_REQUEST_V1",
+  "file": "DUTY_REQUEST_V1.xlsx",
+  "sha256": "550ea3f17c49eaf2f30e18ffaa7649d683c050ff400fd757a9f35a89ab5b102e",
+  "source_file": "source/Ghana_Duty_Payment_-_CHEQUE_REQUEST_TEMPLATE.xlsx",
+  "source_sha256": "7e1a41cd32807a39f0612ad51a130c6d48fc92edaa3560c5350dc85cec845f87",
+  "sheets": [
+    "Duty Template",
+    "BOE Template Capture"
+  ],
+  "cleared_cells": [
+    "D2",
+    "G4",
+    "G6",
+    "G8",
+    "G10",
+    "G11",
+    "G13",
+    "C9",
+    "C13",
+    "C19",
+    "C21",
+    "G20"
+  ],
+  "formulas": {
+    "G19": "=G6-G20",
+    "C24": "=G6/C21",
+    "C26": "=C24/C19",
+    "G41": "=SUM(G19:G40)",
+    "F16": "=G4"
+  }
+}

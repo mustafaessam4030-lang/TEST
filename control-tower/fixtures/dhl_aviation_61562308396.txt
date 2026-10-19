@@ -1,0 +1,41 @@
+Skip to main content
+Tracking DHL ACS Shipments
+61562308396
+
+These are the tracking results for 61562308396 for 54 pieces @ 1825.5 KG as T1.
+
+From DHL Org BRU to DHL Dest LOS.
+
+From PPWK Org BRU to PPWK Dest LOS.
+
+Times given are local to the location in which the shipment checkpoint is recorded.
+
+	Waybill: 61562308396	Monday, August 10, 2026 10:43
+Actual status:	Origin: BRU (brussels)
+NFD - Awaiting Consignee Collection	Destination: LOS (lagos)
+Monday, August 10, 2026	Quantity	Location	Facility Code	Time
+NFD	Awaiting Consignee Collection	8 pcs	LOS	HUB	10:43
+Sunday, August 9, 2026	Quantity	Location	Facility Code	Time
+DEP	Depart Facility
++ Show content	8 pcs	BRU	HUB	23:40
+FFM	Manifested onto movement QY081 to LOS	8 pcs	BRU	HUB	23:13
+Saturday, August 8, 2026	Quantity	Location	Facility Code	Time
+NFD	Awaiting Consignee Collection	46 pcs	LOS	HUB	14:07
+DEP	Depart Facility
++ Show content	46 pcs	BRU	HUB	07:32
+FFM	Manifested onto movement QY081 to LOS	46 pcs	BRU	HUB	07:21
+Friday, August 7, 2026	Quantity	Location	Facility Code	Time
+	Scheduled for Movement	15 pcs	BRU	HUB	11:14
+	Scheduled for Movement	39 pcs	BRU	HUB	09:42
+RCS	Facility Check In	5 pcs	BRU	HUB	09:22
+RCS	Facility Check In	8 pcs	BRU	HUB	09:21
+RCS	Facility Check In	4 pcs	BRU	HUB	09:20
+RCS	Facility Check In	5 pcs	BRU	HUB	09:19
+RCS	Facility Check In	2 pcs	BRU	HUB	09:18
+RCS	Facility Check In	6 pcs	BRU	HUB	09:17
+RCS	Facility Check In	4 pcs	BRU	HUB	09:16
+RCS	Facility Check In	5 pcs	BRU	HUB	09:15
+RCS	Facility Check In	9 pcs	BRU	HUB	09:14
+RCS	Facility Check In	6 pcs	BRU	HUB	09:13
+
+For additional info or questions please contact your local sales representative.
