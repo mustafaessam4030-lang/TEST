@@ -632,6 +632,15 @@ else:
             browser.close()
 
 server.shutdown()
+# 17/19 Oct: ANRB… rows listed under MSC in the Hub go to a person, without
+# spending one of MSC's lookups; real MSC references are untouched.
+check("ANRB under MSC is not looked up: a person checks the Hub's carrier",
+      bool(A.reference_mismatch("MSC", "ANRB77023")))
+check("...a real MSC bill of lading is looked up as before",
+      A.reference_mismatch("MSC", "MEDUWO914768") is None and
+      A.reference_mismatch("MSC", "SCZA00165487") is None)
+check("...and ANRB under Grimaldi is Grimaldi's own", A.reference_mismatch("GRIMALDI", "ANRB77023") is None)
+
 print()
 print("=" * 74)
 print("{0} passed, {1} failed{2}".format(

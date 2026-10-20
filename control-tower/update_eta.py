@@ -6014,6 +6014,28 @@ for _key, _carrier in OCEAN_PORTALS.items():
 CONTAINER_NUMBER = re.compile(r"^\s*[A-Z]{4}\s*\d{6}\s*-?\s*\d\s*$", re.I)
 
 
+# References a carrier is known not to hold, by their own format. 17 and 19
+# Oct: ten ANRB… rows listed under MSC in the Hub — ANRB is Grimaldi's
+# Antwerp bill of lading (the other ANRB rows are Grimaldi's) — each answered
+# "No results found" by MSC, and together they used up MSC's per-run lookups,
+# so real MSC shipments were deferred. Such a row goes to a person instead.
+REFERENCE_MISMATCH = {
+    "MSC": [(re.compile(r"^ANRB\d+$", re.I),
+             "the Hub lists MSC, but ANRB… is a Grimaldi bill of lading format and MSC had "
+             "no record of these numbers; nothing was looked up or written — please check "
+             "the carrier in the Hub")],
+}
+
+
+def reference_mismatch(provider, reference):
+    """The reason a reference cannot belong to this carrier, or None."""
+    ref = re.sub(r"\s", "", str(reference or ""))
+    for pattern, why in REFERENCE_MISMATCH.get(str(provider or "").upper(), []):
+        if pattern.match(ref):
+            return why
+    return None
+
+
 def portal_reference(tracking_number, config):
     """The reference as THIS portal takes it: verbatim for a bill of lading
     (less a prefix the carrier says to leave off), or the air waybill in the
@@ -9998,7 +10020,11 @@ def get_portal_result(page, provider, tracking_number, shipment=None):
     # Some carriers track containers on one page and bills of lading on
     # another; the reference decides which.
     config = portal_config_for(provider, tracking_number)
-    airline = (airline_from_awb(tracking_number)[1] or {}).get("name", config["label"])
+    # A bill of lading is not an air waybill: its digits ("SCZA00165487" ->
+    # "001") must not name an airline (19 Oct: "American Airlines reported no
+    # information" for an MSC shipment).
+    airline = config["label"] if config.get("ocean") else \
+        (airline_from_awb(tracking_number)[1] or {}).get("name", config["label"])
     slug = provider.lower()
     write_log(f"Opening {config['label']} tracking for {tracking_number} ({airline})")
     # The shipment's own trace, for the dashboard and ATLAS: which carrier
@@ -11818,6 +11844,11 @@ def main():
 
                 try:
                     tower.shipment_started(shipment)
+                    _mismatch = reference_mismatch(_provider, bol_awb)
+                    if _mismatch:
+                        # Not looked up: the answer is known, and the lookup
+                        # would cost a carrier's per-run allowance.
+                        raise SkipShipment("NEEDS REVIEW {0}: {1}".format(bol_awb, _mismatch))
                     _refusal = _gate.refusal(_provider)
                     if _refusal:
                         _deferred_queue.defer(shipment, _provider, _refusal[0],
