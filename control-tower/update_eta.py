@@ -2167,6 +2167,39 @@ def table_signature(page):
         return None
 
 
+_TABLE_ABSENT = object()
+
+
+def _table_mark(page):
+    """The marker on the results table now on screen (None: an unmarked, so
+    new, table), or _TABLE_ABSENT when there is no table yet."""
+    try:
+        return find_shipments_table(page).evaluate(
+            "element => element.getAttribute('data-ct-mark')")
+    except Exception:
+        return _TABLE_ABSENT
+
+
+def table_before(page):
+    """
+    The table's signature before a click, with a marker set on the table
+    element itself. When the Hub answers it sends a NEW table, which carries
+    no marker — even when its rows are the same as before.
+
+    19 Oct: the Hub usually answered with the very same rows (the list was
+    already Under Clearance, the view already chosen), so the content never
+    "changed" and 489 waits ran their full 12 s — about 98 minutes a run.
+    """
+    signature = table_signature(page)
+    token = "m{0}".format(int(time.time() * 1000))
+    try:
+        find_shipments_table(page).evaluate(
+            "(element, token) => element.setAttribute('data-ct-mark', token)", token)
+        return "{0}|ct-mark:{1}".format(signature, token)
+    except Exception:
+        return signature
+
+
 def wait_for_table_change(page, before, max_ms=None, reason=""):
     """
     Wait until the results table is different from `before`, then until it is
@@ -2181,8 +2214,16 @@ def wait_for_table_change(page, before, max_ms=None, reason=""):
     """
     ceiling = HUB_TABLE_REFRESH_MAX_MS if max_ms is None else max_ms
     waited = 0
+    token = None
+    if isinstance(before, str) and "|ct-mark:" in before:
+        before, token = before.rsplit("|ct-mark:", 1)
 
     while waited < ceiling:
+        if token is not None:
+            mark = _table_mark(page)
+            if mark is not _TABLE_ABSENT and mark != token:
+                # A new table element: the Hub has answered, same rows or not.
+                return True
         current = table_signature(page)
         if current is not None and current != before:
             if waited > 1500:
@@ -2813,7 +2854,7 @@ def select_shipments_view(page, view_name):
                 option_text = re.sub(r"\s+", " ", option.inner_text()).strip()
                 if any(pattern.fullmatch(option_text) for pattern in exact_patterns):
                     value = option.get_attribute("value")
-                    before_signature = table_signature(page)
+                    before_signature = table_before(page)
                     if value is not None:
                         select_control.select_option(value=value)
                     else:
@@ -2880,7 +2921,7 @@ def select_shipments_view(page, view_name):
                       "{0} shipment view", "{0} shipments view",
                       "shipment - {0}", "shipments - {0}", "{0}"):
             expected_texts.append(shape.format(stem))
-    signature_before_click = table_signature(page)
+    signature_before_click = table_before(page)
     clicked = page.evaluate(
         """expectedTexts => {
             const normalized = value => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
@@ -3010,7 +3051,7 @@ def _click_view_control(page, control, candidates, requested):
                     "click and did not come back.".format(requested))
                 return False
         try:
-            before_signature = table_signature(page)
+            before_signature = table_before(page)
         except Exception:
             before_signature = None
         try:
@@ -3165,7 +3206,7 @@ def select_under_clearance_filter(page):
     if search_button is None:
         raise Exception("Search button was not found.")
 
-    before_signature = table_signature(page)
+    before_signature = table_before(page)
     click_postback(search_button, "Under Clearance search")
     wait_for_table_change(page, before_signature, reason="Under Clearance search")
     find_shipments_table(page).wait_for(state="visible", timeout=12000)
@@ -3189,7 +3230,7 @@ def go_to_table_page(page, page_number):
     if target is None:
         raise SkipShipment(f"Results page {page_number} is not available.")
 
-    before_signature = table_signature(page)
+    before_signature = table_before(page)
     click_postback(target, f"results page {page_number}")
     wait_for_table_change(
         page, before_signature, reason="results page {0}".format(page_number)

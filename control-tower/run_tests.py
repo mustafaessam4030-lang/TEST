@@ -64,6 +64,7 @@ SUITES = [
     ("test_hub_nav.py",         "hub navigation"),
     ("test_view_select.py",     "Hub view selection cannot end the run"),
     ("test_hub_waits.py",       "wait and readiness logic"),
+    ("test_hub_table_mark.py",  "Hub answered with the same rows: seen at once, not after 12 s"),
     ("test_logging.py",         "logging and redaction"),
     ("test_dashboard_access.py", "dashboard access key: never hardcoded, always off loopback"),
     ("test_domain_proxy.py",    "dashboard behind a company domain: key required, real client address"),

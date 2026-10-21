@@ -470,5 +470,13 @@ check("ATLAS cannot check the page: fail closed (BLOCK), never waved through",
 r = F.atlas_check_dhl(text, dict(d, eta=None, ata=None))
 check("Nothing picked: nothing to disagree with", r["verdict"].startswith("AGREES"), r)
 
+from datetime import date as _d, timedelta as _td
+_fut = (_d.today() + _td(days=8)).strftime("%d/%m/%Y")
+_why = E.ata_overwrite_problem(_fut, "05/10/2026")
+check("a future ATA already in the Hub is called wrong, and still not overwritten",
+      bool(_why) and "in the future" in _why, _why)
+check("an ordinary different ATA keeps its usual reason",
+      "already holds ATA" in (E.ata_overwrite_problem("08/10/2026", "06/10/2026") or ""))
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

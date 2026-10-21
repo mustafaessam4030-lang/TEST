@@ -413,6 +413,11 @@ def ata_overwrite_problem(current, new, normalizer=None):
     if state == HUB_UNPARSEABLE:
         return "the Hub's current ATA '{0}' cannot be read as a date".format(current)
     if new and value != new:
+        if _day(value) and _day(value) > date.today():
+            # 17 Oct, K239298: the Hub held ATA 29/10/2026 — an arrival that
+            # has not happened. Still a person's call, but say it is wrong.
+            return ("the Hub's ATA {0} is in the future, so it is wrong; the carrier gives "
+                    "{1} — a person corrects the Hub".format(value, new))
         return "the Hub already holds ATA {0}; the carrier now gives {1}".format(value, new)
     return None
 
