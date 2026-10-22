@@ -3405,6 +3405,43 @@ def _labelled(reply):
     return reply
 
 
+# Questions about installing or reaching the tower (a server, PowerShell, IIS,
+# DNS, a certificate, a sign-in link) are answered from the deployment guides
+# first — "PowerShell is stuck" is not about a stuck shipment.
+SETUP_RX = re.compile(
+    r"\b(powershell|install(?:ed|ing|er)?|ollama|iis|dns|certificate|cert|thumbprint|firewall|azure|"
+    r"remote desktop|rdp|robocopy|unblock|security warning|expand-archive|scheduled task|"
+    r"hosts? file|nsg|pip|python (?:is )?not recognized|python --version|"
+    r"set[- ]password link|access key|check_server|check_iis|setup_iis|create_admin|set_launch|"
+    r"pymupdf|credentials\.txt|new server|move(?:d)? (?:to )?(?:another|a new) server|"
+    r"restart(?:ed)? the (?:server|tower|machine)|session lost)\b", re.I)
+SETUP_DOCS = ("DEPLOYMENT_LESSONS.md", "DEPLOY_SERVER.md", "README_FOR_IT.md", "SERVER_SETUP.md")
+SETUP_STRONG = 5.5
+
+
+def _setup_answer(question):
+    if not SETUP_RX.search(question or ""):
+        return None
+    try:
+        from intelligence import handbook as _HB
+        found = [g for g in _HB.search_guides(question, limit=6)
+                 if g["doc"] in SETUP_DOCS and g["score"] >= _HB.GUIDE_MIN_SCORE]
+        if not found:
+            return None
+        # A topic of ATLAS's own handbook answers it, unless a lesson matches
+        # the question closely ("set-password link can't reach this page" is
+        # that lesson, not the general sign-in topic).
+        if found[0]["score"] < SETUP_STRONG and _HB.answer(question, how_required=False):
+            return None
+        g = found[0]
+        text = "From the project guide (**{0} › {1}**):\n\n{2}".format(
+            g["doc"], g["title"], _HB._excerpt(g["text"]))
+    except Exception:
+        return None
+    return {"answer": text, "card": None, "reference": None, "grounded": True,
+            "intent": "handbook_guide", "topic": "guide:" + g["doc"], "sources": ["handbook"]}
+
+
 def _answer_rules(question, state, context=None):
     """
     Answer one question and attach contextual follow-up chips.
@@ -3432,7 +3469,7 @@ def _answer_rules(question, state, context=None):
                      "intent": "conduct"}
         reply["conduct"] = {"kind": kind, "strikes": strikes + 1}
     else:
-        reply = _answer_core(question, state, context)
+        reply = _setup_answer(question) or _answer_core(question, state, context)
         # A colleague's answer: shipment intelligence, error investigation,
         # general knowledge, and research when the run is not enough.
         reply = atlas_intel.enrich(question, state, context, reply, RunData(state),

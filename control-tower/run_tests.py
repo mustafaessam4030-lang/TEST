@@ -49,6 +49,7 @@ SUITES = [
     ("test_atlas_skills.py", "ATLAS skills: validate, PDF reports, screenshots, web search, handbook"),
     ("test_office_signin.py", "Office sign-in: login page, access levels, user admin, audit"),
     ("test_atlas_conversations.py", "ATLAS conversations: kept per person, Admins only, masked, audited"),
+    ("test_deployment_lessons.py", "ATLAS answers setup questions from the deployment lessons"),
     ("test_launch_page.py",     "launch page: countdown, zone, licensed soundtrack; sign-in untouched"),
     ("test_login_page.py",      "sign-in page: ATLAS greets, looks away from the password, form unchanged"),
     ("test_model_bench.py",     "ATLAS model benchmark (stand-in Ollama)"),

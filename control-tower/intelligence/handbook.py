@@ -438,7 +438,9 @@ def asks_how(question):
 
 # ── the project's own guides, searched section by section ─────────────────
 GUIDES = ("START_HERE.md", "README.md", "PO.md", "SERVER_SETUP.md", "PLATFORM.md",
-          "ARCHITECTURE.md", "PO_WORKER_RUNBOOK.md", "ML.md")
+          "ARCHITECTURE.md", "PO_WORKER_RUNBOOK.md", "ML.md",
+          # How the tower was actually deployed, and every problem met on the way.
+          "DEPLOYMENT_LESSONS.md", "DEPLOY_SERVER.md", "deploy/iis/README_FOR_IT.md")
 STOP = set("""a an the and or of to in on for is are was were be been it its this that these
 those what which who how why when where do does did can could should would i we you he she
 they me my our your with from by at as about into than then there here not no yes if so
