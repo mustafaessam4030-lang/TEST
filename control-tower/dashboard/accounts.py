@@ -53,6 +53,7 @@ GET_PERMISSIONS = (
     ("/api/session/", "human.act"),
     ("/api/admin/users", "users.manage"),
     ("/api/admin/audit", "audit.view"),
+    ("/api/admin/conversations", "users.manage"),
     ("/api/admin/rbac", "dashboard.view"),
 )
 WRITE_PERMISSIONS = (

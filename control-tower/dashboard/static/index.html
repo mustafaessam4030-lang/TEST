@@ -1865,6 +1865,8 @@ td.car{color:var(--ink);font-weight:500}
   border:2px solid currentColor;border-right-color:transparent;animation:chSpin .8s linear infinite}
 @keyframes chSpin{to{transform:rotate(360deg)}}
 .ch-hint{margin-top:8px;text-align:center;font-size:11.5px;color:var(--faint)}
+/* The notice that conversations are kept stays visible on phones too. */
+#chat .ch-hint.ch-saved:not([hidden]){display:block;margin-top:4px}
 .ch-hint kbd{font-family:var(--mono);font-size:10.5px;padding:1px 5px;border:1px solid var(--line);
   border-radius:4px;background:var(--surface-2)}
 .ch-jump{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;display:inline-flex;
@@ -3097,6 +3099,13 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
           <div class="tw"><table><thead><tr><th>When</th><th>User</th><th>Action</th><th>Target</th><th>Result</th></tr></thead>
             <tbody id="acAudit"></tbody></table></div>
         </div>
+        <div class="card" id="acConvCard" hidden>
+          <div class="card-h"><div class="card-t">ATLAS conversations</div><div class="sp"></div>
+            <select id="acConvUser" aria-label="Filter by person"><option value="">Everyone</option></select></div>
+          <p class="hint" id="acConvNote" style="margin:0 18px 10px">What each person asked ATLAS and what it answered. Kept 90 days; viewing is recorded in the audit log.</p>
+          <div class="tw"><table><thead><tr><th>When</th><th>Person</th><th>Asked</th><th>ATLAS answered</th></tr></thead>
+            <tbody id="acConv"></tbody></table></div>
+        </div>
         <div class="card" id="acWorkersCard">
           <div class="card-h"><div class="card-t">Workers</div><div class="sp"></div>
             <button class="cbtn" id="acAddWorker">Register worker</button></div>
@@ -3204,6 +3213,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
         <button class="send" id="chatSend" type="button" aria-label="Send message" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
       </div>
       <div class="ch-hint" aria-hidden="true"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</div>
+      <div class="ch-hint ch-saved" id="chSaved" hidden></div>
     </div>
     </div>
   </div>
@@ -3253,6 +3263,11 @@ const platformReady = _fetch('/api/auth/me', {credentials:'same-origin'}).then((
   if (PF.remote) document.body.classList.add('remote');
   document.body.classList.toggle('can-admin', PF.can('users.manage') || PF.can('audit.view'));
   document.body.classList.toggle('no-human', !PF.can('human.act'));
+  if (me.conversations && me.conversations.saved){
+    $('chSaved').textContent = 'Your conversations with ATLAS are saved for ' + me.conversations.days +
+      ' days and Admins can review them.';
+    $('chSaved').hidden = false;
+  }
   const u = me.user;
   put($('pfName'), u.display_name);
   put($('pfRole'), u.role_label || u.role);
@@ -3451,7 +3466,9 @@ function loadAccess(){
   $('acUsers').hidden = !PF.can('users.manage');
   $('acAuditCard').hidden = !PF.can('audit.view');
   $('acWorkersCard').hidden = !PF.remote || !PF.can('settings.manage');
+  $('acConvCard').hidden = !PF.can('users.manage');
   if (activePage !== 'access') return;
+  if (PF.can('users.manage')) loadConversations();
   if (PF.can('audit.view')) fetch('/api/admin/audit?limit=150' + ($('acAuditAct').value ? '&action=' + $('acAuditAct').value : ''))
     .then((r) => r.json()).then((d) => { acAudit = d.events || []; paintAudit(); }).catch(() => {});
   if (PF.remote && PF.can('settings.manage')) fetch('/api/admin/workers').then((r) => r.json()).then(paintWorkers).catch(() => {});
@@ -3553,6 +3570,27 @@ function paintAudit(){
     '<td><span class="st ' + (/^(SUCCESS|SENT|QUEUED|VERIFICATION_CONFIRMED|RUNNING)$/.test(e.result) ? 'ok' : 'warn') + '">' + esc(e.result) + '</span></td></tr>').join('')
     : '<tr><td colspan="5">' + empty('No audit events', 'Sign-ins, runs, human actions and access changes appear here.') + '</td></tr>');
 }
+/* ATLAS conversations (Admins): newest first, one person or everyone. */
+function loadConversations(){
+  const who = $('acConvUser').value;
+  fetch('/api/admin/conversations?limit=200' + (who ? '&user=' + encodeURIComponent(who) : ''))
+    .then((r) => r.json()).then((d) => {
+      const rows = d.conversations || [];
+      $('acConvNote').textContent = 'What each person asked ATLAS and what it answered. Kept ' + (d.days || 90) +
+        ' days; viewing is recorded in the audit log.';
+      const sel = $('acConvUser');
+      const known = new Set(Array.from(sel.options).map((o) => o.value));
+      rows.forEach((c) => { if (c.email && !known.has(c.email)){ known.add(c.email);
+        const o = document.createElement('option'); o.value = c.email; o.textContent = (c.name || c.email); sel.appendChild(o); } });
+      putHTML($('acConv'), rows.length ? rows.map((c) => '<tr><td class="dt">' + acWhen(c.ts) + '</td>' +
+        '<td><b>' + esc(c.name || '') + '</b><br><span class="hint">' + esc(c.email || '') + '</span></td>' +
+        '<td style="white-space:pre-wrap;max-width:320px">' + esc(c.question || '') + '</td>' +
+        '<td style="white-space:pre-wrap;max-width:460px">' + esc(String(c.answer || '').slice(0, 1200)) +
+        (String(c.answer || '').length > 1200 ? '…' : '') + '</td></tr>').join('')
+        : '<tr><td colspan="4">' + empty('No conversations yet', 'Questions people ask ATLAS while signed in appear here.') + '</td></tr>');
+    }).catch(() => {});
+}
+$('acConvUser').addEventListener('change', loadConversations);
 function paintWorkers(d){
   putHTML($('acWorkers'), (d.workers || []).length ? d.workers.map((w) => '<tr><td><b>' + esc(w.name || w.worker_id) +
     '</b><br><span class="hint mono">' + esc(w.worker_id) + (w.version ? ' · v' + esc(w.version) : '') + '</span></td>' +

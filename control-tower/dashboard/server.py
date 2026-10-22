@@ -58,6 +58,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT.parent) not in sys.path:
     sys.path.insert(0, str(ROOT.parent))
 from dashboard import accounts as _accounts      # noqa: E402  personal sign-in
+from dashboard import conversations as _conversations  # noqa: E402  ATLAS chats, for Admins
 
 # An iPhone ringtone (.m4r) is plain AAC in an MP4 container — the same bytes
 # a browser happily plays as .m4a — but Python's mimetypes has never heard of
@@ -636,6 +637,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({
                 "user": public_user(user), "permissions": rbac.permissions_of(user),
                 "csrf": self.session["csrf"], "mode": "accounts",
+                # The chat window says so when conversations are being kept.
+                "conversations": {"saved": _conversations.enabled(), "days": _conversations.days()},
                 "session": {"expires_at": self.session["expires_at"],
                             "idle_s": acc.settings.session_idle_s}}, default=str))
             return True
@@ -662,6 +665,15 @@ class Handler(BaseHTTPRequestHandler):
         need = "audit.view" if route.startswith("/api/admin/audit") else "users.manage"
         if not rbac.allowed(user, need):
             return False                      # the gate refuses it, and audits that
+        if route == "/api/admin/conversations" and method == "GET":
+            from urllib.parse import urlparse, parse_qs
+            q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            rows = _conversations.list_(email=q.get("user") or None,
+                                        limit=int(q.get("limit") or 200) if str(q.get("limit") or "200").isdigit() else 200)
+            acc.audit.record("VIEW_CONVERSATIONS", user=user, ip=ip, target_type="user",
+                             target_id=q.get("user") or "all")
+            self._send(200, json.dumps({"conversations": rows, "days": _conversations.days()}))
+            return True
         if route == "/api/admin/audit" and method == "GET":
             from urllib.parse import urlparse, parse_qs
             q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
@@ -1079,6 +1091,9 @@ class Handler(BaseHTTPRequestHandler):
             reply = assistant.answer(question, _assistant_state(), context)
         finally:
             _research.progress_done(context.get("progress_id"))
+        if self.user is not None:
+            # Signed-in people are told in the chat window that this is kept.
+            _conversations.record(self.user, question, reply)
         if LEARNING["on"] and INTEL_OK:
             # The intent and a reference-free pattern — never the conversation.
             # A request about a verification code keeps no pattern at all.
