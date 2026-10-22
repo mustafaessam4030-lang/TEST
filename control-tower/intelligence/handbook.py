@@ -441,6 +441,9 @@ GUIDES = ("START_HERE.md", "README.md", "PO.md", "SERVER_SETUP.md", "PLATFORM.md
           "ARCHITECTURE.md", "PO_WORKER_RUNBOOK.md", "ML.md",
           # How the tower was actually deployed, and every problem met on the way.
           "DEPLOYMENT_LESSONS.md", "DEPLOY_SERVER.md", "deploy/iis/README_FOR_IT.md")
+# Server names, addresses and how the company's servers are run: quoted to an
+# Admin only (dashboard/server.py says who is asking).
+PRIVATE_GUIDES = ("DEPLOYMENT_LESSONS.md", "DEPLOY_SERVER.md", "README_FOR_IT.md")
 STOP = set("""a an the and or of to in on for is are was were be been it its this that these
 those what which who how why when where do does did can could should would i we you he she
 they me my our your with from by at as about into than then there here not no yes if so
@@ -490,9 +493,12 @@ def _tf(words):
     return out
 
 
-def search_guides(question, limit=1):
-    """The best sections of the project's guides for a question (BM25)."""
+def search_guides(question, limit=1, private=False):
+    """The best sections of the project's guides for a question (BM25).
+    The private (deployment) guides only when `private` is true."""
     sections, df = _sections()
+    if not private:
+        sections = [s for s in sections if s["doc"] not in PRIVATE_GUIDES]
     if not sections:
         return []
     terms = list(dict.fromkeys(_words(question)))
@@ -545,9 +551,9 @@ def answer(question, how_required=True):
     return None
 
 
-def from_guides(question):
+def from_guides(question, private=False):
     """The best guide section for the question, quoted with its source, or None."""
-    best = search_guides(question)
+    best = search_guides(question, private=private)
     if not best or best[0]["score"] < GUIDE_MIN_SCORE:
         return None
     s = best[0]

@@ -3419,12 +3419,24 @@ SETUP_DOCS = ("DEPLOYMENT_LESSONS.md", "DEPLOY_SERVER.md", "README_FOR_IT.md", "
 SETUP_STRONG = 5.5
 
 
-def _setup_answer(question):
+def _admin_asking(context):
+    """Who may hear the deployment guides: an Admin (the server says so), or
+    whoever holds the key of a tower without personal sign-in."""
+    return str((context or {}).get("admin", "1")) == "1"
+
+
+def _setup_answer(question, context=None):
     if not SETUP_RX.search(question or ""):
         return None
+    if not _admin_asking(context):
+        return {"answer": "Setting up and reaching the Control Tower server is handled by an Admin. "
+                          "Ask one of them, and if a sign-in link doesn't open, ask the Admin who sent it "
+                          "for a new one.",
+                "card": None, "reference": None, "grounded": True, "intent": "setup_admin_only",
+                "final": True, "sources": ["handbook"]}
     try:
         from intelligence import handbook as _HB
-        found = [g for g in _HB.search_guides(question, limit=6)
+        found = [g for g in _HB.search_guides(question, limit=6, private=True)
                  if g["doc"] in SETUP_DOCS and g["score"] >= _HB.GUIDE_MIN_SCORE]
         if not found:
             return None
@@ -3469,7 +3481,7 @@ def _answer_rules(question, state, context=None):
                      "intent": "conduct"}
         reply["conduct"] = {"kind": kind, "strikes": strikes + 1}
     else:
-        reply = _setup_answer(question) or _answer_core(question, state, context)
+        reply = _setup_answer(question, context) or _answer_core(question, state, context)
         # A colleague's answer: shipment intelligence, error investigation,
         # general knowledge, and research when the run is not enough.
         reply = atlas_intel.enrich(question, state, context, reply, RunData(state),
@@ -3874,7 +3886,8 @@ def _answer_core(question, state, context=None):
         try:
             from intelligence import handbook as _HB
             hb = _HB.answer(question, how_required=False)
-            guide = None if hb or not _HB.asks_how(question) else _HB.from_guides(question)
+            guide = None if hb or not _HB.asks_how(question) else _HB.from_guides(
+                question, private=_admin_asking(context))
         except Exception:
             hb = guide = None
         if hb:

@@ -35,6 +35,22 @@ for q, title in SETUP.items():
     check("setup: " + q, r.get("intent") == "handbook_guide" and "DEPLOYMENT_LESSONS.md" in a
           and title.lower() in a.lower(), (r.get("intent"), a[:120]))
 
+NOT_ADMIN = {"admin": "0"}
+for q in ("How do I add the DNS record?", "From a PC I can't reach the azure server",
+          "the set password link says can't reach this page"):
+    r = assistant._answer_rules(q, {}, dict(NOT_ADMIN, _raw=True))
+    a = r.get("answer") or ""
+    check("not an Admin: no server details for " + q,
+          r.get("intent") == "setup_admin_only" and "DEPLOYMENT_LESSONS" not in a
+          and "man-dcaz" not in a and "10.251" not in a, (r.get("intent"), a[:100]))
+r = assistant._answer_rules("how do I set up the IIS front door?", {}, dict(NOT_ADMIN, _raw=True))
+check("not an Admin: the private guides are not quoted by the general guide search either",
+      "README_FOR_IT" not in (r.get("answer") or "") and "DEPLOY_SERVER" not in (r.get("answer") or ""))
+from intelligence import handbook as HB                       # noqa: E402
+check("the guide search leaves the private guides out unless asked",
+      all(g["doc"] not in HB.PRIVATE_GUIDES for g in HB.search_guides("dns record domain controller", limit=10))
+      and any(g["doc"] in HB.PRIVATE_GUIDES for g in HB.search_guides("dns record domain controller", limit=10, private=True)))
+
 RUN = {"Which shipments are stuck?": "stuck", "How many shipments are left?": "counts",
        "what is the ETA of MEDUAHP69377": "eta"}
 for q, intent in RUN.items():

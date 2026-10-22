@@ -125,6 +125,12 @@ st, me = call(view, "GET", "/api/auth/me")
 check("...and the chat no longer says it is kept", me["conversations"]["saved"] is False)
 os.environ.pop("ATA_CONVERSATION_DAYS")
 
+st, r = call(view, "POST", "/api/ask", {"question": "How do I add the DNS record for the server?"}, vc)
+check("through the tower, a Viewer gets no server details",
+      st == 200 and "man-dcaz" not in (r.get("answer") or "") and r.get("intent") == "setup_admin_only", r.get("intent"))
+st, r = call(adm, "POST", "/api/ask", {"question": "How do I add the DNS record for the server?"}, ac)
+check("...an Admin gets the lesson", st == 200 and "man-dcaz" in (r.get("answer") or ""), (r.get("answer") or "")[:120])
+
 html = open(os.path.join(HERE, "dashboard/static/index.html"), encoding="utf-8").read()
 check("the page has the Admin card and the chat notice",
       'id="acConvCard"' in html and 'id="chSaved"' in html and "/api/admin/conversations" in html)

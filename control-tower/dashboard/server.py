@@ -1087,6 +1087,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.user is not None:
             # ATLAS answers about PO jobs only for a role that may see them.
             context["po"] = "1" if self._acc_can("po.view") else "0"
+            # The deployment guides (server names, addresses) are for Admins.
+            context["admin"] = "1" if self._acc_can("users.manage") else "0"
         try:
             reply = assistant.answer(question, _assistant_state(), context)
         finally:
