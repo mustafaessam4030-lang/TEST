@@ -114,7 +114,14 @@ $config = $config -replace "127\.0\.0\.1:8787", "127.0.0.1:$TowerPort"
 Set-Content -Path (Join-Path $SitePath "web.config") -Value $config -Encoding UTF8
 if (Test-Path "IIS:\Sites\$SiteName") {
     Set-ItemProperty "IIS:\Sites\$SiteName" -Name physicalPath -Value $SitePath
-    Ok "site exists; it now uses $SitePath and the new web.config"
+    # A new name (e.g. from the http test on the server's name to the real
+    # one): bindings for any other name are removed, an http one added.
+    Get-WebBinding -Name $SiteName | Where-Object { ($_.bindingInformation -split ":")[-1] -ne $HostName } |
+        ForEach-Object { Remove-WebBinding -Name $SiteName -BindingInformation $_.bindingInformation -Protocol $_.protocol }
+    if (-not (Get-WebBinding -Name $SiteName -Protocol http -HostHeader $HostName -ErrorAction SilentlyContinue)) {
+        New-WebBinding -Name $SiteName -Protocol http -Port 80 -HostHeader $HostName
+    }
+    Ok "site exists; it now answers $HostName, uses $SitePath and the new web.config"
 } else {
     New-Website -Name $SiteName -PhysicalPath $SitePath -HostHeader $HostName -Port 80 | Out-Null
     Ok "site created"
