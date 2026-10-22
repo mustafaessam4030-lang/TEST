@@ -108,6 +108,12 @@ they were written from the code and not tried on an IIS server. IT should check 
 **Order matters:** do step 7 (personal sign-in) first. The domain is for
 signed-in people only.
 
+**Ready-made package:** `deploy/iis/` does all of the below. IT reads
+`deploy/iis/README_FOR_IT.md`, then runs `setup_iis.ps1` (sets everything in
+"What IT does" steps 3–5 and "What you set on the server") and `check_iis.ps1`
+(PASS/WARN/FAIL for each point in "Check it"). The manual steps stay here as
+the reference.
+
 ### What IT does (once)
 
 1. **DNS:** an internal A record `ata.mantrac.com` → this server's internal IP.

@@ -63,7 +63,7 @@ PAID_AI = re.compile(r"api\.anthropic\.com|anthropic-version|ANTHROPIC_API_KEY|i
 SCANNER_FILES = {"make_release.py", "test_release.py", "test_atlas_research.py",
                  "test_dashboard_access.py"}
 TEXT_SUFFIXES = {".py", ".md", ".txt", ".bat", ".ps1", ".json", ".html", ".js", ".jsx",
-                 ".css", ".bicep", ".yml", ".yaml", ".cfg", ".toml", ".ini", ".csv", ""}
+                 ".css", ".config", ".bicep", ".yml", ".yaml", ".cfg", ".toml", ".ini", ".csv", ""}
 
 
 def excluded(rel):
