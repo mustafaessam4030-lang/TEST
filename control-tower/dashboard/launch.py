@@ -14,7 +14,8 @@ variables (read when the tower starts), never by the page:
                         that moment.
     ATA_LAUNCH_AUDIO    a file the company is licensed to host, put in
                         dashboard/static/launch/audio/ (file name only), or
-                        an https:// address of a licensed stream.
+                        an https:// address of a licensed stream. Unset: the
+                        first audio file in that folder. "off": no music.
     ATA_LAUNCH_AUDIO_TITLE / ATA_LAUNCH_AUDIO_ARTIST   what the player shows.
 
 The page is public and decides nothing: sign-in, roles and every protected
@@ -109,8 +110,16 @@ def audio_source(env=None):
     """(url, None) for a licensed source that is really there, or (None, why)."""
     env = os.environ if env is None else env
     raw = (env.get("ATA_LAUNCH_AUDIO") or "").strip()
+    if raw.lower() in ("off", "none", "0"):
+        return None, "the soundtrack is switched off"
     if not raw:
-        return None, "no licensed soundtrack is configured"
+        # Nothing set: the soundtrack is whatever was put in the audio folder
+        # (the release ZIP can carry it there), so it works with no setting.
+        found = sorted(f.name for f in AUDIO_DIR.glob("*")
+                       if f.is_file() and f.suffix.lower() in AUDIO_SUFFIXES and _AUDIO_FILE.match(f.name))
+        if not found:
+            return None, "no licensed soundtrack is configured"
+        raw = found[0]
     if raw.lower().startswith("https://"):
         from urllib.parse import urlsplit
         try:

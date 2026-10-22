@@ -135,7 +135,7 @@ def plan():
     return ship, left_out, findings
 
 
-def inspect_zip(path):
+def inspect_zip(path, allowed=()):
     """Open the built ZIP and check it again, entry by entry."""
     problems, count, total = [], 0, 0
     with zipfile.ZipFile(path) as archive:
@@ -145,7 +145,7 @@ def inspect_zip(path):
             count += 1
             total += info.file_size
             rel = info.filename.split("/", 1)[1] if "/" in info.filename else info.filename
-            why = excluded(rel)
+            why = None if rel in allowed else excluded(rel)
             if why:
                 problems.append((rel, why))
             if Path(rel).suffix.lower() in TEXT_SUFFIXES:
@@ -157,6 +157,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Build the Control Tower release ZIP")
     parser.add_argument("--check", action="store_true", help="scan only, build nothing")
     parser.add_argument("--out", default=str(HERE / "release"))
+    parser.add_argument("--soundtrack", metavar="FILE",
+                        help="pack this licensed audio file as the launch page's soundtrack "
+                             "(dashboard/static/launch/audio/); never committed to Git")
     parser.add_argument("--allow-dirty", action="store_true",
                         help="(--check only) scan HEAD even with uncommitted changes")
     args = parser.parse_args(argv)
@@ -180,10 +183,22 @@ def main(argv=None):
         print("Scan clean: no secrets, no paid AI API, no runtime artifacts in the plan.")
         return 0
 
+    soundtrack = None
+    if args.soundtrack:
+        source = Path(args.soundtrack)
+        suffix = source.suffix.lower()
+        head = source.read_bytes()[:3] if source.is_file() else b""
+        if suffix not in (".mp3", ".m4a", ".ogg", ".opus", ".wav", ".flac", ".webm") or not (
+                head[:3] == b"ID3" or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")
+                or suffix != ".mp3"):
+            print("REFUSED: --soundtrack must be an audio file: {0}".format(source))
+            return 2
+        soundtrack = ("dashboard/static/launch/audio/soundtrack" + suffix, source.read_bytes())
+
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     commit = head_commit()
-    target = out_dir / "ATA-Control-Tower-{0}.zip".format(commit)
+    target = out_dir / "ATA-Control-Tower-{0}{1}.zip".format(commit, "-with-soundtrack" if soundtrack else "")
     manifest = io.StringIO()
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         for rel in sorted(ship):
@@ -193,12 +208,19 @@ def main(argv=None):
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o644 << 16)
             archive.writestr(info, data)
+        if soundtrack:
+            rel, data = soundtrack
+            manifest.write("{0}  {1}  (soundtrack, not in Git)\n".format(hashlib.sha256(data).hexdigest(), rel))
+            info = zipfile.ZipInfo("{0}/{1}".format(PREFIX, rel), date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_STORED
+            info.external_attr = (0o644 << 16)
+            archive.writestr(info, data)
         info = zipfile.ZipInfo("{0}/RELEASE_MANIFEST.txt".format(PREFIX),
                                date_time=(2026, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
         archive.writestr(info, "ATA Control Tower release — commit {0}\nsha256  path\n{1}".format(
             commit, manifest.getvalue()))
-    problems, count, total = inspect_zip(target)
+    problems, count, total = inspect_zip(target, allowed={soundtrack[0]} if soundtrack else ())
     if problems:
         target.unlink()
         print("THE BUILT ZIP FAILED INSPECTION — deleted:")

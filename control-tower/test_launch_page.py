@@ -122,8 +122,11 @@ with wave.open(str(TONE), "wb") as w:            # a generated tone, not a recor
                            for i in range(8000 * 6)))
 BROKEN.write_bytes(b"this is not audio" * 40)
 try:
+    url, why = launch.audio_source({"ATA_LAUNCH_AUDIO": "off"})
+    check("switched off: no music", url is None and "off" in why)
     url, why = launch.audio_source({})
-    check("nothing configured: unavailable", url is None and "no licensed" in why)
+    check("nothing set: the audio folder's first file is used, no setting needed",
+          url is not None and url.startswith("/static/launch/audio/"), url)
     for bad in ("../server.py", "..\\x.mp3", "sub/a.mp3", "evil.exe", "javascript:alert(1)", "http://x.test/a.mp3",
                 "https://user:secret@media.example.com/a.mp3", "https://", "\\\\host\\share\\a.mp3"):
         url, why = launch.audio_source({"ATA_LAUNCH_AUDIO": bad})
@@ -371,10 +374,10 @@ try:
         rule("Browser: the soundtrack, heard and not seen")
         music = lambda pg: pg.get_attribute("body", "data-music")
         set_launch(datetime.now(UTC) + timedelta(days=9, hours=3))
-        os.environ.pop("ATA_LAUNCH_AUDIO", None)
+        os.environ["ATA_LAUNCH_AUDIO"] = "off"
         pg = open_page()
         pg.wait_for_timeout(500)
-        check("no soundtrack configured: nothing plays, page intact",
+        check("soundtrack off: nothing plays, page intact",
               music(pg) == "unavailable" and pg.is_visible("#countdown"))
         check("no player, button, slider or sound icon anywhere on the page",
               pg.locator("audio, #player, #play, #vol, #sound, #snd, input[type=range]").count() == 0)

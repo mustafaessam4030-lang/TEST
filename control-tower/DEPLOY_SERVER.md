@@ -197,7 +197,10 @@ sign-in page itself always works (there is a small "Administrator sign-in"
 link on the launch page). When the countdown reaches zero the page shows
 **Continue to sign in**, which goes to the real sign-in page.
 
-Set it in an Administrator Command Prompt, then sign out and in (the
+**Easiest:** right-click `SET_LAUNCH.bat` → Run as administrator, type the
+date and time in Cairo time (e.g. `2026-11-01 09:00`), then sign out and in.
+A ZIP built with `--soundtrack` already carries the song, which plays with no
+setting. Or by hand, in an Administrator Command Prompt, then sign out and in (the
 scheduled task restarts the tower with the new values):
 ```bat
 setx ATA_LAUNCH_AT 2026-11-01T09:00:00+02:00 /M
