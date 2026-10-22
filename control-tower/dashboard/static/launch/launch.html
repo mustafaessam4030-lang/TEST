@@ -39,7 +39,7 @@
       <p class="kicker" id="kicker">Coming soon</p>
       <h1 id="title">ATLAS</h1>
       <!-- A scripted greeting. ATLAS is not listening or answering on this page. -->
-      <p class="greeting" id="greeting">Hello. I’m ATLAS. We’re preparing something powerful.</p>
+      <p class="greeting" id="greeting">Hello. I’m ATLAS. We’ll work together soon.</p>
 
       <div class="countdown" id="countdown" role="timer" aria-live="off" aria-labelledby="whenLabel" hidden>
         <div class="unit"><span class="num" id="cdD">00</span><span class="lbl">Days</span></div>
@@ -60,32 +60,16 @@
   <p class="admin"><a href="/login" id="adminLink">Administrator sign-in</a></p>
 </main>
 
-<!-- The soundtrack. Nothing plays until someone presses play. -->
-<footer class="player is-off" id="player" aria-label="Soundtrack">
-  <div class="track">
+<!-- The soundtrack plays by itself where the browser allows it, otherwise
+     from the first click or key press. Only a small sound switch shows. -->
+<div class="sound" id="sound" hidden>
+  <span class="hint" id="soundHint" aria-hidden="true">Click anywhere for sound</span>
+  <button type="button" class="snd" id="snd" aria-pressed="false" aria-label="Play music">
     <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-    <div class="meta">
-      <span class="t" id="trackTitle">Lilith</span>
-      <span class="a" id="trackArtist">Saint Avangeline</span>
-    </div>
-  </div>
-  <div class="controls">
-    <button type="button" class="play" id="play" aria-label="Play soundtrack" aria-pressed="false" disabled>
-      <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
-      <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z"/></svg>
-    </button>
-    <div class="bar" aria-hidden="true"><i id="progress"></i></div>
-    <span class="status" id="audioStatus" role="status">Soundtrack unavailable</span>
-  </div>
-  <div class="volume">
-    <button type="button" class="mute" id="mute" aria-label="Mute" aria-pressed="false" disabled>
-      <svg class="i-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></svg>
-      <svg class="i-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
-    </button>
-    <label class="sr" for="vol">Volume</label>
-    <input type="range" id="vol" min="0" max="100" step="1" value="70" disabled>
-  </div>
-</footer>
+    <svg class="i-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+  </button>
+</div>
+<p class="sr" id="audioStatus" role="status">Soundtrack unavailable</p>
 
 <script src="/static/launch/launch.js"></script>
 </body>

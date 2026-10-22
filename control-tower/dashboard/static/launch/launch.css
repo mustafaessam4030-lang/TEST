@@ -6,7 +6,6 @@
   --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Palatino,'URW Palladio L',Georgia,serif;
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Text','Segoe UI',system-ui,Roboto,Arial,sans-serif;
   --e:cubic-bezier(.22,1,.36,1);
-  --player-h:76px;
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
@@ -27,7 +26,7 @@ a{color:inherit}
 
 /* ── layout ── */
 .stage{position:relative;min-height:100vh;display:grid;grid-template-rows:auto 1fr auto;
-  padding:28px clamp(16px,5vw,64px) calc(var(--player-h) + 28px)}
+  padding:28px clamp(16px,5vw,64px) 28px}
 .top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .logo{display:block;height:30px;width:auto;border-radius:3px;opacity:.92}
 .eyebrow{font:600 11px/1.3 var(--sans);letter-spacing:.24em;text-transform:uppercase;color:var(--mute)}
@@ -72,37 +71,20 @@ h1{margin:0;font:400 clamp(64px,10vw,132px)/.92 var(--serif);letter-spacing:.02e
 .admin a{color:var(--faint);text-decoration:none;border-bottom:1px solid transparent}
 .admin a:hover{color:var(--bone);border-color:var(--line)}
 
-/* ── the player ── */
-.player{position:fixed;left:0;right:0;bottom:0;height:var(--player-h);z-index:2;
-  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);align-items:center;gap:20px;
-  padding:0 clamp(16px,4vw,40px) env(safe-area-inset-bottom);
-  background:rgba(12,10,14,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  border-top:1px solid var(--line)}
-.track{display:flex;align-items:center;gap:14px;min-width:0}
-.meta{display:flex;flex-direction:column;min-width:0}
-.meta .t{font:600 14px/1.25 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.meta .a{font-size:12.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.eq{display:flex;align-items:flex-end;gap:3px;width:20px;height:18px;flex:none}
-.eq i{flex:1;height:22%;border-radius:1px;background:var(--faint)}
-.player.is-playing .eq i{background:var(--brass)}
-.controls{display:flex;align-items:center;gap:14px;min-width:0}
-.play{flex:none;width:44px;height:44px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;
-  background:var(--bone);color:var(--void)}
-.play svg{width:20px;height:20px;fill:currentColor}
-.play .i-pause,.player.is-playing .play .i-play{display:none}
-.player.is-playing .play .i-pause{display:block}
-.bar{flex:1;height:3px;border-radius:2px;background:var(--line);overflow:hidden;min-width:40px}
-.bar i{display:block;height:100%;width:0;background:var(--bone)}
-.status{flex:none;font-size:12px;color:var(--faint);white-space:nowrap}
-.volume{display:flex;align-items:center;justify-content:flex-end;gap:10px}
-.mute{width:36px;height:36px;border-radius:50%;border:0;background:transparent;color:var(--bone);cursor:pointer;display:grid;place-items:center}
-.mute svg{width:20px;height:20px;fill:currentColor}
-.mute .w{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
-.mute .i-off,.player.is-muted .mute .i-on{display:none}
-.player.is-muted .mute .i-off{display:block}
-input[type=range]{width:min(140px,100%);accent-color:var(--bone);cursor:pointer}
-.player button:disabled,.player input:disabled{opacity:.35;cursor:not-allowed}
-.player.is-off .meta{opacity:.6}
+/* ── the sound switch: the only trace of the soundtrack ── */
+.sound{position:fixed;top:22px;right:clamp(16px,4vw,40px);z-index:3;display:flex;align-items:center;gap:10px}
+.sound[hidden]{display:none}
+.hint{font:500 12px/1 var(--sans);letter-spacing:.04em;color:var(--mute);transition:opacity .6s ease}
+.sound.is-playing .hint,.sound.was-stopped .hint{opacity:0;animation:none;pointer-events:none}
+.snd{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:rgba(22,19,26,.6);
+  color:var(--bone);cursor:pointer;display:grid;place-items:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.snd:hover{border-color:rgba(237,228,218,.3)}
+.snd .eq{display:none;align-items:flex-end;gap:2.5px;width:16px;height:14px}
+.snd .eq i{flex:1;height:30%;border-radius:1px;background:var(--brass)}
+.snd svg{width:18px;height:18px;fill:currentColor}
+.snd .w{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.sound.is-playing .snd .eq{display:flex}
+.sound.is-playing .snd svg{display:none}
 
 /* ── motion, only for people who have not asked for less ── */
 .ax-eyes,.ax-look{transform-box:fill-box;transform-origin:center}
@@ -129,10 +111,21 @@ input[type=range]{width:min(140px,100%);accent-color:var(--bone);cursor:pointer}
   .now>*{animation:rise 1.1s var(--e) both}
   .now>.info{animation-delay:.15s}
   @keyframes rise{from{opacity:0;transform:translateY(18px)}}
-  .player.is-playing .eq i{animation:eq .9s ease-in-out infinite alternate}
-  .player.is-playing .eq i:nth-child(2){animation-delay:-.3s}
-  .player.is-playing .eq i:nth-child(3){animation-delay:-.6s}
-  .player.is-playing .eq i:nth-child(4){animation-delay:-.15s}
+  .sound.is-playing .eq i{animation:eq .9s ease-in-out infinite alternate}
+  .sound.is-playing .eq i:nth-child(2){animation-delay:-.3s}
+  .sound.is-playing .eq i:nth-child(3){animation-delay:-.6s}
+  .sound.is-playing .eq i:nth-child(4){animation-delay:-.15s}
+  .hint{animation:breathe 2.8s ease-in-out infinite}
+  @keyframes breathe{50%{opacity:.45}}
+  /* ATLAS talking: a small bob of the head while a line is typed, a glance
+     toward the words, a wave on each new line. */
+  .ax-head{transform-box:view-box;transform-origin:60px 70px}
+  .atlas.talk .ax-head{animation:talk .42s ease-in-out infinite alternate}
+  @keyframes talk{from{transform:rotate(-2deg)}to{transform:rotate(2.5deg) translateY(-.6px)}}
+  .ax-look{transition:transform .6s var(--e)}
+  .atlas.glance .ax-look{transform:translateX(3.2px) translateY(.6px)}
+  .atlas.nod .ax-head{animation:nod .7s var(--e)}
+  @keyframes nod{40%{transform:rotate(4deg) translateY(1.4px)}}
   @keyframes eq{from{height:20%}to{height:100%}}
   .num.tick{animation:tick .5s var(--e)}
   @keyframes tick{from{opacity:.35;transform:translateY(-4px)}}
@@ -140,8 +133,8 @@ input[type=range]{width:min(140px,100%);accent-color:var(--bone);cursor:pointer}
   .enter{transition:transform .2s var(--e),background .2s}
   .enter:hover{transform:translateY(-1px)}
 }
-/* Without the eq animation, a playing track still shows: full brass bars. */
-@media (prefers-reduced-motion:reduce){ .player.is-playing .eq i{height:70%} }
+/* Without the eq animation, playing music still shows: steady brass bars. */
+@media (prefers-reduced-motion:reduce){ .sound.is-playing .eq i{height:70%} .hint{opacity:.8} }
 
 /* ── tablet and phone ── */
 @media (max-width:900px){
@@ -154,13 +147,9 @@ input[type=range]{width:min(140px,100%);accent-color:var(--bone);cursor:pointer}
   .ready-note{margin-left:auto;margin-right:auto}
 }
 @media (max-width:620px){
-  :root{--player-h:68px}
   .stage{padding-top:20px}
+  .sound{top:14px}
+  .hint{display:none}
   .top{justify-content:center;text-align:center;flex-direction:column;gap:10px}
   .cover{width:min(230px,62vw);border-radius:18px}
-  .player{grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
-  .volume{order:1}
-  .controls{order:2}
-  .bar,.status{display:none}
-  .volume input{display:none}
 }

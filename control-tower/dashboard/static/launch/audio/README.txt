@@ -18,4 +18,13 @@ Accepted: .mp3 .m4a .ogg .oga .opus .webm .wav .flac. Nothing in this folder
 is committed to Git or packed into the release ZIP: the licence is for this
 installation, not for redistribution. With no file configured, or a file
 that cannot be played, the player shows "Soundtrack unavailable" and the
-page works normally. Nothing ever plays until someone presses play.
+page works normally.
+
+There is no player on the page, only a small sound switch in the corner.
+The music loops and starts by itself where the browser allows it; Chrome and
+Edge only allow that after the visitor has clicked or pressed a key, so
+otherwise it starts on the first click or key press anywhere ("Click
+anywhere for sound"). To let it start with no click at all, IT can add the
+site to the browser policy AutoplayAllowlist (Edge and Chrome, Group
+Policy), e.g. [*.]mantrac.com. The corner switch stops it; leaving the page
+stops it.

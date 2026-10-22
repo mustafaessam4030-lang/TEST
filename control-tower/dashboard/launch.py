@@ -21,6 +21,7 @@ The page is public and decides nothing: sign-in, roles and every protected
 route stay exactly as they are, before and after the launch moment. All a
 pending launch changes is where a signed-out visitor to "/" is sent.
 """
+import math
 import os
 import re
 from datetime import datetime, timezone
@@ -32,7 +33,8 @@ LAUNCH_DIR = HERE / "static" / "launch"
 AUDIO_DIR = LAUNCH_DIR / "audio"
 AUDIO_SUFFIXES = (".mp3", ".m4a", ".ogg", ".oga", ".opus", ".webm", ".wav", ".flac")
 # What /static/launch/ will serve at all; anything else there is refused.
-ASSET_SUFFIXES = (".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".webp", ".svg") + AUDIO_SUFFIXES
+# The page itself is served only at /launch, with its security headers.
+PAGE_FILES = ("launch.css", "launch.js")
 
 _TZ_NAME = re.compile(r"^(UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+\-]+){1,2})$")
 _AUDIO_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,120}$")
@@ -61,12 +63,18 @@ def check_zone(name, moment_utc, raw):
     if not _TZ_NAME.match(name):
         return "is not an IANA time zone name"
     try:
-        from zoneinfo import ZoneInfo
+        from zoneinfo import ZoneInfo, available_timezones
         zone = ZoneInfo(name)
     except Exception:
         # Windows Python has no zone database without the tzdata package. The
         # moment itself is exact (it carries its offset); the browser, which
-        # always has the database, names the zone.
+        # always has the database, names the zone. Where there IS a database,
+        # a name missing from it is a typo, not a gap.
+        try:
+            if available_timezones():
+                return "is not a known IANA time zone"
+        except Exception:
+            pass
         return None
     text = raw.strip()
     text = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
@@ -87,7 +95,8 @@ def _fmt_offset(delta):
 
 def remaining(launch_utc, now_utc):
     """Whole days, hours, minutes and seconds until launch; zeros once it has passed."""
-    total = int((launch_utc - now_utc).total_seconds())
+    # Rounded up: in the last second before launch it still says 1, never 0.
+    total = math.ceil((launch_utc - now_utc).total_seconds())
     total = max(0, total)
     days, rest = divmod(total, 86400)
     hours, rest = divmod(rest, 3600)
@@ -103,8 +112,14 @@ def audio_source(env=None):
     if not raw:
         return None, "no licensed soundtrack is configured"
     if raw.lower().startswith("https://"):
-        if re.search(r"[\s\"'<>]", raw):
-            return None, "the soundtrack address is not valid"
+        from urllib.parse import urlsplit
+        try:
+            parts = urlsplit(raw)
+        except ValueError:
+            parts = None
+        if parts is None or re.search(r"[\s\"'<>\\]", raw) or not parts.hostname \
+                or parts.username or parts.password:
+            return None, "the soundtrack address is not valid (and must not carry a password)"
         return raw, None
     if "/" in raw or "\\" in raw or not _AUDIO_FILE.match(raw) or \
             not raw.lower().endswith(AUDIO_SUFFIXES):
@@ -162,13 +177,18 @@ def pending(env=None, now=None):
 
 
 def asset(route):
-    """The file under /static/launch/ this route names, or None."""
-    relative = route[len("/static/launch/"):]
+    """
+    The file under /static/launch/ this route names, or None. Decided on the
+    name alone, before the filesystem is touched: on Windows a path such as
+    \\\\host\\share would otherwise make the server connect out to that host.
+    """
     from urllib.parse import unquote
-    candidate = (LAUNCH_DIR / unquote(relative)).resolve()
-    base = LAUNCH_DIR.resolve()
-    if base not in candidate.parents or not candidate.is_file():
-        return None
-    if candidate.suffix.lower() not in ASSET_SUFFIXES:
-        return None
-    return candidate
+    name = unquote(route[len("/static/launch/"):])
+    if name in PAGE_FILES:
+        return LAUNCH_DIR / name
+    if name.startswith("audio/"):
+        file = name[len("audio/"):]
+        if _AUDIO_FILE.match(file) and file.lower().endswith(AUDIO_SUFFIXES) and ".." not in file:
+            path = AUDIO_DIR / file
+            return path if path.is_file() else None
+    return None

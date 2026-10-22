@@ -488,8 +488,6 @@ class Handler(BaseHTTPRequestHandler):
         if not _accounts.enabled():
             if self._authorised():
                 return True
-            if method == "GET" and self._launch_redirect(route):
-                return False
             self._deny()
             return False
         from controlplane import rbac
@@ -785,6 +783,9 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/launch":
             self._send(200, json.dumps(launch.config()))
             return True
+        if route == "/static/brand/mantrac-logo.png":
+            self._send_file(STATIC_DIR / "brand" / "mantrac-logo.png")
+            return True
         if route.startswith("/static/launch/"):
             path = launch.asset(route)
             if path is None:
@@ -795,7 +796,11 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _launch_redirect(self, route):
-        """A signed-out visitor to the dashboard's front door sees the launch page until launch."""
+        """
+        A signed-out visitor to the dashboard's front door sees the launch page
+        until launch. Only with personal sign-in: the page's way in is /login,
+        which the access-key mode does not have.
+        """
         if route != "/":
             return False
         from dashboard import launch

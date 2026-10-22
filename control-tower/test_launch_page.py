@@ -82,7 +82,8 @@ check("10 days 0 h 0 m 0 s left, computed from the moment",
 r = launch.remaining(datetime(2026, 10, 23, 9, 3, 4, tzinfo=UTC), NOW)
 check("1 d 2 h 3 m 4 s", (r["days"], r["hours"], r["minutes"], r["seconds"]) == (1, 2, 3, 4), r)
 r = launch.remaining(NOW + timedelta(milliseconds=999), NOW)
-check("under a second left shows 0 s, never a negative or a rounded-up second", r["total_seconds"] == 0)
+check("in the last second it still says 1 s: never 0 before the moment", r["total_seconds"] == 1)
+check("never negative after it", launch.remaining(NOW - timedelta(days=3), NOW)["total_seconds"] == 0)
 check("the same moment from another offset counts the same",
       launch.config({"ATA_LAUNCH_AT": "2026-11-01T07:00:00+00:00"}, NOW)["remaining"] == c["remaining"])
 check("the zone defaults to UTC", launch.config({"ATA_LAUNCH_AT": "2026-11-01T07:00:00Z"}, NOW)["timezone"] == "UTC")
@@ -97,6 +98,9 @@ c = launch.config({"ATA_LAUNCH_AT": "2026-07-01T09:00:00+01:00", "ATA_LAUNCH_TZ"
 check("summer time is taken into account (London is UTC+01:00 in July)", c["state"] == "launched" and not c["problem"], c)
 c = launch.config({"ATA_LAUNCH_AT": "2026-12-01T09:00:00+01:00", "ATA_LAUNCH_TZ": "Europe/London"}, NOW)
 check("...and not in December", c["state"] == "invalid", c)
+c = launch.config({"ATA_LAUNCH_AT": "2026-11-01T09:00:00+02:00", "ATA_LAUNCH_TZ": "Cairo<script>"}, NOW)
+c = launch.config({"ATA_LAUNCH_AT": "2026-11-01T09:00:00+02:00", "ATA_LAUNCH_TZ": "Africa/Ciaro"}, NOW)
+check("a misspelt zone: refused, not ignored", c["state"] == "invalid" and "known" in c["problem"], c)
 c = launch.config({"ATA_LAUNCH_AT": "2026-11-01T09:00:00+02:00", "ATA_LAUNCH_TZ": "Cairo<script>"}, NOW)
 check("a zone that is not an IANA name: refused", c["state"] == "invalid" and "IANA" in c["problem"])
 c = launch.config({"ATA_LAUNCH_AT": "garbage"}, NOW)
@@ -120,7 +124,8 @@ BROKEN.write_bytes(b"this is not audio" * 40)
 try:
     url, why = launch.audio_source({})
     check("nothing configured: unavailable", url is None and "no licensed" in why)
-    for bad in ("../server.py", "..\\x.mp3", "sub/a.mp3", "evil.exe", "javascript:alert(1)", "http://x.test/a.mp3"):
+    for bad in ("../server.py", "..\\x.mp3", "sub/a.mp3", "evil.exe", "javascript:alert(1)", "http://x.test/a.mp3",
+                "https://user:secret@media.example.com/a.mp3", "https://", "\\\\host\\share\\a.mp3"):
         url, why = launch.audio_source({"ATA_LAUNCH_AUDIO": bad})
         check("refused as a source: {0}".format(bad), url is None, url)
     url, why = launch.audio_source({"ATA_LAUNCH_AUDIO": "missing.mp3"})
@@ -135,7 +140,10 @@ try:
     rule("Assets: /static/launch/ serves its own files and nothing else")
     check("the page's script", launch.asset("/static/launch/launch.js") is not None)
     for bad in ("/static/launch/../launch.py", "/static/launch/%2e%2e/launch.py", "/static/launch/../../server.py",
-                "/static/launch/audio/README.txt", "/static/launch/nope.css"):
+                "/static/launch/audio/README.txt", "/static/launch/nope.css", "/static/launch/launch.html",
+                "/static/launch///attacker/share/x.mp3", "/static/launch/%5c%5cattacker%5cshare%5cx.mp3",
+                "/static/launch/audio/%5c%5cattacker%5cs%5cx.mp3", "/static/launch/a%00.js",
+                "/static/launch/audio/..%2f..%2flaunch.py", "/static/launch/C:%5cWindows%5cwin.ini"):
         check("not served: " + bad, launch.asset(bad) is None)
 
     # ── a real tower ─────────────────────────────────────────────────────
@@ -241,9 +249,12 @@ try:
     os.environ["DASHBOARD_ACCOUNTS"] = "0"
     set_launch(datetime.now(UTC) + timedelta(days=3))
     st, _r, h = call(client(), "GET", "/")
-    check("before launch: / without the key goes to the launch page", st == 302 and h.get("Location") == "/launch")
+    check("before launch: / without the key is refused as always (the launch page's way in is personal sign-in)",
+          st == 401)
     check("before launch: the API still needs the key", call(client(), "GET", "/api/state")[0] == 401)
     check("the launch page itself needs no key", call(client(), "GET", "/launch")[0] == 200)
+    check("...nor its logo", call(client(), "GET", "/static/brand/mantrac-logo.png")[0] == 200)
+    check("...but no other brand or dashboard file", call(client(), "GET", "/static/index.html")[0] == 401)
     set_launch(datetime.now(UTC) - timedelta(minutes=1))
     st, _r, _h = call(client(), "GET", "/")
     check("after launch: / without the key is refused as before", st == 401)
@@ -268,6 +279,8 @@ try:
           h.get("Content-Type", "").startswith("text/javascript"), h.get("Content-Type"))
     check("the backend cannot be read through the launch folder",
           all(call(client(), "GET", p)[0] == 404 for p in
+              ("/static/launch/a%00.js", "/static/launch/%5c%5cattacker%5cshare%5cx.mp3")) and
+          all(call(client(), "GET", p)[0] == 404 for p in
               ("/static/launch/../server.py", "/static/launch/%2e%2e/launch.py", "/static/launch/%2e%2e/%2e%2e/accounts.py")))
     webcfg = (Path(HERE) / "deploy/iis/web.config").read_text()
     check("IIS forwards every path unchanged, /launch and /static/launch/ included",
@@ -279,12 +292,24 @@ try:
     from playwright.sync_api import sync_playwright          # noqa: E402
     exe = sorted(Path("/opt/pw-browsers").glob("chromium-*/chrome-linux/chrome"))
     with sync_playwright() as p:
+        # Playwright turns autoplay on by default; take that away so the
+        # browser behaves as a normal one does.
         browser = p.chromium.launch(headless=True, executable_path=str(exe[-1]) if exe else None,
+                                    ignore_default_args=["--autoplay-policy=no-user-gesture-required"],
                                     args=["--autoplay-policy=user-gesture-required"])
         problems = []
 
-        def open_page(w=1440, h=900, motion="no-preference"):
+        def open_page(w=1440, h=900, motion="no-preference", strict_autoplay=False):
             pg = browser.new_page(viewport={"width": w, "height": h}, reduced_motion=motion)
+            if strict_autoplay:
+                pg.add_init_script("""(() => {
+                  const real = HTMLMediaElement.prototype.play;
+                  HTMLMediaElement.prototype.play = function(){
+                    if (!navigator.userActivation.hasBeenActive)
+                      return Promise.reject(new DOMException('needs a gesture', 'NotAllowedError'));
+                    return real.call(this);
+                  };
+                })()""")
             pg.on("pageerror", lambda e: problems.append(str(e)))
             pg.on("console", lambda m: problems.append(m.text) if m.type == "error"
                   and "Failed to load resource" not in m.text else None)
@@ -292,7 +317,9 @@ try:
             pg.on("response", lambda r: problems.append("{0} {1}".format(r.status, r.url))
                   if r.status >= 400 and not r.url.endswith("/api/state") else None)
             pg.goto(BASE + "/launch")
-            until(pg, "!!(window.__atlasLaunch && window.__atlasLaunch.state())", timeout=5000)
+            # A selector wait, not page.evaluate: Playwright's evaluate counts as
+            # a user gesture, which would let the music start on its own.
+            pg.wait_for_selector("body[data-state]", state="attached", timeout=5000)
             return pg
 
         rule("Browser: countdown, zone, launch moment")
@@ -308,9 +335,7 @@ try:
         when = pg.text_content("#whenLabel")
         check("the moment is shown in its zone, with the offset", "Cairo time" in when and "UTC+02:00" in when, when)
         check("before launch the sign-in action is not shown", pg.is_hidden("#ready"))
-        check("nothing plays on arrival (no forced autoplay)", "is-playing" not in pg.get_attribute("#player", "class"))
-        if SHOTS:
-            pg.screenshot(path=os.path.join(SHOTS, "launch_1_countdown_desktop.png"))
+        check("nothing configured, nothing plays", "is-playing" not in (pg.get_attribute("#sound", "class") or ""))
         pg.close()
 
         set_launch(datetime.now(UTC) + timedelta(seconds=3))
@@ -343,67 +368,85 @@ try:
               pg.is_hidden("#countdown") and pg.is_visible("#enter"))
         pg.close()
 
-        rule("Browser: the soundtrack")
+        rule("Browser: the soundtrack, with no player on screen")
+        playing = "document.getElementById('sound').classList.contains('is-playing')"
         set_launch(datetime.now(UTC) + timedelta(days=9, hours=3))
-        del os.environ["ATA_LAUNCH_AUDIO"]
+        os.environ.pop("ATA_LAUNCH_AUDIO", None)
         pg = open_page()
-        check("no soundtrack configured: player says unavailable, controls off",
-              pg.text_content("#audioStatus") == "Soundtrack unavailable" and pg.is_disabled("#play")
-              and pg.is_disabled("#mute") and pg.is_disabled("#vol"))
+        pg.wait_for_timeout(500)
+        check("no soundtrack configured: nothing shown, nothing plays, page intact",
+              pg.is_hidden("#sound") and pg.text_content("#audioStatus") == "Soundtrack unavailable"
+              and pg.is_visible("#countdown"))
+        check("there is no player bar, play button or volume slider",
+              pg.locator("#player, #play, #vol, input[type=range]").count() == 0)
         pg.close()
         os.environ["ATA_LAUNCH_AUDIO"] = "ct-test-broken.mp3"
         pg = open_page()
-        pg.click("#play")
-        until(pg, "document.getElementById('audioStatus').textContent === 'Soundtrack unavailable'",
-                             timeout=6000)
-        check("a file that will not play: unavailable, page unaffected",
-              pg.is_disabled("#play") and pg.is_visible("#countdown"))
+        pg.mouse.click(300, 300)
+        until(pg, "document.getElementById('audioStatus').textContent === 'Soundtrack unavailable'")
+        check("a file that will not play: the switch disappears, page unaffected",
+              pg.is_hidden("#sound") and pg.is_visible("#countdown"))
         pg.close()
         os.environ["ATA_LAUNCH_AUDIO"] = "ct-test-tone.wav"
-        os.environ["ATA_LAUNCH_AUDIO_TITLE"] = "Test tone"
-        os.environ["ATA_LAUNCH_AUDIO_ARTIST"] = "Generated for the test"
-        pg = open_page()
-        check("a licensed file: ready, waiting for a press", pg.text_content("#audioStatus") == "Press play"
-              and not pg.is_disabled("#play"))
-        pg.click("#play")
-        until(pg, "document.getElementById('player').classList.contains('is-playing')", timeout=6000)
-        check("play: it plays, and shows it", pg.get_attribute("#play", "aria-pressed") == "true"
-              and pg.text_content("#audioStatus") == "Playing")
-        pg.click("#mute")
-        check("mute", pg.get_attribute("#mute", "aria-pressed") == "true" and "is-muted" in pg.get_attribute("#player", "class"))
-        pg.click("#mute")
-        pg.fill("#vol", "25")
-        pg.dispatch_event("#vol", "input")
-        check("volume", pg.get_attribute("#mute", "aria-pressed") == "false")
+        # Headless Chromium applies its autoplay policy unreliably (and lets a
+        # site it was clicked on before autoplay). This page gets a browser
+        # that refuses sound exactly as Chrome and Edge do on a first visit:
+        # NotAllowedError until the visitor has clicked or pressed a key.
+        pg = open_page(strict_autoplay=True)
+        pg.wait_for_timeout(1500)
+        check("browser blocks sound before a click: it waits, with a hint, and does not force it",
+              pg.locator("#sound.is-playing").count() == 0 and pg.is_visible("#soundHint"),
+              pg.get_attribute("#sound", "class"))
         if SHOTS:
-            pg.wait_for_timeout(600)
-            pg.screenshot(path=os.path.join(SHOTS, "launch_3_playing_desktop.png"))
-        pg.click("#play")
-        until(pg, "!document.getElementById('player').classList.contains('is-playing')", timeout=3000)
-        check("pause", pg.text_content("#audioStatus") == "Paused")
-        pg.click("#play")
-        until(pg, "document.getElementById('player').classList.contains('is-playing')", timeout=6000)
+            pg.wait_for_timeout(2500)
+            pg.screenshot(path=os.path.join(SHOTS, "launch_1_waiting_desktop.png"))
+        pg.mouse.click(700, 120)
+        until(pg, playing)
+        check("the first click anywhere starts the music", pg.text_content("#audioStatus") == "Music playing")
+        pg.wait_for_timeout(900)
+        check("the hint goes once it plays", pg.evaluate(
+            "getComputedStyle(document.getElementById('soundHint')).opacity") in ("0",))
+        pg.click("#snd")
+        until(pg, "!" + playing, 3000)
+        check("the corner switch stops it", pg.get_attribute("#snd", "aria-pressed") == "false")
+        pg.mouse.click(700, 120)
+        pg.wait_for_timeout(600)
+        check("...and another click elsewhere does not restart it", not pg.evaluate(playing))
+        pg.keyboard.press("Tab")
+        pg.wait_for_timeout(300)
+        check("Tab moving the focus does not start it", not pg.evaluate(playing))
+        pg.click("#snd")
+        until(pg, playing)
+        check("the switch starts it again", pg.get_attribute("#snd", "aria-label") == "Stop music")
         pg.evaluate("dispatchEvent(new Event('pagehide'))")
         pg.wait_for_timeout(300)
-        check("leaving the page stops the music", "is-playing" not in pg.get_attribute("#player", "class"))
+        check("leaving the page stops the music", not pg.evaluate(playing))
         pg.close()
+        free = p.chromium.launch(headless=True, executable_path=str(exe[-1]) if exe else None,
+                                 args=["--autoplay-policy=no-user-gesture-required"])
+        fp = free.new_page()
+        fp.goto(BASE + "/launch")
+        until(fp, playing, 8000)
+        check("where the browser allows it (company policy), it plays by itself, no click",
+              fp.text_content("#audioStatus") == "Music playing")
+        free.close()
 
         rule("Browser: phone, tablet, reduced motion")
         for name, w, h in (("phone", 390, 844), ("tablet", 820, 1180)):
             pg = open_page(w, h)
             pg.wait_for_timeout(2600)
             check(name + ": no sideways scrolling", pg.evaluate("document.documentElement.scrollWidth <= innerWidth"))
-            box = pg.locator("#play").bounding_box()
-            check(name + ": the play button is on screen", box and box["y"] + box["height"] <= h, box)
+            box = pg.locator("#snd").bounding_box()
+            check(name + ": the sound switch is on screen", box and box["y"] + box["height"] <= h, box)
             check(name + ": the countdown is on the first screen",
-                  pg.locator("#cdS").bounding_box()["y"] < h - 68)
+                  pg.locator("#cdS").bounding_box()["y"] < h - 40)
             if SHOTS:
                 pg.screenshot(path=os.path.join(SHOTS, "launch_4_{0}.png".format(name)))
             pg.close()
         pg = open_page(motion="reduce")
         pg.wait_for_timeout(300)
         check("reduced motion: the greeting is there at once",
-              "preparing something powerful" in pg.text_content("#greeting"))
+              "ATLAS" in pg.text_content("#greeting"))
         check("reduced motion: nothing floats, spins or drifts",
               pg.evaluate("['.atlas svg','.disc','.g1','.grain'].every(s => "
                           "getComputedStyle(document.querySelector(s)).animationName === 'none')"))

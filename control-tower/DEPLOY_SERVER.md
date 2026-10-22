@@ -185,12 +185,14 @@ again when they run.
 
 ## 9. Launch page (optional): countdown before ATLAS opens
 
-`/launch` is a public page: the ATLAS greeting, a countdown to a fixed
-moment and, if the company has a licensed soundtrack, a player. It shows no
+`/launch` is a public page: ATLAS greeting visitors ("We'll work together
+soon", "We have a lot to do together"), a countdown to a fixed moment and,
+if the company has a licensed soundtrack, music. It shows no
 data and opens nothing. Sign-in, the three access levels and every protected
 page and API are exactly as before, **before and after** the launch moment.
 The only change while a launch moment is still ahead: a signed-out visitor to
-`https://ata.mantrac.com/` is sent to `/launch` instead of `/login`. The
+`https://ata.mantrac.com/` is sent to `/launch` instead of `/login` (with
+personal sign-in on; in access-key mode nothing changes). The
 sign-in page itself always works (there is a small "Administrator sign-in"
 link on the launch page). When the countdown reaches zero the page shows
 **Continue to sign in**, which goes to the real sign-in page.
@@ -211,8 +213,11 @@ setx ATA_LAUNCH_TZ Africa/Cairo /M
 - Soundtrack (optional): put a file the company is **licensed** to host in
   `dashboard\static\launch\audio\` and `setx ATA_LAUNCH_AUDIO lilith.mp3 /M`
   (or an `https://` address of a licensed stream). See the README.txt in that
-  folder. Nothing plays until someone presses play; with no file, or a file
-  that will not play, the player says "Soundtrack unavailable".
+  folder. There is no player on screen, only a small sound switch: the
+  music starts by itself where the browser allows it, otherwise on the
+  first click or key press. For no click at all, add the site to the Edge /
+  Chrome Group Policy **AutoplayAllowlist** (e.g. `[*.]mantrac.com`). With
+  no file, or a file that will not play, the switch is simply not shown.
 
 Check: `https://ata.mantrac.com/launch` shows the countdown in the right zone;
 `check_iis.ps1` includes it. IIS needs no change: it forwards every path.
