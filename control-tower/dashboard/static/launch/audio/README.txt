@@ -20,7 +20,7 @@ installation, not for redistribution. With no file configured, or a file
 that cannot be played, the player shows "Soundtrack unavailable" and the
 page works normally.
 
-There is no player on the page, only a small sound switch in the corner.
+Nothing about the music shows on the page.
 The music loops and starts by itself where the browser allows it; Chrome and
 Edge only allow that after the visitor has clicked or pressed a key, so
 otherwise it starts on the first click or key press anywhere ("Click

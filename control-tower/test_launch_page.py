@@ -335,7 +335,7 @@ try:
         when = pg.text_content("#whenLabel")
         check("the moment is shown in its zone, with the offset", "Cairo time" in when and "UTC+02:00" in when, when)
         check("before launch the sign-in action is not shown", pg.is_hidden("#ready"))
-        check("nothing configured, nothing plays", "is-playing" not in (pg.get_attribute("#sound", "class") or ""))
+        check("nothing plays without a click", pg.get_attribute("body", "data-music") != "playing")
         pg.close()
 
         set_launch(datetime.now(UTC) + timedelta(seconds=3))
@@ -368,76 +368,80 @@ try:
               pg.is_hidden("#countdown") and pg.is_visible("#enter"))
         pg.close()
 
-        rule("Browser: the soundtrack, with no player on screen")
-        playing = "document.getElementById('sound').classList.contains('is-playing')"
+        rule("Browser: the soundtrack, heard and not seen")
+        music = lambda pg: pg.get_attribute("body", "data-music")
         set_launch(datetime.now(UTC) + timedelta(days=9, hours=3))
         os.environ.pop("ATA_LAUNCH_AUDIO", None)
         pg = open_page()
         pg.wait_for_timeout(500)
-        check("no soundtrack configured: nothing shown, nothing plays, page intact",
-              pg.is_hidden("#sound") and pg.text_content("#audioStatus") == "Soundtrack unavailable"
-              and pg.is_visible("#countdown"))
-        check("there is no player bar, play button or volume slider",
-              pg.locator("#player, #play, #vol, input[type=range]").count() == 0)
+        check("no soundtrack configured: nothing plays, page intact",
+              music(pg) == "unavailable" and pg.is_visible("#countdown"))
+        check("no player, button, slider or sound icon anywhere on the page",
+              pg.locator("audio, #player, #play, #vol, #sound, #snd, input[type=range]").count() == 0)
         pg.close()
         os.environ["ATA_LAUNCH_AUDIO"] = "ct-test-broken.mp3"
         pg = open_page()
         pg.mouse.click(300, 300)
-        until(pg, "document.getElementById('audioStatus').textContent === 'Soundtrack unavailable'")
-        check("a file that will not play: the switch disappears, page unaffected",
-              pg.is_hidden("#sound") and pg.is_visible("#countdown"))
+        pg.wait_for_selector("body[data-music=unavailable]", state="attached", timeout=6000)
+        check("a file that will not play: silence, page unaffected", pg.is_visible("#countdown"))
         pg.close()
         os.environ["ATA_LAUNCH_AUDIO"] = "ct-test-tone.wav"
-        # Headless Chromium applies its autoplay policy unreliably (and lets a
-        # site it was clicked on before autoplay). This page gets a browser
-        # that refuses sound exactly as Chrome and Edge do on a first visit:
-        # NotAllowedError until the visitor has clicked or pressed a key.
+        # Headless Chromium applies its autoplay policy unreliably; this page
+        # gets a browser that refuses sound as Chrome and Edge do on a first
+        # visit: NotAllowedError until the visitor has clicked or pressed a key.
         pg = open_page(strict_autoplay=True)
         pg.wait_for_timeout(1500)
-        check("browser blocks sound before a click: it waits, with a hint, and does not force it",
-              pg.locator("#sound.is-playing").count() == 0 and pg.is_visible("#soundHint"),
-              pg.get_attribute("#sound", "class"))
+        check("browser blocks sound before a click: it waits, does not force it", music(pg) == "waiting", music(pg))
+        pg.mouse.click(700, 120)
+        pg.wait_for_selector("body[data-music=playing]", state="attached", timeout=6000)
+        check("the first click anywhere starts the music, with nothing shown",
+              pg.locator("audio, #sound, #snd").count() == 0)
         if SHOTS:
             pg.wait_for_timeout(2500)
             pg.screenshot(path=os.path.join(SHOTS, "launch_1_waiting_desktop.png"))
-        pg.mouse.click(700, 120)
-        until(pg, playing)
-        check("the first click anywhere starts the music", pg.text_content("#audioStatus") == "Music playing")
-        pg.wait_for_timeout(900)
-        check("the hint goes once it plays", pg.evaluate(
-            "getComputedStyle(document.getElementById('soundHint')).opacity") in ("0",))
-        pg.click("#snd")
-        until(pg, "!" + playing, 3000)
-        check("the corner switch stops it", pg.get_attribute("#snd", "aria-pressed") == "false")
-        pg.mouse.click(700, 120)
-        pg.wait_for_timeout(600)
-        check("...and another click elsewhere does not restart it", not pg.evaluate(playing))
-        pg.keyboard.press("Tab")
-        pg.wait_for_timeout(300)
-        check("Tab moving the focus does not start it", not pg.evaluate(playing))
-        pg.click("#snd")
-        until(pg, playing)
-        check("the switch starts it again", pg.get_attribute("#snd", "aria-label") == "Stop music")
         pg.evaluate("dispatchEvent(new Event('pagehide'))")
-        pg.wait_for_timeout(300)
-        check("leaving the page stops the music", not pg.evaluate(playing))
+        pg.wait_for_selector("body[data-music=paused]", state="attached", timeout=3000)
+        check("leaving the page stops the music", True)
+        pg.close()
+        pg = open_page(strict_autoplay=True)
+        pg.wait_for_timeout(800)
+        pg.keyboard.press("Tab")
+        pg.wait_for_timeout(400)
+        check("Tab moving the focus does not start it", music(pg) == "waiting")
         pg.close()
         free = p.chromium.launch(headless=True, executable_path=str(exe[-1]) if exe else None,
                                  args=["--autoplay-policy=no-user-gesture-required"])
         fp = free.new_page()
         fp.goto(BASE + "/launch")
-        until(fp, playing, 8000)
-        check("where the browser allows it (company policy), it plays by itself, no click",
-              fp.text_content("#audioStatus") == "Music playing")
+        fp.wait_for_selector("body[data-music=playing]", state="attached", timeout=8000)
+        check("where the browser allows it (company policy), it plays by itself, no click", True)
         free.close()
+
+        rule("Browser: ATLAS talks")
+        pg = open_page()
+        pg.wait_for_selector("#greeting:has-text('work together soon')", timeout=12000)
+        pg.wait_for_selector("#greeting:has-text('lot to do together')", timeout=12000)
+        pg.wait_for_selector("#greeting:has-text('ETAs and ATAs')", timeout=12000)
+        check("left alone, he keeps talking about what he can do", True)
+        before = pg.text_content("#greeting")
+        pg.click("#cover")
+        pg.wait_for_timeout(1800)
+        after = pg.text_content("#greeting")
+        check("a click on ATLAS: he waves and says something new", after != before and
+              "wave" in (pg.get_attribute("#atlas", "class") or ""), (before, after))
+        pg.click("#cover")
+        pg.wait_for_timeout(2600)
+        check("another click: another line", pg.text_content("#greeting") != after)
+        check("ATLAS is a real button for keyboard users", pg.get_attribute("#cover", "aria-label") == "Talk to ATLAS")
+        pg.close()
 
         rule("Browser: phone, tablet, reduced motion")
         for name, w, h in (("phone", 390, 844), ("tablet", 820, 1180)):
             pg = open_page(w, h)
             pg.wait_for_timeout(2600)
             check(name + ": no sideways scrolling", pg.evaluate("document.documentElement.scrollWidth <= innerWidth"))
-            box = pg.locator("#snd").bounding_box()
-            check(name + ": the sound switch is on screen", box and box["y"] + box["height"] <= h, box)
+            box = pg.locator("#cover").bounding_box()
+            check(name + ": ATLAS is on screen", box and box["y"] + box["height"] <= h, box)
             check(name + ": the countdown is on the first screen",
                   pg.locator("#cdS").bounding_box()["y"] < h - 40)
             if SHOTS:

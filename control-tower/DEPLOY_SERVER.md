@@ -213,11 +213,11 @@ setx ATA_LAUNCH_TZ Africa/Cairo /M
 - Soundtrack (optional): put a file the company is **licensed** to host in
   `dashboard\static\launch\audio\` and `setx ATA_LAUNCH_AUDIO lilith.mp3 /M`
   (or an `https://` address of a licensed stream). See the README.txt in that
-  folder. There is no player on screen, only a small sound switch: the
+  folder. Nothing about the music shows on screen: the
   music starts by itself where the browser allows it, otherwise on the
   first click or key press. For no click at all, add the site to the Edge /
   Chrome Group Policy **AutoplayAllowlist** (e.g. `[*.]mantrac.com`). With
-  no file, or a file that will not play, the switch is simply not shown.
+  no file, or a file that will not play, the page is simply silent.
 
 Check: `https://ata.mantrac.com/launch` shows the countdown in the right zone;
 `check_iis.ps1` includes it. IIS needs no change: it forwards every path.

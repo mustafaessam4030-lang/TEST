@@ -6,6 +6,11 @@
   const $ = (id) => document.getElementById(id);
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pad = (n) => String(n).padStart(2, '0');
+  // The dashboard's own light/dark choice, if this browser made one there.
+  try {
+    const t = localStorage.getItem('ata-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
 
   // Whole units left; never negative.
   function split(ms){
@@ -107,8 +112,21 @@
 
   /* ── ATLAS: scripted lines, a blink, a glance, a wave ── */
   const fig = $('atlas'), greet = $('greeting');
+  // What ATLAS says, on its own, over and over: who it is and what it does.
+  // Scripted lines; nothing here listens or answers.
   const LINES = ['Hello. I’m ATLAS.', 'We’ll work together soon.', 'We have a lot to do together.',
-                 'Shipments, arrivals, every ETA and ATA.', 'We’re preparing something powerful.'];
+    'I check ETAs and ATAs on the carriers’ sites, air and ocean.',
+    'I update the Hub, then read it back to be sure.',
+    'When a shipment needs a person, I say which one and why.',
+    'I can check a PO and the documents behind it.',
+    'Ask me about any shipment and I’ll answer from the records.',
+    'I can turn a run into a PDF report for you.',
+    'I never guess a date. If I’m not sure, I ask.'];
+  // When someone clicks ATLAS.
+  const POKES = ['Hi! You found me 👋', 'Not long now. Watch the countdown.',
+    'Soon you can ask me anything about your shipments.', 'I’m getting ready for you.',
+    'Click again, I have more to say.'];
+  let poke = 0;
   let typing = 0, lineAt = 0, lineTimer = 0, loop = true;
   const cls = (c, on) => fig.classList.toggle(c, on);
   function say(text, then){
@@ -144,6 +162,15 @@
     setTimeout(() => fig.classList.remove('nod'), 800);
   }
   function stopLines(text){ loop = false; clearTimeout(lineTimer); say(text); }
+  // A click on ATLAS: a wave and something new, then he carries on by himself.
+  $('cover').addEventListener('click', () => {
+    clearTimeout(lineTimer);
+    wave();
+    const text = poke % 2 === 0 ? POKES[(poke / 2) % POKES.length]
+                                : LINES[3 + (lineAt++ % (LINES.length - 3))];
+    poke += 1;
+    say(text, () => { lineTimer = setTimeout(loop ? nextLine : () => {}, calm ? 6000 : 3600); });
+  });
   if (!calm){
     setInterval(() => {
       if (document.hidden || fig.classList.contains('talk')) return;
@@ -151,30 +178,23 @@
     }, 4700);
   }
 
-  /* ── soundtrack: no player, just music ──
+  /* ── soundtrack: heard, not seen ──
      It starts by itself where the browser allows (e.g. a company policy
      allow-listing this site), otherwise on the first click or key press
-     anywhere. The corner switch stops and restarts it. */
-  const sound = $('sound'), snd = $('snd'), status = $('audioStatus');
-  let audio = null, ready = false, stoppedByUser = false, wasPlaying = false;
-  function show(playing){
-    sound.classList.toggle('is-playing', playing);
-    snd.setAttribute('aria-pressed', String(playing));
-    snd.setAttribute('aria-label', playing ? 'Stop music' : 'Play music');
-    status.textContent = playing ? 'Music playing' : (stoppedByUser ? 'Music stopped' : 'Music ready');
-  }
+     anywhere except the way out to sign-in. Leaving the page stops it. */
+  const status = $('audioStatus');
+  let audio = null, ready = false, wasPlaying = false;
   function unavailable(){
     if (audio){ audio.pause(); audio.removeAttribute('src'); try { audio.load(); } catch (e) {} }
     audio = null; ready = false;
-    sound.hidden = true;
+    document.body.dataset.music = 'unavailable';
     status.textContent = 'Soundtrack unavailable';
   }
   function start(){
-    if (!audio || stoppedByUser || !audio.paused) return;
+    if (!audio || !audio.paused) return;
     const p = audio.play();
     if (p && p.catch) p.catch((err) => {
-      // Not allowed yet: wait for the first click or key press.
-      // Paused while still loading: nothing wrong either.
+      // Not allowed yet, or paused while loading: wait for the next click.
       if (!(err && (err.name === 'NotAllowedError' || err.name === 'AbortError'))) unavailable();
     });
   }
@@ -182,30 +202,21 @@
     if (ready) return;
     if (!a.url){ unavailable(); return; }
     audio = new Audio(); audio.preload = 'metadata'; audio.loop = true; audio.volume = 0.7; audio.src = a.url;
-    ready = true; sound.hidden = false;
-    snd.title = [a.title, a.artist].filter(Boolean).join(' · ');
+    ready = true;
     const mine = audio;      // a replaced element's late events change nothing
-    audio.addEventListener('playing', () => { if (audio === mine) show(true); });
-    audio.addEventListener('pause', () => { if (audio === mine) show(false); });
+    audio.addEventListener('playing', () => { if (audio === mine){ document.body.dataset.music = 'playing'; status.textContent = 'Music playing'; } });
+    audio.addEventListener('pause', () => { if (audio === mine) document.body.dataset.music = 'paused'; });
     audio.addEventListener('error', () => { if (audio === mine) unavailable(); });
-    show(false);
+    document.body.dataset.music = 'waiting';
     start();
   }
-  // The first click or key press starts it; not the switch itself (it has
-  // its own job), not the way out to sign-in, not Tab moving the focus.
   const firstGesture = (e) => {
-    if (e.target && e.target.closest && e.target.closest('#snd, a')) return;
+    if (e.target && e.target.closest && e.target.closest('a')) return;
     if (e.type === 'keydown' && (e.key === 'Tab' || e.key === 'Shift')) return;
     start();
   };
   document.addEventListener('pointerdown', firstGesture, true);
   document.addEventListener('keydown', firstGesture, true);
-  snd.addEventListener('click', () => {
-    if (!audio) return;
-    if (!audio.paused){ stoppedByUser = true; sound.classList.add('was-stopped'); audio.pause(); return; }
-    stoppedByUser = false; start();
-  });
-  // Leaving the page stops the music; coming back to the tab resumes it.
   const stop = () => { if (audio && !audio.paused){ wasPlaying = true; audio.pause(); } };
   addEventListener('pagehide', stop);
   document.addEventListener('visibilitychange', () => {
