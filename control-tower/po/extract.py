@@ -121,7 +121,10 @@ def read_pdf(data):
     Raises Unreadable when the file is not a PDF or no page yields text.
     """
     try:
-        import fitz                                   # PyMuPDF
+        try:
+            import pymupdf as fitz                    # PyMuPDF 1.24+ (2.0 dropped the old name)
+        except ImportError:
+            import fitz                               # older PyMuPDF
     except Exception as error:                        # pragma: no cover
         raise Unreadable("PyMuPDF is not installed: {0}".format(error))
     if not data:

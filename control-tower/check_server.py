@@ -99,7 +99,7 @@ def main():
     v = sys.version_info
     report("PASS" if v >= (3, 11) else "FAIL", "Python {0}.{1}".format(v.major, v.minor),
            "" if v >= (3, 11) else "3.11 or newer is required")
-    for module, label in (("playwright", "Playwright"), ("fitz", "PyMuPDF (PO PDFs)"),
+    for module, label in (("playwright", "Playwright"), ("pymupdf", "PyMuPDF (PO PDFs)"),
                           ("openpyxl", "openpyxl (PO Excel)")):
         try:
             __import__(module)
