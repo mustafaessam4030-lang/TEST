@@ -305,10 +305,15 @@ try:
         def open_page(w=1440, h=900, motion="no-preference", strict_autoplay=False):
             pg = browser.new_page(viewport={"width": w, "height": h}, reduced_motion=motion)
             if strict_autoplay:
+                # Counted from the page's own events, not Chromium's activation flag,
+                # which is sometimes already set in headless runs.
                 pg.add_init_script("""(() => {
+                  let gesture = false;
+                  addEventListener('pointerdown', () => { gesture = true; }, true);
+                  addEventListener('keydown', () => { gesture = true; }, true);
                   const real = HTMLMediaElement.prototype.play;
                   HTMLMediaElement.prototype.play = function(){
-                    if (!navigator.userActivation.hasBeenActive)
+                    if (!gesture)
                       return Promise.reject(new DOMException('needs a gesture', 'NotAllowedError'));
                     return real.call(this);
                   };
@@ -410,7 +415,7 @@ try:
         pg.wait_for_timeout(800)
         pg.keyboard.press("Tab")
         pg.wait_for_timeout(400)
-        check("Tab moving the focus does not start it", music(pg) == "waiting")
+        check("Tab moving the focus does not start it", music(pg) == "waiting", music(pg))
         pg.close()
         free = p.chromium.launch(headless=True, executable_path=str(exe[-1]) if exe else None,
                                  args=["--autoplay-policy=no-user-gesture-required"])

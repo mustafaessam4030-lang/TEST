@@ -60,10 +60,23 @@ check("setup_iis.ps1 stops when not Administrator", "IsInRole" in setup and "exi
 check("setup_iis.ps1 needs no secret on its command line",
       not re.search(r"(?i)password|-Key\b|token", setup))
 
+test_cfg = ET.parse(IIS / "web.http-test.config").getroot()
+trules = test_cfg.findall("./system.webServer/rewrite/rules/rule")
+check("http test config: no redirect to https, no HSTS, forwards to the tower",
+      len(trules) == 1 and trules[0].find("action").get("url") == "http://127.0.0.1:8787/{R:1}"
+      and test_cfg.find("./system.webServer/httpProtocol") is None
+      and test_cfg.find("./system.webServer/urlCompression").get("doDynamicCompression") == "false")
+check("setup_iis.ps1 -HttpOnly: no certificate needed, http public address, test config",
+      "[switch] $HttpOnly" in setup and "web.http-test.config" in setup
+      and '"${scheme}://$HostName"' in setup and "if (-not $HttpOnly) {" in setup)
+check("without -HttpOnly a certificate is still required",
+      "if (-not $HttpOnly -and $CertThumbprint.Length -ne 40)" in setup)
 checker = (IIS / "check_iis.ps1").read_text(encoding="utf-8")
 check("check_iis.ps1 changes nothing",
       not re.search(r"(?i)\b(Set|New|Remove|Add|Start|Stop)-(?!Object\b)\w|appcmd[^\n]*\bset\b", checker))
 check("check_iis.ps1 exits with its FAIL count", "exit $fails" in checker)
+check("check_iis.ps1 -HttpOnly checks http and warns that https is still to come",
+      "[switch] $HttpOnly" in checker and '$base = "${scheme}://$HostName"' in checker and "http test:" in checker)
 check("check_iis.ps1 does not assign PowerShell's automatic $args", "$args =" not in checker)
 check("check_iis.ps1 expects sign-in (401) on /api/state", "/api/state" in checker and "401" in checker)
 

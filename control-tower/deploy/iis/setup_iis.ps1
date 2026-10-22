@@ -6,6 +6,12 @@
       cd C:\MantracTower\control-tower\deploy\iis
       powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -CertThumbprint <thumbprint>
 
+  To test before there is a certificate (plain http, company network only):
+
+      powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -HttpOnly
+
+  Later, the first command (with the certificate) switches the same site to https.
+
   What it does (and nothing else):
     1. turns on the IIS web server role (if it is off)
     2. checks that URL Rewrite and Application Request Routing (ARR) are
@@ -27,7 +33,8 @@
 #>
 param(
     [Parameter(Mandatory = $true)] [string] $HostName,
-    [Parameter(Mandatory = $true)] [string] $CertThumbprint,
+    [string] $CertThumbprint = "",
+    [switch] $HttpOnly,
     [string] $SitePath = "C:\inetpub\ata-control-tower",
     [string] $SiteName = "ATA Control Tower",
     [int] $TowerPort = 8787
@@ -43,7 +50,10 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 if (-not $admin) { Stop-With "Run this in an Administrator PowerShell." }
 
 $CertThumbprint = ($CertThumbprint -replace '[^0-9A-Fa-f]', '').ToUpper()
-if ($CertThumbprint.Length -ne 40) { Stop-With "The certificate thumbprint should be 40 hex characters." }
+if (-not $HttpOnly -and $CertThumbprint.Length -ne 40) {
+    Stop-With "Give -CertThumbprint (40 hex characters), or -HttpOnly to test without a certificate first."
+}
+$scheme = if ($HttpOnly) { "http" } else { "https" }
 $client = (Get-CimInstance Win32_OperatingSystem).ProductType -eq 1
 if ($client) {
     Write-Host "   WARN this is client Windows (10/11): its IIS serves about 10 requests at once, and each open" -ForegroundColor Yellow
@@ -79,6 +89,9 @@ if ($LASTEXITCODE -ne 0) { Stop-With "appcmd could not set the proxy settings." 
 Ok "proxy on, Host header kept, no buffering, 30 min timeout"
 
 Step "4. Certificate"
+if ($HttpOnly) {
+    Write-Host "   SKIP http test: no certificate yet (sign-ins are not encrypted on the network - use test accounts only)" -ForegroundColor Yellow
+} else {
 $cert = Get-Item "Cert:\LocalMachine\My\$CertThumbprint" -ErrorAction SilentlyContinue
 if (-not $cert) { Stop-With "No certificate $CertThumbprint in LocalMachine\My. Install it first." }
 if (-not $cert.HasPrivateKey) { Stop-With "The certificate has no private key on this server. Import it as a .pfx with its key." }
@@ -90,11 +103,13 @@ if ($cert.NotAfter -lt (Get-Date).AddDays(14)) {
     Write-Host "   WARN the certificate expires on $($cert.NotAfter)" -ForegroundColor Yellow
 }
 Ok "certificate found (expires $($cert.NotAfter.ToString('dd/MM/yyyy')))"
+}
 
 Step "5. Site '$SiteName'"
 Import-Module WebAdministration
 New-Item -ItemType Directory -Force -Path $SitePath | Out-Null
-$config = Get-Content (Join-Path $PSScriptRoot "web.config") -Raw
+$source = if ($HttpOnly) { "web.http-test.config" } else { "web.config" }
+$config = Get-Content (Join-Path $PSScriptRoot $source) -Raw
 $config = $config -replace "127\.0\.0\.1:8787", "127.0.0.1:$TowerPort"
 Set-Content -Path (Join-Path $SitePath "web.config") -Value $config -Encoding UTF8
 if (Test-Path "IIS:\Sites\$SiteName") {
@@ -104,26 +119,29 @@ if (Test-Path "IIS:\Sites\$SiteName") {
     New-Website -Name $SiteName -PhysicalPath $SitePath -HostHeader $HostName -Port 80 | Out-Null
     Ok "site created"
 }
-if (-not (Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName -ErrorAction SilentlyContinue)) {
-    New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
+if (-not $HttpOnly) {
+    if (-not (Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName -ErrorAction SilentlyContinue)) {
+        New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
+    }
+    $binding = Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName
+    $ssl = Get-Item "IIS:\SslBindings\!443!$HostName" -ErrorAction SilentlyContinue
+    if ($ssl -and $ssl.Thumbprint -ne $CertThumbprint) { $binding.RemoveSslCertificate(); $ssl = $null }
+    if (-not $ssl) { $binding.AddSslCertificate($CertThumbprint, "My") }
 }
-$binding = Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName
-$ssl = Get-Item "IIS:\SslBindings\!443!$HostName" -ErrorAction SilentlyContinue
-if ($ssl -and $ssl.Thumbprint -ne $CertThumbprint) { $binding.RemoveSslCertificate(); $ssl = $null }
-if (-not $ssl) { $binding.AddSslCertificate($CertThumbprint, "My") }
 Start-Website -Name $SiteName
 if ((Get-Website -Name $SiteName).State -ne "Started") {
     Stop-With "The site did not start. Is port 80 or 443 used by another site?"
 }
-Ok "https://$HostName -> http://127.0.0.1:$TowerPort"
+Ok "${scheme}://$HostName -> http://127.0.0.1:$TowerPort"
 
 Step "6. Tower settings"
-[Environment]::SetEnvironmentVariable("ATA_PUBLIC_URL", "https://$HostName", "Machine")
+[Environment]::SetEnvironmentVariable("ATA_PUBLIC_URL", "${scheme}://$HostName", "Machine")
 [Environment]::SetEnvironmentVariable("ATA_TRUST_PROXY", "1", "Machine")
-Ok "ATA_PUBLIC_URL=https://$HostName, ATA_TRUST_PROXY=1"
+Ok "ATA_PUBLIC_URL=${scheme}://$HostName, ATA_TRUST_PROXY=1"
 
 Write-Host ""
 Write-Host "Done. Now:" -ForegroundColor Cyan
 Write-Host "  1. Sign out of Windows and in again (or restart) so the tower reads the new settings."
-Write-Host "  2. Run: powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName $HostName"
+$flag = if ($HttpOnly) { " -HttpOnly" } else { "" }
+Write-Host "  2. Run: powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName $HostName$flag"
 Write-Host "  3. Optional: remove the firewall rule 'Mantrac Control Tower' so people use only https."

@@ -23,6 +23,19 @@ cd C:\MantracTower\control-tower\deploy\iis
 powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -CertThumbprint <thumbprint>
 ```
 
+**Testing before the certificate?** Use plain http first (company network,
+test accounts only — passwords are not encrypted on the wire):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -HttpOnly
+# sign out and in, then
+powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantrac.com -HttpOnly
+```
+
+Open `http://ata.mantrac.com`. When the certificate is ready, run the first
+command above (with `-CertThumbprint`, without `-HttpOnly`); it switches the
+same site to https in place. Then sign out and in, and check without `-HttpOnly`.
+
 Sign out of Windows and in again, then:
 
 ```powershell
