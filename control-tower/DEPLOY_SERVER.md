@@ -183,6 +183,40 @@ Once the domain works, colleagues should use only the domain. To stop direct
 Control Tower". Note that `START_TOWER.bat` and `INSTALL_SERVER.bat` add it
 again when they run.
 
+## 9. Launch page (optional): countdown before ATLAS opens
+
+`/launch` is a public page: the ATLAS greeting, a countdown to a fixed
+moment and, if the company has a licensed soundtrack, a player. It shows no
+data and opens nothing. Sign-in, the three access levels and every protected
+page and API are exactly as before, **before and after** the launch moment.
+The only change while a launch moment is still ahead: a signed-out visitor to
+`https://ata.mantrac.com/` is sent to `/launch` instead of `/login`. The
+sign-in page itself always works (there is a small "Administrator sign-in"
+link on the launch page). When the countdown reaches zero the page shows
+**Continue to sign in**, which goes to the real sign-in page.
+
+Set it in an Administrator Command Prompt, then sign out and in (the
+scheduled task restarts the tower with the new values):
+```bat
+setx ATA_LAUNCH_AT 2026-11-01T09:00:00+02:00 /M
+setx ATA_LAUNCH_TZ Africa/Cairo /M
+```
+- `ATA_LAUNCH_AT`: the moment, **with its UTC offset**. Without one it is
+  refused (the page then shows no countdown, only the sign-in action). Change
+  it the same way; to stop using the launch page: `reg delete
+  "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v ATA_LAUNCH_AT /f`.
+- `ATA_LAUNCH_TZ`: the IANA zone the page names (default UTC). If Python on
+  the server knows the zone, the offset must match it at that moment
+  (summer time included), or the date is refused rather than guessed.
+- Soundtrack (optional): put a file the company is **licensed** to host in
+  `dashboard\static\launch\audio\` and `setx ATA_LAUNCH_AUDIO lilith.mp3 /M`
+  (or an `https://` address of a licensed stream). See the README.txt in that
+  folder. Nothing plays until someone presses play; with no file, or a file
+  that will not play, the player says "Soundtrack unavailable".
+
+Check: `https://ata.mantrac.com/launch` shows the countdown in the right zone;
+`check_iis.ps1` includes it. IIS needs no change: it forwards every path.
+
 ## Rollback (2 min)
 
 End the task, rename `C:\MantracTower` → `C:\MantracTower_failed`, rename

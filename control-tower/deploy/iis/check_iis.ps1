@@ -57,6 +57,13 @@ if ($login -and [int]$login.StatusCode -eq 200 -and "$($login.Content)" -match "
     Line FAIL "https://$HostName did not answer - binding, certificate or firewall (443)"
 }
 
+# 3b. The launch page and its files come through the same front door.
+$lp = Get-Url "https://$HostName/launch"
+$la = Get-Url "https://$HostName/static/launch/launch.js"
+if ($lp -and [int]$lp.StatusCode -eq 200 -and "$($lp.Content)" -match "ATLAS" -and $la -and [int]$la.StatusCode -eq 200) {
+    Line PASS "https://$HostName/launch and its files load"
+} else { Line FAIL "https://$HostName/launch did not load (is the tower up to date?)" }
+
 # 4. http redirects to https.
 $plain = Get-Url "http://$HostName/login" $false
 if ($plain -and [int]$plain.StatusCode -in 301, 302, 307, 308) { Line PASS "http redirects to https" }

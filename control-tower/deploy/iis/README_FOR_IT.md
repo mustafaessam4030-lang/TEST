@@ -52,6 +52,10 @@ requests at once and each open dashboard tab holds one live connection.
 settings the tower always requires a sign-in, so the domain never shows the
 dashboard to anyone who hasn't signed in.
 
+**Launch page (optional):** `/launch` (countdown, greeting, licensed
+soundtrack) comes through the same rule; nothing to add in IIS. Its settings
+are in DEPLOY_SERVER.md section 9.
+
 **Rollback:** stop or delete the IIS site "ATA Control Tower"; remove the two
 machine environment variables; sign out and in. People use
 `http://<server>:8787` again.

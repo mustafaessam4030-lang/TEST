@@ -67,6 +67,15 @@ mimetypes.add_type("audio/mp4", ".m4r")
 mimetypes.add_type("audio/mp4", ".m4a")
 mimetypes.add_type("audio/mpeg", ".mp3")
 mimetypes.add_type("audio/ogg", ".ogg")
+mimetypes.add_type("audio/ogg", ".oga")
+mimetypes.add_type("audio/ogg", ".opus")
+mimetypes.add_type("audio/flac", ".flac")
+# Windows reads these from its registry, where .js is sometimes text/plain:
+# a script sent as text/plain with nosniff does not run.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("image/webp", ".webp")
 
 
 def _find_static():
@@ -338,7 +347,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             self._set_cookie = False
 
-    def _send_file(self, path):
+    def _send_file(self, path, extra=None):
         """
         Serve a file, honouring Range.
 
@@ -385,6 +394,8 @@ class Handler(BaseHTTPRequestHandler):
         if partial:
             self.send_header("Content-Range",
                              "bytes {0}-{1}/{2}".format(start, end, total))
+        for name, value in (extra or {}).items():
+            self.send_header(name, value)
         self._maybe_set_cookie()
         self.end_headers()
         self.wfile.write(body)
@@ -477,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
         if not _accounts.enabled():
             if self._authorised():
                 return True
+            if method == "GET" and self._launch_redirect(route):
+                return False
             self._deny()
             return False
         from controlplane import rbac
@@ -496,6 +509,8 @@ class Handler(BaseHTTPRequestHandler):
                         "error": "session_expired" if why == "expired" else "not_signed_in",
                         "message": "Your session has expired. Sign in again." if why == "expired"
                         else "Sign in to continue."}), extra=extra)
+                elif method == "GET" and why != "expired" and self._launch_redirect(route):
+                    pass
                 else:
                     from urllib.parse import quote
                     extra["Location"] = "/login?next={0}{1}".format(
@@ -753,8 +768,49 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, json.dumps({"error": "not_found"}))
 
+    # The pre-launch page (dashboard/launch.py) is public in every access
+    # mode and carries no data: a date, a greeting, a licensed soundtrack.
+    # It never opens anything the gate protects.
+    LAUNCH_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+                  "media-src 'self' https:; connect-src 'self'; base-uri 'none'; "
+                  "form-action 'none'; frame-ancestors 'none'")
+
+    def _launch_public(self, route):
+        from dashboard import launch
+        if route == "/launch":
+            self._send_file(launch.LAUNCH_DIR / "launch.html", extra={
+                "Content-Security-Policy": self.LAUNCH_CSP, "Cache-Control": "no-cache",
+                "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin"})
+            return True
+        if route == "/api/launch":
+            self._send(200, json.dumps(launch.config()))
+            return True
+        if route.startswith("/static/launch/"):
+            path = launch.asset(route)
+            if path is None:
+                self._send(404, json.dumps({"error": "not_found"}))
+            else:
+                self._send_file(path, extra={"X-Content-Type-Options": "nosniff"})
+            return True
+        return False
+
+    def _launch_redirect(self, route):
+        """A signed-out visitor to the dashboard's front door sees the launch page until launch."""
+        if route != "/":
+            return False
+        from dashboard import launch
+        try:
+            if not launch.pending():
+                return False
+        except Exception:
+            return False
+        self._send(302, b"", "text/plain", extra={"Location": "/launch"})
+        return True
+
     def do_GET(self):
         route = self.path.split("?")[0].rstrip("/") or "/"
+        if self._launch_public(route):
+            return
         if not self._gate("GET", route):
             return
 

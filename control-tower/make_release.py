@@ -75,6 +75,8 @@ def excluded(rel):
     if any(rel.startswith(p) for p in EXCLUDED_PATHS):
         return "runtime data"
     name = parts[-1]
+    if rel.startswith("dashboard/static/launch/audio/") and name != "README.txt":
+        return "licensed media for this installation only ({0})".format(name)
     if name in EXCLUDED_NAMES or (name.startswith(".env") and name != ".env.example"):
         return "local state or credentials ({0})".format(name)
     if name.endswith(EXCLUDED_SUFFIXES):

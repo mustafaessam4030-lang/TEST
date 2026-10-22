@@ -37,3 +37,7 @@ carrier_profile/
 
 # Sandbox PO email copies (runtime data)
 sandbox/
+
+# Launch page soundtrack: licensed to this installation, never committed
+dashboard/static/launch/audio/*
+!dashboard/static/launch/audio/README.txt
