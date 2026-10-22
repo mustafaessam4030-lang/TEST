@@ -32,6 +32,9 @@ function Get-Url($url, $redirect = $true) {
         }
         return Invoke-WebRequest @req -ErrorAction Stop
     } catch {
+        # Windows PowerShell 5.1 has already read an error's body: it is in
+        # ErrorDetails.Message, not in the response stream.
+        $script:lastErrorBody = "$($_.ErrorDetails.Message)"
         if ($_.Exception.Response) { return $_.Exception.Response }
         return $null
     }
@@ -75,9 +78,10 @@ elseif ($plain -and [int]$plain.StatusCode -in 301, 302, 307, 308) { Line PASS "
 else { Line WARN "http://$HostName does not redirect to https" }
 
 # 5. Personal sign-in is on: the dashboard asks to sign in.
+$script:lastErrorBody = ""
 $api = Get-Url "$base/api/state"
-$body = ""
-if ($api -is [System.Net.HttpWebResponse]) {
+$body = $script:lastErrorBody
+if (-not $body -and $api -is [System.Net.HttpWebResponse]) {
     try { $body = (New-Object IO.StreamReader($api.GetResponseStream())).ReadToEnd() } catch {}
 }
 if ($api -and [int]$api.StatusCode -eq 401 -and $body -match "not_signed_in|session_expired") { Line PASS "the dashboard requires a personal sign-in" }
