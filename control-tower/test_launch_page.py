@@ -448,7 +448,7 @@ try:
         check("reduced motion: the greeting is there at once",
               "ATLAS" in pg.text_content("#greeting"))
         check("reduced motion: nothing floats, spins or drifts",
-              pg.evaluate("['.atlas svg','.disc','.g1','.grain'].every(s => "
+              pg.evaluate("['.atlas svg','.disc','.g1','.lane','.port'].every(s => "
                           "getComputedStyle(document.querySelector(s)).animationName === 'none')"))
         check("motion never blocks the page: the ambient layer takes no clicks",
               pg.evaluate("getComputedStyle(document.querySelector('.ambient')).pointerEvents") == "none")

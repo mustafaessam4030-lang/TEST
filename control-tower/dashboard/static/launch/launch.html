@@ -4,13 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#07060A">
+<meta name="theme-color" content="#0A1422">
 <title>ATLAS · Launch</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/launch/launch.css">
 </head>
 <body>
-<div class="ambient" aria-hidden="true"><i class="glow g1"></i><i class="glow g2"></i><i class="grain"></i></div>
+<div class="ambient" aria-hidden="true"><i class="glow g1"></i><i class="glow g2"></i>
+  <svg class="routes" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid slice">
+    <path class="lane" d="M-20 470 Q180 300 330 380 T640 250"/>
+    <path class="lane l2" d="M-20 160 Q220 40 380 170 T640 120"/>
+    <path class="lane l3" d="M60 640 Q200 470 420 520 T640 430"/>
+    <circle class="port" cx="330" cy="380" r="4"/>
+    <circle class="port p2" cx="380" cy="170" r="4"/>
+    <circle class="port p3" cx="420" cy="520" r="4"/>
+  </svg></div>
 
 <main class="stage">
   <header class="top">
