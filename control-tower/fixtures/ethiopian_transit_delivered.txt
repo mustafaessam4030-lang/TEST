@@ -1,0 +1,110 @@
+Ethiopian Delivers
+Search
+Menu
+Home
+My Cargo
+Track your shipment
+Track your shipment
+Search
+AWB No : 00000001
+
+Origin
+
+BRU
+
+Destination
+
+DAR
+
+Pieces
+
+2 Pcs
+
+Weight
+
+1991.5 Kg
+
+BRU
+LGG
+ADD
+DAR
+Flight Schedule
+BRU → LGG
+ET152T • 2026-10-10
+DELIVERED
+LGG → ADD
+ET3711 • 2026-10-10
+DELIVERED
+ADD → DAR
+ET3805 • 2026-10-15
+SCHEDULED
+Shipment History
+Manifested on Flight
+1/2 Pcs | 5.98 m 3 | 1976.5 Kg | from ADD to DAR
+12-Oct-26 09:46:00
+Manifested on Flight
+1/2 Pcs | 5.98 m 3 | 15.0 Kg | from ADD to DAR
+12-Oct-26 08:23:00
+Received From Flight
+2/2 Pcs | 11.95 m 3 | 1991.5 Kg | from LGG to ADD
+11-Oct-26 17:35:00
+Departed on Flight
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from LGG to ADD
+10-Oct-26 19:55:00
+Departed
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from BRU to LGG
+10-Oct-26 05:09:00
+Received From Flight
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from BRU to LGG
+10-Oct-26 04:20:00
+Manifested on Flight
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from BRU to LGG
+10-Oct-26 04:02:00
+Booked
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from BRU to LGG
+09-Oct-26 08:46:00
+Booked
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from LGG to ADD
+09-Oct-26 08:46:00
+Booked
+2/2 Pcs | 4.79 m 3 | 1991.5 Kg | from ADD to DAR
+09-Oct-26 08:46:00
+Received From Shipper
+2/2 Pcs | 4.95 m 3 | 1991.5 Kg | from BRU to LGG
+08-Oct-26 06:10:00
+Booked
+1/2 Pcs | 4.95 m 3 | 1992.0 Kg | from ADD to DAR
+07-Oct-26 17:44:00
+Booked
+1/2 Pcs | 4.95 m 3 | 1992.0 Kg | from LGG to ADD
+07-Oct-26 16:11:00
+Booked
+1/2 Pcs | 4.95 m 3 | 1992.0 Kg | from BRU to LGG
+07-Oct-26 16:01:00
+About Us
+Vision & Mission
+GCEO Message
+Why we are preferred
+Our Awards
+Our History
+Smart Hub
+Pharmaceuticals and Health Care
+Contemporary Freight
+Advanced Logistics Solutions
+E-Commerce
+Ethiopian Group
+Ethiopian Airlines
+Ethiopian Skylight Hotel
+Maintenance, Repair and Overhaul
+In-flight Catering
+Ground Services
+Aviation Academy
+Contact Us
+Worldwide Offices
+Feedback
+Claims
+Ethiopian Cargo App
+Connect With Us
+    
+
+©2026 - Ethiopian Airlines. All rights reserved. Site Map

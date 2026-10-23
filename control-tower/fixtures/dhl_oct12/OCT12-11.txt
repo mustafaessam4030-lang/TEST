@@ -1,0 +1,70 @@
+Tracking Code: OCT12-11
+This shipment is handled by: DHL Global Forwarding
+Origin: Brussel (Bruxelles), Belgium
+Destination: Accra, Ghana
+Time	Status	Location
+
+
+November 6, 2026
+
+4:55 PM (UTC)	Estimated Delivery	Tarkwa
+
+
+October 13, 2026
+
+7:40 PM (UTC)	Estimated Carrier Arrival (Destination)	Accra
+
+
+October 11, 2026
+
+8:38 AM (UTC +02:00)	Carrier: Arrived (1st Transit Point)	Amsterdam Airport Schiphol
+
+
+October 11, 2026
+
+3:25 AM (UTC +02:00)	Carrier: Departed	Brussels Airport
+
+
+October 11, 2026
+
+3:00 AM (UTC +02:00)	Estimated Carrier Departure (Origin)	Bruxelles (Brussel)
+
+
+October 10, 2026
+
+9:51 PM (UTC +02:00)	Received at airline	Bruxelles (Brussel)
+
+
+October 10, 2026
+
+2:49 PM (UTC +02:00)	Departed DHL Station	Bruxelles (Brussel)
+
+
+October 9, 2026
+
+4:55 PM (UTC)	Customs Entry	Accra
+
+
+October 7, 2026
+
+6:00 PM (UTC +02:00)	Estimated Pick Up Date	Grimbergen
+
+
+October 7, 2026
+
+1:59 PM (UTC +02:00)	Received at Origin	Machelen
+
+
+October 7, 2026
+
+1:59 PM (UTC +02:00)	All Export Documents Received	Machelen
+
+
+October 7, 2026
+
+11:59 AM (UTC +02:00)	Actual Pickup Time	Grimbergen
+
+
+October 7, 2026
+
+3:22 AM (UTC +02:00)	Shipment Entered into System	Bruxelles (Brussel)

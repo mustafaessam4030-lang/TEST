@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="description" content="Maia — AI for heavy equipment. Understand your machines, diagnose problems, find parts, and access equipment intelligence through one assistant."/>
+<meta name="theme-color" content="#0A0C0E"/>
+<title>Maia Equipment Intelligence</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIA — AI FOR HEAVY EQUIPMENT
+   -----------------------------------------------------------------------
+   THE ONE IDEA: THE MACHINE IS THE INTERFACE.
+
+   Every visual in this product is the same machine at a different level
+   of magnification. It is a silhouette in the dark at the open, a lit
+   technical illustration in the hero, an exploded system in the explorer,
+   a highlighted subassembly in a diagnosis, and a single part number at
+   the end. Nothing here is an abstract "AI graphic" — the subject is
+   always the equipment.
+
+   -----------------------------------------------------------------------
+   LIGHT AND DARK ARE A NARRATIVE, NOT A THEME TOGGLE
+
+   The film opens at night in the yard: near-black, dust, one work lamp,
+   a machine you can only just make out. The camera pushes through the
+   wordmark and THE WORK LIGHTS COME ON — the product itself is white,
+   steel and daylight. Dark is where the problem lives; light is where
+   the answer lives. That is why the palette changes, and it changes
+   exactly once.
+
+   -----------------------------------------------------------------------
+   THE COLOUR RULE (obeyed everywhere)
+
+     AMBER (#FF7A00) is THE MACHINE.
+       Live components, the value that matters, the thing to act on,
+       the warning. Amber is always about steel and always earns itself.
+
+     BLUE (#0F62FE) is MAIA READING THE MACHINE.
+       Retrieval, structure, confidence, the data layer.
+
+     STEEL AND WHITE are the room everything sits in.
+
+   Amber and black together is industrial signage — the oldest visual
+   language in this industry — so it is the primary button pair, and it
+   is used nowhere it does not mean something.
+
+   -----------------------------------------------------------------------
+   TYPOGRAPHY IS A TWO-VOICE SYSTEM
+
+     SANS — tight, dense, engineered. Headlines carry heavy negative
+            tracking so they read as machined rather than typed.
+     MONO — the voice of the equipment itself. Part numbers, hours,
+            pressures, torques, model codes, tolerances. Used ONLY
+            where the content is genuinely machine data, which is what
+            keeps it meaning something.
+═══════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ── the lit product. A warm cream ground, not a cool grey: Cat yellow
+        sitting on cool grey turns green-ish, and the whole palette goes
+        sour. Warm ground, warm accent. ── */
+  --paper:#FFFFFF;
+  --ground:#F7F4EC;
+  --ground-2:#EFEADF;
+  --steel:#E2DCCD;
+  --steel-2:#BCB4A2;
+  --graphite:#4B4C52;
+  --muted:#807E78;
+  --ink:#14151A;
+
+  /* ── the dealer and the machine: Caterpillar yellow ──
+        THE RULE THAT MAKES THIS PALETTE WORK:
+        --amber is a FILL. It never carries text on a light ground —
+        #FFCD11 on white is 1.6:1, which is why so much Cat-branded work
+        is unreadable. Where the yellow has to speak as type it becomes
+        --amber-text, the same hue taken down to 6.5:1. On the near-black
+        surfaces the fill yellow is the text colour, and it sings. */
+  --amber:#FFCD11;
+  --amber-lit:#FFE45C;
+  --amber-wash:#FFF9E0;
+  --amber-ink:#14151A;      /* type ON yellow */
+  --amber-text:#7A5C00;     /* yellow AS type, on light */
+
+  /* ── the platform underneath: Snowflake ── */
+  --blue:#29B5E8;
+  --blue-deep:#0A6E93;      /* the same hue at type contrast */
+  --blue-wash:#E9F7FD;
+
+  --ok:#0E7A4B;
+  --warn:#B85B00;
+  --alert:#CF2A22;
+
+  /* ── the yard at night (intro only) ── */
+  --night:#0A0C0E;
+  --night-2:#12161A;
+  --lamp:#FFB259;
+
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  /* Heavy things start slowly and settle slowly. Nothing here uses a
+     bouncy curve — a 22-tonne machine does not overshoot. */
+  --out:cubic-bezier(.22,1,.28,1);
+  --io:cubic-bezier(.62,0,.34,1);
+  --hyd:cubic-bezier(.45,0,.55,1);   /* hydraulic: symmetric, no snap */
+
+  --gutter:clamp(20px,4.6vw,84px);
+  --rule:1px solid var(--steel);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html{background:var(--ground);scroll-behavior:smooth;}
+body{
+  background:var(--ground);color:var(--graphite);
+  font-family:var(--sans);font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+body.locked{overflow:hidden;height:100%;}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
+a{color:inherit;text-decoration:none;}
+svg{display:block;}
+::selection{background:var(--amber);color:var(--amber-ink);}
+:focus-visible{outline:2px solid var(--blue-deep);outline-offset:3px;}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+
+/* ═══ TYPE ════════════════════════════════════════════════════════════ */
+.display{font-size:clamp(38px,6vw,84px);line-height:1.0;letter-spacing:-.042em;
+  font-weight:640;color:var(--ink);text-wrap:balance;}
+.h2{font-size:clamp(28px,3.9vw,52px);line-height:1.06;letter-spacing:-.036em;
+  font-weight:640;color:var(--ink);text-wrap:balance;}
+.h3{font-size:clamp(18px,1.7vw,22px);line-height:1.25;letter-spacing:-.022em;
+  font-weight:620;color:var(--ink);}
+.lede{font-size:clamp(15.5px,1.25vw,18.5px);line-height:1.6;color:var(--graphite);
+  max-width:56ch;letter-spacing:-.006em;text-wrap:pretty;}
+.body{font-size:14.5px;line-height:1.62;color:var(--graphite);}
+.eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--amber-text);display:inline-flex;gap:12px;align-items:center;}
+.eyebrow .n{color:var(--steel-2);}
+.data{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+em.hi{font-style:normal;color:var(--amber-text);}
+
+.wrap{width:100%;max-width:1360px;margin:0 auto;padding:0 var(--gutter);}
+section.band{position:relative;padding:clamp(76px,11vh,150px) 0;}
+.band.alt{background:var(--ground-2);}
+.band.paper{background:var(--paper);}
+.head-block{max-width:800px;}
+.head-block .h2{margin-top:20px;}
+.head-block .lede{margin-top:20px;}
+
+[data-reveal]{opacity:0;transform:translateY(22px);
+  transition:opacity .8s var(--out),transform 1s var(--out);
+  transition-delay:calc(var(--i,0) * 80ms);}
+[data-reveal].in{opacity:1;transform:none;}
+
+/* ═══ BUTTONS ═════════════════════════════════════════════════════════
+   Amber on near-black type. Industrial signage, not a SaaS pill —
+   which is also the only amber/white pairing that passes contrast.
+═══════════════════════════════════════════════════════════════════════ */
+.btn{
+  position:relative;display:inline-flex;align-items:center;gap:10px;
+  padding:15px 26px;font-size:14.5px;font-weight:600;letter-spacing:-.012em;
+  border-radius:4px;white-space:nowrap;
+  transform:translate3d(calc(var(--mx,0px)*.26),calc(var(--my,0px)*.26),0);
+  transition:transform .5s var(--out),box-shadow .3s var(--out),
+             background .2s,border-color .2s,color .2s;
+}
+.btn svg{width:16px;height:16px;flex:0 0 16px;transition:transform .45s var(--out);}
+.btn.primary{background:var(--amber);color:var(--amber-ink);
+  box-shadow:0 1px 2px rgba(28,17,3,.22);}
+.btn.primary:hover{background:var(--amber-lit);
+  box-shadow:0 4px 14px rgba(28,17,3,.24);}
+.btn.primary:hover svg{transform:translateX(3px);}
+.btn.ghost{background:var(--paper);color:var(--ink);border:1px solid var(--steel);}
+.btn.ghost:hover{border-color:var(--ink);}
+.btn.dark{background:var(--ink);color:#fff;}
+.btn.dark:hover{background:#000;}
+.btn.sm{padding:10px 16px;font-size:13px;}
+
+/* ═══ NAV ═════════════════════════════════════════════════════════════ */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;
+  justify-content:space-between;gap:22px;padding:14px var(--gutter);
+  border-bottom:1px solid transparent;transition:background .4s,border-color .4s;}
+body.scrolled .nav{background:rgba(255,255,255,.86);border-bottom-color:var(--steel);
+  backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-mark{width:28px;height:28px;flex:0 0 28px;}
+.brand-name{font-size:19px;font-weight:700;letter-spacing:-.04em;color:var(--ink);}
+.brand-tag{font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;color:var(--muted);
+  border-left:1px solid var(--steel);padding-left:10px;margin-left:2px;text-transform:uppercase;}
+.nav-links{display:flex;gap:26px;}
+.nav-links a{font-size:13.5px;color:var(--graphite);position:relative;padding:4px 0;
+  transition:color .25s;}
+.nav-links a::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:var(--amber);transform:scaleX(0);transform-origin:left;
+  transition:transform .4s var(--out);}
+.nav-links a:hover{color:var(--ink);}
+.nav-links a:hover::after{transform:scaleX(1);}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE MACHINE
+   One drawing, injected wherever equipment appears. Technical-illustration
+   flat fills with real outlines — the language of a parts manual, not of
+   a render. Its colours come from CSS variables so the same geometry can
+   be a night silhouette in the intro and a lit machine in the product.
+═══════════════════════════════════════════════════════════════════════ */
+.machine{width:100%;height:auto;display:block;overflow:visible;}
+.machine .m-body{fill:var(--m-body);stroke:var(--m-line);stroke-width:1.6;
+  stroke-linejoin:round;}
+.machine .m-plate{fill:var(--m-plate);stroke:var(--m-line);stroke-width:1.4;}
+.machine .m-dark{fill:var(--m-dark);stroke:var(--m-line);stroke-width:1.3;}
+.machine .m-glass{fill:var(--m-glass);stroke:var(--m-line);stroke-width:1.3;}
+.machine .m-cyl{stroke:var(--m-cyl);stroke-linecap:round;fill:none;}
+.machine .m-rod{stroke:var(--m-rod);stroke-linecap:round;fill:none;}
+.machine .m-hose{stroke:var(--m-hose);stroke-width:2.4;fill:none;stroke-linecap:round;}
+.machine .m-det{stroke:var(--m-line);stroke-width:1.2;fill:none;}
+.machine .m-pin{fill:var(--m-plate);stroke:var(--m-line);stroke-width:1.5;}
+.machine .m-tooth{fill:var(--m-dark);}
+
+/* lit — the product */
+.machine.lit{
+  --m-body:#DCE2E8; --m-plate:#C2CBD4; --m-dark:#78838F; --m-glass:#A9C6DD;
+  --m-line:#39434D; --m-cyl:#8F9BA7; --m-rod:#C7CFD6; --m-hose:#6B7681;
+}
+/* silhouette — the yard at night. One lamp, one rim. */
+.machine.dark{
+  --m-body:#15191D; --m-plate:#101418; --m-dark:#0B0E11; --m-glass:#1C242C;
+  /* the outline is warm, not neutral — every edge you can see is an edge
+     the work lamp is catching, and lamp light is not grey */
+  --m-line:#6E5C45; --m-cyl:#1C2126; --m-rod:#3A342C; --m-hose:#23282D;
+}
+
+/* ── hydraulic motion. Slow, symmetric, no overshoot. A 22-tonne boom
+      does not ease out of a spring. ── */
+.machine [data-part]{transform-box:view-box;}
+.boom-g{transform-origin:498px 400px;animation:boomSwing 12s var(--hyd) infinite;}
+.arm-g {transform-origin:697px 229px;animation:armSwing  12s var(--hyd) infinite;
+        animation-delay:-1.6s;}
+.bkt-g {transform-origin:842px 409px;animation:bktCurl   12s var(--hyd) infinite;
+        animation-delay:-3s;}
+.cylb-g{transform-origin:452px 430px;animation:barrel    12s var(--hyd) infinite;}
+@keyframes boomSwing{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-6deg)}}
+@keyframes armSwing {0%,100%{transform:rotate(0deg)}50%{transform:rotate(10deg)}}
+@keyframes bktCurl  {0%,100%{transform:rotate(0deg)}50%{transform:rotate(-17deg)}}
+@keyframes barrel   {0%,100%{transform:rotate(0deg)}50%{transform:rotate(-3.4deg)}}
+
+/* ── system isolation, for the explorer ── */
+.machine [data-sys]{transition:opacity .55s var(--out),filter .55s var(--out);}
+.machine.iso [data-sys]{opacity:.16;}
+.machine.iso [data-sys].on{opacity:1;
+  filter:drop-shadow(0 0 3px rgba(196,150,0,.9)) drop-shadow(0 0 16px rgba(255,205,17,.55));}
+.machine.iso [data-sys].on .m-body{fill:#FFF3C4;stroke:#8A6A00;}
+.machine.iso [data-sys].on .m-plate{fill:#FFE886;stroke:#8A6A00;}
+.machine.iso [data-sys].on .m-cyl{stroke:#E0B92B;}
+.machine.iso [data-sys].on .m-rod{stroke:#FFF0B8;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE INTRO — four scenes, one clock
+   01 industrial darkness · the lamp finds the machine
+   02 the machine comes alive · hydraulics, dust
+   03 the data layer · lines and readings converge
+   04 MAIA · the camera pushes through, the work lights come on
+═══════════════════════════════════════════════════════════════════════ */
+#intro{position:fixed;inset:0;z-index:150;background:var(--night);overflow:hidden;
+  transition:opacity .9s var(--io),visibility .9s;}
+#intro.done{opacity:0;visibility:hidden;pointer-events:none;}
+#dustCanvas{position:absolute;inset:0;width:100%;height:100%;}
+
+.stage{position:absolute;inset:0;display:grid;place-items:center;}
+.stage-box{position:relative;width:min(1200px,142vw);}
+.stage-machine{
+  width:100%;opacity:0;transform:translateY(2%) scale(1.06);
+  filter:blur(9px) drop-shadow(0 0 40px rgba(255,150,60,.16));
+  transition:opacity 2.2s var(--out),transform 3.4s var(--out),filter 2s var(--out);
+}
+#intro.s1 .stage-machine{opacity:1;transform:none;
+  filter:blur(0) drop-shadow(0 0 40px rgba(255,150,60,.16));}
+/* Scene 04: the machine recedes into the dark rather than cutting away —
+   the light leaves it, which is how it arrived. */
+#intro.s3 .stage-machine{opacity:.1;filter:blur(5px);transform:scale(1.04);
+  transition:opacity 1.6s var(--io),filter 1.6s,transform 2.4s var(--out);}
+
+/* the work lamp: a real cone falling from off-frame, not a vignette */
+.lamp{position:absolute;top:-14%;left:50%;width:120vmax;height:120vmax;
+  transform:translateX(-50%);pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse 34% 52% at 50% 0%,
+    rgba(255,178,89,.5),rgba(255,150,60,.12) 42%,transparent 70%);
+  transition:opacity 2.6s var(--out);}
+#intro.s1 .lamp{opacity:1;}
+#intro.s3 .lamp{opacity:.2;transition:opacity 1.4s;}
+
+/* ── the data layer. A reading with no stem to the part it describes is
+      a HUD; a reading pinned to the component is an instrument. ── */
+.hud{position:absolute;inset:0;pointer-events:none;}
+.hud-item{position:absolute;display:flex;flex-direction:column;align-items:flex-start;
+  transform:translateY(-100%);opacity:0;
+  transition:opacity .8s var(--out);}
+.hud-item.down{transform:none;flex-direction:column-reverse;}
+#intro.s2 .hud-item{opacity:1;}
+#intro.s3 .hud-item{opacity:0;transition:opacity .6s var(--io);}
+.hud-item .stem{display:block;width:1px;height:clamp(22px,4vh,40px);margin-top:9px;
+  position:relative;background:linear-gradient(180deg,rgba(255,178,89,0),rgba(255,178,89,.85));}
+.hud-item .stem::after{content:'';position:absolute;bottom:-2px;left:-2.5px;width:6px;height:6px;
+  border-radius:50%;background:var(--lamp);box-shadow:0 0 10px rgba(255,178,89,.95);}
+.hud-item.down .stem{transform:scaleY(-1);margin:0 0 9px;}
+.hud-k{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+  color:rgba(255,255,255,.52);white-space:nowrap;}
+.hud-v{font-family:var(--mono);font-size:13px;letter-spacing:-.02em;color:var(--lamp);
+  font-variant-numeric:tabular-nums;margin-top:2px;white-space:nowrap;}
+.hud-item:nth-child(1){transition-delay:.1s}
+.hud-item:nth-child(2){transition-delay:.45s}
+.hud-item:nth-child(3){transition-delay:.8s}
+.hud-item:nth-child(4){transition-delay:1.15s}
+
+/* ── the wordmark ── */
+.mark{position:relative;text-align:center;padding:0 6vw;pointer-events:none;z-index:4;}
+.mark-word{font-size:clamp(62px,13vw,168px);font-weight:700;letter-spacing:-.05em;
+  line-height:1;color:#fff;opacity:0;transform:scale(1.1);filter:blur(22px);}
+.mark-word .dot{color:var(--amber);}
+.mark-sub{margin-top:16px;font-family:var(--mono);font-size:clamp(9px,1.05vw,12px);
+  letter-spacing:.4em;text-indent:.4em;text-transform:uppercase;
+  color:rgba(255,255,255,.62);opacity:0;transform:translateY(8px);}
+.mark-lines{margin-top:26px;display:flex;flex-direction:column;gap:3px;}
+.mark-lines span{font-size:clamp(13px,1.3vw,16px);color:rgba(255,255,255,.42);
+  opacity:0;transform:translateY(8px);letter-spacing:-.012em;}
+#intro.s3 .mark-word{opacity:1;transform:scale(1);filter:blur(0);
+  transition:opacity 1.5s var(--out),transform 2.2s var(--out),filter 1.5s var(--out);}
+#intro.s3 .mark-sub{opacity:1;transform:none;transition:all 1.1s .7s var(--out);}
+#intro.s3 .mark-lines span{opacity:1;transform:none;transition:all 1s var(--out);}
+#intro.s3 .mark-lines span:nth-child(1){transition-delay:1.1s}
+#intro.s3 .mark-lines span:nth-child(2){transition-delay:1.28s}
+#intro.s3 .mark-lines span:nth-child(3){transition-delay:1.46s}
+/* light sweep across the wordmark — one pass, at the moment it lands */
+.sweep{position:absolute;inset:-20% -60%;pointer-events:none;opacity:0;
+  background:linear-gradient(105deg,transparent 42%,rgba(255,255,255,.5) 50%,transparent 58%);
+  transform:translateX(-60%);}
+#intro.s3 .sweep{opacity:1;transform:translateX(60%);
+  transition:transform 1.9s .5s var(--io),opacity .3s .5s;}
+
+/* Scene 04 push-through: the camera goes THROUGH the wordmark, and the
+   work lights come on. The white wipe is the product arriving, which is
+   why the palette is allowed to change here and nowhere else. */
+#intro.push .mark-word{transform:scale(3.4);filter:blur(20px);opacity:0;
+  transition:transform 1.5s var(--io),filter 1.3s,opacity 1.1s .3s;}
+#intro.push .mark-sub,#intro.push .mark-lines span{opacity:0;transition:opacity .4s;}
+.wipe{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;
+  background:#fff;transform:translate(-50%,-50%) scale(0);z-index:6;pointer-events:none;}
+#intro.push .wipe{transform:translate(-50%,-50%) scale(360);
+  transition:transform 1.25s .34s var(--io);}
+
+.skip{position:absolute;bottom:30px;right:30px;z-index:8;font-family:var(--mono);
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.42);
+  padding:10px 15px;border:1px solid rgba(255,255,255,.16);border-radius:3px;opacity:0;
+  transition:opacity .7s 1.2s,color .2s,border-color .2s,background .2s;}
+#intro.armed .skip{opacity:1;}
+.skip:hover{color:#fff;border-color:var(--amber);background:rgba(255,205,17,.16);}
+
+/* ═══ HERO ════════════════════════════════════════════════════════════ */
+.hero{position:relative;padding:104px 0 40px;background:var(--paper);overflow:hidden;}
+.hero-copy{max-width:620px;position:relative;z-index:4;}
+/* The headline is ink, not amber. A three-line orange headline spends the
+   accent before the machine has said anything — and the accent is the
+   machine's, not the copy's. Orange survives on one glyph. */
+.hero-copy .display{margin-top:18px;font-size:clamp(34px,4.9vw,68px);}
+.hero-copy .display .l2{display:block;}
+.hero-copy .display .dot{color:var(--amber);}
+.hero-copy .lede{margin-top:18px;font-size:clamp(15px,1.15vw,17.5px);}
+.hero-cta{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap;}
+.eyebrow .bar{width:22px;height:3px;background:var(--amber);display:block;border-radius:1px;}
+.hero-stats{position:relative;z-index:4;display:flex;gap:clamp(20px,4vw,56px);flex-wrap:wrap;
+  padding:22px 0 0;margin-top:clamp(40px,10vh,110px);}
+.hero-stats::before{content:'';position:absolute;left:0;top:0;width:62%;height:1px;
+  background:linear-gradient(90deg,var(--steel) 78%,rgba(211,217,223,0));}
+.hero-stat b{display:block;font-family:var(--mono);font-size:clamp(22px,2.4vw,32px);
+  font-weight:600;color:var(--ink);letter-spacing:-.04em;font-variant-numeric:tabular-nums;}
+.hero-stat span{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);}
+
+/* The machine is enormous AND present: oversized, anchored to the bottom
+   right, bleeding past the frame on two edges so you see a fragment of
+   something that does not fit. A hero machine sized to sit politely
+   inside the grid does not read as 22 tonnes. */
+.hero{min-height:100svh;display:flex;flex-direction:column;justify-content:center;}
+.hero-vis{position:absolute;right:-19%;bottom:1%;width:min(1220px,88vw);z-index:1;
+  pointer-events:none;}
+.hero-vis .machine{width:100%;}
+/* it dissolves into the page on the left, so it can pass behind the copy
+   without ever colliding with a word */
+.hero-vis::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,var(--paper) 2%,rgba(255,255,255,0) 26%);}
+#heroDust{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;}
+
+.callout{position:absolute;z-index:3;display:flex;flex-direction:column;align-items:flex-start;
+  transform:translateY(-100%);opacity:0;transition:opacity .9s var(--out);}
+.callout.down{transform:none;flex-direction:column-reverse;}
+.hero-vis.lit .callout{opacity:1;}
+.callout:nth-of-type(1){transition-delay:.5s} .callout:nth-of-type(2){transition-delay:.75s}
+.callout:nth-of-type(3){transition-delay:1s}
+.callout .stem{display:block;width:1px;height:clamp(20px,3.4vw,44px);margin-top:8px;
+  position:relative;background:linear-gradient(180deg,rgba(41,181,232,0),var(--blue-deep));}
+.callout .stem::after{content:'';position:absolute;bottom:-2px;left:-2.5px;width:6px;height:6px;
+  border-radius:50%;background:var(--blue-deep);}
+.callout.down .stem{transform:scaleY(-1);margin:0 0 8px;}
+.callout-k{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);white-space:nowrap;}
+.callout-v{font-family:var(--mono);font-size:14px;letter-spacing:-.03em;color:var(--ink);
+  font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;}
+.callout-v .u{color:var(--muted);font-weight:400;font-size:11px;}
+
+/* ═══ SYSTEM EXPLORER ═════════════════════════════════════════════════ */
+.exp{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:clamp(24px,3.4vw,56px);
+  margin-top:48px;align-items:center;}
+.exp-vis{position:relative;background:var(--paper);border:var(--rule);border-radius:6px;
+  padding:clamp(12px,2vw,28px);overflow:hidden;}
+.exp-vis::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(var(--steel) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--steel) 1px,transparent 1px);
+  background-size:34px 34px;
+  -webkit-mask-image:radial-gradient(70% 70% at 50% 50%,#000,transparent);
+  mask-image:radial-gradient(70% 70% at 50% 50%,#000,transparent);}
+.exp-vis .machine{position:relative;z-index:1;}
+.sys-list{display:flex;flex-direction:column;gap:1px;background:var(--steel);
+  border:var(--rule);border-radius:6px;overflow:hidden;}
+.sys-btn{display:block;width:100%;text-align:left;padding:18px 20px;background:var(--paper);
+  transition:background .25s;}
+.sys-btn:hover{background:var(--ground);}
+.sys-btn.on{background:var(--amber-wash);}
+.sys-top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.sys-n{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--steel-2);}
+.sys-btn.on .sys-n{color:var(--amber-text);}
+.sys-t{font-size:16px;font-weight:620;letter-spacing:-.022em;color:var(--ink);margin-top:6px;}
+.sys-parts{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;max-height:0;overflow:hidden;
+  opacity:0;transition:max-height .5s var(--out),opacity .4s,margin .4s;}
+.sys-btn.on .sys-parts{max-height:120px;opacity:1;}
+.sys-parts span{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--warn);border:1px solid rgba(122,92,0,.34);
+  background:rgba(255,205,17,.16);padding:4px 8px;border-radius:3px;}
+.sys-dot{width:9px;height:9px;border-radius:50%;background:var(--steel);flex:0 0 9px;}
+.sys-btn.on .sys-dot{background:var(--amber);box-shadow:0 0 0 3px rgba(255,205,17,.28);}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE CHAT
+   Structured like a work order, not a messaging app: the question, what
+   Maia checked, ranked causes, what to do first, when to stop, sources.
+═══════════════════════════════════════════════════════════════════════ */
+.chat{margin-top:44px;display:grid;grid-template-columns:280px minmax(0,1fr);
+  background:var(--paper);border:var(--rule);border-radius:6px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(16,21,25,.07);}
+.chat-side,.chat-main{min-width:0;}
+.chat-side{border-right:var(--rule);background:var(--ground);padding:22px 18px;}
+.side-l{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:14px;}
+.qbtn{display:block;width:100%;text-align:left;padding:14px;border-radius:4px;font-size:13.5px;
+  line-height:1.45;color:var(--graphite);border:1px solid transparent;margin-bottom:6px;
+  transition:background .2s,border-color .2s,color .2s;letter-spacing:-.008em;}
+.qbtn:hover{background:var(--paper);border-color:var(--steel);}
+.qbtn.on{background:var(--paper);border-color:var(--amber);color:var(--ink);
+  box-shadow:inset 3px 0 0 var(--amber);}
+.qbtn .qn{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.14em;
+  color:var(--steel-2);margin-bottom:6px;}
+.side-foot{margin-top:18px;padding-top:16px;border-top:var(--rule);font-size:11.5px;
+  line-height:1.5;color:var(--muted);}
+.chat-main{padding:clamp(20px,2.6vw,36px);min-height:620px;}
+
+.unit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:16px;
+  margin-bottom:20px;border-bottom:var(--rule);}
+.unit-tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  padding:5px 9px;border-radius:3px;background:var(--ink);color:#fff;}
+.unit-meta{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em;}
+
+.turn{display:flex;gap:13px;margin-bottom:22px;}
+.turn.self{flex-direction:row-reverse;}
+.av{width:32px;height:32px;flex:0 0 32px;border-radius:4px;display:grid;place-items:center;
+  font-family:var(--mono);font-size:9px;color:var(--muted);background:var(--ground);
+  border:var(--rule);}
+.av.maia{background:var(--ink);border-color:var(--ink);}
+.av.maia i{width:14px;height:2px;background:var(--amber);display:block;position:relative;}
+.av.maia i::after{content:'';position:absolute;left:0;top:0;width:100%;height:2px;
+  background:var(--amber-lit);animation:scanbar 2.4s var(--io) infinite;}
+@keyframes scanbar{0%,100%{transform:translateY(-4px);opacity:.4}50%{transform:translateY(4px);opacity:1}}
+.said{max-width:78%;padding:13px 16px;border-radius:6px;font-size:14.5px;line-height:1.5;
+  background:var(--ground-2);color:var(--ink);letter-spacing:-.008em;}
+.turn.self .said{border-bottom-right-radius:2px;}
+
+.think{flex:1;min-width:0;padding-top:3px;}
+.think-line{display:flex;align-items:center;gap:12px;font-size:13.5px;color:var(--muted);
+  height:26px;opacity:0;transform:translateY(6px);
+  transition:opacity .4s var(--out),transform .45s var(--out);}
+.think-line.in{opacity:1;transform:none;}
+.think-line.past{color:var(--graphite);}
+.wire{position:relative;width:52px;height:2px;flex:0 0 52px;background:var(--steel);
+  overflow:hidden;border-radius:2px;}
+.wire::after{content:'';position:absolute;top:0;left:-45%;width:45%;height:2px;
+  background:var(--amber);animation:travel 1.25s var(--io) infinite;}
+@keyframes travel{to{left:105%}}
+.think-line.past .wire::after{animation:none;left:0;width:100%;background:var(--ok);}
+
+.answer{flex:1;min-width:0;}
+.blk{opacity:0;transform:translateY(12px);
+  transition:opacity .6s var(--out),transform .7s var(--out);}
+.blk.in{opacity:1;transform:none;}
+.ans-lede{font-size:clamp(17px,1.7vw,21px);line-height:1.42;letter-spacing:-.024em;
+  color:var(--ink);font-weight:560;margin-bottom:24px;}
+.blk-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;font-family:var(--mono);
+  font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);}
+.blk-head::after{content:'';flex:1;height:1px;background:var(--steel);}
+.blk-head.warn{color:var(--warn);}
+
+/* ── ranked causes: segmented, because a smooth bar reads as a score and
+      these are confidence bands, not measurements ── */
+.causes{display:flex;flex-direction:column;gap:15px;margin-bottom:28px;}
+.cause-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  margin-bottom:7px;}
+.cause-l{font-size:14px;color:var(--ink);font-weight:520;letter-spacing:-.012em;}
+.cause-v{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em;}
+.segs{display:flex;gap:3px;}
+.seg{flex:1;height:7px;border-radius:1px;background:var(--ground-2);
+  transform:scaleY(.45);transform-origin:bottom;
+  transition:background .45s var(--out),transform .45s var(--out);}
+.blk.in .seg.lit{transform:scaleY(1);background:var(--steel-2);}
+.blk.in .seg.lit.a{background:var(--amber);}
+.cause-n{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.45;}
+
+.rows{border:var(--rule);border-radius:5px;overflow:hidden;margin-bottom:28px;}
+.row{display:flex;gap:16px;padding:12px 15px;border-bottom:var(--rule);align-items:baseline;}
+.row:last-child{border-bottom:none;}
+.row:nth-child(odd){background:var(--ground);}
+.row-k{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--blue-deep);flex:0 0 132px;}
+.row-v{font-size:13.5px;color:var(--graphite);line-height:1.45;}
+.row-v b{color:var(--ink);font-weight:600;}
+
+.steps{counter-reset:s;margin-bottom:28px;}
+.step{counter-increment:s;display:flex;gap:15px;padding:13px 0;border-bottom:var(--rule);}
+.step:last-child{border-bottom:none;}
+.step::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);font-size:10px;
+  color:var(--amber-text);flex:0 0 auto;padding-top:3px;letter-spacing:.08em;}
+.step p{font-size:13.5px;line-height:1.52;color:var(--graphite);}
+.step p b{color:var(--ink);font-weight:600;}
+
+/* The one hazard-striped element in the whole product. Industrial
+   signage means something here, so it is spent once. */
+.stopbox{border:1px solid rgba(207,42,34,.3);border-radius:5px;overflow:hidden;
+  margin-bottom:26px;background:#FFF6F5;}
+.stopbox-bar{height:6px;background:repeating-linear-gradient(-45deg,
+  #14151A 0 9px,var(--amber) 9px 18px);}
+.stopbox-in{padding:16px 18px;}
+.stopbox ul{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:8px 24px;}
+.stopbox li{font-size:13px;color:var(--ink);padding-left:16px;position:relative;line-height:1.45;}
+.stopbox li::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;
+  background:var(--alert);border-radius:1px;}
+.stop-foot{margin-top:13px;padding-top:12px;border-top:1px solid rgba(207,42,34,.2);
+  font-size:12.5px;color:var(--alert);}
+
+.srcs{display:flex;flex-wrap:wrap;gap:7px;}
+.src{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:var(--rule);
+  border-radius:3px;font-size:11.5px;color:var(--graphite);background:var(--paper);
+  transition:border-color .2s;}
+.src:hover{border-color:var(--ink);}
+.src .kind{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;color:var(--blue-deep);
+  text-transform:uppercase;}
+.ans-foot{margin-top:24px;padding-top:16px;border-top:var(--rule);display:flex;
+  justify-content:space-between;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--muted);}
+.ans-foot b{color:var(--ink);font-weight:600;}
+
+/* ── part card, inside an answer and in the parts section ── */
+.part{border:1px solid var(--steel);border-radius:6px;overflow:hidden;margin-bottom:28px;
+  background:var(--paper);}
+.part-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  padding:16px 18px;background:var(--ink);color:#fff;flex-wrap:wrap;}
+.part-no{font-family:var(--mono);font-size:clamp(17px,2vw,23px);font-weight:600;
+  letter-spacing:.02em;color:var(--amber);}
+.part-nm{font-size:13.5px;color:rgba(255,255,255,.72);margin-top:3px;}
+.part-badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  padding:5px 9px;border-radius:3px;background:rgba(255,255,255,.12);color:#fff;}
+.part-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--steel);}
+.part-cell{background:var(--paper);padding:13px 16px;}
+.part-cell dt{font-family:var(--mono);font-size:9px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:5px;}
+.part-cell dd{font-size:13.5px;color:var(--ink);font-weight:520;}
+.part-cell dd.mono{font-family:var(--mono);letter-spacing:-.01em;}
+.part-cell dd .ok{color:var(--ok);}
+.part-alt{padding:13px 18px;border-top:var(--rule);display:flex;gap:10px;align-items:center;
+  flex-wrap:wrap;font-size:12.5px;color:var(--muted);}
+.part-alt b{font-family:var(--mono);color:var(--ink);font-size:12px;}
+
+/* ═══ PARTS CHAIN ═════════════════════════════════════════════════════ */
+.chain{display:flex;align-items:stretch;gap:0;margin-top:44px;flex-wrap:wrap;
+  border:var(--rule);border-radius:6px;overflow:hidden;background:var(--steel);}
+.link{flex:1 1 190px;background:var(--paper);padding:20px;position:relative;
+  margin-right:1px;transition:background .4s var(--out);}
+.link:last-child{margin-right:0;}
+.link.on{background:var(--amber-wash);}
+.link-n{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--steel-2);}
+.link.on .link-n{color:var(--amber-text);}
+.link-k{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-top:12px;}
+.link-v{font-size:15.5px;font-weight:620;color:var(--ink);letter-spacing:-.022em;margin-top:5px;}
+.link-d{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45;}
+.link-bar{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--amber);
+  transform:scaleX(0);transform-origin:left;transition:transform .5s var(--out);}
+.link.on .link-bar{transform:scaleX(1);}
+
+/* ═══ MAINTENANCE ═════════════════════════════════════════════════════ */
+.svc{margin-top:44px;border:var(--rule);border-radius:6px;overflow:hidden;background:var(--paper);}
+.svc-head{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:16px 20px;border-bottom:var(--rule);background:var(--ground);}
+.svc-title{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);}
+.svc-hours{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:600;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+.svc-row{display:grid;grid-template-columns:22px minmax(0,1.4fr) minmax(0,2fr) auto;
+  gap:16px;align-items:center;padding:15px 20px;border-bottom:var(--rule);}
+.svc-row:last-child{border-bottom:none;}
+.svc-dot{width:9px;height:9px;border-radius:50%;justify-self:center;}
+.svc-dot.due{background:var(--alert);box-shadow:0 0 0 3px rgba(207,42,34,.16);}
+.svc-dot.soon{background:var(--amber);box-shadow:0 0 0 3px rgba(255,205,17,.26);}
+.svc-dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(14,122,75,.14);}
+.svc-n{font-size:14.5px;color:var(--ink);font-weight:520;letter-spacing:-.012em;}
+.svc-sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;}
+.svc-track{height:6px;background:var(--ground-2);border-radius:1px;overflow:hidden;}
+/* display:block is load-bearing — this is an <i>, and width/height are
+   ignored on an inline box, so the bar silently never fills. */
+.svc-fill{display:block;height:100%;width:0;transition:width 1.3s var(--out);}
+.svc-fill.due{background:var(--alert);} .svc-fill.soon{background:var(--amber);}
+.svc-fill.ok{background:var(--ok);}
+.svc-val{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums;
+  white-space:nowrap;letter-spacing:-.02em;}
+
+/* ═══ SPECS ═══════════════════════════════════════════════════════════ */
+.spec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;
+  background:var(--steel);border:var(--rule);border-radius:6px;overflow:hidden;margin-top:44px;}
+.spec{background:var(--paper);padding:24px 22px;transition:background .3s;}
+.spec:hover{background:var(--ground);}
+.spec dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);}
+.spec dd{margin-top:12px;font-family:var(--mono);font-size:clamp(24px,2.6vw,34px);font-weight:600;
+  color:var(--ink);letter-spacing:-.042em;font-variant-numeric:tabular-nums;line-height:1;}
+.spec dd .u{font-size:13px;color:var(--muted);font-weight:400;margin-left:5px;letter-spacing:0;}
+.spec-note{font-size:12px;color:var(--muted);margin-top:8px;}
+
+/* ═══ CARDS ═══════════════════════════════════════════════════════════ */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;
+  background:var(--steel);border:var(--rule);border-radius:6px;overflow:hidden;margin-top:48px;}
+.card{background:var(--paper);padding:30px 26px 34px;position:relative;overflow:hidden;
+  transition:background .35s;}
+.card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .4s;
+  background:radial-gradient(320px circle at var(--px,50%) var(--py,50%),
+             rgba(255,205,17,.16),transparent 68%);}
+.card:hover::before{opacity:1;}
+.card-ico{width:32px;height:32px;margin-bottom:22px;stroke:var(--amber-text);fill:none;
+  stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.card h3{font-size:17px;font-weight:640;letter-spacing:-.024em;color:var(--ink);margin-bottom:9px;}
+.card p{font-size:13.5px;line-height:1.55;color:var(--muted);}
+.card-n{position:absolute;top:24px;right:24px;font-family:var(--mono);font-size:9.5px;
+  color:var(--steel-2);letter-spacing:.12em;}
+
+/* ═══ CTA / FOOTER ════════════════════════════════════════════════════ */
+.cta{background:var(--ink);color:#fff;text-align:center;padding:clamp(90px,14vh,150px) 0;
+  position:relative;overflow:hidden;}
+.cta::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;
+  background:repeating-linear-gradient(-45deg,#14151A 0 11px,var(--amber) 11px 22px);}
+.cta .h2{color:#fff;}
+.cta .lede{color:rgba(255,255,255,.62);margin:20px auto 0;}
+.cta-row{display:flex;gap:12px;justify-content:center;margin-top:34px;flex-wrap:wrap;}
+.cta .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.28);}
+.cta .btn.ghost:hover{border-color:#fff;background:rgba(255,255,255,.08);}
+.foot{background:var(--ink);color:rgba(255,255,255,.4);padding:32px 0 46px;font-size:12px;}
+.foot-in{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;
+  border-top:1px solid rgba(255,255,255,.12);padding-top:26px;}
+.foot-note{max-width:62ch;line-height:1.6;}
+.foot-note b{color:rgba(255,255,255,.72);font-weight:600;}
+.foot .btn{border-color:rgba(255,255,255,.24);color:#fff;background:transparent;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — intentional compositions, not a squeeze
+   The machine keeps its scale on a phone by bleeding even further past
+   the frame: on a small screen you should see a fragment of something
+   huge, not a whole toy.
+═══════════════════════════════════════════════════════════════════════ */
+@media(max-width:1080px){
+  /* five links plus the brand tag plus the CTA cannot share a tablet
+     width without the CTA running off the edge */
+  .nav-links{display:none;}
+  .exp{grid-template-columns:1fr;}
+  .chat{grid-template-columns:1fr;}
+  .chat-side{border-right:none;border-bottom:var(--rule);}
+  .qrail{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;}
+  .qrail::-webkit-scrollbar{display:none;}
+  .qbtn{flex:0 0 auto;min-width:215px;max-width:265px;margin-bottom:0;border-color:var(--steel);}
+  .side-foot{display:none;}
+  .chat-main{min-height:0;}
+  .svc-row{grid-template-columns:22px minmax(0,1fr) auto;}
+  .svc-row .svc-track{grid-column:2 / -1;}
+}
+@media(max-width:760px){
+  .brand-tag{display:none;}
+  .hero-cta{flex-direction:column;align-items:stretch;}
+  .hero-cta .btn{justify-content:center;}
+  /* Phone: the machine stops being a background layer and becomes the
+     picture — full bleed under the copy, cropped hard on both sides so
+     you are looking at a fragment of something huge. */
+  .hero{min-height:0;padding:92px 0 0;display:block;}
+  .hero-vis{position:relative;right:auto;bottom:auto;width:190vw;margin:26px 0 0 -45vw;}
+  .hero-vis::after{display:none;}
+  .callout{display:none;}
+  .hero-stats{gap:20px 26px;margin-top:22px;background:none;}
+  .hero-stat{flex:1 1 40%;}
+  .said{max-width:100%;}
+  .turn:not(.self){display:block;position:relative;}
+  .turn:not(.self)>.av{position:absolute;left:0;top:0;}
+  .turn:not(.self) .think,
+  .turn:not(.self) .answer>.blk-head:first-child{padding-left:45px;}
+  .turn:not(.self) .think{min-height:34px;}
+  .row{flex-direction:column;gap:4px;}
+  .row-k{flex:0 0 auto;}
+  .stopbox ul{grid-template-columns:1fr;}
+  .chain{flex-direction:column;}
+  .link{margin-right:0;margin-bottom:1px;}
+  .btn{padding:15px 22px;}
+  .qbtn{padding:15px;}
+  .skip{bottom:20px;right:20px;}
+  .hud-item:nth-child(2),.hud-item:nth-child(3){display:none;}
+  .hud-item:nth-child(1){left:6%;top:20%}
+  .hud-item:nth-child(4){left:6%;top:74%}
+}
+@media(max-width:440px){
+  .spec-grid{grid-template-columns:1fr 1fr;}
+  .part-grid{grid-template-columns:1fr 1fr;}
+}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.15s!important;}
+  [data-reveal],.blk,.callout,.hud-item{opacity:1!important;transform:none!important;}
+  .mark-word,.mark-sub,.mark-lines span{opacity:1!important;transform:none!important;
+    filter:none!important;}
+  .stage-machine{opacity:1!important;filter:none!important;transform:none!important;}
+  .btn{transform:none!important;}
+}
+</style>
+</head>
+<body class="locked">
+
+<!-- ═══ INTRO ═════════════════════════════════════════════════════════ -->
+<div id="intro" role="dialog" aria-label="Maia introduction">
+  <canvas id="dustCanvas" aria-hidden="true"></canvas>
+  <div class="lamp" aria-hidden="true"></div>
+  <!-- The data layer lives INSIDE the machine's own box, so every reading
+       lands on the component it describes at any viewport instead of
+       floating in the frame. -->
+  <div class="stage" aria-hidden="true">
+    <div class="stage-box">
+      <div class="stage-machine" id="introMachine"></div>
+      <div class="hud">
+        <div class="hud-item"  style="left:24.5%;top:60%">
+          <p class="hud-k">Engine</p><p class="hud-v">C7.1 ACERT</p><i class="stem"></i></div>
+        <div class="hud-item"  style="left:57%;top:43%">
+          <p class="hud-k">Hydraulic system</p><p class="hud-v">31.5 MPa</p><i class="stem"></i></div>
+        <div class="hud-item"  style="left:83%;top:64%">
+          <p class="hud-k">Oil temperature</p><p class="hud-v">96 °C</p><i class="stem"></i></div>
+        <div class="hud-item down" style="left:27%;top:82%">
+          <p class="hud-k">Operating hours</p><p class="hud-v">4 812 h</p><i class="stem"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mark">
+    <div class="sweep" aria-hidden="true"></div>
+    <p class="mark-word">MAIA<span class="dot">.</span></p>
+    <p class="mark-sub">AI for heavy equipment</p>
+    <div class="mark-lines">
+      <span>Understand your machines.</span>
+      <span>Find the right answers.</span>
+      <span>Work smarter.</span>
+    </div>
+  </div>
+
+  <div class="wipe" aria-hidden="true"></div>
+  <button class="skip" id="skipBtn" type="button">Skip intro</button>
+</div>
+
+<!-- ═══ NAV ═══════════════════════════════════════════════════════════ -->
+<header class="nav">
+  <a class="brand" href="#top" aria-label="Maia, home">
+    <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <rect x="1.6" y="1.6" width="36.8" height="36.8" rx="4" stroke="#101519" stroke-width="2"/>
+      <path d="M9 28V12l7 9 7-9v16" stroke="#101519" stroke-width="2.6"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="30" cy="26" r="3.4" fill="#FF7A00"/>
+    </svg>
+    <span class="brand-name">MAIA</span>
+    <span class="brand-tag">Powered by Mantrac AI · Cat® dealer</span>
+  </a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="#machine">Equipment</a>
+    <a href="#diagnose">Diagnose</a>
+    <a href="#parts">Parts</a>
+    <a href="#service">Maintenance</a>
+    <a href="#specs">Specifications</a>
+    <a href="how-maia-works.html">How it works</a>
+  </nav>
+  <a class="btn primary sm" href="#diagnose">
+    Ask Maia
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+  </a>
+</header>
+
+<main id="top">
+
+<!-- ═══ HERO ══════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="eyebrow" data-reveal><i class="bar"></i>Equipment intelligence</span>
+      <h1 class="display" data-reveal style="--i:1">
+        Meet Maia.<span class="l2">AI for heavy equipment<span class="dot">.</span></span>
+      </h1>
+      <p class="lede" data-reveal style="--i:2">
+        Understand your machines, diagnose problems, find parts, and access equipment
+        intelligence through one assistant — built on service manuals, parts catalogues
+        and machine data, not on guesswork.
+      </p>
+      <div class="hero-cta" data-reveal style="--i:3">
+        <a class="btn primary" href="#diagnose" data-magnet>
+          Ask Maia
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="btn ghost" href="#machine" data-magnet>Explore equipment</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-vis" id="heroVis" aria-hidden="true">
+    <canvas id="heroDust"></canvas>
+    <div id="heroMachine"></div>
+    <!-- readings pinned to components, same instrument logic as the intro -->
+    <div class="callout" style="left:59%;top:34%">
+      <p class="callout-k">Boom cylinder</p>
+      <p class="callout-v">120<span class="u"> mm bore</span></p><i class="stem"></i></div>
+    <div class="callout" style="left:29%;top:46%">
+      <p class="callout-k">Operating weight</p>
+      <p class="callout-v">21 900<span class="u"> kg</span></p><i class="stem"></i></div>
+  </div>
+
+  <div class="wrap">
+    <div class="hero-stats" data-reveal style="--i:4">
+      <div class="hero-stat"><b class="data" data-count="184">0</b>
+        <span>Machine models</span></div>
+      <div class="hero-stat"><b class="data" data-count="2.4" data-dec="1" data-suffix="M">0</b>
+        <span>Part numbers</span></div>
+      <div class="hero-stat"><b class="data" data-count="31" data-suffix="k">0</b>
+        <span>Service procedures</span></div>
+      <div class="hero-stat"><b class="data" data-count="700" data-suffix=" ms">0</b>
+        <span>To first answer</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ WHAT MAIA DOES ════════════════════════════════════════════════ -->
+<section class="band alt">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">02</span>What Maia does</span>
+      <h2 class="h2" data-reveal style="--i:1">
+        The manual has the answer.<br/>Nobody has time to find it.
+      </h2>
+      <p class="lede" data-reveal style="--i:2">
+        A fault at the far end of a site. A part number that has been superseded twice.
+        A service interval buried in a 900-page PDF. Maia is the layer between the person
+        holding the spanner and everything the manufacturer already wrote down.
+      </p>
+    </div>
+    <div class="cards">
+      <article class="card" data-tilt data-reveal>
+        <span class="card-n">01</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M4 25h24M7 25V15l6-4 6 4v10"/><path d="M19 18h6l3 4v3"/>
+          <circle cx="11" cy="20" r="2.2"/>
+        </svg>
+        <h3>Diagnoses by symptom</h3>
+        <p>Describe what the machine is doing. Maia ranks the likely systems by
+        confidence and tells you what to check first — in field order, not manual order.</p>
+      </article>
+      <article class="card" data-tilt data-reveal style="--i:1">
+        <span class="card-n">02</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="6"/><circle cx="16" cy="16" r="2"/>
+          <path d="M16 3v4M16 25v4M3 16h4M25 16h4M7 7l3 3M22 22l3 3M25 7l-3 3M10 22l-3 3"/>
+        </svg>
+        <h3>Finds the exact part</h3>
+        <p>Model, serial, build variant, supersessions and aftermarket equivalents —
+        resolved against the catalogue, never generated from memory.</p>
+      </article>
+      <article class="card" data-tilt data-reveal style="--i:2">
+        <span class="card-n">03</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="5" y="4" width="22" height="24" rx="2"/><path d="M10 11h12M10 16h12M10 21h7"/>
+          <path d="M21 22l2.6 2.6L28 20"/>
+        </svg>
+        <h3>Tracks service by hours</h3>
+        <p>Intervals against real meter readings across the fleet, so the next job is a
+        date and a part list rather than a reminder to check.</p>
+      </article>
+      <article class="card" data-tilt data-reveal style="--i:3">
+        <span class="card-n">04</span>
+        <svg class="card-ico" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3l11 5v8c0 7-4.6 11.4-11 13C9.6 27.4 5 23 5 16V8z"/>
+          <path d="M11 16l3.4 3.4L21 13"/>
+        </svg>
+        <h3>Stops at the safety line</h3>
+        <p>Pressure testing, lifting, stored energy. Where a procedure is dangerous,
+        Maia says so and hands the job to a qualified technician.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ MACHINE EXPLORER ══════════════════════════════════════════════ -->
+<section class="band paper" id="machine">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">03</span>Equipment visualisation</span>
+      <h2 class="h2" data-reveal style="--i:1">Every system, on the machine itself.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Not a diagram of a generic excavator — the actual assembly, with each system
+        isolated where it physically sits. Select a system to bring it forward.
+      </p>
+    </div>
+
+    <div class="exp">
+      <div class="exp-vis" data-reveal><div id="expMachine"></div></div>
+      <div class="sys-list" data-reveal style="--i:1" role="group" aria-label="Machine systems">
+        <button class="sys-btn on" type="button" data-sys-btn="engine">
+          <div class="sys-top"><span class="sys-n">SYS 01</span><span class="sys-dot"></span></div>
+          <p class="sys-t">Engine &amp; powertrain</p>
+          <div class="sys-parts"><span>Engine</span><span>Radiator</span><span>Exhaust</span>
+            <span>Air cleaner</span><span>Counterweight</span></div>
+        </button>
+        <button class="sys-btn" type="button" data-sys-btn="hydraulics">
+          <div class="sys-top"><span class="sys-n">SYS 02</span><span class="sys-dot"></span></div>
+          <p class="sys-t">Hydraulics</p>
+          <div class="sys-parts"><span>Main pump</span><span>Boom cylinder</span>
+            <span>Arm cylinder</span><span>Bucket cylinder</span><span>Hoses</span><span>Valves</span></div>
+        </button>
+        <button class="sys-btn" type="button" data-sys-btn="undercarriage">
+          <div class="sys-top"><span class="sys-n">SYS 03</span><span class="sys-dot"></span></div>
+          <p class="sys-t">Undercarriage</p>
+          <div class="sys-parts"><span>Track chain</span><span>Sprocket</span><span>Idler</span>
+            <span>Track rollers</span><span>Carrier rollers</span></div>
+        </button>
+        <button class="sys-btn" type="button" data-sys-btn="frontend">
+          <div class="sys-top"><span class="sys-n">SYS 04</span><span class="sys-dot"></span></div>
+          <p class="sys-t">Front linkage</p>
+          <div class="sys-parts"><span>Boom</span><span>Arm</span><span>Bucket</span>
+            <span>Pins &amp; bushings</span><span>Teeth</span></div>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ DIAGNOSE / CHAT ═══════════════════════════════════════════════ -->
+<section class="band alt" id="diagnose">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">04</span>AI troubleshooting</span>
+      <h2 class="h2" data-reveal style="--i:1">Describe the fault. In plain words.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Maia structures what you said, screens it for safety, retrieves the relevant service
+        procedures and ranks the likely causes — then tells you what to check first.
+      </p>
+    </div>
+
+    <div class="chat" data-reveal>
+      <aside class="chat-side">
+        <p class="side-l">Try a question</p>
+        <div class="qrail" id="qrail" role="group" aria-label="Example questions"></div>
+        <p class="side-foot">Illustrative demo content, written to show the interface and the
+        reasoning structure. Always work to the manufacturer's own service manual.</p>
+      </aside>
+      <div class="chat-main" id="chatMain" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PARTS ═════════════════════════════════════════════════════════ -->
+<section class="band paper" id="parts">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">05</span>Parts assistant</span>
+      <h2 class="h2" data-reveal style="--i:1">From machine to part number in five steps.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Every step narrows against the catalogue. Build variants, supersessions and
+        aftermarket equivalents are resolved before a number is ever shown.
+      </p>
+    </div>
+
+    <div class="chain" id="chain" data-reveal>
+      <div class="link" data-step="0"><span class="link-n">01</span>
+        <p class="link-k">Machine</p><p class="link-v">Excavator</p>
+        <p class="link-d">Category identified from the question.</p><i class="link-bar"></i></div>
+      <div class="link" data-step="1"><span class="link-n">02</span>
+        <p class="link-k">Model &amp; serial</p><p class="link-v">CAT 320 · GC prefix</p>
+        <p class="link-d">Build variant gates every later step.</p><i class="link-bar"></i></div>
+      <div class="link" data-step="2"><span class="link-n">03</span>
+        <p class="link-k">System</p><p class="link-v">Hydraulics</p>
+        <p class="link-d">Return circuit, not pilot or pump.</p><i class="link-bar"></i></div>
+      <div class="link" data-step="3"><span class="link-n">04</span>
+        <p class="link-k">Component</p><p class="link-v">Hydraulic filter</p>
+        <p class="link-d">Return filter element, in-tank.</p><i class="link-bar"></i></div>
+      <div class="link" data-step="4"><span class="link-n">05</span>
+        <p class="link-k">Part</p><p class="link-v">462-1171</p>
+        <p class="link-d">Current number. Two supersessions.</p><i class="link-bar"></i></div>
+    </div>
+
+    <div class="part" data-reveal style="--i:1;margin-top:28px">
+      <div class="part-top">
+        <div><p class="part-no">462-1171</p>
+          <p class="part-nm">Hydraulic Return Filter Element</p></div>
+        <span class="part-badge">OEM · Genuine</span>
+      </div>
+      <dl class="part-grid">
+        <div class="part-cell"><dt>Fits</dt><dd class="mono">CAT 320 / 320 GC</dd></div>
+        <div class="part-cell"><dt>Supersedes</dt><dd class="mono">338-3540 · 126-1813</dd></div>
+        <div class="part-cell"><dt>Filtration</dt><dd class="mono">10 µm absolute</dd></div>
+        <div class="part-cell"><dt>Interval</dt><dd class="mono">1 000 h</dd></div>
+        <div class="part-cell"><dt>Availability</dt><dd><span class="ok">● In stock</span></dd></div>
+        <div class="part-cell"><dt>Serial gate</dt><dd class="mono">Verified</dd></div>
+      </dl>
+      <div class="part-alt">Aftermarket equivalents:
+        <b>P550388</b><b>HF6553</b><b>BT8851</b>
+        <span>— cross-referenced, not endorsed. Warranty terms may differ.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ MAINTENANCE ═══════════════════════════════════════════════════ -->
+<section class="band alt" id="service">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">06</span>Maintenance intelligence</span>
+      <h2 class="h2" data-reveal style="--i:1">Service status, by the hour meter.</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Intervals tracked against real running hours, so the next visit is a date and a
+        parts list rather than a reminder to go and look.
+      </p>
+    </div>
+
+    <div class="svc" id="svc" data-reveal>
+      <div class="svc-head">
+        <span class="svc-title">Unit EX-4471 · CAT 320 · Service status</span>
+        <span class="svc-hours data"><span data-count="4812">0</span> h on meter</span>
+      </div>
+      <div class="svc-row" data-fill="96" data-state="due">
+        <span class="svc-dot due"></span>
+        <div><p class="svc-n">Engine oil &amp; filter</p><p class="svc-sub">500 h interval · last at 4 320 h</p></div>
+        <div class="svc-track"><i class="svc-fill due"></i></div>
+        <span class="svc-val">Due now</span>
+      </div>
+      <div class="svc-row" data-fill="78" data-state="soon">
+        <span class="svc-dot soon"></span>
+        <div><p class="svc-n">Hydraulic return filter</p><p class="svc-sub">1 000 h interval · last at 4 052 h</p></div>
+        <div class="svc-track"><i class="svc-fill soon"></i></div>
+        <span class="svc-val">120 h left</span>
+      </div>
+      <div class="svc-row" data-fill="34" data-state="ok">
+        <span class="svc-dot ok"></span>
+        <div><p class="svc-n">Air cleaner element</p><p class="svc-sub">Condition-based · 34% restricted</p></div>
+        <div class="svc-track"><i class="svc-fill ok"></i></div>
+        <span class="svc-val">Good</span>
+      </div>
+      <div class="svc-row" data-fill="22" data-state="ok">
+        <span class="svc-dot ok"></span>
+        <div><p class="svc-n">Coolant &amp; conditioner</p><p class="svc-sub">3 000 h interval · last at 4 140 h</p></div>
+        <div class="svc-track"><i class="svc-fill ok"></i></div>
+        <span class="svc-val">2 328 h left</span>
+      </div>
+      <div class="svc-row" data-fill="61" data-state="soon">
+        <span class="svc-dot soon"></span>
+        <div><p class="svc-n">Undercarriage wear check</p><p class="svc-sub">Track link pitch measured at 194 mm</p></div>
+        <div class="svc-track"><i class="svc-fill soon"></i></div>
+        <span class="svc-val">61% worn</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SPECS ═════════════════════════════════════════════════════════ -->
+<section class="band paper" id="specs">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow" data-reveal><span class="n">07</span>Equipment specifications</span>
+      <h2 class="h2" data-reveal style="--i:1">CAT 320 · Hydraulic Excavator</h2>
+      <p class="lede" data-reveal style="--i:2">
+        Every figure resolved against the model and build variant, because a specification
+        that ignores the serial prefix is a specification for a different machine.
+      </p>
+    </div>
+
+    <dl class="spec-grid" data-reveal>
+      <div class="spec"><dt>Engine</dt><dd>C7.1<span class="u">ACERT</span></dd>
+        <p class="spec-note">Six cylinder, turbocharged</p></div>
+      <div class="spec"><dt>Net power</dt><dd><span data-count="122">0</span><span class="u">kW</span></dd>
+        <p class="spec-note">at 1 800 rpm</p></div>
+      <div class="spec"><dt>Operating weight</dt><dd><span data-count="21900">0</span><span class="u">kg</span></dd>
+        <p class="spec-note">With standard boom</p></div>
+      <div class="spec"><dt>Hydraulic flow</dt><dd><span data-count="2" data-x="2">0</span><span class="u">× 261 L/min</span></dd>
+        <p class="spec-note">Main pumps, maximum</p></div>
+      <div class="spec"><dt>System pressure</dt><dd><span data-count="31.5" data-dec="1">0</span><span class="u">MPa</span></dd>
+        <p class="spec-note">Implement circuit</p></div>
+      <div class="spec"><dt>Fuel capacity</dt><dd><span data-count="345">0</span><span class="u">L</span></dd>
+        <p class="spec-note">Plus 55 L DEF</p></div>
+      <div class="spec"><dt>Bucket capacity</dt><dd><span data-count="1.19" data-dec="2">0</span><span class="u">m³</span></dd>
+        <p class="spec-note">General purpose</p></div>
+      <div class="spec"><dt>Max dig depth</dt><dd><span data-count="6.72" data-dec="2">0</span><span class="u">m</span></dd>
+        <p class="spec-note">Standard stick, 2.9 m</p></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ═══ CTA ═══════════════════════════════════════════════════════════ -->
+<section class="cta">
+  <div class="wrap">
+    <h2 class="h2" data-reveal>Ask Maia.</h2>
+    <p class="lede" data-reveal style="--i:1">
+      Bring the fault code, the noise nobody can place, or the part number that no longer exists.
+    </p>
+    <div class="cta-row" data-reveal style="--i:2">
+      <a class="btn primary" href="#diagnose" data-magnet>
+        Ask Maia
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn ghost" href="#machine" data-magnet>Explore equipment</a>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p class="foot-note"><b>Maia · Powered by Mantrac AI · Cat® Authorized Dealer · Egypt.</b>
+    This page is a design prototype. Machine models, part numbers,
+    specifications, service intervals and conversations shown here are illustrative, created
+    to demonstrate the interface. Always work to the manufacturer's own service manual and
+    safety procedures. Caterpillar® and CAT® are trademarks of Caterpillar Inc., used here
+    only to describe equipment types.</p>
+    <button class="btn ghost sm" id="replayBtn" type="button">Replay intro</button>
+  </div>
+</footer>
+
+</main>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   ONE CLOCK for every canvas on the page. Nothing schedules its own
+   timer, and nothing off-screen paints.
+═══════════════════════════════════════════════════════════════════════ */
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const Loop = (() => {
+  const jobs = new Set(); let last = 0, running = false;
+  function frame(t){
+    const dt = Math.min((t - last) || 16, 50); last = t;
+    jobs.forEach(j => { try { j(dt, t); } catch(e){ jobs.delete(j); } });
+    if (jobs.size) requestAnimationFrame(frame); else running = false;
+  }
+  return { add(fn){ jobs.add(fn);
+    if (!running){ running = true; last = performance.now(); requestAnimationFrame(frame); }
+    return () => jobs.delete(fn); } };
+})();
+
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const easeOut = t => 1 - Math.pow(1-t, 3);
+
+function fitCanvas(cv){
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  cv.width = w*dpr; cv.height = h*dpr;
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { ctx, w, h };
+}
+function whenVisible(el, on, off){
+  new IntersectionObserver(es => es.forEach(e => e.isIntersecting ? on() : off()),
+    { rootMargin:"120px" }).observe(el);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE MACHINE — one drawing, drawn once, reused everywhere.
+
+   Side elevation of a 20-tonne class tracked excavator. Everything is
+   grouped by SYSTEM rather than by shape, because the systems are what
+   the product talks about: you cannot highlight "the hydraulics" if the
+   cylinders live in the same group as the boom they hang off.
+
+   The kinematics are honest where it matters: each cylinder barrel is
+   pinned to the member BELOW it in the chain and its rod to the member
+   ABOVE, so when the boom swings, the rod genuinely slides out of its
+   barrel instead of the whole cylinder sliding around as one rigid lump.
+═══════════════════════════════════════════════════════════════════════ */
+function MACHINE(kind){
+  /* track grousers, generated rather than hand-placed */
+  let gr = "";
+  for (let x = 176; x < 452; x += 23)
+    gr += `<path class="m-det" d="M${x} 459 v-9 M${x} 551 v9"/>`;
+  let rollers = "";
+  [215,262,309,356,403].forEach(x => rollers += `<circle class="m-dark" cx="${x}" cy="537" r="15"/>`);
+  [250,372].forEach(x => rollers += `<circle class="m-dark" cx="${x}" cy="472" r="10"/>`);
+  let teeth = "";
+  [[901,461],[884,466],[867,470],[850,474]].forEach(([x,y]) =>
+    teeth += `<path class="m-tooth" d="M${x} ${y} l14 9 l-11 8 z"/>`);
+  let louvre = "";
+  for (let i = 0; i < 5; i++) louvre += `<path class="m-det" d="M${218+i*22} 366 v46"/>`;
+
+  return `
+<svg class="machine ${kind}" viewBox="0 0 1060 620" role="img"
+     aria-label="Side view of a tracked hydraulic excavator with boom, arm and bucket">
+
+  <!-- ── UNDERCARRIAGE ─────────────────────────────────────────── -->
+  <g data-sys="undercarriage">
+    <path class="m-plate" d="M170 459 L452 459 A46 46 0 0 1 452 551 L170 551 A46 46 0 0 1 170 459 Z"/>
+    ${gr}
+    <path class="m-body" d="M176 478 L446 478 A10 10 0 0 1 456 488 L456 522 A10 10 0 0 1 446 532 L176 532 A10 10 0 0 1 166 522 L166 488 A10 10 0 0 1 176 478 Z"/>
+    ${rollers}
+    <circle class="m-dark" cx="452" cy="505" r="31"/>
+    <circle class="m-det"  cx="452" cy="505" r="20"/>
+    <path class="m-det" d="M452 474 v62 M421 505 h62 M430 483 l44 44 M474 483 l-44 44"/>
+    <circle class="m-dark" cx="170" cy="505" r="28"/>
+    <circle class="m-det"  cx="170" cy="505" r="15"/>
+  </g>
+
+  <!-- ── ENGINE & POWERTRAIN (house) ───────────────────────────── -->
+  <g data-sys="engine">
+    <path class="m-plate" d="M140 424 L500 424 L492 462 L148 462 Z"/>
+    <path class="m-body"  d="M118 424 L200 424 L200 330 L152 318 Q118 326 118 352 Z"/>
+    <path class="m-det"   d="M126 340 h66 M126 356 h66 M126 372 h66"/>
+    <path class="m-body"  d="M200 424 L200 352 L336 344 L342 424 Z"/>
+    ${louvre}
+    <rect class="m-dark" x="286" y="304" width="17" height="42" rx="3"/>
+    <path class="m-det" d="M208 336 h120"/>
+  </g>
+
+  <!-- ── CAB / OPERATOR ────────────────────────────────────────── -->
+  <g data-sys="structure">
+    <path class="m-body"  d="M346 424 L346 296 L376 266 L458 266 L458 424 Z"/>
+    <path class="m-glass" d="M357 300 L379 278 L447 278 L447 352 L357 352 Z"/>
+    <path class="m-det"   d="M357 366 h90 M357 384 h90"/>
+    <path class="m-det"   d="M470 424 v-46"/>
+  </g>
+
+  <!-- ── HYDRAULICS: boom cylinder barrel, pinned to the house ──── -->
+  <g data-sys="hydraulics">
+    <g class="cylb-g" data-part>
+      <path class="m-cyl" d="M452 430 L560 366" stroke-width="27"/>
+      <path class="m-det" d="M470 425 L548 379"/>
+      <circle class="m-pin" cx="452" cy="430" r="8"/>
+    </g>
+  </g>
+
+  <!-- ══ FRONT LINKAGE — boom ▸ arm ▸ bucket, nested so each member
+         carries its children and its own cylinder rod ══════════════ -->
+  <g class="boom-g" data-part>
+
+    <g data-sys="frontend">
+      <path class="m-body" d="M476 382 Q566 286 686 210 L708 248 Q600 330 516 430 Z"/>
+      <circle class="m-pin" cx="498" cy="400" r="15"/>
+      <circle class="m-pin" cx="697" cy="229" r="13"/>
+    </g>
+
+    <g data-sys="hydraulics">
+      <!-- boom cylinder ROD: pinned to the boom, so it slides out of the
+           barrel above as the boom rises. This pairing is the reason the
+           hydraulics read as hydraulics and not as decoration. -->
+      <path class="m-rod" d="M540 386 L608 344" stroke-width="12"/>
+      <circle class="m-pin" cx="608" cy="344" r="7"/>
+      <!-- arm cylinder barrel, pinned to the boom -->
+      <path class="m-cyl" d="M556 300 L648 240" stroke-width="23"/>
+      <path class="m-det" d="M570 297 L638 253"/>
+      <circle class="m-pin" cx="556" cy="300" r="7"/>
+      <!-- hoses running the length of the boom -->
+      <path class="m-hose" d="M512 404 Q596 322 686 244"/>
+      <path class="m-hose" d="M520 414 Q604 332 694 254"/>
+    </g>
+
+    <g class="arm-g" data-part>
+      <g data-sys="frontend">
+        <path class="m-body" d="M676 242 L826 420 L858 398 L714 212 Z"/>
+        <circle class="m-pin" cx="842" cy="409" r="11"/>
+      </g>
+      <g data-sys="hydraulics">
+        <!-- arm cylinder rod: pinned to the arm -->
+        <path class="m-rod" d="M640 246 L716 206" stroke-width="11"/>
+        <circle class="m-pin" cx="716" cy="206" r="6"/>
+        <!-- bucket cylinder, riding on the arm -->
+        <path class="m-cyl" d="M726 262 L790 336" stroke-width="20"/>
+        <circle class="m-pin" cx="726" cy="262" r="6"/>
+        <path class="m-rod" d="M784 330 L818 372" stroke-width="10"/>
+        <path class="m-hose" d="M700 250 Q742 300 782 340"/>
+      </g>
+
+      <g class="bkt-g" data-part data-sys="frontend">
+        <path class="m-body" d="M816 394 L892 370 Q930 404 908 458 L828 480 Q798 436 816 394 Z"/>
+        <path class="m-det"  d="M828 404 Q880 396 898 420"/>
+        ${teeth}
+        <path class="m-plate" d="M818 372 L846 398 L830 412 L806 388 Z"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ground shadow -->
+  <ellipse cx="310" cy="566" rx="220" ry="9" fill="rgba(16,21,25,.10)"/>
+</svg>`;
+}
+
+document.getElementById("introMachine").innerHTML = MACHINE("dark");
+document.getElementById("heroMachine").innerHTML  = MACHINE("lit");
+document.getElementById("expMachine").innerHTML   = MACHINE("lit");
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ATMOSPHERE — airborne dust. Site air is never clean, and a machine
+   standing in perfectly clear air reads as a render of a machine rather
+   than a machine on a job.
+═══════════════════════════════════════════════════════════════════════ */
+function dust(cv, opts){
+  const o = Object.assign({ n:120, tint:"255,190,120", alpha:.5, rise:-.055 }, opts||{});
+  let ctx, W, H, p = [], stop = null;
+  function layout(){
+    ({ ctx, w:W, h:H } = fitCanvas(cv));
+    const n = innerWidth < 760 ? Math.round(o.n*.5) : o.n;
+    p = [];
+    for (let i = 0; i < n; i++) p.push({
+      x: Math.random()*W, y: Math.random()*H, z:.3+Math.random()*.9,
+      r:.4+Math.random()*1.4, vx:(Math.random()-.5)*.09, vy:o.rise*(.5+Math.random())
+    });
+  }
+  function frame(dt){
+    ctx.clearRect(0,0,W,H);
+    const k = dt/16;
+    p.forEach(d => {
+      d.x += d.vx*d.z*k; d.y += d.vy*d.z*k;
+      if (d.y < -8){ d.y = H+8; d.x = Math.random()*W; }
+      if (d.x < -8) d.x = W+8; if (d.x > W+8) d.x = -8;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r*d.z, 0, 7);
+      ctx.fillStyle = `rgba(${o.tint},${(0.06 + d.z*.16)*o.alpha})`;
+      ctx.fill();
+    });
+  }
+  addEventListener("resize", layout); layout();
+  if (REDUCED){ frame(16); return {}; }
+  whenVisible(cv, () => { if (!stop) stop = Loop.add(frame); },
+                  () => { if (stop){ stop(); stop = null; } });
+  return { start(){ if (!stop) stop = Loop.add(frame); } };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE INTRO
+   01  0.0 – 3.2s   industrial darkness · the lamp finds the machine
+   02  3.2 – 6.4s   the data layer reads it while it works
+   03  6.4 – 10.2s  lines converge · MAIA
+   04 10.2 – 11.8s  through the wordmark · the work lights come on
+═══════════════════════════════════════════════════════════════════════ */
+const Intro = (() => {
+  const el = document.getElementById("intro");
+  const T1 = 3200, T2 = 6400, T3 = 10200, T4 = 11800;
+  let t0 = 0, stop = null, done = false, marks = [];
+  const air = dust(document.getElementById("dustCanvas"),
+                   { n:170, tint:"255,186,110", alpha:1, rise:-.05 });
+
+  function at(ms, fn){ marks.push(setTimeout(fn, ms)); }
+  function clear(){ marks.forEach(clearTimeout); marks = []; }
+
+  function finish(){
+    if (done) return; done = true; clear();
+    el.classList.add("push");
+    /* the wipe covers the swap, so the palette change lands as one event */
+    setTimeout(() => {
+      el.classList.add("done");
+      document.body.classList.remove("locked");
+      Page.wake();
+    }, 1150);
+    setTimeout(() => { if (stop){ stop(); stop = null; } }, 2200);
+  }
+
+  function run(){
+    done = false; clear();
+    el.classList.remove("done","push","s1","s2","s3","armed");
+    document.body.classList.add("locked");
+    void el.offsetWidth;
+    if (!stop) { air.start && air.start(); }
+    at(60,  () => el.classList.add("armed"));
+    if (REDUCED){
+      el.classList.add("s1","s2","s3");
+      at(1600, finish);
+      return;
+    }
+    at(300, () => el.classList.add("s1"));
+    at(T1,  () => el.classList.add("s2"));
+    at(T2,  () => el.classList.add("s3"));
+    at(T3,  finish);
+  }
+
+  document.getElementById("skipBtn").addEventListener("click", finish);
+  addEventListener("keydown", e => {
+    if (!done && (e.key === "Escape" || e.key === "Enter")) finish();
+  });
+  return { run, finish };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE CONVERSATIONS
+   Written as a technician would want them: ranked causes with confidence,
+   the cheap check before the expensive one, and an explicit stop line for
+   anything involving stored hydraulic energy.
+═══════════════════════════════════════════════════════════════════════ */
+const CONVOS = [
+  {
+    id:"hyd", unit:"EX-4471", meta:"CAT 320 · 4 812 h · standard boom",
+    q:"My excavator is losing hydraulic power after 30 minutes of operation.",
+    steps:["Structuring the symptom and duty cycle",
+           "Screening for safety-critical faults",
+           "Retrieving service procedures for this model and serial"],
+    conf:"High", read:"14 procedures · 6 kept",
+    blocks:[
+      { t:"lede", v:"Power that is normal from cold and fades after about half an hour is a heat-related fault almost every time. The system is fine until oil viscosity drops, and then internal leakage that was tolerable becomes losses you can feel at the lever." },
+      { t:"causes", head:"Possible causes, ranked", rows:[
+        { l:"Hydraulic oil temperature", v:8, n:"Cooler core blocked, fan drive weak, or oil level low enough to reduce dwell time in tank." },
+        { l:"Hydraulic filter restriction", v:6, n:"A filter near the end of its life bypasses when hot. Check the last change against the meter." },
+        { l:"Pump performance", v:4, n:"Worn swash-plate or control piston — flow falls as clearances open with temperature." },
+        { l:"Valve system", v:3, n:"Main relief or a spool leaking internally once hot. Least likely, and the most expensive to chase." }
+      ]},
+      { t:"rows", head:"What I looked at", rows:[
+        ["Symptom","Progressive power loss, roughly <b>30 minutes</b> from cold"],
+        ["Recovery","Returns to normal after the machine stands — consistent with temperature"],
+        ["Duty","No change in attachment or material reported"],
+        ["Excluded","No warning lamp, no noise, no visible external leak described"]
+      ]},
+      { t:"steps", head:"What to check first", rows:[
+        "<b>Read the hydraulic oil temperature at working heat.</b> Free, instant, and it separates a cooling fault from a pump fault before you open anything.",
+        "<b>Inspect the cooler core and the fan drive.</b> On a site machine, packed cores are the single most common cause of this exact complaint.",
+        "<b>Check oil level and condition hot.</b> Low level shortens tank dwell and drives temperature up on its own.",
+        "<b>Confirm the return filter against the hour meter.</b> Cheap to change, and it rules out the second-ranked cause entirely.",
+        "<b>Only then flow-test the pump.</b> It is the expensive test, so it belongs after the cheap ones — not before."
+      ]},
+      { t:"stop", head:"Stop and get a qualified technician if", rows:[
+        "Pressure testing is required","A hose or fitting is weeping under pressure",
+        "The boom must be raised to gain access","Any line will be cracked open while hot",
+        "The machine must be run with guards removed"
+      ], foot:"Hydraulic systems hold stored energy with the engine off. Relieve pressure and follow the manufacturer's lock-out procedure before any line is opened." },
+      { t:"srcs", rows:[
+        ["Service manual","CAT 320 · Hydraulic System — Troubleshooting"],
+        ["Procedure","Hydraulic Oil Temperature — Test"],
+        ["Procedure","Main Pump Flow — Test and Adjust"],
+        ["Bulletin","Cooler core cleaning interval, high-debris sites"]
+      ]}
+    ]
+  },
+  {
+    id:"part", unit:"EX-4471", meta:"CAT 320 · GC prefix · serial verified",
+    q:"What hydraulic filter does this machine take, and what supersedes it?",
+    steps:["Resolving model, serial prefix and build variant",
+           "Matching the component against the parts catalogue",
+           "Following the supersession chain to the current number"],
+    conf:"High", read:"Catalogue · serial-gated",
+    blocks:[
+      { t:"lede", v:"For this serial prefix the return filter element is 462-1171. It replaces two earlier numbers, so anything still on your shelf under the old codes will fit but is no longer what the catalogue issues." },
+      { t:"part", v:{
+        no:"462-1171", nm:"Hydraulic Return Filter Element", badge:"OEM · Genuine",
+        cells:[["Fits","CAT 320 / 320 GC",1],["Supersedes","338-3540 · 126-1813",1],
+               ["Filtration","10 µm absolute",1],["Interval","1 000 h",1],
+               ["Availability","● In stock",0],["Serial gate","Verified",1]],
+        alt:["P550388","HF6553","BT8851"]
+      }},
+      { t:"rows", head:"How this was resolved", rows:[
+        ["Model","CAT 320, <b>GC</b> serial prefix — different element from the standard 320"],
+        ["Circuit","Return, in-tank — not the pilot filter or the case drain"],
+        ["Supersession","<b>126-1813 → 338-3540 → 462-1171</b>, current"],
+        ["Verified","Number returned by the catalogue, not generated"]
+      ]},
+      { t:"srcs", rows:[
+        ["Parts catalogue","CAT 320 GC · Hydraulic tank and filters"],
+        ["Bulletin","Filter element supersession notice"]
+      ]}
+    ]
+  },
+  {
+    id:"svc", unit:"EX-4471", meta:"CAT 320 · 4 812 h on meter",
+    q:"What is due on this machine at the next service?",
+    steps:["Reading the hour meter against the interval schedule",
+           "Checking condition-based items on last inspection",
+           "Assembling the parts list for the visit"],
+    conf:"High", read:"Schedule · 5 items",
+    blocks:[
+      { t:"lede", v:"One item is overdue and one is close. Doing both in a single visit saves a second shutdown, and the parts for them are on the shelf." },
+      { t:"causes", head:"Interval consumed", rows:[
+        { l:"Engine oil & filter", v:10, n:"500 h interval, last done at 4 320 h — 492 h ago. Overdue now." },
+        { l:"Hydraulic return filter", v:9, n:"1 000 h interval, last at 4 052 h. About 120 h left — do it in the same visit." },
+        { l:"Undercarriage wear", v:6, n:"Track link pitch measured 194 mm against 190 mm new. 61% of allowable wear." },
+        { l:"Air cleaner element", v:3, n:"Condition-based. 34% restricted, no action yet." }
+      ]},
+      { t:"rows", head:"Parts for the visit", rows:[
+        ["Engine oil filter","<b>462-0642</b> · 1 off"],
+        ["Engine oil","<b>DEO-ULS 10W-30</b> · 26 L"],
+        ["Return filter","<b>462-1171</b> · 1 off"],
+        ["Sealing washers","<b>095-1490</b> · 2 off"]
+      ]},
+      { t:"steps", head:"Sequence", rows:[
+        "<b>Run to working temperature before draining.</b> Warm oil carries more of the suspended debris out with it.",
+        "<b>Engine oil and filter first</b>, then the hydraulic return filter while the machine stands.",
+        "<b>Record the meter reading against both items</b> so the next interval is calculated from what actually happened.",
+        "<b>Re-measure track link pitch at the next 250 h check.</b> At 61% the wear rate matters more than the number."
+      ]},
+      { t:"srcs", rows:[
+        ["Service manual","CAT 320 · Maintenance Interval Schedule"],
+        ["Procedure","Engine Oil and Filter — Change"],
+        ["Reference","Undercarriage wear limits"]
+      ]}
+    ]
+  }
+];
+
+const Chat = (() => {
+  const rail = document.getElementById("qrail");
+  const main = document.getElementById("chatMain");
+  let timers = [], active = null;
+  const clr = () => { timers.forEach(clearTimeout); timers = []; };
+  const at = (ms, fn) => timers.push(setTimeout(fn, REDUCED ? Math.min(ms,180) : ms));
+  function el(tag, cls, html){
+    const n = document.createElement(tag);
+    if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n;
+  }
+
+  function block(b){
+    const w = el("div","blk");
+    switch (b.t){
+      case "lede": w.className = "blk ans-lede"; w.innerHTML = b.v; return w;
+      case "causes": {
+        w.appendChild(el("p","blk-head", b.head));
+        const box = el("div","causes");
+        b.rows.forEach(c => {
+          const r = el("div");
+          const top = el("div","cause-top");
+          top.appendChild(el("span","cause-l", c.l));
+          top.appendChild(el("span","cause-v data", c.v + " / 10"));
+          r.appendChild(top);
+          const segs = el("div","segs");
+          for (let i = 0; i < 10; i++){
+            const s = el("i","seg" + (i < c.v ? " lit" : "") + (c.v >= 6 ? " a" : ""));
+            s.style.transitionDelay = (.22 + i*.04) + "s";
+            segs.appendChild(s);
+          }
+          r.appendChild(segs);
+          if (c.n) r.appendChild(el("p","cause-n", c.n));
+          box.appendChild(r);
+        });
+        w.appendChild(box); return w;
+      }
+      case "rows": {
+        w.appendChild(el("p","blk-head", b.head));
+        const box = el("div","rows");
+        b.rows.forEach(([k,v]) => {
+          const r = el("div","row");
+          r.appendChild(el("span","row-k", k));
+          r.appendChild(el("span","row-v", v));
+          box.appendChild(r);
+        });
+        w.appendChild(box); return w;
+      }
+      case "steps": {
+        w.appendChild(el("p","blk-head", b.head));
+        const box = el("div","steps");
+        b.rows.forEach(s => { const d = el("div","step"); d.appendChild(el("p",null,s)); box.appendChild(d); });
+        w.appendChild(box); return w;
+      }
+      case "stop": {
+        w.appendChild(el("p","blk-head warn", b.head));
+        const box = el("div","stopbox");
+        box.appendChild(el("div","stopbox-bar"));
+        const inner = el("div","stopbox-in");
+        const ul = el("ul");
+        b.rows.forEach(r => ul.appendChild(el("li",null,r)));
+        inner.appendChild(ul);
+        if (b.foot) inner.appendChild(el("p","stop-foot", b.foot));
+        box.appendChild(inner); w.appendChild(box); return w;
+      }
+      case "part": {
+        const p = b.v;
+        const box = el("div","part");
+        box.appendChild(el("div","part-top",
+          `<div><p class="part-no">${p.no}</p><p class="part-nm">${p.nm}</p></div>
+           <span class="part-badge">${p.badge}</span>`));
+        const grid = el("dl","part-grid");
+        p.cells.forEach(([k,v,mono]) => grid.appendChild(el("div","part-cell",
+          `<dt>${k}</dt><dd class="${mono ? "mono" : ""}">${
+            v.startsWith("●") ? `<span class="ok">${v}</span>` : v}</dd>`)));
+        box.appendChild(grid);
+        box.appendChild(el("div","part-alt",
+          `Aftermarket equivalents: ${p.alt.map(a => `<b>${a}</b>`).join("")}
+           <span>— cross-referenced, not endorsed.</span>`));
+        w.appendChild(box); return w;
+      }
+      case "srcs": {
+        w.appendChild(el("p","blk-head","Sources"));
+        const box = el("div","srcs");
+        b.rows.forEach(([kind,name]) => box.appendChild(el("span","src",
+          `<span class="kind">${kind}</span><span>${name}</span>`)));
+        w.appendChild(box); return w;
+      }
+    }
+    return w;
+  }
+
+  function play(c){
+    clr(); active = c.id;
+    [...rail.children].forEach(b => b.classList.toggle("on", b.dataset.id === c.id));
+    main.innerHTML = "";
+
+    main.appendChild(el("div","unit",
+      `<span class="unit-tag">Unit ${c.unit}</span><span class="unit-meta">${c.meta}</span>`));
+
+    const you = el("div","turn self");
+    you.appendChild(el("div","av","YOU"));
+    you.appendChild(el("div","said", c.q));
+    main.appendChild(you);
+
+    const maia = el("div","turn");
+    const av = el("div","av maia"); av.appendChild(el("i"));
+    maia.appendChild(av);
+    const think = el("div","think"); maia.appendChild(think);
+    main.appendChild(maia);
+
+    const lines = c.steps.map(s => {
+      const l = el("div","think-line", `<span class="wire"></span><span>${s}</span>`);
+      think.appendChild(l); return l;
+    });
+    const STEP = 760;
+    lines.forEach((l,i) => {
+      at(110 + i*STEP, () => l.classList.add("in"));
+      at(110 + (i+1)*STEP - 50, () => l.classList.add("past"));
+    });
+
+    at(150 + lines.length*STEP + 300, () => {
+      const ans = el("div","answer");
+      ans.appendChild(el("p","blk-head","Maia"));
+      c.blocks.forEach(b => ans.appendChild(block(b)));
+      ans.appendChild(el("p","ans-foot",
+        `<span>Confidence <b>${c.conf}</b></span><span>Retrieved <b>${c.read}</b></span>
+         <span>Every value read from source</span>`));
+      think.replaceWith(ans);
+      ans.querySelectorAll(".blk").forEach((b,i) => at(50 + i*240, () => b.classList.add("in")));
+    });
+  }
+
+  function init(){
+    CONVOS.forEach((c,i) => {
+      const b = el("button","qbtn" + (i === 0 ? " on" : ""), `<span class="qn">0${i+1}</span>${c.q}`);
+      b.type = "button"; b.dataset.id = c.id;
+      b.addEventListener("click", () => { if (active !== c.id) play(c); });
+      rail.appendChild(b);
+    });
+    let started = false;
+    whenVisible(main, () => { if (!started){ started = true; play(CONVOS[0]); } }, () => {});
+  }
+  return { init };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PAGE
+═══════════════════════════════════════════════════════════════════════ */
+const Page = (() => {
+  let woken = false;
+
+  function reveals(){
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); }
+    }), { rootMargin:"-6% 0px -6% 0px" });
+    document.querySelectorAll("[data-reveal]").forEach(n => {
+      if (!n.closest(".hero")) io.observe(n);
+    });
+  }
+
+  /* Numbers count up because a specification that simply appears is a
+     label; one that resolves reads as a value being looked up. */
+  function counters(){
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (!e.isIntersecting) return;
+      io.unobserve(e.target);
+      const n = e.target, to = parseFloat(n.dataset.count) || 0;
+      const dec = parseInt(n.dataset.dec || "0", 10);
+      const suf = n.dataset.suffix || "";
+      const fmt = v => (dec ? v.toFixed(dec)
+                            : Math.round(v).toLocaleString("en-US").replace(/,/g," ")) + suf;
+      if (REDUCED){ n.textContent = fmt(to); return; }
+      const t0 = performance.now(), dur = 1250;
+      const step = t => {
+        const k = clamp((t - t0)/dur, 0, 1);
+        n.textContent = fmt(to * easeOut(k));
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }), { rootMargin:"-10% 0px" });
+    document.querySelectorAll("[data-count]").forEach(n => io.observe(n));
+  }
+
+  function magnets(){
+    if (REDUCED) return;
+    document.querySelectorAll("[data-magnet]").forEach(b => {
+      b.addEventListener("pointermove", e => {
+        const r = b.getBoundingClientRect();
+        b.style.setProperty("--mx", (e.clientX - (r.left + r.width/2)) + "px");
+        b.style.setProperty("--my", (e.clientY - (r.top + r.height/2)) + "px");
+      });
+      b.addEventListener("pointerleave", () => {
+        b.style.setProperty("--mx","0px"); b.style.setProperty("--my","0px");
+      });
+    });
+  }
+
+  function tilts(){
+    document.querySelectorAll("[data-tilt]").forEach(c =>
+      c.addEventListener("pointermove", e => {
+        const r = c.getBoundingClientRect();
+        c.style.setProperty("--px", (e.clientX - r.left) + "px");
+        c.style.setProperty("--py", (e.clientY - r.top) + "px");
+      }));
+  }
+
+  /* The explorer isolates a system rather than merely tinting it: the rest
+     of the machine drops back so the selected assembly is legible against
+     it. Engineering software, not a glow effect. */
+  function explorer(){
+    const svg = document.querySelector("#expMachine .machine");
+    const btns = [...document.querySelectorAll("[data-sys-btn]")];
+    function set(key){
+      svg.classList.add("iso");
+      svg.querySelectorAll("[data-sys]").forEach(g =>
+        g.classList.toggle("on", g.dataset.sys === key));
+      btns.forEach(b => b.classList.toggle("on", b.dataset.sysBtn === key));
+    }
+    btns.forEach(b => b.addEventListener("click", () => set(b.dataset.sysBtn)));
+    set("engine");
+  }
+
+  /* The parts chain lights step by step as the section crosses the
+     viewport — the reader's own scroll drives the narrowing. */
+  function chain(){
+    const chain = document.getElementById("chain");
+    const links = [...chain.querySelectorAll(".link")];
+    function update(){
+      const r = chain.getBoundingClientRect();
+      const p = clamp((innerHeight*.86 - r.top) / (innerHeight*.62), 0, 1);
+      links.forEach((l,i) => l.classList.toggle("on", p >= (i + .3) / links.length));
+    }
+    addEventListener("scroll", update, { passive:true });
+    addEventListener("resize", update); update();
+  }
+
+  function service(){
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (!e.isIntersecting) return; io.unobserve(e.target);
+      e.target.querySelectorAll("[data-fill]").forEach((row,i) =>
+        setTimeout(() => {
+          row.querySelector(".svc-fill").style.width = row.dataset.fill + "%";
+        }, 120 + i*130));
+    }), { rootMargin:"-10% 0px" });
+    io.observe(document.getElementById("svc"));
+  }
+
+  function chrome(){
+    const s = () => document.body.classList.toggle("scrolled", scrollY > 40);
+    addEventListener("scroll", s, { passive:true }); s();
+    document.getElementById("replayBtn").addEventListener("click", () => {
+      scrollTo({ top:0, behavior: REDUCED ? "auto" : "smooth" });
+      Intro.run();
+    });
+  }
+
+  /* Called the moment the wipe clears. The hero must not stagger itself
+     in behind the intro — an entrance nobody saw did not happen. */
+  function wake(){
+    if (woken) return; woken = true;
+    document.getElementById("heroVis").classList.add("lit");
+    requestAnimationFrame(() =>
+      document.querySelectorAll(".hero [data-reveal]").forEach(n => n.classList.add("in")));
+  }
+
+  function init(){
+    reveals(); counters(); magnets(); tilts(); explorer(); chain(); service(); chrome();
+    dust(document.getElementById("heroDust"), { n:90, tint:"120,132,146", alpha:.9, rise:-.04 });
+    Chat.init();
+  }
+  return { init, wake };
+})();
+
+Page.init();
+Intro.run();
+</script>
+</body>
+</html>
