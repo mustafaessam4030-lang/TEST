@@ -150,3 +150,23 @@ def test_snowflake_without_credentials_is_not_configured(tmp_path):
 def test_secrets_do_not_appear_in_settings_repr():
     s = SnowflakeSettings(account="a", user="u", password="hunter2", private_key_passphrase="pp")
     assert "hunter2" not in repr(s) and "pp'" not in repr(s)
+
+
+def test_private_key_from_environment_text(tmp_path, monkeypatch):
+    import snowflake.connector
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+    seen = {}
+
+    def fake_connect(**kw):
+        seen.update(kw)
+        raise RuntimeError("stop")
+    monkeypatch.setattr(snowflake.connector, "connect", fake_connect)
+    one_line = pem.replace("\n", "\\n")              # how a key often looks after pasting into a secret field
+    b = SnowflakeBackend(_sf_settings(tmp_path, private_key_pem=one_line))
+    with pytest.raises(BackendError):
+        b.query("SELECT 1", (), timeout_s=5, max_rows=1, tag="t")
+    assert seen["authenticator"] == "SNOWFLAKE_JWT" and isinstance(seen["private_key"], bytes)
+    assert "BEGIN" not in repr(b.sf)

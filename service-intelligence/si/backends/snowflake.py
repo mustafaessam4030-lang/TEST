@@ -26,9 +26,9 @@ PERMISSION_ERRNOS = {2003, 3001, 2043, 1063}
 TIMEOUT_ERRNOS = {604, 630}
 
 
-def _private_key_der(path: str, passphrase: str | None) -> bytes:
+def _private_key_der(pem: bytes, passphrase: str | None) -> bytes:
     from cryptography.hazmat.primitives import serialization
-    key = serialization.load_pem_private_key(Path(path).read_bytes(),
+    key = serialization.load_pem_private_key(pem,
                                              password=passphrase.encode() if passphrase else None)
     return key.private_bytes(encoding=serialization.Encoding.DER, format=serialization.PrivateFormat.PKCS8,
                              encryption_algorithm=serialization.NoEncryption())
@@ -77,8 +77,11 @@ class SnowflakeBackend(Backend):
                       session_parameters={"QUERY_TAG": QUERY_TAG, "TIMEZONE": "UTC",
                                           "STATEMENT_TIMEOUT_IN_SECONDS": self.settings.query_timeout_s,
                                           "ABORT_DETACHED_QUERY": True})
-        if self.sf.private_key_path:
-            kwargs["private_key"] = _private_key_der(self.sf.private_key_path, self.sf.private_key_passphrase)
+        if self.sf.private_key_pem or self.sf.private_key_path:
+            # A key pasted into a secret store as one line may carry literal "\n" sequences.
+            pem = (self.sf.private_key_pem.replace("\\n", "\n").encode() if self.sf.private_key_pem
+                   else Path(self.sf.private_key_path).read_bytes())
+            kwargs["private_key"] = _private_key_der(pem, self.sf.private_key_passphrase)
             kwargs["authenticator"] = "SNOWFLAKE_JWT"
         elif self.sf.oauth_token_path:
             kwargs["authenticator"] = "oauth"

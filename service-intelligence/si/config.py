@@ -47,6 +47,7 @@ class SnowflakeSettings:
     warehouse: str | None = None
     authenticator: str | None = None     # SNOWFLAKE_JWT (key pair), externalbrowser, oauth, ...
     private_key_path: str | None = None
+    private_key_pem: str | None = field(default=None, repr=False)   # key text from a secret store
     private_key_passphrase: str | None = field(default=None, repr=False)
     password: str | None = field(default=None, repr=False)
     oauth_token_path: str | None = None
@@ -120,6 +121,7 @@ def load_settings() -> Settings:
         warehouse=_env("SNOWFLAKE_WAREHOUSE"),
         authenticator=_env("SNOWFLAKE_AUTHENTICATOR"),
         private_key_path=_env("SNOWFLAKE_PRIVATE_KEY_PATH"),
+        private_key_pem=_env("SNOWFLAKE_PRIVATE_KEY"),
         private_key_passphrase=_env("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE"),
         password=_env("SNOWFLAKE_PASSWORD"),
         oauth_token_path=_env("SNOWFLAKE_OAUTH_TOKEN_PATH"),
