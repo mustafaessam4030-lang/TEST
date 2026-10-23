@@ -1,0 +1,10 @@
+# Runtime
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.7
+pyyaml>=6.0
+sqlglot>=25,<31          # SQL parsing for the guard and Snowflake->DuckDB translation of fixtures
+duckdb>=1.1              # SYNTHETIC fixture backend (dev/test)
+pandas>=2.1              # fixture loading
+snowflake-connector-python>=3.12
+cryptography>=42         # key-pair authentication

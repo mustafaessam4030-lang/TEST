@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Intelligence</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">SI</span>
+      <div>
+        <h1>Service Intelligence</h1>
+        <p class="sub" id="freshness">Loading…</p>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Pages">
+      <a href="#/analysis" data-page="analysis">Analysis</a>
+      <a href="#/recommendations" data-page="recommendations">Recommendations</a>
+      <a href="#/assistant" data-page="assistant">AI Assistant</a>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+  <div class="banner" id="source-banner" hidden></div>
+
+  <section class="filters" aria-label="Reporting period and filters">
+    <div class="field">
+      <label for="f-start">From</label>
+      <input type="date" id="f-start">
+    </div>
+    <div class="field">
+      <label for="f-end">To</label>
+      <input type="date" id="f-end">
+    </div>
+    <div class="field presets" role="group" aria-label="Quick periods">
+      <button type="button" class="chip" data-preset="30">30 days</button>
+      <button type="button" class="chip" data-preset="90">90 days</button>
+      <button type="button" class="chip" data-preset="month">This month</button>
+      <button type="button" class="chip" data-preset="lastmonth">Last month</button>
+    </div>
+    <div class="dims" id="dim-filters"></div>
+    <div class="field actions">
+      <button type="button" class="primary" id="apply">Apply</button>
+      <button type="button" class="ghost" id="reset">Reset</button>
+    </div>
+    <p class="period-line" id="period-line" aria-live="polite"></p>
+  </section>
+
+  <main id="main" tabindex="-1">
+    <section id="page-analysis" class="page" aria-labelledby="h-analysis" hidden>
+      <h2 id="h-analysis" class="sr-only">Service overview and analysis</h2>
+      <div class="kpis" id="kpis" aria-live="polite"></div>
+      <div class="grid2">
+        <article class="panel" id="detail">
+          <div class="panel-head">
+            <h3 id="detail-title">Select a metric</h3>
+            <div class="controls">
+              <label for="grain">Trend by</label>
+              <select id="grain">
+                <option value="day">Day</option>
+                <option value="week" selected>Week</option>
+                <option value="month">Month</option>
+              </select>
+              <label for="dimension">Break down by</label>
+              <select id="dimension"></select>
+            </div>
+          </div>
+          <div id="definition"></div>
+          <div id="trend" class="chart"></div>
+          <div id="breakdown" class="chart"></div>
+        </article>
+        <article class="panel" id="quality-panel">
+          <div class="panel-head"><h3>Data quality and coverage</h3></div>
+          <div id="quality"></div>
+        </article>
+      </div>
+      <article class="panel" id="drill-panel" hidden>
+        <div class="panel-head">
+          <h3 id="drill-title">Records</h3>
+          <button type="button" class="ghost" id="drill-close">Close</button>
+        </div>
+        <div id="drill"></div>
+      </article>
+    </section>
+
+    <section id="page-recommendations" class="page" aria-labelledby="h-recs" hidden>
+      <div class="page-head">
+        <div>
+          <h2 id="h-recs">Recommendation plan</h2>
+          <p class="muted">Candidates are generated from the approved metrics for the period and filters above.
+            Nothing is saved or acted on until someone saves and approves it.</p>
+        </div>
+        <button type="button" class="primary" id="generate">Generate recommendations</button>
+      </div>
+      <div id="ranking" class="muted small"></div>
+      <div id="candidates" aria-live="polite"></div>
+      <h2 class="section">Saved plan</h2>
+      <div class="plan-filter">
+        <label for="plan-status">Status</label>
+        <select id="plan-status">
+          <option value="">All</option>
+          <option>proposed</option><option>reviewed</option><option>approved</option>
+          <option>in_progress</option><option>completed</option><option>rejected</option><option>blocked</option>
+        </select>
+      </div>
+      <div id="plan"></div>
+      <div id="plan-detail"></div>
+    </section>
+
+    <section id="page-assistant" class="page" aria-labelledby="h-chat" hidden>
+      <div class="page-head">
+        <div>
+          <h2 id="h-chat">AI Service Assistant</h2>
+          <p class="muted">Answers use the same metric definitions as the dashboard and the period and filters above.
+            Context is kept for this conversation only and is not stored.</p>
+        </div>
+        <button type="button" class="ghost" id="new-chat">New conversation</button>
+      </div>
+      <div class="chat" id="chat-log" role="log" aria-live="polite"></div>
+      <form class="composer" id="composer">
+        <label for="message" class="sr-only">Ask a question</label>
+        <textarea id="message" rows="2" maxlength="2000" placeholder="Ask about backlog, resolution time, SLA…"></textarea>
+        <button type="submit" class="primary" id="send">Ask</button>
+      </form>
+      <div class="examples" id="examples"></div>
+    </section>
+
+    <section id="page-signin" class="page" hidden>
+      <form class="panel signin" id="signin">
+        <h2>Sign in</h2>
+        <label for="token">Access token</label>
+        <input type="password" id="token" autocomplete="off" required>
+        <button type="submit" class="primary">Sign in</button>
+        <p class="muted small">The token is kept in this browser tab only.</p>
+      </form>
+    </section>
+  </main>
+  <div class="tooltip" id="tooltip" role="status" hidden></div>
+</body>
+</html>

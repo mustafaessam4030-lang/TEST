@@ -1,0 +1,7 @@
+data/
+discovery/
+.env
+config/source_mapping.yaml
+config/users.yaml
+__pycache__/
+*.pyc

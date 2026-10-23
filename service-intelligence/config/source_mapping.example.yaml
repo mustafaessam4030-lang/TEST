@@ -1,0 +1,44 @@
+# Source mapping for the REAL service data. Fill in ONLY after discovery:
+#   python -m si.discover inventory      -> discovery/inventory.md (candidate tables)
+#   python -m si.discover profile DB.SCHEMA.TABLE --id .. --created .. --status ..
+# then copy this file to config/source_mapping.yaml, review it with the data owner, and run
+#   python -m si.mapping check           -> verifies every column and status value against Snowflake
+#   python -m si.mapping ddl             -> prints the CREATE SECURE VIEW for the schema owner to run
+#
+# Every value below is a PLACEHOLDER. None of these names were found in any Snowflake account.
+source:
+  table: <SOURCE_DB>.<SOURCE_SCHEMA>.<SOURCE_TABLE>
+  timezone: UTC            # time zone of naive (NTZ) timestamps in the source, e.g. Africa/Cairo
+  timestamp_kind: ntz      # ntz | ltz | tz
+  synthetic: false
+
+columns:                   # contract column: SOURCE COLUMN (leave empty if the source has none)
+  request_id: <ID_COLUMN>
+  created_at: <CREATED_TIMESTAMP_COLUMN>
+  closed_at:               # resolution/close timestamp
+  due_at:                  # SLA target timestamp; or use sla_policy below
+  updated_at:
+  loaded_at:               # e.g. _ADF_LOAD_TS if loaded by the ADF framework in this repository
+  status: <STATUS_COLUMN>
+  priority:
+  category:
+  service_type:
+  team:
+  region:
+
+status_classes:            # every source status value, assigned to exactly one class (case-insensitive)
+  OPEN: []
+  CLOSED: []
+  CANCELLED: []
+
+# Only if the source has no SLA target column AND the business has an approved SLA policy:
+# sla_policy:
+#   basis: priority
+#   targets_hours: {P1: 4, P2: 24}
+
+# If the source keeps several rows per request (history/extracts), keep the latest:
+# dedupe:
+#   order_by: <LAST_UPDATED_COLUMN>
+
+# Source columns that must never reach the application (validated: they cannot be mapped).
+sensitive_columns: []

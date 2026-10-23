@@ -1,0 +1,32 @@
+# Mapping for the SYNTHETIC development dataset (si/fixtures.py). Not company data.
+# Copy config/source_mapping.example.yaml for the real source after discovery.
+source:
+  table: SI_SYNTHETIC.RAW.SERVICE_REQUESTS
+  timezone: UTC
+  timestamp_kind: ntz
+  synthetic: true
+
+columns:
+  request_id: TICKET_NO
+  created_at: OPENED_TS
+  closed_at: RESOLVED_TS
+  due_at: TARGET_TS
+  updated_at: LAST_MODIFIED_TS
+  loaded_at: ETL_LOADED_TS
+  status: STATUS_TXT
+  priority: PRIO
+  category: ISSUE_CATEGORY
+  service_type: SVC_TYPE
+  team: WORK_CENTRE
+  region: REGION_NAME
+
+status_classes:
+  OPEN: [New, In Progress, Waiting Parts]
+  CLOSED: [Resolved, Closed]
+  CANCELLED: [Cancelled]
+
+dedupe:
+  order_by: LAST_MODIFIED_TS
+
+sensitive_columns: [CUSTOMER_NAME, PROBLEM_DESCRIPTION]
+notes: Synthetic fixture mapping used only with SI_BACKEND=fixture.

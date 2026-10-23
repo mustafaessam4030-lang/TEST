@@ -1,0 +1,26 @@
+# Application roles and users. Copy to a secured location for test/prod and set SI_USERS_PATH.
+# Tokens are stored only as SHA-256 hashes:  python -m si.tokens new <user-id>
+roles:
+  viewer:   [analysis.read, chat.ask, plan.read]
+  analyst:  [analysis.read, analysis.drilldown, chat.ask, plan.read, plan.add, plan.review]
+  approver: [analysis.read, analysis.drilldown, chat.ask, plan.read, plan.add, plan.review, plan.approve]
+  admin:    [analysis.read, analysis.drilldown, chat.ask, plan.read, plan.add, plan.review, plan.approve, admin.read]
+
+# trusted_header mode: identity-provider group -> application role
+group_roles:
+  si-viewers: viewer
+  si-analysts: analyst
+  si-approvers: approver
+  si-admins: admin
+
+users:
+  # The first user is the one SI_AUTH_MODE=dev signs in as (SI_ENV=dev only).
+  - id: dev.user
+    name: Development user
+    roles: [admin]
+  # Example of a scoped user: every query they trigger is limited to region North.
+  - id: north.analyst
+    name: North analyst (example)
+    roles: [analyst]
+    scope:
+      region: [North]

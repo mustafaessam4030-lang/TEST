@@ -1,0 +1,200 @@
+# Service Intelligence metric registry — the single source of truth.
+#
+# The Analysis page, the Recommendation engine and the AI Assistant all compute
+# metrics from these definitions through si/query.py. Nothing else in the
+# application may calculate a KPI.
+#
+# expression / filter: Snowflake SQL over contract columns only (si/contract.py).
+#   {as_of} and {aged_days} are bound as query parameters, never pasted in.
+# kind: period   -> counted when `time_column` falls in the reporting period
+#       snapshot -> state "as of" the analysis time (period is ignored)
+# requires: contract columns that must be mapped to real data; otherwise the
+#   metric is reported as unavailable instead of being computed.
+version: "2026.10.1"
+
+parameters:
+  aged_days:
+    default: 30
+    description: >-
+      Age in days after which an open request counts as aged. 30 is a starting
+      assumption, not a company standard; change it once the business confirms one.
+
+dimensions:
+  priority:     {label: Priority,     synonyms: [priority, priorities, severity]}
+  category:     {label: Category,     synonyms: [category, categories, issue type, issue types, problem type]}
+  service_type: {label: Service type, synonyms: [service type, service types, type of service]}
+  team:         {label: Team,         synonyms: [team, teams, work centre, work center, group, groups]}
+  region:       {label: Region,       synonyms: [region, regions, branch, branches, site, sites, location, locations]}
+
+metrics:
+  - id: requests_created
+    name: Requests created
+    description: Distinct service requests opened in the period.
+    kind: period
+    time_column: created_at
+    expression: COUNT(DISTINCT request_id)
+    unit: count
+    direction: neutral
+    requires: [request_id, created_at]
+    synonyms: [requests created, new requests, created, volume, intake, demand, how many requests, number of requests, tickets, cases, work orders]
+    limitations:
+      - Counts requests by their opening time in the reporting time zone.
+
+  - id: requests_closed
+    name: Requests closed
+    description: Distinct requests whose status is in the CLOSED class and whose close time falls in the period.
+    kind: period
+    time_column: closed_at
+    expression: COUNT(DISTINCT request_id)
+    filter: status_class = 'CLOSED'
+    unit: count
+    direction: higher_is_better
+    requires: [request_id, closed_at, status_class]
+    synonyms: [closed, resolved, completed, throughput, requests closed]
+    limitations:
+      - Cancelled requests are excluded; they are a separate status class.
+
+  - id: avg_resolution_hours
+    name: Average resolution time
+    description: Mean hours from creation to close for requests closed in the period.
+    kind: period
+    time_column: closed_at
+    expression: AVG(DATEDIFF('minute', created_at, closed_at)) / 60.0
+    filter: status_class = 'CLOSED' AND closed_at >= created_at
+    unit: hours
+    direction: lower_is_better
+    min_sample: 10
+    requires: [created_at, closed_at, status_class]
+    synonyms: [average resolution, mean resolution, avg resolution, resolution, resolution time, resolution times, time to resolve, how long, mttr, turnaround]
+    limitations:
+      - Calendar hours, not business hours; no working calendar is available.
+      - Records closed before they were created are excluded and reported as a data-quality issue.
+      - Sensitive to a few very long requests; read it next to the median.
+
+  - id: median_resolution_hours
+    name: Median resolution time
+    description: Median hours from creation to close for requests closed in the period.
+    kind: period
+    time_column: closed_at
+    expression: MEDIAN(DATEDIFF('minute', created_at, closed_at)) / 60.0
+    filter: status_class = 'CLOSED' AND closed_at >= created_at
+    unit: hours
+    direction: lower_is_better
+    min_sample: 10
+    requires: [created_at, closed_at, status_class]
+    synonyms: [median resolution, typical resolution, median time]
+    limitations:
+      - Calendar hours, not business hours.
+
+  - id: p90_resolution_hours
+    name: 90th percentile resolution time
+    description: Hours within which 90% of requests closed in the period were resolved.
+    kind: period
+    time_column: closed_at
+    expression: PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY DATEDIFF('minute', created_at, closed_at)) / 60.0
+    filter: status_class = 'CLOSED' AND closed_at >= created_at
+    unit: hours
+    direction: lower_is_better
+    min_sample: 20
+    requires: [created_at, closed_at, status_class]
+    synonyms: [p90, 90th percentile, tail resolution, slowest 10%]
+    limitations:
+      - Needs at least 20 closed requests to be meaningful.
+
+  - id: sla_compliance_rate
+    name: SLA compliance
+    description: Share of requests closed in the period that were closed on or before their SLA target time.
+    kind: period
+    time_column: closed_at
+    expression: AVG(IFF(closed_at <= due_at, 1.0, 0.0))
+    filter: status_class = 'CLOSED' AND due_at IS NOT NULL AND closed_at >= created_at
+    unit: ratio
+    direction: higher_is_better
+    min_sample: 10
+    requires: [created_at, closed_at, due_at, status_class]
+    synonyms: [sla, sla compliance, sla performance, on time, within sla, compliance, met sla]
+    limitations:
+      - Only requests with an SLA target time are included; the share without one is shown as coverage.
+      - The target comes from the mapping (a source column or an approved SLA policy); see the definition panel.
+
+  - id: sla_breach_rate
+    name: SLA breach rate
+    description: Share of requests closed in the period that were closed after their SLA target time.
+    kind: period
+    time_column: closed_at
+    expression: AVG(IFF(closed_at > due_at, 1.0, 0.0))
+    filter: status_class = 'CLOSED' AND due_at IS NOT NULL AND closed_at >= created_at
+    unit: ratio
+    direction: lower_is_better
+    min_sample: 10
+    requires: [created_at, closed_at, due_at, status_class]
+    synonyms: [breach, breaches, breach rate, late, missed sla, overdue rate]
+    limitations:
+      - Equals 1 minus SLA compliance over the same records.
+
+  - id: open_backlog
+    name: Open backlog
+    description: Distinct requests in the OPEN status class as of the analysis time.
+    kind: snapshot
+    expression: COUNT(DISTINCT request_id)
+    filter: status_class = 'OPEN' AND created_at <= {as_of}
+    unit: count
+    direction: lower_is_better
+    requires: [request_id, created_at, status_class]
+    synonyms: [backlog, open, open requests, open work, workload, pending, outstanding, wip]
+    limitations:
+      - Current state only. Past backlog cannot be rebuilt without status history, so there is no backlog trend.
+
+  - id: aged_backlog
+    name: Aged backlog
+    description: Open requests older than the aged-days threshold as of the analysis time.
+    kind: snapshot
+    expression: COUNT(DISTINCT request_id)
+    filter: status_class = 'OPEN' AND created_at <= {as_of} AND DATEDIFF('day', created_at, {as_of}) > {aged_days}
+    unit: count
+    direction: lower_is_better
+    requires: [request_id, created_at, status_class]
+    synonyms: [aged backlog, aging, ageing, old requests, stale requests, aged]
+    limitations:
+      - The threshold (aged_days) is a configurable assumption.
+
+  - id: aged_backlog_share
+    name: Aged share of backlog
+    description: Aged open requests divided by all open requests, as of the analysis time.
+    kind: snapshot
+    expression: AVG(IFF(DATEDIFF('day', created_at, {as_of}) > {aged_days}, 1.0, 0.0))
+    filter: status_class = 'OPEN' AND created_at <= {as_of}
+    unit: ratio
+    direction: lower_is_better
+    min_sample: 10
+    requires: [created_at, status_class]
+    synonyms: [aged share, share aged, percentage aged, backlog age share]
+    limitations:
+      - The threshold (aged_days) is a configurable assumption.
+
+  - id: avg_backlog_age_days
+    name: Average backlog age
+    description: Mean age in days of open requests as of the analysis time.
+    kind: snapshot
+    expression: AVG(DATEDIFF('day', created_at, {as_of}))
+    filter: status_class = 'OPEN' AND created_at <= {as_of}
+    unit: days
+    direction: lower_is_better
+    min_sample: 10
+    requires: [created_at, status_class]
+    synonyms: [backlog age, average age, age of backlog, how old]
+    limitations:
+      - Calendar days.
+
+  - id: open_past_due
+    name: Open past SLA target
+    description: Open requests whose SLA target time has already passed, as of the analysis time.
+    kind: snapshot
+    expression: COUNT(DISTINCT request_id)
+    filter: status_class = 'OPEN' AND created_at <= {as_of} AND due_at < {as_of}
+    unit: count
+    direction: lower_is_better
+    requires: [request_id, created_at, due_at, status_class]
+    synonyms: [past due, overdue, open breaches, breached open, late open]
+    limitations:
+      - Only requests with an SLA target time can be past due.
