@@ -1,13 +1,59 @@
 # Service data catalog
 
-**Status: no company service data has been catalogued yet.** Snowflake was not reachable from the build session (see SERVICE_INTELLIGENCE_AUDIT.md §1). This file records:
+> **Update, 23 Oct 2026.** Snowflake is now connected (account FY56654, AZURE_WESTEUROPE, read-only connector).
+> Section 0 below is real metadata. Row counts come from `SHOW TABLES`; columns come from `SHOW COLUMNS`.
+> **Not yet measured:** value ranges, freshness, null rates and duplicates. Measuring them needs a warehouse on the connector.
+> Sections 1–4 are the original pre-connection notes and the contract design.
 
-- what is known from the repository;
-- the data contract the application needs;
-- the synthetic development dataset;
-- how to produce the real catalog.
+## 0. Phase-1 source tables (chosen by the business owner)
 
-Nothing below describes a table that was observed in a live Snowflake account.
+**Source.** Everything comes from `CAT_SHARE`, a database imported from Caterpillar's share `CAT.CAT_AZURE_WEST_EU_NL.HELIOS_DEALER_DATA_SHARE_K666_PROD_SHARE`. All tables are TRANSIENT and maintained by Cat.
+
+**Target.** `SERVICE_INTELLIGENCE.<same schema>.<same table>`, created by `sql/snowflake/01_phase1_cat_share_copy.sql`. The business owner runs it; the read-only connector cannot.
+
+| Table | Rows | Size | Grain (from column names — confirm in profiling) |
+|---|---|---|---|
+| DOMAIN_TELEMETRY.FAULT_CODE_BASIC_DAILY | 67,929,254 | 4.2 GB | One fault-code event per asset per message: SPN/FMI/CID/EID codes, `LEVEL`, occurrence count and time |
+| DOMAIN_TELEMETRY.FAULT_CODE_HISTORY | 7,853,364 | 0.56 GB | Fault-code history: `SEVERITY`, ECU and fault-type descriptions, SMH total, location |
+| DOMAIN_TELEMETRY.TELEMETRY_FUEL_BASIC_DAILY | 5,381,210 | 0.31 GB | Daily fuel readings per asset: fuel level %, cumulative fuel, idle fuel (each with a unit of measure) |
+| DOMAIN_TELEMETRY.TELEMETRY_SMU_LOCATION_BASIC_DAILY | 8,520,895 | 0.57 GB | Daily service-meter hours, idle hours, distance, location and `VALID_FLAG` per asset |
+| OLGA.COMPANY_CONFIG_TABLE | 9 | — | Dealer codes and descriptions, generation time |
+| OLGA.CUSTOMER_TOTALS_TABLE | 14,911 | 1.9 MB | Monthly per customer and division: BASE, SALES, BOOST and OPPORTUNITY by component family |
+| OLGA.EQUIPMENT_REPORT_DETAIL_TABLE | 125,138 | 18.5 MB | One row per machine: model, customer, segment, utilisation, SMU, parked status, 12-month sales, base and opportunity |
+| OLGA.LOST_OPPORTUNITY_REPORT_TABLE | 25,554,944 | 0.92 GB | Monthly (`YEAR_MONTH`) per serial, branch and SMCS component: SALES, BASE, BOOST, OPPORTUNITY and LOST_OPPORTUNITY (`_SCP`) |
+| OLGA.OPPORTUNITIES_TABLE | 13,497,886 | 1.6 GB | One opportunity per serial and component/job: TOTAL_VALUE, LABOR_VALUE, TARGET_DATE, TARGET_SMU, LEAD_SCORE, CONFIDENCE_INDEX, BRANCH, `END_OF_MONTH` |
+| OLGA.OPPORTUNITY_MAJORCLASS_SUBCATEGORY_PARTCOST_TABLE | 245,196,480 | 3.6 GB | Part cost per opportunity (`OPPORTUNITY_KEY`) by major class and commercial group |
+
+### Findings that shape the design
+
+1. **Telemetry values are stored as text.** That includes every date and time (`MODULE_DATETIME`, `OCCURRENCE_DATETIME`, `RECEIVED_DATETIME`, `SERVICE_METER_HOURS_DATETIME`, …) and every number (`OCCURRENCE_COUNT`, `SERVICE_METER_HOURS_VALUE`, `CUMULATIVE_FUEL_VALUE`, `LATITUDE`, …). The curated views must convert them with `TRY_TO_TIMESTAMP` / `TRY_TO_NUMBER` and report how many values fail to convert. The formats are unknown until profiling.
+2. **Join keys between the sources:**
+   - Machines join on serial number: `ASSET_SERIAL_NUMBER` (telemetry) = `SERIAL_NUMBER` (OLGA) = `SERIALNUMBER` (Helios `MANDL_CDM_PROD.MANCDM.SERVICEORDER`).
+   - Dealers join on `DEALER_CODE`.
+   - Customers join on `PRIMARY_CUSTOMER_IDENTIFIER` / `CUSTOMER_NUMBER`.
+   - Inside OLGA, opportunities join to part cost on `OPPORTUNITY_KEY`.
+   - Each match rate must be measured before any join is used in a KPI.
+3. **OLGA tables look like monthly snapshots** (`END_OF_MONTH`, `YEAR_MONTH`, `GENERATION_TIME`). KPIs must choose one snapshot (latest, or the month asked for) so totals are not counted twice.
+4. **Freshness columns** are `REFRESH_TIMESTAMP` (LTZ) and `LAST_UPDATE_TIMESTAMP` on telemetry, and `LAST_UPDATE_TIMESTAMP` / `GENERATION_TIME` on OLGA. `FAULT_CODE_HISTORY.LAST_UPDATE_TIMESTAMP` is text.
+5. **Sensitive columns are excluded from the app's views and the assistant:**
+   - names: `CUSTOMER_NAME`, `DEALER_CUSTOMER_NAME`, `PARENT_CUSTOMER_NAME`, `SALES_REP_NAME`;
+   - location: `LATITUDE`/`LONGITUDE`, `LOCATION_LATITUDE`/`LOCATION_LONGITUDE`, `LOCATION_ADDRESS`, `POSTAL_CODE`, `COUNTY`, `STATE`;
+   - other: `CUSTOM_FIELD` (array).
+
+   Customer and asset identifiers stay, for drill-down by authorised roles only.
+6. **The app's data model needs extending.** The current contract assumes one service-request table (open → closed, SLA). These sources are about **events** (faults), **readings** (hours, fuel) and **opportunities** (value by component). The next step adds one governed view and one metric set per subject (fault events, asset utilisation, opportunities), using the same registry, guard and executor.
+
+### Other service data found (not in phase 1)
+
+| Object | Rows | Notes |
+|---|---|---|
+| `MANDL_CDM_PROD.MANCDM.SERVICEORDER` | 74,144 | Helios production service orders: OPENDATE, LASTCLOSEDATE, FINISHEDDATE, PROMISEDENDDATE, status, open status, priority, repair type, store, division and department. This fits the existing service-request contract. |
+| `MANDL_CDM_PROD.MANCDM.SERVICEORDERJOB` | 140,018 | Job lines: estimated, standard and target hours; rework flag and reason; component and job codes |
+| `SNOWPY.ANALYTICS.SERVICE_RESPONSE_TIME` | — | Existing dbt rule: `is_on_time = actual_start_date <= planned_start_date`, from ManPRO DB2 invoices (customer type 'CUSTOMER' only) |
+| `SVC_CORTEX.MANDW.V_RPT_SERVICE_METRICS` | — | Existing invoice-segment financial metrics: labour, parts and misc sell/cost, gross profit %, labour-to-invoice days |
+| `MANDL_DEV.RENTAL_APP.V_SERVICE_JOBS` | — | ManPRO service jobs on rental units since 2025 |
+
+---
 
 ## 1. Snowflake objects referenced in this repository
 
