@@ -1,8 +1,12 @@
 # Service data catalog
 
-> **Update, 23 Oct 2026.** Snowflake is now connected (account FY56654, AZURE_WESTEUROPE, read-only connector).
-> Section 0 below is real metadata. Row counts come from `SHOW TABLES`; columns come from `SHOW COLUMNS`.
-> **Not yet measured:** value ranges, freshness, null rates and duplicates. Measuring them needs a warehouse on the connector.
+> **Update, 23 Oct 2026 (step 2, profiling).** Snowflake is connected (account FY56654, AZURE_WESTEUROPE, read-only connector).
+> Section 0 is real metadata: row counts from `SHOW TABLES`, columns from `SHOW COLUMNS`.
+> Section 0.1 is what could be measured **without a warehouse**: query-plan metadata (`EXPLAIN`) gives single-valued columns,
+> null presence and range checks. It does not give rates, counts or match percentages.
+> **Still blocked:** null rates, duplicates, conversion rates and serial-number match rates. The connector's MCP server
+> (`MANDL_DEV.STG_MANPRO_SH.CLAUDE_MCP_SERVER`) is configured with warehouse `CLAUDE_WH`, and that warehouse does not exist. So every
+> query that needs compute fails. The full aggregate-only profile is ready in `sql/snowflake/03_phase1_profile.sql` (section 0.2).
 > Sections 1–4 are the original pre-connection notes and the contract design.
 
 ## 0. Phase-1 source tables (chosen by the business owner)
@@ -42,6 +46,81 @@
 
    Customer and asset identifiers stay, for drill-down by authorised roles only.
 6. **The app's data model needs extending.** The current contract assumes one service-request table (open → closed, SLA). These sources are about **events** (faults), **readings** (hours, fuel) and **opportunities** (value by component). The next step adds one governed view and one metric set per subject (fault events, asset utilisation, opportunities), using the same registry, guard and executor.
+
+## 0.1 Profiling results so far (metadata only, 23 Oct 2026)
+
+**Method.** `EXPLAIN` runs without a warehouse. Snowflake keeps exact min, max and null counts for every micro-partition, and the
+optimizer uses them. So a plan shows:
+
+- columns it replaced with a constant (one value in the whole table);
+- filters it proved empty ("no rows") or proved true for every row ("all rows");
+- filters it had to scan, which means some rows match and some don't.
+
+Exact for numbers, dates and nulls. Blank strings are not seen. Thresholds are relative to 23 Oct 2026 evening.
+
+**Snapshot timing.** The copies were taken on 23 Oct 2026 at 21:27 UTC. Cat's `REFRESH_TIMESTAMP` holds one value per table:
+`2026-10-23 16:00:10 +04:00` (12:00 UTC). That is FAULT_CODE_BASIC_DAILY, TELEMETRY_FUEL_BASIC_DAILY and TELEMETRY_SMU_LOCATION_BASIC_DAILY.
+
+| Table | Measured |
+|---|---|
+| FAULT_CODE_BASIC_DAILY | **One `REFRESH_TIMESTAMP` for all 67.9M rows**, so Cat reloads the whole table daily; history is whatever the reload contains. `DEALER_CODE` = `K666` in every row. No nulls in `ASSET_SERIAL_NUMBER`, `OCCURRENCE_DATETIME` or `LAST_UPDATE_TIMESTAMP`. `LAST_UPDATE_TIMESTAMP` has rows from the last 24 h. `STANDARD_MANUFACTURER_CODE` has several values. |
+| FAULT_CODE_HISTORY | No nulls in `ASSET_SERIAL_NUMBER` or `SEVERITY`. `STANDARD_MANUFACTURER_CODE` and `DEALER_CODE_SHARE` have several values. |
+| TELEMETRY_FUEL_BASIC_DAILY | One refresh time (as above). `DEALER_CODE` = `K666`. **Units are constant:** `FUEL_LEVEL_UOM` = `Percentage`, `CUMULATIVE_FUEL_UOM` = `IDLE_FUEL_UOM` = `Liters`. No null serials. `CUMULATIVE_FUEL_VALUE` is null in some rows. |
+| TELEMETRY_SMU_LOCATION_BASIC_DAILY | One refresh time. `DEALER_CODE` = `K666`. **Units are constant:** `SERVICE_METER_UOM` = `IDLE_SERVICE_METER_UOM` = `Hours`, `DISTANCE_TRAVELED_UOM` = `Kilometer`. No null serials. `SERVICE_METER_HOURS_VALUE` is null in some rows. `VALID_FLAG` has several values. |
+| COMPANY_CONFIG_TABLE | 9 rows. `GENERATION_TIME` has several values. |
+| CUSTOMER_TOTALS_TABLE | **Single snapshot:** `END_OF_MONTH` = `'2026-09'` in every row. `DEALER_CODE` has several values. |
+| EQUIPMENT_REPORT_DETAIL_TABLE | No nulls in `SERIAL_NUMBER` or `MONTHLY_UTILIZATION`; utilisation is never negative. **Some `MONTHLY_UTILIZATION` > 744**, more than the hours in a month, so it is not "hours per month" as-is. Confirm the unit. `LAST_INVOICE_DATE` is null in some rows and never in the future. |
+| LOST_OPPORTUNITY_REPORT_TABLE | Several `YEAR_MONTH` values (a history, unlike the other OLGA tables). No null serials or `LOST_OPPORTUNITY_SCP`. **Some `LOST_OPPORTUNITY_SCP` < 0.** |
+| OPPORTUNITIES_TABLE | **Single snapshot:** `END_OF_MONTH` = `'September 2026'` in every row. Note it is a different text format from CUSTOMER_TOTALS. No nulls in `SERIAL_NUMBER`, `OPPORTUNITY_KEY`, `TARGET_DATE` or `TOTAL_VALUE`. `TOTAL_VALUE` is never negative. No `TARGET_DATE` before 2020, **some after 2036**. No `LAST_UPDATE_TIMESTAMP` in the last 7 days. |
+| OPPORTUNITY_MAJORCLASS_SUBCATEGORY_PARTCOST_TABLE | No nulls in `PART_COST_USD`; never negative. |
+| `MANDL_CDM_PROD.MANCDM.SERVICEORDER` | Fresh: rows updated in the last 24 h, orders opened in the last 7 days, none opened in the future. **`PROMISEDENDDATE`, `FIRSTLABORDATE` and `REPAIRTYPE` are null in every row.** `PROMISEDSTARTDATE`, `FINISHEDDATE`, `FIRSTINVOICEDATE`, `OPENDATE` and `LASTCLOSEDATE` are null in some rows. No nulls in `SERIALNUMBER`, `SERVICEORDERPRIORITY`, `ISOPEN`, `CANDEVICEDOWN`, `STORECODE` or `DIVISIONCODE` (blank strings not checked). **Some `OPENDATE` values are before 2000** (placeholders?). |
+
+**What this changes:**
+
+1. **No SLA from Helios.** `PROMISEDENDDATE` is empty, so the "due date" KPIs cannot use it. The candidates are
+   `PROMISEDSTARTDATE` (partly filled), compared against the first activity date, and the existing ManPRO rule in
+   `SNOWPY.ANALYTICS.SERVICE_RESPONSE_TIME`. Both give an on-time *start* measure, not an on-time *completion* measure.
+2. **OLGA opportunities are one month-end snapshot** (September 2026), not a history. Trends need either
+   LOST_OPPORTUNITY_REPORT_TABLE (which has months) or our own monthly snapshots of the copies. `END_OF_MONTH` must be parsed per
+   table (`'YYYY-MM'` vs `'Month YYYY'`).
+3. **Telemetry is fully reloaded by Cat each day.** Our copy is a fixed snapshot, so the copy must be refreshed on a schedule
+   (a task re-running section 3 of `01_phase1_cat_share_copy.sql`, or views straight on `CAT_SHARE`). Deduplication must
+   not rely on `REFRESH_TIMESTAMP`.
+4. **Dealer is a constant (`K666`) in telemetry.** It cannot split results by branch. Branch comes from OLGA (`BRANCH_CODE`) or
+   Helios (`STORECODE`, `DIVISIONCODE`), joined through the serial number.
+5. **Units are uniform**, so the curated views need no unit conversion. Each still asserts its unit, so a change at Cat fails loudly.
+6. **Values to exclude or confirm before they feed KPIs:**
+   - `OPENDATE` before 2000;
+   - `TARGET_DATE` after 2036;
+   - negative `LOST_OPPORTUNITY_SCP`;
+   - `MONTHLY_UTILIZATION` above 744.
+
+**Not yet measured (needs the warehouse):** null *rates*, duplicate counts, text-to-timestamp and text-to-number conversion
+rates and formats, monthly coverage, and all serial-number, dealer, customer and opportunity-key **match rates**.
+
+## 0.2 Full profile (ready to run)
+
+`sql/snowflake/03_phase1_profile.sql` holds 17 aggregate-only queries. They return counts, percentages, min/max and value
+counts, never rows. Sensitive columns get a null rate only. Every query compiles against the live schema; the plans were checked with `EXPLAIN`.
+
+| Query | Measures |
+|---|---|
+| Q01–Q10 | One per table: rows, duplicates (candidate key and whole row), null/blank % per column, text→timestamp and text→number conversion % with raw and converted min/max, future and pre-2000 dates, negatives, freshness |
+| Q11 | Telemetry monthly rows and assets by event time (coverage, gaps) |
+| Q12 | OLGA rows, serials and value per snapshot |
+| Q13 | Value counts for units, flags, levels, dealer codes, product family |
+| Q14 | Serial-number match: telemetry ↔ OLGA equipment/opportunities/lost-opportunity ↔ `SERVICEORDER.SERIALNUMBER` and `DEVICENUMBER`, exact and letters/digits-only |
+| Q15 | Dealer, customer and `OPPORTUNITY_KEY` match |
+| Q16–Q17 | Helios service orders: coverage, freshness, null %, close-before-open, open backlog, status values |
+
+**To unblock the connector, either:**
+- create the warehouse it expects and grant `USAGE` on it to `DEV_ADMIN`:
+  ```sql
+  CREATE WAREHOUSE CLAUDE_WH WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE;
+  ```
+- or have `SF_MAN_GLOBALADMINS` re-create `CLAUDE_MCP_SERVER` with `"warehouse": "DEVELOPMENT_WH"`.
+
+**Or** run the file in Snowsight (Run All) and export each result to CSV.
 
 ### Other service data found (not in phase 1)
 

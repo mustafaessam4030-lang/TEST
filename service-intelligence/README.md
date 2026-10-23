@@ -13,6 +13,7 @@ The app has three pages, all built on one governed Snowflake view and one metric
 | [SERVICE_INTELLIGENCE_AUDIT.md](SERVICE_INTELLIGENCE_AUDIT.md) | Discovery findings, feature status, test results, what is needed to go live |
 | [SERVICE_DATA_CATALOG.md](SERVICE_DATA_CATALOG.md) | Known Snowflake objects, the data contract, the synthetic dataset, how to catalogue real data |
 | [SERVICE_METRIC_DEFINITIONS.md](SERVICE_METRIC_DEFINITIONS.md) | Every KPI (generated from `config/metrics.yaml`) |
+| [SERVICE_KPI_PROPOSAL.md](SERVICE_KPI_PROPOSAL.md) | Proposed phase-1 KPIs on the real sources (Helios orders, Cat telemetry, OLGA), awaiting approval |
 | [SERVICE_INTELLIGENCE_ARCHITECTURE.md](SERVICE_INTELLIGENCE_ARCHITECTURE.md) | Design decision, components, assistant pipeline, recommendation engine |
 | [SERVICE_SECURITY_AND_COST_CONTROLS.md](SERVICE_SECURITY_AND_COST_CONTROLS.md) | Snowflake roles and permissions, optional AI capabilities, query safety, cost controls |
 
