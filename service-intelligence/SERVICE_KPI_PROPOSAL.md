@@ -75,4 +75,6 @@ registry, which regenerates `SERVICE_METRIC_DEFINITIONS.md`, and will get hand-c
 5. C1: open opportunities include past-due ones, or only `TARGET_DATE` ≥ snapshot?
 6. D1: accept the "serviced fleet only" denominator?
 
-Settled by the data: currency is USD (`PART_COST` = `PART_COST_USD`), and "high severity" means `SEVERITY = 'HIGH'`.
+Settled by the data: "high severity" means `SEVERITY = 'HIGH'`. **Correction (24 Oct):** only the part-cost table is confirmed as USD (`PART_COST` = `PART_COST_USD`). `TOTAL_VALUE` and the `*_SCP` columns carry no currency, so the OLGA owner must confirm it.
+
+> **Scope update, 24 Oct 2026.** The business owner limited the project to the tables in `SERVICE_INTELLIGENCE` and a Snowflake-native build. Section A (Helios service orders) and section D are out of scope. Sections B and C are implemented in `snowflake_native/` (see its README).

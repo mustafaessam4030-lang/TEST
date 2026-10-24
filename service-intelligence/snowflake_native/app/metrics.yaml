@@ -1,0 +1,201 @@
+# Service Intelligence metric registry (Snowflake-native app). THE source of truth for every number:
+# the Analysis page, the recommendation detectors and the assistant all compile SQL from this file
+# through si_native/sqlbuild.py. Do not compute a KPI anywhere else.
+#
+# kind: period    -> rows whose `time_column` falls in [start, end) of the reporting period (UTC)
+# kind: snapshot  -> state as of the data (`as_of` = latest load) or the latest OLGA snapshot
+# Placeholders: :start :end :as_of :as_of_date are bound parameters; {table} is the source table.
+version: 2026.10.24
+
+sources:
+  fault_events:
+    table: SERVICE_INTELLIGENCE.CURATED.FAULT_EVENTS
+    label: Fault events (Cat telematics, FAULT_CODE_HISTORY)
+    time_column: occurred_at
+    loaded_column: loaded_at
+    entity: asset_serial
+    dimensions: [product_family, model, dealer_code, severity, fault_type, fault_description, fault_code]
+    drill_columns: [asset_serial, model, product_family, dealer_code]
+    history_from: 2023-12-01        # volume before Dec 2023 is too thin to compare
+  asset_daily:
+    table: SERVICE_INTELLIGENCE.CURATED.ASSET_DAILY
+    label: Daily service-meter readings (Cat telematics, SMU table)
+    time_column: reading_date
+    loaded_column: loaded_at
+    entity: asset_serial
+    dimensions: [model, manufacturer]
+    drill_columns: [asset_serial, model, manufacturer]
+    history_from: 2021-11-01
+    as_of_from: latest_data          # the 7-day window ends at the latest reading date
+  opportunities:
+    table: SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES
+    label: OLGA opportunities (latest month-end snapshot)
+    time_column: target_date
+    loaded_column: loaded_at
+    entity: opportunity_key
+    dimensions: [branch, smcs_group, product_family, source, dealer_code, connected_asset]
+    drill_columns: [asset_serial, model, branch, smcs_group, component, job, target_date]
+  lost_opportunity:
+    table: SERVICE_INTELLIGENCE.CURATED.LOST_OPPORTUNITY_MONTHLY
+    label: OLGA lost-opportunity report (monthly)
+    time_column: month_start
+    loaded_column: null
+    entity: null
+    dimensions: [branch, smcs_group, dealer_code]
+    drill_columns: [branch, smcs_group, dealer_code]
+    history_from: 2023-10-01
+
+dimension_labels:
+  product_family: Product family
+  model: Model
+  dealer_code: Dealer code
+  severity: Severity
+  fault_type: Fault type
+  fault_description: Fault
+  fault_code: Fault code
+  manufacturer: Manufacturer
+  branch: Branch
+  smcs_group: SMCS group
+  source: Opportunity source
+  connected_asset: Connected asset
+
+metrics:
+  - id: high_severity_fault_assets
+    name: Assets with high-severity faults
+    description: Distinct assets with at least one HIGH-severity fault event in the period.
+    source: fault_events
+    kind: period
+    expression: COUNT(DISTINCT asset_serial)
+    filter: severity = 'HIGH'
+    unit: assets
+    direction: lower_is_better
+    synonyms: [high severity, high-severity, severe faults, critical faults, serious faults, high faults, assets with high]
+    drill:
+      measures: {high_events: "COUNT(*)", fault_days: "COUNT(DISTINCT occurred_at::DATE)", last_seen: "MAX(occurred_at)", most_frequent_fault: "MODE(fault_description)"}
+      order_by: high_events
+    limitations:
+      - Covers the assets reporting into FAULT_CODE_HISTORY (about 2,100 a month), not the whole fleet.
+      - Severity is Cat's classification (LOW / MEDIUM / HIGH); it is not a Mantrac definition.
+      - Event times are treated as UTC; the source text carries no time zone.
+
+  - id: high_severity_fault_events
+    name: High-severity fault events
+    description: HIGH-severity fault events in the period, after removing repeated reports of the same event.
+    source: fault_events
+    kind: period
+    expression: COUNT(*)
+    filter: severity = 'HIGH'
+    unit: events
+    direction: lower_is_better
+    synonyms: [high severity events, number of high faults, how many high faults]
+    limitations:
+      - One event = one asset + ECU + fault code + occurrence time; 37% of source rows were repeats and are removed.
+
+  - id: fault_assets
+    name: Assets with any fault
+    description: Distinct assets with at least one fault event of any severity in the period.
+    source: fault_events
+    kind: period
+    expression: COUNT(DISTINCT asset_serial)
+    unit: assets
+    direction: neutral
+    synonyms: [assets with faults, faulting assets, machines with faults]
+    limitations:
+      - Same coverage as the high-severity metric.
+
+  - id: repeat_high_fault_assets
+    name: Assets with repeat high-severity faults
+    description: Distinct assets on which the same HIGH-severity fault occurred on 3 or more different days in the period.
+    source: fault_events
+    kind: period
+    filter: severity = 'HIGH'
+    grouped:
+      by: [asset_serial, fault_description]
+      having: COUNT(DISTINCT occurred_at::DATE) >= 3
+    expression: COUNT(DISTINCT asset_serial)
+    unit: assets
+    direction: lower_is_better
+    synonyms: [repeat faults, repeated faults, recurring faults, recurring, chronic faults, same fault again]
+    limitations:
+      - The 3-day threshold is a starting assumption, not a company standard.
+      - A fault repeating on one asset can be a sensor or configuration issue rather than a component failure.
+
+  - id: assets_reporting_7d
+    name: Assets reporting (last 7 days)
+    description: Distinct assets with a valid service-meter reading in the 7 days up to the latest reading date.
+    source: asset_daily
+    kind: snapshot
+    expression: COUNT(DISTINCT asset_serial)
+    filter: reading_date > DATEADD('day', -7, :as_of_date) AND reading_date <= :as_of_date
+    unit: assets
+    direction: higher_is_better
+    synonyms: [connected assets, assets reporting, reporting assets, active assets, connected machines, fleet size]
+    limitations:
+      - Only readings flagged valid (V) count; 9.4% of readings are flagged invalid.
+
+  - id: open_opportunity_value
+    name: Open opportunity value
+    description: Total OLGA value of opportunities whose target date is after the snapshot month-end (latest snapshot).
+    source: opportunities
+    kind: snapshot
+    expression: SUM(total_value)
+    filter: snapshot_date = (SELECT MAX(snapshot_date) FROM {table}) AND target_date > snapshot_date
+    unit: value
+    direction: neutral
+    synonyms: [open opportunity, opportunity value, pipeline, open opportunities, opportunity pipeline]
+    limitations:
+      - OLGA values; the currency is to be confirmed with the OLGA owner.
+      - 55% of opportunities in the snapshot are already past their target date; they are reported separately.
+
+  - id: past_due_opportunity_value
+    name: Past-due opportunity value
+    description: Total OLGA value of opportunities whose target date is on or before the snapshot month-end.
+    source: opportunities
+    kind: snapshot
+    expression: SUM(total_value)
+    filter: snapshot_date = (SELECT MAX(snapshot_date) FROM {table}) AND target_date <= snapshot_date
+    unit: value
+    direction: lower_is_better
+    synonyms: [past due, overdue opportunities, missed opportunities, past-due]
+    limitations:
+      - OLGA does not record whether the work was done elsewhere; past due is not proof of lost business.
+
+  - id: opportunities_due_90d
+    name: Opportunity value due in the next 90 days
+    description: Total OLGA value of opportunities with a target date in the 90 days after the latest data date.
+    source: opportunities
+    kind: snapshot
+    expression: SUM(total_value)
+    filter: snapshot_date = (SELECT MAX(snapshot_date) FROM {table}) AND target_date > :as_of_date AND target_date <= DATEADD('day', 90, :as_of_date)
+    unit: value
+    direction: neutral
+    synonyms: [due next 90 days, upcoming opportunities, next quarter opportunities, due soon]
+    limitations:
+      - Uses the latest month-end snapshot; opportunities created after it are not included.
+
+  - id: lost_opportunity
+    name: Lost opportunity
+    description: OLGA lost opportunity (opportunity minus sales) for the months in the period. Negative means sales above forecast.
+    source: lost_opportunity
+    kind: period
+    expression: SUM(lost)
+    unit: value
+    direction: lower_is_better
+    grain: month
+    synonyms: [lost opportunity, lost opportunities, lost sales, missed sales, leakage]
+    limitations:
+      - Monthly data; periods are whole months.
+      - Jul-Sep 2026 are about half the earlier monthly level; confirm with the OLGA owner whether recent months are final.
+
+  - id: capture_rate
+    name: Capture rate
+    description: OLGA sales divided by OLGA opportunity for the months in the period.
+    source: lost_opportunity
+    kind: period
+    expression: SUM(sales) / NULLIF(SUM(opportunity), 0)
+    unit: ratio
+    direction: higher_is_better
+    grain: month
+    synonyms: [capture rate, share of wallet, capture, conversion of opportunity]
+    limitations:
+      - Monthly data; periods are whole months.

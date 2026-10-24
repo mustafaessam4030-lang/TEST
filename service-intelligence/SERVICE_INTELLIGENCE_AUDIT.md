@@ -2,6 +2,27 @@
 
 **Date:** 23 Oct 2026 · **Scope:** this repository (all branches) and the Snowflake integration available to this session.
 
+## 0. Status, 24 Oct 2026 (latest)
+
+**Scope.** Only the tables in `SERVICE_INTELLIGENCE` (Cat telematics and OLGA copies). **Architecture:** Streamlit in Snowflake,
+in `snowflake_native/`.
+
+**Checked in this account:**
+- Streamlit in Snowflake is already in use (DEV_ADMIN owns several apps).
+- Cortex is available: `PUBLIC` holds `CORTEX_USER`, and `claude-sonnet-4-6` is allow-listed.
+
+| Item | Status | Evidence |
+|---|---|---|
+| Curated layer: 4 views + daily materialized tables + refresh task (`snowflake_native/sql/10_setup.sql`) | BUILT; SELECTs VERIFIED LIVE | Every view ran read-only on the live copies; counts reconcile with independent queries (snowflake_native/README.md) |
+| Metric registry (10 KPIs: fleet health and opportunity) and SQL builder | TESTED; SQL VERIFIED LIVE | 11 compiled queries ran live |
+| Page 1, Analysis: KPI cards with deltas, trend, breakdown, drill-down, definitions, freshness, evidence | BUILT, TESTED ON FAKE DATA | `tests/test_pages.py` renders the page; not yet deployed |
+| Page 2, Recommendations: detector, transparent score, evidence, save, workflow, audit | BUILT, TESTED ON FAKE DATA | headline = registry metric for the segment (live: 427 = 427) |
+| Page 3, Assistant: rules planner, optional Cortex (validated), grounded answers, refusals, chat log | BUILT, TESTED ON FAKE DATA | assistant SQL is asserted identical to the dashboard SQL |
+| Deployment (objects, Streamlit app, grants) | BLOCKED: needs an owner to run `10_setup.sql` and deploy | the connector is read-only by design |
+| Service-order KPIs (resolution, backlog, SLA) | OUT OF SCOPE | no service-order data in `SERVICE_INTELLIGENCE` |
+
+Sections 1–7 below describe the earlier FastAPI design and the Helios check. They are kept for the record.
+
 ## 1. Bottom line
 
 > **Update, 24 Oct 2026.** This section replaces the 23 Oct status. The original findings in §2–3 still describe the repository.

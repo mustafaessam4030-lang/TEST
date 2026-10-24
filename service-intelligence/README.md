@@ -6,8 +6,9 @@ The app has three pages, all built on one governed Snowflake view and one metric
 - **Recommendations:** an evidence-backed, ranked plan with a review and approval workflow and an audit trail.
 - **AI Assistant:** answers business questions with the same metric definitions, showing its sources.
 
-> **Current state (24 Oct 2026).** The first real source is mapped: Helios service orders (`config/source_mapping.helios.yaml`). The app's KPI SQL has been verified read-only against live Snowflake (audit §7).
-> The running app still serves **SYNTHETIC data** until the contract view and a service user exist (`sql/snowflake/04_helios_contract_view.sql`). See [SERVICE_INTELLIGENCE_AUDIT.md](SERVICE_INTELLIGENCE_AUDIT.md) for what is tested, verified, blocked and not implemented.
+> **Direction (24 Oct 2026): Snowflake-native.** The live application is the Streamlit-in-Snowflake app in [`snowflake_native/`](snowflake_native/README.md). It runs only on the `SERVICE_INTELLIGENCE` tables.
+> The FastAPI app documented below is the earlier design. It is kept for its tests and patterns, runs only on SYNTHETIC data, and is not the deployment target.
+> `config/source_mapping.helios.yaml` and `sql/snowflake/04_helios_contract_view.sql` are out of scope: Helios is not part of `SERVICE_INTELLIGENCE`.
 
 | Document | Contents |
 |---|---|
