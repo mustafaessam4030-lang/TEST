@@ -4,14 +4,21 @@
 
 ## 1. Bottom line
 
-- **Snowflake could not be reached from this session.** The Snowflake connector (MCP) was configured but failed to connect (`ProtocolError`), and the environment holds no Snowflake credentials (`SNOWFLAKE_*` variables are absent). No metadata query, profile or KPI ran against company data.
-- **The repository contains no service-request, work-order, case or repair table definition.** All Snowflake account identifiers in the repository are placeholders (`myorg-myaccount`, `xy12345…`, `YOUR_ACCOUNT_IDENTIFIER`).
-- So the application is built against an explicit **data contract** (one governed view). It is developed and tested on **clearly labelled SYNTHETIC data** that runs the same Snowflake SQL through DuckDB. Connecting it to real data needs four things, all built and tested here:
-  1. run discovery;
-  2. write and review the source mapping;
-  3. apply the generated view;
-  4. set the environment.
-- **Nothing in this repository has been validated against live Snowflake.** Every figure shown by the running application today is synthetic, and the UI says so on every page.
+> **Update, 24 Oct 2026.** This section replaces the 23 Oct status. The original findings in §2–3 still describe the repository.
+
+- **Snowflake is now reachable** through a read-only connector (role `DEV_ADMIN`, warehouse `CLAUDE_WH`). Discovery and profiling of
+  the phase-1 sources are in SERVICE_DATA_CATALOG.md §0–0.1.
+- **The first real source is mapped.** The Helios service-order table `MANDL_CDM_PROD.MANCDM.SERVICEORDER` fits the app's
+  service-request contract. Its mapping is `config/source_mapping.helios.yaml`.
+  - Soft deletes and placeholder dates are excluded.
+  - There is no SLA target, so the SLA KPIs show as unavailable.
+- **The app's own KPI SQL was run against live data.** The SQL compiled by `si/query.py` for 9 KPIs and 1 breakdown was executed
+  read-only through the connector and matches independent hand-written queries on the raw table (§7).
+- **The application process has not run against Snowflake.** That needs:
+  1. the contract view created (`sql/snowflake/04_helios_contract_view.sql`; the connector is read-only and cannot run DDL);
+  2. a service user with a key pair on the app host.
+
+  Until both exist, the running app serves only SYNTHETIC data, and says so on every page.
 
 ## 2. What was inspected
 
@@ -62,7 +69,7 @@ None of these is assumed in code.
 | Query builder: parameterised SQL, filters, scope, time zones, null buckets | TESTED | Covers the Cairo period boundary and `(not set)` filtering. |
 | SQL guard (read-only, approved objects and columns, LIMIT, no `*`, no system functions) | TESTED | 27 refusal cases; every registry query passes. |
 | Executor: cache, single-flight, timeouts, row cap, query log | TESTED | The Snowflake timeout path is mocked; the DuckDB interrupt is real. |
-| Source mapping validation, view generation, SLA policy, time-zone conversion, dedupe | TESTED | Runs on the fixture. The generated Snowflake DDL has not been executed in Snowflake. |
+| Source mapping validation, view generation, SLA policy, time-zone conversion, dedupe, row exclusions | TESTED | Runs on the fixture. The Helios view's SELECT was run live (§7); the `CREATE VIEW` DDL has not been executed (needs a role that can create it). |
 | Snowflake backend: key pair / OAuth / SSO, qmark binds, session limits, error classes | BUILT, NOT RUN LIVE | Connection arguments and error mapping are tested with a mocked driver. |
 | Discovery CLI: inventory, profile, mapping check | BUILT, NOT RUN LIVE | Tested with canned metadata and the fixture. |
 | Page 1, Analysis: KPI cards, deltas, trend, breakdown, drill-down, data quality, freshness | TESTED | API tests and browser tests (Chromium). |
@@ -71,9 +78,11 @@ None of these is assumed in code.
 | Page 3, Assistant: rules planner, 8 intents, follow-ups, sources, refusals | TESTED | Chat figures are asserted equal to dashboard figures. |
 | Optional Cortex planner (`SNOWFLAKE.CORTEX.COMPLETE`) | BUILT, NOT RUN LIVE | Output validation and prompt fencing are tested with a fake. Off by default. |
 | AuthN/AuthZ: token, trusted header, dev; roles; per-user data scope | TESTED | |
-| Live Snowflake tests (`tests/test_snowflake_live.py`) | BLOCKED | Need credentials and the contract view. |
-| Real data catalog and profiles | BLOCKED | Need connectivity. Run `python -m si.discover inventory`. |
-| Confirmation of KPI definitions and SLA targets by the business | BLOCKED | Needs an owner decision. |
+| Helios contract view and KPI SQL on live data | VERIFIED LIVE (read-only, via connector) | 9 KPIs and 1 breakdown, compiled by the app and reconciled with independent queries (§7). |
+| Live Snowflake tests (`tests/test_snowflake_live.py`) | BLOCKED | Need the service user and the created view. |
+| Real data catalog and profiles | DONE | SERVICE_DATA_CATALOG.md §0.1 (10 phase-1 tables plus SERVICEORDER, aggregate-only queries). |
+| Confirmation of KPI definitions by the business | BLOCKED | Needs an owner decision; see SERVICE_KPI_PROPOSAL.md. There is no SLA target source. |
+| Fleet-health (telemetry) and opportunity (OLGA) KPIs | NOT IMPLEMENTED | Need new contract views and metric sets; proposed in SERVICE_KPI_PROPOSAL.md, awaiting approval. |
 | Free-form natural-language-to-SQL | NOT IMPLEMENTED (by design) | The guard is ready for it, but approved templates cover the stated questions. |
 | Backlog history trend, business-hours durations, effort or cost estimates | NOT IMPLEMENTED | No source data for them (status history, calendar, cost). |
 | Per-user Snowflake identity (OAuth pass-through so row-access policies see the end user) | NOT IMPLEMENTED | The app uses a service role plus app-level scope. See the security document. |
@@ -81,10 +90,10 @@ None of these is assumed in code.
 
 ## 5. Test results (this session)
 
-The suite ran in this container (Linux, Python 3.13, DuckDB 2.0, Chromium for the browser tests). There was no Snowflake.
+The suite ran in this container (Linux, Python 3.13, DuckDB 2.0, Chromium for the browser tests). The suite itself uses no Snowflake; live checks are in §7.
 
 ```
-python -m pytest tests            -> 156 passed, 3 skipped (live Snowflake tests, RUN_SNOWFLAKE_TESTS unset)
+python -m pytest tests            -> 163 passed, 3 skipped (live Snowflake tests, RUN_SNOWFLAKE_TESTS unset)
 python -m pyflakes si tests       -> clean
 ```
 
@@ -92,12 +101,44 @@ Passing tests show the logic is consistent on synthetic data. They do not show t
 
 ## 6. What is needed from the company to go live
 
-1. **Restore the Snowflake connector, or provide a service user**, using key pair (preferred), OAuth or SSO. The role must be able to read metadata in the candidate databases. Then run `python -m si.discover inventory`.
-2. **Agree which table holds service requests or work orders**, and who owns it.
-3. **Have the service-operations owner confirm or adjust:**
-   - the status-class mapping;
-   - the SLA target source (a column or an approved policy);
+1. **Create the view and roles.** Run `sql/snowflake/04_helios_contract_view.sql` as ACCOUNTADMIN. Rename `SI_WH`, `SI_READER`, `SI_PLAN_WRITER`,
+   `SI_VIEW_OWNER` and `SI_SVC` first if the admins prefer other names. Then run `02_app_schema.sql` for the plan tables.
+2. **Create the service user.** Create `SI_SVC` with a key pair and store the private key in the app host's secret store.
+   Then run `RUN_SNOWFLAKE_TESTS=1 python -m pytest tests/test_snowflake_live.py` and the mapping check
+   (`python -m si.mapping check`).
+3. **Have the service-operations owner decide** the open points in SERVICE_KPI_PROPOSAL.md:
+   - order-type scope;
+   - Oracle Fusion open status;
    - the 30-day ageing threshold;
-   - the KPI definitions in SERVICE_METRIC_DEFINITIONS.md.
-4. **Have a Snowflake admin approve** the roles, warehouse, resource monitor and SI_APP schema in `sql/snowflake/`. If the AI planner is wanted, they must also confirm Cortex availability for the account's region.
-5. **Choose the hosting and sign-in integration:** a reverse proxy with SSO, using `trusted_header` mode, is recommended.
+   - the meaning of division codes G/E/X.
+4. **Choose the hosting and sign-in integration:** a reverse proxy with SSO, using `trusted_header` mode, is recommended.
+
+## 7. Live verification of the first vertical slice (24 Oct 2026)
+
+**Method.** The app's `QueryBuilder` compiled each KPI with the Helios mapping:
+- reporting period Q3 2026 (1 Jul – 1 Oct, UTC);
+- `as_of` = latest load 2026-10-23 14:50:24 UTC.
+
+Bind values were inlined, and the view name was replaced by the generated view SELECT (as a CTE), so the SQL is otherwise
+unchanged. Each statement ran read-only through the connector. An independent query on the raw table, written without the
+app, checked each value.
+
+| KPI (app SQL) | Live value | Independent check |
+|---|---|---|
+| Requests created, Q3 2026 | 2,818 | 2,818 ✔ |
+| Requests closed, Q3 2026 | 1,699 | 1,699 ✔ |
+| Average resolution time | 1,583.7 h (66.0 days) | 66.0 days ✔ |
+| Median resolution time | 672 h (28 days) | 28 days ✔ |
+| 90th percentile resolution time | 4,440 h (185 days) | n/a |
+| Open backlog | 2,305 | 2,308 orders with `ISOPEN`; the 3 without an `OPENDATE` are excluded by the view ✔ |
+| Aged backlog (> 30 days) | 1,732 | 1,732 ✔ |
+| Aged share of backlog | 75.1 % | n/a |
+| Average backlog age | 89.4 days | n/a |
+| SLA compliance, SLA breach rate, open past SLA | Not available (no `due_at`) | `PROMISEDENDDATE` is empty in every row |
+
+**Evidence for the first recommendation.** 1,533 of the 2,305 open orders (66 %) come from Oracle Fusion, and almost every
+Fusion order has stayed `O`. They are concentrated in stores 99 (490), 29 (151), 15 (104), 35 (90) and 9 (59). Store 1 has the largest
+Helios backlog (838 open; 488 Helios, 350 Fusion).
+
+This is a **data-feed hypothesis, not a measured operational backlog**: Fusion status updates may not be reaching SERVICEORDER.
+The proposed action is to confirm the Fusion status feed with its owner before the backlog KPIs are published.

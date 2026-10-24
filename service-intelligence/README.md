@@ -6,7 +6,8 @@ The app has three pages, all built on one governed Snowflake view and one metric
 - **Recommendations:** an evidence-backed, ranked plan with a review and approval workflow and an audit trail.
 - **AI Assistant:** answers business questions with the same metric definitions, showing its sources.
 
-> **Current state.** This has been built and tested on **SYNTHETIC data only**. Snowflake was not reachable when it was built, so it has **not** been validated against company data. See [SERVICE_INTELLIGENCE_AUDIT.md](SERVICE_INTELLIGENCE_AUDIT.md) for what is tested, blocked and not implemented.
+> **Current state (24 Oct 2026).** The first real source is mapped: Helios service orders (`config/source_mapping.helios.yaml`). The app's KPI SQL has been verified read-only against live Snowflake (audit §7).
+> The running app still serves **SYNTHETIC data** until the contract view and a service user exist (`sql/snowflake/04_helios_contract_view.sql`). See [SERVICE_INTELLIGENCE_AUDIT.md](SERVICE_INTELLIGENCE_AUDIT.md) for what is tested, verified, blocked and not implemented.
 
 | Document | Contents |
 |---|---|
@@ -41,6 +42,8 @@ RUN_SNOWFLAKE_TESTS=1 SI_BACKEND=snowflake ... python -m pytest tests/test_snowf
 ## Connect to Snowflake
 
 1. **Credentials.** Have an admin create a service user with key-pair auth, and a discovery role (`sql/snowflake/00_roles_and_grants.sql`, sections 1, 2 and 6). Keep the private key in your secret store.
+   For Helios service orders, step 1 and steps 3–4 are already prepared. Run `sql/snowflake/04_helios_contract_view.sql`, then set
+   `SI_MAPPING_PATH=config/source_mapping.helios.yaml` and `SI_CONTRACT_VIEW=SERVICE_INTELLIGENCE.SERVICE_INTEL.V_SERVICE_REQUESTS`.
 2. **Discover.** Set `SI_BACKEND=snowflake`, the `SNOWFLAKE_*` variables (see `.env.example`) and a provisional `SI_CONTRACT_VIEW`, then run:
    ```bash
    python -m si.discover inventory

@@ -131,6 +131,9 @@ def check_mapping_with(run: Runner, m: SourceMapping) -> list[str]:
             problems.append(f"{contract_col}: column {src} not found in {m.source_table}")
     if m.dedupe_order_by and m.dedupe_order_by not in cols:
         problems.append(f"dedupe.order_by column {m.dedupe_order_by} not found")
+    for col, _ in m.exclude:
+        if col not in cols:
+            problems.append(f"exclude column {col} not found")
     if not problems:
         mapped = {v for vals in m.status_classes.values() for v in vals}
         for r in run(f"SELECT UPPER(TRIM({m.columns['status']})) AS value, COUNT(*) AS n FROM {m.source_table} "

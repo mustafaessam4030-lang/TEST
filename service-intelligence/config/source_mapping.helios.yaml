@@ -1,0 +1,48 @@
+# Source mapping for REAL company data: Helios service orders (read live, not copied).
+# Every name and value below was measured in Snowflake on 23–24 Oct 2026 (SERVICE_DATA_CATALOG.md §0.1).
+# Review with the Helios / service-operations owner before applying the generated view in production.
+source:
+  table: MANDL_CDM_PROD.MANCDM.SERVICEORDER
+  # OPENDATE / LASTCLOSEDATE are calendar dates (100 % at midnight), so durations are whole days.
+  # Treated as UTC calendar dates; keep SI_REPORTING_TZ=UTC so a date never shifts to the previous day.
+  timezone: UTC
+  timestamp_kind: ntz
+  synthetic: false
+
+columns:
+  request_id: SERVICEORDERID          # unique, never null
+  created_at: OPENDATE                # 0.00 % null
+  closed_at: LASTCLOSEDATE            # 3.8 % null (open orders, plus 486 closed rows without a date)
+  due_at:                             # PROMISEDENDDATE is empty in every row: no SLA target exists
+  updated_at: LASTUPDATEDATE          # date of the last change in Helios
+  loaded_at: LASTUPDATEDDATETIME      # CDC load time in UTC (column default = CURRENT_TIMESTAMP - 4h, account TZ Asia/Dubai)
+  status: SERVICEORDERSTATUS          # I / O / C / M
+  priority: SERVICEORDERPRIORITY      # N 87 %, H 9 %, E, L, M; 1 % blank
+  category: DIVISIONCODE              # Helios division G / E / X (meaning of the codes: confirm with the owner)
+  service_type: SERVICEORDERTYPE      # Revenue / Internal / Expenses / Warranty
+  team: STORECODE                     # 20 store codes
+  region:                             # no region column in SERVICEORDER
+
+status_classes:
+  OPEN: [O]                           # matches ISOPEN = TRUE exactly
+  CLOSED: [I, C]                      # I = Invoiced, C = Closed (STDSERVICEORDEROPENSTATUS_DISPLAY)
+  CANCELLED: []
+  # 'M' (1 row) is deliberately unmapped: it is reported as UNMAPPED under data quality until the owner classifies it.
+
+# Soft deletes from the CDC feed (8,502 rows, 11 %) are not service orders.
+exclude:
+  - column: ROWOPERATION
+    values: [DELETE]
+
+# 2 rows carry the placeholder open date 1925-01-01.
+created_at_min: '2000-01-01'
+
+# Free text, contacts, addresses and people: never mapped into the contract.
+sensitive_columns: [NAME, DESCRIPTION, CONTACTPERSONNAME, INTERNALNOTE, REPAIRPROCESSCOMMENT, RESULTANTDAMAGE,
+  RESPONSIBLE, LASTSTATUSCHANGEDBY, CREATEDBY, MODIFIEDBY, CUSTOMERPONO, DELIVERYADDRESSNAME, DELIVERYADDRESSLINE1,
+  DELIVERYADDRESSLINE2, DELIVERYADDRESSLINE3, DELIVERYADDRESSCOMPOSITE, DELIVERYADDRESSCITY, DELIVERYADDRESSPOSTALCODE,
+  DELIVERYADDRESSTELEPHONE, DELIVERYADDRESSFAX, DELIVERYADDRESSSTATEORPROVINCE]
+
+notes: >
+  Helios SERVICEORDER, all order types. Oracle Fusion orders (SOURCE = 'Oracle Fusion - Service Job Header') are
+  included; nearly all of them show status O, which inflates the backlog until their status feed is confirmed.

@@ -8,7 +8,7 @@ import yaml
 from conftest import AS_OF, KNOWN_ROWS, MARCH, VIEW, make_settings, write_users
 from si.backends.fixture import FixtureBackend
 from si.config import ROOT
-from si.mapping import MappingError, parse_mapping, view_ddl
+from si.mapping import MappingError, load_mapping, parse_mapping, view_ddl
 from si.registry import RegistryError, load_registry
 from si.service import ServiceIntel
 
@@ -136,3 +136,38 @@ def test_prod_settings_refuse_unsafe_configuration(monkeypatch):
     monkeypatch.delenv("SNOWFLAKE_PASSWORD")
     s = load_settings()
     assert s.backend == "snowflake" and s.auth_mode == "token"
+
+
+def test_exclude_rules_and_created_floor_filter_the_contract_view(tmp_path):
+    write_users(tmp_path)
+    m = parse_mapping(variant(exclude=[{"column": "REGION_NAME", "values": ["north"]}]))
+    svc = ServiceIntel(make_settings(tmp_path), backend=FixtureBackend(m, VIEW, rows=KNOWN_ROWS), mapping=m)
+    # March: K1 K2 K3 K5 K7 K8 K9 created; the North rows (K1 K3 K5 K7 K8) are excluded, K9 (Delta) and K2 stay
+    assert svc.analytics.metric("requests_created", MARCH, {}, {}, AS_OF, compare=False)["value"] == 2
+    m2 = parse_mapping(variant(created_at_min="2026-03-10"))
+    svc2 = ServiceIntel(make_settings(tmp_path), backend=FixtureBackend(m2, VIEW, rows=KNOWN_ROWS), mapping=m2)
+    # K3 (10 Mar) K5 K7 K8 K9 remain
+    assert svc2.analytics.metric("requests_created", MARCH, {}, {}, AS_OF, compare=False)["value"] == 5
+
+
+@pytest.mark.parametrize("changes,message", [
+    ({"exclude": [{"column": "ROWOP; DROP", "values": ["DELETE"]}]}, "plain-identifier"),
+    ({"exclude": [{"column": "ROWOPERATION", "values": []}]}, "non-empty"),
+    ({"exclude": [{"column": "CUSTOMER_NAME", "values": ["X"]}]}, "sensitive"),
+    ({"created_at_min": "2000-01-01'; DROP"}, "YYYY-MM-DD"),
+])
+def test_invalid_exclusions_are_rejected(changes, message):
+    with pytest.raises(MappingError, match=message):
+        parse_mapping(variant(**changes))
+
+
+def test_helios_mapping_excludes_soft_deletes_and_placeholder_dates():
+    m = load_mapping(ROOT / "config" / "source_mapping.helios.yaml")
+    assert m.synthetic is False and m.source_table == "MANDL_CDM_PROD.MANCDM.SERVICEORDER"
+    ddl = view_ddl(m, "SERVICE_INTELLIGENCE.SERVICE_INTEL.V_SERVICE_REQUESTS")
+    assert "COALESCE(UPPER(TRIM(ROWOPERATION)), '') NOT IN ('DELETE')" in ddl
+    assert "OPENDATE >= '2000-01-01'" in ddl
+    assert "CAST(NULL AS TIMESTAMP_NTZ) AS due_at" in ddl           # no SLA target in the source
+    assert {"due_at", "region"}.isdisjoint(m.available)
+    for col in m.sensitive_columns:
+        assert f"CAST({col} AS" not in ddl

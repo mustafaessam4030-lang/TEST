@@ -7,6 +7,7 @@ application itself never runs DDL.
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -41,6 +42,8 @@ class SourceMapping:
     sla_targets_hours: dict[str, float] = field(default_factory=dict)
     sla_basis: str | None = None
     dedupe_order_by: str | None = None
+    exclude: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    created_at_min: str | None = None
     sensitive_columns: tuple[str, ...] = ()
     notes: str = ""
 
@@ -127,6 +130,17 @@ def parse_mapping(raw: dict) -> SourceMapping:
     dedupe = (raw.get("dedupe") or {}).get("order_by")
     if dedupe and not IDENT.match(str(dedupe)):
         raise MappingError("dedupe.order_by must be a plain identifier")
+    exclude = []
+    for rule in raw.get("exclude") or ():
+        col, values = (rule or {}).get("column"), (rule or {}).get("values") or []
+        if not col or not IDENT.match(str(col)) or not values:
+            raise MappingError("each exclude rule needs a plain-identifier `column` and non-empty `values`")
+        if str(col).upper() in sensitive:
+            raise MappingError(f"exclude rules cannot read sensitive column {col}")
+        exclude.append((str(col).upper(), tuple(str(v).strip().upper() for v in values)))
+    min_created = raw.get("created_at_min")
+    if min_created is not None and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(min_created)):
+        raise MappingError("created_at_min must be a date, YYYY-MM-DD")
     return SourceMapping(
         source_table=table.upper(),
         source_timezone=str(src.get("timezone", "UTC")),
@@ -137,6 +151,8 @@ def parse_mapping(raw: dict) -> SourceMapping:
         sla_targets_hours=targets,
         sla_basis=basis,
         dedupe_order_by=str(dedupe).upper() if dedupe else None,
+        exclude=tuple(exclude),
+        created_at_min=str(min_created) if min_created is not None else None,
         sensitive_columns=sensitive,
         notes=str(raw.get("notes") or ""),
     )
@@ -175,6 +191,10 @@ def view_select_sql(m: SourceMapping) -> str:
             parts.append(f"CAST({src} AS VARCHAR) AS {c.name}")
     sql = "SELECT\n  " + ",\n  ".join(parts) + f"\nFROM {m.source_table}"
     sql += f"\nWHERE {m.columns['request_id']} IS NOT NULL"
+    for col, values in m.exclude:      # documented row exclusions, e.g. soft deletes; NULLs are kept
+        sql += f"\n  AND COALESCE(UPPER(TRIM({col})), '') NOT IN ({', '.join(_literal(v) for v in values)})"
+    if m.created_at_min:
+        sql += f"\n  AND {m.columns['created_at']} >= {_literal(m.created_at_min)}"
     if m.dedupe_order_by:
         sql += f"\nQUALIFY ROW_NUMBER() OVER (PARTITION BY {m.columns['request_id']} ORDER BY {m.dedupe_order_by} DESC) = 1"
     sqlglot.parse_one(sql, read="snowflake")    # fail early on anything malformed
@@ -191,6 +211,10 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] not in ("ddl", "check"):
         print("usage: python -m si.mapping ddl|check", file=sys.stderr)
         return 2
+    if argv[0] == "ddl" and os.environ.get("SI_MAPPING_PATH") and os.environ.get("SI_CONTRACT_VIEW"):
+        # printing DDL needs no connection, so no Snowflake credentials either
+        print(view_ddl(load_mapping(Path(os.environ["SI_MAPPING_PATH"])), os.environ["SI_CONTRACT_VIEW"].upper()))
+        return 0
     settings = load_settings()
     m = load_mapping(settings.mapping_path)
     if argv[0] == "ddl":
