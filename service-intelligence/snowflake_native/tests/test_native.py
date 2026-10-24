@@ -42,6 +42,13 @@ def responder(spec: Spec):
         if "Failed to Stop" in spec.params:
             return [{"value": 182, "n": 182}]
         return [{"value": 1974, "n": 64249}]
+    if spec.purpose == "list":
+        return [{"opp_rank": i, "is_new_today": i % 3 == 0, "total_value": 640000 - i * 5000, "labor_value": 6000,
+                 "job": "OVERHAUL", "component": "ENGINE", "smcs_group": "Engine", "model": "777E", "product_family": "TRUCKS",
+                 "asset_serial": f"S{i:05d}", "branch": "Geita", "customer_number": "C0000001", "target_date": "2026-12-08",
+                 "days_to_target": 45, "lead_score": 8, "confidence_index": 60, "source": "LENS", "connected_asset": "YES",
+                 "opportunity_id": f"O{i}", "opportunity_key": f"K{i}", "snapshot_date": "2026-09-30",
+                 "run_date": "2026-10-24"} for i in range(1, 101)]
     if spec.purpose == "series":
         return [{"bucket": "2026-07-01", "value": 1397, "n": 1}]
     return []
@@ -54,7 +61,7 @@ def an():
 
 # --- registry ---------------------------------------------------------------------------------------
 def test_registry_loads_every_metric_with_a_known_source():
-    assert len(REG.metrics) == 10
+    assert len(REG.metrics) == 12
     for m in REG.metrics.values():
         assert m.source in REG.sources and m.kind in ("period", "snapshot")
 
@@ -230,3 +237,31 @@ def test_status_workflow_and_roles():
 def test_value_formatting():
     assert fmt_value(1708149673.8, "value") == "1.7bn" and fmt_value(0.7084, "ratio") == "70.8%"
     assert fmt_value(None, "assets") == "—" and fmt_value(1974, "assets") == "1,974"
+
+
+# --- daily top-100 opportunities ----------------------------------------------------------------------
+def test_top_list_reads_only_the_latest_run_with_bound_filters():
+    spec = Builder(REG).top_list("daily_top_opportunities", {"branch": ["Geita"]}, 500)
+    assert "WHERE run_date = (SELECT MAX(run_date) FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES)" in spec.sql
+    assert spec.sql.endswith("ORDER BY opp_rank LIMIT 500") and spec.params == ("Geita",)
+    with pytest.raises(QueryError):
+        Builder(REG).top_list("fault_events", {}, 10)
+
+
+def test_top_opportunity_candidate_is_traceable_and_unprojected(an):
+    from si_native.recommend import top_opportunity_candidate
+    lst = an.top_list("daily_top_opportunities", {}, 100)
+    c = top_opportunity_candidate(lst["rows"][0], lst["evidence"], 640000 - 5000)
+    assert c["candidate_key"] == "top_opportunity/1|K1" and c["priority"] == "High" and c["score"] == 100.0
+    assert c["measured"]["total_value"] == 635000 and c["evidence"][0]["purpose"] == "list"
+    assert "not a forecast" in c["expected_impact"] and c["data_as_of"] == "2026-10-24T00:00:00"
+    assert top_opportunity_candidate(lst["rows"][59], lst["evidence"], 635000)["priority"] == "Medium"
+
+
+def test_assistant_lists_top_opportunities(an):
+    plan = rules_plan("Show me the top 20 opportunities", an)
+    assert plan.intent == "top_list"
+    res = answer(plan, an)
+    assert len(res["table"]) == 100 or len(res["table"]) == 20    # fake runner ignores LIMIT; the spec carries it
+    assert "Top" in res["text"] and res["evidence"][0]["sql"].endswith("LIMIT 20")
+    assert rules_plan("What is the value of the top 100 opportunities by branch?", an).intent == "metric"

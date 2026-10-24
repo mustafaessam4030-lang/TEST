@@ -29,7 +29,6 @@ class FakeSession:
 
     def sql(self, q, params=None):
         self.statements.append((q, params))
-        outer = self
 
         class _Q:
             def collect(self_inner):
@@ -61,7 +60,7 @@ def test_page_renders(fake, page):
 
 def test_recommendations_page_runs_detectors_and_saves(fake):
     at = st_testing.AppTest.from_file(str(APP / "pages/2_Recommendations.py"), default_timeout=30).run()
-    at.button[0].click().run()                     # Run detectors
+    next(b for b in at.button if b.label == "Run detectors on the latest data").click().run()
     assert not at.exception
     assert any("Investigate repeat" in m.value for m in at.markdown)
     save = next(b for b in at.button if b.label == "Save to plan")
@@ -77,3 +76,15 @@ def test_assistant_answers_with_the_registry_figure(fake):
     assert not at.exception
     assert any("1,974" in m.value for m in at.markdown)
     assert any("CHAT_LOG" in q for q, _ in fake.statements)
+
+
+def test_top_opportunities_tab_lists_and_saves(fake):
+    at = st_testing.AppTest.from_file(str(APP / "pages/2_Recommendations.py"), default_timeout=30).run()
+    assert not at.exception
+    assert at.dataframe, "the top-100 table is rendered on the first tab"
+    pick = next(m for m in at.multiselect if m.label == "Add to the plan (by rank)")
+    pick.set_value([1]).run()
+    next(b for b in at.button if b.label == "Save selected to plan").click().run()
+    assert not at.exception
+    saved = [p for q, p in fake.statements if "INSERT INTO SERVICE_INTELLIGENCE.SI_APP.RECOMMENDATIONS" in q]
+    assert saved and saved[0][1] == "top_opportunity/1"

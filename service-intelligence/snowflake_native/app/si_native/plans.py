@@ -69,8 +69,13 @@ class PlanStore:
     def save(self, cand: dict, user: str, role: str, registry_version: str) -> str:
         if not can(role, "analyst"):
             raise PlanError("Saving to the plan needs the analyst role or higher.")
-        dup = self._q(f"SELECT rec_id FROM {SCHEMA}.RECOMMENDATIONS WHERE candidate_key = ? AND data_as_of = ? "
-                      f"AND status NOT IN ('rejected')", [cand["candidate_key"], cand["data_as_of"]])
+        if cand["detector"].startswith("top_opportunity"):
+            # the same opportunity re-appears on later days' lists: one open plan item per opportunity
+            dup = self._q(f"SELECT rec_id FROM {SCHEMA}.RECOMMENDATIONS WHERE candidate_key = ? "
+                          f"AND status NOT IN ('rejected', 'completed')", [cand["candidate_key"]])
+        else:
+            dup = self._q(f"SELECT rec_id FROM {SCHEMA}.RECOMMENDATIONS WHERE candidate_key = ? AND data_as_of = ? "
+                          f"AND status NOT IN ('rejected')", [cand["candidate_key"], cand["data_as_of"]])
         if dup:
             raise PlanError(f"Already in the plan as {dup[0]['rec_id']}.")
         rec_id = "R-" + str(self._q(f"SELECT {SCHEMA}.RECOMMENDATION_SEQ.NEXTVAL AS n", [])[0]["n"])

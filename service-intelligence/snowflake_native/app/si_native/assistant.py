@@ -133,6 +133,15 @@ def rules_plan(question: str, an: Analytics, context: Plan | None = None) -> Pla
             not re.search(r"\bopportunity value|lost opportunit|open opportunit|due\b", q):
         return Plan("recommendations")
     metric_id = match_metric(q, an.r)
+    if re.search(r"\b(top|best|biggest|highest|largest)\s+(\d{1,3}\s+)?(\w+\s+)?opportunit", q):
+        metric_id = "top_opportunities_value"
+    if metric_id == "top_opportunities_value" and re.search(r"\b(list|show|which|what are|give me|top \d+)\b", q) \
+            and not re.search(r"\b(value|total|worth|how much|sum|by)\b", q):
+        n = re.search(r"\btop\s+(\d{1,3})\b", q)
+        plan = Plan("top_list", metric_id=metric_id)
+        plan.notes.append(f"Showing the top {min(int(n.group(1)) if n else 10, 100)} of today's list.")
+        plan.filters = {"_limit": [str(min(int(n.group(1)) if n else 10, 100))]}
+        return plan
     follow_up = False
     if metric_id is None and context and context.metric_id:
         metric_id, follow_up = context.metric_id, True
@@ -233,6 +242,30 @@ def answer(plan: Plan, an: Analytics, plans_store=None, candidates_fn=None) -> d
                        ", ".join(f"{k.replace('_', ' ')} = {v}" for k, v in (ev.get('measured') or {}).items()) +
                        f"\n\nData as of {rec.get('data_as_of')} UTC; {rec.get('analysis_version')}.")
         out["evidence"] = ev.get("queries") or []
+        return out
+
+    if plan.intent == "top_list":
+        limit = int(plan.filters.get("_limit", ["10"])[0])
+        lst = an.top_list("daily_top_opportunities", {}, limit)
+        out["evidence"].extend(lst["evidence"])
+        if not lst["rows"]:
+            out.update(outcome="no_data", text="Today's top-opportunity list has not been built yet.")
+            return out
+        total = an.metric("top_opportunities_value", None)
+        out["evidence"].extend(total["evidence"])
+        out["table"] = [{"Rank": r["opp_rank"], "Value": r["total_value"], "Job": r["job"], "Component": r["component"],
+                         "Model": r["model"], "Serial": r["asset_serial"], "Branch": r["branch"],
+                         "Target date": r["target_date"], "New today": r["is_new_today"]} for r in lst["rows"]]
+        top = lst["rows"][0]
+        out["text"] = (f"**Top {len(lst['rows'])} opportunities** from the list of {str(top['run_date'])[:10]} "
+                       f"(the whole top-100 is worth **{fmt_value(total['value'], 'value')}**). #1: {top['job']} "
+                       f"{top['component']} on {top['model']} {top['asset_serial']} at {top['branch']}, "
+                       f"{fmt_value(top['total_value'], 'value')}, due {top['target_date']}.")
+        m = an.r.metric("top_opportunities_value")
+        out["definitions"].append({"metric": m.name, "definition": m.description, "source": an.r.source_of(m).label,
+                                   "expression": m.expression, "filter": m.filter})
+        out["limitations"].extend(m.limitations)
+        out["followups"] = ["Value of today's top-100 opportunities by branch", "New entries in today's top-100"]
         return out
 
     m = an.r.metric(plan.metric_id)

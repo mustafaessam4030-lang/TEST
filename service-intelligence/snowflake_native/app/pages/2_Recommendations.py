@@ -3,7 +3,7 @@ import streamlit as st
 
 from si_native import ui
 from si_native.plans import PlanError, PlanStore, allowed_moves, can
-from si_native.recommend import WEIGHTS, all_candidates
+from si_native.recommend import WEIGHTS, all_candidates, top_opportunity_candidate
 
 ui.header("Recommendation plan", "Ranked findings from the metric registry. Measured facts and hypotheses are labelled separately.")
 reg = ui.registry()
@@ -14,7 +14,59 @@ store = PlanStore(ui.session())
 st.caption(f"Signed in as {email} · app role **{role}** · ranking = {WEIGHTS['impact']}×impact + "
            f"{WEIGHTS['urgency']}×urgency + {WEIGHTS['confidence']}×confidence")
 
-tab_new, tab_plan = st.tabs(["Current findings", "Saved plan"])
+tab_top, tab_new, tab_plan = st.tabs(["Top 100 opportunities today", "Fleet-health findings", "Saved plan"])
+
+with tab_top:
+    try:
+        src_id = "daily_top_opportunities"
+        fresh = an.freshness(src_id)
+        if not fresh["latest_data"]:
+            st.info("No list yet. It is built daily by SI_ADMIN.REFRESH_DAILY (or run "
+                    "CALL SERVICE_INTELLIGENCE.SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(100, 90)).")
+        else:
+            c1, c2, c3 = st.columns(3)
+            total = an.metric("top_opportunities_value", None)
+            new = an.metric("top_opportunities_new_today", None)
+            c1.metric("Value of today's list", ui.fmt(total["value"], "value"))
+            c2.metric("New since yesterday", ui.fmt(new["value"], "opportunities"))
+            c3.metric("List date (UTC)", str(fresh["latest_data"])[:10])
+            st.caption("Rule: from the latest OLGA snapshot, opportunities due in the next 90 days, ranked by value "
+                       "(then OLGA lead score). Rebuilt every day after the data refresh; earlier days are kept. "
+                       "Values are OLGA estimates; currency to be confirmed.")
+            f1, f2, f3 = st.columns(3)
+            filters = {}
+            for col, dim in zip((f1, f2, f3), ("branch", "job", "product_family")):
+                picked = col.multiselect(reg.label(dim), an.dimension_values(src_id, dim), key=f"top_{dim}")
+                if picked:
+                    filters[dim] = picked
+            lst = an.top_list(src_id, filters, 100)
+            rows = lst["rows"]
+            if not rows:
+                st.info("No opportunities match these filters.")
+            else:
+                table = ui.df(rows)
+                st.dataframe(table, hide_index=True, use_container_width=True,
+                             column_config={"total_value": st.column_config.NumberColumn("Value", format="%,.0f"),
+                                            "labor_value": st.column_config.NumberColumn("Labour", format="%,.0f"),
+                                            "is_new_today": st.column_config.CheckboxColumn("New today")})
+                st.download_button("Download list (CSV)", table.to_csv(index=False).encode(),
+                                   file_name=f"top_opportunities_{str(fresh['latest_data'])[:10]}.csv", mime="text/csv")
+                ui.evidence_expander(lst["evidence"] + total["evidence"])
+                if can(role, "analyst"):
+                    ranks = st.multiselect("Add to the plan (by rank)", [r["opp_rank"] for r in rows], key="top_pick")
+                    if st.button("Save selected to plan", disabled=not ranks):
+                        top_value = max(float(r["total_value"] or 0) for r in rows)
+                        for r in rows:
+                            if r["opp_rank"] in ranks:
+                                try:
+                                    rid = store.save(top_opportunity_candidate(r, lst["evidence"], top_value), email, role, reg.version)
+                                    st.success(f"Rank {r['opp_rank']} saved as {rid}.")
+                                except PlanError as exc:
+                                    st.warning(f"Rank {r['opp_rank']}: {exc}")
+                else:
+                    st.caption("Saving to the plan needs the analyst role.")
+    except Exception as exc:  # noqa: BLE001
+        ui.show_error(exc)
 
 with tab_new:
     try:

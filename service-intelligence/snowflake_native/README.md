@@ -37,6 +37,19 @@ SERVICE_INTELLIGENCE
   - Evidence = the exact registry queries and their query IDs.
   - Expected impact is labelled as a hypothesis.
   - Plans persist in `SI_APP.RECOMMENDATIONS` with an append-only `RECOMMENDATION_EVENTS` audit trail.
+- **Daily top-100 opportunities.**
+  - `SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(100, 90)` runs at the end of each daily refresh and writes
+    `SI_APP.DAILY_TOP_OPPORTUNITIES`, one list per day; earlier days are kept.
+  - Rule: from the latest OLGA snapshot, take opportunities with value > 0 and a target date in the next 90 days. Rank by
+    value, then OLGA lead score, and keep 100. `is_new_today` marks entries that were not on the previous day's list.
+  - The Recommendations page opens on this list:
+    - value of the list and the number of new entries;
+    - filters by branch, job and product family;
+    - CSV download;
+    - "Save selected to plan", which creates tracked plan items with evidence. The branch is suggested as owner, and the
+      same opportunity can't be saved twice while it is open.
+  - The assistant answers "show the top 20 opportunities" and "value of the top 100 by branch" from the same table.
+  - OLGA publishes opportunities monthly, so most day-to-day change comes from the 90-day window moving forward.
 - **Access.**
   - Who can open the app: `GRANT USAGE ON STREAMLIT` to `SI_APP_VIEWER`.
   - What they can change: `SI_APP.APP_USERS` (`viewer` < `analyst` < `approver` < `admin`), checked server-side.
@@ -93,6 +106,7 @@ the SELECT of its view from `sql/10_setup.sql`. Each query ran unchanged otherwi
 | Opportunity value due in the next 90 days (from 16 Oct) | 124.4M (493,060 opportunities) | n/a |
 | Lost opportunity, Q3 2026 | 41,242,205 | 41,224,204 on raw rows; the 18,001 difference is exactly the duplicate rows removed ✔ |
 | Capture rate, Sep 2026 | 70.8 % | n/a |
+| Daily top-100 selection, run date 24 Oct 2026 | 100 unique opportunities, total 11.47M, values 77,932–638,984, 22 branches, 39 customers, target dates 25 Oct 2026 – 21 Jan 2027 | the 12 largest checked by hand against OLGA rows ✔ |
 
 **Note on the 2-asset gap.** 23,860 fault events (0.8 % of repeated events) were reported again with a *different* severity.
 The view keeps the most recently received classification; the raw count includes an asset if any report said HIGH.
@@ -102,5 +116,5 @@ The view keeps the most recently received classification; the raw count includes
 - **Not deployed or run as an app.** The connector used here is read-only, so it can't create objects or deploy. Every
   query has run live; the pages have only run in tests on fake data.
 - **Out of scope:** service orders, SLA, resolution time and backlog. No such data is in `SERVICE_INTELLIGENCE`.
-- **One recommendation detector so far** (repeat high-severity faults). Opportunity detectors are next.
+- **Recommendations so far:** repeat high-severity faults (fleet health) and the daily top-100 opportunities.
 - **Currency of OLGA values** is not confirmed. `PART_COST` equals `PART_COST_USD`, but `TOTAL_VALUE` and the SCP columns are unlabelled.

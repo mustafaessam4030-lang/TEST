@@ -113,6 +113,10 @@ class Analytics:
         res = self.run(self.b.drilldown(metric_id, period if m.kind == "period" else None, filters or {}, as_of, limit))
         return {"metric": m, "rows": res.rows, "truncated": len(res.rows) >= limit, "evidence": [evidence(res)]}
 
+    def top_list(self, source_id: str, filters: dict | None = None, limit: int = 100) -> dict:
+        res = self.run(self.b.top_list(source_id, filters or {}, limit))
+        return {"rows": res.rows, "evidence": [evidence(res)], "freshness": self.freshness(source_id)}
+
     def dimension_values(self, source_id: str, dimension: str) -> list[str]:
         return [r["value"] for r in self.run(self.b.dimension_values(source_id, dimension)).rows if r["value"] is not None]
 

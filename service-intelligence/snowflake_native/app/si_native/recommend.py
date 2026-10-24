@@ -101,3 +101,45 @@ def all_candidates(an: Analytics) -> list[dict]:
     for fn in DETECTORS.values():
         cands.extend(fn(an))
     return sorted(cands, key=lambda c: (-c["score"], c["title"]))
+
+
+TOP_OPP_VERSION = "top_opportunity/1"
+
+
+def top_opportunity_candidate(row: dict, list_evidence: list[dict], top_value: float) -> dict:
+    """A saved-plan item for one opportunity from the daily top-100 list. Every figure is OLGA's; nothing is projected
+    beyond OLGA's own value."""
+    rank = int(row["opp_rank"])
+    value = float(row["total_value"] or 0)
+    priority = "High" if rank <= 20 else "Medium" if rank <= 60 else "Low"
+    what = " ".join(x for x in (str(row.get("job") or "").title(), str(row.get("component") or "").title()) if x)
+    return {
+        "candidate_key": f"{TOP_OPP_VERSION}|{row['opportunity_key']}",
+        "detector": TOP_OPP_VERSION,
+        "title": f"#{rank} {what} on {row.get('model')} {row.get('asset_serial')} ({row.get('branch')})",
+        "explanation": (f"OLGA opportunity worth {value:,.0f} (labour {float(row.get('labor_value') or 0):,.0f}), target date "
+                        f"{row.get('target_date')} ({row.get('days_to_target')} days), customer {row.get('customer_number')}. "
+                        f"Rank {rank} in the top-100 list of {row.get('run_date')} (OLGA snapshot {row.get('snapshot_date')}); "
+                        f"OLGA lead score {row.get('lead_score')}, confidence index {row.get('confidence_index')}."),
+        "problem": "A high-value parts and service opportunity is due within 90 days; if no quote or job is raised in time it "
+                   "may be lost to a competitor or deferred.",
+        "metric_id": "top_opportunities_value",
+        "segment": {"filters": {}, "opportunity_key": row["opportunity_key"], "run_date": str(row.get("run_date"))},
+        "measured": {k: row.get(k) for k in ("opp_rank", "total_value", "labor_value", "job", "component", "model",
+                                               "asset_serial", "branch", "customer_number", "target_date", "days_to_target",
+                                               "lead_score", "confidence_index", "source", "opportunity_id", "snapshot_date")},
+        "evidence": list_evidence,
+        "score": round(100 * value / top_value, 1) if top_value else 0.0,
+        "score_breakdown": {"rule": "value / largest value in today's list", "rank": rank},
+        "priority": priority,
+        "confidence": "OLGA-estimated",
+        "expected_impact": (f"Up to {value:,.0f} of parts and labour if the work is won (OLGA estimate, not a forecast of "
+                            "win probability)."),
+        "actions": ["Confirm the machine's current hours and condition with the customer.",
+                    f"Prepare a quote for {what.lower() or 'the job'} before {row.get('target_date')}.",
+                    "Check parts availability (or reman option) for the component.",
+                    "Record the outcome (won / lost / deferred) in the plan."],
+        "risks": "OLGA estimates value and timing from model intervals; the job may already be done elsewhere or not yet needed.",
+        "owner": row.get("branch"),     # the source names the branch; a person is assigned in the plan
+        "data_as_of": f"{row.get('run_date')}T00:00:00",
+    }

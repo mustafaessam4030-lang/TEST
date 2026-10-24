@@ -35,6 +35,21 @@ sources:
     entity: opportunity_key
     dimensions: [branch, smcs_group, product_family, source, dealer_code, connected_asset]
     drill_columns: [asset_serial, model, branch, smcs_group, component, job, target_date]
+  daily_top_opportunities:
+    table: SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
+    label: Daily top-100 opportunities (built each day by SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES)
+    time_column: run_date
+    loaded_column: generated_at
+    entity: opportunity_key
+    as_of_from: latest_data
+    dimensions: [branch, product_family, smcs_group, job, component, source, dealer_code]
+    drill_columns: [opportunity_key, asset_serial, model, branch, customer_number, job, component, target_date]
+    list:
+      latest_column: run_date
+      order_by: opp_rank
+      columns: [opp_rank, is_new_today, total_value, labor_value, job, component, smcs_group, model, product_family,
+                asset_serial, branch, customer_number, target_date, days_to_target, lead_score, confidence_index,
+                source, connected_asset, opportunity_id, opportunity_key, snapshot_date, run_date]
   lost_opportunity:
     table: SERVICE_INTELLIGENCE.CURATED.LOST_OPPORTUNITY_MONTHLY
     label: OLGA lost-opportunity report (monthly)
@@ -58,6 +73,8 @@ dimension_labels:
   smcs_group: SMCS group
   source: Opportunity source
   connected_asset: Connected asset
+  job: Job
+  component: Component
 
 metrics:
   - id: high_severity_fault_assets
@@ -199,3 +216,30 @@ metrics:
     synonyms: [capture rate, share of wallet, capture, conversion of opportunity]
     limitations:
       - Monthly data; periods are whole months.
+
+  - id: top_opportunities_value
+    name: Value of today's top-100 opportunities
+    description: Total OLGA value of the opportunities in the latest daily top-100 list (due within 90 days, ranked by value).
+    source: daily_top_opportunities
+    kind: snapshot
+    expression: SUM(total_value)
+    filter: run_date = (SELECT MAX(run_date) FROM {table})
+    unit: value
+    direction: neutral
+    synonyms: [top opportunities, top 100, top 100 opportunities, best opportunities, highest opportunities, biggest opportunities, daily opportunities, today's opportunities]
+    limitations:
+      - The list is rebuilt daily, but OLGA opportunities change only with each month-end snapshot; day-to-day changes come mostly from the 90-day window moving.
+      - Ranked by value only (then OLGA lead score); value is not probability of winning.
+
+  - id: top_opportunities_new_today
+    name: New entries in today's top-100
+    description: Opportunities in the latest daily top-100 list that were not in the previous day's list.
+    source: daily_top_opportunities
+    kind: snapshot
+    expression: COUNT(*)
+    filter: run_date = (SELECT MAX(run_date) FROM {table}) AND is_new_today
+    unit: opportunities
+    direction: neutral
+    synonyms: [new opportunities today, new in top 100, new entries]
+    limitations:
+      - On the first run every entry is new.

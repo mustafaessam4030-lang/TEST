@@ -94,7 +94,9 @@ CREATE OR REPLACE VIEW SERVICE_INTELLIGENCE.CURATED.V_OPPORTUNITIES
 AS
 SELECT
   OPPORTUNITY_KEY                                                           AS opportunity_key,
+  OPPORTUNITY_ID                                                            AS opportunity_id,
   UPPER(TRIM(SERIAL_NUMBER))                                                AS asset_serial,
+  CUSTOMER_NUMBER                                                           AS customer_number,   -- identifier only; names excluded
   MODEL                                                                     AS model,
   COALESCE(NULLIF(TRIM(PRODUCT_FAMILY), ''), '(not set)')                   AS product_family,
   DEALER_CODE                                                               AS dealer_code,
@@ -108,6 +110,8 @@ SELECT
   TARGET_DATE::DATE                                                         AS target_date,
   TOTAL_VALUE                                                               AS total_value,
   LABOR_VALUE                                                               AS labor_value,
+  LEAD_SCORE                                                                AS lead_score,        -- OLGA 0-15; null on 72 % of rows
+  CONFIDENCE_INDEX                                                          AS confidence_index,
   LAST_UPDATE_TIMESTAMP                                                     AS loaded_at
 FROM SERVICE_INTELLIGENCE.OLGA.OPPORTUNITIES_TABLE
 WHERE TARGET_DATE < '2099-01-01';
@@ -183,6 +187,35 @@ MERGE INTO SERVICE_INTELLIGENCE.SI_APP.APP_USERS t
 USING (SELECT 'memabrouk@mantracgroup.com' email, 'admin' app_role) s ON t.email = s.email
 WHEN NOT MATCHED THEN INSERT (email, app_role) VALUES (s.email, s.app_role);
 
+-- Daily top opportunities: one list per run_date (history kept), rebuilt by SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES.
+CREATE TABLE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES (
+  run_date         DATE          NOT NULL,                 -- UTC date of the run
+  opp_rank         NUMBER        NOT NULL,                 -- 1 = highest value
+  horizon_days     NUMBER        NOT NULL,
+  is_new_today     BOOLEAN       NOT NULL,                 -- not in the previous run's list
+  opportunity_key  VARCHAR       NOT NULL,
+  opportunity_id   VARCHAR,
+  asset_serial     VARCHAR,
+  model            VARCHAR,
+  product_family   VARCHAR,
+  dealer_code      VARCHAR,
+  branch           VARCHAR,
+  customer_number  VARCHAR,
+  smcs_group       VARCHAR,
+  component        VARCHAR,
+  job              VARCHAR,
+  source           VARCHAR,
+  connected_asset  VARCHAR,
+  target_date      DATE,
+  days_to_target   NUMBER,
+  total_value      FLOAT,
+  labor_value      FLOAT,
+  lead_score       NUMBER,
+  confidence_index NUMBER,
+  snapshot_date    DATE,
+  generated_at     TIMESTAMP_NTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.CHAT_LOG (
   asked_at   TIMESTAMP_NTZ DEFAULT CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
   user_email VARCHAR,
@@ -193,7 +226,43 @@ CREATE TABLE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.CHAT_LOG (
   outcome    VARCHAR                                       -- answered / refused / no_data / error
 );
 
--- 5. Daily refresh: re-copy the 10 tables from CAT_SHARE, rebuild CURATED tables, log row counts.
+-- 5a. Daily top-N opportunity list. Rule (transparent, no model):
+--   from the latest OLGA snapshot, opportunities with value > 0 and target date in (run_date, run_date + horizon_days],
+--   ranked by value, then OLGA lead score, then key; top N kept. is_new_today = not in the previous run's list.
+--   Re-running on the same day replaces that day's list.
+CREATE OR REPLACE PROCEDURE SERVICE_INTELLIGENCE.SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(TOP_N NUMBER, HORIZON_DAYS NUMBER)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS
+$$
+DECLARE
+  run_dt DATE DEFAULT CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::DATE;
+  n NUMBER;
+BEGIN
+  DELETE FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date = :run_dt;
+  INSERT INTO SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
+  WITH prev AS (
+    SELECT opportunity_key FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
+    WHERE run_date = (SELECT MAX(run_date) FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date < :run_dt)),
+  ranked AS (
+    SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.total_value DESC, o.lead_score DESC NULLS LAST, o.opportunity_key) AS opp_rank
+    FROM SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES o
+    WHERE o.snapshot_date = (SELECT MAX(snapshot_date) FROM SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES)
+      AND o.total_value > 0
+      AND o.target_date > :run_dt AND o.target_date <= DATEADD('day', :horizon_days, :run_dt)
+    QUALIFY opp_rank <= :top_n)
+  SELECT :run_dt, r.opp_rank, :horizon_days, (p.opportunity_key IS NULL), r.opportunity_key, r.opportunity_id, r.asset_serial,
+         r.model, r.product_family, r.dealer_code, r.branch, r.customer_number, r.smcs_group, r.component, r.job, r.source,
+         r.connected_asset, r.target_date, DATEDIFF('day', :run_dt, r.target_date), r.total_value, r.labor_value,
+         r.lead_score, r.confidence_index, r.snapshot_date, CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ
+  FROM ranked r LEFT JOIN prev p ON p.opportunity_key = r.opportunity_key;
+  SELECT COUNT(*) INTO :n FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date = :run_dt;
+  RETURN 'top opportunities for ' || run_dt || ': ' || n;
+END;
+$$;
+
+-- 5b. Daily refresh: re-copy the 10 tables from CAT_SHARE, rebuild CURATED tables, build the top-100 list, log row counts.
 CREATE OR REPLACE PROCEDURE SERVICE_INTELLIGENCE.SI_ADMIN.REFRESH_ALL()
 RETURNS VARCHAR
 LANGUAGE SQL
@@ -222,9 +291,13 @@ BEGIN
     UNION ALL SELECT 'CURATED', 'ASSET_DAILY', NULL, COUNT(*) FROM SERVICE_INTELLIGENCE.CURATED.ASSET_DAILY
     UNION ALL SELECT 'CURATED', 'OPPORTUNITIES', NULL, COUNT(*) FROM SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES
     UNION ALL SELECT 'CURATED', 'LOST_OPPORTUNITY_MONTHLY', NULL, COUNT(*) FROM SERVICE_INTELLIGENCE.CURATED.LOST_OPPORTUNITY_MONTHLY;
+  CALL SERVICE_INTELLIGENCE.SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(100, 90);
   RETURN 'refreshed';
 END;
 $$;
+
+-- First list now (later lists come from the daily task).
+CALL SERVICE_INTELLIGENCE.SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(100, 90);
 
 -- Cat refreshes the share at about 12:00 UTC; refresh at 13:30 UTC daily. Suspended until you resume it.
 CREATE OR REPLACE TASK SERVICE_INTELLIGENCE.SI_ADMIN.REFRESH_DAILY
@@ -246,6 +319,7 @@ GRANT SELECT, INSERT, UPDATE ON TABLE SERVICE_INTELLIGENCE.SI_APP.RECOMMENDATION
 GRANT SELECT, INSERT ON TABLE SERVICE_INTELLIGENCE.SI_APP.RECOMMENDATION_EVENTS TO ROLE SI_APP_OWNER;   -- append-only
 GRANT SELECT ON TABLE SERVICE_INTELLIGENCE.SI_APP.APP_USERS TO ROLE SI_APP_OWNER;                       -- admins manage it in SQL
 GRANT INSERT ON TABLE SERVICE_INTELLIGENCE.SI_APP.CHAT_LOG TO ROLE SI_APP_OWNER;
+GRANT SELECT ON TABLE SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES TO ROLE SI_APP_OWNER;      -- read-only for the app
 GRANT USAGE ON SEQUENCE SERVICE_INTELLIGENCE.SI_APP.RECOMMENDATION_SEQ TO ROLE SI_APP_OWNER;
 GRANT USAGE ON SCHEMA SERVICE_INTELLIGENCE.SI_ADMIN TO ROLE SI_APP_OWNER;
 GRANT SELECT ON TABLE SERVICE_INTELLIGENCE.SI_ADMIN.COPY_LOG TO ROLE SI_APP_OWNER;                       -- freshness panel
