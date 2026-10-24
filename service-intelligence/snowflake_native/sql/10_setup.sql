@@ -108,6 +108,7 @@ SELECT
   CONNECTED_ASSET                                                           AS connected_asset,
   LAST_DAY(TRY_TO_DATE(END_OF_MONTH, 'MMMM YYYY'))                          AS snapshot_date,
   TARGET_DATE::DATE                                                         AS target_date,
+  TARGET_SMU                                                                AS target_smu,        -- service-meter hours at which the job is due
   TOTAL_VALUE                                                               AS total_value,
   LABOR_VALUE                                                               AS labor_value,
   LEAD_SCORE                                                                AS lead_score,        -- OLGA 0-15; null on 72 % of rows
@@ -187,33 +188,39 @@ MERGE INTO SERVICE_INTELLIGENCE.SI_APP.APP_USERS t
 USING (SELECT 'memabrouk@mantracgroup.com' email, 'admin' app_role) s ON t.email = s.email
 WHEN NOT MATCHED THEN INSERT (email, app_role) VALUES (s.email, s.app_role);
 
--- Daily top opportunities: one list per run_date (history kept), rebuilt by SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES.
+-- Daily top-100 opportunity ranking (per machine, OLGA + telemetry). One ranking per run_date; history kept.
+-- Rows stored per day: the top N overall plus the top N of each signal class (so each class can be listed).
 CREATE TABLE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES (
-  run_date         DATE          NOT NULL,                 -- UTC date of the run
-  opp_rank         NUMBER        NOT NULL,                 -- 1 = highest value
-  horizon_days     NUMBER        NOT NULL,
-  is_new_today     BOOLEAN       NOT NULL,                 -- not in the previous run's list
-  opportunity_key  VARCHAR       NOT NULL,
-  opportunity_id   VARCHAR,
-  asset_serial     VARCHAR,
-  model            VARCHAR,
-  product_family   VARCHAR,
-  dealer_code      VARCHAR,
-  branch           VARCHAR,
-  customer_number  VARCHAR,
-  smcs_group       VARCHAR,
-  component        VARCHAR,
-  job              VARCHAR,
-  source           VARCHAR,
-  connected_asset  VARCHAR,
-  target_date      DATE,
-  days_to_target   NUMBER,
-  total_value      FLOAT,
-  labor_value      FLOAT,
-  lead_score       NUMBER,
-  confidence_index NUMBER,
-  snapshot_date    DATE,
-  generated_at     TIMESTAMP_NTZ NOT NULL
+  run_date             DATE          NOT NULL,      -- UTC date of the run
+  overall_rank         NUMBER,                      -- 1..N across all machines (NULL if only in a class list)
+  signal_class         VARCHAR       NOT NULL,      -- OLGA + telemetry / OLGA only / Telemetry only
+  class_rank           NUMBER        NOT NULL,
+  is_new_today         BOOLEAN       NOT NULL,      -- not in the previous run's overall top N
+  asset_serial         VARCHAR       NOT NULL,
+  model                VARCHAR,
+  product_family       VARCHAR,
+  branch               VARCHAR,
+  customer_number      VARCHAR,
+  score                FLOAT         NOT NULL,      -- value_points + urgency_points + condition_points (0-100)
+  value_points         FLOAT,                       -- 35 x percentile of due OLGA value among machines with value
+  urgency_points       FLOAT,                       -- 30 x (1 if due within 30 days or overdue, falling to 0 at 90 days)
+  condition_points     FLOAT,                       -- 35 x min(1, days with the same HIGH fault in 30 days / 15); 0.2 floor if any
+  due_value            FLOAT,                       -- OLGA value of opportunities due in [run-30, run+90] days (effective date)
+  due_opportunities    NUMBER,
+  top_job              VARCHAR,
+  earliest_due         DATE,
+  days_to_due          NUMBER,
+  due_basis            VARCHAR,                     -- telemetry hours / OLGA date
+  telemetry_timed_opps NUMBER,
+  smu_now              FLOAT,
+  hours_per_day        FLOAT,
+  last_reading         DATE,
+  max_fault_days       NUMBER,
+  repeat_fault         VARCHAR,
+  high_fault_events    NUMBER,
+  last_fault_at        TIMESTAMP_NTZ,
+  reason               VARCHAR,
+  generated_at         TIMESTAMP_NTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.CHAT_LOG (
@@ -226,10 +233,12 @@ CREATE TABLE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.CHAT_LOG (
   outcome    VARCHAR                                       -- answered / refused / no_data / error
 );
 
--- 5a. Daily top-N opportunity list. Rule (transparent, no model):
---   from the latest OLGA snapshot, opportunities with value > 0 and target date in (run_date, run_date + horizon_days],
---   ranked by value, then OLGA lead score, then key; top N kept. is_new_today = not in the previous run's list.
---   Re-running on the same day replaces that day's list.
+-- 5a. Daily top-N opportunity ranking per machine. Transparent rule, no model:
+--   OLGA opportunities are re-timed with live telemetry: if the machine reports hours, effective due date =
+--   last reading + (OLGA target hours - current hours) / average hours per day over the last 30 days; else OLGA's date.
+--   Opportunities with an effective due date in [run - 30, run + HORIZON_DAYS] count towards the machine's due value.
+--   Condition = HIGH-severity fault events (de-duplicated) in the last 30 days.
+--   score = 35 x value percentile + 30 x urgency + 35 x condition (see column comments). Re-running a day replaces it.
 CREATE OR REPLACE PROCEDURE SERVICE_INTELLIGENCE.SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(TOP_N NUMBER, HORIZON_DAYS NUMBER)
 RETURNS VARCHAR
 LANGUAGE SQL
@@ -242,23 +251,82 @@ DECLARE
 BEGIN
   DELETE FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date = :run_dt;
   INSERT INTO SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
-  WITH prev AS (
-    SELECT opportunity_key FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
-    WHERE run_date = (SELECT MAX(run_date) FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date < :run_dt)),
-  ranked AS (
-    SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.total_value DESC, o.lead_score DESC NULLS LAST, o.opportunity_key) AS opp_rank
+  WITH usage AS (
+    SELECT asset_serial, MAX_BY(smh, reading_date) AS smu_now, MAX(reading_date) AS last_reading,
+           (MAX_BY(smh, reading_date) - MIN_BY(smh, reading_date)) / NULLIF(DATEDIFF('day', MIN(reading_date), MAX(reading_date)), 0) AS hours_per_day
+    FROM SERVICE_INTELLIGENCE.CURATED.ASSET_DAILY
+    WHERE smh IS NOT NULL AND reading_date BETWEEN DATEADD('day', -30, :run_dt) AND :run_dt
+    GROUP BY asset_serial HAVING COUNT(*) >= 5),
+  opp AS (
+    SELECT o.*, u.smu_now, u.hours_per_day, u.last_reading,
+           IFF(u.smu_now IS NOT NULL AND o.target_smu > 0 AND u.hours_per_day BETWEEN 0.1 AND 24,
+               DATEADD('day', GREATEST(-3650, LEAST(ROUND((o.target_smu - u.smu_now) / u.hours_per_day), 3650))::INT, u.last_reading),
+               NULL) AS tel_due
     FROM SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES o
-    WHERE o.snapshot_date = (SELECT MAX(snapshot_date) FROM SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES)
-      AND o.total_value > 0
-      AND o.target_date > :run_dt AND o.target_date <= DATEADD('day', :horizon_days, :run_dt)
-    QUALIFY opp_rank <= :top_n)
-  SELECT :run_dt, r.opp_rank, :horizon_days, (p.opportunity_key IS NULL), r.opportunity_key, r.opportunity_id, r.asset_serial,
-         r.model, r.product_family, r.dealer_code, r.branch, r.customer_number, r.smcs_group, r.component, r.job, r.source,
-         r.connected_asset, r.target_date, DATEDIFF('day', :run_dt, r.target_date), r.total_value, r.labor_value,
-         r.lead_score, r.confidence_index, r.snapshot_date, CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ
-  FROM ranked r LEFT JOIN prev p ON p.opportunity_key = r.opportunity_key;
-  SELECT COUNT(*) INTO :n FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date = :run_dt;
-  RETURN 'top opportunities for ' || run_dt || ': ' || n;
+    LEFT JOIN usage u ON u.asset_serial = o.asset_serial
+    WHERE o.snapshot_date = (SELECT MAX(snapshot_date) FROM SERVICE_INTELLIGENCE.CURATED.OPPORTUNITIES) AND o.total_value > 0),
+  opp_due AS (
+    SELECT *, COALESCE(tel_due, target_date) AS eff_due, IFF(tel_due IS NOT NULL, 'telemetry hours', 'OLGA date') AS due_basis
+    FROM opp WHERE COALESCE(tel_due, target_date) BETWEEN DATEADD('day', -30, :run_dt) AND DATEADD('day', :horizon_days, :run_dt)),
+  opp_asset AS (
+    SELECT asset_serial, ANY_VALUE(model) AS model, ANY_VALUE(product_family) AS product_family, MODE(branch) AS branch,
+           MODE(customer_number) AS customer_number, SUM(total_value) AS due_value, COUNT(*) AS due_opportunities,
+           MAX_BY(INITCAP(COALESCE(job, '')) || ' ' || INITCAP(COALESCE(component, '')), total_value) AS top_job,
+           MIN(eff_due) AS earliest_due, MIN_BY(due_basis, eff_due) AS due_basis,
+           COUNT_IF(due_basis = 'telemetry hours') AS telemetry_timed_opps,
+           ANY_VALUE(smu_now) AS smu_now, ANY_VALUE(hours_per_day) AS hours_per_day, ANY_VALUE(last_reading) AS last_reading
+    FROM opp_due GROUP BY asset_serial),
+  fault_by_code AS (
+    SELECT asset_serial, fault_description, COUNT(DISTINCT occurred_at::DATE) AS days, COUNT(*) AS events, MAX(occurred_at) AS last_at,
+           ANY_VALUE(model) AS model, ANY_VALUE(product_family) AS product_family, ANY_VALUE(dealer_code) AS dealer_code
+    FROM SERVICE_INTELLIGENCE.CURATED.FAULT_EVENTS
+    WHERE severity = 'HIGH' AND occurred_at > DATEADD('day', -30, :run_dt) AND occurred_at < DATEADD('day', 1, :run_dt)
+    GROUP BY asset_serial, fault_description),
+  faults AS (
+    SELECT asset_serial, MAX(days) AS max_fault_days, MAX_BY(fault_description, days) AS repeat_fault, SUM(events) AS high_fault_events,
+           MAX(last_at) AS last_fault_at, ANY_VALUE(model) AS model, ANY_VALUE(product_family) AS product_family,
+           ANY_VALUE(dealer_code) AS dealer_code
+    FROM fault_by_code GROUP BY asset_serial),
+  cand AS (
+    SELECT COALESCE(a.asset_serial, f.asset_serial) AS asset_serial, COALESCE(a.model, f.model) AS model,
+           COALESCE(f.product_family, a.product_family) AS product_family, COALESCE(a.branch, 'Dealer ' || f.dealer_code) AS branch,
+           a.customer_number, COALESCE(a.due_value, 0) AS due_value, COALESCE(a.due_opportunities, 0) AS due_opportunities,
+           a.top_job, a.earliest_due, a.due_basis, a.telemetry_timed_opps, a.smu_now, a.hours_per_day, a.last_reading,
+           f.max_fault_days, f.repeat_fault, f.high_fault_events, f.last_fault_at
+    FROM opp_asset a FULL OUTER JOIN faults f ON f.asset_serial = a.asset_serial),
+  scored AS (
+    SELECT c.*,
+           ROUND(35 * IFF(c.due_value > 0, PERCENT_RANK() OVER (PARTITION BY (c.due_value > 0) ORDER BY c.due_value), 0), 1) AS value_points,
+           ROUND(30 * IFF(c.earliest_due IS NULL, 0,
+                 LEAST(1, GREATEST(0, 1 - (DATEDIFF('day', :run_dt, c.earliest_due) - 30) / 60))), 1) AS urgency_points,
+           ROUND(35 * IFF(c.max_fault_days IS NULL, 0, LEAST(1, GREATEST(0.2, c.max_fault_days / 15))), 1) AS condition_points,
+           CASE WHEN c.due_value > 0 AND c.max_fault_days IS NOT NULL THEN 'OLGA + telemetry'
+                WHEN c.due_value > 0 THEN 'OLGA only' ELSE 'Telemetry only' END AS signal_class
+    FROM cand c),
+  ranked AS (
+    SELECT s.*, value_points + urgency_points + condition_points AS score,
+           ROW_NUMBER() OVER (ORDER BY value_points + urgency_points + condition_points DESC, due_value DESC, asset_serial) AS overall_rank,
+           ROW_NUMBER() OVER (PARTITION BY signal_class
+                              ORDER BY value_points + urgency_points + condition_points DESC, due_value DESC, high_fault_events DESC NULLS LAST, asset_serial) AS class_rank
+    FROM scored s),
+  prev AS (
+    SELECT asset_serial FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
+    WHERE overall_rank IS NOT NULL
+      AND run_date = (SELECT MAX(run_date) FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date < :run_dt))
+  SELECT :run_dt, IFF(r.overall_rank <= :top_n, r.overall_rank, NULL), r.signal_class, r.class_rank, (p.asset_serial IS NULL),
+         r.asset_serial, r.model, r.product_family, r.branch, r.customer_number, r.score, r.value_points, r.urgency_points,
+         r.condition_points, r.due_value, r.due_opportunities, r.top_job, r.earliest_due, DATEDIFF('day', :run_dt, r.earliest_due),
+         r.due_basis, r.telemetry_timed_opps, r.smu_now, r.hours_per_day, r.last_reading, r.max_fault_days, r.repeat_fault,
+         r.high_fault_events, r.last_fault_at,
+         ARRAY_TO_STRING(ARRAY_CONSTRUCT_COMPACT(
+           IFF(r.due_value > 0, 'OLGA value due ' || TO_VARCHAR(ROUND(r.due_value), 'FM999,999,999,999') || ' (' || r.due_opportunities || ' jobs, top: ' || r.top_job || ')', NULL),
+           IFF(r.earliest_due IS NOT NULL, IFF(r.earliest_due < :run_dt, 'overdue since ', 'due ') || r.earliest_due || ' by ' || r.due_basis, NULL),
+           IFF(r.max_fault_days IS NOT NULL, 'HIGH fault "' || r.repeat_fault || '" on ' || r.max_fault_days || ' of the last 30 days', NULL)), '; '),
+         CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ
+  FROM ranked r LEFT JOIN prev p ON p.asset_serial = r.asset_serial
+  WHERE r.overall_rank <= :top_n OR r.class_rank <= :top_n;
+  SELECT COUNT(*) INTO :n FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES WHERE run_date = :run_dt AND overall_rank IS NOT NULL;
+  RETURN 'top machines for ' || run_dt || ': ' || n;
 END;
 $$;
 

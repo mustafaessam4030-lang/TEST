@@ -43,11 +43,15 @@ def responder(spec: Spec):
             return [{"value": 182, "n": 182}]
         return [{"value": 1974, "n": 64249}]
     if spec.purpose == "list":
-        return [{"opp_rank": i, "is_new_today": i % 3 == 0, "total_value": 640000 - i * 5000, "labor_value": 6000,
-                 "job": "OVERHAUL", "component": "ENGINE", "smcs_group": "Engine", "model": "777E", "product_family": "TRUCKS",
-                 "asset_serial": f"S{i:05d}", "branch": "Geita", "customer_number": "C0000001", "target_date": "2026-12-08",
-                 "days_to_target": 45, "lead_score": 8, "confidence_index": 60, "source": "LENS", "connected_asset": "YES",
-                 "opportunity_id": f"O{i}", "opportunity_key": f"K{i}", "snapshot_date": "2026-09-30",
+        cls = next((p for p in spec.params if p in ("OLGA + telemetry", "OLGA only", "Telemetry only")), None)
+        return [{"overall_rank": None if cls else i, "class_rank": i, "signal_class": cls or "OLGA + telemetry",
+                 "is_new_today": i % 3 == 0, "score": 100 - i * 0.2, "value_points": 35.0, "urgency_points": 30.0,
+                 "condition_points": 35.0 - i * 0.2, "asset_serial": f"S{i:05d}", "model": "777E", "product_family": "TRUCKS",
+                 "branch": "Geita", "customer_number": "C0000001", "due_value": 0 if cls == "Telemetry only" else 250000 - i * 1000,
+                 "due_opportunities": 12, "top_job": "Recon Before Failure Final Drive", "earliest_due": "2026-09-29",
+                 "days_to_due": -25, "due_basis": "telemetry hours", "smu_now": 41000.0, "hours_per_day": 18.5,
+                 "max_fault_days": 22, "repeat_fault": "Diff Lube Pres", "high_fault_events": 140,
+                 "last_fault_at": "2026-10-23T10:00:00", "reason": "OLGA value due 249,000; overdue since 2026-09-29 by telemetry hours",
                  "run_date": "2026-10-24"} for i in range(1, 101)]
     if spec.purpose == "series":
         return [{"bucket": "2026-07-01", "value": 1397, "n": 1}]
@@ -61,7 +65,7 @@ def an():
 
 # --- registry ---------------------------------------------------------------------------------------
 def test_registry_loads_every_metric_with_a_known_source():
-    assert len(REG.metrics) == 12
+    assert len(REG.metrics) == 13
     for m in REG.metrics.values():
         assert m.source in REG.sources and m.kind in ("period", "snapshot")
 
@@ -241,27 +245,35 @@ def test_value_formatting():
 
 # --- daily top-100 opportunities ----------------------------------------------------------------------
 def test_top_list_reads_only_the_latest_run_with_bound_filters():
-    spec = Builder(REG).top_list("daily_top_opportunities", {"branch": ["Geita"]}, 500)
+    b = Builder(REG)
+    spec = b.top_list("daily_top_opportunities", {"branch": ["Geita"]}, 500)
     assert "WHERE run_date = (SELECT MAX(run_date) FROM SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES)" in spec.sql
-    assert spec.sql.endswith("ORDER BY opp_rank LIMIT 500") and spec.params == ("Geita",)
+    assert "AND overall_rank IS NOT NULL" in spec.sql and spec.sql.endswith("ORDER BY overall_rank LIMIT 500")
+    assert spec.params == ("Geita",)
+    cls = b.top_list("daily_top_opportunities", {}, 100, "Telemetry only")
+    assert "AND signal_class = ?" in cls.sql and cls.sql.endswith("ORDER BY class_rank LIMIT 100")
+    assert cls.params == ("Telemetry only",)
     with pytest.raises(QueryError):
-        Builder(REG).top_list("fault_events", {}, 10)
+        b.top_list("fault_events", {}, 10)
 
 
-def test_top_opportunity_candidate_is_traceable_and_unprojected(an):
+def test_machine_candidate_is_traceable_and_unprojected(an):
     from si_native.recommend import top_opportunity_candidate
     lst = an.top_list("daily_top_opportunities", {}, 100)
-    c = top_opportunity_candidate(lst["rows"][0], lst["evidence"], 640000 - 5000)
-    assert c["candidate_key"] == "top_opportunity/1|K1" and c["priority"] == "High" and c["score"] == 100.0
-    assert c["measured"]["total_value"] == 635000 and c["evidence"][0]["purpose"] == "list"
-    assert "not a forecast" in c["expected_impact"] and c["data_as_of"] == "2026-10-24T00:00:00"
-    assert top_opportunity_candidate(lst["rows"][59], lst["evidence"], 635000)["priority"] == "Medium"
+    c = top_opportunity_candidate(lst["rows"][0], lst["evidence"])
+    assert c["candidate_key"] == "top_machine/1|S00001" and c["priority"] == "High"
+    assert c["measured"]["due_basis"] == "telemetry hours" and c["evidence"][0]["purpose"] == "list"
+    assert "not a win" in c["expected_impact"] and c["data_as_of"] == "2026-10-24T00:00:00"
+    tel = an.top_list("daily_top_opportunities", {}, 100, "Telemetry only")["rows"][0]
+    t = top_opportunity_candidate(tel, lst["evidence"])
+    assert "No OLGA value" in t["expected_impact"] and t["confidence"].startswith("Telemetry only")
 
 
-def test_assistant_lists_top_opportunities(an):
+def test_assistant_lists_top_machines(an):
     plan = rules_plan("Show me the top 20 opportunities", an)
     assert plan.intent == "top_list"
     res = answer(plan, an)
-    assert len(res["table"]) == 100 or len(res["table"]) == 20    # fake runner ignores LIMIT; the spec carries it
-    assert "Top" in res["text"] and res["evidence"][0]["sql"].endswith("LIMIT 20")
+    assert "machines to act on" in res["text"] and res["evidence"][0]["sql"].endswith("LIMIT 20")
+    assert rules_plan("show the top 5 machines", an).intent == "top_list"
     assert rules_plan("What is the value of the top 100 opportunities by branch?", an).intent == "metric"
+    assert rules_plan("machines needing attention that OLGA does not list", an).metric_id == "telemetry_only_opportunities"

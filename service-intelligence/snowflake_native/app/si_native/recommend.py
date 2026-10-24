@@ -103,43 +103,54 @@ def all_candidates(an: Analytics) -> list[dict]:
     return sorted(cands, key=lambda c: (-c["score"], c["title"]))
 
 
-TOP_OPP_VERSION = "top_opportunity/1"
+TOP_OPP_VERSION = "top_machine/1"
+SIGNAL_CLASSES = ("OLGA + telemetry", "OLGA only", "Telemetry only")
 
 
-def top_opportunity_candidate(row: dict, list_evidence: list[dict], top_value: float) -> dict:
-    """A saved-plan item for one opportunity from the daily top-100 list. Every figure is OLGA's; nothing is projected
-    beyond OLGA's own value."""
-    rank = int(row["opp_rank"])
-    value = float(row["total_value"] or 0)
-    priority = "High" if rank <= 20 else "Medium" if rank <= 60 else "Low"
-    what = " ".join(x for x in (str(row.get("job") or "").title(), str(row.get("component") or "").title()) if x)
+def top_opportunity_candidate(row: dict, list_evidence: list[dict], top_value: float | None = None) -> dict:
+    """A plan item for one machine from the daily ranking. Values are OLGA's; timing and condition come from telemetry.
+    Nothing is projected beyond OLGA's own value."""
+    rank = row.get("overall_rank") or row.get("class_rank")
+    score = float(row["score"])
+    priority = "High" if score >= 80 else "Medium" if score >= 50 else "Low"
+    due_value = float(row.get("due_value") or 0)
+    what = row.get("top_job") or row.get("repeat_fault") or "inspection"
+    signals = row.get("signal_class")
     return {
-        "candidate_key": f"{TOP_OPP_VERSION}|{row['opportunity_key']}",
+        "candidate_key": f"{TOP_OPP_VERSION}|{row['asset_serial']}",
         "detector": TOP_OPP_VERSION,
-        "title": f"#{rank} {what} on {row.get('model')} {row.get('asset_serial')} ({row.get('branch')})",
-        "explanation": (f"OLGA opportunity worth {value:,.0f} (labour {float(row.get('labor_value') or 0):,.0f}), target date "
-                        f"{row.get('target_date')} ({row.get('days_to_target')} days), customer {row.get('customer_number')}. "
-                        f"Rank {rank} in the top-100 list of {row.get('run_date')} (OLGA snapshot {row.get('snapshot_date')}); "
-                        f"OLGA lead score {row.get('lead_score')}, confidence index {row.get('confidence_index')}."),
-        "problem": "A high-value parts and service opportunity is due within 90 days; if no quote or job is raised in time it "
-                   "may be lost to a competitor or deferred.",
+        "title": f"#{rank} {row.get('model')} {row['asset_serial']} ({row.get('branch')}): {what}",
+        "explanation": f"{row.get('reason')}. Signal: {signals}; score {score:.1f} = value {row.get('value_points')} + "
+                       f"urgency {row.get('urgency_points')} + condition {row.get('condition_points')} "
+                       f"(ranking of {row.get('run_date')}).",
+        "problem": ("Work is due on this machine and/or it keeps reporting a HIGH-severity fault; acting first on the "
+                    "highest-ranked machines protects parts and service revenue and machine availability."),
         "metric_id": "top_opportunities_value",
-        "segment": {"filters": {}, "opportunity_key": row["opportunity_key"], "run_date": str(row.get("run_date"))},
-        "measured": {k: row.get(k) for k in ("opp_rank", "total_value", "labor_value", "job", "component", "model",
-                                               "asset_serial", "branch", "customer_number", "target_date", "days_to_target",
-                                               "lead_score", "confidence_index", "source", "opportunity_id", "snapshot_date")},
+        "segment": {"filters": {}, "asset_serial": row["asset_serial"], "run_date": str(row.get("run_date")),
+                    "signal_class": signals},
+        "measured": {k: row.get(k) for k in ("overall_rank", "class_rank", "signal_class", "score", "value_points",
+                                               "urgency_points", "condition_points", "due_value", "due_opportunities",
+                                               "top_job", "earliest_due", "days_to_due", "due_basis", "smu_now",
+                                               "hours_per_day", "max_fault_days", "repeat_fault", "high_fault_events",
+                                               "customer_number", "branch")},
         "evidence": list_evidence,
-        "score": round(100 * value / top_value, 1) if top_value else 0.0,
-        "score_breakdown": {"rule": "value / largest value in today's list", "rank": rank},
+        "score": round(score, 1),
+        "score_breakdown": {"value_points": row.get("value_points"), "urgency_points": row.get("urgency_points"),
+                            "condition_points": row.get("condition_points"),
+                            "rule": "35 x value percentile + 30 x urgency + 35 x fault condition"},
         "priority": priority,
-        "confidence": "OLGA-estimated",
-        "expected_impact": (f"Up to {value:,.0f} of parts and labour if the work is won (OLGA estimate, not a forecast of "
-                            "win probability)."),
-        "actions": ["Confirm the machine's current hours and condition with the customer.",
-                    f"Prepare a quote for {what.lower() or 'the job'} before {row.get('target_date')}.",
-                    "Check parts availability (or reman option) for the component.",
+        "confidence": "Telemetry only (no OLGA value)" if signals == "Telemetry only" else
+                      ("OLGA value, telemetry-timed" if row.get("due_basis") == "telemetry hours" else "OLGA estimate"),
+        "expected_impact": (f"Up to {due_value:,.0f} of parts and labour if the due work is won (OLGA estimate, not a win "
+                            "probability)." if due_value else
+                            "No OLGA value exists for this machine; impact is avoided downtime and repair work, not quantified "
+                            "by the data."),
+        "actions": ["Call the customer to confirm machine hours, condition and site access.",
+                    f"Quote the due work ({row.get('top_job') or 'inspection and repair'}) and check parts or reman availability.",
+                    ("Investigate the repeating fault “" + str(row.get("repeat_fault")) + "” with product support.")
+                    if row.get("repeat_fault") else "Offer a condition-monitoring connection if the machine is not connected.",
                     "Record the outcome (won / lost / deferred) in the plan."],
-        "risks": "OLGA estimates value and timing from model intervals; the job may already be done elsewhere or not yet needed.",
-        "owner": row.get("branch"),     # the source names the branch; a person is assigned in the plan
+        "risks": "OLGA intervals are model-based and telemetry hours can lag; the work may already be done elsewhere.",
+        "owner": row.get("branch"),
         "data_as_of": f"{row.get('run_date')}T00:00:00",
     }

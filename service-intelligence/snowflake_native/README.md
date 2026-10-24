@@ -37,19 +37,24 @@ SERVICE_INTELLIGENCE
   - Evidence = the exact registry queries and their query IDs.
   - Expected impact is labelled as a hypothesis.
   - Plans persist in `SI_APP.RECOMMENDATIONS` with an append-only `RECOMMENDATION_EVENTS` audit trail.
-- **Daily top-100 opportunities.**
+- **Daily top-100 machines to act on (OLGA + telemetry).**
   - `SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(100, 90)` runs at the end of each daily refresh and writes
-    `SI_APP.DAILY_TOP_OPPORTUNITIES`, one list per day; earlier days are kept.
-  - Rule: from the latest OLGA snapshot, take opportunities with value > 0 and a target date in the next 90 days. Rank by
-    value, then OLGA lead score, and keep 100. `is_new_today` marks entries that were not on the previous day's list.
-  - The Recommendations page opens on this list:
-    - value of the list and the number of new entries;
-    - filters by branch, job and product family;
-    - CSV download;
-    - "Save selected to plan", which creates tracked plan items with evidence. The branch is suggested as owner, and the
-      same opportunity can't be saved twice while it is open.
-  - The assistant answers "show the top 20 opportunities" and "value of the top 100 by branch" from the same table.
-  - OLGA publishes opportunities monthly, so most day-to-day change comes from the 90-day window moving forward.
+    `SI_APP.DAILY_TOP_OPPORTUNITIES`, one ranking per day; earlier days are kept.
+  - It ranks **machines**, combining three sources:
+    - **Value (35 points), OLGA:** percentile of the OLGA value due on the machine. OLGA is the only source of money values.
+    - **Urgency (30 points), telemetry + OLGA:** each OLGA opportunity is re-timed with live service-meter hours:
+      due date = last reading + (OLGA target hours − current hours) ÷ average daily hours over the last 30 days. If the
+      machine doesn't report hours, OLGA's date is used. The score is full if the work is overdue or due within 30 days,
+      falling to 0 at 90 days.
+    - **Condition (35 points), telemetry:** the number of days the same HIGH-severity fault occurred in the last 30
+      (full at 15 days, minimum 20 % if any).
+  - Each machine is classed **OLGA + telemetry**, **OLGA only** or **Telemetry only**. The table stores the top 100
+    overall plus the top 100 of each class. The page shows the overall list, or any class.
+  - Telemetry-only machines are repair opportunities OLGA doesn't list; they carry no money value.
+  - Every row has a plain-language reason, for example: "OLGA value due 254,904 (45 jobs, top: Recon Before Failure Final Drive);
+    overdue since 2026-09-29 by telemetry hours; HIGH fault "Diff Lube Pres" on 22 of the last 30 days".
+  - "Save selected to plan" creates one open plan item per machine, with evidence and the branch as suggested owner.
+  - The assistant answers "show the top 20 machines" and "machines needing attention that OLGA does not list".
 - **Access.**
   - Who can open the app: `GRANT USAGE ON STREAMLIT` to `SI_APP_VIEWER`.
   - What they can change: `SI_APP.APP_USERS` (`viewer` < `analyst` < `approver` < `admin`), checked server-side.
@@ -106,7 +111,7 @@ the SELECT of its view from `sql/10_setup.sql`. Each query ran unchanged otherwi
 | Opportunity value due in the next 90 days (from 16 Oct) | 124.4M (493,060 opportunities) | n/a |
 | Lost opportunity, Q3 2026 | 41,242,205 | 41,224,204 on raw rows; the 18,001 difference is exactly the duplicate rows removed ✔ |
 | Capture rate, Sep 2026 | 70.8 % | n/a |
-| Daily top-100 selection, run date 24 Oct 2026 | 100 unique opportunities, total 11.47M, values 77,932–638,984, 22 branches, 39 customers, target dates 25 Oct 2026 – 21 Jan 2027 | the 12 largest checked by hand against OLGA rows ✔ |
+| Daily machine ranking, run date 24 Oct 2026 (the procedure's own SELECT) | 37,575 candidate machines; 300 rows stored. Overall top 100: all *OLGA + telemetry*, scores 78.4–100, 7.58M OLGA value due, 89 timed by telemetry hours. Telemetry-only #1: 14M grader, steering-pump fault on 24 of 30 days. OLGA-only #1: 987,836 due (track links) | signal counts checked separately: 1,490 machines with HIGH faults in 30 days (1,227 with no OLGA work due); 5,361 OLGA machines re-timed by live hours ✔ |
 
 **Note on the 2-asset gap.** 23,860 fault events (0.8 % of repeated events) were reported again with a *different* severity.
 The view keeps the most recently received classification; the raw count includes an asset if any report said HIGH.
@@ -116,5 +121,5 @@ The view keeps the most recently received classification; the raw count includes
 - **Not deployed or run as an app.** The connector used here is read-only, so it can't create objects or deploy. Every
   query has run live; the pages have only run in tests on fake data.
 - **Out of scope:** service orders, SLA, resolution time and backlog. No such data is in `SERVICE_INTELLIGENCE`.
-- **Recommendations so far:** repeat high-severity faults (fleet health) and the daily top-100 opportunities.
+- **Recommendations so far:** repeat high-severity faults (fleet health) and the daily top-100 machines (OLGA + telemetry).
 - **Currency of OLGA values** is not confirmed. `PART_COST` equals `PART_COST_USD`, but `TOTAL_VALUE` and the SCP columns are unlabelled.

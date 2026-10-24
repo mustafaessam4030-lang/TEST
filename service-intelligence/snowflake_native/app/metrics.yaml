@@ -37,19 +37,22 @@ sources:
     drill_columns: [asset_serial, model, branch, smcs_group, component, job, target_date]
   daily_top_opportunities:
     table: SERVICE_INTELLIGENCE.SI_APP.DAILY_TOP_OPPORTUNITIES
-    label: Daily top-100 opportunities (built each day by SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES)
+    label: Daily top-100 machines to act on (OLGA value + telemetry hours and faults; built by SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES)
     time_column: run_date
     loaded_column: generated_at
-    entity: opportunity_key
+    entity: asset_serial
     as_of_from: latest_data
-    dimensions: [branch, product_family, smcs_group, job, component, source, dealer_code]
-    drill_columns: [opportunity_key, asset_serial, model, branch, customer_number, job, component, target_date]
+    dimensions: [signal_class, branch, product_family, due_basis]
+    drill_columns: [asset_serial, model, branch, customer_number, signal_class]
     list:
       latest_column: run_date
-      order_by: opp_rank
-      columns: [opp_rank, is_new_today, total_value, labor_value, job, component, smcs_group, model, product_family,
-                asset_serial, branch, customer_number, target_date, days_to_target, lead_score, confidence_index,
-                source, connected_asset, opportunity_id, opportunity_key, snapshot_date, run_date]
+      order_by: overall_rank
+      class_column: signal_class
+      class_order_by: class_rank
+      columns: [overall_rank, class_rank, signal_class, is_new_today, score, value_points, urgency_points, condition_points,
+                asset_serial, model, product_family, branch, customer_number, due_value, due_opportunities, top_job,
+                earliest_due, days_to_due, due_basis, smu_now, hours_per_day, max_fault_days, repeat_fault,
+                high_fault_events, last_fault_at, reason, run_date]
   lost_opportunity:
     table: SERVICE_INTELLIGENCE.CURATED.LOST_OPPORTUNITY_MONTHLY
     label: OLGA lost-opportunity report (monthly)
@@ -75,6 +78,8 @@ dimension_labels:
   connected_asset: Connected asset
   job: Job
   component: Component
+  signal_class: Signal
+  due_basis: Due-date basis
 
 metrics:
   - id: high_severity_fault_assets
@@ -218,28 +223,42 @@ metrics:
       - Monthly data; periods are whole months.
 
   - id: top_opportunities_value
-    name: Value of today's top-100 opportunities
-    description: Total OLGA value of the opportunities in the latest daily top-100 list (due within 90 days, ranked by value).
+    name: OLGA value due on today's top-100 machines
+    description: OLGA value due (effective due date within 30 days past to 90 days ahead) on the machines in today's overall top-100 ranking.
     source: daily_top_opportunities
     kind: snapshot
-    expression: SUM(total_value)
-    filter: run_date = (SELECT MAX(run_date) FROM {table})
+    expression: SUM(due_value)
+    filter: run_date = (SELECT MAX(run_date) FROM {table}) AND overall_rank IS NOT NULL
     unit: value
     direction: neutral
-    synonyms: [top opportunities, top 100, top 100 opportunities, best opportunities, highest opportunities, biggest opportunities, daily opportunities, today's opportunities]
+    synonyms: [top opportunities, top 100, top 100 opportunities, best opportunities, highest opportunities, biggest opportunities, daily opportunities, today's opportunities, top machines]
     limitations:
-      - The list is rebuilt daily, but OLGA opportunities change only with each month-end snapshot; day-to-day changes come mostly from the 90-day window moving.
-      - Ranked by value only (then OLGA lead score); value is not probability of winning.
+      - Value comes only from OLGA; telemetry-only machines (faults without an OLGA opportunity) add 0 to this total.
+      - Due dates are re-timed with live service-meter hours where the machine reports them; otherwise OLGA's date is used.
+      - The score ranks where to act first; it is not a probability of winning the work.
 
   - id: top_opportunities_new_today
-    name: New entries in today's top-100
-    description: Opportunities in the latest daily top-100 list that were not in the previous day's list.
+    name: New machines in today's top-100
+    description: Machines in today's overall top-100 that were not in the previous day's top-100.
     source: daily_top_opportunities
     kind: snapshot
     expression: COUNT(*)
-    filter: run_date = (SELECT MAX(run_date) FROM {table}) AND is_new_today
-    unit: opportunities
+    filter: run_date = (SELECT MAX(run_date) FROM {table}) AND overall_rank IS NOT NULL AND is_new_today
+    unit: machines
     direction: neutral
-    synonyms: [new opportunities today, new in top 100, new entries]
+    synonyms: [new opportunities today, new in top 100, new entries, new machines]
     limitations:
       - On the first run every entry is new.
+
+  - id: telemetry_only_opportunities
+    name: Machines needing attention that OLGA does not list
+    description: Machines with HIGH-severity faults in the last 30 days and no OLGA opportunity due (latest daily ranking, top list).
+    source: daily_top_opportunities
+    kind: snapshot
+    expression: COUNT(*)
+    filter: run_date = (SELECT MAX(run_date) FROM {table}) AND signal_class = 'Telemetry only'
+    unit: machines
+    direction: lower_is_better
+    synonyms: [telemetry only, not in olga, faults without opportunity, hidden opportunities, repair opportunities]
+    limitations:
+      - Counts the stored class list (top 100 of the class), not every such machine; the daily build reports the full count in its log.

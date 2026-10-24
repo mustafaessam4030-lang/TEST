@@ -78,13 +78,20 @@ def test_assistant_answers_with_the_registry_figure(fake):
     assert any("CHAT_LOG" in q for q, _ in fake.statements)
 
 
-def test_top_opportunities_tab_lists_and_saves(fake):
+def test_top_machines_tab_lists_and_saves(fake):
     at = st_testing.AppTest.from_file(str(APP / "pages/2_Recommendations.py"), default_timeout=30).run()
     assert not at.exception
     assert at.dataframe, "the top-100 table is rendered on the first tab"
-    pick = next(m for m in at.multiselect if m.label == "Add to the plan (by rank)")
-    pick.set_value([1]).run()
+    pick = next(m for m in at.multiselect if m.label == "Add to the plan (by serial)")
+    pick.set_value(["S00001"]).run()
     next(b for b in at.button if b.label == "Save selected to plan").click().run()
     assert not at.exception
     saved = [p for q, p in fake.statements if "INSERT INTO SERVICE_INTELLIGENCE.SI_APP.RECOMMENDATIONS" in q]
-    assert saved and saved[0][1] == "top_opportunity/1"
+    assert saved and saved[0][1] == "top_machine/1"
+
+
+def test_top_machines_tab_switches_signal_class(fake):
+    at = st_testing.AppTest.from_file(str(APP / "pages/2_Recommendations.py"), default_timeout=30).run()
+    radio = next(r for r in at.radio if r.label == "Show")
+    radio.set_value("Telemetry only").run()
+    assert not at.exception and at.dataframe

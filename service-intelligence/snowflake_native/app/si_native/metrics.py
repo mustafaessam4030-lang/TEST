@@ -50,6 +50,8 @@ class Source:
     list_columns: tuple[str, ...] = ()
     list_order: str | None = None
     list_latest: str | None = None
+    list_class_column: str | None = None
+    list_class_order: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +121,8 @@ class Registry:
                 raise RegistryError(f"source {sid}: table must be DATABASE.SCHEMA.TABLE")
             lst = s.get("list") or {}
             cols = [s.get("time_column"), s.get("loaded_column"), s.get("entity"), *(s.get("dimensions") or []),
-                    *(s.get("drill_columns") or []), *(lst.get("columns") or []), lst.get("order_by"), lst.get("latest_column")]
+                    *(s.get("drill_columns") or []), *(lst.get("columns") or []), lst.get("order_by"), lst.get("latest_column"),
+                    lst.get("class_column"), lst.get("class_order_by")]
             for c in cols:
                 if c is not None and not IDENT.match(str(c)):
                     raise RegistryError(f"source {sid}: {c!r} is not a plain column name")
@@ -131,7 +134,8 @@ class Registry:
                 history_from=date.fromisoformat(str(hf)) if hf else None,
                 as_of_from=str(s.get("as_of_from", "loaded")),
                 list_columns=tuple(lst.get("columns") or ()), list_order=lst.get("order_by"),
-                list_latest=lst.get("latest_column"))
+                list_latest=lst.get("latest_column"), list_class_column=lst.get("class_column"),
+                list_class_order=lst.get("class_order_by"))
             if self.sources[sid].as_of_from not in ("loaded", "latest_data"):
                 raise RegistryError(f"source {sid}: as_of_from must be loaded or latest_data")
         self.metrics: dict[str, Metric] = {}
@@ -356,19 +360,27 @@ class Builder:
         check_spec(spec, self.r)
         return spec
 
-    def top_list(self, source_id: str, filters: dict, limit: int = 100) -> Spec:
-        """The latest ranked list of a list-type source (e.g. daily top opportunities), filtered by dimensions."""
+    def top_list(self, source_id: str, filters: dict, limit: int = 100, list_class: str | None = None) -> Spec:
+        """The latest ranked list of a list-type source: the overall ranking, or one class's ranking."""
         src = self.r.sources[source_id]
         if not src.list_columns:
             raise QueryError(f"{src.label} has no ranked list")
         q = _Sql().add(f"SELECT {', '.join(src.list_columns)} FROM {src.table} WHERE {src.list_latest} = "
                        f"(SELECT MAX({src.list_latest}) FROM {src.table})")
+        if list_class is None:
+            q.add(f" AND {src.list_order} IS NOT NULL")
+            order = src.list_order
+        else:
+            if not src.list_class_column:
+                raise QueryError(f"{src.label} has no classes")
+            q.add(f" AND {src.list_class_column} = ?", str(list_class)[:100])
+            order = src.list_class_order
         for dim, vals in sorted(normalise_filters(filters, src).items()):
             named = [v for v in vals if v != NOT_SET]
             conds = ([f"{dim} IN ({', '.join('?' for _ in named)})"] if named else []) + \
                     ([f"{dim} IS NULL"] if NOT_SET in vals else [])
             q.add(" AND (" + " OR ".join(conds) + ")", *named)
-        q.add(f" ORDER BY {src.list_order} LIMIT {max(1, min(int(limit), self.max_rows))}")
+        q.add(f" ORDER BY {order} LIMIT {max(1, min(int(limit), self.max_rows))}")
         spec = Spec(q.text(), tuple(q.params), "list", None)
         check_spec(spec, self.r)
         return spec
