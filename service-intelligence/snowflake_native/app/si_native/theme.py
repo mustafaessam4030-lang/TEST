@@ -148,11 +148,11 @@ APP_ICON = ('<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="
             '<circle cx="12" cy="15" r="1.9" fill="#fff" stroke="none"/></svg>')
 
 
-ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "vela"
+ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "ai"
 
 
 def asset_bytes(name: str) -> bytes:
-    """The VELA AI icon files (embedded in the single-file build, else read from app/assets/vela)."""
+    """The VELA AI icon files (embedded in the single-file build, else read from app/assets/ai)."""
     import si_native
     emb = getattr(si_native, "EMBEDDED_ASSETS", None)
     if emb and name in emb:
@@ -162,7 +162,7 @@ def asset_bytes(name: str) -> bytes:
 
 
 def asset_uri(name: str) -> str:
-    mime = {"webp": "image/webp", "png": "image/png"}[name.rsplit(".", 1)[1]]
+    mime = {"webp": "image/webp", "png": "image/png", "svg": "image/svg+xml"}[name.rsplit(".", 1)[1]]
     return f"data:{mime};base64," + base64.b64encode(asset_bytes(name)).decode()
 
 
@@ -171,19 +171,19 @@ def ai_icon():
     try:
         import io
         from PIL import Image
-        return Image.open(io.BytesIO(asset_bytes("vela_emblem_128.webp")))
+        return Image.open(io.BytesIO(asset_bytes("vela_ai_icon_128.png")))
     except Exception:  # noqa: BLE001
         return None
 
 
 def thinking_html(label: str) -> str:
-    return (f'<div class="si-thinking"><img src="{asset_uri("vela_emblem_128.webp")}" alt=""><span>VELA AI · {esc(label)}</span>'
+    return (f'<div class="si-thinking"><img src="{asset_uri("vela_ai_icon.svg")}" alt=""><span>VELA AI · {esc(label)}</span>'
             f'<span class="si-typing"><span></span><span></span><span></span></span></div>')
 
 
 def ai_hero() -> None:
     """VELA AI introduction on an empty chat."""
-    html_block(f'<div class="si-aihero"><img src="{asset_uri("vela_emblem_320.webp")}" alt="VELA AI"><div>'
+    html_block(f'<div class="si-aihero"><img src="{asset_uri("vela_ai_icon.svg")}" alt="VELA AI"><div>'
                '<div class="eyebrow">VELA AI · service intelligence analyst</div><h2>How can I help you today?</h2>'
                '<p>Ask in your own words — English or Arabic. I query live Snowflake data (faults, machine hours, OLGA '
                'opportunities, the daily ranking, lost business), explain what it means and show the evidence. '
@@ -263,10 +263,10 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 [class*="st-key-topbar"] [data-testid="stRadioOption"] p, [class*="st-key-topbar"] [role="radiogroup"] label p {{ font-size: .86rem; font-weight: 500; white-space: nowrap; }}
 [class*="st-key-topbar"] [role="radiogroup"] label > div:first-child:not(:only-child) {{ display: none !important; }}
 [class*="st-key-topbar"] [role="radiogroup"] label:has(input:checked) *, [class*="st-key-topbar"] [data-testid="stRadioOption"]:has(input:checked) * {{ color: var(--canvas) !important; }}
-[data-testid="stMain"] [role="radiogroup"] label {{ background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px !important; margin-right: 4px; }}
-[data-testid="stMain"] [role="radiogroup"] label:has(input:checked) {{ background: var(--ink); border-color: var(--ink); }}
-[data-testid="stMain"] [role="radiogroup"] label:has(input:checked) * {{ color: var(--canvas) !important; }}
-[data-testid="stMain"] [role="radiogroup"] label > div:first-child:not(:only-child) {{ display: none !important; }}
+[data-testid="stAppViewContainer"] [role="radiogroup"] label {{ background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px !important; margin-right: 4px; }}
+[data-testid="stAppViewContainer"] [role="radiogroup"] label:has(input:checked) {{ background: var(--ink); border-color: var(--ink); }}
+[data-testid="stAppViewContainer"] [role="radiogroup"] label:has(input:checked) * {{ color: var(--canvas) !important; }}
+[data-testid="stAppViewContainer"] [role="radiogroup"] label > div:first-child:not(:only-child) {{ display: none !important; }}
 [class*="st-key-modes"] {{ max-width: 96px !important; justify-content: flex-start !important; }}
 [class*="st-key-modes"] {{ background: var(--card); border-radius: 999px; padding: 4px; width: fit-content !important; gap: 0 !important;
   box-shadow: 0 1px 2px var(--shadow); }}
@@ -306,13 +306,13 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 [data-baseweb="popover"] li:hover, [role="option"]:hover, [role="option"][data-focused], [aria-selected="true"][role="option"] {{ background: var(--card2) !important; }}
 [data-baseweb="tag"], [data-testid="stMultiSelectTag"] {{ background: var(--soft) !important; border-radius: 999px !important; }}
 [data-baseweb="tag"] *, [data-testid="stMultiSelectTag"] * {{ color: var(--ink) !important; fill: var(--ink) !important; }}
-[data-testid="stMain"] [data-testid="stRadioGroup"], .main [role="radiogroup"] {{ gap: 6px; flex-wrap: wrap; }}
-[data-testid="stMain"] [data-testid="stRadioOption"], .main [role="radiogroup"] label {{ background: var(--card); border: 1px solid var(--line);
+[data-testid="stAppViewContainer"] [data-testid="stRadioGroup"], .main [role="radiogroup"] {{ gap: 6px; flex-wrap: wrap; }}
+[data-testid="stAppViewContainer"] [data-testid="stRadioOption"], .main [role="radiogroup"] label {{ background: var(--card); border: 1px solid var(--line);
   border-radius: 999px; padding: 7px 15px !important; margin-right: 4px; transition: background .2s, transform .12s; }}
-[data-testid="stMain"] [data-testid="stRadioOption"]:hover, .main [role="radiogroup"] label:hover {{ transform: translateY(-1px); }}
-[data-testid="stMain"] [data-testid="stRadioOption"]:has(input:checked), .main [role="radiogroup"] label:has(input:checked) {{ background: var(--ink); border-color: var(--ink); }}
-[data-testid="stMain"] [data-testid="stRadioOption"]:has(input:checked) *, .main [role="radiogroup"] label:has(input:checked) * {{ color: var(--canvas) !important; }}
-[data-testid="stMain"] [data-testid="stRadioOption"] > div > div:first-child:not([data-testid]), .main [role="radiogroup"] label > div:first-child {{ display: none !important; }}
+[data-testid="stAppViewContainer"] [data-testid="stRadioOption"]:hover, .main [role="radiogroup"] label:hover {{ transform: translateY(-1px); }}
+[data-testid="stAppViewContainer"] [data-testid="stRadioOption"]:has(input:checked), .main [role="radiogroup"] label:has(input:checked) {{ background: var(--ink); border-color: var(--ink); }}
+[data-testid="stAppViewContainer"] [data-testid="stRadioOption"]:has(input:checked) *, .main [role="radiogroup"] label:has(input:checked) * {{ color: var(--canvas) !important; }}
+[data-testid="stAppViewContainer"] [data-testid="stRadioOption"] > div > div:first-child:not([data-testid]), .main [role="radiogroup"] label > div:first-child {{ display: none !important; }}
 [data-testid="stToggle"] label, [data-testid="stCheckbox"] label {{ color: var(--ink) !important; }}
 
 /* buttons: primary = pill in ink colour (like "Upload file"), secondary = card pill */
@@ -636,7 +636,7 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
 @media (max-width: 1100px) {{ .si-hero {{ grid-template-columns: 1fr 1fr; }} }}
 .si-aihero {{ display: flex; gap: 26px; align-items: center; background: var(--card); border-radius: 28px; padding: 22px 28px;
   margin: 6px 0 18px; animation: siUp .5s cubic-bezier(.2,.7,.2,1) both; }}
-.si-aihero img {{ width: 140px; height: 140px; object-fit: contain; flex: none; }}
+.si-aihero img {{ width: 120px; height: 120px; object-fit: contain; flex: none; }}
 .si-aihero .eyebrow {{ font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 700; }}
 .si-aihero h2 {{ font-size: 1.8rem; font-weight: 500; margin: 6px 0; padding: 0; color: var(--ink); }}
 .si-aihero p {{ color: var(--muted); max-width: 760px; margin: 0; font-size: .92rem; line-height: 1.55; }}
