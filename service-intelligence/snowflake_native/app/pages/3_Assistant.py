@@ -75,17 +75,21 @@ def training_link(path: str, page) -> str:
 
 
 def show_videos(turn: dict) -> None:
-    """Videos found on the web: thumbnail cards that open the video, and an in-chat player for the first one."""
-    videos = [v for r in turn.get("results") or [] if r.get("tool") == "video" for v in r.get("rows") or []][:3]
+    """Videos found on the web: video files play inside the chat; YouTube videos as cards that open YouTube."""
+    found = [r for r in turn.get("results") or [] if r.get("tool") == "video"]
+    playable = [v for r in found for v in r.get("playable") or []][:2]
+    videos = [v for r in found for v in r.get("rows") or []][:3]
+    for v in playable:
+        st.video(v["src"])
+        st.caption(f"▶ {v['title']} · {v['source']}")
     if not videos:
         return
+    if playable:
+        st.caption("More on YouTube (opens YouTube)")
     theme.html_block('<div class="si-videos">' + "".join(
         f'<a class="si-video" href="{theme.esc(v["url"])}" target="_blank" rel="noopener">'
         f'<div class="thumb" style="background-image:url(\'{theme.esc(v["thumb"])}\')"><span class="play">&#9654;</span></div>'
         f'<div class="t">{theme.esc(v["title"])}</div><div class="s">Watch on YouTube ↗</div></a>' for v in videos) + "</div>")
-    with st.expander(f"Play here: {videos[0]['title'][:70]}"):
-        st.video(videos[0]["url"])
-        st.caption("If the player stays blank, Snowflake is blocking the embedded player: use the card above.")
 
 
 def show_training_pictures(turn: dict) -> None:

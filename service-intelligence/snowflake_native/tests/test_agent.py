@@ -250,3 +250,17 @@ def test_video_search_returns_youtube_cards(an):
     from si_native.agent import run_step
     out = run_step({"tool": "video", "query": "777G walkaround"}, an, None, web=lambda q, n: rows)
     assert out["tool"] == "video" and len(out["rows"]) == 2
+
+
+def test_video_files_play_in_the_chat_and_youtube_stays_a_card(an):
+    from si_native import brain
+    from si_native.agent import run_step
+    files = [{"url": "https://commons.wikimedia.org/wiki/File:Caterpillar_777.webm", "title": "File:Caterpillar 777.webm - Wikimedia Commons"},
+             {"url": "https://commons.wikimedia.org/wiki/File:Giant_Mining_Truck.jpg", "title": "jpg"},
+             {"url": "https://cdn.example.com/clips/brake.mp4", "title": "Brake test"}]
+    p = brain.playable_videos(files)
+    assert p[0]["src"] == "https://upload.wikimedia.org/wikipedia/commons/b/bc/Caterpillar_777.webm"
+    assert p[0]["title"] == "Caterpillar 777" and p[1]["src"].endswith("brake.mp4") and len(p) == 2
+    yt = [{"url": "https://www.youtube.com/watch?v=RHQy8mi9jOA", "title": "777G walkaround - YouTube"}]
+    out = run_step({"tool": "video", "query": "777 truck"}, an, None, web=lambda q, n: files if "commons" in q else yt)
+    assert out["playable"][0]["title"] == "Caterpillar 777" and out["rows"][0]["video_id"] == "RHQy8mi9jOA"

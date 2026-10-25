@@ -330,10 +330,15 @@ def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, 
         query = scrub_web_query(str(step.get("query") or ""))
         if not query:
             raise QueryError("Nothing to search for")
-        videos = brain.video_results(web(f"{query} video youtube", 8))
+        yt, files = parallel([lambda: web(f"{query} video youtube", 8),
+                              lambda: web(f"site:commons.wikimedia.org File: {query} video webm", 8)])
+        yt = [] if isinstance(yt, Exception) else yt
+        files = [] if isinstance(files, Exception) else files
+        videos = brain.video_results(yt)
         if not videos:
             videos = brain.video_results(web(f"site:youtube.com {query}", 8))
-        return {"tool": "video", "purpose": f"Video search: {query}", "query": query, "rows": videos,
+        playable = brain.playable_videos(files + yt)
+        return {"tool": "video", "purpose": f"Video search: {query}", "query": query, "rows": videos, "playable": playable,
                 "evidence": [{"purpose": "Cortex web search (videos)", "query_id": None, "metric_id": None,
                               "sql": brain.web_sql(f"{query} video youtube", 8), "params": []}]}
     if tool == "web":
@@ -566,8 +571,9 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
             "(Course · Module, p. N). 'repairs' rows are real Mantrac jobs - say how many similar jobs matched, the usual "
             "root causes, fixes and parts (with part numbers). Labour hours ONLY from median_labour_hours (when it is null "
             "say there is no reliable figure). 'machine' is one machine's profile. 'photo' holds what the photos show. "
-            "'video' rows are videos shown as playable cards under your answer: introduce them briefly (title and why it "
-            "helps), never invent what is in a video beyond its title and description. "
+            "'video' results: 'playable' videos play right inside the chat under your answer; 'rows' are YouTube videos "
+            "shown as cards that open YouTube (Snowflake blocks the YouTube player inside apps). Introduce them briefly "
+            "(title and why it helps); never invent what is in a video beyond its title and description. "
             "The pages behind the 'manual' rows are displayed as pictures under your answer - refer to them ('see the "
             "diagram below') instead of saying you cannot show images. "
             "'web' rows are public web pages: attribute those facts to the site with a markdown link [title](url), never "

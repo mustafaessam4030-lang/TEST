@@ -266,6 +266,42 @@ def web_search(session, query: str, n: int = 5) -> list[dict]:
 _YT = re.compile(r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})")
 
 
+_COMMONS = re.compile(r"commons\.wikimedia\.org/wiki/File:([^?#]+\.(?:webm|ogv|ogg|mp4))$", re.I)
+_DIRECT = re.compile(r"^https://[^\s]+\.(?:mp4|webm|ogv)(?:\?[^\s]*)?$", re.I)
+
+
+def commons_file_url(name: str) -> str:
+    """Direct URL of a Wikimedia Commons file (upload path = md5 of the file name)."""
+    import hashlib
+    from urllib.parse import quote, unquote
+    name = unquote(name).replace(" ", "_")
+    h = hashlib.md5(name.encode("utf-8")).hexdigest()
+    return f"https://upload.wikimedia.org/wikipedia/commons/{h[0]}/{h[:2]}/{quote(name)}"
+
+
+def playable_videos(rows: list[dict], n: int = 2) -> list[dict]:
+    """Videos that are plain files (Wikimedia Commons, direct .mp4/.webm links): these play inside the chat, because
+    Snowflake's content policy allows media from any HTTPS site but blocks embedded players such as YouTube."""
+    out, seen = [], set()
+    for r in rows:
+        url = str(r.get("url") or "")
+        m = _COMMONS.search(url)
+        if m:
+            src = commons_file_url(m.group(1))
+            title = re.sub(r"\s*-\s*Wikimedia Commons\s*$", "", str(r.get("title") or m.group(1)), flags=re.I)
+            title = re.sub(r"^File:|\.(webm|ogv|ogg|mp4)$", "", title, flags=re.I)
+            item = {"title": title.replace("_", " ").strip(), "src": src, "page": url, "source": "Wikimedia Commons"}
+        elif _DIRECT.match(url):
+            item = {"title": str(r.get("title") or url.rsplit("/", 1)[-1]), "src": url, "page": url,
+                    "source": url.split("/")[2]}
+        else:
+            continue
+        if item["src"] not in seen:
+            seen.add(item["src"])
+            out.append(item)
+    return out[:n]
+
+
 def video_results(rows: list[dict], n: int = 3) -> list[dict]:
     """YouTube videos among web results: canonical link and thumbnail (images load from any HTTPS site)."""
     out, seen = [], set()
