@@ -58,8 +58,41 @@ def known_values() -> dict:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def manual_search(query: str, system, limit: int) -> list:
-    return brain.kb_search(ui.session(), query, system, limit)
+def manual_search(query: str, system, limit: int, visual: bool = False) -> list:
+    return brain.kb_search(ui.session(), query, system, limit, visual)
+
+
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=60)
+def training_picture(path: str, page) -> bytes | None:
+    """The diagram image, or the PDF page rendered as a picture (None if pypdfium2 is not installed)."""
+    data = brain.read_training_file(ui.session(), path)
+    return data if brain.media_kind(path) == "image" else brain.pdf_page_png(data, page or 1)
+
+
+@st.cache_data(ttl=3000, show_spinner=False)
+def training_link(path: str, page) -> str:
+    return brain.training_link(ui.session(), path, page)
+
+
+def show_training_pictures(turn: dict) -> None:
+    """Pictures from the CAT training material behind the answer (pages, slides, diagrams)."""
+    passages = [m for r in turn.get("results") or [] if r.get("tool") == "manual" for m in r.get("rows") or []]
+    visuals = brain.training_visuals(passages, 3)
+    if not visuals:
+        return
+    pics = ui.run_parallel([lambda v=v: training_picture(v["path"], v["page"]) for v in visuals])
+    st.caption("From the CAT training material")
+    cols = st.columns(len(visuals))
+    for col, v, pic in zip(cols, visuals, pics):
+        with col:
+            if isinstance(pic, (bytes, bytearray)):
+                st.image(pic, caption=v["caption"], use_container_width=True)
+            else:
+                st.markdown(f"**{v['caption']}**")
+            try:
+                st.markdown(f"[Open the {'page' if v['kind'] == 'pdf' else 'picture'} ↗]({training_link(v['path'], v['page'])})")
+            except Exception:  # noqa: BLE001
+                pass
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -172,6 +205,10 @@ def with_assumptions(text: str) -> str:
 def show_extras(turn: dict) -> None:
     if turn.get("table"):
         theme.table(turn["table"], max_height=360)
+    try:
+        show_training_pictures(turn)
+    except Exception:  # noqa: BLE001 - pictures are extra; the answer stands without them
+        pass
     src = sources_html(turn)
     if src:
         theme.html_block(src)

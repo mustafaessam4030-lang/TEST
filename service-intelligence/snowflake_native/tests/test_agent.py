@@ -221,3 +221,19 @@ def test_web_search_is_cited_and_never_carries_serials_or_emails(an):
         {"doc_id": "https://a.example", "doc_title": "A", "text": "x  y"}, {"doc_id": "https://a.example"}]}}]}}]}
     assert brain.parse_web(json.dumps(raw)) == [{"title": "A", "url": "https://a.example", "text": "x y"}]
     assert "''" in brain.web_sql("driver's cab") and '"web_search"' in brain.web_sql("x")
+
+
+def test_training_pictures_come_from_the_pages_found():
+    import io
+    from PIL import Image
+    from si_native import brain
+    sql = brain.kb_sql("fuel system", "Diesel Engine", 5, visual=True)
+    assert '"@and"' in sql and "Diagram / slide (OCR)" in sql and "FILE_PATH" in sql
+    rows = [{"course": "C", "module": "M", "page": 79, "path": "a/b.pdf"}, {"course": "C", "module": "M", "page": 79, "path": "a/b.pdf"},
+            {"course": "D", "module": "N", "page": 1, "path": "x/Fault Example.JPG"}, {"page": 3, "path": "z.dxr"}]
+    vis = brain.training_visuals(rows)
+    assert [(v["kind"], v["page"]) for v in vis] == [("pdf", 79), ("image", None)] and vis[0]["caption"] == "C · M · p. 79"
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 100), "white").save(buf, "PDF")
+    png = brain.pdf_page_png(buf.getvalue(), 1, width=300)
+    assert png is None or Image.open(io.BytesIO(png)).size[0] == 300

@@ -33,6 +33,8 @@ T_ALERTS = f"{DB}.V_CAT_ALERTS"
 T_FAULTS = f"{DB}.V_FAULT_CODES"
 T_RULES = f"{DB}.BRAIN_RULES"
 KB_SERVICE = f"{DB}.TRAINING_KB_SEARCH"
+TRAINING_STAGE = f"@{DB}.TRAINING_STG"           # source files at docs/<FILE_PATH> (PDFs and diagram JPGs)
+VISUAL_TYPES = ("Slides", "Diagram / slide (OCR)")
 PHOTO_STAGE = f"@{DB}.PHOTO_STG"
 T_PHOTO_LOG = f"{DB}.PHOTO_LOG"
 KB_SYSTEMS = ("Basic Service", "Electrical & Electronics", "Diesel Engine", "Hydraulics", "Powertrain",
@@ -151,11 +153,15 @@ def rules_spec() -> Spec:
 
 
 # --- training library (Cortex Search) -------------------------------------------------------------------
-def kb_sql(query: str, system: str | None = None, limit: int = 5) -> str:
+def kb_sql(query: str, system: str | None = None, limit: int = 5, visual: bool = False) -> str:
+    """visual=True keeps slides and diagrams (pages that are mostly pictures)."""
     req = {"query": str(query)[:300], "limit": max(1, min(int(limit), 8)),
-           "columns": ["CHUNK_TEXT", "COURSE_TITLE", "MODULE", "SYSTEM", "DOC_TYPE", "FILE_NAME", "PAGE_NO"]}
-    if system in KB_SYSTEMS:
-        req["filter"] = {"@eq": {"SYSTEM": system}}
+           "columns": ["CHUNK_TEXT", "COURSE_TITLE", "MODULE", "SYSTEM", "DOC_TYPE", "FILE_NAME", "FILE_PATH", "PAGE_NO"]}
+    conds = [{"@eq": {"SYSTEM": system}}] if system in KB_SYSTEMS else []
+    if visual:
+        conds.append({"@or": [{"@eq": {"DOC_TYPE": t}} for t in VISUAL_TYPES]})
+    if conds:
+        req["filter"] = conds[0] if len(conds) == 1 else {"@and": conds}
     return f"SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW({sql_str(KB_SERVICE)}, {sql_str(json.dumps(req))}) AS r"
 
 
@@ -166,13 +172,62 @@ def parse_kb(raw) -> list[dict]:
         text = re.sub(r"\s+", " ", str(r.get("CHUNK_TEXT") or "")).strip()
         out.append({"course": r.get("COURSE_TITLE"), "module": r.get("MODULE"), "system": r.get("SYSTEM"),
                     "doc_type": r.get("DOC_TYPE"), "file": r.get("FILE_NAME"), "page": r.get("PAGE_NO"),
-                    "text": text[:900]})
+                    "path": r.get("FILE_PATH") or None, "text": text[:900]})
     return out
 
 
-def kb_search(session, query: str, system: str | None = None, limit: int = 5) -> list[dict]:
-    row = session.sql(kb_sql(query, system, limit)).collect()[0]
+def kb_search(session, query: str, system: str | None = None, limit: int = 5, visual: bool = False) -> list[dict]:
+    row = session.sql(kb_sql(query, system, limit, visual)).collect()[0]
     return parse_kb(list(row.as_dict().values())[0])
+
+
+# --- pictures from the training material ------------------------------------------------------------
+def media_kind(path: str | None) -> str | None:
+    ext = str(path or "").rsplit(".", 1)[-1].lower()
+    return "image" if ext in ("jpg", "jpeg", "png", "gif", "webp") else "pdf" if ext == "pdf" else None
+
+
+def training_visuals(passages: list[dict], n: int = 3) -> list[dict]:
+    """The distinct pages/diagrams behind the top passages, in search order (what to show under an answer)."""
+    out, seen = [], set()
+    for m in passages:
+        kind = media_kind(m.get("path"))
+        key = (m.get("path"), m.get("page") if kind == "pdf" else None)
+        if kind and key not in seen:
+            seen.add(key)
+            out.append({"path": m["path"], "page": int(m.get("page") or 1) if kind == "pdf" else None, "kind": kind,
+                        "caption": f"{m.get('course') or ''} · {m.get('module') or ''}"
+                                   + (f" · p. {m.get('page')}" if kind == "pdf" else "")})
+    return out[:n]
+
+
+def read_training_file(session, path: str) -> bytes:
+    with session.file.get_stream(f"{TRAINING_STAGE}/docs/{path}") as f:
+        return f.read()
+
+
+def pdf_page_png(data: bytes, page: int, width: int = 1100) -> bytes | None:
+    """One PDF page as PNG; None when pypdfium2 is not installed (add it under Packages in Snowsight)."""
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return None
+    doc = pdfium.PdfDocument(data)
+    try:
+        pg = doc[max(0, min(int(page) - 1, len(doc) - 1))]
+        img = pg.render(scale=width / max(1.0, pg.get_width())).to_pil()
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "PNG", optimize=True)
+        return buf.getvalue()
+    finally:
+        doc.close()
+
+
+def training_link(session, path: str, page: int | None = None) -> str:
+    """A 1-hour link to the source file (opens the PDF at the page)."""
+    url = session.sql(f"SELECT GET_PRESIGNED_URL({TRAINING_STAGE}, ?, 3600) AS u", params=[f"docs/{path}"]).collect()[0][0]
+    from urllib.parse import quote
+    return quote(url, safe=":/?&=%+~") + (f"#page={int(page)}" if page else "")
 
 
 # --- web search (Cortex) -----------------------------------------------------------------------------

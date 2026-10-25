@@ -206,9 +206,11 @@ You can look up live data. Decide what the user needs and reply with ONE JSON ob
   {{"tool": "top_list", "n": <1-100>, "signal_class": null|"OLGA + telemetry"|"OLGA only"|"Telemetry only",
     "filters": {{"branch"|"product_family"|"due_basis": ["value", ...]}}}}
   {{"tool": "sql", "purpose": "<what it computes, plain words>", "sql": "<one Snowflake SELECT>"}}
-  {{"tool": "manual", "query": "<what to look up, in English technical words>", "system": null|{json.dumps(list(brain.KB_SYSTEMS))}}}
+  {{"tool": "manual", "query": "<what to look up, in English technical words>", "system": null|{json.dumps(list(brain.KB_SYSTEMS))},
+    "visual": true|false}}  (visual = true when the user wants to SEE a picture, diagram, drawing or slide)
      searches the CAT technician training library (courses, modules, pages): how systems work, troubleshooting
-     steps, procedures, specs, safety. Use for "how/why/what does/how to fix/how to test" questions.
+     steps, procedures, specs, safety. Use for "how/why/what does/how to fix/how to test" questions. The pictures
+     of the pages found (diagrams, slides, figures) are shown to the user under your answer automatically.
   {{"tool": "repairs", "keywords": ["<term|synonym>", ...up to 4, ANDed; '|' = OR], "model": "<model prefix or null>",
     "serial": "<serial or null>"}}  similar Mantrac repair jobs: complaint, root cause, work done, parts, labour hours,
      how many matched and the median labour hours. Use short English terms as technicians write them
@@ -336,7 +338,10 @@ def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, 
         if not query:
             raise QueryError("Nothing to look up")
         system = step.get("system") if step.get("system") in brain.KB_SYSTEMS else None
-        rows = search(query, system, 5)
+        visual = bool(step.get("visual"))
+        rows = search(query, system, 5, visual) if visual else search(query, system, 5)
+        if visual and not rows:                       # no slide/diagram matched: any page (they have figures too)
+            rows = search(query, system, 5)
         return {"tool": "manual", "purpose": f"Training library: {query}", "query": query, "system": system,
                 "rows": rows, "evidence": [{"purpose": "Cortex Search · TRAINING_KB_SEARCH", "query_id": None,
                                             "metric_id": None, "sql": brain.kb_sql(query, system, 5), "params": []}]}
@@ -546,6 +551,8 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
             "(Course · Module, p. N). 'repairs' rows are real Mantrac jobs - say how many similar jobs matched, the usual "
             "root causes, fixes and parts (with part numbers). Labour hours ONLY from median_labour_hours (when it is null "
             "say there is no reliable figure). 'machine' is one machine's profile. 'photo' holds what the photos show. "
+            "The pages behind the 'manual' rows are displayed as pictures under your answer - refer to them ('see the "
+            "diagram below') instead of saying you cannot show images. "
             "'web' rows are public web pages: attribute those facts to the site with a markdown link [title](url), never "
             "present them as Mantrac data, and prefer company data and the training library when they disagree. "
             "Anything from your own general Caterpillar knowledge (not in the results) goes on its own line starting "
