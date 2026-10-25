@@ -1,0 +1,11 @@
+# Copy this block into  %USERPROFILE%\.snowflake\connections.toml  (Windows)
+#                   or  ~/.snowflake/connections.toml             (Mac / Linux)
+# The private key never goes into the project folder or into Git.
+[vela]
+account = "PECFYLF-FY56654"
+user = "VELA_LOCAL"
+authenticator = "SNOWFLAKE_JWT"
+private_key_file = "C:/Users/<you>/.snowflake/vela_local_key.p8"
+role = "VELA_LOCAL_READER"
+warehouse = "SI_WH"
+database = "SERVICE_INTELLIGENCE"

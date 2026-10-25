@@ -37,3 +37,8 @@ Nothing is copied out. The app runs as `DEV_ADMIN` (owner's rights) on warehouse
 - `sql/21_ai_brain_repair_search.sql` — optional semantic search over repair history (`V_REPAIR_STORY`, `REPAIR_SEARCH`).
 
 The app works before and after these are run: missing search services are skipped.
+
+## Local variant (Ollama)
+`local/` runs the same app on a laptop: a local Ollama model plans and writes answers (and reads photos),
+while retrieval stays in Snowflake through the read-only role from `sql/30_local_vela_reader.sql`.
+The agent's model call is the only part that changes. See `local/README.md`.
