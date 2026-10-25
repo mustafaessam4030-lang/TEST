@@ -20,7 +20,9 @@ CACHE_TTL_S = 900          # data refreshes daily; 15 minutes keeps repeated cli
 
 @st.cache_resource
 def registry() -> Registry:
-    return Registry.load(APP_DIR / "metrics.yaml")
+    import si_native
+    embedded = getattr(si_native, "EMBEDDED_REGISTRY", None)     # set by the single-file build
+    return Registry(embedded) if embedded else Registry.load(APP_DIR / "metrics.yaml")
 
 
 @st.cache_resource
@@ -67,7 +69,9 @@ def analytics() -> Analytics:
 
 
 def header(title: str, subtitle: str) -> None:
-    st.set_page_config(page_title=f"Service Intelligence · {title}", layout="wide")
+    import si_native
+    if not getattr(si_native, "SINGLE_FILE", False):              # the single-file launcher sets it once
+        st.set_page_config(page_title=f"Service Intelligence · {title}", layout="wide")
     st.title(title)
     st.caption(subtitle)
     st.info("Live company data from SERVICE_INTELLIGENCE (copies of Cat telematics and OLGA). "

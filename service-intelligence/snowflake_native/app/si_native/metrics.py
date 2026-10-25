@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import yaml
 
 KINDS = ("period", "snapshot")
 GRAINS = ("day", "week", "month")
@@ -172,6 +171,7 @@ class Registry:
 
     @classmethod
     def load(cls, path: Path) -> "Registry":
+        import yaml   # only needed when the registry is read from metrics.yaml (multi-file deployment)
         return cls(yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {})
 
     def metric(self, metric_id: str) -> Metric:
