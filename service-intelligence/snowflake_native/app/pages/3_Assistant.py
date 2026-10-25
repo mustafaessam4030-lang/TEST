@@ -1,5 +1,6 @@
-"""Page 3 — AI Service Assistant: a conversational assistant (Cortex) that answers from live, read-only queries."""
+"""Page 3 — VELA AI: a service intelligence analyst (Cortex) that answers from live, read-only queries."""
 import json
+import re
 import time
 
 import streamlit as st
@@ -10,8 +11,9 @@ from si_native.assistant import answer, rules_plan
 from si_native.plans import PlanStore
 from si_native.recommend import all_candidates
 
-ui.header("Service assistant", "Ask anything about fleet health, faults, machines and opportunities — in your own words.",
+ui.header("VELA AI", "Your service intelligence analyst: answers from authorized Snowflake data, with the evidence behind them.",
           [f"Model <b>{MODEL}</b>"])
+AVATAR = theme.ai_icon()
 an = ui.analytics()
 email = ui.user_email()
 store = PlanStore(ui.session())
@@ -19,8 +21,9 @@ store = PlanStore(ui.session())
 if "chat" not in st.session_state:
     st.session_state["chat"] = []
     st.session_state["ctx"] = None
-with st.sidebar:
-    if st.button("＋", key="new_chat", help="New chat"):
+if st.session_state["chat"]:
+    _, nc = st.columns([6, 1])
+    if nc.button("＋ New chat", key="new_chat", use_container_width=True):
         st.session_state["chat"] = []
         st.session_state["ctx"] = None
         st.rerun()
@@ -60,18 +63,48 @@ def show_details(turn: dict) -> None:
         ui.evidence_list([e for r in results for e in r.get("evidence", [])])
 
 
+TABLE_RE = re.compile(r"SERVICE_INTELLIGENCE\.\w+\.(\w+)", re.I)
+
+
+def sources_html(turn: dict) -> str:
+    """Where the answer came from (approved metrics, ranking, tables) and whether its figures were verified."""
+    results = turn.get("results") or []
+    if not results:
+        return ""
+    names = []
+    for r in results:
+        if r.get("tool") == "metric":
+            names.append(f"Metric · {r.get('metric')}")
+        elif r.get("tool") == "top_list":
+            names.append("Daily top-100 ranking")
+        for ev in r.get("evidence") or []:
+            for t in TABLE_RE.findall(ev.get("sql") or ""):
+                names.append(t.replace("_", " ").title())
+    names = list(dict.fromkeys(names))[:6]
+    bad = turn.get("unverified") or []
+    check = (f'<span class="ok">✓ every figure matches the query results</span>' if not bad else
+             f'<span class="warn">⚠ not matched to the results: {theme.esc(", ".join(bad[:4]))}</span>')
+    return ('<div class="si-sources">Sources ' + "".join(f'<span class="src">{theme.esc(n)}</span>' for n in names)
+            + f' · {check}</div>')
+
+
+def with_assumptions(text: str) -> str:
+    """Lines the model marks 'Assumption:' are shown as a separate note, apart from the verified facts."""
+    return re.sub(r"(?im)^\s*(?:[-*]\s*)?\**assumption\**\s*:\s*\**\s*(.+)$", r"> **Assumption** · \1", text)
+
+
 def show_extras(turn: dict) -> None:
     if turn.get("table"):
         theme.table(turn["table"], max_height=360)
-    if turn.get("unverified"):
-        st.caption("⚠️ I could not match these figures to the query results, so treat them with care: "
-                   + ", ".join(turn["unverified"][:6]))
+    src = sources_html(turn)
+    if src:
+        theme.html_block(src)
     show_details(turn)
 
 
 def render(turn: dict) -> None:
-    with st.chat_message(turn["role"]):
-        st.markdown(turn["text"])
+    with st.chat_message(turn["role"], avatar=AVATAR if turn["role"] == "assistant" and AVATAR is not None else None):
+        st.markdown(with_assumptions(turn["text"]) if turn["role"] == "assistant" else turn["text"])
         if turn["role"] == "assistant":
             show_extras(turn)
 
@@ -97,11 +130,7 @@ def rules_fallback(question: str) -> dict:
 
 clicked = st.session_state.pop("chat_prefill", None)
 if not st.session_state["chat"]:
-    theme.cover("AI assistant · live Snowflake data", "Mantrac service assistant",
-                "Ask in your own words — English or Arabic, typos are fine. I look up faults, machine hours, OLGA "
-                "opportunities, the daily top-100 ranking and lost business, then explain what it means.",
-                [("Cortex", "AI model"), ("Read-only", "queries")], "sparkle")
-    theme.html_block('<div class="si-welcome"><h2>How can I help you today?</h2></div>')
+    theme.ai_hero()
     _, mid, _ = st.columns([1, 5, 1])
     with mid:
         cols = st.columns(2)
@@ -122,20 +151,18 @@ if last and last["role"] == "assistant" and last.get("followups") and not clicke
         if col.button(q, key=f"fu_{len(st.session_state['chat'])}_{i}", use_container_width=True):
             clicked = q
 
-question = st.chat_input("Message the service assistant…") or clicked
+question = st.chat_input("Ask VELA AI…") or clicked
 if question:
     history = list(st.session_state["chat"])
     st.session_state["chat"].append({"role": "user", "text": question})
     render({"role": "user", "text": question})
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AVATAR):
         out, planner = None, "cortex-agent"
         thinking = st.empty()
 
         def status(label: str) -> None:
-            thinking.markdown(f'<div style="display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.86rem">'
-                              f'<span class="si-typing"><span></span><span></span><span></span></span>{theme.esc(label)}</div>',
-                              unsafe_allow_html=True)
-        status("Thinking…")
+            thinking.markdown(theme.thinking_html(label), unsafe_allow_html=True)
+        status("Analyzing authorized Snowflake data…")
         try:
             out = ask(question, history, an, lambda msgs, n: cortex_complete(ui.session(), msgs, n),
                       lambda spec: ui.CachedRunner().run(spec, email), on_status=status, hints=known_values())
@@ -150,9 +177,9 @@ if question:
         if out is None:
             out = {"text": "I couldn't answer that; nothing was estimated.", "results": [], "evidence": [], "kind": "error"}
         if hasattr(st, "write_stream"):
-            st.write_stream(typed(out["text"]))
+            st.write_stream(typed(with_assumptions(out["text"])))
         else:
-            st.markdown(out["text"])
+            st.markdown(with_assumptions(out["text"]))
         turn = {"role": "assistant", "text": out["text"], "table": out.get("table"), "results": out.get("results"),
                 "unverified": out.get("unverified"), "data_note": out.get("data_note"), "followups": out.get("followups") or []}
         show_extras(turn)

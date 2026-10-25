@@ -148,6 +148,48 @@ APP_ICON = ('<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="
             '<circle cx="12" cy="15" r="1.9" fill="#fff" stroke="none"/></svg>')
 
 
+ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "vela"
+
+
+def asset_bytes(name: str) -> bytes:
+    """The VELA AI icon files (embedded in the single-file build, else read from app/assets/vela)."""
+    import si_native
+    emb = getattr(si_native, "EMBEDDED_ASSETS", None)
+    if emb and name in emb:
+        return base64.b64decode(emb[name])
+    f = ASSET_DIR / name
+    return f.read_bytes() if f.exists() else b""
+
+
+def asset_uri(name: str) -> str:
+    mime = {"webp": "image/webp", "png": "image/png"}[name.rsplit(".", 1)[1]]
+    return f"data:{mime};base64," + base64.b64encode(asset_bytes(name)).decode()
+
+
+def ai_icon():
+    """The VELA AI icon as an image for chat avatars; None if it cannot be loaded."""
+    try:
+        import io
+        from PIL import Image
+        return Image.open(io.BytesIO(asset_bytes("vela_emblem_128.webp")))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def thinking_html(label: str) -> str:
+    return (f'<div class="si-thinking"><img src="{asset_uri("vela_emblem_128.webp")}" alt=""><span>VELA AI · {esc(label)}</span>'
+            f'<span class="si-typing"><span></span><span></span><span></span></span></div>')
+
+
+def ai_hero() -> None:
+    """VELA AI introduction on an empty chat."""
+    html_block(f'<div class="si-aihero"><img src="{asset_uri("vela_emblem_320.webp")}" alt="VELA AI"><div>'
+               '<div class="eyebrow">VELA AI · service intelligence analyst</div><h2>How can I help you today?</h2>'
+               '<p>Ask in your own words — English or Arabic. I query live Snowflake data (faults, machine hours, OLGA '
+               'opportunities, the daily ranking, lost business), explain what it means and show the evidence. '
+               'Figures come only from query results; anything I assume is marked as an assumption.</p></div></div>')
+
+
 def mode() -> str:
     return "dark" if st.session_state.get("si_dark") else "light"
 
@@ -588,6 +630,24 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
 [class*="st-key-hit_row"]:first-of-type .si-lrow {{ border-radius: 0; }}
 .si-listwrap {{ background: var(--card); border-radius: 24px; padding: 14px 0 6px; overflow: hidden; }}
 @media (max-width: 1100px) {{ .si-hero {{ grid-template-columns: 1fr 1fr; }} }}
+.si-aihero {{ display: flex; gap: 26px; align-items: center; background: var(--card); border-radius: 28px; padding: 22px 28px;
+  margin: 6px 0 18px; animation: siUp .5s cubic-bezier(.2,.7,.2,1) both; }}
+.si-aihero img {{ width: 140px; height: 140px; object-fit: contain; flex: none; }}
+.si-aihero .eyebrow {{ font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 700; }}
+.si-aihero h2 {{ font-size: 1.8rem; font-weight: 500; margin: 6px 0; padding: 0; color: var(--ink); }}
+.si-aihero p {{ color: var(--muted); max-width: 760px; margin: 0; font-size: .92rem; line-height: 1.55; }}
+.si-thinking {{ display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .86rem; }}
+.si-thinking img {{ width: 28px; height: 28px; animation: siPulse 1.4s ease-in-out infinite; }}
+@keyframes siPulse {{ 0%, 100% {{ transform: scale(.94); }} 50% {{ transform: scale(1.06); }} }}
+.si-sources {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; font-size: .72rem; color: var(--muted); }}
+.si-sources .src {{ border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; color: var(--ink); background: var(--card2); }}
+.si-sources .ok {{ color: #0F9F6E; font-weight: 600; }} .si-sources .warn {{ color: #D97706; font-weight: 600; }}
+[data-testid="stChatMessageContent"] blockquote {{ border-left: 3px dashed var(--accent) !important; margin: .5rem 0 !important; padding: .4rem .8rem !important;
+  background: var(--card2); border-radius: 0 12px 12px 0; }}
+[data-testid="stChatMessageContent"] blockquote * {{ color: var(--muted) !important; }}
+[data-testid="stChatMessageAvatarCustom"] {{ width: 38px !important; height: 38px !important; background: transparent !important; }}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarCustom"]) [data-testid="stChatMessageContent"] {{
+  background: var(--card); border-radius: 22px 22px 22px 6px; padding: 1rem 1.25rem; max-width: 900px; margin-left: 0 !important; margin-right: auto !important; }}
 {stagger}
 @media (max-width: 900px) {{ .block-container, [data-testid="stMainBlockContainer"] {{ margin: 8px; padding: 1.2rem 1rem 6rem !important; }} }}
 </style>

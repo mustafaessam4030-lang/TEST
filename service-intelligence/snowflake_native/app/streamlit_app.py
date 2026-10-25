@@ -95,7 +95,7 @@ try:
                 ui.go_to("Recommendations")
     with c3:
         with theme.hit("card_note"):
-            theme.html_block(theme.note_card("Ask the assistant", "Live data", "Which machines should we act on first today, and why?",
+            theme.html_block(theme.note_card("Ask VELA AI", "Live data", "Which machines should we act on first today, and why?",
                                              "Cortex · read-only"))
             if st.button("Ask", key="open_note"):
                 ui.go_to("Assistant", chat_prefill="Which machines should we act on first today, and why?")
