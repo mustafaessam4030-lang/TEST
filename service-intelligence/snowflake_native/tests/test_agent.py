@@ -104,3 +104,9 @@ def test_a_plain_text_reply_is_shown_not_replaced(an):
     out = ask("haha what", [], an, lambda msgs, n: "Ha! I mean I can look up your fleet data. What should I check?",
               lambda spec: runner.run(spec))
     assert out["kind"] == "reply" and out["text"].startswith("Ha! I mean") and not runner.calls
+
+
+def test_model_codes_are_not_taken_for_figures():
+    results = [{"rows": [{"model": "785D", "due_value": 106719}]}]
+    assert unverified_numbers("The 785D at Goldfields has 106,719 due.", results) == []
+    assert unverified_numbers("EID 875 fires often.", [{"rows": [{"repeat_fault": "Low System Voltage (EID 875)"}]}]) == []

@@ -235,7 +235,7 @@ def run_step(step: dict, an: Analytics, runner_sql) -> dict:
 
 
 # --- grounding check ---------------------------------------------------------------------------------
-_NUM = re.compile(r"(?<![\w.])-?\d[\d,]*(?:\.\d+)?\s*(?:%|bn|billion|m\b|million|k\b|thousand)?", re.I)
+_NUM = re.compile(r"(?<![\w.])-?\d[\d,]*(?:\.\d+)?(?:\s*(?:%|bn|billion|m\b|million|k\b|thousand))?(?![\w])", re.I)   # not model codes like 785D
 
 
 def _numbers_in(obj, acc: list[float]):

@@ -401,8 +401,12 @@ div[role="dialog"] * {{ color: var(--ink); }}
   box-shadow: 0 10px 30px var(--shadow); }}
 [data-testid="stChatInput"] textarea {{ background: transparent !important; color: var(--ink) !important; }}
 [data-testid="stChatInput"] textarea::placeholder {{ color: var(--muted) !important; opacity: 1; }}
-[data-testid="stBottom"], [data-testid="stBottom"] > div, [data-testid="stBottomBlockContainer"], .stChatFloatingInputContainer {{ background: transparent !important; }}
-[data-testid="stBottomBlockContainer"] {{ max-width: 1100px; margin: 0 auto; }}
+/* the message bar sits on a solid strip at the bottom so answers never show through it */
+[data-testid="stBottom"], [data-testid="stBottom"] > div, .stChatFloatingInputContainer {{ background: var(--frame) !important; z-index: 50; }}
+[data-testid="stBottom"]::before {{ content: ""; position: absolute; left: 0; right: 0; top: -28px; height: 28px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--frame)); }}
+[data-testid="stBottomBlockContainer"] {{ max-width: 1100px; margin: 0 auto; background: var(--frame) !important; padding-top: 10px !important; padding-bottom: 18px !important; }}
+.block-container, [data-testid="stMainBlockContainer"] {{ padding-bottom: 9rem !important; flex-shrink: 0 !important; height: auto !important; }}
 [data-testid="stChatInputSubmitButton"] {{ background: linear-gradient(135deg, #FFB47E, #FF7A2E) !important; border-radius: 999px !important; }}
 [data-testid="stChatInputSubmitButton"] svg {{ fill: #fff !important; color: #fff !important; }}
 .si-typing {{ display: inline-flex; gap: 4px; padding: 6px 2px; }}
@@ -646,7 +650,8 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
   background: var(--card2); border-radius: 0 12px 12px 0; }}
 [data-testid="stChatMessageContent"] blockquote * {{ color: var(--muted) !important; }}
 [data-testid="stChatMessageAvatarCustom"] {{ width: 38px !important; height: 38px !important; background: transparent !important; }}
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarCustom"]) [data-testid="stChatMessageContent"] {{
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarCustom"]) [data-testid="stChatMessageContent"],
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarImage"]) [data-testid="stChatMessageContent"] {{
   background: var(--card); border-radius: 22px 22px 22px 6px; padding: 1rem 1.25rem; max-width: 900px; margin-left: 0 !important; margin-right: auto !important; }}
 {stagger}
 @media (max-width: 900px) {{ .block-container, [data-testid="stMainBlockContainer"] {{ margin: 8px; padding: 1.2rem 1rem 6rem !important; }} }}
