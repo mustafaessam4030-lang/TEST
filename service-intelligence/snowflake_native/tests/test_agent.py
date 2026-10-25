@@ -110,3 +110,92 @@ def test_model_codes_are_not_taken_for_figures():
     results = [{"rows": [{"model": "785D", "due_value": 106719}]}]
     assert unverified_numbers("The 785D at Goldfields has 106,719 due.", results) == []
     assert unverified_numbers("EID 875 fires often.", [{"rows": [{"repeat_fault": "Low System Voltage (EID 875)"}]}]) == []
+
+
+# --- AI Brain: training library, repair history, machine profile, photos -------------------------------
+def brain_responder(spec):
+    if spec.purpose == "brain_repairs":
+        return [{"model": "777G", "open_date": "2025-12-09", "complaint": "LOW SYSTEM VOLTAGE", "root_cause": "TORN",
+                 "work_done": "ALTERNATOR BELT REPLACED", "parts_used": "3748480 BELT x1", "labour_hours": 2.0,
+                 "similar_jobs": 31, "jobs_with_hours": 10, "median_labour_hours": 4.0}]
+    if spec.purpose == "brain_repair_parts":
+        return [{"part": "1417116 BELT", "jobs": 11}]
+    if spec.purpose == "brain_machine":
+        eg = "TNW" in spec.params[0]
+        return [{"terrid": "EG" if eg else "GH", "serial_no": spec.params[0], "model_cd": "785",
+                 "telemetry_allowed": not eg, "latest_smu": 32438.6}]
+    if spec.purpose == "brain_machine_faults":
+        return [{"description": "Diff Lube Pres", "severity_level": 3, "events": 214, "last_seen": "2026-10-24"}]
+    if spec.purpose.startswith("brain_machine"):
+        return []
+    return responder(spec)
+
+
+def test_brain_queries_pass_the_guard_with_values_bound():
+    from si_native import brain
+    from si_native.metrics import check_spec
+    specs = [brain.repairs_spec(["alternator|charging", "x'; DROP"], "777'", "S1"), brain.repair_parts_spec(["belt"], "777"),
+             brain.faults_spec("X'; DROP"), brain.rules_spec(), *brain.machine_specs("X'; DROP").values()]
+    for spec in specs:
+        check_spec(spec, REG)
+        assert "DROP" not in spec.sql
+    assert "cause, 300) AS complaint" in specs[0].sql and "correction, 200) AS root_cause" in specs[0].sql
+
+
+def test_adhoc_sql_reaches_the_brain_but_not_logs_or_unfiltered_telematics(an):
+    adhoc_spec("SELECT model_cd, COUNT(*) AS n FROM SERVICE_INTELLIGENCE.AI_BRAIN.REPAIR_KNOWLEDGE GROUP BY 1", an)
+    for t in ("V_FAULT_CODES", "PHOTO_LOG", "CHAT_LOG", "AI_SUMMARY_CACHE"):
+        with pytest.raises(QueryError):
+            adhoc_spec(f"SELECT * FROM SERVICE_INTELLIGENCE.AI_BRAIN.{t}", an)
+
+
+def test_labour_hours_need_a_model_and_three_jobs():
+    from si_native import brain
+    rows = [{"similar_jobs": 5, "jobs_with_hours": 4, "median_labour_hours": 3.5}]
+    assert brain.summarize_repairs(rows, [], "777")["median_labour_hours"] == 3.5
+    assert brain.summarize_repairs(rows, [], None)["median_labour_hours"] is None
+    assert brain.summarize_repairs([{**rows[0], "jobs_with_hours": 2}], [], "777")["median_labour_hours"] is None
+
+
+def test_egypt_machine_profile_skips_telematics(an):
+    from si_native.agent import run_step
+    runner = FakeRunner(REG, brain_responder)
+    eg = run_step({"tool": "machine", "serial": "TNW00180"}, an, lambda s: runner.run(s))
+    assert "not allowed" in eg["fault_codes_90d"] and not any(c.purpose == "brain_machine_faults" for c in runner.calls)
+    gh = run_step({"tool": "machine", "serial": "MSY00912"}, an, lambda s: runner.run(s))
+    assert gh["fault_codes_90d"][0]["events"] == 214
+
+
+def test_photo_question_uses_vision_manual_and_repairs(an):
+    runner = FakeRunner(REG, brain_responder)
+    seen = {}
+
+    def complete(msgs, n):
+        if "ONE JSON object" in msgs[0]["content"]:
+            seen["planner"] = msgs[-1]["content"]
+            return json.dumps({"type": "data", "steps": [
+                {"tool": "manual", "query": "alternator belt", "system": "Electrical & Electronics"},
+                {"tool": "repairs", "keywords": ["alternator|belt", "voltage"], "model": "777"}]})
+        seen["answer"] = msgs[-1]["content"]
+        return "Likely a torn belt: **31** similar jobs, median **4.0** h (p. 78).\nFOLLOWUPS: a | b | c"
+
+    out = ask("what's wrong here?", [], an, complete, lambda s: runner.run(s),
+              search=lambda q, system, n: [{"course": "EESF", "module": "M08", "page": "78", "text": "Check belt tension"}],
+              look=lambda paths, q: "- Torn alternator belt on a 777G", photos=["2026-10/a.jpg"])
+    assert "Torn alternator belt" in seen["planner"] and "Check belt tension" in seen["answer"]
+    assert [r["tool"] for r in out["results"]] == ["photo", "manual", "repairs"]
+    assert out["unverified"] == [] and out["results"][2]["common_parts"][0]["part"] == "1417116 BELT"
+
+
+def test_photo_with_a_plain_reply_still_answers_from_the_findings(an):
+    out = ask("hi", [], an, lambda msgs, n: "plain words" if "ONE JSON object" in msgs[0]["content"] else "It is a cracked hose.",
+              lambda s: None, look=lambda paths, q: "- Cracked hydraulic hose", photos=["p.jpg"])
+    assert out["kind"] == "data" and out["results"][0]["tool"] == "photo"
+
+
+def test_vision_and_search_sql_escape_user_text():
+    from si_native import brain
+    sql = brain.vision_sql("claude-sonnet-5", "it's {0} \\ leaking", ["2026-10/a.jpg"])
+    assert "it''s (0) \\\\ leaking" in sql and "TO_FILE('@SERVICE_INTELLIGENCE.AI_BRAIN.PHOTO_STG', '2026-10/a.jpg')" in sql
+    assert "''" in brain.kb_sql("driver's seat", "Brakes") and '"@eq"' in brain.kb_sql("x", "Brakes")
+    assert '"filter"' not in brain.kb_sql("x", "Not a system")

@@ -11,7 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
-MODULES = ["metrics", "data", "analysis", "recommend", "plans", "assistant", "agent", "machine", "theme", "ui"]   # dependency order
+MODULES = ["metrics", "data", "analysis", "recommend", "plans", "assistant", "brain", "agent", "machine", "theme", "ui"]   # dependency order
 VELA_ASSETS = ["vela_ai_icon.svg", "vela_ai_icon_128.png"]               # the VELA AI icon
 PAGES = [("Analysis", "streamlit_app.py"), ("Recommendations", "pages/2_Recommendations.py"),
          ("Assistant", "pages/3_Assistant.py")]

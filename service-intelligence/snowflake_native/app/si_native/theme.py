@@ -185,9 +185,10 @@ def ai_hero() -> None:
     """VELA AI introduction on an empty chat."""
     html_block(f'<div class="si-aihero"><img src="{asset_uri("vela_ai_icon.svg")}" alt="VELA AI"><div>'
                '<div class="eyebrow">VELA AI · service intelligence analyst</div><h2>How can I help you today?</h2>'
-               '<p>Ask in your own words — English or Arabic. I query live Snowflake data (faults, machine hours, OLGA '
-               'opportunities, the daily ranking, lost business), explain what it means and show the evidence. '
-               'Figures come only from query results; anything I assume is marked as an assumption.</p></div></div>')
+               '<p>Ask in your own words — English or Arabic — or attach photos of a problem. I combine live fleet '
+               'data (faults, hours, OLGA, the daily ranking), the CAT technician training library, Mantrac repair '
+               'history and each machine\'s full profile, explain what it means and show the evidence. Figures come '
+               'only from the data; anything I assume is marked as an assumption.</p></div></div>')
 
 
 def mode() -> str:

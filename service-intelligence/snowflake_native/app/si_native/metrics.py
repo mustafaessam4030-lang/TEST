@@ -137,6 +137,10 @@ class Registry:
                 list_class_order=lst.get("class_order_by"))
             if self.sources[sid].as_of_from not in ("loaded", "latest_data"):
                 raise RegistryError(f"source {sid}: as_of_from must be loaded or latest_data")
+        self.reference_tables: tuple[str, ...] = tuple(str(t).upper() for t in raw.get("reference_tables") or ())
+        for t in self.reference_tables:
+            if not QUALIFIED.match(t):
+                raise RegistryError(f"reference table {t!r} must be DATABASE.SCHEMA.TABLE")
         self.metrics: dict[str, Metric] = {}
         for m in raw.get("metrics") or []:
             mid = m.get("id", "")
@@ -404,7 +408,7 @@ def check_spec(spec: Spec, registry: Registry) -> None:
         raise QueryError("Multiple statements and comments are not allowed")
     if FORBIDDEN.search(text):
         raise QueryError("Statement contains a non-read-only keyword")
-    allowed = {s.table for s in registry.sources.values()}
+    allowed = {s.table for s in registry.sources.values()} | set(registry.reference_tables)
     for ref in re.findall(r"\b([A-Z_][A-Z0-9_]*\.[A-Z_][A-Z0-9_]*\.[A-Z_][A-Z0-9_]*)\b", text, re.I):
         if ref.upper() not in allowed:
             raise QueryError(f"Table {ref} is not an approved source")

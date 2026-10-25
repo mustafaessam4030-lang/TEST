@@ -1,17 +1,22 @@
-"""Page 3 — VELA AI: a service intelligence analyst (Cortex) that answers from live, read-only queries."""
+"""Page 3 — VELA AI: a service intelligence analyst (Cortex) that answers from live, read-only queries, the AI Brain
+(CAT training library, Mantrac repair history, machine profiles, business rules) and photos the user attaches."""
+import inspect
 import json
 import re
 import time
+import uuid
 
 import streamlit as st
 
 from si_native import theme, ui
-from si_native.agent import MODEL, ask, cortex_complete
+from si_native import brain
+from si_native.agent import FALLBACK_MODEL, MODEL, ask, cortex_complete
 from si_native.assistant import answer, rules_plan
 from si_native.plans import PlanStore
 from si_native.recommend import all_candidates
 
-ui.header("VELA AI", "Your service intelligence analyst: answers from authorized Snowflake data, with the evidence behind them.",
+ui.header("VELA AI", "Your service intelligence brain: fleet data, CAT training manuals, Mantrac repair history and "
+          "photos, with the evidence behind every answer.",
           [f"Model <b>{MODEL}</b>"])
 AVATAR = theme.ai_icon()
 an = ui.analytics()
@@ -21,17 +26,21 @@ store = PlanStore(ui.session())
 if "chat" not in st.session_state:
     st.session_state["chat"] = []
     st.session_state["ctx"] = None
+st.session_state.setdefault("chat_id", str(uuid.uuid4()))
 if st.session_state["chat"]:
     _, nc = st.columns([6, 1])
     if nc.button("＋ New chat", key="new_chat", use_container_width=True):
         st.session_state["chat"] = []
         st.session_state["ctx"] = None
+        st.session_state["chat_id"] = str(uuid.uuid4())
         st.rerun()
 
 EXAMPLES = [("target", "orange", "Which 10 machines should we act on first today, and why?"),
             ("alert", "pink", "Which product families had the most high-severity faults last month?"),
             ("wallet", "sky", "Which branches have the most OLGA value overdue?"),
-            ("repeat", "mint", "What are the most common repeat faults on large off-highway trucks?")]
+            ("repeat", "mint", "777G shows low system voltage: what usually causes it and how do we fix it?")]
+PHOTO_TYPES = ["jpg", "jpeg", "png", "webp"]
+CHAT_FILES = "accept_file" in inspect.signature(st.chat_input).parameters      # Streamlit >= 1.43
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -40,7 +49,34 @@ def known_values() -> dict:
     wanted = {"branch": ("opportunities", "branch"), "product_family": ("fault_events", "product_family"),
               "smcs_group": ("opportunities", "smcs_group"), "dealer_code": ("fault_events", "dealer_code")}
     got = ui.run_parallel([lambda s=s, d=d: an.dimension_values(s, d) for s, d in wanted.values()])
-    return {k: v[:150] for k, v in zip(wanted, got) if not isinstance(v, Exception)}
+    out = {k: v[:150] for k, v in zip(wanted, got) if not isinstance(v, Exception)}
+    try:
+        out["rules"] = ui.CachedRunner().run(brain.rules_spec(), email).rows
+    except Exception:  # noqa: BLE001 - the assistant still works without the rules
+        pass
+    return out
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def manual_search(query: str, system, limit: int) -> list:
+    return brain.kb_search(ui.session(), query, system, limit)
+
+
+def look(paths: list, question: str) -> str:
+    return brain.look(ui.session(), paths, question, (MODEL, FALLBACK_MODEL))
+
+
+def save_photos(files) -> tuple[list, list]:
+    """Prepared JPEGs uploaded to the AI Brain photo stage. Returns (stage paths, small previews for the chat)."""
+    paths, previews = [], []
+    for f in list(files or [])[:brain.MAX_PHOTOS]:
+        try:
+            data = brain.prepare_photo(f.getvalue())
+            paths.append(brain.save_photo(ui.session(), data, email, st.session_state["chat_id"]))
+            previews.append(data)
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"Could not upload {getattr(f, 'name', 'a photo')}: {str(exc)[:160]}")
+    return paths, previews
 
 
 def show_details(turn: dict) -> None:
@@ -50,8 +86,29 @@ def show_details(turn: dict) -> None:
     with st.expander("How I got this"):
         for r in results:
             title = r.get("metric") or r.get("purpose") or r.get("list") or r.get("tool")
-            st.markdown(f"**{title}** · " + ("approved metric" if r.get("tool") == "metric" else
-                                             "daily ranking" if r.get("tool") == "top_list" else "read-only query"))
+            st.markdown(f"**{title}** · " + KIND.get(r.get("tool"), "read-only query"))
+            if r.get("tool") == "photo":
+                st.markdown(r.get("findings") or "")
+                continue
+            if r.get("tool") == "manual":
+                for i, m in enumerate(r.get("rows") or [], 1):
+                    st.markdown(f"{i}. **{m.get('course')}** · {m.get('module')} · p. {m.get('page')} "
+                                f"<span style='opacity:.6'>({m.get('file')})</span>", unsafe_allow_html=True)
+                continue
+            if r.get("tool") == "repairs":
+                theme.kv({"Similar jobs": r.get("similar_jobs"), "Median labour hours": r.get("median_labour_hours"),
+                          "Jobs with hours": r.get("jobs_with_hours")})
+                if r.get("common_parts"):
+                    theme.table(r["common_parts"], max_height=240)
+            if r.get("tool") == "machine":
+                for key in ("fleet", "recent_jobs", "oil_samples", "inspections", "service_letters", "cat_alerts",
+                            "fault_codes_90d"):
+                    val = r.get(key)
+                    if isinstance(val, list) and val:
+                        st.caption(key.replace("_", " ").capitalize())
+                        theme.table(val, max_height=260)
+                    elif isinstance(val, str):
+                        st.caption(f"{key.replace('_', ' ').capitalize()}: {val}")
             if r.get("tool") == "metric":
                 theme.kv({"Value": r.get("value"), "Period": r.get("period"), "Previous": r.get("previous_value"),
                           "Change %": r.get("change_pct"), "Records": r.get("records")})
@@ -64,6 +121,10 @@ def show_details(turn: dict) -> None:
 
 
 TABLE_RE = re.compile(r"SERVICE_INTELLIGENCE\.\w+\.(\w+)", re.I)
+KIND = {"metric": "approved metric", "top_list": "daily ranking", "manual": "CAT training library (Cortex Search)",
+        "repairs": "Mantrac repair history", "machine": "AI Brain machine profile", "photo": "VELA vision"}
+SOURCE = {"manual": "CAT training library", "repairs": "Mantrac repair history", "machine": "Machine profile",
+          "photo": "Photo analysis"}
 
 
 def sources_html(turn: dict) -> str:
@@ -77,6 +138,9 @@ def sources_html(turn: dict) -> str:
             names.append(f"Metric · {r.get('metric')}")
         elif r.get("tool") == "top_list":
             names.append("Daily top-100 ranking")
+        elif r.get("tool") in SOURCE:
+            names.append(SOURCE[r["tool"]])
+            continue
         for ev in r.get("evidence") or []:
             for t in TABLE_RE.findall(ev.get("sql") or ""):
                 names.append(t.replace("_", " ").title())
@@ -90,7 +154,9 @@ def sources_html(turn: dict) -> str:
 
 def with_assumptions(text: str) -> str:
     """Lines the model marks 'Assumption:' are shown as a separate note, apart from the verified facts."""
-    return re.sub(r"(?im)^\s*(?:[-*]\s*)?\**assumption\**\s*:\s*\**\s*(.+)$", r"> **Assumption** · \1", text)
+    text = re.sub(r"(?im)^\s*(?:[-*]\s*)?\**assumption\**\s*:\s*\**\s*(.+)$", r"> **Assumption** · \1", text)
+    return re.sub(r"(?im)^\s*(?:[-*]\s*)?\**general (?:cat )?knowledge\**\s*:\s*\**\s*(.+)$",
+                  r"> **General knowledge** · \1", text)
 
 
 def show_extras(turn: dict) -> None:
@@ -104,6 +170,8 @@ def show_extras(turn: dict) -> None:
 
 def render(turn: dict) -> None:
     with st.chat_message(turn["role"], avatar=AVATAR if turn["role"] == "assistant" and AVATAR is not None else None):
+        if turn.get("images"):
+            st.image(turn["images"], width=150)
         st.markdown(with_assumptions(turn["text"]) if turn["role"] == "assistant" else turn["text"])
         if turn["role"] == "assistant":
             show_extras(turn)
@@ -151,21 +219,38 @@ if last and last["role"] == "assistant" and last.get("followups") and not clicke
         if col.button(q, key=f"fu_{len(st.session_state['chat'])}_{i}", use_container_width=True):
             clicked = q
 
-question = st.chat_input("Ask VELA AI…") or clicked
+files = []
+if CHAT_FILES:
+    got = st.chat_input("Ask VELA AI… or attach photos of a problem", accept_file="multiple", file_type=PHOTO_TYPES)
+    question = (got.text if got else None) or clicked
+    files = list(got.files) if got else []
+else:                                                 # older Streamlit: a small uploader above the message bar
+    up_key = f"photos_{st.session_state.get('photo_round', 0)}"
+    with (st.popover("＋ Attach photos") if hasattr(st, "popover") else st.expander("＋ Attach photos")):
+        st.file_uploader("Photos of the problem", type=PHOTO_TYPES, accept_multiple_files=True, key=up_key)
+    question = st.chat_input("Ask VELA AI…") or clicked
+    if question:
+        files = list(st.session_state.get(up_key) or [])
+        st.session_state["photo_round"] = st.session_state.get("photo_round", 0) + 1
+if files and not question:
+    question = "What is the problem in this photo and how do we fix it?"
 if question:
     history = list(st.session_state["chat"])
-    st.session_state["chat"].append({"role": "user", "text": question})
-    render({"role": "user", "text": question})
+    photo_paths, previews = save_photos(files) if files else ([], [])
+    user_turn = {"role": "user", "text": question, "images": previews}
+    st.session_state["chat"].append(user_turn)
+    render(user_turn)
     with st.chat_message("assistant", avatar=AVATAR):
         out, planner = None, "cortex-agent"
         thinking = st.empty()
 
         def status(label: str) -> None:
             thinking.markdown(theme.thinking_html(label), unsafe_allow_html=True)
-        status("Analyzing authorized Snowflake data…")
+        status("Thinking…")
         try:
             out = ask(question, history, an, lambda msgs, n: cortex_complete(ui.session(), msgs, n),
-                      lambda spec: ui.CachedRunner().run(spec, email), on_status=status, hints=known_values())
+                      lambda spec: ui.CachedRunner().run(spec, email), on_status=status, hints=known_values(),
+                      search=manual_search, look=look, photos=photo_paths, parallel=ui.run_parallel)
         except Exception:  # noqa: BLE001 - Cortex not available to this role/region: fall back to the rules
             planner = "rules"
             try:
