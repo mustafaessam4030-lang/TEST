@@ -56,7 +56,7 @@ with tab_top:
                 st.info("No machines match these filters.")
             else:
                 cols = TOP_COLUMNS if view == "Top 100 overall" else [("class_rank", "#", "num"), *TOP_COLUMNS[1:]]
-                layout = st.radio("Layout", ["List", "Cards", "Table"], horizontal=True, key="top_layout", label_visibility="collapsed")
+                layout = st.radio("Layout", ["Cards", "List", "Table"], horizontal=True, key="top_layout", label_visibility="collapsed")
                 main, side = st.columns([3.2, 1], gap="medium")
                 with main:
                     theme.section(view, f"{len(rows)} machines · ranking of {run_date}")
