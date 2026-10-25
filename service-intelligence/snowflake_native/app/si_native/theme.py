@@ -140,6 +140,14 @@ def motion() -> None:
         pass
 
 
+# App icon: a speedometer (gauge arc, ticks and needle) on the orange tile
+APP_ICON = ('<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M4.2 17.5a8.5 8.5 0 1 1 15.6 0" stroke-width="2.2"/>'
+            '<path d="M7 9.2l.9.9M12 6.4v1.3M17 9.2l-.9.9" stroke-width="1.6" opacity=".85"/>'
+            '<g class="ndl" style="transform: rotate(38deg)"><path d="M12 15 L12 8.6" stroke-width="2.2"/></g>'
+            '<circle cx="12" cy="15" r="1.9" fill="#fff" stroke="none"/></svg>')
+
+
 def mode() -> str:
     return "dark" if st.session_state.get("si_dark") else "light"
 
@@ -194,7 +202,11 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 [class*="st-key-topbar"] [data-testid="stHorizontalBlock"] {{ align-items: center; }}
 .si-brandchip {{ display: inline-flex; align-items: center; gap: 10px; background: var(--card); border-radius: 999px; padding: 6px 16px 6px 6px;
   box-shadow: 0 1px 2px var(--shadow); animation: siFade .4s ease both; }}
-.si-brandchip img {{ height: 30px; border-radius: 7px; display: block; }}
+.si-brandchip img.mantrac {{ height: 24px; border-radius: 5px; display: block; margin-left: 4px; opacity: .95; }}
+.si-brandchip .appicon {{ width: 36px; height: 36px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(145deg, #FFA45C 0%, #F26B1D 55%, #D9520A 100%); box-shadow: 0 4px 12px rgba(242,107,29,.35); flex: none; }}
+.si-brandchip .appicon svg {{ width: 24px; height: 24px; }}
+.si-brandchip .appicon .ndl {{ transform-origin: 12px 15px; animation: siNeedle 1.4s cubic-bezier(.3,1.4,.4,1) both; }}
 .si-brandchip b {{ font-weight: 650; font-size: .95rem; color: var(--ink); white-space: nowrap; }}
 [class*="st-key-topbar"] [data-testid="stRadio"] {{ display: flex; justify-content: center; }}
 [class*="st-key-topbar"] [data-testid="stRadioGroup"], [class*="st-key-topbar"] [role="radiogroup"] {{ background: var(--card) !important;
@@ -632,8 +644,8 @@ def nav(pages: list[str], user: str, role: str, key: str = "si_page", index: int
         left, mid, right = st.columns([1.25, 3.2, 1.25])
         with left:
             logo = logo_uri()
-            img = f'<img src="{logo}" alt="Mantrac CAT">' if logo else ""
-            html_block(f'<div class="si-brandchip">{img}<b>Service Intelligence</b></div>')
+            img = f'<img class="mantrac" src="{logo}" alt="Mantrac CAT">' if logo else ""
+            html_block(f'<div class="si-brandchip"><span class="appicon">{APP_ICON}</span><b>Service Intelligence</b>{img}</div>')
         with mid:
             page = st.radio("Menu", pages, index=index, key=key, horizontal=True, label_visibility="collapsed")
         with right:
