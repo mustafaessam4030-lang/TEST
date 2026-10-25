@@ -297,10 +297,14 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
     sys_msg = {"role": "system", "content": system_prompt(an, today, hints)}
     msgs = [sys_msg, *_history(history), {"role": "user", "content": question[:4000]}]
     on_status("Understanding the question…")
+    raw = complete(msgs, 1500)
     try:
-        plan = _json_from(complete(msgs, 1500))
+        plan = _json_from(raw)
     except (ValueError, KeyError):
-        plan = {"type": "reply", "text": "Sorry, I didn't catch that. Could you rephrase the question?"}
+        # the model answered in plain words (small talk, a clarifying question): show that answer as it is
+        text = (raw or "").strip()
+        plan = {"type": "reply", "text": text if text and not text.lstrip().startswith("{") else
+                "Sorry, I didn't catch that. Could you say it another way?"}
     if plan.get("type") != "data":
         text, followups = split_followups(str(plan.get("text") or ""))
         return {"text": text, "results": [], "evidence": [], "unverified": [], "kind": "reply", "followups": followups}

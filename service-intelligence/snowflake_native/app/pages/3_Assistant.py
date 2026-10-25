@@ -56,7 +56,8 @@ def show_details(turn: dict) -> None:
                 theme.table(r["rows"][:200], max_height=300)
                 if r.get("truncated"):
                     st.caption("Only the first 200 rows were read.")
-        ui.evidence_expander([e for r in results for e in r.get("evidence", [])], "SQL and query IDs")
+        st.markdown("**SQL and query IDs**")                      # no expander inside an expander (older Streamlit)
+        ui.evidence_list([e for r in results for e in r.get("evidence", [])])
 
 
 def show_extras(turn: dict) -> None:

@@ -321,12 +321,17 @@ div[role="dialog"] * {{ color: var(--ink); }}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]), [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {{ flex-direction: row-reverse; }}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"],
 [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) [data-testid="stChatMessageContent"] {{
-  background: var(--ink); border-radius: 22px 22px 6px 22px; padding: .75rem 1.05rem; max-width: 72%; flex: 0 1 auto; }}
+  background: var(--ink); border-radius: 22px 22px 6px 22px; padding: .75rem 1.05rem; max-width: 72%; flex: 0 1 auto !important;
+  width: fit-content !important; min-width: fit-content; margin-left: auto !important; margin-right: 0 !important; }}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]), [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {{
+  justify-content: flex-start !important; width: 100% !important; }}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] div,
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) [data-testid="stChatMessageContent"] div {{ flex: 0 1 auto !important; width: auto !important; }}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] *,
 [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) [data-testid="stChatMessageContent"] * {{ color: var(--canvas) !important; }}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stChatMessageContent"],
 [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) [data-testid="stChatMessageContent"] {{
-  background: var(--card); border-radius: 22px 22px 22px 6px; padding: 1rem 1.25rem; max-width: 900px; }}
+  background: var(--card); border-radius: 22px 22px 22px 6px; padding: 1rem 1.25rem; max-width: 900px; margin-left: 0 !important; margin-right: auto !important; }}
 [data-testid="stChatMessageContent"] h1, [data-testid="stChatMessageContent"] h2, [data-testid="stChatMessageContent"] h3 {{
   font-size: 1.02rem !important; font-weight: 650 !important; margin: .2rem 0 .4rem !important; padding: 0 !important; }}
 [data-testid="stChatMessageContent"] p, [data-testid="stChatMessageContent"] li {{ font-size: .93rem; line-height: 1.6; }}

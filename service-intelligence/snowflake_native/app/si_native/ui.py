@@ -277,13 +277,17 @@ def period_picker(key: str, as_of_date: date, default_days: int = 30) -> Period:
     return Period(s, e + timedelta(days=1))
 
 
+def evidence_list(evidence: list[dict]) -> None:
+    for ev in evidence:
+        st.markdown(f"**{ev.get('purpose')}** · metric `{ev.get('metric_id')}` · query id `{ev.get('query_id')}`")
+        st.code(ev.get("sql", ""), language="sql")
+        if ev.get("params"):
+            st.caption("Bind values: " + json.dumps(ev["params"]))
+
+
 def evidence_expander(evidence: list[dict], label: str = "Evidence: queries behind this figure") -> None:
     with st.expander(label):
-        for ev in evidence:
-            st.markdown(f"**{ev.get('purpose')}** · metric `{ev.get('metric_id')}` · query id `{ev.get('query_id')}`")
-            st.code(ev.get("sql", ""), language="sql")
-            if ev.get("params"):
-                st.caption("Bind values: " + json.dumps(ev["params"]))
+        evidence_list(evidence)
 
 
 def df(rows: list[dict]) -> pd.DataFrame:

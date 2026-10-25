@@ -97,3 +97,10 @@ def test_machine_detail_queries_pass_the_guard_with_the_serial_bound():
                  machine.hours("X'; DROP", date(2026, 10, 23))):
         check_spec(spec, REG)
         assert "DROP" not in spec.sql and spec.params[0] == "X'; DROP"
+
+
+def test_a_plain_text_reply_is_shown_not_replaced(an):
+    runner = FakeRunner(REG, responder)
+    out = ask("haha what", [], an, lambda msgs, n: "Ha! I mean I can look up your fleet data. What should I check?",
+              lambda spec: runner.run(spec))
+    assert out["kind"] == "reply" and out["text"].startswith("Ha! I mean") and not runner.calls
