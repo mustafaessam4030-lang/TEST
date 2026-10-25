@@ -213,6 +213,12 @@ You can look up live data. Decide what the user needs and reply with ONE JSON ob
     "serial": "<serial or null>"}}  similar Mantrac repair jobs: complaint, root cause, work done, parts, labour hours,
      how many matched and the median labour hours. Use short English terms as technicians write them
      (e.g. ["alternator|charging", "voltage"], ["hose|leak", "boom"]).
+  {{"tool": "web", "query": "<public web search query>"}}  searches the public internet (Cortex web search) for
+     things the company data and the training library do not hold: Cat product specs and public service info, industry
+     news, standards, general technical facts. Use it when the user asks to search the web/internet, or when the
+     other tools cannot answer. The query is sent outside the company: NEVER put customer names, serial numbers,
+     prices, internal figures or other company data in it - only generic technical words (e.g. "Cat 777G engine oil
+     change interval").
   {{"tool": "machine", "serial": "<serial>"}}  one machine's full profile: fleet record (customer, hours, utilisation),
      recent repairs, oil samples, inspections, service letters, CAT alerts and recent fault codes (where allowed).
 
@@ -289,6 +295,16 @@ def _clean_filters(raw, dims) -> dict:
     return out
 
 
+SERIAL_LIKE = re.compile(r"\b(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z0-9-]{8,}\b", re.I)   # Cat serials: 8 chars
+
+
+def scrub_web_query(query: str) -> str:
+    """Last safeguard for what leaves the company: no serial-number-like tokens or e-mails in a web query."""
+    query = re.sub(r"\S+@\S+", " ", query)
+    query = SERIAL_LIKE.sub(" ", query)
+    return re.sub(r"\s+", " ", query).strip()[:200]
+
+
 def _sequential(fns: list) -> list:
     out = []
     for fn in fns:
@@ -299,10 +315,20 @@ def _sequential(fns: list) -> list:
     return out
 
 
-def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None) -> dict:
-    """search(query, system, limit) -> passages; parallel(fns) -> results (exceptions in place)."""
+def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, web=None) -> dict:
+    """search(query, system, limit) -> passages; web(query, n) -> web results; parallel(fns) -> results."""
     tool = step.get("tool")
     parallel = parallel or _sequential
+    if tool == "web":
+        if web is None:
+            raise QueryError("Web search is not available here")
+        query = scrub_web_query(str(step.get("query") or ""))
+        if not query:
+            raise QueryError("Nothing to search for")
+        rows = web(query, 5)
+        return {"tool": "web", "purpose": f"Web search: {query}", "query": query, "rows": rows,
+                "evidence": [{"purpose": "Cortex web search", "query_id": None, "metric_id": None,
+                              "sql": brain.web_sql(query, 5), "params": []}]}
     if tool == "manual":
         if search is None:
             raise QueryError("The training library is not available here")
@@ -448,11 +474,11 @@ def unverified_numbers(text: str, results: list[dict]) -> list[str]:
 
 
 # --- one conversational turn -------------------------------------------------------------------------
-STEP_LABEL = {"manual": "Reading the CAT training library: {}", "repairs": "Searching Mantrac repair history",
+STEP_LABEL = {"web": "Searching the web: {}", "manual": "Reading the CAT training library: {}", "repairs": "Searching Mantrac repair history",
               "machine": "Building the machine profile: {}"}
 
 def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql, on_status=lambda s: None,
-        hints: dict | None = None, search=None, look=None, photos=(), parallel=None) -> dict:
+        hints: dict | None = None, search=None, look=None, photos=(), parallel=None, web=None) -> dict:
     """Returns {"text", "results", "evidence", "unverified", "kind", "followups"}; `complete(messages, max_tokens)` -> str.
     search(query, system, limit) -> training passages; look(photo_paths, question) -> what the photos show."""
     today = f"{an.as_of('fault_events'):%Y-%m-%d}"
@@ -488,7 +514,7 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
         on_status(STEP_LABEL.get(step.get("tool"), "Querying: {}").format(
             step.get("purpose") or step.get("query") or step.get("serial") or step.get("metric_id") or step.get("tool")) + "…")
         try:
-            results.append(run_step(step, an, runner_sql, search, parallel))
+            results.append(run_step(step, an, runner_sql, search, parallel, web))
         except Exception as exc:  # noqa: BLE001 - one repair attempt for model-written SQL
             if step.get("tool") != "sql":
                 errors.append(f"{step.get('tool')}: {exc}")
@@ -498,7 +524,7 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
                 fix = _json_from(complete([sys_msg, {"role": "user", "content":
                         f"This SELECT failed: {step.get('sql')}\nError: {str(exc)[:500]}\n"
                         'Reply with JSON only: {"sql": "<corrected single SELECT>"}'}], 1200))
-                results.append(run_step({**step, "sql": fix.get("sql")}, an, runner_sql, search, parallel))
+                results.append(run_step({**step, "sql": fix.get("sql")}, an, runner_sql, search, parallel, web))
             except Exception as exc2:  # noqa: BLE001
                 errors.append(f"sql: {exc2}")
 
@@ -520,6 +546,8 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
             "(Course · Module, p. N). 'repairs' rows are real Mantrac jobs - say how many similar jobs matched, the usual "
             "root causes, fixes and parts (with part numbers). Labour hours ONLY from median_labour_hours (when it is null "
             "say there is no reliable figure). 'machine' is one machine's profile. 'photo' holds what the photos show. "
+            "'web' rows are public web pages: attribute those facts to the site with a markdown link [title](url), never "
+            "present them as Mantrac data, and prefer company data and the training library when they disagree. "
             "Anything from your own general Caterpillar knowledge (not in the results) goes on its own line starting "
             "with 'General knowledge:'. Never invent part numbers, specs, pressures or torque values.\n"
             "For a problem / diagnosis: 1) what is most likely wrong and why, 2) checks to do in order, 3) the fix, parts "

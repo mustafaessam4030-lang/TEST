@@ -199,3 +199,25 @@ def test_vision_and_search_sql_escape_user_text():
     assert "it''s (0) \\\\ leaking" in sql and "TO_FILE('@SERVICE_INTELLIGENCE.AI_BRAIN.PHOTO_STG', '2026-10/a.jpg')" in sql
     assert "''" in brain.kb_sql("driver's seat", "Brakes") and '"@eq"' in brain.kb_sql("x", "Brakes")
     assert '"filter"' not in brain.kb_sql("x", "Not a system")
+
+
+def test_web_search_is_cited_and_never_carries_serials_or_emails(an):
+    from si_native import brain
+    from si_native.agent import scrub_web_query
+    assert scrub_web_query("777G oil interval MSY00912 for a.b@mantracgroup.com C175-16") == "777G oil interval for C175-16"
+    seen = {}
+
+    def complete(msgs, n):
+        if "ONE JSON object" in msgs[0]["content"]:
+            return json.dumps({"type": "data", "steps": [{"tool": "web", "query": "Cat 777G oil change interval tnw00180"}]})
+        return "Per [Toromont](https://t.example/x), intervals depend on S·O·S results.\nFOLLOWUPS: a | b | c"
+
+    def web(q, n):
+        seen["q"] = q
+        return [{"title": "Toromont", "url": "https://t.example/x", "text": "oil drain intervals"}]
+    out = ask("search the web for the 777G oil interval", [], an, complete, lambda s: None, web=web)
+    assert seen["q"] == "Cat 777G oil change interval" and out["results"][0]["tool"] == "web"
+    raw = {"content": [{"tool_use": {}}, {"tool_result": {"content": [{"json": {"search_results": [
+        {"doc_id": "https://a.example", "doc_title": "A", "text": "x  y"}, {"doc_id": "https://a.example"}]}}]}}]}
+    assert brain.parse_web(json.dumps(raw)) == [{"title": "A", "url": "https://a.example", "text": "x y"}]
+    assert "''" in brain.web_sql("driver's cab") and '"web_search"' in brain.web_sql("x")

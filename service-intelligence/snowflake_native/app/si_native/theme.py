@@ -187,7 +187,7 @@ def ai_hero() -> None:
                '<div class="eyebrow">VELA AI · service intelligence analyst</div><h2>How can I help you today?</h2>'
                '<p>Ask in your own words — English or Arabic — or attach photos of a problem. I combine live fleet '
                'data (faults, hours, OLGA, the daily ranking), the CAT technician training library, Mantrac repair '
-               'history and each machine\'s full profile, explain what it means and show the evidence. Figures come '
+               'history, each machine\'s full profile and web search, explain what it means and show the evidence. Figures come '
                'only from the data; anything I assume is marked as an assumption.</p></div></div>')
 
 

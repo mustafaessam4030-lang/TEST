@@ -8,6 +8,8 @@
 - Machine profile: fleet record, recent repairs, oil samples, inspections, service letters, CAT alerts and (only
   where the territory policy allows telematics) fault codes.
 - Photos: images uploaded to PHOTO_STG and read by a Cortex vision model.
+- Web: Cortex web search (Cortex Agents web_search tool, account parameter ENABLE_CORTEX_WEBSEARCH) for public
+  information the company data does not hold; results are cited as web sources, never as company data.
 Every table query is a parameterised SELECT that passes check_spec; Cortex Search and vision calls are function
 calls built from escaped literals. Nothing here changes company data (photos and their log are app uploads).
 """
@@ -171,6 +173,38 @@ def parse_kb(raw) -> list[dict]:
 def kb_search(session, query: str, system: str | None = None, limit: int = 5) -> list[dict]:
     row = session.sql(kb_sql(query, system, limit)).collect()[0]
     return parse_kb(list(row.as_dict().values())[0])
+
+
+# --- web search (Cortex) -----------------------------------------------------------------------------
+WEB_MODEL = "claude-sonnet-4-6"
+
+
+def web_sql(query: str, n: int = 5) -> str:
+    """One Cortex Agents run whose only job is a web_search call; the search results are read from the tool result."""
+    req = {"messages": [{"role": "user", "content": [{"type": "text", "text":
+            f"Use the web_search tool once with this query, then reply only 'done': {str(query)[:300]}"}]}],
+           "models": {"orchestration": WEB_MODEL}, "tool_choice": {"type": "auto"},
+           "tools": [{"tool_spec": {"type": "web_search", "name": "web_search"}}],
+           "tool_resources": {"web_search": {"max_results": max(1, min(int(n), 8))}}}
+    return f"SELECT SNOWFLAKE.CORTEX.AGENT_RUN({sql_str(json.dumps(req))}) AS r"
+
+
+def parse_web(raw) -> list[dict]:
+    data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    out = []
+    for item in data.get("content") or []:
+        for c in (item.get("tool_result") or {}).get("content") or []:
+            for r in (c.get("json") or {}).get("search_results") or []:
+                url = str(r.get("doc_id") or "")
+                if url.startswith("http") and url not in {o["url"] for o in out}:
+                    out.append({"title": r.get("doc_title"), "url": url,
+                                "text": re.sub(r"\s+", " ", str(r.get("text") or "")).strip()[:900]})
+    return out
+
+
+def web_search(session, query: str, n: int = 5) -> list[dict]:
+    row = session.sql(web_sql(query, n)).collect()[0]
+    return parse_web(list(row.as_dict().values())[0])
 
 
 # --- photos ------------------------------------------------------------------------------------------

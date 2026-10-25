@@ -62,6 +62,11 @@ def manual_search(query: str, system, limit: int) -> list:
     return brain.kb_search(ui.session(), query, system, limit)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def web_search(query: str, n: int) -> list:
+    return brain.web_search(ui.session(), query, n)
+
+
 def look(paths: list, question: str) -> str:
     return brain.look(ui.session(), paths, question, (MODEL, FALLBACK_MODEL))
 
@@ -89,6 +94,10 @@ def show_details(turn: dict) -> None:
             st.markdown(f"**{title}** · " + KIND.get(r.get("tool"), "read-only query"))
             if r.get("tool") == "photo":
                 st.markdown(r.get("findings") or "")
+                continue
+            if r.get("tool") == "web":
+                for i, w in enumerate(r.get("rows") or [], 1):
+                    st.markdown(f"{i}. [{w.get('title') or w.get('url')}]({w.get('url')})")
                 continue
             if r.get("tool") == "manual":
                 for i, m in enumerate(r.get("rows") or [], 1):
@@ -122,8 +131,9 @@ def show_details(turn: dict) -> None:
 
 TABLE_RE = re.compile(r"SERVICE_INTELLIGENCE\.\w+\.(\w+)", re.I)
 KIND = {"metric": "approved metric", "top_list": "daily ranking", "manual": "CAT training library (Cortex Search)",
-        "repairs": "Mantrac repair history", "machine": "AI Brain machine profile", "photo": "VELA vision"}
-SOURCE = {"manual": "CAT training library", "repairs": "Mantrac repair history", "machine": "Machine profile",
+        "repairs": "Mantrac repair history", "machine": "AI Brain machine profile", "photo": "VELA vision",
+        "web": "public web (Cortex web search)"}
+SOURCE = {"web": "Web search", "manual": "CAT training library", "repairs": "Mantrac repair history", "machine": "Machine profile",
           "photo": "Photo analysis"}
 
 
@@ -250,7 +260,8 @@ if question:
         try:
             out = ask(question, history, an, lambda msgs, n: cortex_complete(ui.session(), msgs, n),
                       lambda spec: ui.CachedRunner().run(spec, email), on_status=status, hints=known_values(),
-                      search=manual_search, look=look, photos=photo_paths, parallel=ui.run_parallel)
+                      search=manual_search, look=look, photos=photo_paths, parallel=ui.run_parallel,
+                      web=web_search)
         except Exception:  # noqa: BLE001 - Cortex not available to this role/region: fall back to the rules
             planner = "rules"
             try:
