@@ -77,6 +77,7 @@ def chrome() -> None:
     """The design (colours, layout, animations) for the current light/dark mode."""
     from . import theme
     theme.apply()
+    theme.motion()
 
 
 def top_nav(key: str = "si_page", index: int = 0) -> str:

@@ -72,6 +72,74 @@ ICONS.update({
 })
 
 
+_BLOB_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 -100 200 200"><path fill="#000" d="M44.8,-58.3C57.6,-49.5,'
+             '67.3,-35.6,71.4,-20.1C75.5,-4.6,74,12.5,66.8,26.4C59.6,40.3,46.7,51,32.2,58.8C17.7,66.6,1.6,71.5,-15.8,70.6C-33.2,69.7,'
+             '-51.9,63,-62.7,49.6C-73.5,36.2,-76.4,16.1,-73.2,-2.3C-70,-20.7,-60.7,-37.4,-47.4,-46.4C-34.1,-55.4,-17.1,-56.7,-0.4,'
+             '-56.2C16.2,-55.7,32,-67.1,44.8,-58.3Z"/></svg>')
+BLOB = "data:image/svg+xml;utf8," + quote(_BLOB_SVG)
+
+MOTION_JS = r"""
+(function () {
+  const W = window.parent, D = W.document;
+  if (!D) return;
+  const fmt = (raw, v) => {
+    const dec = (raw.split('.')[1] || '').length;
+    let s = Math.abs(v).toFixed(dec);
+    if (raw.includes(',')) { const p = s.split('.'); p[0] = Number(p[0]).toLocaleString('en-US'); s = p.join('.'); }
+    return (v < 0 ? '-' : '') + s;
+  };
+  function count(el) {
+    el.dataset.sidone = '1';
+    const txt = el.textContent, m = txt.match(/-?[0-9][0-9,]*(\.[0-9]+)?/);
+    if (!m) return;
+    const raw = m[0], target = parseFloat(raw.replace(/,/g, ''));
+    if (!isFinite(target)) return;
+    const pre = txt.slice(0, m.index), post = txt.slice(m.index + raw.length);
+    const delay = parseInt(el.dataset.delay || '0', 10), dur = 1600;
+    el.setAttribute('data-v', pre + fmt(raw, 0) + post);
+    el.classList.add('si-anim');
+    const t0 = W.performance.now() + delay;
+    const step = (t) => {
+      const k = Math.max(0, Math.min(1, (t - t0) / dur)), e = 1 - Math.pow(1 - k, 4);
+      el.setAttribute('data-v', pre + fmt(raw, target * e) + post);
+      if (k < 1) W.requestAnimationFrame(step); else el.classList.remove('si-anim');
+    };
+    W.requestAnimationFrame(step);
+  }
+  function pill(group, sel) {
+    const on = group.querySelector(sel);
+    if (!on) return;
+    group.setAttribute('data-sipill', '1');
+    const gr = group.getBoundingClientRect(), r = on.getBoundingClientRect();
+    if (!r.width) return;
+    const x = (r.left - gr.left) + 'px', w = r.width + 'px';
+    if (group.style.getPropertyValue('--px') !== x) group.style.setProperty('--px', x);
+    if (group.style.getPropertyValue('--pw') !== w) group.style.setProperty('--pw', w);
+  }
+  function tick() {
+    D.querySelectorAll('.si-count:not([data-sidone])').forEach(count);
+    D.querySelectorAll('[class*="st-key-topbar"] [data-testid="stRadioGroup"], [class*="st-key-topbar"] [role="radiogroup"]').forEach(g => {
+      const lab = [...g.querySelectorAll('label')].find(l => { const i = l.querySelector('input'); return i && i.checked; });
+      if (lab) { lab.setAttribute('data-sion', '1'); g.querySelectorAll('label[data-sion]').forEach(o => { if (o !== lab) o.removeAttribute('data-sion'); });
+                 pill(g, 'label[data-sion]'); }
+    });
+    D.querySelectorAll('[data-testid="stTabs"] [role="tablist"]').forEach(g => pill(g, '[role="tab"][aria-selected="true"]'));
+  }
+  tick();
+  W.setInterval(tick, 120);
+})();
+"""
+
+
+def motion() -> None:
+    """Counting numbers and sliding menu/tab pills (a tiny script in a hidden component; harmless if scripts are blocked)."""
+    try:
+        import streamlit.components.v1 as components
+        components.html(f"<script>{MOTION_JS}</script>", height=0)
+    except Exception:  # noqa: BLE001 - the page works without motion
+        pass
+
+
 def mode() -> str:
     return "dark" if st.session_state.get("si_dark") else "light"
 
@@ -100,7 +168,8 @@ def css() -> str:
     return f"""
 <style>
 :root {{ {root}; --rail: {RAIL}; }}
-@keyframes siUp {{ from {{ opacity: 0; transform: translateY(12px); }} to {{ opacity: 1; transform: none; }} }}
+@keyframes siUp {{ from {{ opacity: 0; transform: translateY(10px) scale(.985); filter: blur(8px); }} to {{ opacity: 1; transform: none; filter: none; }} }}
+@keyframes siReveal {{ from {{ clip-path: inset(100% 0 0 0); }} to {{ clip-path: inset(0 0 0 0); }} }}
 @keyframes siFade {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
 @keyframes siPop {{ from {{ opacity: 0; transform: scale(.96); }} to {{ opacity: 1; transform: none; }} }}
 html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--frame) !important; color: var(--ink) !important;
@@ -153,12 +222,15 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 .si-avatar::after {{ content: attr(data-tip); position: absolute; right: 0; top: 50px; background: var(--ink); color: var(--canvas);
   font-size: .72rem; font-weight: 500; padding: 6px 11px; border-radius: 9px; white-space: nowrap; opacity: 0; transition: opacity .15s; pointer-events: none; }}
 .si-avatar:hover::after {{ opacity: 1; }}
-@property --si-r {{ syntax: "<length>"; inherits: false; initial-value: 0px; }}
+@property --si-s {{ syntax: "<length>"; inherits: false; initial-value: 0px; }}
 .si-ink {{ position: fixed; inset: 0; z-index: 9999; pointer-events: none;
-  -webkit-mask: radial-gradient(circle at calc(100% - 170px) 90px, transparent var(--si-r), #000 calc(var(--si-r) + 1px));
-  mask: radial-gradient(circle at calc(100% - 170px) 90px, transparent var(--si-r), #000 calc(var(--si-r) + 1px));
-  animation: siInk 1s cubic-bezier(.65,0,.25,1) forwards; }}
-@keyframes siInk {{ to {{ --si-r: 2600px; }} }}
+  -webkit-mask-image: url("{BLOB}"), linear-gradient(#000, #000); mask-image: url("{BLOB}"), linear-gradient(#000, #000);
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-size: var(--si-s) var(--si-s), 100% 100%; mask-size: var(--si-s) var(--si-s), 100% 100%;
+  -webkit-mask-position: calc(100vw - 170px - var(--si-s) / 2) calc(90px - var(--si-s) / 2), 0 0;
+  mask-position: calc(100vw - 170px - var(--si-s) / 2) calc(90px - var(--si-s) / 2), 0 0;
+  -webkit-mask-composite: xor; mask-composite: exclude; animation: siInk 1.1s cubic-bezier(.7,0,.2,1) forwards; }}
+@keyframes siInk {{ 0% {{ --si-s: 0px; }} 100% {{ --si-s: 420vmax; }} }}
 
 /* ---------- form controls ---------- */
 [data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"],
@@ -203,7 +275,7 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 [data-baseweb="tab"][aria-selected="true"] p, [data-testid="stTabs"] [role="tab"][aria-selected="true"] p {{ color: var(--canvas) !important; }}
 [data-baseweb="tab-highlight"], [data-baseweb="tab-border"], [data-testid="stTabs"] [role="tablist"] > div:not([role="tab"]),
 .react-aria-SelectionIndicator, [data-testid="stTab"] > div:not([data-testid]) {{ display: none !important; }}
-[data-testid="stTabs"] [role="tablist"]::after, [data-testid="stTabs"] [role="tablist"]::before {{ display: none !important; }}
+[data-testid="stTabs"] [role="tablist"]::after {{ display: none !important; }}
 [data-baseweb="tab-panel"], [data-testid="stTabs"] [role="tabpanel"] {{ animation: siFade .3s ease both; padding-top: 14px; }}
 
 /* cards: keyed containers, expanders, alerts, dialogs */
@@ -337,6 +409,7 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
 .si-badge.red {{ background: rgba(229,72,77,.14); color: #E5484D; }} .si-badge.grn {{ background: rgba(15,159,110,.14); color: #0F9F6E; }}
 .si-badge.yel {{ background: rgba(252,188,0,.18); color: {"#8A6400" if mode() == "light" else "#FFD666"}; }}
 {_pastel_css()}
+[data-testid="stElementContainer"]:has(> iframe[height="0"]), [data-testid="stElementContainer"]:has(iframe[height="0"]), .element-container:has(iframe[height="0"]) {{ display: none !important; }}
 .si-mcard {{ background: var(--card); border-radius: 24px; padding: 8px; transition: transform .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s;
   animation: siUp .5s cubic-bezier(.2,.7,.2,1) both; }}
 .si-mcard .cover {{ height: 118px; border-radius: 18px; position: relative; display:flex; align-items:center; justify-content:center; overflow: hidden; }}
@@ -382,8 +455,17 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
 .si-rec {{ background: var(--card); border-radius: 24px; padding: 18px 20px; margin-bottom: 12px; animation: siUp .45s ease both; }}
 .si-rec h4 {{ margin: 8px 0 6px; padding: 0; font-size: 1.02rem; color: var(--ink); }}
 .si-rec p, .si-rec li {{ margin: 4px 0; color: var(--muted); font-size: .86rem; }} .si-rec b {{ color: var(--ink); }}
-.si-roll {{ display: inline-flex; overflow: hidden; vertical-align: bottom; }}
-.si-roll > span {{ display: inline-block; animation: siRoll .7s cubic-bezier(.2,.75,.2,1) both; }}
+.si-roll {{ display: inline-block; }}
+.si-count.si-anim {{ position: relative; -webkit-text-fill-color: transparent; }}
+.si-count.si-anim::after {{ content: attr(data-v); position: absolute; left: 0; top: 0; white-space: nowrap; -webkit-text-fill-color: currentColor; }}
+[data-sipill] {{ position: relative !important; }}
+[data-sipill]::before {{ content: ""; position: absolute; top: 5px; bottom: 5px; left: var(--px, 5px); width: var(--pw, 0px); border-radius: 999px;
+  background: var(--ink); box-shadow: 0 6px 16px var(--shadow); transition: left .5s cubic-bezier(.65,0,.25,1.15), width .5s cubic-bezier(.65,0,.25,1.15);
+  z-index: 0; }}
+[data-sipill] > * , [data-sipill] label, [data-sipill] [role="tab"] {{ position: relative; z-index: 1; }}
+[data-sipill] [data-testid="stRadioOption"]:has(input:checked), [data-sipill] label:has(input:checked),
+[data-sipill] [role="tab"][aria-selected="true"] {{ background: transparent !important; box-shadow: none !important; }}
+[data-testid="stVegaLiteChart"], .stVegaLiteChart {{ animation: siReveal 1.1s cubic-bezier(.2,.7,.2,1) both; }}
 @keyframes siRoll {{ from {{ transform: translateY(70%); opacity: 0; }} to {{ transform: none; opacity: 1; }} }}
 .si-hero {{ display: grid; grid-template-columns: 1.15fr 1fr 1fr 1fr; gap: 18px; align-items: end; margin: 6px 0 18px; }}
 .si-big {{ animation: siFade .5s ease both; }}
@@ -576,10 +658,8 @@ def topbar(title: str, subtitle: str, chips: list[str] | None = None) -> None:
 
 
 def roll(text, delay_ms: int = 0) -> str:
-    """Characters slide up one after another (the reference design's number/title animation)."""
-    t = str(text)
-    return '<span class="si-roll">' + "".join(
-        f'<span style="animation-delay:{delay_ms + i * 28}ms">{esc(ch) if ch != " " else "&nbsp;"}</span>' for i, ch in enumerate(t)) + "</span>"
+    """Text that counts up from 0 when it holds a number (done by the motion script; static without it)."""
+    return f'<span class="si-roll si-count" data-delay="{int(delay_ms)}">{esc(text)}</span>'
 
 
 def cover(eyebrow: str, title: str, text: str, stats: list[tuple[str, str]] = (), icon_name: str = "chart") -> None:
