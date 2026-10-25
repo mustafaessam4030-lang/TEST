@@ -207,9 +207,17 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 [class*="st-key-topbar"] [data-testid="stRadioOption"]:has(input:checked), [class*="st-key-topbar"] [role="radiogroup"] label:has(input:checked) {{
   background: var(--ink) !important; box-shadow: 0 6px 16px var(--shadow); }}
 [class*="st-key-topbar"] [data-testid="stRadioOption"] p, [class*="st-key-topbar"] [role="radiogroup"] label p {{ font-size: .86rem; font-weight: 500; white-space: nowrap; }}
+[class*="st-key-topbar"] [role="radiogroup"] label > div:first-child:not(:only-child) {{ display: none !important; }}
+[class*="st-key-topbar"] [role="radiogroup"] label:has(input:checked) *, [class*="st-key-topbar"] [data-testid="stRadioOption"]:has(input:checked) * {{ color: var(--canvas) !important; }}
+[data-testid="stMain"] [role="radiogroup"] label {{ background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px !important; margin-right: 4px; }}
+[data-testid="stMain"] [role="radiogroup"] label:has(input:checked) {{ background: var(--ink); border-color: var(--ink); }}
+[data-testid="stMain"] [role="radiogroup"] label:has(input:checked) * {{ color: var(--canvas) !important; }}
+[data-testid="stMain"] [role="radiogroup"] label > div:first-child:not(:only-child) {{ display: none !important; }}
+[class*="st-key-modes"] {{ max-width: 96px !important; justify-content: flex-start !important; }}
 [class*="st-key-modes"] {{ background: var(--card); border-radius: 999px; padding: 4px; width: fit-content !important; gap: 0 !important;
   box-shadow: 0 1px 2px var(--shadow); }}
-[class*="st-key-modes"] [data-testid="stHorizontalBlock"] {{ gap: 2px !important; flex-wrap: nowrap !important; }}
+[class*="st-key-modes"], [class*="st-key-modes"] > [data-testid="stVerticalBlock"] {{ flex-direction: row !important; flex-wrap: nowrap !important; gap: 2px !important; }}
+[class*="st-key-modes"] [data-testid="stElementContainer"], [class*="st-key-modes"] .element-container {{ width: auto !important; }}
 [class*="st-key-modes"] [data-testid="stColumn"], [class*="st-key-modes"] [data-testid="column"] {{ width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }}
 [class*="st-key-modes"] .stButton button {{ width: 40px !important; height: 40px !important; min-height: 40px !important; border-radius: 50% !important;
   padding: 0 !important; border: none !important; background: transparent !important; color: var(--muted) !important; font-size: 1rem; }}
@@ -289,8 +297,13 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [da
 .stApp pre, .stApp code {{ background: var(--card2) !important; color: var(--accentink) !important; border-radius: 10px; }}
 .stApp pre code {{ background: transparent !important; }}
 [data-testid="stVegaLiteChart"], .stVegaLiteChart {{ background: transparent !important; }}
-div[role="dialog"], [data-testid="stDialog"] > div > div {{ background: var(--canvas) !important; border-radius: 28px !important; border: 1px solid var(--line) !important;
+[data-testid="stElementToolbar"], [data-testid="stElementToolbar"] > div {{ background: var(--card) !important; border-radius: 10px; }}
+[data-testid="stElementToolbar"] button, [data-testid="stElementToolbar"] svg {{ color: var(--muted) !important; background: transparent !important; }}
+[data-testid="stDialog"] > div, div[role="dialog"], [data-baseweb="modal"] [role="dialog"] {{ background: var(--canvas) !important;
+  border-radius: 28px !important; border: 1px solid var(--line) !important; color: var(--ink) !important;
   animation: siPop .25s cubic-bezier(.2,.7,.2,1) both; }}
+[data-testid="stDialog"] > div > div:not([role="dialog"]) {{ background: transparent !important; }}
+[data-testid="stDialog"] button[aria-label="Close"], [data-testid="stDialog"] button[aria-label="Close"] svg {{ color: var(--ink) !important; fill: var(--ink) !important; }}
 div[role="dialog"] * {{ color: var(--ink); }}
 [data-testid="stDialog"] {{ backdrop-filter: blur(6px); }}
 
@@ -622,10 +635,9 @@ def nav(pages: list[str], user: str, role: str, key: str = "si_page", index: int
             r1, r2 = st.columns([1, 1])
             with r1:
                 with st.container(key="modes") if _keyed() else st.container():
-                    a, b = st.columns(2)
-                    if a.button("☀", key="mode_light", help="Light mode") and mode() != "light":
+                    if st.button("☀", key="mode_light", help="Light mode") and mode() != "light":
                         _switch_mode(False)
-                    if b.button("☾", key="mode_dark", help="Dark mode") and mode() != "dark":
+                    if st.button("☾", key="mode_dark", help="Dark mode") and mode() != "dark":
                         _switch_mode(True)
             with r2:
                 html_block(f'<div class="si-avatar" data-tip="{esc(user)} · {esc(role)}">{esc(_initials(user))}</div>')
