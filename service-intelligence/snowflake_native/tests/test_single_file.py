@@ -44,7 +44,7 @@ for page in ("Analysis", "Recommendations", "Assistant"):
     at.session_state["si_page"] = page
     at.run()
     assert not at.exception, (page, [e.message for e in at.exception])
-    assert at.title[0].value, page
+    assert any("si-top" in m.value for m in at.markdown), page
 print("OK")
 """
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=300)

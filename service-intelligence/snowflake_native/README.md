@@ -31,6 +31,16 @@ SERVICE_INTELLIGENCE
   - Cortex (`claude-sonnet-4-6`) is off by default. When switched on, it only *chooses* among approved metrics; its JSON is validated.
   - Answers are assembled from query results, so the model cannot invent numbers.
   - Questions outside the registry are refused.
+- **Conversational assistant (Cortex `claude-sonnet-4-6`, `si_native/agent.py`).**
+  - It understands free questions and follow-ups like a chat assistant. For each question it either replies directly
+    or plans up to 3 data steps: an approved metric, the daily top list, or one ad-hoc SELECT.
+  - Ad-hoc SELECTs pass the same read-only guard as every app query plus a FROM/JOIN allow-list (CURATED tables and
+    the daily ranking only). They are capped at 200 rows; a failed query gets one repair attempt.
+  - The reply is written only from the returned rows. Every figure in it is checked against those rows, and anything
+    that doesn't match is flagged to the user. "How I got this" shows the SQL and query IDs.
+  - If Cortex is unavailable, the rule-based assistant above answers instead.
+- **Design.** Light canvas, a black icon rail, white cards, an orange accent and the Mantrac logo
+  (`si_native/theme.py`, `app/assets/mantrac_logo.svg`). The light design is forced even when Snowsight is in dark mode.
 - **Recommendations.**
   - The detector `repeat_high_faults` flags faults where 10 or more assets had the same HIGH-severity fault on 3 or more days in the last 30.
   - Score = 50 × impact + 30 × urgency + 20 × confidence.

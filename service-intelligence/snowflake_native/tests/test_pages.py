@@ -55,7 +55,7 @@ def fake(monkeypatch):
 def test_page_renders(fake, page):
     at = st_testing.AppTest.from_file(str(APP / page), default_timeout=30).run()
     assert not at.exception, [e.message for e in at.exception]
-    assert at.title[0].value
+    assert any("si-top" in m.value for m in at.markdown)          # the page header rendered
 
 
 def test_recommendations_page_runs_detectors_and_saves(fake):
@@ -81,7 +81,7 @@ def test_assistant_answers_with_the_registry_figure(fake):
 def test_top_machines_tab_lists_and_saves(fake):
     at = st_testing.AppTest.from_file(str(APP / "pages/2_Recommendations.py"), default_timeout=30).run()
     assert not at.exception
-    assert at.dataframe, "the top-100 table is rendered on the first tab"
+    assert any("si-mcard" in m.value for m in at.markdown), "the top-100 cards render on the first tab"
     pick = next(m for m in at.multiselect if m.label == "Add to the plan (by serial)")
     pick.set_value(["S00001"]).run()
     next(b for b in at.button if b.label == "Save selected to plan").click().run()
@@ -94,4 +94,4 @@ def test_top_machines_tab_switches_signal_class(fake):
     at = st_testing.AppTest.from_file(str(APP / "pages/2_Recommendations.py"), default_timeout=30).run()
     radio = next(r for r in at.radio if r.label == "Show")
     radio.set_value("Telemetry only").run()
-    assert not at.exception and at.dataframe
+    assert not at.exception and any("Telemetry only" in m.value and "si-mcard" in m.value for m in at.markdown)

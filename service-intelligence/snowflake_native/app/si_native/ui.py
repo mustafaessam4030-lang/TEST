@@ -68,15 +68,22 @@ def analytics() -> Analytics:
     return Analytics(registry(), CachedRunner(), user_email())
 
 
-def header(title: str, subtitle: str) -> None:
+def chrome() -> None:
+    """Design and the logo/user block in the navigation rail."""
+    from . import theme
+    theme.apply()
+    email = user_email()
+    theme.brand(email, app_role(email))
+
+
+def header(title: str, subtitle: str, chips: list[str] | None = None) -> None:
     import si_native
-    if not getattr(si_native, "SINGLE_FILE", False):              # the single-file launcher sets it once
-        st.set_page_config(page_title=f"Service Intelligence · {title}", layout="wide")
-    st.title(title)
-    st.caption(subtitle)
-    st.info("Live company data from SERVICE_INTELLIGENCE (copies of Cat telematics and OLGA). "
-            "Figures are computed in Snowflake from the approved metric registry "
-            f"(version {registry().version}). All times are UTC.", icon="ℹ️")
+    from . import theme
+    if not getattr(si_native, "SINGLE_FILE", False):              # the single-file launcher does this once, before its menu
+        st.set_page_config(page_title=f"Service Intelligence · {title}", page_icon="◆", layout="wide")
+        chrome()
+    base = [f"Registry <b>v{registry().version}</b>", "Live Snowflake data · <b>UTC</b>"]
+    theme.topbar(title, subtitle, (chips or []) + base)
 
 
 def show_error(exc: Exception) -> None:
