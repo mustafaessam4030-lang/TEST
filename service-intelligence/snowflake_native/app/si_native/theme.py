@@ -25,10 +25,10 @@ YELLOW = "#FCBC00"
 RAIL = "#0B0B0D"
 
 MODES = {
-    "light": {"frame": "#FFFFFF", "canvas": "#EEEDF1", "card": "#FFFFFF", "card2": "#F6F5F8", "ink": "#17171A",
+    "light": {"frame": "#E4E3E8", "canvas": "#F3F2F5", "card": "#FFFFFF", "card2": "#F6F5F8", "ink": "#17171A",
               "muted": "#6E6E78", "line": "#E4E2EA", "line2": "#F0EFF3", "accent": "#F26B1D", "accent2": "#FF9A4D",
               "soft": "#FFE4D2", "accentink": "#B8460B", "shadow": "rgba(14,14,16,.07)", "grid": "#EFEEF3"},
-    "dark": {"frame": "#060607", "canvas": "#111114", "card": "#1A1A1F", "card2": "#22222A", "ink": "#F3F3F5",
+    "dark": {"frame": "#000000", "canvas": "#121215", "card": "#1A1A1F", "card2": "#22222A", "ink": "#F3F3F5",
              "muted": "#9C9CA8", "line": "#2B2B33", "line2": "#24242C", "accent": "#FF7A2E", "accent2": "#FFA05C",
              "soft": "#3A2416", "accentink": "#FFB07A", "shadow": "rgba(0,0,0,.45)", "grid": "#26262E"},
 }
@@ -86,20 +86,6 @@ def _icon_uri(name: str, color: str) -> str:
     return "data:image/svg+xml;utf8," + quote(svg)
 
 
-def _rail_css() -> str:
-    """Per-item icon + hover label for the menu radio (Streamlit renders the menu as a radio group in the rail)."""
-    out = []
-    for i, (label, ic) in enumerate(NAV, 1):
-        for sel in (f'section[data-testid="stSidebar"] [data-testid="stRadioGroup"] > :nth-child({i}) label',
-                    f'section[data-testid="stSidebar"] [data-testid="stRadioGroup"] > label:nth-child({i})',
-                    f'section[data-testid="stSidebar"] [role="radiogroup"] > label:nth-child({i})',
-                    f'section[data-testid="stSidebar"] [role="radiogroup"] > :nth-child({i}) > label'):
-            out.append(f'{sel}::before {{ background-image: url("{_icon_uri(ic, "#E4E4E7")}"); }}')
-            out.append(f'{sel}:has(input:checked)::before {{ background-image: url("{_icon_uri(ic, "#17171A")}"); }}')
-            out.append(f'{sel}::after {{ content: "{label}"; }}')
-    return "\n".join(out)
-
-
 def _pastel_css() -> str:
     dark = mode() == "dark"
     return "\n".join(f'.si-badge.{k} {{ background: {v[2] if dark else v[0]}; color: {v[1] if not dark else "var(--ink)"}; }}'
@@ -123,7 +109,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--fram
 [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"] {{ display: none !important; }}
 /* no grey-out while Streamlit reruns: the page stays crisp and changes in place */
 [data-stale="true"], .stale-element, [data-testid="stElementContainer"][data-stale="true"] {{ opacity: 1 !important; filter: none !important; transition: none !important; }}
-.block-container, [data-testid="stMainBlockContainer"] {{ background: var(--canvas); border-radius: 34px; margin: 14px 14px 14px 0;
+.block-container, [data-testid="stMainBlockContainer"] {{ background: var(--canvas); border-radius: 34px; margin: 14px auto;
   padding: 2rem 2.2rem 6rem !important; max-width: none !important; min-height: calc(100vh - 28px); animation: siFade .35s ease both;
   transition: background .3s; }}
 .stApp p, .stApp li, .stApp label, .stApp span, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp td, .stApp th,
@@ -133,51 +119,46 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--fram
 hr {{ border-color: var(--line) !important; }}
 ::-webkit-scrollbar {{ width: 10px; height: 10px; }} ::-webkit-scrollbar-thumb {{ background: var(--line); border-radius: 10px; }}
 
-/* ---------- floating black icon rail ---------- */
-section[data-testid="stSidebar"] {{ background: transparent !important; border: none !important; width: 104px !important;
-  min-width: 104px !important; max-width: 104px !important; transform: none !important; visibility: visible !important; }}
-section[data-testid="stSidebar"] > div:first-child, [data-testid="stSidebarContent"] {{ background: transparent !important; overflow: visible !important; }}
-[data-testid="stSidebarHeader"], [data-testid="stSidebarCollapseButton"], [data-testid="stSidebarResizeHandle"],
-[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarNav"] {{ display: none !important; }}
-[data-testid="stSidebarUserContent"] {{ position: fixed; top: 18px; left: 22px; width: 66px; height: calc(100vh - 36px);
-  background: var(--rail); border-radius: 999px; padding: 18px 0 !important; box-shadow: 0 14px 36px rgba(0,0,0,.30);
-  border: 1px solid rgba(255,255,255,.06); display: flex; flex-direction: column; align-items: center; overflow: visible !important; z-index: 1000; }}
-[data-testid="stSidebarUserContent"] > div, [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] {{ width: 66px !important;
-  align-items: center; gap: 12px; overflow: visible !important; }}
-[data-testid="stSidebarUserContent"] [data-testid="stElementContainer"], [data-testid="stSidebarUserContent"] .element-container {{ width: auto !important; display: flex; justify-content: center; }}
-section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] {{ display: none !important; }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"], section[data-testid="stSidebar"] [role="radiogroup"] {{
-  display: flex !important; flex-direction: column !important; gap: 14px !important; align-items: center; margin: 14px 0 6px; }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label, section[data-testid="stSidebar"] [role="radiogroup"] label {{
-  width: 44px !important; height: 44px !important; min-height: 44px; border-radius: 50% !important; padding: 0 !important; margin: 0 !important;
-  position: relative; display: flex !important; align-items: center; justify-content: center; cursor: pointer;
-  transition: background .2s, transform .15s, box-shadow .2s; }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label:active, section[data-testid="stSidebar"] [role="radiogroup"] label:active {{ transform: scale(.92); }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label > *, section[data-testid="stSidebar"] [role="radiogroup"] label > * {{
-  opacity: 0 !important; position: absolute !important; inset: 0; width: 44px !important; height: 44px !important; overflow: hidden; }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label::before, section[data-testid="stSidebar"] [role="radiogroup"] label::before {{
-  content: ""; width: 20px; height: 20px; background-repeat: no-repeat; background-size: 20px 20px; pointer-events: none; }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label:hover, section[data-testid="stSidebar"] [role="radiogroup"] label:hover {{ background: #26262B; }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label:has(input:checked), section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {{
-  background: linear-gradient(135deg, #FFB47E, #FF7A2E) !important; box-shadow: 0 6px 18px rgba(255,122,46,.45); }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label::after, section[data-testid="stSidebar"] [role="radiogroup"] label::after {{
-  position: absolute; left: 58px; top: 50%; transform: translate(-6px,-50%); background: var(--rail); color: #fff; font-size: .75rem;
-  font-weight: 500; padding: 6px 11px; border-radius: 9px; white-space: nowrap; opacity: 0; pointer-events: none;
-  transition: opacity .15s, transform .15s; z-index: 1001; box-shadow: 0 6px 16px rgba(0,0,0,.25); }}
-section[data-testid="stSidebar"] [data-testid="stRadioGroup"] label:hover::after, section[data-testid="stSidebar"] [role="radiogroup"] label:hover::after {{ opacity: 1; transform: translate(0,-50%); }}
-{_rail_css()}
-.si-mark {{ width: 40px; height: 40px; border-radius: 12px; background: {YELLOW}; overflow: hidden; display: block; box-shadow: 0 4px 14px rgba(252,188,0,.35); }}
-.si-mark img {{ width: 40px; height: 40px; display: block; }}
-.si-rail-foot {{ position: fixed; left: 33px; bottom: 34px; z-index: 1001; }}
-.si-avatar {{ width: 44px; height: 44px; border-radius: 50%; background: #26262B; color: #fff !important; display: flex; align-items: center;
-  justify-content: center; font-weight: 700; font-size: .8rem; position: relative; cursor: default; }}
-.si-avatar::after {{ content: attr(data-tip); position: absolute; left: 58px; top: 50%; transform: translateY(-50%); background: var(--rail);
-  color: #fff; font-size: .72rem; font-weight: 500; padding: 6px 11px; border-radius: 9px; white-space: nowrap; opacity: 0; transition: opacity .15s; }}
+/* ---------- top bar: brand chip, pill menu, light/dark switch, avatar ---------- */
+section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"], [data-testid="stSidebarNav"] {{ display: none !important; }}
+[class*="st-key-topbar"] {{ position: sticky; top: 0; z-index: 60; background: var(--canvas); padding: 2px 0 14px; margin-bottom: 6px; }}
+[class*="st-key-topbar"] [data-testid="stHorizontalBlock"] {{ align-items: center; }}
+.si-brandchip {{ display: inline-flex; align-items: center; gap: 10px; background: var(--card); border-radius: 999px; padding: 6px 16px 6px 6px;
+  box-shadow: 0 1px 2px var(--shadow); animation: siFade .4s ease both; }}
+.si-brandchip img {{ height: 30px; border-radius: 7px; display: block; }}
+.si-brandchip b {{ font-weight: 650; font-size: .95rem; color: var(--ink); white-space: nowrap; }}
+[class*="st-key-topbar"] [data-testid="stRadio"] {{ display: flex; justify-content: center; }}
+[class*="st-key-topbar"] [data-testid="stRadioGroup"], [class*="st-key-topbar"] [role="radiogroup"] {{ background: var(--card) !important;
+  border-radius: 999px; padding: 5px !important; gap: 2px !important; flex-wrap: nowrap !important; width: fit-content; margin: 0 auto;
+  box-shadow: 0 1px 2px var(--shadow); }}
+[class*="st-key-topbar"] [data-testid="stRadioOption"], [class*="st-key-topbar"] [role="radiogroup"] label {{ border: none !important;
+  background: transparent !important; padding: 9px 22px !important; border-radius: 999px !important; margin: 0 !important;
+  transition: background .35s cubic-bezier(.2,.7,.2,1), transform .15s; }}
+[class*="st-key-topbar"] [data-testid="stRadioOption"]:hover, [class*="st-key-topbar"] [role="radiogroup"] label:hover {{ background: var(--card2) !important; transform: none; }}
+[class*="st-key-topbar"] [data-testid="stRadioOption"]:has(input:checked), [class*="st-key-topbar"] [role="radiogroup"] label:has(input:checked) {{
+  background: var(--ink) !important; box-shadow: 0 6px 16px var(--shadow); }}
+[class*="st-key-topbar"] [data-testid="stRadioOption"] p, [class*="st-key-topbar"] [role="radiogroup"] label p {{ font-size: .86rem; font-weight: 500; white-space: nowrap; }}
+[class*="st-key-modes"] {{ background: var(--card); border-radius: 999px; padding: 4px; width: fit-content !important; gap: 0 !important;
+  box-shadow: 0 1px 2px var(--shadow); }}
+[class*="st-key-modes"] [data-testid="stHorizontalBlock"] {{ gap: 2px !important; flex-wrap: nowrap !important; }}
+[class*="st-key-modes"] [data-testid="stColumn"], [class*="st-key-modes"] [data-testid="column"] {{ width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }}
+[class*="st-key-modes"] .stButton button {{ width: 40px !important; height: 40px !important; min-height: 40px !important; border-radius: 50% !important;
+  padding: 0 !important; border: none !important; background: transparent !important; color: var(--muted) !important; font-size: 1rem; }}
+[class*="st-key-modes"] .stButton button p {{ color: inherit !important; }}
+[class*="st-key-modes"] [class*="st-key-mode_{mode()}"] .stButton button {{ background: var(--ink) !important; color: var(--canvas) !important; }}
+[class*="st-key-modes"] [class*="st-key-mode_{mode()}"] .stButton button * {{ color: var(--canvas) !important; }}
+.si-avatar {{ width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #FFB47E, #FF7A2E); color: #fff !important;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .8rem; position: relative; margin-left: auto;
+  box-shadow: 0 4px 12px rgba(255,122,46,.35); }}
+.si-avatar::after {{ content: attr(data-tip); position: absolute; right: 0; top: 50px; background: var(--ink); color: var(--canvas);
+  font-size: .72rem; font-weight: 500; padding: 6px 11px; border-radius: 9px; white-space: nowrap; opacity: 0; transition: opacity .15s; pointer-events: none; }}
 .si-avatar:hover::after {{ opacity: 1; }}
-.stApp section[data-testid="stSidebar"] .stButton button {{ width: 44px; height: 44px; min-height: 44px; border-radius: 50% !important; padding: 0 !important;
-  background: #1D1D22 !important; border: none !important; color: #fff !important; font-size: 1.05rem; transition: background .2s, transform .15s; }}
-.stApp section[data-testid="stSidebar"] .stButton button:hover {{ background: #2C2C33 !important; transform: rotate(-12deg); }}
-.stApp section[data-testid="stSidebar"] .stButton button p {{ color: #fff !important; }}
+@property --si-r {{ syntax: "<length>"; inherits: false; initial-value: 0px; }}
+.si-ink {{ position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  -webkit-mask: radial-gradient(circle at calc(100% - 170px) 90px, transparent var(--si-r), #000 calc(var(--si-r) + 1px));
+  mask: radial-gradient(circle at calc(100% - 170px) 90px, transparent var(--si-r), #000 calc(var(--si-r) + 1px));
+  animation: siInk 1s cubic-bezier(.65,0,.25,1) forwards; }}
+@keyframes siInk {{ to {{ --si-r: 2600px; }} }}
 
 /* ---------- form controls ---------- */
 [data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"],
@@ -277,7 +258,7 @@ div[role="dialog"] * {{ color: var(--ink); }}
 [data-testid="stChatInput"] textarea {{ background: transparent !important; color: var(--ink) !important; }}
 [data-testid="stChatInput"] textarea::placeholder {{ color: var(--muted) !important; opacity: 1; }}
 [data-testid="stBottom"], [data-testid="stBottom"] > div, [data-testid="stBottomBlockContainer"], .stChatFloatingInputContainer {{ background: transparent !important; }}
-[data-testid="stBottomBlockContainer"] {{ padding-left: 7rem !important; }}
+[data-testid="stBottomBlockContainer"] {{ max-width: 1100px; margin: 0 auto; }}
 [data-testid="stChatInputSubmitButton"] {{ background: linear-gradient(135deg, #FFB47E, #FF7A2E) !important; border-radius: 999px !important; }}
 [data-testid="stChatInputSubmitButton"] svg {{ fill: #fff !important; color: #fff !important; }}
 .si-typing {{ display: inline-flex; gap: 4px; padding: 6px 2px; }}
@@ -401,6 +382,100 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
 .si-rec {{ background: var(--card); border-radius: 24px; padding: 18px 20px; margin-bottom: 12px; animation: siUp .45s ease both; }}
 .si-rec h4 {{ margin: 8px 0 6px; padding: 0; font-size: 1.02rem; color: var(--ink); }}
 .si-rec p, .si-rec li {{ margin: 4px 0; color: var(--muted); font-size: .86rem; }} .si-rec b {{ color: var(--ink); }}
+.si-roll {{ display: inline-flex; overflow: hidden; vertical-align: bottom; }}
+.si-roll > span {{ display: inline-block; animation: siRoll .7s cubic-bezier(.2,.75,.2,1) both; }}
+@keyframes siRoll {{ from {{ transform: translateY(70%); opacity: 0; }} to {{ transform: none; opacity: 1; }} }}
+.si-hero {{ display: grid; grid-template-columns: 1.15fr 1fr 1fr 1fr; gap: 18px; align-items: end; margin: 6px 0 18px; }}
+.si-big {{ animation: siFade .5s ease both; }}
+.si-big .l {{ font-size: .8rem; color: var(--muted); margin-bottom: 4px; }}
+.si-big .v {{ font-size: 2.6rem; font-weight: 500; letter-spacing: -.03em; color: var(--ink); line-height: 1; display: flex; align-items: center; gap: 10px; }}
+.si-big .p {{ font-size: .7rem; font-weight: 700; border-radius: 999px; padding: 3px 8px; color: #fff; letter-spacing: 0; }}
+.si-big .p.good {{ background: #22C55E; }} .si-big .p.bad {{ background: #EF4444; }} .si-big .p.flat {{ background: var(--muted); }}
+.si-big .s {{ font-size: .72rem; color: var(--muted); margin-top: 6px; }}
+[class*="st-key-askbox"] input {{ font-size: 2.1rem !important; font-weight: 500 !important; letter-spacing: -.02em; background: transparent !important;
+  border: none !important; padding: 6px 0 !important; color: var(--ink) !important; }}
+[class*="st-key-askbox"] input::placeholder {{ color: var(--ink) !important; opacity: .9; }}
+[class*="st-key-askbox"] [data-testid="stTextInputRootElement"], [class*="st-key-askbox"] [data-testid="stTextInput"] div {{ background: transparent !important;
+  border-top: none !important; border-left: none !important; border-right: none !important; box-shadow: none !important; outline: none !important; }}
+[class*="st-key-askbox"] [data-testid="stTextInputRootElement"] {{ border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; }}
+[class*="st-key-askbox"] [data-baseweb="input"], [class*="st-key-askbox"] [data-baseweb="base-input"], [class*="st-key-askbox"] > div > div {{
+  background: transparent !important; border: none !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; }}
+.si-c {{ background: var(--card); border-radius: 26px; padding: 20px 22px; height: 100%; min-height: 300px; margin-top: 10px; position: relative; overflow: hidden;
+  animation: siUp .55s cubic-bezier(.2,.7,.2,1) both; transition: transform .2s, box-shadow .2s; }}
+.si-c h4 {{ margin: 0; padding: 0; font-size: 1.2rem; font-weight: 500; color: var(--ink); line-height: 1.25; max-width: 75%; }}
+.si-c .plus {{ position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; border-radius: 50%; background: var(--card2);
+  display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 1.1rem; }}
+.si-c .plus svg {{ width: 16px; height: 16px; stroke: var(--muted); fill: none; stroke-width: 2; }}
+[class*="st-key-hit_"]:hover .si-c {{ transform: translateY(-4px); box-shadow: 0 16px 32px var(--shadow); }}
+.si-speedo {{ display: grid; grid-template-columns: 1fr 1.15fr; align-items: end; gap: 10px; margin-top: 18px; }}
+.si-speedo .num {{ font-size: 3rem; font-weight: 500; letter-spacing: -.03em; color: var(--ink); display: flex; align-items: center; gap: 10px; line-height: 1; }}
+.si-speedo .tag {{ display: inline-block; margin-top: 8px; background: #22C55E; color: #fff; font-size: .7rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; letter-spacing: 0; }}
+.si-speedo .tag.warn {{ background: var(--accent); }}
+.si-speedo .lab {{ font-size: .76rem; color: var(--muted); margin-bottom: 6px; }} .si-speedo .unit {{ font-size: .74rem; color: var(--muted); margin-top: 6px; }}
+.si-speedo svg .needle {{ transform-origin: 100px 100px; animation: siNeedle 1.3s cubic-bezier(.3,1.4,.4,1) both; }}
+.si-speedo svg .fill {{ animation: siArc 1.2s cubic-bezier(.2,.7,.2,1) both; }}
+@keyframes siNeedle {{ from {{ transform: rotate(-90deg); }} }}
+.si-chips2 {{ display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }}
+.si-chips2 > div {{ border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: .78rem; color: var(--muted); display: flex; gap: 8px; align-items: center; }}
+.si-chips2 b {{ color: var(--ink); font-size: .9rem; }}
+.si-orange {{ background: linear-gradient(160deg, #FF8A3D 0%, #F26B1D 55%, #E85A0C 100%) !important; color: #fff; }}
+.si-orange h4, .si-orange * {{ color: #fff !important; }}
+.si-orange .plus {{ background: rgba(255,255,255,.18); }} .si-orange .plus svg {{ stroke: #fff; }}
+.si-orange .pill {{ display: inline-flex; align-items: center; gap: 8px; background: #fff; color: #17171A !important; border-radius: 999px;
+  padding: 9px 16px; font-size: .8rem; font-weight: 600; margin-top: 18px; box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
+.si-orange .pill * {{ color: #17171A !important; }}
+.si-orange .huge {{ position: absolute; left: 22px; bottom: 18px; font-size: 3.6rem; font-weight: 300; letter-spacing: -.04em; line-height: 1; display: flex; align-items: flex-end; gap: 10px; }}
+.si-orange .huge small {{ font-size: .72rem; font-weight: 500; opacity: .85; letter-spacing: 0; line-height: 1.3; margin-bottom: 8px; }}
+.si-orange::after {{ content: ""; position: absolute; right: -40px; top: -40px; width: 180px; height: 180px; border-radius: 50%; background: rgba(255,255,255,.12); }}
+.si-bubble {{ position: absolute; left: 22px; right: 22px; bottom: 20px; background: var(--card2); border-radius: 18px; padding: 14px 14px 12px;
+  border-top: 6px solid var(--ink); animation: siUp .6s .2s cubic-bezier(.2,.7,.2,1) both; }}
+.si-bubble .t {{ font-size: .7rem; color: var(--muted); background: var(--card); border-radius: 999px; padding: 3px 9px; display: inline-block; }}
+.si-bubble .h {{ font-size: .86rem; font-weight: 600; color: var(--ink); margin-top: 8px; line-height: 1.3; }}
+.si-bubble .f {{ font-size: .72rem; color: var(--muted); margin-top: 6px; }} .si-bubble .f i {{ display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; }}
+.si-map {{ background-color: var(--card); background-image:
+  linear-gradient(115deg, transparent 47%, var(--line) 47.5%, var(--line) 49%, transparent 49.5%),
+  linear-gradient(25deg, transparent 58%, var(--line) 58.5%, var(--line) 60%, transparent 60.5%),
+  linear-gradient(170deg, transparent 30%, var(--line) 30.5%, var(--line) 32%, transparent 32.5%),
+  linear-gradient(75deg, transparent 70%, var(--line) 70.5%, var(--line) 71.5%, transparent 72%); }}
+.si-map .pin {{ position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); width: 46px; height: 46px; border-radius: 50%; background: var(--card);
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px var(--shadow); animation: siPop .5s .3s both; }}
+.si-map .pin svg {{ width: 22px; height: 22px; stroke: var(--accent); fill: none; stroke-width: 2; }}
+.si-map .foot {{ position: absolute; left: 16px; right: 16px; bottom: 16px; background: var(--card); border-radius: 999px; padding: 6px 6px 6px 6px;
+  display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 18px var(--shadow); }}
+.si-map .foot .dot {{ width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #FFB47E, #E85A0C); flex: none; }}
+.si-map .foot .n {{ font-size: 1.5rem; font-weight: 500; color: var(--ink); }} .si-map .foot .s {{ font-size: .7rem; color: var(--muted); line-height: 1.2; }}
+.si-map .foot .go {{ margin-left: auto; width: 40px; height: 40px; border-radius: 50%; background: var(--ink); display: flex; align-items: center; justify-content: center; }}
+.si-map .foot .go svg {{ width: 16px; height: 16px; stroke: var(--canvas); fill: none; stroke-width: 2; }}
+.si-week {{ display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin-top: 16px; }}
+.si-week .d {{ text-align: center; font-size: .74rem; color: var(--muted); padding: 6px 0; border-radius: 999px; }}
+.si-week .d.today {{ background: var(--ink); color: var(--canvas); font-weight: 600; }}
+.si-week .b {{ margin: 12px auto 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700;
+  color: #fff; animation: siPop .5s cubic-bezier(.2,.7,.2,1) both; }}
+.si-week .b.z {{ border: 1.5px dashed var(--line); color: var(--muted); background: transparent; }}
+.si-next {{ background: #0E0E10; color: #fff; border-radius: 22px; padding: 16px 18px; margin-top: 16px; box-shadow: 0 16px 34px rgba(0,0,0,.25);
+  animation: siUp .6s .25s cubic-bezier(.2,.7,.2,1) both; }}
+.si-next * {{ color: #fff !important; }}
+.si-next .h {{ font-size: 1.05rem; font-weight: 500; }} .si-next .s {{ font-size: .76rem; opacity: .7 !important; margin-top: 4px; }}
+.si-next .tags {{ display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }}
+.si-next .tags span {{ background: #FF7A2E; border-radius: 999px; padding: 5px 11px; font-size: .72rem; font-weight: 600; }}
+.si-next .tags span.g {{ background: #2A2A30; }}
+.si-stat3 {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }}
+.si-stat3 > div {{ background: var(--card); border-radius: 22px; padding: 18px 22px; animation: siUp .5s cubic-bezier(.2,.7,.2,1) both; }}
+.si-stat3 > div:nth-child(2) {{ animation-delay: .06s; }} .si-stat3 > div:nth-child(3) {{ animation-delay: .12s; }}
+.si-stat3 .l {{ font-size: .76rem; color: var(--muted); }} .si-stat3 .v {{ font-size: 2.3rem; font-weight: 500; letter-spacing: -.03em; color: var(--ink); margin-top: 8px; }}
+.si-stat3 > div.hl {{ background: linear-gradient(160deg, #FF8A3D 0%, #F26B1D 60%, #E85A0C 100%); }}
+.si-stat3 > div.hl .l, .si-stat3 > div.hl .v {{ color: #fff !important; }}
+.si-listhead, .si-lrow {{ display: grid; grid-template-columns: 2.2fr 1.4fr 1fr 1fr 1.3fr .9fr; gap: 10px; align-items: center; padding: 0 18px; }}
+.si-listhead {{ font-size: .72rem; color: var(--muted); padding-bottom: 10px; padding-top: 16px; background: var(--card); border-radius: 22px 22px 0 0;
+  border-bottom: 1px solid var(--line); }}
+.si-lrow {{ background: var(--card); padding-top: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line2); font-size: .82rem;
+  color: var(--ink); transition: background .15s; animation: siFade .4s ease both; }}
+.si-lrow .t {{ font-weight: 600; }} .si-lrow .sub {{ font-size: .7rem; color: var(--muted); margin-top: 2px; }}
+.si-lrow .act {{ justify-self: end; background: var(--ink); color: var(--canvas); border-radius: 999px; padding: 5px 12px; font-size: .72rem; font-weight: 600; }}
+[class*="st-key-hit_row"]:hover .si-lrow {{ background: var(--card2); }}
+[class*="st-key-hit_row"]:first-of-type .si-lrow {{ border-radius: 0; }}
+.si-listwrap {{ background: var(--card); border-radius: 24px; padding: 14px 0 6px; overflow: hidden; }}
+@media (max-width: 1100px) {{ .si-hero {{ grid-template-columns: 1fr 1fr; }} }}
 {stagger}
 @media (max-width: 900px) {{ .block-container, [data-testid="stMainBlockContainer"] {{ margin: 8px; padding: 1.2rem 1rem 6rem !important; }} }}
 </style>
@@ -447,39 +522,64 @@ def apply() -> None:
     html_block(css())
 
 
-def brand(user: str, role: str) -> None:
-    """Emblem at the top of the rail; the signed-in user sits at its foot (see user_card)."""
-    initials = "".join(p[0] for p in user.split("@")[0].replace(".", " ").split()[:2]).upper() or "?"
-    mark = mark_uri()
-    with st.sidebar:
-        img = f'<img src="{mark}" alt="Mantrac">' if mark else ""
-        html_block(f'<div class="si-mark" title="Mantrac Service Intelligence">{img}</div>')
-    st.session_state["_si_user_html"] = (f'<div class="si-rail-foot"><div class="si-avatar" data-tip="{esc(user)} · {esc(role)}">'
-                                         f'{esc(initials)}</div></div>')
+def _initials(user: str) -> str:
+    return "".join(p[0] for p in user.split("@")[0].replace(".", " ").split()[:2]).upper() or "?"
 
 
-def mode_switch() -> None:
-    """Light/dark switch in the rail (under the menu)."""
-    dark = mode() == "dark"
-    with st.sidebar:
-        if st.button("☀" if dark else "☾", key="si_mode", help="Light mode" if dark else "Dark mode"):
-            st.session_state["si_dark"] = not dark
-            st.rerun()
+def nav(pages: list[str], user: str, role: str, key: str = "si_page", index: int = 0) -> str:
+    """Top bar like the reference design: brand chip, pill menu, light/dark switch and avatar. Returns the chosen page."""
+    with st.container(key="topbar") if _keyed() else st.container():
+        left, mid, right = st.columns([1.25, 3.2, 1.25])
+        with left:
+            logo = logo_uri()
+            img = f'<img src="{logo}" alt="Mantrac CAT">' if logo else ""
+            html_block(f'<div class="si-brandchip">{img}<b>Service Intelligence</b></div>')
+        with mid:
+            page = st.radio("Menu", pages, index=index, key=key, horizontal=True, label_visibility="collapsed")
+        with right:
+            r1, r2 = st.columns([1, 1])
+            with r1:
+                with st.container(key="modes") if _keyed() else st.container():
+                    a, b = st.columns(2)
+                    if a.button("☀", key="mode_light", help="Light mode") and mode() != "light":
+                        _switch_mode(False)
+                    if b.button("☾", key="mode_dark", help="Dark mode") and mode() != "dark":
+                        _switch_mode(True)
+            with r2:
+                html_block(f'<div class="si-avatar" data-tip="{esc(user)} · {esc(role)}">{esc(_initials(user))}</div>')
+    if st.session_state.pop("_si_ink", False):          # the new mode spreads out from the switch over the old one
+        old = MODES["light" if mode() == "dark" else "dark"]["canvas"]
+        html_block(f'<div class="si-ink" style="background:{old}"></div>')
+    return page
+
+
+def _keyed() -> bool:
+    import inspect
+    return "key" in inspect.signature(st.container).parameters
+
+
+def _switch_mode(dark: bool) -> None:
+    st.session_state["si_dark"] = dark
+    st.session_state["_si_ink"] = True
+    st.rerun()
 
 
 def user_card() -> None:
-    if st.session_state.get("_si_user_html"):
-        with st.sidebar:
-            html_block(st.session_state["_si_user_html"])
+    """Kept for page compatibility: the user now sits in the top bar."""
 
 
 def topbar(title: str, subtitle: str, chips: list[str] | None = None) -> None:
-    """Page title (left) and the Mantrac logo with status chips (right). Chips may contain <b>, nothing else."""
+    """Page title (left) with status chips (right). Chips may contain <b>, nothing else."""
     chip_html = "".join(f'<span class="si-chip">{c}</span>' for c in (chips or []))
-    logo = logo_uri()
-    logo_html = f'<span class="logo"><img src="{logo}" alt="Mantrac CAT"></span>' if logo else ""
-    html_block(f'<div class="si-top"><div><h1>{esc(title)}</h1><div class="sub">{esc(subtitle)}</div></div>'
-               f'<div class="right">{chip_html}{logo_html}</div></div>')
+    html_block(f'<div class="si-top"><div><h1>{roll(title)}</h1><div class="sub">{esc(subtitle)}</div></div>'
+               f'<div class="right">{chip_html}</div></div>')
+
+
+def roll(text, delay_ms: int = 0) -> str:
+    """Characters slide up one after another (the reference design's number/title animation)."""
+    t = str(text)
+    return '<span class="si-roll">' + "".join(
+        f'<span style="animation-delay:{delay_ms + i * 28}ms">{esc(ch) if ch != " " else "&nbsp;"}</span>' for i, ch in enumerate(t)) + "</span>"
 
 
 def cover(eyebrow: str, title: str, text: str, stats: list[tuple[str, str]] = (), icon_name: str = "chart") -> None:
@@ -591,18 +691,13 @@ def points(items: list[tuple[str, float, float]]) -> None:
 
 def card(name: str):
     """A rounded card around Streamlit widgets (keyed container; falls back to a bordered one)."""
-    try:
-        return st.container(key=f"card_{name}")
-    except TypeError:                     # Streamlit < 1.39 has no key on containers
-        return st.container(border=True)
+    return st.container(key=f"card_{name}") if _keyed() else st.container(border=True)
 
 
 def hit(name: str):
-    """Container whose button (added inside it) is stretched invisibly over the whole card, making it clickable."""
-    try:
-        return st.container(key=f"hit_{name}")
-    except TypeError:                     # older Streamlit: the button simply shows under the card
-        return st.container()
+    """Container whose button (added inside it) is stretched invisibly over the whole card, making it clickable.
+    On Streamlit versions without container keys the button simply shows under the card."""
+    return st.container(key=f"hit_{name}") if _keyed() else st.container()
 
 
 def badge(text, tone: str = "orange") -> str:
@@ -691,3 +786,104 @@ def bar_chart(df, cat: str, val: str, height: int = 300) -> None:
         x=alt.X(f"{val}:Q", title=None),
         tooltip=[alt.Tooltip(f"{cat}:N"), alt.Tooltip(f"{val}:Q", format=",.0f")])
     st.altair_chart(_style(chart.properties(height=height)), use_container_width=True, theme=None)
+
+
+def big_kpi(label: str, value: str, delta: str | None = None, tone: str = "flat", sub: str = "", delay_ms: int = 0) -> str:
+    p = f'<span class="p {tone}">{esc(delta)}</span>' if delta else ""
+    return (f'<div class="si-big" style="animation-delay:{delay_ms}ms"><div class="l">{esc(label)}</div>'
+            f'<div class="v">{roll(value, delay_ms)}{p}</div><div class="s">{esc(sub)}</div></div>')
+
+
+def speedo(title: str, ratio: float | None, number: str, label: str, tag: str, tag_warn: bool, unit: str,
+           chips: list[tuple[str, str]] = ()) -> str:
+    """Semicircle gauge with a needle (the reference design's response-time card)."""
+    p = max(0.0, min(1.0, ratio or 0.0))
+    r, cx, cy = 80, 100, 100
+    half = math.pi * r
+    ang = -90 + 180 * p
+    arc = (f'<path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="{c("card2")}" stroke-width="26" stroke-linecap="round"/>'
+           f'<defs><linearGradient id="spg" x1="0" x2="1"><stop offset="0" stop-color="#FFB47E"/><stop offset="1" stop-color="#E85A0C"/></linearGradient></defs>'
+           f'<path class="fill" d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="url(#spg)" stroke-width="26" stroke-linecap="round" '
+           f'stroke-dasharray="{half * p:.1f} {half:.1f}"/>'
+           f'<g class="needle" style="transform: rotate({ang:.1f}deg)"><path d="M100 46 L108 96 L100 90 L92 96 Z" fill="{c("ink")}"/></g>')
+    ch = "".join(f'<div><b>{esc(v)}</b>{esc(k)}</div>' for k, v in chips)
+    return (f'<div class="si-c"><h4>{esc(title)}</h4><div class="plus">{icon("chart")}</div><div class="si-speedo"><div>'
+            f'<div class="lab">{esc(label)}</div><div class="num">{roll(number)}</div><span class="tag{" warn" if tag_warn else ""}">{esc(tag)}</span>'
+            f'<div class="unit">{esc(unit)}</div></div><svg viewBox="0 0 200 110">{arc}</svg></div>'
+            f'<div class="si-chips2">{ch}</div></div>')
+
+
+def orange_card(title: str, button: str, number: str, small: str) -> str:
+    return (f'<div class="si-c si-orange"><h4>{esc(title)}</h4><div class="plus">{icon("down")}</div>'
+            f'<div class="pill">⊕ {esc(button)}</div><div class="huge">{roll(number)}<small>{esc(small)}</small></div></div>')
+
+
+def note_card(title: str, when: str, headline: str, foot: str) -> str:
+    return (f'<div class="si-c"><h4>{esc(title)}</h4><div class="plus">{icon("sparkle")}</div><div class="si-bubble"><span class="t">◷ {esc(when)}</span>'
+            f'<div class="h">{esc(headline)}</div><div class="f"><i></i>{esc(foot)}</div></div></div>')
+
+
+def map_card(title: str, number: str, sub: str) -> str:
+    return (f'<div class="si-c si-map"><h4>{esc(title)}</h4><div class="plus">{icon("target")}</div><div class="pin">{icon("target")}</div>'
+            f'<div class="foot"><div class="dot"></div><div class="n">{roll(number)}</div><div class="s">{esc(sub)}</div>'
+            f'<div class="go">{icon("down")}</div></div></div>')
+
+
+def week(days: list[tuple[str, int, bool]], next_up: tuple[str, str, list[str]] | None = None) -> None:
+    """A calendar strip (like the reference 'Meeting Schedule'): one bubble per day sized by count, plus a dark 'next up' card."""
+    mx = max([n for _, n, _ in days] + [1])
+    heads = "".join(f'<div class="d{" today" if t else ""}">{esc(lbl)}</div>' for lbl, _, t in days)
+    bubbles = ""
+    for i, (_, n, _) in enumerate(days):
+        size = 30 + 34 * (n / mx) if n else 34
+        alpha = .35 + .65 * (n / mx) if n else 0
+        style = (f'width:{size:.0f}px;height:{size:.0f}px;background:rgba(242,107,29,{alpha:.2f});animation-delay:{i * 60}ms' if n
+                 else f'width:{size:.0f}px;height:{size:.0f}px;animation-delay:{i * 60}ms')
+        bubbles += f'<div class="b{"" if n else " z"}" style="{style}">{n if n else ""}</div>'
+    nxt = ""
+    if next_up:
+        h, sub, tags = next_up
+        nxt = (f'<div class="si-next"><div class="h">{esc(h)}</div><div class="s">{esc(sub)}</div><div class="tags">'
+               + "".join(f'<span class="{"" if i == 0 else "g"}">{esc(t)}</span>' for i, t in enumerate(tags)) + "</div></div>")
+    html_block(f'<div class="si-week">{heads}{bubbles}</div>{nxt}')
+
+
+def stat3(items: list[tuple[str, str]], highlight: int = 0) -> None:
+    html_block('<div class="si-stat3">' + "".join(
+        f'<div class="{"hl" if i == highlight else ""}"><div class="l">{esc(k)}</div><div class="v">{roll(v, i * 80)}</div></div>'
+        for i, (k, v) in enumerate(items)) + "</div>")
+
+
+LIST_HEAD = ("Machine", "Customer · branch", "Due", "OLGA value", "Signal", "")
+
+
+def list_head() -> None:
+    html_block('<div class="si-listhead">' + "".join(f"<div>{esc(h)}</div>" for h in LIST_HEAD) + "</div>")
+
+
+def list_row(r: dict, fmt_money, delay_ms: int = 0) -> str:
+    tones = {"OLGA + telemetry": "orange", "OLGA only": "yel", "Telemetry only": "dark"}
+    due = r.get("days_to_due")
+    due_txt = "—" if due is None else (f"Overdue {abs(int(float(due)))}d" if float(due) < 0 else f"in {int(float(due))}d")
+    return (f'<div class="si-lrow" style="animation-delay:{delay_ms}ms"><div><div class="t">#{esc(r.get("overall_rank") or r.get("class_rank"))} '
+            f'{esc(r.get("model"))} · {esc(r.get("asset_serial"))}</div><div class="sub">{esc(r.get("top_job") or r.get("repeat_fault") or "")}</div></div>'
+            f'<div><div>{esc(r.get("customer_number") or "—")}</div><div class="sub">{esc(r.get("branch") or "")}</div></div>'
+            f'<div>{badge(due_txt, "red" if due is not None and float(due) < 0 else "gry")}</div>'
+            f'<div>{esc(fmt_money(r.get("due_value")) if r.get("due_value") else "—")}</div>'
+            f'<div>{badge(r.get("signal_class"), tones.get(r.get("signal_class"), "gry"))}</div>'
+            f'<div class="act">Details</div></div>')
+
+
+def bars(df, x: str, y: str, height: int = 260) -> None:
+    """Rounded grey columns with the latest one in orange and its value in a dark pill (the 'Project Deals' chart)."""
+    import altair as alt
+    d = df.copy()
+    d["hl"] = [i == len(d) - 1 for i in range(len(d))]
+    base = alt.Chart(d).encode(x=alt.X(f"{x}:O", title=None, axis=alt.Axis(labelAngle=0)),
+                               y=alt.Y(f"{y}:Q", title=None))
+    col = base.mark_bar(cornerRadius=14, size=26).encode(
+        color=alt.condition(alt.datum.hl, alt.value(c("accent")), alt.value(c("card2"))),
+        tooltip=[alt.Tooltip(f"{x}:O"), alt.Tooltip(f"{y}:Q", format=",.0f")])
+    lab = base.transform_filter(alt.datum.hl).mark_text(dy=-16, fontWeight="bold", color=c("ink"), fontSize=12).encode(
+        text=alt.Text(f"{y}:Q", format=",.0f"))
+    st.altair_chart(_style((col + lab).properties(height=height)), use_container_width=True, theme=None)

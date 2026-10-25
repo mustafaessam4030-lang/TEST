@@ -71,11 +71,10 @@ def install():
 
 def render():
     ui = sys.modules["si_native.ui"]
-    ui.chrome()                                         # design + logo before the menu
+    ui.chrome()                                         # design for the current light/dark mode
     if "si_page_next" in st.session_state:              # a page asked to switch (e.g. "Ask the assistant")
         st.session_state["si_page"] = st.session_state.pop("si_page_next")
-    page = st.sidebar.radio("Menu", list(PAGE_SOURCES), key="si_page")
-    ui.rail_tail()                                      # light/dark switch under the menu
+    page = ui.top_nav()                                 # brand, pill menu, light/dark switch, avatar
     exec(compile(PAGE_SOURCES[page], f"pages/{{page}}.py", "exec"), {{"__name__": "__main__"}})
 
 

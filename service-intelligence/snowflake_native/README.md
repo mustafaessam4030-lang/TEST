@@ -41,7 +41,10 @@ SERVICE_INTELLIGENCE
   - If Cortex is unavailable, the rule-based assistant above answers instead.
   - It understands informal wording, typos and Arabic, remembers earlier answers for follow-ups, and suggests next questions.
 - **Design** (`si_native/theme.py`, `app/assets/mantrac_logo.svg`):
-  - a black icon rail with a light/dark switch, cards, an orange accent and the Mantrac logo, with entrance animations;
+  - a top bar (Mantrac brand chip, pill menu, light/dark switch with an ink-spread transition, avatar), cards, an orange
+    accent and rolling-number / entrance animations;
+  - Analysis opens with an "Ask anything…" box (sends the question to the assistant), headline numbers, a repeat-fault
+    gauge, the top-100 card, a top-branch card, a monthly trend and a "Due this week" strip from the daily ranking;
   - the chosen mode is applied even when Snowsight is in the other one;
   - clicking a metric tile opens its trend and breakdown; clicking a machine card opens its OLGA jobs, faults and
     hours (`si_native/machine.py`).

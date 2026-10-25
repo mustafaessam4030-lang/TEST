@@ -68,29 +68,40 @@ def analytics() -> Analytics:
     return Analytics(registry(), CachedRunner(), user_email())
 
 
+PAGES = ["Analysis", "Recommendations", "Assistant"]
+PAGE_FILES = {"Analysis": "streamlit_app.py", "Recommendations": "pages/2_Recommendations.py", "Assistant": "pages/3_Assistant.py"}
+TITLE_PAGE = {"Service analysis": "Analysis", "Recommendation plan": "Recommendations", "Service assistant": "Assistant"}
+
+
 def chrome() -> None:
-    """Design and the logo/user block in the navigation rail."""
+    """The design (colours, layout, animations) for the current light/dark mode."""
     from . import theme
     theme.apply()
-    email = user_email()
-    theme.brand(email, app_role(email))
 
 
-def rail_tail() -> None:
-    """Controls under the menu in the rail (light/dark switch)."""
+def top_nav(key: str = "si_page", index: int = 0) -> str:
+    """Brand chip, pill menu, light/dark switch and avatar. Returns the chosen page."""
     from . import theme
-    theme.mode_switch()
+    email = user_email()
+    return theme.nav(PAGES, email, app_role(email), key, index)
 
 
-def header(title: str, subtitle: str, chips: list[str] | None = None) -> None:
+def header(title: str, subtitle: str, chips: list[str] | None = None, show_title: bool = True) -> None:
     import si_native
     from . import theme
-    if not getattr(si_native, "SINGLE_FILE", False):              # the single-file launcher does this once, around its menu
+    if not getattr(si_native, "SINGLE_FILE", False):              # the single-file launcher draws the bar once, itself
         st.set_page_config(page_title=f"Service Intelligence · {title}", page_icon="◆", layout="wide")
         chrome()
-        rail_tail()
-    base = ['<span class="dot"></span>Live Snowflake data', f"Registry <b>v{registry().version}</b>"]
-    theme.topbar(title, subtitle, (chips or []) + base)
+        here = TITLE_PAGE.get(title, "Analysis")
+        nxt = st.session_state.pop("si_page_next", None)
+        if nxt and nxt != here and getattr(st, "switch_page", None):
+            st.switch_page(PAGE_FILES[nxt])
+        choice = top_nav(f"nav_{here}", PAGES.index(here))
+        if choice != here and getattr(st, "switch_page", None):
+            st.switch_page(PAGE_FILES[choice])
+    if show_title:
+        base = ['<span class="dot"></span>Live Snowflake data', f"Registry <b>v{registry().version}</b>"]
+        theme.topbar(title, subtitle, (chips or []) + base)
 
 
 def run_parallel(fns: list) -> list:
@@ -149,10 +160,9 @@ def go_to(page: str, **state) -> None:
     if getattr(si_native, "SINGLE_FILE", False):
         st.session_state["si_page_next"] = page
         st.rerun()
-    files = {"Analysis": "streamlit_app.py", "Recommendations": "pages/2_Recommendations.py", "Assistant": "pages/3_Assistant.py"}
     switch = getattr(st, "switch_page", None)
     if switch:
-        switch(files[page])
+        switch(PAGE_FILES[page])
 
 
 def run_spec(spec: Spec) -> list[dict]:

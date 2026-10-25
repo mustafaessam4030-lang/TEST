@@ -5,7 +5,7 @@ from si_native import theme, ui
 from si_native.plans import PlanError, PlanStore, allowed_moves, can
 from si_native.recommend import SIGNAL_CLASSES, all_candidates, top_opportunity_candidate
 
-ui.header("Recommendation plan", "The machines and findings to act on first. Measured facts and hypotheses are labelled separately.")
+ui.header("Recommendation plan", "The machines to act on first, rebuilt every day from OLGA and live telemetry.")
 reg = ui.registry()
 an = ui.analytics()
 email = ui.user_email()
@@ -39,11 +39,9 @@ with tab_top:
             total, new, tel = got[:3]
             options = dict(zip(DIMS, got[3:]))
             run_date = str(fresh["latest_data"])[:10]
-            theme.cover("Daily ranking · " + run_date, "Top 100 machines to act on today",
-                        "Score 0–100 = 35 × OLGA value due + 30 × urgency (due date re-timed from live service-meter hours) "
-                        "+ 35 × condition (days with the same HIGH-severity fault in the last 30). Rebuilt every day.",
-                        [(ui.fmt(total["value"], "value"), "OLGA value due"), (ui.fmt(new["value"], "machines"), "new today"),
-                         (ui.fmt(tel["value"], "machines"), "telemetry-only")], "target")
+            theme.stat3([("OLGA value due · top 100", ui.fmt(total["value"], "value")),
+                         ("New since yesterday", ui.fmt(new["value"], "machines")),
+                         ("Telemetry-only machines (OLGA doesn't list them)", ui.fmt(tel["value"], "machines"))])
             c0, c1, c2, c3 = st.columns([2.4, 1, 1, 1])
             with c0:
                 view = st.radio("Show", ["Top 100 overall", *SIGNAL_CLASSES], horizontal=True, key="top_view")
@@ -58,11 +56,24 @@ with tab_top:
                 st.info("No machines match these filters.")
             else:
                 cols = TOP_COLUMNS if view == "Top 100 overall" else [("class_rank", "#", "num"), *TOP_COLUMNS[1:]]
-                layout = st.radio("Layout", ["Cards", "Table"], horizontal=True, key="top_layout", label_visibility="collapsed")
+                layout = st.radio("Layout", ["List", "Cards", "Table"], horizontal=True, key="top_layout", label_visibility="collapsed")
                 main, side = st.columns([3.2, 1], gap="medium")
                 with main:
                     theme.section(view, f"{len(rows)} machines · ranking of {run_date}")
-                    if layout == "Cards":
+                    if layout == "List":
+                        n_show = st.session_state.get("top_n_list", 25)
+                        money = lambda v: ui.fmt(v, "value")  # noqa: E731
+                        theme.list_head()
+                        for k, r in enumerate(rows[:n_show]):
+                            with theme.hit(f"row_{r['asset_serial']}"):
+                                theme.html_block(theme.list_row(r, money, min(k, 15) * 25))
+                                if st.button("Open details", key=f"row_open_{r['asset_serial']}"):
+                                    ui.open_dialog(f"{r.get('model')} · {r['asset_serial']}", ui.machine_detail, r,
+                                                   an.as_of("fault_events").date(), lst["evidence"], store, role)
+                        if n_show < len(rows) and st.button(f"Show more ({len(rows) - n_show} left)", key="more_list"):
+                            st.session_state["top_n_list"] = n_show + 25
+                            st.rerun()
+                    elif layout == "Cards":
                         n_show = st.session_state.get("top_n_show", 12)
                         money = lambda v: ui.fmt(v, "value")  # noqa: E731
                         shown = rows[:n_show]
