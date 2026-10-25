@@ -35,6 +35,8 @@ T_RULES = f"{DB}.BRAIN_RULES"
 KB_SERVICE = f"{DB}.TRAINING_KB_SEARCH"
 TRAINING_STAGE = f"@{DB}.TRAINING_STG"           # source files at docs/<FILE_PATH> (PDFs and diagram JPGs)
 VISUAL_TYPES = ("Slides", "Diagram / slide (OCR)")
+VIDEO_SERVICE = f"{DB}.VIDEO_KB_SEARCH"           # sql/20_ai_brain_videos.sql (exists once videos are indexed)
+REPAIR_SERVICE = f"{DB}.REPAIR_SEARCH"            # sql/21_ai_brain_repair_search.sql (optional)
 PHOTO_STAGE = f"@{DB}.PHOTO_STG"
 T_PHOTO_LOG = f"{DB}.PHOTO_LOG"
 KB_SYSTEMS = ("Basic Service", "Electrical & Electronics", "Diesel Engine", "Hydraulics", "Powertrain",
@@ -179,6 +181,88 @@ def parse_kb(raw) -> list[dict]:
 def kb_search(session, query: str, system: str | None = None, limit: int = 5, visual: bool = False) -> list[dict]:
     row = session.sql(kb_sql(query, system, limit, visual)).collect()[0]
     return parse_kb(list(row.as_dict().values())[0])
+
+
+# --- training videos (VIDEO_KB_SEARCH over timed transcript segments) ---------------------------------
+def video_kb_sql(query: str, limit: int = 3) -> str:
+    req = {"query": str(query)[:300], "limit": max(1, min(int(limit), 6)),
+           "columns": ["VIDEO_ID", "TITLE", "TOPIC", "MODEL", "STAGE_PATH", "START_S", "END_S", "TEXT"]}
+    return f"SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW({sql_str(VIDEO_SERVICE)}, {sql_str(json.dumps(req))}) AS r"
+
+
+def parse_video_kb(raw) -> list[dict]:
+    """Matching parts of training videos; one clip per video (the best-ranked part)."""
+    data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    out, seen = [], set()
+    for r in data.get("results") or []:
+        if r.get("VIDEO_ID") in seen or not r.get("STAGE_PATH"):
+            continue
+        seen.add(r.get("VIDEO_ID"))
+        start, end = float(r.get("START_S") or 0), float(r.get("END_S") or 0)
+        out.append({"title": r.get("TITLE"), "topic": r.get("TOPIC"), "model": r.get("MODEL"), "path": r["STAGE_PATH"],
+                    "start": max(0, int(start) - 2), "end": int(end) + 2 if end > start else None,
+                    "text": str(r.get("TEXT") or "")[:600]})
+    return out
+
+
+def video_kb_search(session, query: str, limit: int = 3) -> list[dict]:
+    """Empty when the video service does not exist yet (no videos indexed)."""
+    try:
+        row = session.sql(video_kb_sql(query, limit)).collect()[0]
+    except Exception as exc:  # noqa: BLE001
+        if "does not exist" in str(exc).lower() or "not authorized" in str(exc).lower():
+            return []
+        raise
+    return parse_video_kb(list(row.as_dict().values())[0])
+
+
+def clock(seconds) -> str:
+    s = int(seconds or 0)
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+
+
+# --- repair history by meaning (REPAIR_SEARCH, optional) ----------------------------------------------
+def repair_kb_sql(query: str, limit: int = 25) -> str:
+    req = {"query": str(query)[:300], "limit": max(1, min(int(limit), 50)),
+           "columns": ["TERRID", "SERIAL_NO", "MODEL_CD", "OPEN_DATE", "JOB_TYPE", "JOB", "COMPLAINT", "ROOT_CAUSE",
+                       "WORK_DONE", "PARTS_USED", "LABOUR_HOURS"]}
+    return f"SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW({sql_str(REPAIR_SERVICE)}, {sql_str(json.dumps(req))}) AS r"
+
+
+def parse_repair_kb(raw, model: str | None = None, n: int = 12) -> list[dict]:
+    data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    rows = [{"terrid": r.get("TERRID"), "serial_no": r.get("SERIAL_NO"), "model": r.get("MODEL_CD"),
+             "open_date": r.get("OPEN_DATE"), "job_type": r.get("JOB_TYPE"), "job": r.get("JOB"),
+             "complaint": str(r.get("COMPLAINT") or "")[:300], "root_cause": str(r.get("ROOT_CAUSE") or "")[:200],
+             "work_done": str(r.get("WORK_DONE") or "")[:400], "parts_used": str(r.get("PARTS_USED") or "")[:200],
+             "labour_hours": r.get("LABOUR_HOURS")} for r in data.get("results") or []]
+    if model:
+        same = [r for r in rows if str(r.get("model") or "").upper().startswith(str(model).upper())]
+        rows = same or rows
+    return rows[:n]
+
+
+def repair_kb_search(session, query: str, model: str | None = None, n: int = 12) -> list[dict]:
+    """Similar repairs by meaning; empty when the optional REPAIR_SEARCH service does not exist."""
+    try:
+        row = session.sql(repair_kb_sql(f"{model or ''} {query}".strip(), 25 if model else n)).collect()[0]
+    except Exception as exc:  # noqa: BLE001
+        if "does not exist" in str(exc).lower() or "not authorized" in str(exc).lower():
+            return []
+        raise
+    return parse_repair_kb(list(row.as_dict().values())[0], model, n)
+
+
+def median_hours(rows: list[dict], model: str | None) -> float | None:
+    """BRAIN_RULES: labour hours only as the median of >= 3 similar jobs on the same model."""
+    if not model:
+        return None
+    hrs = sorted(float(r["labour_hours"]) for r in rows if r.get("labour_hours") not in (None, "", 0, "0")
+                 and str(r.get("model") or "").upper().startswith(str(model).upper()) and float(r["labour_hours"]) > 0)
+    if len(hrs) < 3:
+        return None
+    mid = len(hrs) // 2
+    return hrs[mid] if len(hrs) % 2 else (hrs[mid - 1] + hrs[mid]) / 2
 
 
 # --- pictures from the training material ------------------------------------------------------------

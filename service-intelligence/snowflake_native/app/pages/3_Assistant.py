@@ -40,6 +40,7 @@ EXAMPLES = [("target", "orange", "Which 10 machines should we act on first today
             ("wallet", "sky", "Which branches have the most OLGA value overdue?"),
             ("repeat", "mint", "777G shows low system voltage: what usually causes it and how do we fix it?")]
 PHOTO_TYPES = ["jpg", "jpeg", "png", "webp"]
+VIDEO_END = "end_time" in inspect.signature(st.video).parameters                  # Streamlit >= 1.36
 CHAT_FILES = "accept_file" in inspect.signature(st.chat_input).parameters      # Streamlit >= 1.43
 
 
@@ -74,14 +75,37 @@ def training_link(path: str, page) -> str:
     return brain.training_link(ui.session(), path, page)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def video_kb(query: str, n: int) -> list:
+    return brain.video_kb_search(ui.session(), query, n)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def repair_kb(query: str, model, n: int) -> list:
+    return brain.repair_kb_search(ui.session(), query, model, n)
+
+
+def play(v: dict) -> None:
+    """A Mantrac training clip (from the stage, starting at the matching moment) or a video file from the web."""
+    if v.get("path"):
+        kw = {"start_time": int(v.get("start") or 0)}
+        if VIDEO_END and v.get("end"):
+            kw["end_time"] = int(v["end"])
+        st.video(training_link(v["path"], None), **kw)
+        span = f" · {brain.clock(v.get('start'))}" + (f"–{brain.clock(v['end'])}" if v.get("end") else "")
+        st.caption(f"▶ {v.get('title') or 'Training video'}{span} · Mantrac training video")
+    else:
+        st.video(v["src"])
+        st.caption(f"▶ {v['title']} · {v['source']}")
+
+
 def show_videos(turn: dict) -> None:
     """Videos found on the web: video files play inside the chat; YouTube videos as cards that open YouTube."""
     found = [r for r in turn.get("results") or [] if r.get("tool") == "video"]
     playable = [v for r in found for v in r.get("playable") or []][:2]
     videos = [v for r in found for v in r.get("rows") or []][:3]
     for v in playable:
-        st.video(v["src"])
-        st.caption(f"▶ {v['title']} · {v['source']}")
+        play(v)
     if not videos:
         return
     if playable:
@@ -90,6 +114,15 @@ def show_videos(turn: dict) -> None:
         f'<a class="si-video" href="{theme.esc(v["url"])}" target="_blank" rel="noopener">'
         f'<div class="thumb" style="background-image:url(\'{theme.esc(v["thumb"])}\')"><span class="play">&#9654;</span></div>'
         f'<div class="t">{theme.esc(v["title"])}</div><div class="s">Watch on YouTube ↗</div></a>' for v in videos) + "</div>")
+
+
+def show_training_clips(turn: dict) -> None:
+    """Parts of Mantrac's training videos that match the question (play inside the chat at that moment)."""
+    shown = {v.get("path") for r in turn.get("results") or [] if r.get("tool") == "video" for v in r.get("playable") or []}
+    clips = [c for r in turn.get("results") or [] if r.get("tool") == "manual" for c in r.get("clips") or []
+             if c.get("path") not in shown][:2]
+    for c in clips:
+        play(c)
 
 
 def show_training_pictures(turn: dict) -> None:
@@ -228,6 +261,10 @@ def show_extras(turn: dict) -> None:
     except Exception:  # noqa: BLE001
         pass
     try:
+        show_training_clips(turn)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         show_training_pictures(turn)
     except Exception:  # noqa: BLE001 - pictures are extra; the answer stands without them
         pass
@@ -320,7 +357,7 @@ if question:
             out = ask(question, history, an, lambda msgs, n: cortex_complete(ui.session(), msgs, n),
                       lambda spec: ui.CachedRunner().run(spec, email), on_status=status, hints=known_values(),
                       search=manual_search, look=look, photos=photo_paths, parallel=ui.run_parallel,
-                      web=web_search)
+                      web=web_search, kb={"videos": video_kb, "repairs": repair_kb})
         except Exception:  # noqa: BLE001 - Cortex not available to this role/region: fall back to the rules
             planner = "rules"
             try:

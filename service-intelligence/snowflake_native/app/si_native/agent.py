@@ -124,6 +124,10 @@ TABLES = {
     "SERVICE_INTELLIGENCE.AI_BRAIN.V_CUST_SURVEY": (
         "Customer survey answers (development copy, ratings to Mar-2025).",
         "terrid, cusno, survey_id, survey_date, loyalty, avg_rate, min_rate, answers, comments"),
+    "SERVICE_INTELLIGENCE.AI_BRAIN.VIDEO_LIBRARY": (
+        "Mantrac training videos uploaded to Snowflake (one row per video; status INDEXED = searchable).",
+        "video_id, stage_path, title, topic, system, model, spoken_language, description, size_bytes, uploaded_at, "
+        "duration_s, segments, status, error, indexed_at"),
     "SERVICE_INTELLIGENCE.AI_BRAIN.SOURCE_HEALTH": (
         "Freshness check of each data source (GREEN/AMBER/RED).",
         "source_id, checked_at, latest_data, age_hours, status, error"),
@@ -211,8 +215,8 @@ You can look up live data. Decide what the user needs and reply with ONE JSON ob
      searches the CAT technician training library (courses, modules, pages): how systems work, troubleshooting
      steps, procedures, specs, safety. Use for "how/why/what does/how to fix/how to test" questions. The pictures
      of the pages found (diagrams, slides, figures) are shown to the user under your answer automatically.
-  {{"tool": "repairs", "keywords": ["<term|synonym>", ...up to 4, ANDed; '|' = OR], "model": "<model prefix or null>",
-    "serial": "<serial or null>"}}  similar Mantrac repair jobs: complaint, root cause, work done, parts, labour hours,
+  {{"tool": "repairs", "query": "<the problem in plain English words>", "keywords": ["<term|synonym>", ...up to 4,
+    ANDed; '|' = OR], "model": "<model prefix or null>", "serial": "<serial or null>"}}  similar Mantrac repair jobs: complaint, root cause, work done, parts, labour hours,
      how many matched and the median labour hours. Use short English terms as technicians write them
      (e.g. ["alternator|charging", "voltage"], ["hose|leak", "boom"]).
   {{"tool": "web", "query": "<public web search query>"}}  searches the public internet (Cortex web search) for
@@ -222,7 +226,8 @@ You can look up live data. Decide what the user needs and reply with ONE JSON ob
      prices, internal figures or other company data in it - only generic technical words (e.g. "Cat 777G engine oil
      change interval").
   {{"tool": "video", "query": "<what to find a video about, generic words>"}}  finds videos on the web (YouTube) and
-     shows them to the user as video cards under your answer. Use when the user asks for a video, or to SEE how
+     shows them to the user as video cards under your answer. Mantrac's own training videos (if any match) are
+     found automatically by "manual" and by "video" and play inside the chat at the right moment. Use when the user asks for a video, or to SEE how
      something is done. Same rule as web: no company data in the query.
   {{"tool": "machine", "serial": "<serial>"}}  one machine's full profile: fleet record (customer, hours, utilisation),
      recent repairs, oil samples, inspections, service letters, CAT alerts and recent fault codes (where allowed).
@@ -320,10 +325,12 @@ def _sequential(fns: list) -> list:
     return out
 
 
-def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, web=None) -> dict:
-    """search(query, system, limit) -> passages; web(query, n) -> web results; parallel(fns) -> results."""
+def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, web=None, kb=None) -> dict:
+    """search(query, system, limit) -> passages; web(query, n) -> web results; parallel(fns) -> results;
+    kb: optional {"videos": f(query, n) -> clips, "repairs": f(query, model, n) -> stories} (AI Brain search services)."""
     tool = step.get("tool")
     parallel = parallel or _sequential
+    kb = kb or {}
     if tool == "video":
         if web is None:
             raise QueryError("Web search is not available here")
@@ -338,6 +345,13 @@ def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, 
         if not videos:
             videos = brain.video_results(web(f"site:youtube.com {query}", 8))
         playable = brain.playable_videos(files + yt)
+        if kb.get("videos"):
+            try:
+                own = kb["videos"](query, 2)
+            except Exception:  # noqa: BLE001
+                own = []
+            playable = [{"title": c["title"], "path": c["path"], "start": c["start"], "end": c["end"],
+                         "source": "Mantrac training video", "text": c["text"]} for c in own] + playable
         return {"tool": "video", "purpose": f"Video search: {query}", "query": query, "rows": videos, "playable": playable,
                 "evidence": [{"purpose": "Cortex web search (videos)", "query_id": None, "metric_id": None,
                               "sql": brain.web_sql(f"{query} video youtube", 8), "params": []}]}
@@ -359,26 +373,48 @@ def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, 
             raise QueryError("Nothing to look up")
         system = step.get("system") if step.get("system") in brain.KB_SYSTEMS else None
         visual = bool(step.get("visual"))
-        rows = search(query, system, 5, visual) if visual else search(query, system, 5)
+        jobs = [lambda: search(query, system, 5, visual) if visual else search(query, system, 5)]
+        if kb.get("videos"):
+            jobs.append(lambda: kb["videos"](query, 2))
+        got = parallel(jobs)
+        if isinstance(got[0], Exception):
+            raise got[0]
+        rows = got[0]
+        clips = got[1] if len(got) > 1 and not isinstance(got[1], Exception) else []
         if visual and not rows:                       # no slide/diagram matched: any page (they have figures too)
             rows = search(query, system, 5)
         return {"tool": "manual", "purpose": f"Training library: {query}", "query": query, "system": system,
-                "rows": rows, "evidence": [{"purpose": "Cortex Search · TRAINING_KB_SEARCH", "query_id": None,
+                "rows": rows, "clips": clips, "evidence": [{"purpose": "Cortex Search · TRAINING_KB_SEARCH", "query_id": None,
                                             "metric_id": None, "sql": brain.kb_sql(query, system, 5), "params": []}]}
     if tool == "repairs":
         kw, model, serial = step.get("keywords") or [], step.get("model") or None, step.get("serial") or None
-        if not brain._terms(kw) and not serial:
+        text = str(step.get("query") or " ".join(a for g in brain._terms(kw) for a in g[:1])).strip()
+        if not brain._terms(kw) and not serial and not text:
             raise QueryError("Repair search needs keywords or a serial")
-        got = parallel([lambda: runner_sql(brain.repairs_spec(kw, model, serial)),
-                        lambda: runner_sql(brain.repair_parts_spec(kw, model, serial))])
-        if isinstance(got[0], Exception):
-            raise got[0]
-        parts = [] if isinstance(got[1], Exception) else got[1].rows
-        out = brain.summarize_repairs(got[0].rows, parts, model)
-        terms = " + ".join("/".join(g) for g in brain._terms(kw))
+        jobs = []
+        if brain._terms(kw) or serial:
+            jobs += [lambda: runner_sql(brain.repairs_spec(kw, model, serial)),
+                     lambda: runner_sql(brain.repair_parts_spec(kw, model, serial))]
+        if kb.get("repairs") and text and not serial:
+            jobs.append(lambda: kb["repairs"](text, model, 12))
+        got = parallel(jobs)
+        keyword = got[:2] if len(got) >= 2 and (brain._terms(kw) or serial) else []
+        meaning = got[-1] if kb.get("repairs") and text and not serial and not isinstance(got[-1], Exception) else []
+        if keyword and isinstance(keyword[0], Exception) and not meaning:
+            raise keyword[0]
+        rows = keyword[0].rows if keyword and not isinstance(keyword[0], Exception) else []
+        parts = keyword[1].rows if keyword and not isinstance(keyword[1], Exception) else []
+        out = brain.summarize_repairs(rows, parts, model)
+        if meaning:                                   # best stories by meaning; counts and parts stay keyword-based
+            out["rows"] = meaning
+            out["match"] = "by meaning (REPAIR_SEARCH)"
+            if out["median_labour_hours"] is None and brain.median_hours(meaning, model) is not None:
+                out["median_labour_hours"] = brain.median_hours(meaning, model)
+                out["hours_note"] = "Median of the most similar jobs on this model (search by meaning)."
+        terms = " + ".join("/".join(g) for g in brain._terms(kw)) or text
         return {"tool": "repairs", "purpose": f"Mantrac repair history: {terms or serial}"
                 + (f" on {model}" if model else ""), "keywords": kw, "model": model, **out,
-                "evidence": [evidence(r) for r in got if not isinstance(r, Exception)]}
+                "evidence": [evidence(r) for r in keyword if not isinstance(r, Exception)]}
     if tool == "machine":
         serial = str(step.get("serial") or "").strip().upper()
         if not re.match(r"^[A-Z0-9-]{4,30}$", serial):
@@ -503,7 +539,7 @@ STEP_LABEL = {"video": "Finding videos: {}", "web": "Searching the web: {}", "ma
               "machine": "Building the machine profile: {}"}
 
 def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql, on_status=lambda s: None,
-        hints: dict | None = None, search=None, look=None, photos=(), parallel=None, web=None) -> dict:
+        hints: dict | None = None, search=None, look=None, photos=(), parallel=None, web=None, kb=None) -> dict:
     """Returns {"text", "results", "evidence", "unverified", "kind", "followups"}; `complete(messages, max_tokens)` -> str.
     search(query, system, limit) -> training passages; look(photo_paths, question) -> what the photos show."""
     today = f"{an.as_of('fault_events'):%Y-%m-%d}"
@@ -539,7 +575,7 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
         on_status(STEP_LABEL.get(step.get("tool"), "Querying: {}").format(
             step.get("purpose") or step.get("query") or step.get("serial") or step.get("metric_id") or step.get("tool")) + "…")
         try:
-            results.append(run_step(step, an, runner_sql, search, parallel, web))
+            results.append(run_step(step, an, runner_sql, search, parallel, web, kb))
         except Exception as exc:  # noqa: BLE001 - one repair attempt for model-written SQL
             if step.get("tool") != "sql":
                 errors.append(f"{step.get('tool')}: {exc}")
@@ -549,7 +585,7 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
                 fix = _json_from(complete([sys_msg, {"role": "user", "content":
                         f"This SELECT failed: {step.get('sql')}\nError: {str(exc)[:500]}\n"
                         'Reply with JSON only: {"sql": "<corrected single SELECT>"}'}], 1200))
-                results.append(run_step({**step, "sql": fix.get("sql")}, an, runner_sql, search, parallel, web))
+                results.append(run_step({**step, "sql": fix.get("sql")}, an, runner_sql, search, parallel, web, kb))
             except Exception as exc2:  # noqa: BLE001
                 errors.append(f"sql: {exc2}")
 
@@ -571,6 +607,8 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
             "(Course · Module, p. N). 'repairs' rows are real Mantrac jobs - say how many similar jobs matched, the usual "
             "root causes, fixes and parts (with part numbers). Labour hours ONLY from median_labour_hours (when it is null "
             "say there is no reliable figure). 'machine' is one machine's profile. 'photo' holds what the photos show. "
+            "'clips' in 'manual' results are parts of Mantrac's own training videos; they play inside the chat at that "
+            "moment - mention them ('watch the clip below, from 3:15'). "
             "'video' results: 'playable' videos play right inside the chat under your answer; 'rows' are YouTube videos "
             "shown as cards that open YouTube (Snowflake blocks the YouTube player inside apps). Introduce them briefly "
             "(title and why it helps); never invent what is in a video beyond its title and description. "

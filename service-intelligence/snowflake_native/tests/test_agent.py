@@ -264,3 +264,25 @@ def test_video_files_play_in_the_chat_and_youtube_stays_a_card(an):
     yt = [{"url": "https://www.youtube.com/watch?v=RHQy8mi9jOA", "title": "777G walkaround - YouTube"}]
     out = run_step({"tool": "video", "query": "777 truck"}, an, None, web=lambda q, n: files if "commons" in q else yt)
     assert out["playable"][0]["title"] == "Caterpillar 777" and out["rows"][0]["video_id"] == "RHQy8mi9jOA"
+
+
+def test_training_video_clips_and_repairs_by_meaning(an):
+    from si_native import brain
+    from si_native.agent import run_step
+    raw = {"results": [{"VIDEO_ID": "v1", "TITLE": "Brake Check", "STAGE_PATH": "videos/777G/brake_check.mp4", "START_S": 195.4,
+                        "END_S": 240.2, "TEXT": "check the brake"}, {"VIDEO_ID": "v1", "STAGE_PATH": "videos/777G/brake_check.mp4"}]}
+    clips = brain.parse_video_kb(json.dumps(raw))
+    assert clips == [{"title": "Brake Check", "topic": None, "model": None, "path": "videos/777G/brake_check.mp4",
+                      "start": 193, "end": 242, "text": "check the brake"}] and brain.clock(195) == "3:15"
+    out = run_step({"tool": "manual", "query": "brake check"}, an, None, search=lambda q, s, n: [{"page": 1}],
+                   kb={"videos": lambda q, n: clips})
+    assert out["clips"][0]["start"] == 193
+    stories = [{"model": "777G", "labour_hours": h, "complaint": "no charge"} for h in (2.0, 4.0, 6.0)]
+    runner = FakeRunner(REG, brain_responder)
+    rep = run_step({"tool": "repairs", "query": "truck will not charge", "keywords": ["alternator"], "model": "777"},
+                   an, lambda s: runner.run(s), kb={"repairs": lambda q, m, n: stories})
+    assert rep["rows"] == stories and rep["similar_jobs"] == 31 and rep["common_parts"][0]["part"] == "1417116 BELT"
+    only = run_step({"tool": "repairs", "query": "truck will not charge", "model": "777G"}, an, None,
+                    kb={"repairs": lambda q, m, n: stories})
+    assert only["median_labour_hours"] == 4.0 and only["match"].startswith("by meaning")
+    assert brain.median_hours(stories[:2], "777G") is None
