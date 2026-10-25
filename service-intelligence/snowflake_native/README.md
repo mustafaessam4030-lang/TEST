@@ -65,7 +65,7 @@ SERVICE_INTELLIGENCE
 1. In Snowsight, as ACCOUNTADMIN, run `sql/10_setup.sql`. It creates the roles, warehouse, schemas, views, tables, refresh
    procedure and task, and the grants.
 2. Upload and create the app, **as SI_APP_OWNER**. Use either of these:
-   - **Snowflake CLI:** from this folder, run `snow streamlit deploy --replace --role SI_APP_OWNER --warehouse SI_WH`.
+   - **Snowflake CLI:** from the `app/` folder, run `snow streamlit deploy --replace --role SI_APP_OWNER --warehouse SI_WH`.
    - **Snowsight:**
      1. `USE ROLE SI_APP_OWNER; CREATE STAGE IF NOT EXISTS SERVICE_INTELLIGENCE.SI_APP.APP_STAGE;`
      2. Upload the contents of `app/` to `@SERVICE_INTELLIGENCE.SI_APP.APP_STAGE/si/`, keeping the `pages/` and `si_native/` folders.

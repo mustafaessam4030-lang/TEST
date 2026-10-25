@@ -1,0 +1,28 @@
+# Snowflake CLI project. From THIS folder (app/):
+#   snow streamlit deploy --replace --role SI_APP_OWNER --warehouse SI_WH --database SERVICE_INTELLIGENCE --schema SI_APP
+definition_version: 2
+entities:
+  service_intelligence_app:
+    type: streamlit
+    identifier:
+      name: SERVICE_INTELLIGENCE_APP
+      database: SERVICE_INTELLIGENCE
+      schema: SI_APP
+    title: Service Intelligence
+    query_warehouse: SI_WH
+    main_file: streamlit_app.py
+    stage: APP_STAGE
+    artifacts:
+      - streamlit_app.py
+      - environment.yml
+      - metrics.yaml
+      - pages/2_Recommendations.py
+      - pages/3_Assistant.py
+      - si_native/__init__.py
+      - si_native/analysis.py
+      - si_native/assistant.py
+      - si_native/data.py
+      - si_native/metrics.py
+      - si_native/plans.py
+      - si_native/recommend.py
+      - si_native/ui.py
