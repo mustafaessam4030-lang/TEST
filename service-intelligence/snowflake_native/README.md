@@ -31,7 +31,7 @@ SERVICE_INTELLIGENCE
   - Cortex (`claude-sonnet-4-6`) is off by default. When switched on, it only *chooses* among approved metrics; its JSON is validated.
   - Answers are assembled from query results, so the model cannot invent numbers.
   - Questions outside the registry are refused.
-- **Conversational assistant (Cortex `claude-sonnet-4-6`, `si_native/agent.py`).**
+- **Conversational assistant (Cortex `claude-sonnet-5`, falling back to `claude-sonnet-4-6`; `si_native/agent.py`).**
   - It understands free questions and follow-ups like a chat assistant. For each question it either replies directly
     or plans up to 3 data steps: an approved metric, the daily top list, or one ad-hoc SELECT.
   - Ad-hoc SELECTs pass the same read-only guard as every app query plus a FROM/JOIN allow-list (CURATED tables and
@@ -39,8 +39,12 @@ SERVICE_INTELLIGENCE
   - The reply is written only from the returned rows. Every figure in it is checked against those rows, and anything
     that doesn't match is flagged to the user. "How I got this" shows the SQL and query IDs.
   - If Cortex is unavailable, the rule-based assistant above answers instead.
-- **Design.** Light canvas, a black icon rail, white cards, an orange accent and the Mantrac logo
-  (`si_native/theme.py`, `app/assets/mantrac_logo.svg`). The light design is forced even when Snowsight is in dark mode.
+  - It understands informal wording, typos and Arabic, remembers earlier answers for follow-ups, and suggests next questions.
+- **Design** (`si_native/theme.py`, `app/assets/mantrac_logo.svg`):
+  - a black icon rail with a light/dark switch, cards, an orange accent and the Mantrac logo, with entrance animations;
+  - the chosen mode is applied even when Snowsight is in the other one;
+  - clicking a metric tile opens its trend and breakdown; clicking a machine card opens its OLGA jobs, faults and
+    hours (`si_native/machine.py`).
 - **Recommendations.**
   - The detector `repeat_high_faults` flags faults where 10 or more assets had the same HIGH-severity fault on 3 or more days in the last 30.
   - Score = 50 × impact + 30 × urgency + 20 × confidence.

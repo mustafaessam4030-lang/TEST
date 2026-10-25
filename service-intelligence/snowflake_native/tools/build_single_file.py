@@ -10,7 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
-MODULES = ["metrics", "data", "analysis", "recommend", "plans", "assistant", "agent", "theme", "ui"]   # dependency order
+MODULES = ["metrics", "data", "analysis", "recommend", "plans", "assistant", "agent", "machine", "theme", "ui"]   # dependency order
 PAGES = [("Analysis", "streamlit_app.py"), ("Recommendations", "pages/2_Recommendations.py"),
          ("Assistant", "pages/3_Assistant.py")]
 
@@ -70,8 +70,12 @@ def install():
 
 
 def render():
-    sys.modules["si_native.ui"].chrome()              # design + logo before the menu
+    ui = sys.modules["si_native.ui"]
+    ui.chrome()                                         # design + logo before the menu
+    if "si_page_next" in st.session_state:              # a page asked to switch (e.g. "Ask the assistant")
+        st.session_state["si_page"] = st.session_state.pop("si_page_next")
     page = st.sidebar.radio("Menu", list(PAGE_SOURCES), key="si_page")
+    ui.rail_tail()                                      # light/dark switch under the menu
     exec(compile(PAGE_SOURCES[page], f"pages/{{page}}.py", "exec"), {{"__name__": "__main__"}})
 
 

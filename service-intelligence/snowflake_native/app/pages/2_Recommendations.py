@@ -28,9 +28,16 @@ with tab_top:
             st.info("No ranking yet. It is built daily by SI_ADMIN.REFRESH_DAILY (or run "
                     "CALL SERVICE_INTELLIGENCE.SI_ADMIN.BUILD_DAILY_TOP_OPPORTUNITIES(100, 90)).")
         else:
-            total = an.metric("top_opportunities_value", None)
-            new = an.metric("top_opportunities_new_today", None)
-            tel = an.metric("telemetry_only_opportunities", None)
+            DIMS = ("branch", "product_family", "due_basis")
+            got = ui.run_parallel([lambda: an.metric("top_opportunities_value", None),
+                                   lambda: an.metric("top_opportunities_new_today", None),
+                                   lambda: an.metric("telemetry_only_opportunities", None)]
+                                  + [lambda d=d: an.dimension_values(src_id, d) for d in DIMS])
+            for g in got:
+                if isinstance(g, Exception):
+                    raise g
+            total, new, tel = got[:3]
+            options = dict(zip(DIMS, got[3:]))
             run_date = str(fresh["latest_data"])[:10]
             theme.cover("Daily ranking · " + run_date, "Top 100 machines to act on today",
                         "Score 0–100 = 35 × OLGA value due + 30 × urgency (due date re-timed from live service-meter hours) "
@@ -41,8 +48,8 @@ with tab_top:
             with c0:
                 view = st.radio("Show", ["Top 100 overall", *SIGNAL_CLASSES], horizontal=True, key="top_view")
             filters = {}
-            for col, dim in zip((c1, c2, c3), ("branch", "product_family", "due_basis")):
-                picked = col.multiselect(reg.label(dim), an.dimension_values(src_id, dim), key=f"top_{dim}")
+            for col, dim in zip((c1, c2, c3), DIMS):
+                picked = col.multiselect(reg.label(dim), options[dim], key=f"top_{dim}")
                 if picked:
                     filters[dim] = picked
             lst = an.top_list(src_id, filters, 100, None if view == "Top 100 overall" else view)
@@ -57,7 +64,17 @@ with tab_top:
                     theme.section(view, f"{len(rows)} machines · ranking of {run_date}")
                     if layout == "Cards":
                         n_show = st.session_state.get("top_n_show", 12)
-                        theme.machine_cards(rows[:n_show], lambda v: ui.fmt(v, "value"))
+                        money = lambda v: ui.fmt(v, "value")  # noqa: E731
+                        shown = rows[:n_show]
+                        for start in range(0, len(shown), 3):
+                            cols = st.columns(3)
+                            for k, (col, r) in enumerate(zip(cols, shown[start:start + 3])):
+                                with col:
+                                    with theme.hit(f"mc_{r['asset_serial']}"):
+                                        theme.html_block(theme.machine_card(r, money, (start + k) % 12 * 40))
+                                        if st.button("Open details", key=f"mc_open_{r['asset_serial']}"):
+                                            ui.open_dialog(f"{r.get('model')} · {r['asset_serial']}", ui.machine_detail, r,
+                                                           an.as_of("fault_events").date(), lst["evidence"], store, role)
                         if n_show < len(rows) and st.button(f"Show more ({len(rows) - n_show} left)"):
                             st.session_state["top_n_show"] = n_show + 12
                             st.rerun()

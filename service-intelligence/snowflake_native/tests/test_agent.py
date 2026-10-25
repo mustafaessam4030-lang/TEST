@@ -80,3 +80,20 @@ def test_number_check_allows_rounding_and_percentages():
     results = [{"value": 1708000000.0, "previous_value": 1500000.0, "change_pct": 13.9, "rows": [{"value": 427}, {"value": 1974}]}]
     assert unverified_numbers("Open value is 1.7bn (+13.9%); 427 of 1,974 assets (22%) repeat.", results) == []
     assert unverified_numbers("Open value is 2.4bn.", results) == ["2.4bn"]
+
+
+def test_followups_are_split_from_the_answer():
+    from si_native.agent import split_followups
+    text, fu = split_followups("**12** machines.\n\nFOLLOWUPS: By branch? | Which are overdue? | Show the top 5")
+    assert text == "**12** machines." and fu == ["By branch?", "Which are overdue?", "Show the top 5"]
+    assert split_followups("No suggestions here.") == ("No suggestions here.", [])
+
+
+def test_machine_detail_queries_pass_the_guard_with_the_serial_bound():
+    from datetime import date
+    from si_native import machine
+    from si_native.metrics import check_spec
+    for spec in (machine.olga_jobs("X'; DROP"), machine.faults("X'; DROP", date(2026, 10, 23)),
+                 machine.hours("X'; DROP", date(2026, 10, 23))):
+        check_spec(spec, REG)
+        assert "DROP" not in spec.sql and spec.params[0] == "X'; DROP"
