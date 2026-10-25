@@ -221,6 +221,9 @@ You can look up live data. Decide what the user needs and reply with ONE JSON ob
      other tools cannot answer. The query is sent outside the company: NEVER put customer names, serial numbers,
      prices, internal figures or other company data in it - only generic technical words (e.g. "Cat 777G engine oil
      change interval").
+  {{"tool": "video", "query": "<what to find a video about, generic words>"}}  finds videos on the web (YouTube) and
+     shows them to the user as video cards under your answer. Use when the user asks for a video, or to SEE how
+     something is done. Same rule as web: no company data in the query.
   {{"tool": "machine", "serial": "<serial>"}}  one machine's full profile: fleet record (customer, hours, utilisation),
      recent repairs, oil samples, inspections, service letters, CAT alerts and recent fault codes (where allowed).
 
@@ -321,6 +324,18 @@ def run_step(step: dict, an: Analytics, runner_sql, search=None, parallel=None, 
     """search(query, system, limit) -> passages; web(query, n) -> web results; parallel(fns) -> results."""
     tool = step.get("tool")
     parallel = parallel or _sequential
+    if tool == "video":
+        if web is None:
+            raise QueryError("Web search is not available here")
+        query = scrub_web_query(str(step.get("query") or ""))
+        if not query:
+            raise QueryError("Nothing to search for")
+        videos = brain.video_results(web(f"{query} video youtube", 8))
+        if not videos:
+            videos = brain.video_results(web(f"site:youtube.com {query}", 8))
+        return {"tool": "video", "purpose": f"Video search: {query}", "query": query, "rows": videos,
+                "evidence": [{"purpose": "Cortex web search (videos)", "query_id": None, "metric_id": None,
+                              "sql": brain.web_sql(f"{query} video youtube", 8), "params": []}]}
     if tool == "web":
         if web is None:
             raise QueryError("Web search is not available here")
@@ -479,7 +494,7 @@ def unverified_numbers(text: str, results: list[dict]) -> list[str]:
 
 
 # --- one conversational turn -------------------------------------------------------------------------
-STEP_LABEL = {"web": "Searching the web: {}", "manual": "Reading the CAT training library: {}", "repairs": "Searching Mantrac repair history",
+STEP_LABEL = {"video": "Finding videos: {}", "web": "Searching the web: {}", "manual": "Reading the CAT training library: {}", "repairs": "Searching Mantrac repair history",
               "machine": "Building the machine profile: {}"}
 
 def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql, on_status=lambda s: None,
@@ -551,6 +566,8 @@ def ask(question: str, history: list[dict], an: Analytics, complete, runner_sql,
             "(Course · Module, p. N). 'repairs' rows are real Mantrac jobs - say how many similar jobs matched, the usual "
             "root causes, fixes and parts (with part numbers). Labour hours ONLY from median_labour_hours (when it is null "
             "say there is no reliable figure). 'machine' is one machine's profile. 'photo' holds what the photos show. "
+            "'video' rows are videos shown as playable cards under your answer: introduce them briefly (title and why it "
+            "helps), never invent what is in a video beyond its title and description. "
             "The pages behind the 'manual' rows are displayed as pictures under your answer - refer to them ('see the "
             "diagram below') instead of saying you cannot show images. "
             "'web' rows are public web pages: attribute those facts to the site with a markdown link [title](url), never "

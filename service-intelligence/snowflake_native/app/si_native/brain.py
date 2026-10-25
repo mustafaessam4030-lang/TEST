@@ -262,6 +262,24 @@ def web_search(session, query: str, n: int = 5) -> list[dict]:
     return parse_web(list(row.as_dict().values())[0])
 
 
+# --- videos (found with web search) ------------------------------------------------------------------
+_YT = re.compile(r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})")
+
+
+def video_results(rows: list[dict], n: int = 3) -> list[dict]:
+    """YouTube videos among web results: canonical link and thumbnail (images load from any HTTPS site)."""
+    out, seen = [], set()
+    for r in rows:
+        m = _YT.search(str(r.get("url") or ""))
+        if m and m.group(1) not in seen:
+            vid = m.group(1)
+            seen.add(vid)
+            out.append({"title": re.sub(r"\s*-\s*YouTube\s*$", "", str(r.get("title") or "Video")),
+                        "url": f"https://www.youtube.com/watch?v={vid}", "video_id": vid,
+                        "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg", "text": r.get("text")})
+    return out[:n]
+
+
 # --- photos ------------------------------------------------------------------------------------------
 VISION_PROMPT = (
     "You are a senior Caterpillar field service technician looking at photos sent by a colleague. "

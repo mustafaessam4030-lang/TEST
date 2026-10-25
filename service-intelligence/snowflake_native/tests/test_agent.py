@@ -237,3 +237,16 @@ def test_training_pictures_come_from_the_pages_found():
     Image.new("RGB", (200, 100), "white").save(buf, "PDF")
     png = brain.pdf_page_png(buf.getvalue(), 1, width=300)
     assert png is None or Image.open(io.BytesIO(png)).size[0] == 300
+
+
+def test_video_search_returns_youtube_cards(an):
+    from si_native import brain
+    rows = [{"url": "https://www.youtube.com/watch?v=RHQy8mi9jOA", "title": "Cat 777G Haul Truck Service Walkaround - YouTube"},
+            {"url": "https://m.youtube.com/watch?v=A0TBspHrug0&pp=yg", "title": "777G"},
+            {"url": "https://youtu.be/RHQy8mi9jOA", "title": "dup"}, {"url": "https://example.com/x", "title": "page"}]
+    v = brain.video_results(rows)
+    assert [x["video_id"] for x in v] == ["RHQy8mi9jOA", "A0TBspHrug0"] and v[0]["title"] == "Cat 777G Haul Truck Service Walkaround"
+    assert v[0]["thumb"] == "https://i.ytimg.com/vi/RHQy8mi9jOA/hqdefault.jpg"
+    from si_native.agent import run_step
+    out = run_step({"tool": "video", "query": "777G walkaround"}, an, None, web=lambda q, n: rows)
+    assert out["tool"] == "video" and len(out["rows"]) == 2

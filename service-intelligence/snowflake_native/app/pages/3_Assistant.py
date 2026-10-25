@@ -74,6 +74,20 @@ def training_link(path: str, page) -> str:
     return brain.training_link(ui.session(), path, page)
 
 
+def show_videos(turn: dict) -> None:
+    """Videos found on the web: thumbnail cards that open the video, and an in-chat player for the first one."""
+    videos = [v for r in turn.get("results") or [] if r.get("tool") == "video" for v in r.get("rows") or []][:3]
+    if not videos:
+        return
+    theme.html_block('<div class="si-videos">' + "".join(
+        f'<a class="si-video" href="{theme.esc(v["url"])}" target="_blank" rel="noopener">'
+        f'<div class="thumb" style="background-image:url(\'{theme.esc(v["thumb"])}\')"><span class="play">&#9654;</span></div>'
+        f'<div class="t">{theme.esc(v["title"])}</div><div class="s">Watch on YouTube ↗</div></a>' for v in videos) + "</div>")
+    with st.expander(f"Play here: {videos[0]['title'][:70]}"):
+        st.video(videos[0]["url"])
+        st.caption("If the player stays blank, Snowflake is blocking the embedded player: use the card above.")
+
+
 def show_training_pictures(turn: dict) -> None:
     """Pictures from the CAT training material behind the answer (pages, slides, diagrams)."""
     passages = [m for r in turn.get("results") or [] if r.get("tool") == "manual" for m in r.get("rows") or []]
@@ -128,7 +142,7 @@ def show_details(turn: dict) -> None:
             if r.get("tool") == "photo":
                 st.markdown(r.get("findings") or "")
                 continue
-            if r.get("tool") == "web":
+            if r.get("tool") in ("web", "video"):
                 for i, w in enumerate(r.get("rows") or [], 1):
                     st.markdown(f"{i}. [{w.get('title') or w.get('url')}]({w.get('url')})")
                 continue
@@ -165,8 +179,8 @@ def show_details(turn: dict) -> None:
 TABLE_RE = re.compile(r"SERVICE_INTELLIGENCE\.\w+\.(\w+)", re.I)
 KIND = {"metric": "approved metric", "top_list": "daily ranking", "manual": "CAT training library (Cortex Search)",
         "repairs": "Mantrac repair history", "machine": "AI Brain machine profile", "photo": "VELA vision",
-        "web": "public web (Cortex web search)"}
-SOURCE = {"web": "Web search", "manual": "CAT training library", "repairs": "Mantrac repair history", "machine": "Machine profile",
+        "web": "public web (Cortex web search)", "video": "videos on the web (Cortex web search)"}
+SOURCE = {"video": "Web videos", "web": "Web search", "manual": "CAT training library", "repairs": "Mantrac repair history", "machine": "Machine profile",
           "photo": "Photo analysis"}
 
 
@@ -205,6 +219,10 @@ def with_assumptions(text: str) -> str:
 def show_extras(turn: dict) -> None:
     if turn.get("table"):
         theme.table(turn["table"], max_height=360)
+    try:
+        show_videos(turn)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         show_training_pictures(turn)
     except Exception:  # noqa: BLE001 - pictures are extra; the answer stands without them

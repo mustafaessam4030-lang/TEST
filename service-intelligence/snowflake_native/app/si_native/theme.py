@@ -646,6 +646,16 @@ table.si-table td.wide {{ min-width: 300px; color: var(--muted); font-size: .8re
 @keyframes siPulse {{ 0%, 100% {{ transform: scale(.94); }} 50% {{ transform: scale(1.06); }} }}
 .si-sources {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; font-size: .72rem; color: var(--muted); }}
 .si-sources .src {{ border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; color: var(--ink); background: var(--card2); }}
+.si-videos {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin: 12px 0 4px; }}
+.si-video {{ display: block; text-decoration: none !important; color: var(--ink) !important; background: var(--card2);
+  border: 1px solid var(--line); border-radius: 16px; overflow: hidden; transition: transform .18s ease, box-shadow .18s ease; }}
+.si-video:hover {{ transform: translateY(-2px); box-shadow: 0 10px 24px var(--shadow); }}
+.si-video .thumb {{ position: relative; aspect-ratio: 16 / 9; background: #000 center / cover no-repeat; }}
+.si-video .play {{ position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 46px; height: 46px;
+  border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; padding-left: 3px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }}
+.si-video .t {{ font-size: .82rem; font-weight: 600; line-height: 1.3; padding: 9px 11px 2px; }}
+.si-video .s {{ font-size: .7rem; color: var(--muted); padding: 0 11px 10px; }}
 .si-sources .ok {{ color: #0F9F6E; font-weight: 600; }} .si-sources .warn {{ color: #D97706; font-weight: 600; }}
 [data-testid="stChatMessageContent"] blockquote {{ border-left: 3px dashed var(--accent) !important; margin: .5rem 0 !important; padding: .4rem .8rem !important;
   background: var(--card2); border-radius: 0 12px 12px 0; }}
