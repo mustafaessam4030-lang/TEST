@@ -428,9 +428,9 @@ try:
         pg.click("#askFab")
         pg.fill("#askIn", "which clearing agent has the most past due?")
         pg.locator("#askForm button").click()
-        pg.wait_for_function("document.querySelectorAll('#askLog .bot').length >= 2 && !document.querySelector('#askLog .bot:last-child').textContent.startsWith('…')", timeout=15000)
+        pg.wait_for_function("(() => { const b = document.querySelectorAll('#askLog .bot'); return b.length >= 2 && !b[b.length - 1].textContent.startsWith('…'); })()", timeout=15000)
         ans = pg.locator("#askLog .bot").last
-        check("in a browser: ATLAS answers on the page", "TEST AGENT" in ans.inner_text(), ans.inner_text()[:200])
+        check("in a browser: ATLAS answers on the page", "TEST AGENT" in ans.inner_text(), ans.inner_text())
         ans.locator("a").first.click()
         pg.wait_for_timeout(400)
         check("in a browser: ATLAS's link filters the page", "Open and past due" in pg.locator("#pills").inner_text(), pg.locator("#pills").inner_text())
