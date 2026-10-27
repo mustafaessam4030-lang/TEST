@@ -65,6 +65,9 @@ ALL_WORDS = re.compile(r"\b(all|every|each|the run|this run|whole run|everything
 CLEARANCE_ASK = re.compile(
     r"\b(clearance|customs|clearing agents?|duty (payment|assessment)|submit(ted)? to (the )?bu|"
     r"assign(ing)? (the )?clearing|ehub export|shipment update export)\b", re.I)
+# The run, its Human Actions, the PO worker and sign-in are not the export.
+NOT_CLEARANCE = re.compile(r"\b(this run|the run|run (fail|stop)\w*|human action|log ?in|sign(ed)? in|worker|"
+                           r"job|carriers?)\b", re.I)
 # "How does clearance work?" is for the handbook, not the export's figures.
 HOW_IT_WORKS = re.compile(r"\bhow (does|do|is|are)\b[^?]{0,40}\bwork|\bexplain\b|"
                           r"\bwhat (is|are|does) (a |the )?(customs|clearance)\b", re.I)
@@ -162,7 +165,8 @@ def detect(question, data=None, context=None):
         return "clearance"
     if CLEARANCE_ASK.search(q) and not PO_WORDS.search(q) and not WEB_ASK.search(q) and \
             not _reference(q, data, context, named_only=True) and not HOW_IT_WORKS.search(q) and \
-            not re.search(r"\bunder clearance\b", q, re.I):     # the Hub's status filter: the run
+            not re.search(r"\bunder clearance\b", q, re.I) and \
+            (context or {}).get("domain") != "po" and not NOT_CLEARANCE.search(q):   # the run, PO, sign-in
         return "clearance"
     if WEB_ASK.search(q) and not CAN_YOU_SEARCH.search(q):
         return "web"
@@ -170,25 +174,35 @@ def detect(question, data=None, context=None):
 
 
 def _clearance_named(q, data, context):
-    """A shipment of the loaded export named (not one of this run), or an escalation question."""
+    """A question about the loaded eHub export (dashboard/clearance.py), not the run, PO or handbook."""
     try:
         from dashboard import clearance
         if clearance.load() is None:
             return False
-        if re.search(r"\bescalat\w*", q, re.I) and not PO_WORDS.search(q):
+        context = context or {}
+        on_page = context.get("page") == "clearance"
+        # Never the PO page's questions, the run's, sign-in, or how something works.
+        if context.get("domain") == "po" or HOW_IT_WORKS.search(q) or NOT_CLEARANCE.search(q) or \
+                (re.search(r"\bunder clearance\b", q, re.I) and not on_page):
+            return False
+        if _reference(q, data, context, named_only=True):
+            return False
+        po = re.search(r"\b(po|p\.o\.|purchase orders?|boe|bill of entry)\b", q, re.I) if on_page else PO_WORDS.search(q)
+        if po:
+            return False
+        if re.search(r"\bescalat\w*", q, re.I):
             return True
         # Asked from the Clearance page: a question that names something in the
         # export (a BU, mode, step, agent, forwarder, month) or asks for shipments.
-        if (context or {}).get("page") == "clearance" and not PO_WORDS.search(q):
+        if on_page:
             whole = clearance.query(None)
             if whole and (_cl_filters(q, dict(whole["values"], years=[])) or
                           re.search(r"\b(shipments?|how many|which|list|show|top|worst|summary|status)\b", q, re.I)):
                 return True
         # The export's own words: the run has carriers, not forwarders or clearing agents.
-        if re.search(r"\b(past[- ]?due|forwarders?|clearing agents?|ehub)\b", q, re.I) and \
-                not PO_WORDS.search(q) and not _reference(q, data, context, named_only=True):
+        if re.search(r"\b(past[- ]?due|forwarders?|clearing agents?|ehub export)\b", q, re.I):
             return True
-        return bool(clearance.awbs_in(q)) and not _reference(q, data, context, named_only=True)
+        return bool(clearance.awbs_in(q))
     except Exception:
         return False
 
@@ -479,13 +493,14 @@ def _step(name):
 CL_RANK = re.compile(r"\b(which|what|who|top|worst|most|slowest|biggest|rank)\b", re.I)
 CL_ESC = re.compile(r"\bescalat\w*", re.I)
 CL_FLAG = [("pastdue", re.compile(r"\b(past[- ]?due|overdue|late at|stuck|waiting longest|delayed)\b", re.I)),
+           ("open", re.compile(r"\b(open|pending|in progress|(not|yet to be|still not) (yet )?"
+                               r"(completed|finished|done|cleared))\b", re.I)),
            ("done", re.compile(r"\b(completed|finished|done|cleared)\b", re.I)),
-           ("open", re.compile(r"\b(open|pending|in progress|not (yet )?completed)\b", re.I)),
            ("late", re.compile(r"\b(not on time|late)\b", re.I))]
 CL_STEPS = [("Submit to BU", r"submit(ted)? to (the )?bu"), ("Assign Clearing Agent", r"assign(ing|ed)?\b[^.?]{0,12}agent"),
             ("Customs Pre Entry", r"pre[- ]?entry"), ("Customs Declaration", r"declaration"),
             ("Duty Assessment", r"duty assessment|assessment"), ("Duty Payment", r"duty payment|paying duty"),
-            ("Customs Release", r"customs release|release"), ("Awaiting Reciept", r"receipt|reciept|received"),
+            ("Customs Release", r"customs release|release"), ("Awaiting Reciept", r"awaiting receipt|receipt|reciept"),
             ("Correction Required", r"correction")]
 MONTHS_RX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
@@ -519,7 +534,10 @@ def _cl_filters(question, values):
                 best = v
         if best:
             f[key] = best
-    m = re.search(r"\b(" + "|".join(MONTHS_RX) + r")[a-z]*\.?\s*(20\d\d)?\b", q, re.I)
+    m = re.search(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|"
+                  r"sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?\s*(20\d\d)?", q, re.I)
+    if m and m.group(1).lower() == "may" and not (m.group(2) or re.search(r"\b(eta|month)\b", q, re.I)):
+        m = None
     if m and re.search(r"\b(eta|month|in|for|during)\b", q, re.I):
         year = m.group(2)
         if not year:
@@ -547,6 +565,11 @@ def _cl_link(f):
     return "/clearance" + ("#" + urlencode(h) if h else "")
 
 
+def _plain(text):
+    """Text people typed (reasons, recipients): shown as written, never as a link."""
+    return str(text or "").replace("[", "(").replace("]", ")")
+
+
 def _cl_shipment(rows, escalations, log):
     lines = []
     for r in rows:
@@ -568,10 +591,11 @@ def _cl_shipment(rows, escalations, log):
         met = sum(1 for a in r["ach"] if a == "Y")
         lines.append("- Stage targets: {0} met{1}".format(met, "; missed: " + ", ".join(missed) if missed else ""))
     for e in escalations:
-        lines.append("- Escalation ({0}) by {1} on {2}: {3}".format(e["status"], e["by"], e["at"][:10], e["reason"]))
+        lines.append("- Escalation ({0}, {1}) by {2} on {3}: {4}".format(e["status"], e["bu"], e["by"], e["at"][:10],
+                                                                    _plain(e["reason"])))
     for c in log[-3:]:
         lines.append("- {0} {1} by {2} on {3}".format("Call started" if c["kind"] == "call" else "Mail drafted",
-                                                    ("to " + c["to"]) if c["to"] else "", c["by"], c["at"][:16].replace("T", " ")))
+                                                    ("to " + _plain(c["to"])) if c["to"] else "", c["by"], c["at"][:16].replace("T", " ")))
     lines.append("Open it on the [Clearance page](/clearance#q={0}).".format(rows[0]["awb"].replace(" ", "%20")))
     return "\n".join(lines)
 
@@ -588,9 +612,10 @@ def clearance_answer(question):
     if named:
         out = []
         for awb in named[:3]:
-            out.append(_cl_shipment(clearance.find(awb, data),
-                                    [e for e in clearance.escalations() if e["awb"] == awb],
-                                    clearance.contact_log(awb)))
+            rows = clearance.find(awb, data)
+            bus = {r["bu"] for r in rows}
+            out.append(_cl_shipment(rows, [e for e in clearance.escalations() if e["awb"] == awb and e["bu"] in bus],
+                                    [c for c in clearance.contact_log(awb) if c.get("bu") in bus | {None}]))
         return "\n\n".join(out)
     whole = clearance.query(None, data=data)
     values = dict(whole["values"], years=sorted({(r[data["fields"].index("eta")] or "")[:4]
@@ -607,7 +632,7 @@ def clearance_answer(question):
             lines.append("- {0} ({1}, {2}) at {3}{4}: “{5}” by {6} on {7}".format(
                 e["awb"], e["bu"], e["mode"], _step(e["step"]),
                 ", {0:,} days past due".format(e["overdue"]) if e.get("overdue") and e["overdue"] > 0 else "",
-                e["reason"][:140], e["by"], e["at"][:10]))
+                _plain(e["reason"][:140]), e["by"], e["at"][:10]))
         return "\n".join(lines)
     s = clearance.query(f, data=data)
     if not s["total"]:

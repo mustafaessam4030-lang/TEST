@@ -298,7 +298,7 @@ check("ATLAS lists open escalations", "TEST-0002" in reply and "Agent not answer
 reply = atlas_skills.answer("clearance", "what is the status of TEST-0002?", None)["answer"]
 check("ATLAS answers one shipment from the export: step, due, days, agent, escalation, mail",
       "Customs Release" in reply and "2026-09-01" in reply and "55" in reply and "TEST AGENT" in reply
-      and "Escalation (open)" in reply and "Mail drafted" in reply, reply)
+      and "Escalation (open, GH)" in reply and "Mail drafted" in reply, reply)
 check("…and only for the shipments it names", atlas_skills.detect("what is the status of TEST-0002?") == "clearance")
 st, r = post(V, V_csrf, "/api/clearance/resolve", {"id": esc1.get("id"), "note": "x"})
 check("a Viewer cannot resolve (403)", st == 403)
@@ -314,6 +314,37 @@ check("escalate, resolve, contacts and mail are all in the audit log",
 check("a question asked on the Clearance page goes to the clearance data",
       atlas_skills.detect("GH air shipments in June", None, {"page": "clearance"}) == "clearance"
       and atlas_skills.detect("GH air shipments in June", None, {}) is None)
+
+print("\n4c. ATLAS KEEPS THE OTHER QUESTIONS (an export is loaded)")
+for q, ctx in [("did this job run against the real eHub?", {"domain": "po"}),
+               ("where do the eHub records come from", {"domain": "po"}),
+               ("which shipments are under clearance in eHub", {}),
+               ("how does the eHub login work?", {}),
+               ("why did the run fail to log in to eHub", {}),
+               ("was shipment 1234567890 escalated to human action?", {}),
+               ("what needs escalation in this run?", {}),
+               ("how does customs clearance work?", {})]:
+    check("not the export: " + q, atlas_skills.detect(q, None, ctx) != "clearance", atlas_skills.detect(q, None, ctx))
+vals = clearance.query(None)["values"]
+f = atlas_skills._cl_filters("how many shipments are not completed", dict(vals, years=[]))
+check("'not completed' means open, not completed", f.get("flag") == "open", f)
+f = atlas_skills._cl_filters("not yet cleared shipments", dict(vals, years=[]))
+check("'not yet cleared' means open", f.get("flag") == "open", f)
+for q in ["which shipments may be late in CAT", "sea shipments in the market", "a separate decision for the junior team"]:
+    f = atlas_skills._cl_filters(q, dict(vals, years=["2026"]))
+    check("no month read from ordinary words: " + q, "month" not in f, f)
+f = atlas_skills._cl_filters("GH shipments in June 2026", dict(vals, years=["2026"]))
+check("a real month is read", f.get("month") == "2026-06", f)
+f = atlas_skills._cl_filters("eta in may", dict(vals, years=["2026"]))
+check("'may' as a month only with ETA/month or a year", f.get("month") == "2026-05", f)
+st, r = post(V, V_csrf, "/api/clearance/contact-log", {"awb": "TEST-0002", "bu": "GH", "kind": "call", "to": "[click](/clearance) +99 not on file"})
+log = [c for c in clearance.contact_log("TEST-0002") if c["kind"] == "call"]
+check("a recipient not on file is not recorded as typed", log and log[-1]["to"] == "", log)
+st, b, _h = call(O, "POST", "/api/clearance/escalate", None, O_csrf, {"Content-Type": "application/json"}, raw=True)
+st, b, _h = call(O, "POST", "/api/clearance/contacts", b'["not", "an", "object"]', A_csrf, {"Content-Type": "application/json"}, raw=True)
+check("a body that is not an object is a clean 400 / 403, never a crash", st in (400, 403), st)
+st, b, _h = call(A, "POST", "/api/clearance/contacts", b'{"agents": {"X": "not-an-object"}}', A_csrf, {"Content-Type": "application/json"}, raw=True)
+check("a contact that is not an object is refused", st == 200 and js(b).get("ok") is False, b[:120])
 
 print("\n5. THE PAGES")
 html = open(os.path.join(HERE, "dashboard", "static", "clearance.html"), encoding="utf-8").read()

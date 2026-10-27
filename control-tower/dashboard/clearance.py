@@ -301,10 +301,14 @@ def contacts():
 
 def save_contacts(payload, by):
     """Replace the contact list. -> (ok, message). Every value is checked."""
+    if not isinstance(payload, dict) or not all(isinstance(payload.get(k) or {}, dict) for k in KINDS):
+        return False, "Bad contact list."
     out = {}
     for kind in KINDS:
         out[kind] = {}
         for name, c in (payload.get(kind) or {}).items():
+            if not isinstance(c, dict):
+                return False, "Bad contact for {0}.".format(str(name)[:60])
             name = str(name or "").strip()[:120]
             c = c or {}
             person = str(c.get("person") or "").strip()[:80]
@@ -341,7 +345,7 @@ def escalate(row, reason, by):
              "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "status": "open"}
     with _store_lock:
         items = escalations()
-        if any(e["awb"] == entry["awb"] and e["status"] == "open" for e in items):
+        if any(e["awb"] == entry["awb"] and e["bu"] == entry["bu"] and e["status"] == "open" for e in items):
             return False, "{0} already has an open escalation.".format(entry["awb"]), None
         items.append(entry)
         _write_json(runtime() / "escalations.json", items)
@@ -364,15 +368,31 @@ def log_contact(row, kind, to, by):
     """Someone started a call or drafted a mail for a shipment (the act itself is on their PC)."""
     if kind not in ("call", "mail") or not row:
         return False
-    entry = {"awb": row["awb"], "kind": kind, "to": str(to or "")[:200], "by": by,
-             "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    # Only recipients that are on file are recorded (what someone types in the
+    # mail's To box is theirs to send; the record names who was contacted).
+    known = set()
+    for group in contacts().values():
+        for c in group.values():
+            known |= {e.strip().lower() for e in c.get("email", "").split(";") if e.strip()}
+            if c.get("phone"):
+                known.add(_re.sub(r"[^\d+]", "", c["phone"]))
+    said = [t.strip() for t in _re.split(r"[;,]", str(to or "")) if t.strip()]
+    on_file = [t for t in said if t.lower() in known or _re.sub(r"[^\d+]", "", t.split()[-1]) in known]
+    entry = {"awb": row["awb"], "bu": row["bu"], "kind": kind, "to": "; ".join(on_file)[:200],
+             "by": by, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    path = runtime() / "contact_log.jsonl"
     with _store_lock:
-        with open(str(runtime() / "contact_log.jsonl"), "a", encoding="utf-8") as f:
+        with open(str(path), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
+        if path.stat().st_size > 4 * 1024 * 1024:          # keep the newest ~2 MB
+            lines = path.read_text(encoding="utf-8").splitlines()
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text("\n".join(lines[len(lines) // 2:]) + "\n", encoding="utf-8")
+            os.replace(str(tmp), str(path))
     return True
 
 
-def contact_log(awb=None, limit=200):
+def contact_log(awb=None, limit=200, bu=None):
     try:
         lines = (runtime() / "contact_log.jsonl").read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -383,7 +403,7 @@ def contact_log(awb=None, limit=200):
             e = json.loads(line)
         except ValueError:
             continue
-        if awb is None or e.get("awb") == awb:
+        if (awb is None or e.get("awb") == awb) and (bu is None or e.get("bu") in (None, bu)):
             out.append(e)
     return out[-limit:]
 
@@ -430,7 +450,7 @@ def awbs_in(text, data=None):
     found = []
     for r in records(data):
         k = norm_awb(r["awb"])
-        if len(k) >= 5 and k in words and r["awb"] not in found:
+        if len(k) >= 5 and any(ch.isdigit() for ch in k) and k in words and r["awb"] not in found:
             found.append(r["awb"])
     return found
 

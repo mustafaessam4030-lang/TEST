@@ -710,7 +710,7 @@ function openRow(idx) {
     <div style="margin:0 0 14px">${actions(r)}</div>
     <h4 style="margin:0 0 8px">Stage targets</h4><ul class="steps">${steps}</ul>
     <h4 style="margin:16px 0 8px">Activity</h4><div id="d-act" class="note">Loading…</div>`;
-  api("/api/clearance/activity?awb=" + encodeURIComponent(r[F.awb])).then((x) => x.json()).then((a) => {
+  api("/api/clearance/activity?awb=" + encodeURIComponent(r[F.awb]) + "&bu=" + encodeURIComponent(r[F.bu])).then((x) => x.json()).then((a) => {
     const items = a.escalations.map((x) => `Escalation (${x.status}) by ${esc(x.by)} on ${esc(x.at.slice(0, 16).replace("T", " "))}: “${esc(x.reason)}”` +
       (x.status === "resolved" ? ` · resolved by ${esc(x.resolved_by)}${x.resolved_note ? ": " + esc(x.resolved_note) : ""}` : ""))
       .concat(a.contacts.map((c) => `${c.kind === "call" ? "Call started" : "Mail drafted"}${c.to ? " to " + esc(c.to) : ""} by ${esc(c.by)} on ${esc(c.at.slice(0, 16).replace("T", " "))}`));

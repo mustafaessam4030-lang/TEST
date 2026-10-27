@@ -950,10 +950,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/clearance/activity":
             from urllib.parse import parse_qs, urlparse as _up
-            awb = (parse_qs(_up(self.path).query).get("awb") or [""])[0][:60]
+            qs = parse_qs(_up(self.path).query)
+            awb = (qs.get("awb") or [""])[0][:60]
+            bu = (qs.get("bu") or [""])[0][:20] or None
             self._send(200, json.dumps({
-                "contacts": _clearance.contact_log(awb),
-                "escalations": [e for e in _clearance.escalations() if e["awb"] == awb]}))
+                "contacts": _clearance.contact_log(awb, bu=bu),
+                "escalations": [e for e in _clearance.escalations()
+                                if e["awb"] == awb and (bu is None or e["bu"] == bu)]}))
             return
 
         if route == "/api/clearance":
@@ -1323,6 +1326,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._acc_json(65536)
         except (ValueError, TypeError):
+            body = None
+        if not isinstance(body, dict):
             self._send(400, json.dumps({"ok": False, "message": "Bad request."}))
             return
         by = (self.user or {}).get("work_email") or "access key"
