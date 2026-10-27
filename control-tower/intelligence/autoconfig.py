@@ -402,6 +402,13 @@ def apply(log=print):
     if model_ok:
         log("ATLAS model choice: " + auto_upgrade(
             os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA, log))
+    try:
+        from . import cortex as _cortex
+        if _cortex.settings():
+            log("ATLAS wording model: Snowflake Cortex ({0}) first, budget {1:,} tokens a day; "
+                "the local model is the fallback".format(_cortex.model(), _cortex.budget()))
+    except Exception:
+        pass
     log("ATLAS conversation: {0}".format(
         "ON — " + model_detail if model_ok else "off — " + model_detail))
     if not search_ok and _start_local_search():

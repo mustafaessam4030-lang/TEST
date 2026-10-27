@@ -284,3 +284,22 @@ CSV, a detail panel). Everything on the page is clickable to filter.
   *Data checks*. "On time" is the export's own flag.
 - **ATLAS** answers clearance questions ("how many EG shipments are past due in
   customs?") from the loaded export only, and links to the page.
+
+## ATLAS on Snowflake Cortex (optional, billed in Snowflake credits)
+
+ATLAS can word its answers with a model in Mantrac's Snowflake account
+(default `claude-sonnet-4-5`); the local Ollama model stays as the fallback.
+Facts still come only from ATLAS's records, and the fact guard rejects any
+added number, reference or claim.
+
+1. A Snowflake admin runs `deploy/snowflake/atlas_cortex_setup.sql` (a
+   service user `ATLAS_SVC` with Cortex only, no data; a network policy for
+   the tower server; a 180-day token).
+2. On the server, as the account that runs the tower: `STORE_SNOWFLAKE_TOKEN.bat`
+   (the token goes into Windows Credential Manager), then restart the tower.
+3. `python -m intelligence.cortex status` shows today's calls and tokens.
+   Daily budget `ATLAS_CORTEX_DAILY_TOKENS` (default 500,000); then the local
+   model answers until midnight. `ATLAS_CORTEX=off` switches it off.
+
+Pictures are never sent to Cortex. With the account's cross-region setting
+(AWS_US) Snowflake may process prompts in that region.

@@ -34,6 +34,12 @@ at the time; check them before acting.
    Then restart the tower.
 10. Launch page date: SET_LAUNCH.bat as administrator (Cairo time).
 
+11. Optional, ATLAS on Snowflake Cortex: a Snowflake admin runs
+    `deploy/snowflake/atlas_cortex_setup.sql` (put the server's outbound IP in
+    it: `Invoke-RestMethod https://api.ipify.org`), then run
+    `STORE_SNOWFLAKE_TOKEN.bat` on the server as the tower's account and
+    restart the tower. Cortex answers first; the local model is the fallback.
+
 ## Problems we hit and the fix for each
 
 ### "python is not recognized" right after installing Python

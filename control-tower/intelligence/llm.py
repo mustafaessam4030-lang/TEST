@@ -1,5 +1,5 @@
 """
-ATLAS's optional language model — LOCAL only, no paid API.
+ATLAS's optional language model: local (Ollama), with Snowflake Cortex in front when set up.
 
 The deterministic ATLAS (dashboard/assistant.py and intelligence/*) is the
 authority for every run fact, every success or failure, every action. A model
@@ -10,6 +10,8 @@ model is not configured, not running, slow or wrong, ATLAS answers exactly as
 it does without one.
 
     ATLAS_LLM_PROVIDER      none (default) | ollama
+    (Snowflake Cortex, when set up with python -m intelligence.cortex set,
+    answers first and the provider above is its fallback: intelligence/cortex.py)
     ATLAS_LLM_URL           default http://127.0.0.1:11434 (Ollama)
     ATLAS_LLM_MODEL         e.g. qwen2.5:7b-instruct  (no default: must be named)
     ATLAS_LLM_VISION_MODEL  the model for questions with a picture (default:
@@ -170,16 +172,52 @@ def _report(ok, model, error):
             pass
 
 
+class ChainProvider(object):
+    """Snowflake Cortex first (intelligence/cortex.py), the local model when it
+    cannot answer: not set up, over today's budget, unreachable, or a picture."""
+    name = "chain"
+
+    def __init__(self, first, then):
+        self.first, self.then = first, then
+
+    @property
+    def model(self):
+        return self.first.model if self.first.health()["ok"] else self.then.model
+
+    def health(self):
+        a, b = self.first.health(), self.then.health()
+        out = dict(a if a["ok"] else b)
+        out["chain"] = [a, b]
+        out["ok"] = a["ok"] or b["ok"]
+        return out
+
+    def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700, images=None):
+        if not images and self.first.health()["ok"]:
+            try:
+                return self.first.generate(system, prompt, None, json_mode, max_tokens)
+            except Exception:
+                pass                                   # the local model answers instead
+        return self.then.generate(system, prompt, timeout, json_mode, max_tokens, images)
+
+
 _provider = {"key": None, "obj": None}
 
 
 def provider():
-    """The configured provider (rebuilt when the settings change)."""
+    """The configured provider (rebuilt when the settings change). With Snowflake
+    Cortex set up, it answers first and the local one is the fallback."""
     key = (os.environ.get("ATLAS_LLM_PROVIDER") or "none").strip().lower(), \
-        os.environ.get("ATLAS_LLM_URL"), os.environ.get("ATLAS_LLM_MODEL")
+        os.environ.get("ATLAS_LLM_URL"), os.environ.get("ATLAS_LLM_MODEL"), \
+        (os.environ.get("ATLAS_CORTEX") or "").strip().lower()
     if _provider["key"] != key:
         _provider["key"] = key
-        _provider["obj"] = OllamaProvider() if key[0] == "ollama" else NullProvider()
+        local = OllamaProvider() if key[0] == "ollama" else NullProvider()
+        try:
+            from . import cortex as _cortex
+            _provider["obj"] = ChainProvider(_cortex.CortexProvider(), local) \
+                if _cortex.settings() else local
+        except Exception:
+            _provider["obj"] = local
     return _provider["obj"]
 
 
