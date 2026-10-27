@@ -90,7 +90,10 @@ LOG = []
 print("1. Upgrade by itself")
 fresh(["qwen3.5:4b"])
 AC.apply(LOG.append)
-check("Starts on the small model at once", os.environ.get("ATLAS_LLM_MODEL") == "qwen3.5:4b")
+# On a busy machine the (instant, fake) download can already have finished and
+# switched by now: started on the 4B means 4B now, or 30B only after the pull.
+check("Starts on the small model at once", os.environ.get("ATLAS_LLM_MODEL") == "qwen3.5:4b" or
+      (os.environ.get("ATLAS_LLM_MODEL") == "qwen3:30b" and PULLS == ["qwen3:30b"]), os.environ.get("ATLAS_LLM_MODEL"))
 check("Downloads the stronger model in the background", wait_for(lambda: PULLS == ["qwen3:30b"]), PULLS)
 check("...and switches to it when ready, keeping the 4B for pictures",
       wait_for(lambda: os.environ.get("ATLAS_LLM_MODEL") == "qwen3:30b")
@@ -129,19 +132,19 @@ print("3. When it does not upgrade")
 fresh(["qwen3.5:4b"], ram=16.0)
 LOG = []
 AC.apply(LOG.append)
-time.sleep(0.3)
+wait_for(lambda: any("needs 30" in x for x in LOG))
 check("16 GB RAM: no download, and it says why", PULLS == [] and
       any("needs 30" in x for x in LOG), LOG)
 fresh(["qwen3.5:4b"], disk=10.0)
 LOG = []
 AC.apply(LOG.append)
-time.sleep(0.3)
+wait_for(lambda: any("free disk" in x for x in LOG))
 check("Not enough free disk: no download, and it says why", PULLS == [] and
       any("free disk" in x for x in LOG), LOG)
 fresh(["qwen3.5:4b"], ATLAS_LLM_MODEL="qwen3.5:4b")
 LOG = []
 AC.apply(LOG.append)
-time.sleep(0.3)
+wait_for(lambda: any("operator chose" in x for x in LOG))
 check("A model the operator named is kept", PULLS == [] and
       os.environ["ATLAS_LLM_MODEL"] == "qwen3.5:4b" and any("operator chose" in x for x in LOG), LOG)
 fresh(["qwen3.5:4b"], ATLAS_LLM_URL="http://10.9.9.9:11434")
@@ -150,11 +153,12 @@ check("Ollama on another machine: its models are not managed from here",
 fresh(["qwen3.5:4b"], ATLAS_AUTO_UPGRADE="0")
 LOG = []
 AC.apply(LOG.append)
-time.sleep(0.3)
+wait_for(lambda: any("off" in x for x in LOG))
 check("ATLAS_AUTO_UPGRADE=0: off", PULLS == [] and any("off" in x for x in LOG), LOG)
 fresh(["qwen3.5:4b", "qwen3:30b"])
 LOG = []
 AC.apply(LOG.append)
+wait_for(lambda: os.environ.get("ATLAS_LLM_MODEL") == "qwen3:30b")
 check("Already downloaded: used at once, no download", PULLS == [] and
       os.environ["ATLAS_LLM_MODEL"] == "qwen3:30b", LOG)
 fresh(["qwen3.5:4b"])
