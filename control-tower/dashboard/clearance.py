@@ -19,6 +19,7 @@ invented and nothing is written back to eHub.
 import datetime as _dt
 import json
 import os
+import re as _re
 import threading
 import time
 import uuid
@@ -274,29 +275,236 @@ def check_inbox():
     return _start(newest, newest.name, "inbox folder", "inbox", keep=stamp)
 
 
-# ── for ATLAS ─────────────────────────────────────────────────────────────
+# ── contacts, escalations and the contact log ─────────────────────────────
+#
+# Contacts are typed in by an Admin on the Clearance page; nothing is looked
+# up or guessed. Call and Mail happen on the person's own phone / Outlook
+# (tel: and mailto:): the platform sends nothing. What was done is recorded.
 
-def summary(bu=None, top=5):
-    """Counts from the loaded export for ATLAS, or None when nothing is loaded."""
+_store_lock = threading.Lock()
+KINDS = ("agents", "bus", "forwarders")
+EMAIL = _re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[A-Za-z]{2,}$")
+PHONE = _re.compile(r"^\+?[0-9 ()\-./]{6,24}$")
+
+
+def _read_json(name, default):
     try:
-        data = json.loads(data_path().read_text(encoding="utf-8"))
+        return json.loads((runtime() / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def contacts():
+    data = _read_json("contacts.json", {})
+    return {k: dict(data.get(k) or {}) for k in KINDS}
+
+
+def save_contacts(payload, by):
+    """Replace the contact list. -> (ok, message). Every value is checked."""
+    out = {}
+    for kind in KINDS:
+        out[kind] = {}
+        for name, c in (payload.get(kind) or {}).items():
+            name = str(name or "").strip()[:120]
+            c = c or {}
+            person = str(c.get("person") or "").strip()[:80]
+            emails = [e.strip() for e in _re.split(r"[;,]", str(c.get("email") or "")) if e.strip()]
+            phone = str(c.get("phone") or "").strip()[:30]
+            if not name or not (person or emails or phone):
+                continue
+            bad = [e for e in emails if not EMAIL.match(e)]
+            if bad:
+                return False, "Not an email address: {0} ({1})".format(bad[0][:60], name)
+            if phone and not PHONE.match(phone):
+                return False, "Not a phone number: {0} ({1})".format(phone, name)
+            out[kind][name] = {"person": person, "email": "; ".join(emails[:5]), "phone": phone}
+    out["updated_by"], out["updated_at"] = by, time.strftime("%Y-%m-%dT%H:%M:%S")
+    with _store_lock:
+        _write_json(runtime() / "contacts.json", out)
+    return True, "Contacts saved."
+
+
+def escalations():
+    return _read_json("escalations.json", [])
+
+
+def escalate(row, reason, by):
+    """A new open escalation for one shipment (its facts copied from the export)."""
+    reason = str(reason or "").strip()
+    if not reason:
+        return False, "Write why it is escalated.", None
+    if not row or not row.get("awb"):
+        return False, "That shipment is not in the loaded export.", None
+    entry = {"id": uuid.uuid4().hex[:12], "awb": row["awb"], "bu": row["bu"], "mode": row["mode"],
+             "step": row["step"], "overdue": row["overdue"], "due": row["due"],
+             "agent": row["agent"], "reason": reason[:600], "by": by,
+             "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "status": "open"}
+    with _store_lock:
+        items = escalations()
+        if any(e["awb"] == entry["awb"] and e["status"] == "open" for e in items):
+            return False, "{0} already has an open escalation.".format(entry["awb"]), None
+        items.append(entry)
+        _write_json(runtime() / "escalations.json", items)
+    return True, "Escalated {0}.".format(entry["awb"]), entry
+
+
+def resolve(esc_id, note, by):
+    with _store_lock:
+        items = escalations()
+        for e in items:
+            if e["id"] == esc_id and e["status"] == "open":
+                e.update(status="resolved", resolved_by=by, resolved_note=str(note or "")[:600],
+                         resolved_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+                _write_json(runtime() / "escalations.json", items)
+                return True, "Resolved {0}.".format(e["awb"]), e
+    return False, "No open escalation with that id.", None
+
+
+def log_contact(row, kind, to, by):
+    """Someone started a call or drafted a mail for a shipment (the act itself is on their PC)."""
+    if kind not in ("call", "mail") or not row:
+        return False
+    entry = {"awb": row["awb"], "kind": kind, "to": str(to or "")[:200], "by": by,
+             "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    with _store_lock:
+        with open(str(runtime() / "contact_log.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    return True
+
+
+def contact_log(awb=None, limit=200):
+    try:
+        lines = (runtime() / "contact_log.jsonl").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if awb is None or e.get("awb") == awb:
+            out.append(e)
+    return out[-limit:]
+
+
+# ── reading the loaded export (ATLAS, the actions) ────────────────────────
+
+_cache = {"mtime": None, "data": None}
+
+
+def load():
+    """The loaded export, or None. Read again only when it changed."""
+    try:
+        path = data_path()
+        mtime = path.stat().st_mtime
+        if _cache["mtime"] != mtime:
+            _cache.update(mtime=mtime, data=json.loads(path.read_text(encoding="utf-8")))
+        return _cache["data"]
     except (OSError, ValueError):
         return None
-    F = {k: i for i, k in enumerate(data["fields"])}
-    rows = [r for r in data["rows"] if not bu or r[F["bu"]] == bu]
-    open_ = [r for r in rows if r[F["step"]] != "Completed"]
-    late = sorted([r for r in open_ if r[F["overdue"]] is not None and r[F["overdue"]] > 0],
-                  key=lambda r: -r[F["overdue"]])
-    by_step, by_bu = {}, {}
-    for r in late:
-        by_step[r[F["step"]]] = by_step.get(r[F["step"]], 0) + 1
-        by_bu[r[F["bu"]]] = by_bu.get(r[F["bu"]], 0) + 1
-    on = sum(r[F["ontime"]] for r in rows)
-    return {"asof": data["asof"], "bu": bu, "total": len(rows), "on_time": on,
-            "open": len(open_), "past_due": len(late),
-            "past_due_by_step": sorted(by_step.items(), key=lambda x: -x[1]),
-            "past_due_by_bu": sorted(by_bu.items(), key=lambda x: -x[1]),
-            "longest": [{"awb": r[F["awb"]], "bu": r[F["bu"]], "mode": r[F["mode"]],
-                         "step": r[F["step"]], "days": r[F["overdue"]], "due": r[F["due"]]}
+
+
+def records(data=None):
+    data = data or load()
+    if not data:
+        return []
+    f = data["fields"]
+    return [dict(zip(f, r)) for r in data["rows"]]
+
+
+def norm_awb(text):
+    return _re.sub(r"[\s\-./]", "", str(text or "")).upper()
+
+
+def find(awb, data=None):
+    """Every shipment row whose AWB/BOL matches (spaces and dashes ignored)."""
+    key = norm_awb(awb)
+    return [r for r in records(data) if key and norm_awb(r["awb"]) == key] if key else []
+
+
+def awbs_in(text, data=None):
+    """AWB/BOL numbers of the loaded export named in a question."""
+    words = set(norm_awb(w) for w in _re.findall(r"[A-Za-z0-9][A-Za-z0-9\- ]{4,24}[A-Za-z0-9]", text or ""))
+    words |= set(norm_awb(w) for w in _re.findall(r"[A-Za-z0-9\-]{5,}", text or ""))
+    found = []
+    for r in records(data):
+        k = norm_awb(r["awb"])
+        if len(k) >= 5 and k in words and r["awb"] not in found:
+            found.append(r["awb"])
+    return found
+
+
+def is_open(r):
+    return r["step"] != "Completed"
+
+
+def past_due(r):
+    return is_open(r) and r["overdue"] is not None and r["overdue"] > 0
+
+
+GROUPS = {"With BU": ("Submit to BU", "Assign Clearing Agent", "Correction Required"),
+          "In customs": ("Customs Pre Entry", "Customs Declaration", "Duty Assessment",
+                         "Duty Payment", "Customs Release"),
+          "Receipt": ("Awaiting Reciept",)}
+
+
+def query(filters=None, top=5, data=None):
+    """
+    Counts for any combination of bu / mode / div / step / agent / ffw / month /
+    status / flag (open, pastdue, done, late) from the loaded export. None when
+    nothing is loaded. Every number is counted from the rows; nothing estimated.
+    """
+    data = data or load()
+    if not data:
+        return None
+    f = dict(filters or {})
+    rows = records(data)
+    def keep(r):
+        for k in ("bu", "mode", "div", "step", "agent", "ffw", "status"):
+            if f.get(k) and str(r[k]).lower() != str(f[k]).lower():
+                return False
+        if f.get("month") and not (r["eta"] or "").startswith(f["month"]):
+            return False
+        if f.get("group") and r["step"] not in GROUPS.get(f["group"], ()):
+            return False
+        flag = f.get("flag")
+        if flag == "open" and not is_open(r) or flag == "pastdue" and not past_due(r) or \
+                flag == "done" and is_open(r) or flag == "late" and r["ontime"]:
+            return False
+        return True
+    sel = [r for r in rows if keep(r)]
+    open_ = [r for r in sel if is_open(r)]
+    late = sorted([r for r in open_ if past_due(r)], key=lambda r: -r["overdue"])
+
+    def group(key, rs):
+        out = {}
+        for r in rs:
+            out[r[key]] = out.get(r[key], 0) + 1
+        return sorted(out.items(), key=lambda x: -x[1])
+    open_esc = [e for e in escalations() if e["status"] == "open"]
+    awbs = {r["awb"] for r in sel}
+    return {"asof": data["asof"], "filters": f, "total": len(sel),
+            "on_time": sum(r["ontime"] for r in sel), "open": len(open_), "past_due": len(late),
+            "done": len(sel) - len(open_),
+            "past_due_by_step": group("step", late), "past_due_by_bu": group("bu", late),
+            "past_due_by_agent": group("agent", [r for r in late if r["agent"]]),
+            "past_due_by_ffw": group("ffw", [r for r in late if r["ffw"]]),
+            "by_mode": group("mode", sel),
+            "longest": [{k: r[k] for k in ("awb", "bu", "mode", "step", "overdue", "due", "agent", "ffw")}
                         for r in late[:top]],
-            "bus": sorted({r[F["bu"]] for r in data["rows"]}), "dq": data["dq"]}
+            "escalated_open": [e for e in open_esc if e["awb"] in awbs],
+            "values": {k: sorted({r[k] for r in rows if r[k]}) for k in
+                       ("bu", "mode", "div", "step", "agent", "ffw", "status")},
+            "dq": data["dq"]}
+
+
+def summary(bu=None, top=5):
+    """Kept for callers of the first version: query() for one BU or all."""
+    q = query({"bu": bu} if bu else None, top=top)
+    if q is None:
+        return None
+    q["bu"] = bu
+    q["bus"] = q["values"]["bu"]
+    q["longest"] = [dict(x, days=x["overdue"]) for x in q["longest"]]
+    return q

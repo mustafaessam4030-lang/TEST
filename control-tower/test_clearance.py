@@ -263,7 +263,57 @@ check("ATLAS: a clearance question goes to the clearance skill",
 reply = atlas_skills.answer("clearance", "clearance past due for GH", None)
 check("ATLAS answers from the loaded export only, names the BU and links the page",
       "**GH**" in reply["answer"] and "TEST-0002" in reply["answer"] and "55 days" in reply["answer"]
-      and "(/clearance#bu=GH)" in reply["answer"], reply["answer"])
+      and "(/clearance#bu=GH&flag=pastdue)" in reply["answer"], reply["answer"])
+
+print("\n4b. ACTIONS: escalate, contacts, call / mail log")
+def post(o, csrf, path, body):
+    st, b, _h = call(o, "POST", path, body, csrf)
+    return st, js(b)
+st, r = post(V, V_csrf, "/api/clearance/escalate", {"awb": "TEST-0002", "bu": "GH", "reason": "x"})
+check("a Viewer cannot escalate (403)", st == 403, st)
+st, r = post(O, O_csrf, "/api/clearance/escalate", {"awb": "TEST-0002", "bu": "GH", "reason": ""})
+check("an escalation needs a reason", st == 200 and r.get("ok") is False)
+st, r = post(O, O_csrf, "/api/clearance/escalate", {"awb": "NOT-IN-EXPORT", "reason": "late"})
+check("only a shipment of the loaded export can be escalated", r.get("ok") is False)
+st, r = post(O, O_csrf, "/api/clearance/escalate", {"awb": "test 0002", "bu": "GH", "reason": "Agent not answering"})
+esc1 = r.get("escalation") or {}
+check("an Operator escalates; the facts come from the export, not the page", r.get("ok") is True and esc1.get("awb") == "TEST-0002"
+      and esc1.get("step") == "Customs Release" and esc1.get("overdue") == 55 and esc1.get("by") == "oper@mantrac.example", r)
+st, r = post(O, O_csrf, "/api/clearance/escalate", {"awb": "TEST-0002", "bu": "GH", "reason": "again"})
+check("a second open escalation for the same shipment is refused", r.get("ok") is False)
+st, r = post(O, O_csrf, "/api/clearance/contacts", {"agents": {"TEST AGENT": {"email": "a@b.com"}}})
+check("contacts are Admin-only (403 for an Operator)", st == 403, st)
+st, r = post(A, A_csrf, "/api/clearance/contacts", {"agents": {"TEST AGENT": {"person": "Ali", "email": "not-an-email"}}})
+check("a bad email address is refused", r.get("ok") is False and "email" in r.get("message", ""))
+st, r = post(A, A_csrf, "/api/clearance/contacts", {"agents": {"TEST AGENT": {"person": "Ali", "email": "ali@agent.example; ops@agent.example", "phone": "+20 2 1234 5678"}},
+                                                     "bus": {"GH": {"person": "GH desk", "email": "gh@mantrac.example"}}})
+check("an Admin saves contacts", r.get("ok") is True and r["contacts"]["agents"]["TEST AGENT"]["phone"] == "+20 2 1234 5678")
+check("everyone can read the contacts (for Call and Mail)", js(call(V, "GET", "/api/clearance/contacts")[1])["bus"]["GH"]["person"] == "GH desk")
+st, r = post(V, V_csrf, "/api/clearance/contact-log", {"awb": "TEST-0002", "bu": "GH", "kind": "mail", "to": "ali@agent.example"})
+check("a Mail draft is recorded (the platform sends nothing)", r.get("ok") is True)
+act = js(call(V, "GET", "/api/clearance/activity?awb=TEST-0002")[1])
+check("the shipment's activity: its escalation and the mail", len(act["escalations"]) == 1 and act["contacts"][0]["kind"] == "mail")
+reply = atlas_skills.answer("clearance", "any open escalations?", None)["answer"]
+check("ATLAS lists open escalations", "TEST-0002" in reply and "Agent not answering" in reply, reply)
+reply = atlas_skills.answer("clearance", "what is the status of TEST-0002?", None)["answer"]
+check("ATLAS answers one shipment from the export: step, due, days, agent, escalation, mail",
+      "Customs Release" in reply and "2026-09-01" in reply and "55" in reply and "TEST AGENT" in reply
+      and "Escalation (open)" in reply and "Mail drafted" in reply, reply)
+check("…and only for the shipments it names", atlas_skills.detect("what is the status of TEST-0002?") == "clearance")
+st, r = post(V, V_csrf, "/api/clearance/resolve", {"id": esc1.get("id"), "note": "x"})
+check("a Viewer cannot resolve (403)", st == 403)
+st, r = post(O, O_csrf, "/api/clearance/resolve", {"id": esc1.get("id"), "note": "Agent replied, release tomorrow"})
+check("an Operator resolves it with a note", r.get("ok") is True and r["escalation"]["status"] == "resolved")
+st, r = post(O, O_csrf, "/api/clearance/escalate", {"awb": "TEST-0002", "bu": "GH", "reason": "Still not released"})
+check("after resolving, it can be escalated again", r.get("ok") is True)
+audit = js(call(A, "GET", "/api/admin/audit?limit=100")[1])
+entries = audit.get("entries") or audit.get("events") or audit.get("items") or []
+acts = {e.get("action") for e in entries}
+check("escalate, resolve, contacts and mail are all in the audit log",
+      {"ESCALATE_SHIPMENT", "RESOLVE_ESCALATION", "CLEARANCE_CONTACTS_CHANGED", "CLEARANCE_MAIL"} <= acts, acts)
+check("a question asked on the Clearance page goes to the clearance data",
+      atlas_skills.detect("GH air shipments in June", None, {"page": "clearance"}) == "clearance"
+      and atlas_skills.detect("GH air shipments in June", None, {}) is None)
 
 print("\n5. THE PAGES")
 html = open(os.path.join(HERE, "dashboard", "static", "clearance.html"), encoding="utf-8").read()
@@ -290,6 +340,36 @@ try:
         check("in a browser: an Operator sees 'Load new export'", pg.locator("#loadBtn").is_visible())
         pg.locator('.kpi[data-set*="pastdue"]').click()
         check("in a browser: clicking a card filters", pg.locator("#e-count").inner_text() == "2 shipments", pg.locator("#e-count").inner_text())
+        pg.locator('[data-clear="flag"]').click()
+        row = pg.locator("#xbody tr", has_text="TEST-0002")
+        check("in a browser: the table has Escalate (shown as Escalated), Call and Mail",
+              row.locator('[data-act="esc"]').inner_text() == "Escalated" and row.locator('[data-act="call"]').count() == 1
+              and row.locator('[data-act="mail"]').count() == 1)
+        row.locator('[data-act="mail"]').click()
+        check("in a browser: Mail drafts to the agent, Cc the BU, with the export's facts",
+              pg.locator("#mTo").input_value() == "ali@agent.example; ops@agent.example" and pg.locator("#mCc").input_value() == "gh@mantrac.example"
+              and "Customs Release" in pg.locator("#mBody").input_value() and "55 days past due" in pg.locator("#mSub").input_value())
+        pg.keyboard.press("Escape")
+        row.locator('[data-act="call"]').click()
+        check("in a browser: Call offers the numbers on file only", pg.locator('#m-body a[href^="tel:"]').count() == 1
+              and pg.locator('#m-body a[href^="tel:"]').get_attribute("href") == "tel:+20212345678")
+        pg.keyboard.press("Escape")
+        other = pg.locator("#xbody tr", has_text="TEST-0006")
+        other.locator('[data-act="esc"]').click()
+        pg.fill("#eWhy", "Correction pending for 3 weeks")
+        pg.locator("#m-act button", has_text="Escalate").click()
+        pg.wait_for_function("[...document.querySelectorAll('#xbody tr')].some(t => t.textContent.includes('TEST-0006') && t.textContent.includes('Escalated'))", timeout=10000)
+        check("in a browser: escalating marks the row and puts it at the top of the alerts",
+              "TEST-0006" in pg.locator("#alerts .al.es").first.inner_text())
+        pg.click("#askFab")
+        pg.fill("#askIn", "which clearing agent has the most past due?")
+        pg.locator("#askForm button").click()
+        pg.wait_for_function("document.querySelectorAll('#askLog .bot').length >= 2 && !document.querySelector('#askLog .bot:last-child').textContent.startsWith('…')", timeout=15000)
+        ans = pg.locator("#askLog .bot").last
+        check("in a browser: ATLAS answers on the page", "TEST AGENT" in ans.inner_text(), ans.inner_text()[:200])
+        ans.locator("a").first.click()
+        pg.wait_for_timeout(400)
+        check("in a browser: ATLAS's link filters the page", "Open and past due" in pg.locator("#pills").inner_text(), pg.locator("#pills").inner_text())
         pg.screenshot(path=os.path.join(TMP, "clearance.png"), full_page=True)
         check("in a browser: no script errors", not errors, errors)
         b.close()

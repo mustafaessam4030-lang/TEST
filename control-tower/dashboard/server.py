@@ -940,6 +940,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(_clearance.status(), default=str))
             return
 
+        if route == "/api/clearance/contacts":
+            self._send(200, json.dumps(_clearance.contacts()))
+            return
+
+        if route == "/api/clearance/escalations":
+            self._send(200, json.dumps({"escalations": _clearance.escalations()}))
+            return
+
+        if route == "/api/clearance/activity":
+            from urllib.parse import parse_qs, urlparse as _up
+            awb = (parse_qs(_up(self.path).query).get("awb") or [""])[0][:60]
+            self._send(200, json.dumps({
+                "contacts": _clearance.contact_log(awb),
+                "escalations": [e for e in _clearance.escalations() if e["awb"] == awb]}))
+            return
+
         if route == "/api/clearance":
             # The loaded eHub export (a newer file in the inbox folder starts
             # being read first; the page polls the status and reloads).
@@ -1046,6 +1062,11 @@ class Handler(BaseHTTPRequestHandler):
             self._po("POST", route)
             return
 
+        if route in ("/api/clearance/contacts", "/api/clearance/escalate",
+                     "/api/clearance/resolve", "/api/clearance/contact-log"):
+            self._clearance_action(route)
+            return
+
         if route == "/api/clearance/upload":
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -1119,6 +1140,8 @@ class Handler(BaseHTTPRequestHandler):
                            raw_context.get("evidence_id") or ""))[:16],
                        # Asked from the PO Automation page, about which job.
                        "domain": "po" if raw_context.get("domain") == "po" else "",
+                       # Asked from the Clearance page (questions are about its export).
+                       "page": "clearance" if raw_context.get("page") == "clearance" else "",
                        "po_id": re.sub(r"[^0-9a-z-]", "", str(
                            raw_context.get("po_id") or ""))[:40],
                        # The tab's id for this one question, so it can ask
@@ -1294,6 +1317,46 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, json.dumps({"error": str(error)[:200]}))
             return
         self._send(404, json.dumps({"error": "not found"}))
+
+    def _clearance_action(self, route):
+        """Contacts (Admin), escalations (Operator, Admin), the call / mail log (everyone)."""
+        try:
+            body = self._acc_json(65536)
+        except (ValueError, TypeError):
+            self._send(400, json.dumps({"ok": False, "message": "Bad request."}))
+            return
+        by = (self.user or {}).get("work_email") or "access key"
+        if route == "/api/clearance/contacts":
+            ok, message = _clearance.save_contacts(body, by)
+            if ok:
+                self._acc_audit("CLEARANCE_CONTACTS_CHANGED", "SUCCESS", "clearance_contacts", None,
+                                {k: len(_clearance.contacts()[k]) for k in _clearance.KINDS})
+            self._send(200, json.dumps({"ok": ok, "message": message,
+                                        "contacts": _clearance.contacts()}))
+            return
+        if route == "/api/clearance/resolve":
+            ok, message, entry = _clearance.resolve(str(body.get("id") or "")[:20],
+                                                    body.get("note"), by)
+            if ok:
+                self._acc_audit("RESOLVE_ESCALATION", "SUCCESS", "shipment", entry["awb"][:64])
+            self._send(200, json.dumps({"ok": ok, "message": message, "escalation": entry}))
+            return
+        # The shipment is taken from the loaded export, never from what the page sent.
+        rows = _clearance.find(str(body.get("awb") or "")[:60])
+        row = next((r for r in rows if r["bu"] == body.get("bu")), rows[0] if rows else None)
+        if route == "/api/clearance/escalate":
+            ok, message, entry = _clearance.escalate(row, body.get("reason"), by)
+            if ok:
+                self._acc_audit("ESCALATE_SHIPMENT", "SUCCESS", "shipment", entry["awb"][:64],
+                                {"bu": entry["bu"], "step": entry["step"]})
+            self._send(200, json.dumps({"ok": ok, "message": message, "escalation": entry}))
+            return
+        kind = str(body.get("kind") or "")
+        ok = _clearance.log_contact(row, kind, body.get("to"), by)
+        if ok:
+            self._acc_audit("CLEARANCE_CALL" if kind == "call" else "CLEARANCE_MAIL", "SUCCESS",
+                            "shipment", row["awb"][:64], {"to": str(body.get("to") or "")[:120]})
+        self._send(200, json.dumps({"ok": ok}))
 
     def _evidence_upload(self):
         """An operator's image: validated, read, refused if it is a verification screen."""

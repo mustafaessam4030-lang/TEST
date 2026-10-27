@@ -26,6 +26,7 @@ the automation's job, behind its own checks and Human Action rules.
 """
 
 import re
+import time
 from datetime import date
 from pathlib import Path
 
@@ -157,6 +158,8 @@ def detect(question, data=None, context=None):
             return "validate_date"
         if _reference(q, data, context) or ALL_WORDS.search(q):
             return "validate"
+    if _clearance_named(q, data, context):
+        return "clearance"
     if CLEARANCE_ASK.search(q) and not PO_WORDS.search(q) and not WEB_ASK.search(q) and \
             not _reference(q, data, context, named_only=True) and not HOW_IT_WORKS.search(q) and \
             not re.search(r"\bunder clearance\b", q, re.I):     # the Hub's status filter: the run
@@ -164,6 +167,30 @@ def detect(question, data=None, context=None):
     if WEB_ASK.search(q) and not CAN_YOU_SEARCH.search(q):
         return "web"
     return None
+
+
+def _clearance_named(q, data, context):
+    """A shipment of the loaded export named (not one of this run), or an escalation question."""
+    try:
+        from dashboard import clearance
+        if clearance.load() is None:
+            return False
+        if re.search(r"\bescalat\w*", q, re.I) and not PO_WORDS.search(q):
+            return True
+        # Asked from the Clearance page: a question that names something in the
+        # export (a BU, mode, step, agent, forwarder, month) or asks for shipments.
+        if (context or {}).get("page") == "clearance" and not PO_WORDS.search(q):
+            whole = clearance.query(None)
+            if whole and (_cl_filters(q, dict(whole["values"], years=[])) or
+                          re.search(r"\b(shipments?|how many|which|list|show|top|worst|summary|status)\b", q, re.I)):
+                return True
+        # The export's own words: the run has carriers, not forwarders or clearing agents.
+        if re.search(r"\b(past[- ]?due|forwarders?|clearing agents?|ehub)\b", q, re.I) and \
+                not PO_WORDS.search(q) and not _reference(q, data, context, named_only=True):
+            return True
+        return bool(clearance.awbs_in(q)) and not _reference(q, data, context, named_only=True)
+    except Exception:
+        return False
 
 
 def _reference(question, data, context, named_only=False):
@@ -449,41 +476,182 @@ def _step(name):
     return "Awaiting Receipt" if name == "Awaiting Reciept" else name
 
 
+CL_RANK = re.compile(r"\b(which|what|who|top|worst|most|slowest|biggest|rank)\b", re.I)
+CL_ESC = re.compile(r"\bescalat\w*", re.I)
+CL_FLAG = [("pastdue", re.compile(r"\b(past[- ]?due|overdue|late at|stuck|waiting longest|delayed)\b", re.I)),
+           ("done", re.compile(r"\b(completed|finished|done|cleared)\b", re.I)),
+           ("open", re.compile(r"\b(open|pending|in progress|not (yet )?completed)\b", re.I)),
+           ("late", re.compile(r"\b(not on time|late)\b", re.I))]
+CL_STEPS = [("Submit to BU", r"submit(ted)? to (the )?bu"), ("Assign Clearing Agent", r"assign(ing|ed)?\b[^.?]{0,12}agent"),
+            ("Customs Pre Entry", r"pre[- ]?entry"), ("Customs Declaration", r"declaration"),
+            ("Duty Assessment", r"duty assessment|assessment"), ("Duty Payment", r"duty payment|paying duty"),
+            ("Customs Release", r"customs release|release"), ("Awaiting Reciept", r"receipt|reciept|received"),
+            ("Correction Required", r"correction")]
+MONTHS_RX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+
+def _cl_filters(question, values):
+    """What a question narrows to, from the loaded export's own values only."""
+    q, f = question, {}
+    for v in values["bu"]:
+        if re.search(r"\b{0}\b".format(re.escape(v)), q):
+            f["bu"] = v
+    for v in values["mode"]:
+        if re.search(r"\b{0}\b".format(re.escape(v)), q, re.I):
+            f["mode"] = v
+    for v in values["div"]:                  # "Spare Parts", "Power System & Industrial"…
+        if re.search(re.escape(" ".join(v.split()[:2])), q, re.I):
+            f["div"] = v
+    for name, rx in CL_STEPS:
+        if name in values["step"] and re.search(r"\b(" + rx + r")", q, re.I):
+            f["step"] = name
+            break
+    if "step" not in f:
+        if re.search(r"\b(in|at|with|through) customs\b", q, re.I):
+            f["group"] = "In customs"
+        elif re.search(r"\b(with|at|waiting (on|for)) (the )?bu\b", q, re.I):
+            f["group"] = "With BU"
+    for key in ("agent", "ffw"):
+        best = None
+        for v in values[key]:
+            if len(v) >= 3 and re.search(r"(?<![\w])" + re.escape(v) + r"(?![\w])", q, re.I) and \
+                    (best is None or len(v) > len(best)):
+                best = v
+        if best:
+            f[key] = best
+    m = re.search(r"\b(" + "|".join(MONTHS_RX) + r")[a-z]*\.?\s*(20\d\d)?\b", q, re.I)
+    if m and re.search(r"\b(eta|month|in|for|during)\b", q, re.I):
+        year = m.group(2)
+        if not year:
+            years = sorted({str(x) for x in values.get("years", [])}) or [time.strftime("%Y")]
+            year = years[-1]
+        f["month"] = "{0}-{1:02d}".format(year, MONTHS_RX.index(m.group(1).lower()[:3]) + 1)
+    for flag, rx in CL_FLAG:
+        if rx.search(q):
+            f["flag"] = flag
+            break
+    return f
+
+
+def _cl_link(f):
+    from urllib.parse import urlencode
+    h = {}
+    for k in ("bu", "mode", "div", "month", "status", "group"):
+        if f.get(k):
+            h[k] = f[k]
+    if f.get("flag") in ("pastdue", "open", "done", "late") and not (f.get("group") and f["flag"] == "open"):
+        h["flag"] = f["flag"]
+    term = f.get("agent") or f.get("ffw") or f.get("step")
+    if term:
+        h["q"] = term
+    return "/clearance" + ("#" + urlencode(h) if h else "")
+
+
+def _cl_shipment(rows, escalations, log):
+    lines = []
+    for r in rows:
+        state = "completed" if r["step"] == "Completed" else "open at **{0}**".format(_step(r["step"]))
+        lines.append("**{0}** ({1}, {2}, {3}) is {4}.".format(r["awb"], r["bu"], r["mode"], r["div"], state))
+        facts = [("eHub status", r["status"]), ("Next step", r["next"]), ("ETA", r["eta"]), ("ATA", r["ata"]),
+                 ("Submitted to BU", r["submitted"]), ("Customs release", r["release"]),
+                 ("Completed", r["completed"]), ("Forwarder", r["ffw"]), ("Clearing agent", r["agent"])]
+        if r["step"] != "Completed":
+            facts.insert(2, ("Step due", r["due"] or "no usable due date in the export"))
+            if r["overdue"] is not None:
+                facts.insert(3, ("Days past due", "{0:,}".format(r["overdue"]) if r["overdue"] > 0
+                                 else "not past due ({0} days left)".format(-r["overdue"])))
+        facts.append(("On time (eHub flag)", "yes" if r["ontime"] else "no"))
+        lines += ["- {0}: {1}".format(k, v) for k, v in facts if v not in (None, "")]
+        names = ["Submit to BU", "Assign agent", "Pre entry", "Declaration", "Duty assessment",
+                 "Duty payment", "Customs release", "Receipt", "End to end"]
+        missed = [n for n, a in zip(names, r["ach"]) if a == "N"]
+        met = sum(1 for a in r["ach"] if a == "Y")
+        lines.append("- Stage targets: {0} met{1}".format(met, "; missed: " + ", ".join(missed) if missed else ""))
+    for e in escalations:
+        lines.append("- Escalation ({0}) by {1} on {2}: {3}".format(e["status"], e["by"], e["at"][:10], e["reason"]))
+    for c in log[-3:]:
+        lines.append("- {0} {1} by {2} on {3}".format("Call started" if c["kind"] == "call" else "Mail drafted",
+                                                    ("to " + c["to"]) if c["to"] else "", c["by"], c["at"][:16].replace("T", " ")))
+    lines.append("Open it on the [Clearance page](/clearance#q={0}).".format(rows[0]["awb"].replace(" ", "%20")))
+    return "\n".join(lines)
+
+
 def clearance_answer(question):
-    """Counts from the loaded eHub export only (dashboard/clearance.py); never estimated."""
+    """Answers about the loaded eHub export, counted from its rows only (dashboard/clearance.py)."""
     from dashboard import clearance
-    whole = clearance.summary()
-    if whole is None:
+    data = clearance.load()
+    if data is None:
         return ("No eHub shipment export is loaded yet, so I have no clearance figures. An Operator "
                 "or Admin can load one on the [Clearance page](/clearance) (Load new export), or put "
                 "the .xlsx in the clearance folder on the server.")
-    bu = next((b for b in whole["bus"] if re.search(r"\b{0}\b".format(re.escape(b)), question)), None)
-    s = clearance.summary(bu=bu) if bu else whole
+    named = clearance.awbs_in(question, data)
+    if named:
+        out = []
+        for awb in named[:3]:
+            out.append(_cl_shipment(clearance.find(awb, data),
+                                    [e for e in clearance.escalations() if e["awb"] == awb],
+                                    clearance.contact_log(awb)))
+        return "\n\n".join(out)
+    whole = clearance.query(None, data=data)
+    values = dict(whole["values"], years=sorted({(r[data["fields"].index("eta")] or "")[:4]
+                                                  for r in data["rows"] if r[data["fields"].index("eta")]}))
+    f = _cl_filters(question, values)
+    if CL_ESC.search(question):
+        items = [e for e in clearance.escalations() if e["status"] == "open" and
+                 all(not f.get(k) or e.get(k) == f[k] for k in ("bu", "mode", "agent"))]
+        if not items:
+            return "There are no open escalations{0}. Escalate a shipment with the Escalate button in the " \
+                   "[Clearance page](/clearance)'s shipment list.".format(" for " + f["bu"] if f.get("bu") else "")
+        lines = ["**{0}** open escalation{1}:".format(len(items), "" if len(items) == 1 else "s")]
+        for e in sorted(items, key=lambda e: e["at"], reverse=True)[:10]:
+            lines.append("- {0} ({1}, {2}) at {3}{4}: “{5}” by {6} on {7}".format(
+                e["awb"], e["bu"], e["mode"], _step(e["step"]),
+                ", {0:,} days past due".format(e["overdue"]) if e.get("overdue") and e["overdue"] > 0 else "",
+                e["reason"][:140], e["by"], e["at"][:10]))
+        return "\n".join(lines)
+    s = clearance.query(f, data=data)
     if not s["total"]:
-        return "The loaded export has no shipments for {0}.".format(bu)
-    lines = ["From the eHub export with data as of **{0}**{1}: **{2:,}** shipments, **{3}%** on time "
-             "(the export's own On Time flag; target 95%).".format(
-                 s["asof"] or "an unknown date (the export has no Last Date)",
-                 " for **{0}**".format(bu) if bu else "", s["total"],
-                 round(100.0 * s["on_time"] / s["total"])),
-             "**{0:,}** are open and **{1:,}** of them are past their current step's due date."
-             .format(s["open"], s["past_due"])]
-    if s["past_due_by_step"]:
-        lines.append("Past due by step: " + ", ".join("{0} {1:,}".format(_step(k), v)
-                                                     for k, v in s["past_due_by_step"][:5]) + ".")
-    if not bu and s["past_due_by_bu"]:
-        lines.append("By BU: " + ", ".join("{0} {1:,}".format(k, v) for k, v in s["past_due_by_bu"][:6]) + ".")
+        words = {"pastdue": "past due", "open": "open", "done": "completed", "late": "not on time"}
+        said = [_step(v) if k == "step" else words.get(v, v).lower() if k in ("flag", "group") else v
+                for k, v in f.items()]
+        return "None of the shipments in the loaded export (data as of {0}) match: {1}.".format(
+            s["asof"] or "an unknown date", ", ".join(said))
+    label = ", ".join(_step(v) if k == "step" else v for k, v in f.items() if k not in ("flag",))
+    flag_txt = {"pastdue": "past due", "open": "open", "done": "completed", "late": "not on time"}.get(f.get("flag"))
+    head = "From the eHub export with data as of **{0}**{1}{2}: **{3:,}** shipment{4}".format(
+        s["asof"] or "an unknown date (the export has no Last Date)",
+        " for **{0}**".format(label) if label else "", " ({0})".format(flag_txt) if flag_txt else "",
+        s["total"], "" if s["total"] == 1 else "s")
+    lines = [head + ", **{0}%** on time (the export's own On Time flag; target 95%).".format(
+        round(100.0 * s["on_time"] / s["total"]))]
+    if f.get("flag") not in ("done",):
+        lines.append("**{0:,}** open, **{1:,}** past their current step's due date, {2:,} completed.".format(
+            s["open"], s["past_due"], s["done"]))
+    rank = CL_RANK.search(question)
+    groups = [("Past due by step", "past_due_by_step", _step)]
+    if not f.get("bu"):
+        groups.append(("By BU", "past_due_by_bu", str))
+    if re.search(r"\bagents?\b", question, re.I) or (rank and not f.get("agent")):
+        groups.append(("By clearing agent", "past_due_by_agent", str))
+    if re.search(r"\b(forwarders?|ffw)\b", question, re.I):
+        groups.append(("By forwarder", "past_due_by_ffw", str))
+    for title, key, name in groups:
+        if s[key] and not (key == "past_due_by_step" and f.get("step")):
+            lines.append("{0}: {1}.".format(title, ", ".join("{0} {1:,}".format(name(k), v) for k, v in s[key][:6])))
     if s["longest"]:
         lines.append("Longest waits:")
         for x in s["longest"]:
-            lines.append("- {0} ({1}, {2}) at {3}: {4:,} days past its due date {5}".format(
-                x["awb"] or "no AWB/BOL", x["bu"], x["mode"], _step(x["step"]), x["days"], x["due"]))
+            lines.append("- {0} ({1}, {2}) at {3}: {4:,} days past its due date {5}{6}".format(
+                x["awb"] or "no AWB/BOL", x["bu"], x["mode"], _step(x["step"]), x["overdue"], x["due"],
+                "; agent " + x["agent"] if x["agent"] else ""))
+    if s["escalated_open"]:
+        lines.append("{0} of these have an open escalation.".format(len(s["escalated_open"])))
     checks = sum(v for k, v in (s.get("dq") or {}).items() if k != "agent_name_variants")
     if checks:
         lines.append("The export also has {0:,} values that could not be used (no ETA, empty due "
                      "dates…); the Clearance page lists them under Data checks.".format(checks))
-    lines.append("Open the [Clearance page](/clearance{0}) to filter, see every shipment and "
-                 "download the list.".format("#bu=" + bu if bu else ""))
+    lines.append("[Open this on the Clearance page]({0}) to see every shipment, act on it and download "
+                 "the list.".format(_cl_link(f)))
     return "\n".join(lines)
 
 

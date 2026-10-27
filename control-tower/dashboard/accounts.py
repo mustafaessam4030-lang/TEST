@@ -70,6 +70,10 @@ WRITE_PERMISSIONS = (
     ("/api/me/prefs", "dashboard.view"),
     ("/api/auth/logout", "dashboard.view"),
     ("/api/clearance/upload", "clearance.upload"),
+    ("/api/clearance/contacts", "clearance.contacts"),
+    ("/api/clearance/escalate", "clearance.escalate"),
+    ("/api/clearance/resolve", "clearance.escalate"),
+    ("/api/clearance/contact-log", "clearance.view"),
 )
 
 

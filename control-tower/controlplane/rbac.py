@@ -30,6 +30,8 @@ PERMISSIONS = {
     "po.resend":          "Authorize sending the same PO document again",
     "clearance.view":     "See the Clearance dashboard (the eHub shipment export)",
     "clearance.upload":   "Load a new eHub shipment export into the Clearance dashboard",
+    "clearance.escalate": "Escalate a shipment on the Clearance page, and resolve escalations",
+    "clearance.contacts": "Edit the Clearance contacts (clearing agents, BUs, forwarders)",
 }
 
 ROLE_PERMISSIONS = {
@@ -37,7 +39,8 @@ ROLE_PERMISSIONS = {
     OPERATOR: frozenset((
         "dashboard.view", "runs.view", "runs.start", "runs.stop", "human.act",
         "evidence.view", "evidence.upload", "atlas.chat", "health.view",
-        "po.view", "po.process", "po.send", "clearance.view", "clearance.upload")),
+        "po.view", "po.process", "po.send", "clearance.view", "clearance.upload",
+        "clearance.escalate")),
     VIEWER: frozenset((
         "dashboard.view", "runs.view", "atlas.chat", "health.view", "po.view",
         "clearance.view")),
