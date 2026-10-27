@@ -27,10 +27,18 @@ Set up, as the Windows account that runs the tower (not as administrator):
     ATLAS_CORTEX_MODEL          default claude-sonnet-4-5
     ATLAS_CORTEX_TIMEOUT_S      default 30
     ATLAS_CORTEX_DAILY_TOKENS   default 500000 (then the local model, until midnight)
+    ATLAS_CORTEX_CACHE_S        default 900: the same request within 15 minutes is
+                                answered from memory (same text, no tokens)
     ATLAS_CORTEX=off            switch Cortex off without removing the token
+
+Tokens are kept low without changing answers: answers ATLAS builds exactly
+(records, skills, Clearance, emails, guides) never reach a model; repeated
+requests come from memory; prompts carry no empty fields or JSON spacing;
+the answer length is capped per task. `status` shows tokens per purpose.
 """
 
 import getpass
+import hashlib
 import json
 import os
 import sys
@@ -48,6 +56,20 @@ COOL_DOWN_S = 300
 
 _lock = threading.Lock()
 _state = {"failed_at": 0.0, "last_error": None}
+_cache = {}                        # sha256(request) -> (time, text); paid answers only
+CACHE_MAX = 300
+
+
+def _cache_key(model_name, system, prompt, json_mode, max_tokens):
+    raw = json.dumps([model_name, system, prompt, bool(json_mode), int(max_tokens)])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _cache_ttl():
+    try:
+        return max(0, int(os.environ.get("ATLAS_CORTEX_CACHE_S") or 900))
+    except ValueError:
+        return 900
 
 
 class CortexError(Exception):
@@ -109,7 +131,16 @@ def _usage_path():
     return base / "cortex_usage.json"
 
 
-ZERO = {"calls": 0, "failed": 0, "prompt_tokens": 0, "completion_tokens": 0}
+ZERO = {"calls": 0, "failed": 0, "cached": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+# What a call was for, from its system prompt (for `status`: where tokens go).
+PURPOSES = (("You route questions", "understand"), ("You are ATLAS, the friendly assistant of Mantrac's logistics", "chat"),
+            ("You are ATLAS, the friendly assistant of Mantrac's Enterprise", "compose"),
+            ("You are ATLAS, the operations assistant", "phrase"))
+
+
+def purpose(system):
+    return next((p for start, p in PURPOSES if str(system or "").startswith(start)), "other")
 
 
 def _num(v):
@@ -128,10 +159,13 @@ def usage():
     except Exception:
         day = None
     day = day if isinstance(day, dict) else {}
-    return {k: _num(day.get(k)) for k in ZERO}
+    out = {k: _num(day.get(k)) for k in ZERO}
+    out["by_purpose"] = {k: _num(v) for k, v in (day.get("by_purpose") or {}).items()} \
+        if isinstance(day.get("by_purpose"), dict) else {}
+    return out
 
 
-def _count(ok, prompt_tokens=0, completion_tokens=0):
+def _count(ok, prompt_tokens=0, completion_tokens=0, what=None, cached=False):
     with _lock:
         path = _usage_path()
         try:
@@ -143,9 +177,17 @@ def _count(ok, prompt_tokens=0, completion_tokens=0):
         today = time.strftime("%Y-%m-%d")
         old = data.get(today) if isinstance(data.get(today), dict) else {}
         day = data[today] = {k: _num(old.get(k)) for k in ZERO}
-        day["calls" if ok else "failed"] += 1
-        day["prompt_tokens"] += _num(prompt_tokens)
-        day["completion_tokens"] += _num(completion_tokens)
+        day["by_purpose"] = {k: _num(v) for k, v in (old.get("by_purpose") or {}).items()} \
+            if isinstance(old.get("by_purpose"), dict) else {}
+        if cached:
+            day["cached"] += 1
+        else:
+            day["calls" if ok else "failed"] += 1
+            day["prompt_tokens"] += _num(prompt_tokens)
+            day["completion_tokens"] += _num(completion_tokens)
+            if what:
+                day["by_purpose"][what] = day["by_purpose"].get(what, 0) + \
+                    _num(prompt_tokens) + _num(completion_tokens)
         for old in sorted(data)[:-60]:                 # two months of history
             data.pop(old, None)
         tmp = path.with_suffix(".tmp")
@@ -210,6 +252,15 @@ class CortexProvider(object):
         url, token = self._conf()
         if not allowed_url(url):
             raise CortexError("the Cortex URL is not a Snowflake account URL")
+        what = purpose(system)
+        key = _cache_key(self.model, system, prompt, json_mode, max_tokens)
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < _cache_ttl():
+            try:
+                _count(True, what=what, cached=True)
+            except Exception:
+                pass
+            return hit[1]
         if json_mode:
             system = system + "\nReply with one JSON object only, no other text."
         body = {"model": self.model, "stream": False, "temperature": 0.2,
@@ -242,9 +293,15 @@ class CortexProvider(object):
         try:
             # No usage block: count what was allowed, so the budget still holds.
             _count(True, used.get("prompt_tokens") or len(system + prompt) // 3,
-                   used.get("completion_tokens") or max_tokens)
+                   used.get("completion_tokens") or max_tokens, what=what)
         except Exception:
             pass                      # the answer was paid for: it is used even if not counted
+        if _cache_ttl():
+            with _lock:
+                if len(_cache) >= CACHE_MAX:
+                    for old in sorted(_cache, key=lambda k: _cache[k][0])[:CACHE_MAX // 4]:
+                        _cache.pop(old, None)
+                _cache[key] = (time.time(), text)
         return text
 
     def _fail(self, why):
@@ -282,8 +339,11 @@ def _status(out=print):
     u = usage()
     out("Snowflake Cortex: {0}".format("set up, model " + model() + ", account " + conf[0] if conf else
                                       "not set up (python -m intelligence.cortex set)"))
-    out("Today: {0} calls, {1} failed, {2:,} tokens of {3:,}".format(
-        u["calls"], u["failed"], u["prompt_tokens"] + u["completion_tokens"], budget()))
+    out("Today: {0} calls, {1} answered from memory (no tokens), {2} failed, {3:,} tokens of {4:,}".format(
+        u["calls"], u["cached"], u["failed"], u["prompt_tokens"] + u["completion_tokens"], budget()))
+    if u["by_purpose"]:
+        out("Tokens by purpose: " + ", ".join("{0} {1:,}".format(k, v) for k, v in
+                                              sorted(u["by_purpose"].items(), key=lambda x: -x[1])))
     return 0 if conf else 1
 
 

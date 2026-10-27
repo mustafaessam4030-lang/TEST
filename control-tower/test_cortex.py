@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 os.environ["ATLAS_INTEL_DIR"] = tempfile.mkdtemp(prefix="cortex_")
 os.environ.pop("ATLAS_CORTEX", None)
+os.environ["ATLAS_CORTEX_CACHE_S"] = "0"          # each check makes its own call; the memory has its own section
 
 from intelligence import cortex as C, llm                     # noqa: E402
 import hub_credentials as H                                    # noqa: E402
@@ -155,6 +156,38 @@ def no_usage(request, timeout=None):
 C.CortexProvider(("https://a.snowflakecomputing.com", TOKEN), no_usage).generate("S", "P", max_tokens=200)
 check("no usage block from Snowflake: the allowed tokens are still counted", C.usage()["completion_tokens"] - before["completion_tokens"] == 200)
 
+print("\n3c. FEWER TOKENS, SAME ANSWERS")
+os.environ["ATLAS_CORTEX_CACHE_S"] = "900"
+C._cache.clear(); SEEN.clear(); C._state.update(failed_at=0.0, last_error=None)
+pc = C.CortexProvider(("https://a.snowflakecomputing.com", TOKEN), snowflake("same words"))
+u0 = C.usage()
+first = pc.generate("You route questions for ATLAS", "Question: where is X?", json_mode=True, max_tokens=160)
+second = pc.generate("You route questions for ATLAS", "Question: where is X?", json_mode=True, max_tokens=160)
+u1 = C.usage()
+check("the same request within 15 minutes comes from memory: same text, one call", first == second == "same words" and len(SEEN) == 1)
+check("…counted as answered from memory, no tokens", u1["cached"] - u0["cached"] == 1 and u1["calls"] - u0["calls"] == 1
+      and u1["prompt_tokens"] - u0["prompt_tokens"] == 120)
+pc.generate("You route questions for ATLAS", "Question: where is Y?", json_mode=True, max_tokens=160)
+check("a different request is a new call", len(SEEN) == 2)
+check("tokens are counted per purpose", C.usage()["by_purpose"].get("understand", 0) >= 320, C.usage()["by_purpose"])
+os.environ["ATLAS_CORTEX_CACHE_S"] = "0"
+packed = llm.compact({"ref": "MEDU1", "eta": None, "notes": [], "events": [{"a": 1, "b": ""}], "x": "y"})
+check("prompts carry no empty fields or JSON spacing (same facts)", packed == '{"ref":"MEDU1","events":[{"a":1}],"x":"y"}', packed)
+from intelligence import converse as CV                          # noqa: E402
+check("answers ATLAS builds exactly never reach a model (Clearance, emails, guides, screenshots)",
+      {"skill_clearance", "setup_admin_only", "evidence", "code_request"} <= CV.SKILL_INTENTS)
+
+os.environ["ATLAS_LLM_SLOTS"] = "1"
+_real = llm.provider
+_chain = llm.ChainProvider(C.CortexProvider(("https://a.snowflakecomputing.com", TOKEN), snowflake("x")), Local())
+llm.provider = lambda: _chain
+check("while Cortex answers, 4 questions run at once (the local model's gate stays 1)", CV._slots() == 4)
+_local = Local()
+llm.provider = lambda: _local
+check("…and back to 1 with the local model alone", CV._slots() == 1)
+llm.provider = _real
+os.environ.pop("ATLAS_LLM_SLOTS")
+
 print("\n4. SET UP ON THE SERVER (Credential Manager)")
 H._backend = Store()
 out = []
@@ -179,7 +212,7 @@ H._backend = None
 llm._provider.update(key=None, obj=None)
 
 src = open(os.path.join(HERE, "intelligence", "cortex.py"), encoding="utf-8").read()
-check("no Snowflake SDK or other package needed (standard library only)", "import snowflake" not in src and "requests" not in src)
+check("no Snowflake SDK or other package needed (standard library only)", "import snowflake" not in src and "import requests" not in src)
 sql = open(os.path.join(HERE, "deploy", "snowflake", "atlas_cortex_setup.sql"), encoding="utf-8").read()
 check("the setup script: a service user with Cortex only, a network policy, a role-restricted token",
       "TYPE = SERVICE" in sql and "CORTEX_REST_API_USER" in sql and "NETWORK POLICY" in sql

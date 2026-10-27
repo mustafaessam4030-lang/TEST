@@ -286,9 +286,23 @@ def _int_env(name, default):
         return default
 
 
+def _slots():
+    """How many questions may be in the model at once. The gate exists for a
+    CPU-only local model; while Snowflake Cortex answers first, more run in
+    parallel (ATLAS_CORTEX_SLOTS, default 4) and nobody queues behind one."""
+    slots = _int_env("ATLAS_LLM_SLOTS", 0)
+    try:
+        p = llm.provider()
+        if slots > 0 and isinstance(p, llm.ChainProvider) and p._first_ok():
+            return max(slots, _int_env("ATLAS_CORTEX_SLOTS", 4))
+    except Exception:
+        pass
+    return slots
+
+
 def _enter():
     """-> None when this question may use the model, else why not."""
-    slots = _int_env("ATLAS_LLM_SLOTS", 0)
+    slots = _slots()
     if slots <= 0:
         return None
     gate = _GATE
@@ -301,7 +315,7 @@ def _enter():
                 gate["running"], gate["waiting"])
         gate["waiting"] += 1
         try:
-            ok = gate["cond"].wait_for(lambda: gate["running"] < slots,
+            ok = gate["cond"].wait_for(lambda: gate["running"] < _slots(),
                                        timeout=_int_env("ATLAS_LLM_WAIT_S", 150))
         finally:
             gate["waiting"] -= 1
@@ -661,7 +675,11 @@ def _image(question, state, context, inner, rules, lang, timings, started):
 
 # Answers ATLAS's skills and handbook build (dashboard/atlas_skills.py,
 # intelligence/handbook.py): returned as built, never reworded.
-SKILL_INTENTS = {"skill_pdf", "skill_validate", "skill_web", "handbook"}
+# Built exactly by ATLAS (skills, handbook, the admin-only setup notice, the Clearance export and
+# its emails, screenshots, a refused verification code): no model call at
+# all - nothing to add, and no tokens spent (Snowflake Cortex is billed).
+SKILL_INTENTS = {"skill_pdf", "skill_validate", "skill_web", "handbook",
+                 "setup_admin_only", "skill_clearance", "evidence", "code_request", "conduct"}
 
 # Intents the rules answer from the run's records. "general_knowledge" and
 # "filter" are left to the model: they may need the web.

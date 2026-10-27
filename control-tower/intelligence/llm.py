@@ -251,10 +251,21 @@ Rules — absolute:
   No tables. No URLs in the text."""
 
 
+def compact(value):
+    """The same facts in fewer tokens: no empty fields, no spaces in the JSON."""
+    def strip(v):
+        if isinstance(v, dict):
+            return {k: strip(x) for k, x in v.items() if x not in (None, "", [], {})}
+        if isinstance(v, (list, tuple)):
+            return [strip(x) for x in v if x not in (None, "", [], {})]
+        return v
+    return json.dumps(strip(value), default=str, separators=(",", ":"), ensure_ascii=False)
+
+
 def phrase(answer, evidence, web=None, timeout=None):
     """The model's phrasing of ATLAS's answer, or raises LLMError."""
     prompt = "ANSWER (authoritative):\n{0}\n\nEVIDENCE (run data):\n{1}\n\nWEB (public sources, " \
-             "may be empty):\n{2}".format(answer[:6000], json.dumps(evidence, default=str)[:5000],
+             "may be empty):\n{2}".format(answer[:6000], compact(evidence)[:5000],
                                           "\n".join("- {0}: {1}".format(w.get("publisher"),
                                                                         w.get("snippet") or "")
                                                     for w in (web or []))[:3000])
