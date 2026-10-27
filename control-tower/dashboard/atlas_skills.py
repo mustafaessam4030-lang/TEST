@@ -490,6 +490,7 @@ def _step(name):
     return "Awaiting Receipt" if name == "Awaiting Reciept" else name
 
 
+MAIL_ASK = re.compile(r"\b(e-?mail|mail|draft|write|compose)\b", re.I)
 CL_RANK = re.compile(r"\b(which|what|who|top|worst|most|slowest|biggest|rank)\b", re.I)
 CL_ESC = re.compile(r"\bescalat\w*", re.I)
 CL_FLAG = [("pastdue", re.compile(r"\b(past[- ]?due|overdue|late at|stuck|waiting longest|delayed)\b", re.I)),
@@ -609,6 +610,21 @@ def clearance_answer(question):
                 "or Admin can load one on the [Clearance page](/clearance) (Load new export), or put "
                 "the .xlsx in the clearance folder on the server.")
     named = clearance.awbs_in(question, data)
+    if named and MAIL_ASK.search(question):
+        out = []
+        for awb in named[:2]:
+            for row in clearance.find(awb, data)[:2]:
+                d = clearance.draft_mail(row)
+                out.append("\n".join(x for x in
+                    ["**Email for {0} ({1})** - situation: {2}.".format(row["awb"], row["bu"], d["situation"]),
+                     "To: {0}".format(d["to"] or "(no address on file)"),
+                     "Cc: {0}".format(d["cc"]) if d["cc"] else None,
+                     "Subject: {0}".format(d["subject"]), "", d["body"].rstrip()] +
+                    (["", "Missing in Contacts: " + "; ".join(d["missing"]) + "."] if d["missing"] else []) +
+                    ["", "[Open it ready in Outlook from the Clearance page](/clearance#q={0}&mail={1})".format(
+                        row["awb"].replace(" ", "%20"), row["bu"]) +
+                     " - nothing is sent until you press Send."] if x is not None))
+        return "\n\n".join(out)
     if named:
         out = []
         for awb in named[:3]:

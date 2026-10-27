@@ -762,6 +762,10 @@ addEventListener("hashchange", () => {
 });
 function loadHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  if (p.get("mail") && p.get("q")) setTimeout(() => {
+    const r = ROWS.find((x) => x[F.awb] === p.get("q") && x[F.bu] === p.get("mail")) || ROWS.find((x) => x[F.awb] === p.get("q"));
+    if (r) mailForm(r);
+  }, 0);
   for (const [k, v] of p) {
     if (k === "stage" || k === "ontime") state[k] = +v;
     else if (KEYS.includes(k) || k === "q") state[k] = v;
@@ -893,7 +897,7 @@ setInterval(async () => {
    Contacts come only from the list an Admin keeps (Contacts); nothing is
    guessed. Call and Mail open the person's own phone / Outlook (tel:,
    mailto:): the platform sends nothing. Each one is recorded. */
-let CONTACTS = {agents: {}, bus: {}, forwarders: {}}, ESC = [], ME = null;
+let CONTACTS = {agents: {}, bus: {}, forwarders: {}, coe: {}}, ESC = [], ME = null;
 const openEsc = (r) => ESC.find((x) => x.status === "open" && x.awb === r[F.awb] && x.bu === r[F.bu]);
 function actions(r) {
   const i = ROWS.indexOf(r), e = openEsc(r);
@@ -943,14 +947,16 @@ function doAction(kind, i) {
     $("m-body").querySelectorAll("[data-tel]").forEach((a) => a.addEventListener("click", () => logContact(r, "call", ph[+a.dataset.tel].role + " " + ph[+a.dataset.tel].phone)));
     return;
   }
-  const to = ps.filter((p) => p.email && p.role === "Clearing agent").map((p) => p.email).join("; ");
-  const cc = ps.filter((p) => p.email && p.role !== "Clearing agent").map((p) => p.email).join("; ");
-  const subject = `${r[F.awb]} – ${stepName(r[F.step])}${r[F.overdue] > 0 ? `, ${r[F.overdue]} days past due` : ""} (${r[F.bu]})`;
-  const body = `Hello,\n\nPlease share an update on this shipment and the expected date to complete "${stepName(r[F.step])}".\n\n${facts(r)}\n\nThank you,\n${ME ? ME.display_name : ""}`;
-  modal(`Mail about ${r[F.awb]}`, `<p class="note">This opens in your Outlook. Nothing is sent until you press Send there.</p>` +
-    (ps.some((p) => p.email) ? "" : noContact(r)) +
-    `<label for="mTo">To</label><input id="mTo" value="${esc(to)}"><label for="mCc">Cc</label><input id="mCc" value="${esc(cc)}">` +
-    `<label for="mSub">Subject</label><input id="mSub" value="${esc(subject)}"><label for="mBody">Message</label><textarea id="mBody">${esc(body)}</textarea>`,
+  mailForm(r);
+}
+async function mailForm(r) {
+  let d = null;
+  try { d = (await (await api("/api/clearance/draft?awb=" + encodeURIComponent(r[F.awb]) + "&bu=" + encodeURIComponent(r[F.bu]))).json()).draft; } catch (err) { /* below */ }
+  if (!d) return modal(`Mail about ${r[F.awb]}`, "<p>ATLAS could not prepare the email: the shipment is not in the loaded export.</p>");
+  modal(`Mail about ${r[F.awb]}`, `<p class="note">Written by ATLAS for this situation: <b>${esc(d.situation)}</b>. It opens in your Outlook; nothing is sent until you press Send there. Change anything you like first.</p>` +
+    (d.missing.length ? `<p>Not on file: ${esc(d.missing.join("; "))}.${PF.can("clearance.contacts") ? " Add it in <b>Contacts</b>." : " Ask an Admin to add it in Contacts."}</p>` : "") +
+    `<label for="mTo">To</label><input id="mTo" value="${esc(d.to)}"><label for="mCc">Cc</label><input id="mCc" value="${esc(d.cc)}">` +
+    `<label for="mSub">Subject</label><input id="mSub" value="${esc(d.subject)}"><label for="mBody">Message</label><textarea id="mBody" style="min-height:260px">${esc(d.body)}</textarea>`,
     [["Open in Outlook", () => {
       const q = ["subject=" + encodeURIComponent($("mSub").value), "body=" + encodeURIComponent($("mBody").value)];
       if ($("mCc").value.trim()) q.push("cc=" + encodeURIComponent($("mCc").value.trim()));
@@ -985,11 +991,11 @@ function escalationView(x) {
     (PF.can("clearance.escalate") ? `<label for="eNote">Resolution note</label><textarea id="eNote" style="min-height:70px"></textarea>` : ""), btns);
 }
 function contactsForm() {
-  const kinds = [["agents", "Clearing agents", "agent"], ["bus", "BUs", "bu"], ["forwarders", "Forwarders", "ffw"]];
+  const kinds = [["agents", "Clearing agents", "agent"], ["bus", "BUs", "bu"], ["forwarders", "Forwarders", "ffw"], ["coe", "COE", null]];
   let cur = "agents";
   const draw = () => {
     const [k, , field] = kinds.find((x) => x[0] === cur);
-    const names = [...new Set(ROWS.map((r) => r[F[field]]).filter(Boolean).concat(Object.keys(CONTACTS[k])))].sort();
+    const names = field ? [...new Set(ROWS.map((r) => r[F[field]]).filter(Boolean).concat(Object.keys(CONTACTS[k])))].sort() : ["COE"];
     $("m-body").innerHTML = `<div class="tabs">${kinds.map(([kk, l]) => `<button type="button" class="chip" aria-pressed="${kk === cur}" data-tab="${kk}">${l}</button>`).join("")}</div>` +
       `<p class="note">Only what you type here is used for Call and Mail. Several emails: separate with ;</p>` +
       `<table class="ctab"><thead><tr><th>Name</th><th>Person</th><th>Email</th><th>Phone</th></tr></thead><tbody>` +
@@ -1013,7 +1019,7 @@ function contactsForm() {
 }
 $("contactsBtn").onclick = contactsForm;
 async function loadEsc() { try { ESC = (await (await api("/api/clearance/escalations")).json()).escalations || []; } catch (err) { ESC = []; } }
-async function loadContacts() { try { const c = await (await api("/api/clearance/contacts")).json(); CONTACTS = {agents: c.agents || {}, bus: c.bus || {}, forwarders: c.forwarders || {}}; } catch (err) { /* empty list */ } }
+async function loadContacts() { try { const c = await (await api("/api/clearance/contacts")).json(); CONTACTS = {agents: c.agents || {}, bus: c.bus || {}, forwarders: c.forwarders || {}, coe: c.coe || {}}; } catch (err) { /* empty list */ } }
 
 /* ── Ask ATLAS (the same ATLAS, answering from this export) ─────────────── */
 const askFmt = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>")

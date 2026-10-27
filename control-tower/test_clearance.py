@@ -315,6 +315,37 @@ check("a question asked on the Clearance page goes to the clearance data",
       atlas_skills.detect("GH air shipments in June", None, {"page": "clearance"}) == "clearance"
       and atlas_skills.detect("GH air shipments in June", None, {}) is None)
 
+print("\n4b2. ATLAS WRITES THE EMAIL FOR THE SITUATION")
+def rowd(**kw):
+    base = dict(awb="T-1", bu="GH", mode="Ocean", div="Spare Parts", ffw="TEST FFW", agent="TEST AGENT",
+                status="Under Clearance", step="Customs Release", eta="2026-06-01", ata=None, due="2026-09-01",
+                overdue=55, completed=None)
+    base.update(kw); return base
+d = clearance.draft_mail(rowd(), "Esi")
+check("customs step: to the clearing agent, Cc the BU (from Contacts)", d["to"] == "ali@agent.example; ops@agent.example" and d["cc"] == "gh@mantrac.example", d)
+check("55 days late: urgent, with the due date and days", d["subject"].startswith("URGENT:") and "1 Sep 2026" in d["body"] and "55 days late" in d["body"], d["subject"])
+check("the request fits the step", "obtain the customs release" in d["body"] and d["body"].startswith("Dear Ali,"))
+d = clearance.draft_mail(rowd(overdue=3, due="2026-10-23"))
+check("3 days late: a follow-up, not urgent", "follow-up" in d["situation"] and not d["subject"].startswith("URGENT") and "3 days late" in d["body"], d["situation"])
+d = clearance.draft_mail(rowd(overdue=-2, due="2026-10-28"))
+check("not yet due: a reminder", "reminder" in d["situation"] and "due on 28 Oct 2026" in d["body"], d["situation"])
+d = clearance.draft_mail(rowd(overdue=None, due=None))
+check("no usable due date: says so, does not claim it is late", "no usable due date" in d["situation"] and "late." not in d["body"].split("eHub has no due date")[0])
+d = clearance.draft_mail(rowd(step="Assign Clearing Agent", agent=""))
+check("assign agent: to the BU", d["to"] == "gh@mantrac.example" and "assign a clearing agent" in d["body"], d)
+d = clearance.draft_mail(rowd(step="Submit to BU"))
+check("submit to BU: to the COE, missing COE address named, nothing invented", d["to"] == "" and any("COE" in m for m in d["missing"]), d)
+d = clearance.draft_mail(rowd(agent="UNKNOWN AGENT"))
+check("an agent with no address on file: To stays empty and it says so", d["to"] == "" and "UNKNOWN AGENT" in d["missing"][0], d)
+d = clearance.draft_mail(rowd(step="Completed", completed="2026-10-01", overdue=None))
+check("completed: a thank-you, nothing chased", "completed" in d["situation"] and "Thank you" in d["body"] and "URGENT" not in d["subject"])
+reply = atlas_skills.answer("clearance", "write an email for TEST-0002", None)["answer"]
+check("ATLAS writes it in the chat, with the situation and an Outlook link through the page",
+      "situation: Customs Release" in reply and "To: ali@agent.example" in reply and "/clearance#q=TEST-0002&mail=GH" in reply
+      and "escalated" in reply, reply[:400])
+st, b2, _h = call(V, "GET", "/api/clearance/draft?awb=TEST-0002&bu=GH")
+check("the page's Mail uses the same draft", js(b2)["draft"]["subject"].startswith("URGENT: TEST-0002"), b2[:200])
+
 print("\n4c. ATLAS KEEPS THE OTHER QUESTIONS (an export is loaded)")
 for q, ctx in [("did this job run against the real eHub?", {"domain": "po"}),
                ("where do the eHub records come from", {"domain": "po"}),
@@ -377,9 +408,11 @@ try:
               row.locator('[data-act="esc"]').inner_text() == "Escalated" and row.locator('[data-act="call"]').count() == 1
               and row.locator('[data-act="mail"]').count() == 1)
         row.locator('[data-act="mail"]').click()
+        pg.wait_for_selector("#mTo", timeout=10000)
         check("in a browser: Mail drafts to the agent, Cc the BU, with the export's facts",
               pg.locator("#mTo").input_value() == "ali@agent.example; ops@agent.example" and pg.locator("#mCc").input_value() == "gh@mantrac.example"
               and "Customs Release" in pg.locator("#mBody").input_value() and "55 days past due" in pg.locator("#mSub").input_value())
+        check("in a browser: the draft says which situation ATLAS wrote it for", "Customs Release" in pg.locator("#m-body .note").first.inner_text())
         pg.keyboard.press("Escape")
         row.locator('[data-act="call"]').click()
         check("in a browser: Call offers the numbers on file only", pg.locator('#m-body a[href^="tel:"]').count() == 1
@@ -401,6 +434,10 @@ try:
         ans.locator("a").first.click()
         pg.wait_for_timeout(400)
         check("in a browser: ATLAS's link filters the page", "Open and past due" in pg.locator("#pills").inner_text(), pg.locator("#pills").inner_text())
+        pg.goto(BASE + "/clearance#q=TEST-0002&mail=GH")
+        pg.wait_for_selector("#mTo", timeout=15000)
+        check("in a browser: ATLAS's 'open in Outlook' link opens its draft on the page", pg.locator("#mSub").input_value().startswith("URGENT: TEST-0002"))
+        pg.keyboard.press("Escape")
         pg.screenshot(path=os.path.join(TMP, "clearance.png"), full_page=True)
         check("in a browser: no script errors", not errors, errors)
         b.close()

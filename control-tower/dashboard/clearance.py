@@ -282,7 +282,7 @@ def check_inbox():
 # (tel: and mailto:): the platform sends nothing. What was done is recorded.
 
 _store_lock = threading.Lock()
-KINDS = ("agents", "bus", "forwarders")
+KINDS = ("agents", "bus", "forwarders", "coe")
 EMAIL = _re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[A-Za-z]{2,}$")
 PHONE = _re.compile(r"^\+?[0-9 ()\-./]{6,24}$")
 
@@ -362,6 +362,126 @@ def resolve(esc_id, note, by):
                 _write_json(runtime() / "escalations.json", items)
                 return True, "Resolved {0}.".format(e["awb"]), e
     return False, "No open escalation with that id.", None
+
+
+# ── ATLAS's email for a shipment's situation ──────────────────────────────
+#
+# Written from the loaded export and the contacts on file only: who owns the
+# step decides who it goes to, the days past due decide how firm it is. It is
+# a draft for the person's own Outlook; nothing here sends anything.
+
+STEP_OWNER = {"Submit to BU": "coe", "Assign Clearing Agent": "bu", "Correction Required": "bu",
+              "Customs Pre Entry": "agent", "Customs Declaration": "agent", "Duty Assessment": "agent",
+              "Duty Payment": "bu", "Customs Release": "agent", "Awaiting Reciept": "bu"}
+STEP_ASK = {
+    "Submit to BU": "submit this shipment's documents to the BU in eHub",
+    "Assign Clearing Agent": "assign a clearing agent to this shipment in eHub",
+    "Correction Required": "correct this shipment's record in eHub so it can move on",
+    "Customs Pre Entry": "complete the customs pre-entry",
+    "Customs Declaration": "lodge the customs declaration",
+    "Duty Assessment": "share the duty assessment",
+    "Duty Payment": "arrange the duty payment (the clearing agent is in copy for the receipt)",
+    "Customs Release": "obtain the customs release",
+    "Awaiting Reciept": "confirm the goods are received in the warehouse and close the receipt in eHub",
+}
+
+
+def _step_name(step):
+    return "Awaiting Receipt" if step == "Awaiting Reciept" else step
+
+
+def _d(iso):
+    if not iso:
+        return "not in the export"
+    try:
+        return _dt.datetime.strptime(iso, "%Y-%m-%d").strftime("%d %b %Y").lstrip("0")
+    except ValueError:
+        return iso
+
+
+def draft_mail(row, sender=""):
+    """
+    -> {to, cc, subject, body, situation, missing} for one shipment row, or
+    None when there is no row. Recipients come from contacts() only; a missing
+    one is named in 'missing', never made up.
+    """
+    if not row:
+        return None
+    book = contacts()
+
+    def emails(kind, name):
+        c = (book.get(kind) or {}).get(name or "") or {}
+        return [e.strip() for e in (c.get("email") or "").split(";") if e.strip()], c.get("person") or ""
+    agent, agent_p = emails("agents", row["agent"])
+    bu, bu_p = emails("bus", row["bu"])
+    coe, coe_p = emails("coe", "COE")
+    step, overdue = row["step"], row["overdue"]
+    esc = next((e for e in escalations() if e["awb"] == row["awb"] and e["bu"] == row["bu"]
+                and e["status"] == "open"), None)
+    owner = STEP_OWNER.get(step)
+    missing = []
+    if step == "Completed":
+        to, cc, greet = agent or bu, bu if agent else [], agent_p or bu_p
+        situation = "completed - a thank-you / confirmation, nothing to chase"
+        ask = ("Thank you - eHub shows this shipment as completed{0}. Please let us know if anything is "
+               "still open on your side.".format(" on " + _d(row["completed"]) if row["completed"] else ""))
+        tone = ""
+    else:
+        if owner == "agent":
+            to, cc, greet = agent, bu, agent_p
+            if not agent:
+                missing.append("the clearing agent's email ({0})".format(row["agent"] or "no agent in eHub"))
+        elif owner == "coe":
+            to, cc, greet = coe, bu, coe_p
+            if not coe:
+                missing.append("the COE email (Contacts > COE)")
+        else:
+            to, cc, greet = bu, agent if step == "Duty Payment" else [], bu_p
+            if not bu:
+                missing.append("BU {0}'s email".format(row["bu"]))
+        what = STEP_ASK.get(step, "move this shipment to its next step")
+        if overdue is None:
+            situation = "{0}; eHub has no usable due date for this step".format(_step_name(step))
+            tone = ("eHub has no due date for this step, so we cannot tell whether it is late. "
+                    "Please also check the dates on the eHub record.")
+            ask = "Could you please {0}, and share the expected date?".format(what)
+        elif overdue <= 0:
+            situation = "{0}; due {1} ({2} day{3} left) - a reminder".format(
+                _step_name(step), _d(row["due"]), -overdue, "" if overdue == -1 else "s")
+            tone = "A friendly reminder: this step is due on {0}.".format(_d(row["due"]))
+            ask = "Could you please {0} by then?".format(what)
+        elif overdue <= 7:
+            situation = "{0}; {1} day{2} past due - a follow-up".format(_step_name(step), overdue, "" if overdue == 1 else "s")
+            tone = "This step was due on {0} and is now {1} day{2} late.".format(_d(row["due"]), overdue, "" if overdue == 1 else "s")
+            ask = "Could you please {0} and share the expected completion date?".format(what)
+        else:
+            situation = "{0}; {1} days past due - urgent".format(_step_name(step), overdue)
+            tone = ("URGENT: this step was due on {0} and is now {1} days late. It is holding the "
+                    "shipment's clearance.".format(_d(row["due"]), overdue))
+            ask = "Please {0} today, or tell us what is blocking it and by when it will be done.".format(what)
+        if esc:
+            situation += "; escalated"
+            tone += " It has been escalated: {0}".format(esc["reason"].rstrip(".") + ".")
+            if bu and not set(bu) <= set(to) | set(cc):
+                cc = cc + bu
+    subject = "{0}{1} - {2} ({3}){4}".format(
+        "URGENT: " if overdue and overdue > 7 and step != "Completed" else "",
+        row["awb"] or "Shipment", _step_name(step), row["bu"],
+        ", {0} days past due".format(overdue) if overdue and overdue > 0 and step != "Completed" else "")
+    facts = ["AWB/BOL: {0}".format(row["awb"] or "-"),
+             "BU: {0} - {1} - {2}".format(row["bu"], row["mode"], row["div"]),
+             "Current step: {0}".format(_step_name(step))]
+    if step != "Completed":
+        facts.append("Step due: {0}{1}".format(_d(row["due"]), " ({0} days past due)".format(overdue)
+                                               if overdue and overdue > 0 else ""))
+    facts += ["ETA: {0}{1}".format(_d(row["eta"]), " - ATA: {0}".format(_d(row["ata"])) if row["ata"] else ""),
+              "Forwarder: {0}".format(row["ffw"] or "-"), "Clearing agent: {0}".format(row["agent"] or "-"),
+              "eHub status: {0} (export data as of {1})".format(row["status"], _d((load() or {}).get("asof")))]
+    body = "\n".join(["Dear {0},".format(greet) if greet else "Hello,", ""] +
+                     ([tone, ""] if tone else []) + [ask, "", "Shipment details (from eHub):"] +
+                     ["- " + f for f in facts] + ["", "Thank you,", sender or ""]).rstrip() + "\n"
+    return {"to": "; ".join(to), "cc": "; ".join(e for e in cc if e not in to), "subject": subject,
+            "body": body, "situation": situation, "missing": missing, "awb": row["awb"], "bu": row["bu"]}
 
 
 def log_contact(row, kind, to, by):

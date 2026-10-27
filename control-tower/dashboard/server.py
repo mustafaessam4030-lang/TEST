@@ -948,6 +948,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"escalations": _clearance.escalations()}))
             return
 
+        if route == "/api/clearance/draft":
+            # ATLAS's email for this shipment's situation (a draft; nothing is sent).
+            from urllib.parse import parse_qs, urlparse as _up
+            qs = parse_qs(_up(self.path).query)
+            rows = _clearance.find((qs.get("awb") or [""])[0][:60])
+            bu = (qs.get("bu") or [""])[0][:20]
+            row = next((r for r in rows if r["bu"] == bu), rows[0] if rows else None)
+            self._send(200, json.dumps({"draft": _clearance.draft_mail(
+                row, (self.user or {}).get("display_name") or "")}))
+            return
+
         if route == "/api/clearance/activity":
             from urllib.parse import parse_qs, urlparse as _up
             qs = parse_qs(_up(self.path).query)
