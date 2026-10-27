@@ -179,24 +179,40 @@ class ChainProvider(object):
 
     def __init__(self, first, then):
         self.first, self.then = first, then
+        self.answered_by = None          # the model behind the last answer (labels, reasons)
+
+    def _first_ok(self):
+        try:
+            return bool(self.first.health().get("ok"))
+        except Exception:
+            return False
 
     @property
     def model(self):
-        return self.first.model if self.first.health()["ok"] else self.then.model
+        if self.answered_by:
+            return self.answered_by
+        return self.first.model if self._first_ok() else self.then.model
 
     def health(self):
-        a, b = self.first.health(), self.then.health()
-        out = dict(a if a["ok"] else b)
+        try:
+            a = self.first.health()
+        except Exception as error:
+            a = {"ok": False, "provider": "cortex", "model": None, "detail": type(error).__name__}
+        b = self.then.health()
+        out = dict(a if a.get("ok") else b)
         out["chain"] = [a, b]
-        out["ok"] = a["ok"] or b["ok"]
+        out["ok"] = bool(a.get("ok") or b.get("ok"))
         return out
 
     def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700, images=None):
-        if not images and self.first.health()["ok"]:
+        if not images and self._first_ok():
             try:
-                return self.first.generate(system, prompt, None, json_mode, max_tokens)
+                text = self.first.generate(system, prompt, timeout, json_mode, max_tokens)
+                self.answered_by = self.first.model
+                return text
             except Exception:
                 pass                                   # the local model answers instead
+        self.answered_by = self.then.model
         return self.then.generate(system, prompt, timeout, json_mode, max_tokens, images)
 
 

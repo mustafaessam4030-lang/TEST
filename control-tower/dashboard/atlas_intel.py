@@ -337,9 +337,9 @@ def _phrased(out, question, run_brief, web, pid, raw=False):
         [w.get("text") for w in web] + [w.get("publisher") for w in web]
     ok, violations = factguard.check(text, inputs)
     if not ok:
-        out["llm"] = {"used": False, "reason": "the local model's phrasing added things ATLAS "
-                                              "does not hold: " + "; ".join(violations)}
+        out["llm"] = {"used": False, "reason": "the model's phrasing ({0}) added things ATLAS "
+                                              "does not hold: ".format(p.model) + "; ".join(violations)}
         return out
     phrased = dict(out, answer=text, details=answer)
-    phrased["llm"] = {"used": True, "model": health.get("model")}
+    phrased["llm"] = {"used": True, "model": p.model}      # the one that actually answered
     return phrased

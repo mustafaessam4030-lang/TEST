@@ -119,6 +119,42 @@ check("over today's budget: the local model, and the reason is shown",
       chain.generate("S", "P") == "local answer" and "budget" in C.CortexProvider(("https://a.snowflakecomputing.com", TOKEN)).health()["detail"])
 os.environ.pop("ATLAS_CORTEX_DAILY_TOKENS")
 
+print("\n3b. NOTHING ABOUT CORTEX CAN BREAK AN ANSWER")
+import time as _t                                              # noqa: E402
+open(C._usage_path(), "w").write(json.dumps({_t.strftime("%Y-%m-%d"): {"calls": 1}}))
+C._state.update(failed_at=0.0, last_error=None)
+chain = llm.ChainProvider(C.CortexProvider(("https://pecfylf-fy56654.snowflakecomputing.com", TOKEN), snowflake("ok")), Local())
+check("a usage file of the wrong shape counts as zero, not an error", C.usage()["prompt_tokens"] == 0 and chain.generate("S", "P") == "ok")
+open(C._usage_path(), "w").write("[1, 2, 3]")
+check("…and a usage file that is not even an object", chain.health()["ok"] and chain.generate("S", "P") == "ok")
+
+
+class Broken(C.CortexProvider):
+    def _conf(self):
+        raise UnicodeDecodeError("utf-16-le", b"x", 0, 1, "odd length")
+
+
+chain = llm.ChainProvider(Broken(), Local())
+check("an unreadable stored token: health says why, the local model answers",
+      chain.health()["ok"] and chain.generate("S", "P") == "local answer" and chain.model == "qwen3.5:4b")
+check("the answer is labelled with the model that actually answered", chain.answered_by == "qwen3.5:4b")
+for bad in ("https://x.snowflakecomputing.com?a=1", "https://x.snowflakecomputing.com:8443", "https://x.snowflakecomputing.com#f"):
+    check("refused: " + bad, not C.allowed_url(bad))
+try:
+    C._Refuse().redirect_request(type("R", (), {"full_url": "https://a.snowflakecomputing.com/x"})(), None, 302, "Found", {}, "https://evil.example/")
+    check("a redirect is refused (the token never follows it)", False)
+except urllib.error.HTTPError:
+    check("a redirect is refused (the token never follows it)", True)
+SEEN.clear()
+C._state.update(failed_at=0.0, last_error=None)
+C.CortexProvider(("https://a.snowflakecomputing.com", TOKEN), snowflake("x")).generate("S", "P", timeout=5)
+check("the caller's shorter wait is respected", SEEN[-1]["timeout"] == 5.0)
+before = C.usage()
+def no_usage(request, timeout=None):
+    return Resp(json.dumps({"choices": [{"message": {"content": "y"}}]}).encode())
+C.CortexProvider(("https://a.snowflakecomputing.com", TOKEN), no_usage).generate("S", "P", max_tokens=200)
+check("no usage block from Snowflake: the allowed tokens are still counted", C.usage()["completion_tokens"] - before["completion_tokens"] == 200)
+
 print("\n4. SET UP ON THE SERVER (Credential Manager)")
 H._backend = Store()
 out = []
@@ -147,7 +183,8 @@ check("no Snowflake SDK or other package needed (standard library only)", "impor
 sql = open(os.path.join(HERE, "deploy", "snowflake", "atlas_cortex_setup.sql"), encoding="utf-8").read()
 check("the setup script: a service user with Cortex only, a network policy, a role-restricted token",
       "TYPE = SERVICE" in sql and "CORTEX_REST_API_USER" in sql and "NETWORK POLICY" in sql
-      and "ROLE_RESTRICTION = 'ATLAS_CORTEX_ROLE'" in sql and "GRANT SELECT" not in sql.upper())
+      and "ROLE_RESTRICTION = 'ATLAS_CORTEX_ROLE'" in sql and "GRANT SELECT" not in sql.upper()
+      and sql.index("CREATE DATABASE IF NOT EXISTS GOVERNANCE") < sql.index("CREATE SCHEMA IF NOT EXISTS GOVERNANCE.NETWORK"))
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

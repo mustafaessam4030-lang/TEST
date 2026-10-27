@@ -54,6 +54,15 @@ class CortexError(Exception):
     pass
 
 
+class _Refuse(urllib.request.HTTPRedirectHandler):
+    """A redirect would carry the token to another host: refused."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+_NO_REDIRECTS = urllib.request.build_opener(_Refuse)
+
+
 def _store():
     import hub_credentials                         # Credential Manager (advapi32)
     return hub_credentials.backend()
@@ -63,8 +72,12 @@ def allowed_url(url):
     """Only Mantrac-style Snowflake account URLs, over https."""
     u = urlparse(str(url or ""))
     host = (u.hostname or "").lower()
+    try:
+        port = u.port
+    except ValueError:
+        return False
     return u.scheme == "https" and host.endswith(".snowflakecomputing.com") and not u.path.strip("/") \
-        and "@" not in (u.netloc or "")
+        and "@" not in (u.netloc or "") and not u.query and not u.fragment and port is None
 
 
 def settings():
@@ -76,7 +89,7 @@ def settings():
         return None
     try:
         found = store.read(TARGET)
-    except OSError:
+    except Exception:                     # an unreadable entry: the local model answers
         return None
     if not found or not allowed_url(found[0]) or not found[1]:
         return None
@@ -96,13 +109,26 @@ def _usage_path():
     return base / "cortex_usage.json"
 
 
-def usage():
+ZERO = {"calls": 0, "failed": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+
+def _num(v):
     try:
-        data = json.loads(_usage_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        data = {}
-    today = time.strftime("%Y-%m-%d")
-    return data.get(today) or {"calls": 0, "failed": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        return max(0, int(v or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def usage():
+    """Today's counts; a missing or damaged file counts as zero, never an error."""
+    try:
+        with _lock:
+            data = json.loads(_usage_path().read_text(encoding="utf-8"))
+        day = data.get(time.strftime("%Y-%m-%d")) if isinstance(data, dict) else None
+    except Exception:
+        day = None
+    day = day if isinstance(day, dict) else {}
+    return {k: _num(day.get(k)) for k in ZERO}
 
 
 def _count(ok, prompt_tokens=0, completion_tokens=0):
@@ -112,11 +138,14 @@ def _count(ok, prompt_tokens=0, completion_tokens=0):
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
+        if not isinstance(data, dict):
+            data = {}
         today = time.strftime("%Y-%m-%d")
-        day = data.setdefault(today, {"calls": 0, "failed": 0, "prompt_tokens": 0, "completion_tokens": 0})
+        old = data.get(today) if isinstance(data.get(today), dict) else {}
+        day = data[today] = {k: _num(old.get(k)) for k in ZERO}
         day["calls" if ok else "failed"] += 1
-        day["prompt_tokens"] += int(prompt_tokens or 0)
-        day["completion_tokens"] += int(completion_tokens or 0)
+        day["prompt_tokens"] += _num(prompt_tokens)
+        day["completion_tokens"] += _num(completion_tokens)
         for old in sorted(data)[:-60]:                 # two months of history
             data.pop(old, None)
         tmp = path.with_suffix(".tmp")
@@ -143,7 +172,7 @@ class CortexProvider(object):
 
     def __init__(self, conf=None, opener=None):
         self.conf = conf                     # (url, token); tests pass their own
-        self.opener = opener or urllib.request.urlopen
+        self.opener = opener or _NO_REDIRECTS.open
 
     @property
     def model(self):
@@ -153,6 +182,13 @@ class CortexProvider(object):
         return self.conf or settings()
 
     def health(self):
+        try:
+            return self._health()
+        except Exception as error:                  # never breaks ATLAS: the local model answers
+            return {"ok": False, "provider": "cortex", "model": self.model,
+                    "detail": "Cortex settings could not be read ({0})".format(type(error).__name__)}
+
+    def _health(self):
         conf = self._conf()
         if not conf:
             return {"ok": False, "provider": "cortex", "model": None,
@@ -185,7 +221,8 @@ class CortexProvider(object):
             headers={"Content-Type": "application/json", "Accept": "application/json",
                      "Authorization": "Bearer " + token,
                      "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN"})
-        limit = float(timeout or os.environ.get("ATLAS_CORTEX_TIMEOUT_S") or 30)
+        own = float(os.environ.get("ATLAS_CORTEX_TIMEOUT_S") or 30)
+        limit = min(float(timeout), own) if timeout else own     # the caller's wait, at most Cortex's own
         try:
             with self.opener(request, timeout=limit) as response:
                 answer = json.loads(response.read().decode("utf-8") or "{}")
@@ -201,8 +238,13 @@ class CortexProvider(object):
             text = ""
         if not text:
             self._fail("Cortex returned no text")
-        used = answer.get("usage") or {}
-        _count(True, used.get("prompt_tokens"), used.get("completion_tokens"))
+        used = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
+        try:
+            # No usage block: count what was allowed, so the budget still holds.
+            _count(True, used.get("prompt_tokens") or len(system + prompt) // 3,
+                   used.get("completion_tokens") or max_tokens)
+        except Exception:
+            pass                      # the answer was paid for: it is used even if not counted
         return text
 
     def _fail(self, why):

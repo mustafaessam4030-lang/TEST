@@ -14,5 +14,6 @@ if %errorLevel% equ 0 %CT_PY% -m intelligence.cortex test
 echo.
 %CT_PY% -m intelligence.cortex status
 echo.
-echo   Restart the tower so ATLAS uses it:  Stop-ScheduledTask / Start-ScheduledTask "Mantrac Tower"
+echo   Then restart the tower so ATLAS uses it, in an Administrator PowerShell:
+echo     Stop-ScheduledTask "Mantrac Tower"; Start-ScheduledTask "Mantrac Tower"
 pause

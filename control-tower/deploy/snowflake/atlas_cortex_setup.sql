@@ -20,6 +20,9 @@ GRANT ROLE ATLAS_CORTEX_ROLE TO USER ATLAS_SVC;
 
 -- 3. Only the tower server may use it (a programmatic access token for a
 --    service user needs a network policy). Network rules live in a schema.
+--    The server's IP changed later? ALTER NETWORK RULE GOVERNANCE.NETWORK.ATLAS_SERVER_IP
+--    SET VALUE_LIST = ('<new IP>');   (IF NOT EXISTS below never updates it.)
+CREATE DATABASE IF NOT EXISTS GOVERNANCE;
 CREATE SCHEMA IF NOT EXISTS GOVERNANCE.NETWORK;
 CREATE NETWORK RULE IF NOT EXISTS GOVERNANCE.NETWORK.ATLAS_SERVER_IP
   MODE = INGRESS TYPE = IPV4 VALUE_LIST = ('<SERVER_PUBLIC_IP>');
@@ -29,7 +32,9 @@ ALTER USER ATLAS_SVC SET NETWORK_POLICY = ATLAS_SVC_POLICY;
 
 -- 4. The token. Its secret is shown ONCE in the output (token_secret): give it
 --    to the tower's operator to type into STORE_SNOWFLAKE_TOKEN.bat on the
---    server - never by email or chat. Renew before it expires.
+--    server - never by email or chat. To renew (this ADD fails once it exists):
+--    ALTER USER ATLAS_SVC ROTATE PROGRAMMATIC ACCESS TOKEN ATLAS_CORTEX;
+--    then STORE_SNOWFLAKE_TOKEN.bat again with the new secret.
 ALTER USER ATLAS_SVC ADD PROGRAMMATIC ACCESS TOKEN ATLAS_CORTEX
   ROLE_RESTRICTION = 'ATLAS_CORTEX_ROLE'
   DAYS_TO_EXPIRY = 180
