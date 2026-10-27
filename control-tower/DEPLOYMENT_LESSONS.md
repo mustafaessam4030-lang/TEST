@@ -23,8 +23,12 @@ at the time; check them before acting.
 7. The tower: `powershell -ExecutionPolicy Bypass -File .\install_server.ps1`
    (or INSTALL_SERVER.bat as administrator). It creates the scheduled task
    "Mantrac Tower" that starts the tower when the account signs in.
-8. `C:\Automation\credentials.txt` — the Hub login, two lines
-   `USERNAME=` and `PASSWORD=`. Never in the ZIP, email or chat.
+8. The Hub login: run `STORE_HUB_PASSWORD.bat` signed in as the account that
+   runs the tower. It keeps the login in Windows Credential Manager (encrypted
+   for that account) and deletes `C:\Automation\credentials.txt` if one exists.
+   Each Windows account has its own Credential Manager: when the task changes
+   account (for example to a service account), run it again as that
+   account. Never put the login in the ZIP, email or chat.
 9. Users: CREATE_ADMIN.bat or
    `python -m dashboard.accounts create-admin --email ... --name ...`.
    Then restart the tower.
@@ -116,15 +120,58 @@ tower with two user lists. Find them with
 - An Azure server's network is usually "Public"; the tower's firewall rule was
   for Domain/Private only. Fix:
   `Set-NetFirewallRule -DisplayName "Mantrac Control Tower" -Profile Any -RemoteAddress 10.0.0.0/8`.
+  START_TOWER.bat and the installer used to reset the rule to Domain/Private;
+  they now open every profile to private addresses only.
 - If the PC is still blocked, Azure's Network Security Group needs inbound
   TCP 80, 443 (and 8787) from the company network — ask the Azure admin.
 - `ERR_NAME_NOT_RESOLVED`: the PC does not know the name. Use the IP, or ask
   for a DNS record; for one PC only, a hosts-file line.
 
+### The scheduled task is "Ready" and never starts at sign-in
+
+It was registered under the account that ran the installer (on the Azure
+server: the local `azureuser`), so it waited for that account to sign in. Check
+with `(Get-ScheduledTask "Mantrac Tower").Principal`. The current installer
+fires at any sign-in and still runs only as its account. To move an existing
+task to yourself:
+`Set-ScheduledTask -TaskName 'Mantrac Tower' -Trigger (New-ScheduledTaskTrigger -AtLogOn) -Principal (New-ScheduledTaskPrincipal -UserId 'WIN2K\<you>' -LogonType Interactive -RunLevel Limited)`.
+Start it by hand with `Start-ScheduledTask "Mantrac Tower"`; result 267009
+means "running". Leave the server by closing Remote Desktop with the X
+(disconnect), never "Sign out": signing out stops the tower.
+
+### ATLAS says "Ollama is not answering" for one Windows account
+
+Ollama installs per Windows user. Installed as `azureuser`, it does not run
+for `memabrouk`. Install it again while signed in as the account that runs the
+tower; the models can be copied from `C:\Users\<other>\.ollama\models` to
+your own `%USERPROFILE%\.ollama\models` instead of downloading them again.
+
+### https gives "502" (Bad Gateway)
+
+IIS is fine; the tower behind it is not running. Start the task, then check
+`Test-NetConnection 127.0.0.1 -Port 8787`.
+
+### Testing https://ata... before colleagues can use the name
+
+On the server, a hosts line `127.0.0.1   ata.mantracgroup.com` (SETUP_HTTPS.bat
+adds it). On one test PC, `10.251.68.132   ata.mantracgroup.com`. Colleagues
+need the name added by a Domain Admin (see the DNS section). "Stream was not readable" when editing the hosts
+file means Windows held it for a moment: wait and run again.
+Test-NetConnection run ON the server always reaches the server: test the
+network from another PC.
+
 ## IIS, HTTPS and the company name
 
 - IIS role: `Install-WindowsFeature Web-Server, Web-Mgmt-Console, Web-Scripting-Tools`
   (needs a restart), then URL Rewrite and ARR 3.0 from iis.net.
+- **One click:** put the company `.pfx` in `C:\Automation\certificate` and run
+  `SETUP_HTTPS.bat` as administrator. It installs IIS, URL Rewrite and ARR
+  (Microsoft-signed only), asks for the certificate password (typed there,
+  never saved), imports it, deletes the .pfx, opens 80/443 to company
+  addresses, builds the site, restarts the tower and runs the check.
+- The company certificate is a wildcard `*.mantracgroup.com` (expires
+  18 Mar 2027). Its password comes from whoever issued the file; never keep it
+  in a text file on the server, and never send the .pfx by chat or email.
 - Test without a certificate first:
   `setup_iis.ps1 -HostName <name> -HttpOnly`, restart the tower,
   `check_iis.ps1 -HostName <name> -HttpOnly`.
@@ -138,8 +185,11 @@ tower with two user lists. Find them with
   which moves the bindings.
 - To also answer the server's own name, add an https binding for it with the
   same certificate (the certificate must include that name).
-- The WARN "dashboard is locked by the access key only" from an older
-  check_iis.ps1 was a mistake in the script, fixed since.
+- The WARN "dashboard is locked by the access key only" came from IIS
+  replacing the tower's own error replies with its error pages. web.config now
+  has `httpErrors existingResponse="PassThrough"`; run SETUP_HTTPS.bat (or
+  setup_iis.ps1) again to copy it, otherwise an expired session may not lead
+  back to the sign-in page.
 - Restart the tower after setup_iis.ps1 so it reads ATA_PUBLIC_URL; after the
   switch to HTTPS everyone signs in again.
 

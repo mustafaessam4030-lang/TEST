@@ -29,7 +29,7 @@
   After it: sign out and in (or restart) so the tower reads the two settings,
   then run check_iis.ps1.
 
-  It has not been run on an IIS server by its author: IT should read it first.
+  First run on Windows Server (Azure) in October 2026; IT should still read it first.
 #>
 param(
     [Parameter(Mandatory = $true)] [string] $HostName,

@@ -11,9 +11,9 @@ if %errorLevel% neq 0 (
 )
 
 echo.
-echo   Opening inbound TCP 8787 for Domain and Private networks...
+echo   Opening inbound TCP 8787 to company (private) addresses only...
 netsh advfirewall firewall delete rule name="Mantrac Control Tower" >nul 2>&1
-netsh advfirewall firewall add rule name="Mantrac Control Tower" dir=in action=allow protocol=TCP localport=8787 profile=domain,private >nul
+netsh advfirewall firewall add rule name="Mantrac Control Tower" dir=in action=allow protocol=TCP localport=8787 profile=any remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 >nul
 if %errorLevel% equ 0 (echo   Done.) else (echo   Could not add the rule - ask IT to allow inbound TCP 8787.)
 echo.
 echo   Starting the automation. Copy the link marked SEND THIS TO COLLEAGUES.

@@ -6,7 +6,7 @@ echo  Sharing the last finished run on this network.
 echo  Colleagues open the link printed below.
 echo.
 echo  If nobody can connect, run this ONCE in an Administrator PowerShell:
-echo    New-NetFirewallRule -DisplayName "Mantrac Control Tower" -Direction Inbound -Protocol TCP -LocalPort 8787 -Action Allow -Profile Domain,Private
+echo    New-NetFirewallRule -DisplayName "Mantrac Control Tower" -Direction Inbound -Protocol TCP -LocalPort 8787 -Action Allow -Profile Any -RemoteAddress LocalSubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 echo.
 set /p KEY=Access key to require (press ENTER to use this installation's key): 
 where python >nul 2>&1 && (

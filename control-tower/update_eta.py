@@ -2345,8 +2345,21 @@ def wait_between_shipments():
 # ============================================================
 
 def load_credentials():
+    """The Hub sign-in: Windows Credential Manager first (hub_credentials.py),
+    then credentials.txt for a server that has not moved yet."""
+    try:
+        import hub_credentials
+        stored = hub_credentials.read()
+    except Exception as error:
+        print("  Credential Manager not readable ({0}); trying {1}".format(
+            type(error).__name__, CREDENTIALS_FILE.name), flush=True)
+        stored = None
+    if stored:
+        return stored
+
     if not CREDENTIALS_FILE.exists():
-        raise Exception(f"Missing credentials file: {CREDENTIALS_FILE}")
+        raise Exception(f"No Hub sign-in: none in Windows Credential Manager and no {CREDENTIALS_FILE}. "
+                        "Store it with STORE_HUB_PASSWORD.bat (python -m hub_credentials set).")
 
     values = {}
     with open(CREDENTIALS_FILE, "r", encoding="utf-8-sig") as credentials_file:

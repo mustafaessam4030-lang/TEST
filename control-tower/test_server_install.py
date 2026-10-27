@@ -35,8 +35,19 @@ check("It asks for administrator rights and refuses without them",
       b"-Verb RunAs" in bat and "IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)" in ps1)
 check("It checks Python 3.11+ and Edge before changing anything",
       ps1.index('"3.11"') < ps1.index("pip install") and ps1.index("msedge.exe") < ps1.index("pip install"))
-check("The dashboard port is opened to the company network only, never public",
-      "profile=domain,private" in ps1 and "public" not in ps1.split("profile=")[1].split("|")[0])
+rule = ps1.split("profile=")[1].split("|")[0]
+check("The dashboard port is opened to company (private) addresses only, on every profile (Azure is 'Public')",
+      rule.startswith("any ") and "remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" in rule)
+check("The task fires at any sign-in but runs only as the installing account",
+      "New-ScheduledTaskTrigger -AtLogOn\n" in ps1 and "-AtLogOn -User" not in ps1
+      and "New-ScheduledTaskPrincipal -UserId $Account" in ps1)
+for name in ("START_TOWER.bat", "START_SHARED.bat"):
+    b = (HERE / name).read_text(encoding="utf-8", errors="replace")
+    check(name + " opens 8787 to private addresses on every profile",
+          "profile=any remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" in b and "profile=domain,private" not in b)
+srv = (HERE / "dashboard" / "server.py").read_text(encoding="utf-8")
+check("The tower's own firewall rule: every profile, private addresses, replaces an old Domain/Private rule",
+      '"profile=any", FIREWALL_REMOTE' in srv and '"10.0.0.0/8" in existing.stdout' in srv)
 check("The machine never sleeps on mains power",
       "standby-timeout-ac 0" in ps1 and "hibernate-timeout-ac 0" in ps1)
 check("The task starts the tower at sign-in, restarts it, needs no admin rights to run",

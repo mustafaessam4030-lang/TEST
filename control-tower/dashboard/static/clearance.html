@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipment Control Tower</title>
+<style>
+:root{
+  --bg:#EAF2FD; --bg2:#F6FAFF; --card:#FFFFFF; --line:#E3EAF4;
+  --ink:#1B2A3B; --muted:#7486A0; --soft:#A9B6C8;
+  --title:#2A7BE4; --blue:#2D6BF6; --cyan:#1EC4E6; --green:#16B364;
+  --orange:#F7834A; --amber:#FDB022; --red:#E5484D;
+  --tint-blue:#EEF4FF; --tint-cyan:#E9F9FD; --tint-amber:#FFF7E6; --tint-green:#EAF8F0; --tint-red:#FDEEEE;
+  --shadow:0 1px 2px rgba(23,48,89,.05),0 6px 20px rgba(23,48,89,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:linear-gradient(180deg,var(--bg) 0,var(--bg2) 420px,var(--bg2) 100%);color:var(--ink);
+  font:14px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;min-height:100vh}
+.wrap{max-width:1680px;margin:0 auto;padding:14px 20px 28px}
+button{font:inherit}
+[data-set]{cursor:pointer}
+[data-set]:focus-visible,.chip:focus-visible,select:focus-visible,input:focus-visible,button:focus-visible,tr[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+/* header */
+header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;padding:6px 4px 14px}
+header .logo{display:flex;align-items:center;gap:14px}
+header .logo img{height:30px;display:block}
+header .back{font-size:13px;font-weight:600;color:var(--blue);text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;white-space:nowrap}
+header .back:hover{background:var(--tint-blue)}
+header h1{margin:0;font-size:30px;font-weight:700;color:var(--title);letter-spacing:.2px;text-align:center}
+header .asof{justify-self:end;text-align:right;display:flex;align-items:center;gap:14px}
+header .asof div span{display:block;font-size:12px;color:var(--muted)}
+header .asof div b{display:block;font-size:20px;color:var(--title);font-weight:700;line-height:1.2}
+.load{border:1px dashed #9DB8E8;background:#fff;color:var(--blue);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.load:hover{background:var(--tint-blue)}
+#src{font-size:11.5px;color:var(--muted);text-align:right;margin:-8px 4px 8px}
+
+/* filters */
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;background:var(--card);border-radius:10px;
+  box-shadow:var(--shadow);padding:10px 14px;margin-bottom:14px;position:sticky;top:0;z-index:20}
+.fgroup{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.fgroup>label{font-size:12px;color:var(--muted);font-weight:600;margin-right:2px;text-transform:uppercase;letter-spacing:.6px}
+.chip{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:4px 11px;font-size:13px;cursor:pointer}
+.chip:hover{border-color:#B9CCEB}
+.chip[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff;color:var(--ink)}
+.pills{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+.pills:empty{display:none}
+.pill{display:inline-flex;align-items:center;gap:6px;background:#FFF1E8;border:1px solid #FBC9A8;color:#8A3B0F;border-radius:999px;padding:3px 6px 3px 11px;font-size:12.5px}
+.pill button{border:0;background:#FBD9C4;color:#8A3B0F;width:18px;height:18px;border-radius:50%;cursor:pointer;line-height:1;font-size:13px;padding:0}
+.reset{margin-left:auto;font-size:13px;color:var(--blue);background:none;border:0;cursor:pointer;padding:4px}
+
+/* layout */
+.grid{display:grid;grid-template-columns:300px minmax(0,1fr) 330px;gap:14px;align-items:stretch}
+.mid{display:grid;grid-template-rows:auto auto;gap:14px;min-width:0}
+.row2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;margin-top:14px}
+.card{background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:14px 16px;min-width:0}
+.card h2{margin:0 0 12px;font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card h2::before{content:"";width:4px;height:18px;border-radius:2px;background:var(--blue)}
+.card h2 small{margin-left:auto;font-size:12px;font-weight:500;color:var(--muted)}
+.note{font-size:11.5px;color:var(--muted)}
+
+/* KPI 360 */
+.kgroup{margin-top:10px}
+.kgroup h3{margin:0 0 6px;font-size:15px;color:var(--blue);font-weight:700}
+.kpi{display:grid;grid-template-columns:52px 1fr;border-radius:6px;overflow:hidden;min-height:76px;border:1px solid transparent;transition:transform .15s ease,border-color .15s ease}
+.kpi[data-set]:hover{transform:translateY(-1px);border-color:#C7D7F2}
+.kpi.on{border-color:var(--blue);box-shadow:0 0 0 2px rgba(45,107,246,.15)}
+.kpi .ic{display:grid;place-items:center}
+.kpi .ic svg{width:26px;height:26px}
+.kpi .bd{padding:8px 12px 9px}
+.kpi .t{font-size:13px;font-weight:600;color:#33445A;display:flex;justify-content:space-between;gap:6px}
+.kpi .t em{font-style:normal;font-size:11px;font-weight:500;color:var(--muted)}
+.kpi .v{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;margin-top:2px}
+.kpi .v b{font-size:24px;font-weight:600;letter-spacing:-.3px;white-space:nowrap}
+.kpi .v span{font-size:11.5px;color:var(--muted)}
+.bar{position:relative;height:6px;border-radius:3px;background:#E4ECF7;margin-top:6px}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.55}
+
+/* execution */
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.mode{border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;text-align:center;transition:opacity .2s ease,border-color .2s ease}
+.mode.dim{opacity:.45}
+.mode.on{border-color:var(--blue);box-shadow:0 0 0 2px rgba(45,107,246,.12)}
+.mode h4{margin:0;font-size:17px;font-weight:600;padding-bottom:6px;border-bottom:1px solid #9AA8BA}
+.mode h4:hover{color:var(--blue)}
+.mode .tot{font-size:15px;margin:8px 0 6px}
+.mode .tot b{font-size:17px}
+.pbar{display:flex;align-items:center;gap:8px;justify-content:center}
+.pbar .bar{flex:1;max-width:150px;margin:0;height:7px}
+.pbar .ok{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700}
+.split{display:flex;justify-content:center;gap:10px;font-size:12px;margin:7px 0 4px;color:#33445A}
+.split span:hover{color:var(--blue)}
+.split em{font-style:normal;color:var(--line)}
+.donut{position:relative;width:118px;height:118px;margin:6px auto 4px}
+.donut svg{width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+.donut circle[data-set]{transition:stroke-width .15s ease}
+.donut circle[data-set]:hover,.donut circle.on{stroke-width:22}
+.donut .c{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1.15;pointer-events:none}
+.donut .c span{font-size:11px;color:var(--muted)}
+.donut .c b{font-size:15px}
+.legs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px}
+.legs div{font-size:12px;border-radius:5px;padding:2px 0}
+.legs div:hover,.legs div.on{background:var(--tint-blue)}
+.legs b{display:block;font-size:12.5px;padding-bottom:3px;border-bottom:1px solid var(--line);margin-bottom:3px}
+
+/* insights */
+.ins{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px;align-items:start}
+.status{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center}
+.status .donut{width:120px;height:120px;margin:0}
+.slist{font-size:12.5px;display:grid;gap:2px}
+.slist div{display:flex;justify-content:space-between;gap:8px;padding:1px 4px;border-radius:4px}
+.slist div:hover,.slist div.on{background:var(--tint-blue)}
+.slist i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.story{margin-top:12px}
+.story h3{margin:0 0 6px;font-size:17px}
+.story h3 span{color:#B2621D}
+.story ul{margin:0;padding:10px 12px 10px 26px;background:var(--tint-blue);border-radius:6px;font-size:12.5px;color:#4A5B73;display:grid;gap:4px}
+.story a{color:var(--blue);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.chart svg{width:100%;height:auto;display:block}
+.chart text{font:11px "Segoe UI",system-ui,sans-serif;fill:#6D7F98}
+.chart [data-set]:hover .hl,.chart [data-set].on .hl{fill:rgba(45,107,246,.08)}
+.chart [data-set]:hover rect.b,.chart [data-set].on rect.b{filter:brightness(1.12)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:#33445A;margin-bottom:4px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.legend i.line{height:3px;border-radius:2px;vertical-align:3px}
+.dimmed{opacity:.35}
+
+/* BU table */
+.butable{width:100%;border-collapse:collapse;font-size:13px}
+.butable th{font-size:11.5px;color:var(--muted);font-weight:600;text-align:right;padding:4px 6px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.5px}
+.butable th:first-child{text-align:left}
+.butable td{padding:6px;text-align:right;border-bottom:1px solid #F0F3F8;font-variant-numeric:tabular-nums}
+.butable td:first-child{text-align:left;font-weight:600}
+.butable tr[data-set]:hover{background:var(--tint-blue)}
+.butable tr.on{background:#E2ECFF}
+.mini{display:inline-block;vertical-align:middle;width:70px;height:6px;border-radius:3px;background:#E4ECF7;margin-left:8px;position:relative;overflow:hidden}
+.mini i{position:absolute;left:0;top:0;bottom:0}
+
+/* alerts */
+.alerts{display:flex;flex-direction:column;max-height:calc(100vh - 120px);min-height:620px;position:sticky;top:76px}
+.alist{overflow:auto;padding-right:4px;flex:1}
+.al{position:relative;padding:0 0 12px 18px}
+.al::before{content:"";position:absolute;left:4px;top:7px;bottom:-2px;border-left:1px dashed #B9CCEB}
+.al:last-child::before{display:none}
+.al::after{content:"";position:absolute;left:0;top:4px;width:9px;height:9px;border-radius:50%;border:2px solid var(--blue);background:#fff}
+.al.dq::after{border-color:var(--amber)}
+.al .h{font-size:12.5px;font-weight:600;color:#33445A;display:flex;justify-content:space-between;gap:6px}
+.al .h span{color:var(--red);font-weight:700;white-space:nowrap}
+.al.dq .h span{color:#B26A00}
+.al .b{display:block;width:100%;text-align:left;border:1px solid transparent;margin-top:4px;background:var(--tint-blue);border-radius:6px;padding:8px 10px;font-size:12.5px;color:#33445A}
+.al button.b{cursor:pointer}
+.al button.b:hover{border-color:#B9CCEB}
+.al.dq .b{background:var(--tint-amber)}
+.al .b code{font:12px Consolas,"Cascadia Mono",monospace;color:var(--ink)}
+.empty{color:var(--muted);font-size:13px;padding:8px 0}
+
+/* explorer */
+.explorer{margin-top:14px}
+.xtools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.xtools input{flex:1;min-width:220px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:#B9CCEB}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.xwrap{overflow:auto;border:1px solid var(--line);border-radius:8px}
+.xt{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
+.xt th{position:sticky;top:0;background:#F4F7FC;text-align:left;font-weight:600;color:#4A5B73;padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.xt th:hover{color:var(--blue)}
+.xt th .s{color:var(--blue);margin-left:3px}
+.xt td{padding:6px 10px;border-bottom:1px solid #F0F3F8}
+.xt td.n{text-align:right;font-variant-numeric:tabular-nums}
+.xt tbody tr{cursor:pointer}
+.xt tbody tr:hover{background:var(--tint-blue)}
+.tag{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600}
+.pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:8px;font-size:12.5px;color:var(--muted)}
+
+/* tooltip */
+#tip{position:fixed;z-index:60;pointer-events:none;background:#14233A;color:#fff;font-size:12.5px;line-height:1.4;border-radius:7px;padding:7px 10px;
+  box-shadow:0 8px 24px rgba(10,25,50,.25);max-width:280px;opacity:0;transform:translateY(4px);transition:opacity .12s ease,transform .12s ease}
+#tip.show{opacity:1;transform:none}
+#tip b{color:#9CC2FF}
+#tip small{display:block;color:#A9B8CF;margin-top:3px}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(15,30,55,.28);z-index:70;opacity:0;pointer-events:none;transition:opacity .2s ease}
+.scrim.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:#fff;z-index:71;box-shadow:-10px 0 40px rgba(10,25,50,.18);
+  transform:translateX(100%);transition:transform .22s ease;display:flex;flex-direction:column}
+.drawer.show{transform:none}
+.drawer .dh{padding:16px 18px 12px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
+.drawer .dh h3{margin:0;font-size:18px;font-family:Consolas,"Cascadia Mono",monospace}
+.drawer .dh p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
+.drawer .x{margin-left:auto;border:0;background:var(--tint-blue);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;color:var(--ink)}
+.drawer .db{padding:14px 18px;overflow:auto}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 12px;font-size:13px;margin-bottom:16px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-weight:500}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.steps li{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;font-size:13px}
+.steps li i{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700;color:#fff}
+
+/* drop zone */
+.drop{position:fixed;inset:0;z-index:80;background:rgba(45,107,246,.12);border:3px dashed var(--blue);display:none;place-items:center;font-size:20px;font-weight:600;color:var(--blue)}
+.drop.show{display:grid}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#14233A;color:#fff;border-radius:8px;padding:10px 16px;font-size:13px;z-index:90;box-shadow:0 8px 24px rgba(10,25,50,.25);display:none;max-width:90vw}
+.toast.show{display:block}
+
+footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+@media (max-width:1280px){
+  .grid{grid-template-columns:280px minmax(0,1fr)}
+  .alerts{grid-column:1/-1;max-height:none;min-height:0;position:static}
+  .alist{max-height:420px}
+}
+@media (max-width:900px){
+  header .logo{justify-content:center}
+  .wrap{padding:12px 16px 24px}
+  header{grid-template-columns:1fr;text-align:center}
+  header .logo img{margin:0 auto}
+  header .asof{justify-self:center;text-align:center;flex-direction:column;gap:8px}
+  header h1{font-size:24px}
+  #src{text-align:center}
+  .filters{position:static}
+  .grid,.row2,.ins{grid-template-columns:minmax(0,1fr)}
+  .status{grid-template-columns:110px 1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><a class="back" href="/" title="Back to the Control Tower">‹ Control Tower</a><img alt="Mantrac" src="/static/brand/mantrac-logo.png"></div>
+    <h1>Shipment Control Tower</h1>
+    <div class="asof">
+      <button class="load" id="loadBtn" type="button" title="Load a new eHub Shipment Update export (.xlsx) for everyone" hidden>⤓ Load new export</button>
+      <div><span>eHub data as of</span><b id="asof"></b></div>
+    </div>
+  </header>
+  <div id="src"></div>
+  <input type="file" id="file" accept=".xlsx,.xlsm,.xls" hidden>
+
+  <nav class="filters" aria-label="Filters">
+    <div class="fgroup" id="f-bu"><label>BU</label></div>
+    <div class="fgroup" id="f-mode"><label>Mode</label></div>
+    <div class="fgroup"><label for="f-div">Division</label><select id="f-div"></select></div>
+    <button class="reset" id="reset" type="button">Clear all filters</button>
+    <div class="pills" id="pills"></div>
+  </nav>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="k-h">
+      <h2 id="k-h">Clearance KPI 360</h2>
+      <div class="note" id="k-note"></div>
+      <div id="kpis"></div>
+    </section>
+
+    <div class="mid">
+      <section class="card" aria-labelledby="x-h">
+        <h2 id="x-h">Clearance Execution <small>click a mode, a ring segment or on-time / late</small></h2>
+        <div class="modes" id="modes"></div>
+      </section>
+      <section class="card" aria-labelledby="i-h">
+        <h2 id="i-h">Clearance Insights <small>click a status or a stage</small></h2>
+        <div class="ins">
+          <div>
+            <div class="status"><div class="donut" id="st-donut"></div><div class="slist" id="st-list"></div></div>
+            <div class="story"><h3>Insight report – <span>What stands out</span></h3><ul id="story"></ul></div>
+          </div>
+          <div class="chart">
+            <div class="legend"><span><i style="background:var(--blue)"></i>Met target</span><span><i style="background:#C9D8F4"></i>Missed target</span><span><i class="line" style="background:var(--orange)"></i>95% target</span></div>
+            <div id="stages"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card alerts" aria-labelledby="a-h">
+      <h2 id="a-h">Shipment Alerts <small id="a-count"></small></h2>
+      <div class="alist" id="alerts"></div>
+    </section>
+  </div>
+
+  <div class="row2">
+    <section class="card" aria-labelledby="m-h">
+      <h2 id="m-h">Monthly Volume &amp; On-time <small>click a month</small></h2>
+      <div class="legend"><span><i style="background:var(--blue)"></i>On time</span><span><i style="background:var(--cyan)"></i>Late</span><span><i class="line" style="background:var(--orange)"></i>On-time %</span></div>
+      <div class="chart" id="months"></div>
+    </section>
+    <section class="card" aria-labelledby="b-h">
+      <h2 id="b-h">Business Units <small>click a row</small></h2>
+      <table class="butable"><thead><tr><th>BU</th><th>Shipments</th><th>On time</th><th>Open</th><th>Past due</th></tr></thead><tbody id="bus"></tbody></table>
+    </section>
+  </div>
+
+  <section class="card explorer" aria-labelledby="e-h">
+    <h2 id="e-h">Shipment Explorer <small id="e-count"></small></h2>
+    <div class="xtools">
+      <input id="q" type="search" placeholder="Search AWB/BOL, forwarder, clearing agent, step…" aria-label="Search shipments">
+      <button class="btn" id="csv" type="button">Download CSV</button>
+    </div>
+    <div class="xwrap"><table class="xt"><thead><tr id="xhead"></tr></thead><tbody id="xbody"></tbody></table></div>
+    <div class="pager"><span id="pinfo"></span><button class="btn" id="prev" type="button">‹ Prev</button><button class="btn" id="next" type="button">Next ›</button></div>
+  </section>
+
+  <footer>
+    <span>Figures are calculated from the eHub export as delivered. Values that could not be read are listed under Data checks, not corrected.</span>
+    <span>On time = the export's own "On Time" flag · Past due = open shipment beyond its current step's expected completion date.</span>
+  </footer>
+</div>
+
+<div id="tip" role="tooltip"></div>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="d-title" role="dialog">
+  <div class="dh"><div><h3 id="d-title"></h3><p id="d-sub"></p></div><button class="x" id="d-close" type="button" aria-label="Close">×</button></div>
+  <div class="db" id="d-body"></div>
+</aside>
+<div class="drop" id="drop">Drop the eHub export (.xlsx) to load it for everyone</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+let DATA = {asof: "", rows: [], dq: {}, fields: ["bu","div","mode","ffw","agent","status","step","eta","ata","ontime","overdue","awb","ach","cycle","target","due","next","submitted","release","completed"]};
+let F = {}, ROWS = [];
+function useData(d) { DATA = d; F = d.fields.reduce((o, k, i) => (o[k] = i, o), {}); ROWS = d.rows; }
+useData(DATA);
+
+const STAGES = [["Submit to BU","COE","Submit|to BU"],["Assign Clearing Agent","BU","Assign|agent"],["Pre Entry","CA","Pre|entry"],["Customs Declaration","CA","Customs|declaration"],
+  ["Duty Assessment","CA","Duty|assessment"],["Duty Payment","CA/BU","Duty|payment"],["Customs Release","CA","Customs|release"],["Receipt","BU","Receipt|"],["End to end","All","End to|end"]];
+const GROUPS = [
+  {name:"With BU", color:"var(--orange)", steps:["Submit to BU","Assign Clearing Agent","Correction Required"]},
+  {name:"In customs", color:"var(--blue)", steps:["Customs Pre Entry","Customs Declaration","Duty Assessment","Duty Payment","Customs Release"]},
+  {name:"Receipt", color:"var(--green)", steps:["Awaiting Reciept"]},
+];
+const STATUS_COLORS = {"Completed":"var(--blue)","Under Clearance":"var(--cyan)","SubmittedToBU":"var(--orange)",
+  "Created":"var(--amber)","Finalized":"var(--green)","RequiredCorrection":"var(--red)"};
+const STATUS_LABEL = {"SubmittedToBU":"Submitted to BU","RequiredCorrection":"Correction required"};
+const FLAGS = {late:"Not on time", open:"Open", pastdue:"Open and past due", done:"Completed", slow:"Completed slower than target"};
+const MODE_ORDER = ["Air","Ocean","Courier","Truck"];
+const TARGET = 0.95;
+const KEYS = ["bu","mode","div","status","group","stage","month","flag","ontime"];
+const state = {bu:"All", mode:"All", div:"All", status:null, group:null, stage:null, month:null, flag:null, ontime:null, q:"", sort:["overdue",-1], page:0};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = (n) => n.toLocaleString("en-US");
+const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+const pctTxt = (a, b) => b ? pct(a, b) + "%" : "–";
+const median = (a) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dmy = (s) => s ? `${+s.slice(8, 10)} ${MONTHS[+s.slice(5, 7) - 1]} ${s.slice(0, 4)}` : "–";
+const mon = (k) => `${MONTHS[+k.slice(5, 7) - 1]} ${k.slice(2, 4)}`;
+const stepName = (s) => s === "Awaiting Reciept" ? "Awaiting Receipt" : s;
+const isOpen = (r) => r[F.step] !== "Completed";
+const pastDue = (r) => isOpen(r) && r[F.overdue] != null && r[F.overdue] > 0;
+const groupOf = (r) => (GROUPS.find((g) => g.steps.includes(r[F.step])) || {}).name || null;
+const setAttr = (o) => esc(JSON.stringify(o));
+
+function match(r, skip) {
+  const s = state, sk = (k) => skip && skip.includes(k);
+  if (!sk("bu") && s.bu !== "All" && r[F.bu] !== s.bu) return false;
+  if (!sk("mode") && s.mode !== "All" && r[F.mode] !== s.mode) return false;
+  if (!sk("div") && s.div !== "All" && r[F.div] !== s.div) return false;
+  if (!sk("status") && s.status && r[F.status] !== s.status) return false;
+  if (!sk("group") && s.group && groupOf(r) !== s.group) return false;
+  if (!sk("stage") && s.stage != null && r[F.ach][s.stage] !== "N") return false;
+  if (!sk("month") && s.month && !(r[F.eta] || "").startsWith(s.month)) return false;
+  if (!sk("ontime") && s.ontime != null && r[F.ontime] !== s.ontime) return false;
+  if (!sk("flag") && s.flag) {
+    const f = s.flag;
+    if (f === "late" && r[F.ontime]) return false;
+    if (f === "open" && !isOpen(r)) return false;
+    if (f === "pastdue" && !pastDue(r)) return false;
+    if (f === "done" && isOpen(r)) return false;
+    if (f === "slow" && !(!isOpen(r) && r[F.cycle] != null && r[F.target] != null && r[F.cycle] > r[F.target])) return false;
+  }
+  return true;
+}
+const rows = (skip) => ROWS.filter((r) => match(r, skip));
+
+/* apply a click: every key in the object set; if all already equal, clear them (toggle) */
+function apply(o) {
+  const same = Object.entries(o).every(([k, v]) => state[k] === v);
+  for (const [k, v] of Object.entries(o)) state[k] = same ? (["bu","mode","div"].includes(k) ? "All" : null) : v;
+  state.page = 0;
+  render();
+}
+
+function donut(segs, size, stroke, center) {
+  const R = (size - stroke) / 2, C = 2 * Math.PI * R, total = segs.reduce((s, x) => s + x.v, 0);
+  let off = 0, arcs = `<circle cx="${size/2}" cy="${size/2}" r="${R}" fill="none" stroke="#EEF2F8" stroke-width="${stroke}"/>`;
+  if (total) for (const s of segs) {
+    if (!s.v) continue;
+    const len = C * s.v / total, gap = segs.filter((x) => x.v).length > 1 ? Math.min(2, len / 3) : 0;
+    arcs += `<circle class="${s.on ? "on" : ""}${s.dim ? " dimmed" : ""}" cx="${size/2}" cy="${size/2}" r="${R}" fill="none" stroke="${s.c}" stroke-width="${stroke}" stroke-dasharray="${Math.max(len - gap, .01)} ${C}" stroke-dashoffset="${-off}"
+      ${s.set ? `data-set="${setAttr(s.set)}" tabindex="0" role="button"` : ""} data-tip="${esc(`<b>${esc(s.n)}</b>: ${fmt(s.v)} (${pct(s.v, total)}%)${s.hint ? `<small>${esc(s.hint)}</small>` : ""}`)}"></circle>`;
+    off += len;
+  }
+  return `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(segs.map((s) => s.n + " " + s.v).join(", "))}">${arcs}</svg><div class="c">${center}</div>`;
+}
+
+const ICONS = {
+  check:'<path d="M20 6 9 17l-5-5"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  flow:'<path d="M4 7h11l-3-3M20 17H9l3 3"/>', warn:'<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17.5v.5"/>',
+  box:'<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/>',
+};
+const icon = (k, c) => `<svg viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
+
+function kpis(R) {
+  const n = R.length, open = R.filter(isOpen), late = open.filter(pastDue), done = R.filter((r) => !isOpen(r));
+  const on = R.filter((r) => r[F.ontime]).length;
+  const withCyc = done.filter((r) => r[F.cycle] != null), cyc = withCyc.map((r) => r[F.cycle]), tgt = withCyc.map((r) => r[F.target]).filter((v) => v != null);
+  const mc = median(cyc), mt = median(tgt), lateMed = median(late.map((r) => r[F.overdue]));
+  const slow = withCyc.filter((r) => r[F.target] != null && r[F.cycle] > r[F.target]).length;
+  const card = (grp, flag, ic, color, tint, title, val, sub, w, mark, tip) => `
+    <div class="kgroup"><h3>${grp}</h3><div class="kpi${state.flag === flag ? " on" : ""}" style="background:${tint}" data-set="${setAttr({flag})}" tabindex="0" role="button" data-tip="${esc(tip)}">
+      <div class="ic" style="filter:brightness(.97);background:${tint}">${icon(ic, color)}</div>
+      <div class="bd"><div class="t">${title}<em>${state.flag === flag ? "filtering ✕" : "show ›"}</em></div>
+        <div class="v"><b style="color:${color}">${val}</b><span>${sub}</span></div>
+        <div class="bar"><i style="width:${Math.max(0, Math.min(100, w))}%;background:${color}"></i>${mark != null ? `<u style="left:${mark}%"></u>` : ""}</div>
+      </div></div></div>`;
+  $("k-note").textContent = `${fmt(n)} shipment${n === 1 ? "" : "s"} in view · ETA ${span(R)}`;
+  $("kpis").innerHTML =
+    card("Reliable", "late", "check", "var(--blue)", "var(--tint-blue)", "On-time shipments", pctTxt(on, n), `${fmt(on)} of ${fmt(n)} · target 95%`, pct(on, n), 95, `<b>${fmt(n - on)}</b> shipments are not on time.<small>Click to list them.</small>`) +
+    card("Responsive", "slow", "clock", "var(--cyan)", "var(--tint-cyan)", "Median cycle (completed)", mc == null ? "–" : `${mc} d`, mt == null ? "no valid cycle data" : `target ${mt} d · ${fmt(cyc.length)} shipments`, mc ? Math.min(100, 100 * mt / mc) : 0, null, `<b>${fmt(slow)}</b> completed shipments took longer than their target.<small>Click to list them.</small>`) +
+    card("In progress", "open", "flow", "#D08700", "var(--tint-amber)", "Open shipments", fmt(open.length), `${pctTxt(open.length, n)} of all`, pct(open.length, n), null, `<b>${fmt(open.length)}</b> shipments are not completed yet.<small>Click to list them.</small>`) +
+    card("At risk", "pastdue", "warn", "var(--red)", "var(--tint-red)", "Open and past due", fmt(late.length), late.length ? `${pctTxt(late.length, open.length)} of open · median ${lateMed} d late` : "none past due", pct(late.length, open.length), null, `<b>${fmt(late.length)}</b> open shipments are past their current step's due date.<small>Click to list them.</small>`) +
+    card("Delivered", "done", "box", "var(--green)", "var(--tint-green)", "Completed shipments", fmt(done.length), `${pctTxt(done.length, n)} of all`, pct(done.length, n), null, `<b>${fmt(done.length)}</b> shipments are completed.<small>Click to list them.</small>`);
+}
+
+function span(R) {
+  const m = R.map((r) => r[F.eta]).filter(Boolean).sort();
+  return m.length ? `${dmy(m[0])} – ${dmy(m[m.length - 1])}` : "no dates";
+}
+
+function modes() {
+  const R = rows(["mode", "group", "ontime"]);
+  const present = MODE_ORDER.filter((m) => ROWS.some((r) => r[F.mode] === m));
+  $("modes").innerHTML = present.map((m) => {
+    const M = R.filter((r) => r[F.mode] === m), n = M.length, on = M.filter((r) => r[F.ontime]).length;
+    const open = M.filter(isOpen), late = open.filter(pastDue), done = n - open.length;
+    const segs = GROUPS.map((g) => ({n: g.name, c: g.color, v: open.filter((r) => g.steps.includes(r[F.step])).length,
+      set: {mode: m, group: g.name}, on: state.mode === m && state.group === g.name, dim: state.group && state.group !== g.name,
+      hint: `open ${m} shipments · ${open.filter((r) => g.steps.includes(r[F.step]) && pastDue(r)).length} past due · click to filter`}));
+    const good = n && on / n >= TARGET, cls = state.mode === "All" ? "" : state.mode === m ? " on" : " dim";
+    return `<div class="mode${cls}">
+      <h4 data-set="${setAttr({mode: m})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(m)}</b>: ${fmt(n)} shipments<small>Click to filter on ${esc(m)}</small>`)}">${esc(m)}</h4>
+      <div class="tot">total: <b>${fmt(n)}</b></div>
+      <div class="pbar"><div class="bar" data-tip="${esc(`<b>${pctTxt(done, n)}</b> completed (${fmt(done)} of ${fmt(n)})`)}"><i style="width:${pct(done, n)}%;background:var(--amber)"></i></div>
+        <span class="ok" style="background:${good ? "var(--green)" : "var(--red)"}" data-tip="${good ? "On-time at or above 95%" : "On-time below the 95% target"}">${good ? "✓" : "!"}</span></div>
+      <div class="split"><span data-set="${setAttr({mode: m, ontime: 1})}" tabindex="0" role="button" data-tip="Click to list on-time ${m} shipments">on time: ${fmt(on)} (${pctTxt(on, n)})</span><em>|</em>
+        <span data-set="${setAttr({mode: m, ontime: 0})}" tabindex="0" role="button" data-tip="Click to list late ${m} shipments">late: ${fmt(n - on)} (${pctTxt(n - on, n)})</span></div>
+      <div class="donut">${donut(segs, 118, 16, `<span>past due</span><b>${fmt(late.length)}/${fmt(open.length)}</b><span>open</span>`)}</div>
+      <div class="legs">${segs.map((s) => `<div class="${s.on ? "on" : ""}" data-set="${setAttr(s.set)}" tabindex="0" role="button"><b>${fmt(s.v)}/${pctTxt(s.v, open.length)}</b><span style="color:${s.c};font-weight:600">${s.n}</span></div>`).join("")}</div>
+    </div>`;
+  }).join("");
+}
+
+function statusMix() {
+  const R = rows(["status"]), c = {};
+  R.forEach((r) => c[r[F.status]] = (c[r[F.status]] || 0) + 1);
+  const segs = Object.entries(c).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({n: STATUS_LABEL[k] || k, v, c: STATUS_COLORS[k] || "var(--soft)",
+    set: {status: k}, on: state.status === k, dim: state.status && state.status !== k, hint: "click to filter"}));
+  const sel = state.status ? (c[state.status] || 0) : (c["Completed"] || 0);
+  $("st-donut").innerHTML = donut(segs, 120, 18, `<span>${esc(state.status ? (STATUS_LABEL[state.status] || state.status) : "Completed")}</span><b>${pctTxt(sel, R.length)}</b>`);
+  $("st-list").innerHTML = segs.map((s) => `<div class="${s.on ? "on" : ""}" data-set="${setAttr(s.set)}" tabindex="0" role="button"><span><i style="background:${s.c}"></i>${esc(s.n)}</span><b>${pctTxt(s.v, R.length)}</b></div>`).join("");
+}
+
+function stageStats(R) {
+  return STAGES.map(([name, owner, label], i) => {
+    let y = 0, nn = 0; R.forEach((r) => { const a = r[F.ach][i]; if (a === "Y") y++; else if (a === "N") nn++; });
+    return {i, name, owner, label, y, n: nn, t: y + nn};
+  });
+}
+
+function stages() {
+  const S = stageStats(rows(["stage"])), W = 640, H = 270, L = 34, B = 58, T = 14, cw = (W - L - 8) / S.length, ph = H - T - B;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of shipments meeting each stage target">`;
+  for (const v of [0, 25, 50, 75, 100]) { const y = T + ph * (1 - v / 100); s += `<line x1="${L}" x2="${W - 8}" y1="${y}" y2="${y}" stroke="#EEF2F8"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${v}%</text>`; }
+  S.forEach((st) => {
+    const x = L + st.i * cw + cw * .2, w = cw * .6, p = st.t ? st.y / st.t : 0, hy = ph * p, [l1, l2] = st.label.split("|");
+    const dim = state.stage != null && state.stage !== st.i ? " dimmed" : "", on = state.stage === st.i ? " on" : "";
+    s += `<g class="${on}${dim}" data-set="${setAttr({stage: st.i})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(st.name)}</b> (owner ${esc(st.owner)})<br>${fmt(st.y)} of ${fmt(st.t)} met target (${pctTxt(st.y, st.t)})<small>Click to list the ${fmt(st.n)} that missed it</small>`)}">
+      <rect class="hl" x="${L + st.i * cw}" y="${T - 6}" width="${cw}" height="${H - T}" fill="transparent" rx="6"/>
+      <rect x="${x}" y="${T}" width="${w}" height="${ph}" rx="3" fill="#C9D8F4" opacity=".55"/>
+      <rect class="b" x="${x}" y="${T + ph - hy}" width="${w}" height="${hy}" rx="3" fill="${p >= TARGET ? "var(--green)" : "var(--blue)"}"/>
+      <text x="${x + w / 2}" y="${T + ph - hy - 5}" text-anchor="middle" style="fill:#1B2A3B;font-weight:600">${st.t ? Math.round(p * 100) + "%" : "–"}</text>
+      <text x="${x + w / 2}" y="${H - B + 16}" text-anchor="middle" style="fill:#33445A">${esc(l1)}</text>
+      ${l2 ? `<text x="${x + w / 2}" y="${H - B + 29}" text-anchor="middle" style="fill:#33445A">${esc(l2)}</text>` : ""}
+      <text x="${x + w / 2}" y="${H - B + 44}" text-anchor="middle">${st.owner}</text></g>`;
+  });
+  const ty = T + ph * (1 - TARGET);
+  s += `<line x1="${L}" x2="${W - 8}" y1="${ty}" y2="${ty}" stroke="var(--orange)" stroke-width="2" stroke-dasharray="6 4" pointer-events="none"/></svg>`;
+  $("stages").innerHTML = `<div class="note" style="margin-bottom:4px">Share of shipments that met each stage's target time · owner under each stage</div>` + s;
+}
+
+function story(R) {
+  const S = stageStats(R), li = [];
+  const valid = S.filter((s) => s.t >= 10 && s.name !== "End to end");
+  if (valid.length) {
+    const worst = valid.reduce((a, b) => (a.y / a.t <= b.y / b.t ? a : b));
+    li.push(`<a data-set="${setAttr({stage: worst.i})}" tabindex="0" role="button">${esc(worst.name)}</a> is the weakest stage: ${pct(worst.y, worst.t)}% of ${fmt(worst.t)} shipments met its target, against 95% (owner: ${worst.owner}).`);
+  }
+  const e2e = S[S.length - 1];
+  if (e2e.t) li.push(`End to end, ${pct(e2e.y, e2e.t)}% of ${fmt(e2e.t)} measured shipments finished within the overall target.`);
+  const open = R.filter(isOpen), late = open.filter(pastDue);
+  if (open.length) {
+    const byStep = {}; late.forEach((r) => byStep[r[F.step]] = (byStep[r[F.step]] || 0) + 1);
+    const top = Object.entries(byStep).sort((a, b) => b[1] - a[1])[0];
+    li.push(`<a data-set="${setAttr({flag: "pastdue"})}" tabindex="0" role="button">${fmt(late.length)} of ${fmt(open.length)}</a> open shipments are past their step's due date` + (top ? `; most are at <b>${esc(stepName(top[0]))}</b> (${fmt(top[1])}).` : "."));
+  }
+  if (state.bu === "All" && R.length) {
+    const byBu = {}; R.forEach((r) => byBu[r[F.bu]] = (byBu[r[F.bu]] || 0) + 1);
+    const [bu, c] = Object.entries(byBu).sort((a, b) => b[1] - a[1])[0];
+    li.push(`<a data-set="${setAttr({bu})}" tabindex="0" role="button">${esc(bu)}</a> carries the most volume: ${fmt(c)} shipments, ${pct(c, R.length)}% of those in view.`);
+  }
+  $("story").innerHTML = li.length ? li.map((x) => `<li>${x}</li>`).join("") : `<li>No shipments match these filters.</li>`;
+}
+
+function months() {
+  const R = rows(["month"]), all = {};
+  ROWS.forEach((r) => { const m = r[F.eta] && r[F.eta].slice(0, 7); if (m) all[m] = (all[m] || 0) + 1; });
+  const keys = Object.keys(all).filter((k) => all[k] >= 30).sort(), asofM = (DATA.asof || "9999-12").slice(0, 7);
+  const M = keys.map((k) => { const X = R.filter((r) => r[F.eta] && r[F.eta].startsWith(k)); const on = X.filter((r) => r[F.ontime]).length; return {k, n: X.length, on, past: k <= asofM}; });
+  const W = 760, H = 260, L = 40, Rr = 40, T = 16, B = 30, ph = H - T - B, cw = (W - L - Rr) / Math.max(1, M.length);
+  const max = Math.max(10, ...M.map((m) => m.n)), mag = Math.pow(10, Math.floor(Math.log10(max))), step = max / mag > 5 ? mag : mag / 2, top = Math.ceil(max / step) * step;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Shipments per ETA month, on time and late, with on-time percentage">`;
+  for (let v = 0; v <= top; v += step) { const y = T + ph * (1 - v / top); s += `<line x1="${L}" x2="${W - Rr}" y1="${y}" y2="${y}" stroke="#EEF2F8"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${fmt(v)}</text>`; }
+  for (const v of [0, 50, 100]) { const y = T + ph * (1 - v / 100); s += `<text x="${W - Rr + 6}" y="${y + 4}">${v}%</text>`; }
+  let path = "", dots = "";
+  M.forEach((m, i) => {
+    const x = L + i * cw + cw * .22, w = cw * .56, ho = ph * m.on / top, hl = ph * (m.n - m.on) / top, base = T + ph;
+    const dim = state.month && state.month !== m.k ? " dimmed" : "", on = state.month === m.k ? " on" : "";
+    s += `<g class="${on}${dim}" data-set="${setAttr({month: m.k})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(mon(m.k))}</b> · ${fmt(m.n)} shipments<br>${fmt(m.on)} on time, ${fmt(m.n - m.on)} late${m.past && m.n ? ` · ${pct(m.on, m.n)}% on time` : ""}<small>${m.past ? "Click to filter on this ETA month" : "ETA after the data date: volume only"}</small>`)}">
+      <rect class="hl" x="${L + i * cw}" y="${T - 6}" width="${cw}" height="${ph + 6}" fill="transparent" rx="6"/>
+      <rect class="b" x="${x}" y="${base - ho}" width="${w}" height="${ho}" fill="var(--blue)"/>
+      <rect class="b" x="${x}" y="${base - ho - hl}" width="${w}" height="${hl}" fill="var(--cyan)"/>
+      <text x="${x + w / 2}" y="${H - 10}" text-anchor="middle" style="fill:#33445A">${mon(m.k)}</text></g>`;
+    if (m.n && m.past) {
+      const cx = x + w / 2, y = T + ph * (1 - m.on / m.n);
+      path += (path ? "L" : "M") + cx + " " + y;
+      dots += `<circle cx="${cx}" cy="${y}" r="3.5" fill="#fff" stroke="var(--orange)" stroke-width="2"/><text x="${cx}" y="${y - 9}" text-anchor="middle" style="fill:#B2531D;font-weight:600">${pct(m.on, m.n)}%</text>`;
+    }
+  });
+  s += `<g pointer-events="none"><path d="${path}" fill="none" stroke="var(--orange)" stroke-width="2"/>${dots}</g></svg>`;
+  $("months").innerHTML = s + `<div class="note">Months with fewer than 30 shipments in the whole export are not drawn. Recent months still hold open shipments, so their on-time share can change; months after the data date show volume only.</div>`;
+}
+
+function bus() {
+  const R = rows(["bu"]), g = {};
+  R.forEach((r) => { const b = g[r[F.bu]] || (g[r[F.bu]] = {n: 0, on: 0, open: 0, late: 0}); b.n++; b.on += r[F.ontime]; if (isOpen(r)) b.open++; if (pastDue(r)) b.late++; });
+  $("bus").innerHTML = Object.entries(g).sort((a, b) => b[1].n - a[1].n).map(([k, b]) => {
+    const p = pct(b.on, b.n);
+    return `<tr class="${state.bu === k ? "on" : ""}" tabindex="0" data-set="${setAttr({bu: k})}" data-tip="${esc(`<b>${esc(k)}</b>: ${fmt(b.n)} shipments, ${p}% on time<br>${fmt(b.open)} open, ${fmt(b.late)} past due<small>Click to filter on ${esc(k)}</small>`)}"><td>${esc(k)}</td><td>${fmt(b.n)}</td>
+      <td>${p}%<span class="mini"><i style="width:${p}%;background:${p >= 95 ? "var(--green)" : p >= 70 ? "var(--blue)" : "var(--orange)"}"></i></span></td>
+      <td>${fmt(b.open)}</td><td style="color:${b.late ? "var(--red)" : "inherit"}">${fmt(b.late)}</td></tr>`;
+  }).join("") || `<tr><td colspan="5" class="empty">No shipments match these filters.</td></tr>`;
+}
+
+function alerts(R) {
+  const list = [], filtered = KEYS.some((k) => state[k] != null && state[k] !== "All");
+  if (!filtered) {
+    const dq = DATA.dq, items = [];
+    if (dq.correction) items.push([`${fmt(dq.correction)} shipments are marked <b>Correction required</b> in eHub.`, {status: "RequiredCorrection"}]);
+    if (dq.due_bad) items.push([`${fmt(dq.due_bad)} open shipments have no usable due date for their current step (empty, or 1899/1900 in the source), so they are not counted as past due.`]);
+    if (dq.eta_missing) items.push([`${fmt(dq.eta_missing)} shipments have no ETA.`]);
+    if (dq.eta_bad_year) items.push([`${fmt(dq.eta_bad_year)} shipment(s) have an ETA outside 2025–2027; they are left out of the monthly chart.`]);
+    if (dq.cycle_bad) items.push([`${fmt(dq.cycle_bad)} completed shipments have an unreadable cycle time (a missing date in the source); they are left out of the median.`]);
+    if (dq.ontime_unclear) items.push([`${fmt(dq.ontime_unclear)} shipment(s) have an On Time value that is neither "yes" nor "no"; they count as not on time.`]);
+    if (dq.bu_missing) items.push([`${fmt(dq.bu_missing)} shipment(s) have no BU; they show as "?".`]);
+    if (dq.mode_missing) items.push([`${fmt(dq.mode_missing)} shipment(s) have no transport mode.`]);
+    if (dq.agent_name_variants) items.push([`${fmt(dq.agent_name_variants)} clearing agent name(s) appear with different spacing (for example "AGL-AFRICA…" and "AGL - AFRICA…"), so each counts as two agents.`]);
+    items.forEach(([t, set]) => list.push(`<div class="al dq"><div class="h">Data check<span>review</span></div>${set
+      ? `<button type="button" class="b" data-set="${setAttr(set)}">${t} <u>Show them</u></button>` : `<div class="b">${t}</div>`}</div>`));
+  }
+  const late = R.filter(pastDue).sort((a, b) => b[F.overdue] - a[F.overdue]);
+  $("a-count").textContent = `${fmt(late.length)} past due`;
+  late.slice(0, 40).forEach((r) => {
+    list.push(`<div class="al"><div class="h">${esc(r[F.bu])} · ${esc(r[F.mode])} · ${esc(stepName(r[F.step]))}<span>${fmt(r[F.overdue])} d</span></div>
+      <button type="button" class="b" data-row="${ROWS.indexOf(r)}"><code>${esc(r[F.awb] || "no AWB/BOL")}</code> has waited at <b>${esc(stepName(r[F.step]))}</b> since its due date ${dmy(r[F.due])}.
+      ${r[F.ffw] ? `Forwarder ${esc(r[F.ffw])}.` : ""} ${r[F.agent] ? `Agent ${esc(r[F.agent])}.` : ""}</button></div>`);
+  });
+  if (late.length > 40) list.push(`<div class="empty">Showing the 40 longest waits of ${fmt(late.length)}. The Shipment Explorer below lists them all.</div>`);
+  $("alerts").innerHTML = list.join("") || `<div class="empty">No open shipment is past due.</div>`;
+}
+
+/* explorer */
+const COLS = [
+  ["awb", "AWB / BOL"], ["bu", "BU"], ["mode", "Mode"], ["div", "Division"], ["step", "Current step"], ["eta", "ETA"],
+  ["due", "Step due"], ["overdue", "Days past due", "n"], ["ffw", "Forwarder"], ["agent", "Clearing agent"], ["ontime", "On time"],
+];
+const PAGE = 25;
+function explorer(R) {
+  const q = state.q.trim().toLowerCase();
+  let X = q ? R.filter((r) => [F.awb, F.ffw, F.agent, F.step, F.bu, F.status, F.div].some((i) => String(r[i] || "").toLowerCase().includes(q))) : R;
+  const [k, dir] = state.sort, i = F[k];
+  X = [...X].sort((a, b) => { const x = a[i], y = b[i]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+  $("xhead").innerHTML = COLS.map(([c, l]) => `<th scope="col" data-sort="${c}" tabindex="0" aria-sort="${state.sort[0] === c ? (dir > 0 ? "ascending" : "descending") : "none"}">${l}${state.sort[0] === c ? `<span class="s">${dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`).join("");
+  const pages = Math.max(1, Math.ceil(X.length / PAGE));
+  state.page = Math.min(state.page, pages - 1);
+  const P = X.slice(state.page * PAGE, state.page * PAGE + PAGE);
+  $("xbody").innerHTML = P.map((r) => `<tr data-row="${ROWS.indexOf(r)}" tabindex="0">${COLS.map(([c, , cls]) => {
+    let v = r[F[c]];
+    if (c === "eta" || c === "due") v = v ? dmy(v) : "–";
+    else if (c === "step") v = stepName(v);
+    else if (c === "overdue") v = v == null ? "–" : v > 0 ? `<span style="color:var(--red);font-weight:600">${fmt(v)}</span>` : fmt(v);
+    else if (c === "ontime") v = v ? `<span class="tag" style="background:var(--tint-green);color:#0E7A43">Yes</span>` : `<span class="tag" style="background:var(--tint-red);color:#B42318">No</span>`;
+    else v = esc(v || "–");
+    return `<td${cls ? ` class="${cls}"` : ""}>${c === "awb" ? `<code>${v}</code>` : v}</td>`;
+  }).join("")}</tr>`).join("") || `<tr><td colspan="${COLS.length}" class="empty">No shipments match.</td></tr>`;
+  $("e-count").textContent = `${fmt(X.length)} shipment${X.length === 1 ? "" : "s"}`;
+  $("pinfo").textContent = X.length ? `${fmt(state.page * PAGE + 1)}–${fmt(Math.min(X.length, (state.page + 1) * PAGE))} of ${fmt(X.length)}` : "";
+  $("prev").disabled = state.page === 0; $("next").disabled = state.page >= pages - 1;
+  explorer.current = X;
+}
+
+function csv() {
+  const cols = ["awb","bu","div","mode","ffw","agent","status","step","next","eta","ata","submitted","release","completed","due","overdue","ontime","cycle","target"];
+  // A cell that Excel would run as a formula (= + - @) is kept as text.
+  const cell = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+    return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  const lines = [cols.join(",")].concat(explorer.current.map((r) => cols.map((c) => cell(c === "ontime" ? (r[F[c]] ? "yes" : "no") : r[F[c]])).join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
+  a.download = `shipments_${DATA.asof || "export"}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* drawer */
+let lastFocus = null;
+function openRow(idx) {
+  const r = ROWS[idx]; if (!r) return;
+  lastFocus = document.activeElement;
+  $("d-title").textContent = r[F.awb] || "No AWB/BOL";
+  $("d-sub").textContent = `${r[F.bu]} · ${r[F.mode]} · ${r[F.div]}`;
+  const kv = [["Status", STATUS_LABEL[r[F.status]] || r[F.status]], ["Current step", stepName(r[F.step])], ["Next step", r[F.next]],
+    ["Step due", dmy(r[F.due])], ["Days past due", r[F.overdue] == null ? "–" : fmt(r[F.overdue])], ["On time (eHub)", r[F.ontime] ? "Yes" : "No"],
+    ["ETA", dmy(r[F.eta])], ["ATA", dmy(r[F.ata])], ["Submitted to BU", dmy(r[F.submitted])], ["Customs release", dmy(r[F.release])],
+    ["Completed", dmy(r[F.completed])], ["Cycle / target", isOpen(r) || r[F.cycle] == null ? "–" : `${r[F.cycle]} d / ${r[F.target] ?? "–"} d`],
+    ["Forwarder", r[F.ffw]], ["Clearing agent", r[F.agent]]];
+  const steps = STAGES.map(([n, o], i) => { const a = r[F.ach][i];
+    return `<li><i style="background:${a === "Y" ? "var(--green)" : a === "N" ? "var(--red)" : "#C5CFDD"}">${a === "Y" ? "✓" : a === "N" ? "!" : "·"}</i><span>${n}</span><span class="note">${a === "Y" ? "met target" : a === "N" ? "missed target" : "not reached / no data"} · ${o}</span></li>`; }).join("");
+  $("d-body").innerHTML = `<dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v || "–")}</dd>`).join("")}</dl>
+    <h4 style="margin:0 0 8px">Stage targets</h4><ul class="steps">${steps}</ul>`;
+  $("drawer").classList.add("show"); $("scrim").classList.add("show"); $("drawer").setAttribute("aria-hidden", "false");
+  $("d-close").focus();
+}
+function closeRow() {
+  $("drawer").classList.remove("show"); $("scrim").classList.remove("show"); $("drawer").setAttribute("aria-hidden", "true");
+  if (lastFocus) lastFocus.focus();
+}
+
+/* filters, pills, url */
+function filterBar() {
+  const order = (k) => [...new Set(ROWS.map((r) => r[F[k]]))].sort((a, b) => ROWS.filter((r) => r[F[k]] === b).length - ROWS.filter((r) => r[F[k]] === a).length);
+  const chips = (el, key, vals) => {
+    el.querySelectorAll(".chip").forEach((c) => c.remove());
+    ["All", ...vals].forEach((v) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = v;
+      b.setAttribute("aria-pressed", String(state[key] === v));
+      b.onclick = () => { state[key] = v; state.page = 0; render(); };
+      el.appendChild(b);
+    });
+  };
+  chips($("f-bu"), "bu", order("bu"));
+  chips($("f-mode"), "mode", MODE_ORDER.filter((m) => ROWS.some((r) => r[F.mode] === m)));
+  const divs = [...new Set(ROWS.map((r) => r[F.div]))].sort();
+  $("f-div").innerHTML = ["All", ...divs].map((d) => `<option${state.div === d ? " selected" : ""}>${esc(d)}</option>`).join("");
+  const p = [];
+  if (state.status) p.push(["status", `Status: ${STATUS_LABEL[state.status] || state.status}`]);
+  if (state.group) p.push(["group", `Open: ${state.group}`]);
+  if (state.stage != null) p.push(["stage", `Missed: ${STAGES[state.stage][0]}`]);
+  if (state.month) p.push(["month", `ETA: ${mon(state.month)}`]);
+  if (state.flag) p.push(["flag", FLAGS[state.flag]]);
+  if (state.ontime != null) p.push(["ontime", state.ontime ? "On time" : "Late"]);
+  if (state.q) p.push(["q", `Search: ${state.q}`]);
+  $("pills").innerHTML = p.map(([k, l]) => `<span class="pill">${esc(l)}<button type="button" data-clear="${k}" aria-label="Remove ${esc(l)}">×</button></span>`).join("");
+}
+
+function saveHash() {
+  const o = {}; KEYS.forEach((k) => { if (state[k] != null && state[k] !== "All") o[k] = state[k]; }); if (state.q) o.q = state.q;
+  const h = new URLSearchParams(Object.entries(o).map(([k, v]) => [k, String(v)])).toString();
+  history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
+}
+function loadHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  for (const [k, v] of p) {
+    if (k === "stage" || k === "ontime") state[k] = +v;
+    else if (KEYS.includes(k) || k === "q") state[k] = v;
+  }
+  $("q").value = state.q;
+}
+
+function render() {
+  filterBar();
+  const R = rows();
+  kpis(R); modes(); statusMix(); stages(); story(R); months(); bus(); alerts(R); explorer(R);
+  saveHash();
+}
+
+/* tooltip + clicks (delegated) */
+const tip = $("tip");
+document.addEventListener("mouseover", (e) => { const t = e.target.closest("[data-tip]"); if (!t) { tip.classList.remove("show"); return; } tip.innerHTML = t.getAttribute("data-tip"); tip.classList.add("show"); });
+document.addEventListener("mousemove", (e) => {
+  if (!tip.classList.contains("show")) return;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+});
+document.addEventListener("focusin", (e) => { const t = e.target.closest("[data-tip]"); if (!t) return; const b = t.getBoundingClientRect(); tip.innerHTML = t.getAttribute("data-tip"); tip.classList.add("show"); tip.style.left = Math.min(b.left, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (b.bottom + 8) + "px"; });
+document.addEventListener("focusout", () => tip.classList.remove("show"));
+document.addEventListener("click", (e) => {
+  const set = e.target.closest("[data-set]"); if (set) { tip.classList.remove("show"); apply(JSON.parse(set.getAttribute("data-set"))); return; }
+  const clr = e.target.closest("[data-clear]"); if (clr) { const k = clr.dataset.clear; if (k === "q") { state.q = ""; $("q").value = ""; } else state[k] = null; state.page = 0; render(); return; }
+  const row = e.target.closest("[data-row]"); if (row) { openRow(+row.dataset.row); return; }
+  const th = e.target.closest("th[data-sort]"); if (th) { const c = th.dataset.sort; state.sort = [c, state.sort[0] === c ? -state.sort[1] : (c === "overdue" ? -1 : 1)]; explorer(rows()); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("drawer").classList.contains("show")) { closeRow(); return; }
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-set],[data-row],th[data-sort]") && !e.target.matches("button")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", {bubbles: true})); }
+});
+$("f-div").onchange = (e) => { state.div = e.target.value; state.page = 0; render(); };
+$("reset").onclick = () => { KEYS.forEach((k) => state[k] = ["bu","mode","div"].includes(k) ? "All" : null); state.q = ""; $("q").value = ""; state.page = 0; render(); };
+let qt; $("q").addEventListener("input", (e) => { clearTimeout(qt); qt = setTimeout(() => { state.q = e.target.value; state.page = 0; filterBar(); explorer(rows()); saveHash(); }, 180); });
+$("prev").onclick = () => { state.page--; explorer(rows()); };
+$("next").onclick = () => { state.page++; explorer(rows()); };
+$("csv").onclick = csv;
+$("d-close").onclick = closeRow; $("scrim").onclick = closeRow;
+
+/* ── the server: sign-in, data, loading a new export ───────────────────
+   The page has the same sign-in and access levels as the Control Tower:
+   clearance.view to see it, clearance.upload to load a new export. The
+   export is read on the server (dashboard/clearance.py); everyone sees the
+   same data. A file dropped in the server's inbox folder is picked up too. */
+const PF = {on: false, perms: [], csrf: null, can(p) { return !this.on || this.perms.includes(p); }};
+function toast(msg, ms) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); if (ms) toast.t = setTimeout(() => t.classList.remove("show"), ms); }
+function signIn() { location.replace("/login?next=" + encodeURIComponent("/clearance" + location.hash)); }
+async function api(url, init) {
+  init = init || {};
+  if (PF.on && init.method && init.method !== "GET") init.headers = Object.assign({}, init.headers, {"X-CSRF-Token": PF.csrf || ""});
+  const r = await fetch(url, Object.assign({credentials: "same-origin"}, init));
+  if (r.status === 401) { signIn(); throw new Error("signed out"); }
+  return r;
+}
+let loadedAt = null;
+async function loadData(first) {
+  const r = await api("/api/clearance");
+  if (r.status === 403) { $("src").textContent = "Your access level does not include the Clearance dashboard. Ask an Admin."; return; }
+  const d = await r.json();
+  if (d.empty) {
+    useData(DATA);
+    $("asof").textContent = "–";
+    $("src").textContent = PF.can("clearance.upload")
+      ? `No eHub export loaded yet. Click "Load new export", or put the .xlsx in ${d.inbox} on the server.`
+      : `No eHub export loaded yet. Ask an Operator or Admin to load one.`;
+    if (d.status && d.status.state === "reading") watch();
+  } else {
+    useData(d);
+    $("asof").textContent = dmy(DATA.asof);
+  }
+  const st = await (await api("/api/clearance/status")).json();
+  loadedAt = st.current ? st.current.loaded_at : null;
+  if (st.current) $("src").textContent = `${st.current.file} · ${fmt(st.current.count)} shipments · loaded ${st.current.loaded_at.replace("T", " ").slice(0, 16)} by ${st.current.by}`;
+  if (first) loadHash();
+  render();
+}
+let watching = null;
+function watch() {
+  clearInterval(watching);
+  watching = setInterval(async () => {
+    const st = await (await api("/api/clearance/status")).json();
+    if (st.state === "reading") { toast(st.message); return; }
+    clearInterval(watching); watching = null;
+    if (st.state === "error") toast(st.message, 10000);
+    else { toast(st.message, 5000); KEYS.forEach((k) => state[k] = ["bu","mode","div"].includes(k) ? "All" : null); await loadData(false); }
+  }, 2000);
+}
+async function uploadFile(file) {
+  if (!file) return;
+  if (!PF.can("clearance.upload")) { toast("Your access level cannot load a new export.", 5000); return; }
+  if (!/\.xls[xm]$/i.test(file.name)) { toast("Choose the eHub export as an .xlsx file.", 6000); return; }
+  toast(`Sending ${file.name}…`);
+  try {
+    const r = await api("/api/clearance/upload", {method: "POST", body: file,
+      headers: {"Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name)}});
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok || !out.accepted) { toast(out.message || `The server refused the file (${r.status}).`, 8000); return; }
+    toast(out.message); watch();
+  } catch (err) { if (err.message !== "signed out") toast("The file could not be sent: " + err.message, 8000); }
+}
+$("loadBtn").onclick = () => $("file").click();
+$("file").onchange = (e) => { uploadFile(e.target.files[0]); e.target.value = ""; };
+let dragN = 0;
+addEventListener("dragenter", (e) => { if (PF.can("clearance.upload") && [...e.dataTransfer.types].includes("Files")) { dragN++; $("drop").classList.add("show"); } });
+addEventListener("dragleave", () => { if (--dragN <= 0) { dragN = 0; $("drop").classList.remove("show"); } });
+addEventListener("dragover", (e) => e.preventDefault());
+addEventListener("drop", (e) => { e.preventDefault(); dragN = 0; $("drop").classList.remove("show"); uploadFile(e.dataTransfer.files[0]); });
+/* A file dropped in the inbox folder, or loaded by a colleague, shows up here
+   within a minute without a reload. */
+setInterval(async () => {
+  if (watching || document.hidden) return;
+  try {
+    const st = await (await api("/api/clearance/status")).json();
+    if (st.state === "reading") { watch(); return; }
+    if (st.current && st.current.loaded_at !== loadedAt) { toast(`New export loaded: ${st.current.file}`, 5000); await loadData(false); }
+  } catch (err) { /* the next tick tries again */ }
+}, 60000);
+
+(async function boot() {
+  try {
+    const r = await fetch("/api/auth/me", {credentials: "same-origin"});
+    if (r.status === 401) { signIn(); return; }
+    if (r.ok) {
+      const me = await r.json();
+      if (me.mode === "accounts" || me.mode === "remote") { PF.on = true; PF.perms = me.permissions || []; PF.csrf = me.csrf; }
+    }
+    $("loadBtn").hidden = !PF.can("clearance.upload");
+    await loadData(true);
+  } catch (err) {
+    if (err.message !== "signed out") $("src").textContent = "The Clearance data could not be loaded: " + err.message;
+  }
+})();
+</script>
+</body>
+</html>

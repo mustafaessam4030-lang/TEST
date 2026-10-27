@@ -61,6 +61,12 @@ CAN_YOU_SEARCH = re.compile(r"^\s*(can|could|do|will|are) (you|atlas)( be able t
                             r"google|go online|look things up|use the (web|internet))"
                             r"( (on )?the (web|internet)| online| websites?)?\s*\??\s*$", re.I)
 ALL_WORDS = re.compile(r"\b(all|every|each|the run|this run|whole run|everything|them)\b", re.I)
+CLEARANCE_ASK = re.compile(
+    r"\b(clearance|customs|clearing agents?|duty (payment|assessment)|submit(ted)? to (the )?bu|"
+    r"assign(ing)? (the )?clearing|ehub export|shipment update export)\b", re.I)
+# "How does clearance work?" is for the handbook, not the export's figures.
+HOW_IT_WORKS = re.compile(r"\bhow (does|do|is|are)\b[^?]{0,40}\bwork|\bexplain\b|"
+                          r"\bwhat (is|are|does) (a |the )?(customs|clearance)\b", re.I)
 
 
 # ── carriers and resources ───────────────────────────────────────────────
@@ -151,6 +157,10 @@ def detect(question, data=None, context=None):
             return "validate_date"
         if _reference(q, data, context) or ALL_WORDS.search(q):
             return "validate"
+    if CLEARANCE_ASK.search(q) and not PO_WORDS.search(q) and not WEB_ASK.search(q) and \
+            not _reference(q, data, context, named_only=True) and not HOW_IT_WORKS.search(q) and \
+            not re.search(r"\bunder clearance\b", q, re.I):     # the Hub's status filter: the run
+        return "clearance"
     if WEB_ASK.search(q) and not CAN_YOU_SEARCH.search(q):
         return "web"
     return None
@@ -433,6 +443,50 @@ def web_answer(question):
     return "\n".join(lines), sources, {"searches": searches}
 
 
+# ── clearance (the eHub export on the Clearance page) ─────────────────────
+
+def _step(name):
+    return "Awaiting Receipt" if name == "Awaiting Reciept" else name
+
+
+def clearance_answer(question):
+    """Counts from the loaded eHub export only (dashboard/clearance.py); never estimated."""
+    from dashboard import clearance
+    whole = clearance.summary()
+    if whole is None:
+        return ("No eHub shipment export is loaded yet, so I have no clearance figures. An Operator "
+                "or Admin can load one on the [Clearance page](/clearance) (Load new export), or put "
+                "the .xlsx in the clearance folder on the server.")
+    bu = next((b for b in whole["bus"] if re.search(r"\b{0}\b".format(re.escape(b)), question)), None)
+    s = clearance.summary(bu=bu) if bu else whole
+    if not s["total"]:
+        return "The loaded export has no shipments for {0}.".format(bu)
+    lines = ["From the eHub export with data as of **{0}**{1}: **{2:,}** shipments, **{3}%** on time "
+             "(the export's own On Time flag; target 95%).".format(
+                 s["asof"] or "an unknown date (the export has no Last Date)",
+                 " for **{0}**".format(bu) if bu else "", s["total"],
+                 round(100.0 * s["on_time"] / s["total"])),
+             "**{0:,}** are open and **{1:,}** of them are past their current step's due date."
+             .format(s["open"], s["past_due"])]
+    if s["past_due_by_step"]:
+        lines.append("Past due by step: " + ", ".join("{0} {1:,}".format(_step(k), v)
+                                                     for k, v in s["past_due_by_step"][:5]) + ".")
+    if not bu and s["past_due_by_bu"]:
+        lines.append("By BU: " + ", ".join("{0} {1:,}".format(k, v) for k, v in s["past_due_by_bu"][:6]) + ".")
+    if s["longest"]:
+        lines.append("Longest waits:")
+        for x in s["longest"]:
+            lines.append("- {0} ({1}, {2}) at {3}: {4:,} days past its due date {5}".format(
+                x["awb"] or "no AWB/BOL", x["bu"], x["mode"], _step(x["step"]), x["days"], x["due"]))
+    checks = sum(v for k, v in (s.get("dq") or {}).items() if k != "agent_name_variants")
+    if checks:
+        lines.append("The export also has {0:,} values that could not be used (no ETA, empty due "
+                     "dates…); the Clearance page lists them under Data checks.".format(checks))
+    lines.append("Open the [Clearance page](/clearance{0}) to filter, see every shipment and "
+                 "download the list.".format("#bu=" + bu if bu else ""))
+    return "\n".join(lines)
+
+
 # ── the answer ────────────────────────────────────────────────────────────
 
 def answer(kind, question, data, context=None):
@@ -464,6 +518,9 @@ def answer(kind, question, data, context=None):
                     "something goes wrong or a carrier asks for a person. Ask “PDF for {0}” for its "
                     "full record.".format(ref, " ({0})".format(problem) if problem else ""))
         return dict(base, answer=text, intent="evidence", reference=ref, evidence=shots)
+    if kind == "clearance":
+        return dict(base, answer=clearance_answer(question), intent="skill_clearance",
+                    reference=None, sources=["clearance.export"])
     if kind == "web":
         text, sources, research = web_answer(question)
         return dict(base, answer=text, intent="skill_web", reference=None,

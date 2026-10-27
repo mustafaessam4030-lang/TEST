@@ -10,7 +10,7 @@ if %errorLevel% neq 0 (
 )
 
 netsh advfirewall firewall delete rule name="Mantrac Control Tower" >nul 2>&1
-netsh advfirewall firewall add rule name="Mantrac Control Tower" dir=in action=allow protocol=TCP localport=8787 profile=domain,private >nul
+netsh advfirewall firewall add rule name="Mantrac Control Tower" dir=in action=allow protocol=TCP localport=8787 profile=any remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 >nul
 
 echo.
 echo   The dashboard stays open whether or not a run is going.

@@ -1,7 +1,7 @@
 """
 deploy/iis/ (the IIS front door for IT) says what the tower needs: Host kept,
 no buffering of the live stream, https only, and the two settings the tower
-reads. Static checks; the scripts themselves have not been run on IIS.
+reads. Static checks (the scripts were first run on Windows Server in Oct 2026).
 
     python test_iis_package.py
 """
@@ -81,7 +81,33 @@ check("check_iis.ps1 does not assign PowerShell's automatic $args", "$args =" no
 check("check_iis.ps1 expects sign-in (401) on /api/state", "/api/state" in checker and "401" in checker)
 
 readme = (IIS / "README_FOR_IT.md").read_text(encoding="utf-8")
-check("README says the scripts are not yet run on IIS", "not been run on an" in readme)
+check("README offers the one-click SETUP_HTTPS.bat", "SETUP_HTTPS.bat" in readme)
+
+for cfg in ("web.config", "web.http-test.config"):
+    he = ET.parse(IIS / cfg).getroot().find("./system.webServer/httpErrors")
+    check(cfg + ": the tower's own 401/403/404 replies pass through IIS (sign-in again works)",
+          he is not None and he.get("existingResponse") == "PassThrough")
+
+https = (IIS / "setup_https.ps1").read_text(encoding="utf-8")
+bat = (HERE / "SETUP_HTTPS.bat").read_text(encoding="utf-8")
+check("SETUP_HTTPS.bat asks for Administrator and runs setup_https.ps1",
+      "-Verb RunAs" in bat and "deploy\\iis\\setup_https.ps1" in bat)
+check("setup_https: Microsoft downloads are installed only when validly signed by Microsoft",
+      https.count("download.microsoft.com") == 2 and "Get-AuthenticodeSignature" in https
+      and '$sig.Status -ne "Valid"' in https and "O=Microsoft Corporation" in https and "$written" in https)
+check("setup_https: the certificate password is typed, never stored or printed",
+      "Read-Host" in https and "-AsSecureString" in https
+      and not re.search(r"(?i)ConvertFrom-SecureString|Out-File|Set-Content|Add-Content|Write-Host[^\n]*\$pw", https))
+check("setup_https: the .pfx is deleted only after the import worked",
+      https.index("Import-PfxCertificate") < https.index("Remove-Item $pfx[0].FullName"))
+check("setup_https: a certificate already in Windows is reused (safe to run again)",
+      https.index("$cert = Find-Cert") < https.index("Import-PfxCertificate"))
+check("setup_https: 80/443 open to private addresses only",
+      "-LocalPort 80, 443" in https and "-RemoteAddress LocalSubnet, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16" in https)
+check("setup_https: stops when Windows needs a restart after IIS",
+      'RestartNeeded)" -eq "Yes"' in https)
+check("setup_https: runs setup_iis.ps1 with the thumbprint, then check_iis.ps1",
+      "setup_iis.ps1\") -HostName $HostName -CertThumbprint $cert.Thumbprint" in https and "check_iis.ps1" in https)
 check("README puts personal sign-in first", "CREATE_ADMIN.bat" in readme)
 check("DEPLOY_SERVER.md points to the package", "deploy/iis/" in (HERE / "DEPLOY_SERVER.md").read_text(encoding="utf-8"))
 

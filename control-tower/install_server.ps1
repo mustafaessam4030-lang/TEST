@@ -7,11 +7,12 @@
   What it does, in order:
     1. checks Python 3.11+ and Microsoft Edge are installed
     2. installs the Python packages the automation needs
-    3. opens port 8787 to the company network only (domain and private
-       networks — never public), so colleagues reach the dashboard
+    3. opens port 8787 to company (private) addresses only - 10.x, 172.16-31.x,
+       192.168.x and this subnet - on every network profile, because an Azure
+       server's network is "Public"; the internet is never allowed
     4. keeps the machine awake: no sleep, no hibernate on mains power
-    5. registers the scheduled task "Mantrac Tower": starts the tower when
-       this account signs in, restarts it within a minute if it stops
+    5. registers the scheduled task "Mantrac Tower": starts the tower at
+       sign-in, always as this account, restarts it within a minute if it stops
     6. runs check_server.py and prints what still needs doing
 
   It never asks for, stores or prints a password. Automatic sign-in is set
@@ -52,8 +53,8 @@ if ($LASTEXITCODE -ne 0) { throw "pip could not install the packages (see above)
 Step "3. Dashboard port $Port, company network only"
 netsh advfirewall firewall delete rule name="Mantrac Control Tower" | Out-Null
 netsh advfirewall firewall add rule name="Mantrac Control Tower" dir=in action=allow `
-  protocol=TCP localport=$Port profile=domain,private | Out-Null
-Write-Host "     Allowed on domain and private networks; not on public networks."
+  protocol=TCP localport=$Port profile=any remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 | Out-Null
+Write-Host "     Allowed from company (private) addresses only; never from the internet."
 
 Step "4. Never sleep on mains power"
 powercfg /change standby-timeout-ac 0
@@ -64,7 +65,10 @@ Step "5. Scheduled task 'Mantrac Tower' for $Account"
 $pythonPath = (Get-Command $Python).Source
 $action = New-ScheduledTaskAction -Execute $pythonPath `
   -Argument "-m dashboard.supervisor --share --port $Port" -WorkingDirectory $Root
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $Account
+# Any sign-in fires it; it still runs only as $Account (see the principal).
+# A trigger tied to one name never fired when the server was set up under
+# another account (azureuser) and run by a domain account.
+$trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
   -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
   -MultipleInstances IgnoreNew
@@ -73,7 +77,7 @@ $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New
 $principal = New-ScheduledTaskPrincipal -UserId $Account -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName "Mantrac Tower" -Action $action -Trigger $trigger `
   -Settings $settings -Principal $principal -Force | Out-Null
-Write-Host "     Starts when $Account signs in; restarts within a minute if it stops."
+Write-Host "     Starts at sign-in and runs as $Account; restarts within a minute if it stops."
 
 Step "6. Health check"
 & $Python (Join-Path $Root "check_server.py")

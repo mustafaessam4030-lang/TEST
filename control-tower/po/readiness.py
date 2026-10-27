@@ -48,6 +48,15 @@ CHAIN = ("PO_DISCOVERED", "EHUB_RECORD_FOUND", "CLEARANCE_CHECKED", "MANAGE_OPEN
          "TEMPLATE_GENERATED", "OUTPUT_SAVED")
 
 
+
+def _credential_manager_has_hub():
+    """The Hub sign-in may be in Windows Credential Manager instead of the file."""
+    try:
+        import hub_credentials
+        return hub_credentials.read() is not None
+    except Exception:
+        return False
+
 def _real(record):
     p = record.get("provenance") or {}
     return p.get("source") == "REAL" and p.get("verification") == "VERIFIED"
@@ -212,7 +221,8 @@ def levels(store, pilot_gates, production_gates, signoff):
     except OSError:
         pass
     env = {"graph_settings": graph_ok, "recipient": bool(os.environ.get("PO_MAIL_RECIPIENT")),
-           "ehub_credentials_file": creds.is_file(), "output_folder_writable": writable}
+           "ehub_credentials_file": creds.is_file() or _credential_manager_has_hub(),
+           "output_folder_writable": writable}
     out["D_ENVIRONMENT_READY"] = {
         "status": "PASS" if all(env.values()) else "UNVERIFIED",
         "evidence": "{0}{1}".format(", ".join("{0}: {1}".format(k, "yes" if v else "NO")

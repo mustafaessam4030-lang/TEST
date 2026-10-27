@@ -110,10 +110,12 @@ The first time you do this, Windows will block the inbound connection. Run this
 
 ```powershell
 New-NetFirewallRule -DisplayName "Mantrac Control Tower" -Direction Inbound `
-  -Protocol TCP -LocalPort 8787 -Action Allow -Profile Domain,Private
+  -Protocol TCP -LocalPort 8787 -Action Allow -Profile Any `
+  -RemoteAddress LocalSubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 ```
 
-`-Profile Domain,Private` deliberately excludes public networks. To undo it:
+`-RemoteAddress` allows company (private) addresses only, never the internet.
+Every profile is needed because an Azure server's network shows as "Public". To undo it:
 
 ```powershell
 Remove-NetFirewallRule -DisplayName "Mantrac Control Tower"
@@ -261,3 +263,24 @@ button appears and playback starts on the first click anywhere.
 `dashboard/bridge.py` wraps every hook in a `try/except` that swallows errors,
 and `update_eta.py` falls back to a no-op object if the dashboard folder is
 missing. A dashboard problem can never stop a shipment run.
+
+
+## Clearance page (the eHub shipment export)
+
+`/clearance` (menu: **Clearance**) shows the eHub "Shipment Update" export:
+on-time against the 95% target, open and past-due shipments by mode, BU and
+stage, the stage targets, the longest waits and every shipment (search, sort,
+CSV, a detail panel). Everything on the page is clickable to filter.
+
+- **Loading an export:** an Operator or Admin clicks *Load new export* (or drops
+  the .xlsx on the page), or anyone with server access puts the .xlsx in
+  `C:\Automation\clearance` (`ATA_CLEARANCE_INBOX`). The server reads the
+  *Export* sheet in a few seconds; everyone sees the same data. Each load is in
+  the audit log; a file that cannot be read never replaces what is shown.
+- **Access:** `clearance.view` (every level) and `clearance.upload` (Operator,
+  Admin).
+- **Nothing is repaired:** an unusable value (no ETA, ETA year 2926, a step due
+  date of 1899, a cycle time from a missing date) is left out and listed under
+  *Data checks*. "On time" is the export's own flag.
+- **ATLAS** answers clearance questions ("how many EG shipments are past due in
+  customs?") from the loaded export only, and links to the page.

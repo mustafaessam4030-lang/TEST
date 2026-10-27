@@ -73,5 +73,13 @@ are in DEPLOY_SERVER.md section 9.
 machine environment variables; sign out and in. People use
 `http://<server>:8787` again.
 
-These scripts were written from the tower's code and have **not been run on an
-IIS server yet** — please read them before running.
+**One click instead:** put the certificate (.pfx) in `C:\Automation\certificate`
+and double-click `SETUP_HTTPS.bat` in the control-tower folder. It installs IIS,
+URL Rewrite and ARR (Microsoft-signed downloads only), imports the certificate
+(its password is typed there and never saved; the .pfx is deleted once
+imported), opens 80/443 to company addresses, runs `setup_iis.ps1`, restarts
+the tower's task and runs `check_iis.ps1`.
+
+First run on Windows Server 2022 (Azure, MAN-ATAAZ-01) in October 2026 with
+the company wildcard certificate: every check passed. Please still read the
+scripts before running them on another server.

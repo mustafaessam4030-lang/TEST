@@ -59,6 +59,7 @@ if str(ROOT.parent) not in sys.path:
     sys.path.insert(0, str(ROOT.parent))
 from dashboard import accounts as _accounts      # noqa: E402  personal sign-in
 from dashboard import conversations as _conversations  # noqa: E402  ATLAS chats, for Admins
+from dashboard import clearance as _clearance    # noqa: E402  the eHub export, /clearance
 
 # An iPhone ringtone (.m4r) is plain AAC in an MP4 container — the same bytes
 # a browser happily plays as .m4a — but Python's mimetypes has never heard of
@@ -125,6 +126,7 @@ def _trust_proxy():
 
 
 FIREWALL_RULE = "Mantrac Control Tower"
+FIREWALL_REMOTE = "remoteip=localsubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 
 def ensure_firewall_rule(port):
@@ -136,7 +138,8 @@ def ensure_firewall_rule(port):
     Administrator, so this is best-effort: if we have the rights we do it
     silently and the link just works; if we do not, we say exactly what to run.
 
-    Scoped to domain and private profiles — never public networks.
+    Every network profile (an Azure server's network is "Public"), but only
+    from private, company addresses: never from the internet.
     """
     if os.name != "nt":
         return "not-windows"
@@ -153,12 +156,19 @@ def ensure_firewall_rule(port):
         existing = run(["netsh", "advfirewall", "firewall", "show", "rule",
                         "name={0}".format(FIREWALL_RULE)])
         if existing.returncode == 0 and str(port) in existing.stdout:
-            return "already-allowed"
+            # netsh's words are translated on non-English Windows; the
+            # address ranges are not. A rule with them is the current one.
+            if "10.0.0.0/8" in existing.stdout:
+                return "already-allowed"
+            # An older rule for Domain/Private only: an Azure server's network
+            # is "Public", so colleagues stay blocked. Replace it.
+            run(["netsh", "advfirewall", "firewall", "delete", "rule",
+                 "name={0}".format(FIREWALL_RULE)])
 
         added = run(["netsh", "advfirewall", "firewall", "add", "rule",
                      "name={0}".format(FIREWALL_RULE), "dir=in", "action=allow",
                      "protocol=TCP", "localport={0}".format(port),
-                     "profile=domain,private"])
+                     "profile=any", FIREWALL_REMOTE])
         if added.returncode == 0:
             print("  Windows Firewall: inbound TCP {0} allowed automatically."
                   .format(port), flush=True)
@@ -921,6 +931,30 @@ class Handler(BaseHTTPRequestHandler):
             self._po("GET", route)
             return
 
+        if route == "/clearance":
+            self._send_file(STATIC_DIR / "clearance.html")
+            return
+
+        if route == "/api/clearance/status":
+            _clearance.check_inbox()
+            self._send(200, json.dumps(_clearance.status(), default=str))
+            return
+
+        if route == "/api/clearance":
+            # The loaded eHub export (a newer file in the inbox folder starts
+            # being read first; the page polls the status and reloads).
+            _clearance.check_inbox()
+            path = _clearance.data_path()
+            if path.exists():
+                self._send(200, path.read_bytes())
+            else:
+                # The server folder is named only to those who may load an export.
+                self._send(200, json.dumps({"empty": True, "status": _clearance.status(),
+                                            "inbox": str(_clearance.inbox())
+                                            if self._acc_can("clearance.upload") else None},
+                                           default=str))
+            return
+
         if route.startswith("/api/session/"):
             self._live_view("GET", route)
             return
@@ -1010,6 +1044,25 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/po" or route.startswith("/api/po/"):
             self._po("POST", route)
+            return
+
+        if route == "/api/clearance/upload":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if length <= 0 or length > _clearance.MAX_UPLOAD:
+                self._send(413, json.dumps({"accepted": False,
+                                            "message": "Send one Excel file up to 40 MB."}))
+                return
+            from urllib.parse import unquote
+            # The page sends the name URL-encoded (HTTP headers are Latin-1 only).
+            name = unquote(str(self.headers.get("X-Filename") or "export.xlsx"))[:120]
+            by = (self.user or {}).get("work_email") or "access key"
+            accepted, message = _clearance.upload(self.rfile.read(length), name, by)
+            self._acc_audit("UPLOAD_CLEARANCE_EXPORT", "SUCCESS" if accepted else "REFUSED",
+                            "clearance_export", name[:64], {"bytes": length})
+            self._send(200, json.dumps({"accepted": accepted, "message": message}))
             return
 
         if route == "/api/feedback":

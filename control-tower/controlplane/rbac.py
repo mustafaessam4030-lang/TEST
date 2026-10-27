@@ -28,6 +28,8 @@ PERMISSIONS = {
     "po.process":         "Start processing a PO document",
     "po.send":            "Send a validated, generated PO document by email",
     "po.resend":          "Authorize sending the same PO document again",
+    "clearance.view":     "See the Clearance dashboard (the eHub shipment export)",
+    "clearance.upload":   "Load a new eHub shipment export into the Clearance dashboard",
 }
 
 ROLE_PERMISSIONS = {
@@ -35,9 +37,10 @@ ROLE_PERMISSIONS = {
     OPERATOR: frozenset((
         "dashboard.view", "runs.view", "runs.start", "runs.stop", "human.act",
         "evidence.view", "evidence.upload", "atlas.chat", "health.view",
-        "po.view", "po.process", "po.send")),
+        "po.view", "po.process", "po.send", "clearance.view", "clearance.upload")),
     VIEWER: frozenset((
-        "dashboard.view", "runs.view", "atlas.chat", "health.view", "po.view")),
+        "dashboard.view", "runs.view", "atlas.chat", "health.view", "po.view",
+        "clearance.view")),
 }
 
 ROLE_LABELS = {ADMIN: "Admin", OPERATOR: "Operator", VIEWER: "Viewer"}

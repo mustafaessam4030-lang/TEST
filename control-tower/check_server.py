@@ -165,7 +165,7 @@ def main():
     if not WINDOWS:
         for label in ("Scheduled task 'Mantrac Tower'", "Never sleeps on mains power",
                       "Firewall rule for port {0}".format(PORT),
-                      r"C:\Automation\credentials.txt", "Session type"):
+                      "Hub sign-in (Credential Manager)", "Session type"):
             report("SKIP", label, "Windows only")
     else:
         code, _out = run(["schtasks", "/query", "/tn", "Mantrac Tower"])
@@ -180,9 +180,16 @@ def main():
                           "name=Mantrac Control Tower"])
         report("PASS" if code == 0 else "WARN", "Firewall rule for port {0}".format(PORT),
                "" if code == 0 else "missing — colleagues cannot open the dashboard")
-        creds = Path(r"C:\Automation\credentials.txt")
-        report("PASS" if creds.exists() else "FAIL", r"C:\Automation\credentials.txt present",
-               "" if creds.exists() else "the Hub login file is missing")
+        try:
+            import hub_credentials
+            where = hub_credentials.source()
+        except Exception:
+            where = "file" if Path(r"C:\Automation\credentials.txt").exists() else None
+        report({"credential-manager": "PASS", "file": "WARN"}.get(where, "FAIL"),
+               "Hub sign-in (Credential Manager)",
+               {"credential-manager": "",
+                "file": r"still in C:\Automation\credentials.txt - move it with STORE_HUB_PASSWORD.bat"
+                }.get(where, "missing - store it with STORE_HUB_PASSWORD.bat"))
         session = os.environ.get("SESSIONNAME", "")
         report("PASS" if session.lower() == "console" else "WARN",
                "Session type: {0}".format(session or "unknown"),

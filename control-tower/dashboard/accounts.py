@@ -55,6 +55,8 @@ GET_PERMISSIONS = (
     ("/api/admin/audit", "audit.view"),
     ("/api/admin/conversations", "users.manage"),
     ("/api/admin/rbac", "dashboard.view"),
+    ("/clearance", "clearance.view"),
+    ("/api/clearance", "clearance.view"),
 )
 WRITE_PERMISSIONS = (
     ("/api/control", "runs.start"),
@@ -67,6 +69,7 @@ WRITE_PERMISSIONS = (
     ("/api/admin/users", "users.manage"),
     ("/api/me/prefs", "dashboard.view"),
     ("/api/auth/logout", "dashboard.view"),
+    ("/api/clearance/upload", "clearance.upload"),
 )
 
 
