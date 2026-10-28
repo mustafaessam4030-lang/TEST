@@ -4306,6 +4306,9 @@ def extract_event_log_result(page):
         "events": events,
         "eta_source": decision["eta_event"]["description"] if decision["eta_event"] else None,
         "ata_source": decision["ata_event"]["description"] if decision["ata_event"] else None,
+        # The places the timeline names, for the Tracking map only; they
+        # decide nothing here.
+        "places": dhl_places(timeline_text, events, destination),
     }
 
 
@@ -5085,6 +5088,19 @@ def click_dhl_track_again(page, tracking_number):
         wait_until="domcontentloaded",
         timeout=60000,
     )
+
+
+def dhl_places(timeline_text, events, destination):
+    """The DHL page's own Origin/Destination lines and each event's place, as
+    printed. dashboard/geo.py decides which can be put on the map."""
+    origin = re.search(r"^Origin:\s*(.+)$", str(timeline_text or ""), re.M)
+    return {"source": "DHL timeline",
+            "origin": origin.group(1).strip()[:120] if origin else None,
+            "destination": destination,
+            "events": [{"date": e.get("date"), "time": e.get("time"), "tz": e.get("tz"),
+                        "text": e.get("description"), "place": e.get("location"),
+                        "estimated": e.get("estimated")}
+                       for e in events if e.get("location")][:200]}
 
 
 def get_dhl_result_from_api(tracking_number):
@@ -9039,6 +9055,39 @@ def afkl_milestones(text):
     return found
 
 
+def afkl_places(text, destination=None):
+    """The stations an AFKL page names — the route header's origin and
+    destination ("MUC ✈ ACC"), else the first flight leg's origin, and the
+    station each milestone names — for the Tracking map only."""
+    text = text or ""
+    head = text
+    awb = re.search(r"\b\d{3}[-\s]?\d{8}\b", head)
+    if awb:
+        head = head[:awb.start()]
+    origin = None
+    for line in head.splitlines():
+        found = AFKL_ROUTE.match(line.strip())
+        if found and found.group(1) != found.group(2):
+            origin, destination = found.group(1), destination or found.group(2)
+            break
+    if origin is None:
+        for line in text.splitlines():
+            stripped = " ".join(line.split())
+            stations = re.search(r"\b([A-Z]{3})\s*-\s*([A-Z]{3})\b", stripped)
+            if stations and AFKL_FLIGHT_NUMBER.search(stripped):
+                origin = stations.group(1)
+                break
+    events = []
+    for when, clock, event in afkl_milestones(text):
+        station = re.search(r"\b(?:at|in)\s+([A-Z]{3})\b", event) or \
+            re.search(r"\bfrom\s+([A-Z]{3})\b", event)
+        if station:
+            events.append({"date": when, "time": clock, "text": event[:160],
+                           "place": station.group(1), "code": True})
+    return {"source": "AFKL myCargo", "origin_code": origin,
+            "destination_code": destination, "events": events[:200]}
+
+
 def _read_afkl_milestones(text, provider):
     """
     Read the current AFKL layout, or None if this is not that layout.
@@ -9116,7 +9165,8 @@ def _read_afkl_milestones(text, provider):
             "ata": ata, "flight_leg": leg,
             "eta_source": "AFKL estimated arrival at destination {0}".format(destination)
             if eta else None,
-            "ata_source": "AFKL arrived at destination {0}".format(destination) if ata else None}
+            "ata_source": "AFKL arrived at destination {0}".format(destination) if ata else None,
+            "places": afkl_places(text, destination)}
 
 
 def _read_afkl_page(page, provider):
@@ -9259,7 +9309,8 @@ def _read_afkl_page(page, provider):
             "eta": eta, "ata": ata, "flight_leg": leg,
             "eta_source": "AFKL estimated arrival at destination {0}".format(destination)
             if eta else None,
-            "ata_source": "AFKL arrived at destination {0}".format(destination) if ata else None}
+            "ata_source": "AFKL arrived at destination {0}".format(destination) if ata else None,
+            "places": afkl_places(text, destination)}
 
 
 # ============================================================
@@ -9917,11 +9968,33 @@ def _read_dhl_aviation_page(page, provider):
         last, code = min(complete)
         return {"provider": provider, "tracking_status": "Arrived", "eta": None,
                 "ata": last.strftime("%d/%m/%Y"),
-                "ata_source": "{0} at {1}: all {2} pieces".format(code, dest, total)}
+                "ata_source": "{0} at {1}: all {2} pieces".format(code, dest, total),
+                "places": dhl_aviation_places(text)}
     most = max((sum(p for _d, p in seen) for seen in arrived.values()), default=0)
     return {"provider": provider, "eta": None, "ata": None,
             "tracking_status": ("Partly arrived ({0} of {1} pieces at {2})".format(
-                most, total, dest) if most else "In transit")}
+                most, total, dest) if most else "In transit"),
+            "places": dhl_aviation_places(text)}
+
+
+def dhl_aviation_places(text):
+    """The stations a DHL Aviation page names — "From DHL Org BRU to DHL Dest
+    LOS" and each checkpoint's station code — for the Tracking map only."""
+    text = str(text or "").replace("\n+ Show content", "")
+    org = re.search(r"\bDHL\s+Org\s+([A-Z]{3})\b", text)
+    dest = re.search(r"\bDHL\s+Dest\s+([A-Z]{3})\b", text)
+    events, day = [], None
+    for line in text.splitlines():
+        header = _WEEKDAY_HEADER.match(line)
+        if header:
+            day = normalize_date(header.group(1))
+            continue
+        m = re.match(r"^\s*([A-Z]{3})?\s+(.+?)\s+\d+\s+pcs\s+([A-Z]{3})\b.*?(\d{1,2}:\d{2})\s*$", line)
+        if m and day:
+            events.append({"date": day, "time": m.group(4), "place": m.group(3), "code": True,
+                           "text": " ".join(x for x in (m.group(1), m.group(2)) if x)[:160]})
+    return {"source": "DHL Aviation", "origin_code": org.group(1) if org else None,
+            "destination_code": dest.group(1) if dest else None, "events": events[:200]}
 
 
 def _read_generic_portal_page(page, provider):

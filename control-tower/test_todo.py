@@ -193,7 +193,7 @@ check("the Overview keeps its layout: no To Do card, no Tasks page, no bell",
       and "data-notify-slot" not in idx + cl and not os.path.exists(os.path.join(S, "tasks.js"))
       and not os.path.exists(os.path.join(S, "notify.js")))
 check("the Overview still has its Tracking map, On the way and ATLAS card",
-      'class="card route"' in idx and "routeMap" in idx and "On the way" in idx and "atlas-fig" in idx)
+      'class="card route"' in idx and 'id="routeMap"' in idx and "On the way" in idx and "atlas-fig" in idx)
 check("the To Do button in the top bar of both pages", idx.count("<span data-todo-slot></span>") == 1
       and cl.count("<span data-todo-slot></span>") == 1 and '<script src="/static/todo.js" defer></script>' in idx + cl)
 check("the slide-out opens only on a click, never on load", "open(true)" not in js and 'btn.addEventListener("click"' in js)

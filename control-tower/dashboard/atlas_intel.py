@@ -56,6 +56,9 @@ def _brief_record(record):
             "provider_ata_source", "atlas_check", "flight", "verification", "coe_action", "bu_action", "message",
             "started_at", "updated", "table_page")
     out = {k: record.get(k) for k in keep if record.get(k) not in (None, "", [], {})}
+    where = where_line(record)
+    if where:
+        out["last_reported_place"] = where
     access = record.get("carrier_access") or {}
     if access:
         out["carrier_access"] = {k: access.get(k) for k in ("state", "detail", "facts")}
@@ -143,6 +146,15 @@ def atlas_check_line(record):
     return text + (" (" + quoted + ")." if quoted else ".")
 
 
+def where_line(record):
+    """Where the carrier last reported the shipment (geo.sentence), or None."""
+    try:
+        from . import geo
+    except ImportError:
+        import geo
+    return geo.sentence(record.get("where"))
+
+
 def shipment_picture(record):
     """What the run knows about one shipment, said the way a person says it."""
     ref, carrier = record.get("reference"), record.get("carrier") or "the carrier"
@@ -153,6 +165,9 @@ def shipment_picture(record):
         parts.append("When the run read it, " + ", ".join(said) + ".")
     if (record.get("atlas_check") or {}).get("verdict"):
         parts.append(atlas_check_line(record))
+    where = where_line(record)
+    if where:
+        parts.append(where)
     if record.get("internal_eta"):
         parts.append("The Hub had {0} before the run.".format(record["internal_eta"]))
     verified = record.get("verification") or {}

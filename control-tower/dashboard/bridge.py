@@ -11,6 +11,20 @@ import threading
 from collections import deque
 from datetime import datetime
 
+def _where(places):
+    """geo.where(places), or None: a map problem never touches the run."""
+    if not places:
+        return None
+    try:
+        try:
+            from . import geo
+        except ImportError:                       # imported as a top-level module
+            import geo
+        return geo.where(places)
+    except Exception:
+        return None
+
+
 MAX_LOG_LINES = 800
 MAX_SHIPMENTS = 500
 MAX_EXCEPTIONS = 200
@@ -1258,10 +1272,14 @@ class ControlTowerState:
 
     @_guard
     def provider_result(self, result):
+        # The places the carrier named, put on the map (dashboard/geo.py).
+        # Read before the lock: the place table loads once, on first use.
+        where = _where(result.get("places")) if isinstance(result, dict) else None
         with self._lock:
             record = self._current_record()
             if record is None or not isinstance(result, dict):
                 return
+            record["where"] = where
             record["provider_status"] = result.get("tracking_status")
             record["provider_eta"] = result.get("eta")
             record["provider_ata"] = result.get("ata")

@@ -1134,9 +1134,9 @@ a.cbtn{text-decoration:none}
 .ov-vis{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:18px;
   margin-bottom:18px;align-items:start}
 .ov-vis-r{display:grid;gap:18px}
-.route-g{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,1fr)}
-.route-map{padding:16px 0 16px 16px;align-self:start}
-.route-map svg{display:block;width:100%;height:auto;border-radius:14px}
+.route-g{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(220px,1fr)}
+.route-map{padding:16px 0 16px 16px;align-self:stretch;display:flex;min-width:0}
+.route-map > .tm{flex:1}
 .route-side{padding:16px 20px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
 @media(min-width:761px){.route-side{min-height:540px}}
 /* Its button stays at the bottom, whatever the event list holds: the card
@@ -1163,11 +1163,10 @@ a.cbtn{text-decoration:none}
 .rt-av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;
   background:var(--surface);border:1px solid var(--line-2);color:var(--ink)}
 .rt-av svg{width:17px;height:17px}
-/* the vehicle glides along the route; the transform is the whole animation */
-.rt-car{transition:transform 1.1s var(--e)}
-.rt-done{transition:stroke-dashoffset 1.1s var(--e)}
-.rt-pulse{transform-box:fill-box;transform-origin:center;animation:rtPulse 2.2s ease-out infinite}
-@keyframes rtPulse{0%{transform:scale(.7);opacity:.55}100%{transform:scale(1.9);opacity:0}}
+/* where the carrier last reported the shipment, under its ETA */
+.sc-where{display:grid;gap:2px;padding:9px 11px;border-radius:12px;background:var(--surface-3);font-size:12.5px;line-height:1.4}
+.sc-where b{font-weight:600;color:var(--ink)}
+.sc-where small{color:var(--faint);font-size:11.5px}
 
 /* ═══════════ ON THE WAY ═══════════ */
 .fleet-b{display:grid;grid-template-columns:auto 1fr;align-items:end;gap:8px;padding:14px 0 0 20px;
@@ -1613,13 +1612,6 @@ td.car{color:var(--ink);font-weight:500}
 .rv-on{overflow:hidden}
 
 /* ── Dark: the few surfaces drawn with fixed colours ── */
-:root[data-theme="dark"] #routeMap rect[fill="#F2F5F8"]{fill:#0E1A2A}
-:root[data-theme="dark"] #routeMap path[stroke="#E4ECF3"]{stroke:#11243A}
-:root[data-theme="dark"] #routeMap g[fill="#EAEEF3"]{fill:#15233A}
-:root[data-theme="dark"] #routeMap g[stroke="#FFFFFF"]{stroke:#1C2C44}
-:root[data-theme="dark"] #rtBase{stroke:#5B6B80}
-:root[data-theme="dark"] #rtRing{fill:var(--surface)}
-:root[data-theme="dark"] #routeMap circle[fill="rgba(11,31,51,.08)"]{fill:rgba(0,0,0,.35)}
 :root[data-theme="dark"] svg text[fill="#0B1F33"]{fill:#E8EEF6}
 :root[data-theme="dark"] svg text[fill="#475569"],:root[data-theme="dark"] svg text[fill="#64748B"]{fill:#AAB6C6}
 :root[data-theme="dark"] svg text[fill="#B45309"]{fill:var(--y)}
@@ -2639,13 +2631,13 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
         <div class="card-b" data-clearmap-body></div>
       </section>
       <div class="ov-vis">
-        <!-- TRACKING. A map of the shipment's way through ATA — Hub, carrier,
-             data, Hub write, verified — not a GPS map: no position is
-             recorded, so none is drawn. The vehicle is the shipment's own
-             mode: a plane for air, a ship for ocean, a van for road. -->
+        <!-- TRACKING. Where each shipment was last reported, on a real map
+             (static/trackmap.js): the places the carrier's own events name,
+             matched to an airport, port or town (dashboard/geo.py). Not a
+             GPS map: nothing is drawn between two reported places. -->
         <div class="card route">
           <div class="card-h"><div><div class="card-t">Tracking</div>
-            <div class="card-s" id="routeSub">The selected shipment's journey · route drawn abstractly — carriers report status and dates, not positions</div></div>
+            <div class="card-s" id="routeSub">Where each shipment was last reported · places the carrier names, not live GPS</div></div>
             <div class="sp"></div><span id="routeTag"></span></div>
           <div class="route-g">
             <div class="route-map" id="routeMap"></div>
@@ -6390,52 +6382,18 @@ setInterval(() => {
 let axTimeTick = 0;
 
 /* ═══ TRACKING MAP ═══════════════════════════════════════════════════
-   The selected shipment's journey, drawn from its record:
-
-     processing / waiting   at the origin; the route ahead is not yet known
-     on the way             the carrier gave an ETA: in transit, destination
-                            labelled with that ETA
-     arrived                the carrier gave an ATA: the route is complete
-     exception              stopped where the evidence stops, in red, still
-
-   The route is ABSTRACT. The carrier reports a status and dates, never a
-   position, so no point on this map is a place: "in transit" means the
-   carrier said so, and nothing more precise is drawn. Its shape follows the
-   mode — an arc for air, a long curve for sea, streets for road. */
-const ROUTE_PATHS = {
-  air:   'M46 204 Q 180 18 354 72',
-  ocean: 'M46 204 C 122 214, 150 122, 214 132 S 304 92, 354 72',
-  road:  'M46 204 C 92 190, 82 140, 132 136 S 212 150, 238 112 S 300 70, 354 72'
-};
+   Where each shipment of the run was last reported, on a real map
+   (static/trackmap.js). The places are the record's own: record.where holds
+   the places the carrier's events named — "Arrived Final Destination,
+   Kotoka International Airport" — matched to an airport, port or town by
+   dashboard/geo.py. A marker is the newest such place, never a point in
+   between and never a GPS position; a shipment whose carrier names no
+   place is listed, not placed. The shipment on show also gets its route:
+   where it has been (solid), what is left to its destination (dotted).
+   Clicking a marker, or choosing in the list, follows that shipment. */
 const JOURNEY_RING = {processing:'var(--blu)', onway:'var(--teal-dot)', human:'var(--y-dot)',
                       arrived:'var(--grn-dot)', failed:'var(--red)', nodata:'#94A3B8', none:'#94A3B8'};
-let routeRef = null, routeLen = 0, routeSig = '', routeBuilt = false, fleetBuilt = false, routeMode = '';
-
-function routeMapSVG(){
-  return '<svg viewBox="0 0 400 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shipment route">' +
-    '<rect width="400" height="260" fill="#F2F5F8"/>' +
-    '<path d="M250 -10 C 236 60, 300 96, 284 150 S 300 230, 330 270" fill="none" stroke="#E4ECF3" stroke-width="30"/>' +
-    '<g fill="#EAEEF3">' +
-      '<rect x="18" y="20" width="70" height="48" rx="7"/><rect x="104" y="22" width="56" height="70" rx="7"/>' +
-      '<rect x="176" y="18" width="52" height="38" rx="7"/><rect x="20" y="88" width="58" height="40" rx="7"/>' +
-      '<rect x="120" y="176" width="66" height="54" rx="7"/><rect x="204" y="160" width="40" height="72" rx="7"/>' +
-      '<rect x="318" y="120" width="60" height="44" rx="7"/><rect x="332" y="184" width="50" height="52" rx="7"/>' +
-    '</g>' +
-    '<g fill="none" stroke="#FFFFFF" stroke-linecap="round">' +
-      '<path d="M0 78 H400" stroke-width="6"/><path d="M0 162 H230 L400 110" stroke-width="6"/>' +
-      '<path d="M96 0 V260" stroke-width="5"/><path d="M168 0 C 160 90, 200 150, 190 260" stroke-width="5"/>' +
-      '<path d="M310 0 V260" stroke-width="4"/><path d="M0 240 H400" stroke-width="4"/>' +
-    '</g>' +
-    '<path id="rtBase" fill="none" stroke="#B9C2CE" stroke-width="3" stroke-dasharray="0.5 8" stroke-linecap="round"/>' +
-    '<path class="rt-done" id="rtDone" fill="none" stroke-width="4" stroke-linecap="round"/>' +
-    '<g id="rtNodes"></g>' +
-    '<g class="rt-car" id="rtCar">' +
-      '<circle r="20" cy="2" fill="rgba(11,31,51,.08)"/>' +
-      '<circle class="rt-pulse" id="rtPulse" r="17" fill="none" stroke-width="2"/>' +
-      '<circle id="rtRing" r="17" fill="#FFFFFF" stroke-width="2.2"/>' +
-      '<path id="rtIcon" transform="translate(-9 -9) scale(.75)"/>' +
-    '</g></svg>';
-}
+let routeRef = null, routeSig = '', fleetBuilt = false;
 
 function routeShipment(){
   const all = S.shipments || [];
@@ -6444,11 +6402,6 @@ function routeShipment(){
     (cur && all.find((x) => x.reference === cur.reference)) || all[0] || null;
   return pick ? liveRec(pick) : null;
 }
-
-const svgText = (x, y, t, o) => '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" text-anchor="' +
-  ((o && o.anchor) || 'middle') + '" font-size="' + ((o && o.size) || 11) + '" font-weight="' +
-  ((o && o.weight) || 500) + '" fill="' + ((o && o.fill) || '#475569') +
-  '" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif">' + esc(t) + '</text>';
 
 /* Who tracks it, when that is not the carrier the Hub names: DHL tracks the
    K-references an airline flies, so "Brussels Airlines" alone would hide
@@ -6460,83 +6413,58 @@ function trackedBy(r){
   return '<span class="sc-via">Tracked by ' + esc(t) + '</span>';
 }
 
+function routeItems(){
+  return (S.shipments || []).map((x) => {
+    const r = liveRec(x), mode = getTransportMode(r), j = journeyOf(r);
+    return {ref:r.reference, carrier:r.carrier || sysName(r.provider || '') || '', where:r.where || null,
+            k:j.k, label:j.label, date:j.date, color:MODES[mode].color, ring:JOURNEY_RING[j.k] || '#94A3B8',
+            icon:MODE_ICON[mode], live:j.k === 'processing' || j.k === 'onway' || j.k === 'human'};
+  });
+}
+
 function paintRoute(){
-  if (activePage !== 'overview' && routeBuilt) return;
-  if (!routeBuilt){ routeBuilt = true; $('routeMap').innerHTML = routeMapSVG(); routeSig = ''; routeMode = ''; }
+  if (activePage !== 'overview' && routeSig) return;
   const r = routeShipment();
   const mode = getTransportMode(r);
   const j = journeyOf(r);
   const list = r ? pipeline(r) : [];
+  const items = routeItems();
   /* "Last update" changes on every write, and it is one text cell. It is
-     kept out of the key so a new timestamp does not rebuild the route, the
-     nodes and the illustration — that rebuild cost 2 ms a frame. */
-  const key = r ? JSON.stringify([r.reference, r.state, r.step, r.provider_eta, r.provider_ata,
-    r.provider_ata_source, r.provider_eta_source, r.provider_status, r.carrier,
-    mode, j.k, list.map((x) => x.st + x.t + (x.note || '')).join('|')]) : 'none';
+     kept out of the key so a new timestamp does not rebuild the map and the
+     card — only what is shown is. */
+  const key = JSON.stringify([r && r.reference, items.map((i) => [i.ref, i.k, i.date, i.where]),
+    r ? [r.state, r.step, r.provider_eta, r.provider_ata, r.provider_ata_source, r.provider_eta_source,
+         r.provider_status, r.carrier, mode, list.map((x) => x.st + x.t + (x.note || '')).join('|')] : 0]);
   if (key === routeSig){ if (r) put($('scUpd'), r.updated ? String(r.updated) : '—'); return; }
+  if (!window.ctTrackMap) return;                // the map script is still loading
   routeSig = key;
-
-  // The route's shape is the mode's; it changes only when the mode does.
-  const shape = ROUTE_PATHS[mode] || ROUTE_PATHS.road;
-  const base = $('rtBase'), done = $('rtDone');
-  if (routeMode !== shape){
-    routeMode = shape;
-    base.setAttribute('d', shape); done.setAttribute('d', shape);
-    routeLen = done.getTotalLength();
-    done.style.strokeDasharray = routeLen + ' ' + routeLen;
-  }
-  const knowsTransit = has(r && r.provider_eta) || has(r && r.provider_ata);
-  const frac = !r ? 0 : j.k === 'arrived' ? 1 : j.k === 'onway' ? .5
-    : j.k === 'failed' ? (knowsTransit ? .5 : .02) : .02;
-  done.style.strokeDashoffset = String(routeLen * (1 - frac));
-  done.setAttribute('stroke', j.k === 'arrived' ? 'var(--grn-dot)' : j.k === 'failed' ? '#94A3B8'
-                              : MODES[mode].color);
-  const at = done.getPointAtLength(routeLen * frac);
-  $('rtCar').style.transform = 'translate(' + at.x.toFixed(1) + 'px,' + at.y.toFixed(1) + 'px)';
-  const ring = JOURNEY_RING[j.k] || '#94A3B8';
-  $('rtRing').setAttribute('stroke', ring);
-  $('rtIcon').setAttribute('d', MODE_ICON[mode]);
-  $('rtIcon').setAttribute('fill', j.k === 'failed' ? 'var(--red)' : MODES[mode].color);
-  const pulse = $('rtPulse');
-  const live = j.k === 'processing' || j.k === 'onway' || j.k === 'human';
-  pulse.style.display = live ? '' : 'none';
-  pulse.setAttribute('stroke', ring);
-
-  // Origin, destination, and "in transit" only when the carrier said so.
-  const o = done.getPointAtLength(0), d = done.getPointAtLength(routeLen), m = done.getPointAtLength(routeLen * .5);
-  const destDone = j.k === 'arrived';
-  let nodes = '<circle cx="' + o.x + '" cy="' + o.y + '" r="6" fill="#FFFFFF" stroke="#0B1F33" stroke-width="2.2"/>' +
-    svgText(o.x - 8, o.y + 38, 'Origin', {weight:600, fill:'#0B1F33', anchor:'start'});
-  nodes += destDone
-    ? '<circle cx="' + d.x + '" cy="' + d.y + '" r="9" fill="var(--grn-dot)"/>' +
-      '<path d="M' + (d.x - 4) + ' ' + d.y + ' l2.8 2.8 l5 -5.4" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
-    : '<circle cx="' + d.x + '" cy="' + d.y + '" r="6" fill="#FFFFFF" stroke="' +
-      (j.k === 'onway' ? 'var(--teal-dot)' : '#B9C2CE') + '" stroke-width="2.2"/>';
-  // Right-aligned to the node so a date never runs off the map.
-  nodes += svgText(d.x + 14, d.y - 34, 'Destination', {weight:600, fill:destDone ? '#15803D' : '#0B1F33', anchor:'end'});
-  if (j.k === 'arrived') nodes += svgText(d.x + 14, d.y - 20, 'Arrived ' + j.date, {size:10.5, fill:'#15803D', anchor:'end'});
-  else if (j.k === 'onway') nodes += svgText(d.x + 14, d.y - 20, 'ETA ' + j.date, {size:10.5, fill:'#0F766E', anchor:'end'});
-  if (j.k === 'onway') nodes += svgText(m.x, m.y + 34, 'In transit', {size:10.5, fill:'#0F766E'});
-  if (j.k === 'failed') nodes += svgText(at.x + 26, at.y - 22, 'Exception — stopped here', {size:10.5, weight:600, fill:'#DC2626', anchor:'start'});
-  if (j.k === 'human') nodes += svgText(at.x + 26, at.y - 22, 'Waiting for a person', {size:10.5, anchor:'start', fill:'#B45309'});
-  if (j.k === 'processing') nodes += svgText(at.x + 26, at.y - 22, 'Tracking in progress', {size:10.5, anchor:'start', fill:'#2563EB'});
-  const rtn = $('rtNodes'), want = r ? nodes : '';
-  if (rtn._h !== want){ rtn._h = want; rtn.innerHTML = want; }
+  window.ctTrackMap.paint({el:$('routeMap'), items, selected:r ? r.reference : null,
+    onSelect:(ref) => { routeRef = ref; routeSig = ''; paintRoute(); }});
 
   putHTML($('routeTag'), r ? jpill(j) : '');
   if (!r){
     putHTML($('routeSide'), '<div class="hint">No shipment yet. The first one picked up from the Hub appears here.</div>');
     return;
   }
+  // Where the carrier last put it, as the carrier said it.
+  const now = window.ctTrackMap.nowOf({where:r.where, k:j.k});
+  const w = r.where || {};
+  const said = (p) => p ? (p.code ? p.name + ' (' + p.code + ')' : p.name) + (p.country ? ', ' + p.country : '') : '';
+  const whereHTML = now
+    ? '<div class="sc-where"><small>Last reported by the carrier</small><b>' + esc(said(now.pt)) + '</b>' +
+        (now.ev ? '<small>' + esc(now.ev.text) + ' · ' + esc(now.ev.date || '') + (now.ev.time ? ' ' + esc(now.ev.time) : '') + '</small>' : '') + '</div>'
+    : (w.origin || w.destination)
+      ? '<div class="sc-where"><small>Route the carrier names</small><b>' + esc([said(w.origin), said(w.destination)].filter(Boolean).join(' → ')) +
+          '</b><small>No place the shipment has reached yet</small></div>'
+      : '<div class="sc-where"><small>Where</small><b>No place reported</b><small>' + esc(r.carrier || 'The carrier') +
+          ' gives status and dates here, not a place</small></div>';
   // The shipment card: who carries it, how, where it stands, and the last
   // automation steps — all from the record.
   const front = list.findIndex((x) => x.st === 'now' || x.st === 'wait' || x.st === 'fail');
   const reach = front >= 0 ? front : (r.state === 'updated' ? list.length - 1 : 0);
   const shown = list.slice(Math.max(0, reach - 2), Math.min(list.length, reach + 1));
-  const moving = j.k === 'onway' || j.k === 'processing';
   putHTML($('routeSide'),
     '<div class="sc-h"><span class="sc-car">' + dash(r.carrier) + trackedBy(r) + '</span>' + modeChip(mode) + '</div>' +
-    TransportIllustration(mode, moving) +
     '<div class="sc-g">' +
       '<div><div class="fk">Shipment</div><div class="rt-ref">' + esc(r.reference) + '</div></div>' +
       '<div><div class="fk">' + (j.k === 'arrived' ? 'ATA' : 'ETA') + '</div><div class="fv mono">' +
@@ -6544,13 +6472,14 @@ function paintRoute(){
       '<div><div class="fk">Last update</div><div class="fv mono" id="scUpd">' + dash(r.updated) + '</div></div>' +
       '<div><div class="fk">Source</div><div class="fv">' +
         dash(r.provider_ata_source || r.provider_eta_source || r.provider_status) + '</div></div>' +
-    '</div>' +
+    '</div>' + whereHTML +
     '<div class="sc-t">' + shown.map((x) =>
       '<div class="rt-ev"><i class="' + x.st + '"></i><span>' + esc(x.t) + '</span>' +
       (x.note ? '<em>' + esc(x.note) + '</em>' : '') + '</div>').join('') + '</div>' +
     '<button class="sc-open" data-open="' + esc(r.reference) + '">Open shipment details' +
       '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>');
 }
+document.addEventListener('ct:trackmap', () => { routeSig = ''; if (S) paintRoute(); });
 $('routeSide').addEventListener('click', (e) => {
   const b = e.target.closest('[data-open]'); if (b) openDrawer(b.dataset.open);
 });
@@ -8071,6 +8000,7 @@ setTimeout(() => document.body.classList.remove('first-load'), 1400);
 })();
 </script>
 <script src="/static/clearmap.js" defer></script>
+<script src="/static/trackmap.js" defer></script>
 <script src="/static/search.js" defer></script>
 <script src="/static/todo.js" defer></script>
 </body>

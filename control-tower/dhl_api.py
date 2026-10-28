@@ -68,6 +68,39 @@ def _country(place):
     return str(((place or {}).get("address") or {}).get("countryCode") or "").upper()
 
 
+def _locality(place):
+    """The place name DHL gives ("LEIPZIG - GERMANY"), or None."""
+    town = str(((place or {}).get("address") or {}).get("addressLocality") or "").strip()
+    return town or None
+
+
+def _clock(timestamp):
+    """(HH:MM, "UTC +hh:mm") from DHL's timestamp, the offset only when DHL
+    states one."""
+    m = re.match(r"\d{4}-\d{2}-\d{2}T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?",
+                 str(timestamp or ""))
+    if not m:
+        return None, None
+    zone = m.group(2)
+    return m.group(1), ("UTC" if zone == "Z" else "UTC " + zone if zone else None)
+
+
+def places(s, events):
+    """What the Tracking map needs: the places DHL names, as DHL names them
+    (dashboard/geo.py decides which can be placed)."""
+    out = []
+    for e in events:
+        clock, zone = _clock(e.get("timestamp"))
+        out.append({"date": _day(e.get("timestamp")), "time": clock, "tz": zone,
+                    "text": _text(e).strip()[:160], "place": _locality(e.get("location")),
+                    "country": _country(e.get("location")) or None})
+    return {"source": "DHL Shipment Tracking API",
+            "origin": _locality(s.get("origin")), "origin_country": _country(s.get("origin")) or None,
+            "destination": _locality(s.get("destination")),
+            "destination_country": _country(s.get("destination")) or None,
+            "events": out}
+
+
 def _text(event):
     return " ".join(str(event.get(k) or "") for k in ("status", "description", "remark"))
 
@@ -125,4 +158,5 @@ def interpret(payload, tracking_number):
         "destination_country": dest or None,
         "latest_event": {"date": _day(latest.get("timestamp")),
                          "text": _text(latest).strip()[:200]} if latest else None,
+        "places": places(s, events),
     }, None, False

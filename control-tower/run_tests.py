@@ -52,6 +52,7 @@ SUITES = [
     ("test_deployment_lessons.py", "ATLAS answers setup questions from the deployment lessons"),
     ("test_hub_credentials.py", "Hub sign-in in Windows Credential Manager, credentials.txt only as fallback"),
     ("test_clearance.py",      "Clearance page: eHub export, access levels, upload, inbox, ATLAS"),
+    ("test_tracking_map.py",   "Tracking map: carrier-reported places only, on a real map, interactive"),
     ("test_cortex.py",         "ATLAS on Snowflake Cortex first, local model as fallback, budget, token kept safe"),
     ("test_launch_page.py",     "launch page: countdown, zone, soundtrack only when named; sign-in untouched"),
     ("test_verify_atlas.py",    "verify_atlas.py, the operator's ATLAS check, passes"),

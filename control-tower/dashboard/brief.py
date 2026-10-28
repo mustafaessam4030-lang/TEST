@@ -144,6 +144,18 @@ def shipment(rec):
     return first + (" " + second if second else "")
 
 
+def _place(rec):
+    """Where the carrier last reported it (dashboard/geo.py), or None."""
+    try:
+        try:
+            from . import geo
+        except ImportError:
+            import geo
+        return geo.sentence(rec.get("where"))
+    except Exception:
+        return None
+
+
 def eta(rec, question):
     ref = rec.get("reference")
     asks_ata = bool(re.search(r"\bata\b|arriv", question or "", re.I)) and \
@@ -345,6 +357,9 @@ def concise(question, reply, state, data):
                     r"voyage|flight|container|weight|piece|history|timeline|when did|how long",
                     question or "", re.I):
             text = shipment(rec)
+            place = _place(rec)
+            if text and place:
+                text += " " + place
         elif intent in FAILURE_INTENTS and rec is not None:
             # ATLAS's failure analysis reads more than the record's last line
             # (a "skip" after a completed verification is an access problem):

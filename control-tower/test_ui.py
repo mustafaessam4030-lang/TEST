@@ -795,14 +795,17 @@ check("...with its own fill and foreground tokens",
       "--nav-on:#1D1D1F; --on-nav:#FFFFFF;" in INDEX)
 check("The sidebar remains the menu on phones and tablets",
       "  .tnav{display:none}" in INDEX and "  .nav{display:flex;position:fixed;" in INDEX)
-check("The tracking map says it is an abstract route, never a GPS map",
-      "The route is ABSTRACT" in INDEX and "route drawn abstractly" in INDEX)
-check("...the vehicle's place comes from the shipment's own pipeline",
+TRACKMAP = (HERE / "dashboard" / "static" / "trackmap.js").read_text(encoding="utf-8")
+check("The tracking map is a real map that says it is not GPS",
+      "places the carrier names, not live GPS" in INDEX and "not a live GPS position" in TRACKMAP
+      and 'src="/static/trackmap.js"' in INDEX)
+check("...its places are the record's own (record.where), never computed in the page",
+      "where:r.where || null" in INDEX and "w.last && placed(w.last.pt)" in TRACKMAP)
+check("...the card still reads the shipment's own pipeline",
       "const list = r ? pipeline(r) : [];" in INDEX.split("function paintRoute(){")[1])
-check("...and its vehicle is the shipment's real mode, read from the record",
-      "const m = r && r.transport_mode;" in INDEX and "return MODES[m] ? m : 'unknown';" in INDEX)
-check("...and it glides by transform only, built once",
-      ".rt-car{transition:transform 1.1s var(--e)}" in INDEX and "if (!routeBuilt){" in INDEX)
+check("...and its marker shows the shipment's real mode, read from the record",
+      "const m = r && r.transport_mode;" in INDEX and "return MODES[m] ? m : 'unknown';" in INDEX
+      and "icon:MODE_ICON[mode]" in INDEX)
 check("On the way counts shipments with an ETA and no ATA yet",
       "has(r.provider_eta) && !has(r.provider_ata)" in INDEX)
 check("...and the illustration only moves while one is on the way",
@@ -822,11 +825,11 @@ _j = INDEX.split("function journeyOf(r){")[1].split("\n}")[0]
 check("The journey is read from the record: exception, arrived (ATA), on the way (ETA)",
       _j.index("'failed'") < _j.index("provider_ata") < _j.index("provider_eta"))
 _rt = INDEX.split("function paintRoute(){")[1].split("\n$('routeSide')")[0]
-check("An exception does not move: no pulse, a grey route",
-      "const live = j.k === 'processing' || j.k === 'onway' || j.k === 'human';" in _rt
-      and "j.k === 'failed' ? '#94A3B8'" in _rt)
-check("'In transit' is drawn only when the carrier gave an ETA",
-      "if (j.k === 'onway') nodes += svgText(m.x, m.y + 34, 'In transit'" in _rt)
+check("Only a live shipment pulses on the map; an exception does not",
+      "live:j.k === 'processing' || j.k === 'onway' || j.k === 'human'" in INDEX
+      and "if (sel.live) el(\"circle\", {class: \"pulse\"" in TRACKMAP)
+check("A shipment whose carrier names no place is listed, not placed",
+      "no place reported" in TRACKMAP and "if (it.k === \"arrived\" && placed(w.destination))" in TRACKMAP)
 check("ATLAS's time tiers come from elapsed time: 30 s, 1, 2 and 3 minutes",
       "[[180, 'very_long'], [120, 'waiting'], [60, 'long_monitoring'], [30, 'long'], [0, 'normal']]" in INDEX)
 check("...measured from the shipment's own start and the action's opening",
@@ -836,7 +839,7 @@ check("ATLAS blames the carrier only when the carrier is the system working",
 check("The tiers change carriage, not the character: transforms on existing parts",
       '.atlas[data-tier="very_long"].is-monitoring.alt .ax-head{transform:rotate(-6deg)}' in INDEX)
 check("A new 'last update' time patches one cell instead of rebuilding the map card",
-      "if (key === routeSig){ if (r) put($('scUpd')" in _rt and "r.updated, mode" not in _rt)
+      "if (key === routeSig){ if (r) put($('scUpd')" in _rt and "r.updated" not in _rt.split("const key")[1].split(";")[0])
 check("The ATLAS notices fold to one line once a question is asked, and reopen on click",
       "nb.classList.add('fold')" in INDEX and "classList.toggle('fold')" in INDEX)
 check("ATLAS's own colours are pinned, untouched by the dashboard tokens",

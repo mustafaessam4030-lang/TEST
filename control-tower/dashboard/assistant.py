@@ -1395,8 +1395,9 @@ def _help(data):
         "• Is DHL currently processing?\n"
         "• Validate the run's dates · PDF report of the run · screenshot for <shipment>\n"
         "• How does the PO process work? · Which carriers do you support?\n\n"
-        "The automation never reads origin, destination, route or order numbers, "
-        "so I can't answer those. If I don't have something, I'll say so."
+        "The automation never reads order numbers, and reads origin, destination "
+        "and route only where a carrier's page names them (DHL, DHL Aviation, AFKL). "
+        "If I don't have something, I'll say so."
     )
 
 
@@ -2178,6 +2179,9 @@ def _facts(record):
     check = record.get("atlas_check") or {}
     if check.get("verdict"):
         lines.append(_atlas_check_line(record))
+    where = atlas_intel.where_line(record)
+    if where:
+        lines.append(where)
     if written:
         lines.append("Written to the Hub: " + "; ".join(written) + ".")
     elif record.get("state") != "partial":
@@ -3831,8 +3835,20 @@ def _answer_core(question, state, context=None):
                 reference, STATE_WORDS.get(record.get("state"), "in an unknown state"))
             if record.get("state") in ("failed", "skipped") and _has(record.get("error")):
                 summary += " " + record["error"]
-            summary += ("\n\nThe automation never reads origin, destination or "
-                        "route, so those aren't available.")
+            w = record.get("where") or {}
+            named = [(word, (w.get(k) or {}).get("name")) for word, k in
+                     (("origin", "origin"), ("destination", "destination"))]
+            named = [(word, n) for word, n in named if n]
+            if named:
+                # Only what the carrier's own page named (dashboard/geo.py).
+                summary += "\n\nThe carrier names its " + " and ".join(
+                    "{0} as {1}".format(word, n) for word, n in named) + "."
+                place = atlas_intel.where_line(record)
+                if place:
+                    summary += " " + place
+            else:
+                summary += ("\n\nThe automation never reads origin, destination or "
+                            "route, so those aren't available.")
             return {"answer": summary, "card": shipment_card(data, record),
                     "reference": reference, "grounded": True}
 
