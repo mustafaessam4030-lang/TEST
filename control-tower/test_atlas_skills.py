@@ -227,7 +227,7 @@ check("a carrier tracking page is never fetched",
 # ── handbook ───────────────────────────────────────────────────────────
 rule("The handbook: how the system works")
 CASES = [
-    ("what is the control tower?", "overview", "four parts"),
+    ("what is the control tower?", "overview", "five parts"),
     ("how does the ETA update work?", "eta_flow", "five things"),
     ("what checks does it do before writing?", "checks", "No future arrival"),
     ("which carriers do you support?", "carriers", "MSC"),
