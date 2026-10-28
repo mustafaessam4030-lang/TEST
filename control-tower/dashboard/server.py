@@ -455,17 +455,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._packed[key] = hit
         etag, raw, packed = hit
         extra = dict(extra or {})
-        cache = extra.pop("Cache-Control", "no-cache")       # a route's own rule wins
+        cache = extra.pop("Cache-Control", "private, no-cache")   # a route's own rule wins
+        use_gzip = packed is not None and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+        if use_gzip:                       # each encoding its own validator
+            etag = etag[:-1] + '-gz"'
         if (self.headers.get("If-None-Match") or "").strip() == etag:
             self.send_response(304)
             self.send_header("ETag", etag)
             self.send_header("Cache-Control", cache)
+            self.send_header("Vary", "Accept-Encoding")
             for name, value in (extra or {}).items():
                 self.send_header(name, value)
             self._maybe_set_cookie()
             self.end_headers()
             return
-        use_gzip = packed is not None and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
         body = packed if use_gzip else raw
         self.send_response(200)
         self.send_header("Content-Type", content_type)
@@ -479,8 +482,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(name, value)
         self._maybe_set_cookie()
         self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
+        self.wfile.write(body)
 
     # -- routes ------------------------------------------------------------
 
@@ -1276,6 +1278,8 @@ class Handler(BaseHTTPRequestHandler):
             context["po"] = "1" if self._acc_can("po.view") else "0"
             # The deployment guides (server names, addresses) are for Admins.
             context["admin"] = "1" if self._acc_can("users.manage") else "0"
+            # Clearance figures only for a role that may open the Clearance page.
+            context["clearance"] = "1" if self._acc_can("clearance.view") else "0"
         try:
             reply = assistant.answer(question, _assistant_state(), context)
         finally:

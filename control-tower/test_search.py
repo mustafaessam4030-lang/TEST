@@ -84,8 +84,12 @@ for page in ("index.html", "clearance.html"):
 js = open(os.path.join(HERE, "dashboard", "static", "search.js"), encoding="utf-8").read()
 check("search.js escapes every value and follows only same-site links",
       "${esc(i.title)}" in js and "${esc(i.detail)}" in js and "/^\\/(?!\\/)/.test" in js)
-check("its shortcut never takes a key the Human Action live view is forwarding",
-      "e.defaultPrevented" in js and 'closest("#rvStage, [data-own-keys]")' in js)
+check("its shortcut never takes a key the Human Action live view is forwarding, nor opens over a dialog",
+      "e.defaultPrevented" in js and 'closest("#rv, #rvStage, [data-own-keys]")' in js and "overlayOpen()" in js
+      and "#rv:not([hidden])" in js)
+check("Escape closes the panel and nothing else (captured first)", js.count('}, true);') == 1 and "e.stopPropagation(); open(false)" in js)
+check("a search that did not run is said so, never 'nothing found'", "Search could not run (HTTP ${r.status})" in js)
+check("a result where the page already is still opens (same hash)", "new HashChangeEvent(\"hashchange\")" in js)
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

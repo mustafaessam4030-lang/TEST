@@ -44,6 +44,13 @@
   const btn = slot.querySelector(".todo-b"), panel = slot.querySelector(".todo-p"), badge = slot.querySelector(".todo-n");
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const safe = (h) => (/^\/(?!\/)/.test(h || "") ? h : "/");
+  // A link to where the page already is (same hash) still opens it.
+  function follow(e, a) {
+    const url = new URL(a.getAttribute("href"), location.href);
+    if (url.origin === location.origin && url.pathname === location.pathname && url.hash === location.hash) {
+      e.preventDefault(); dispatchEvent(new HashChangeEvent("hashchange"));
+    }
+  }
   let last = null;
   function paint(d) {
     last = d;
@@ -60,6 +67,7 @@
   async function load() {
     try {
       const r = await fetch("/api/todo", {credentials: "same-origin"});
+      if (r.status === 404) { slot.hidden = true; return; }      // not on this kind of server
       if (!r.ok) return paint(last);
       paint(await r.json());
     } catch (e) { paint(last); }
@@ -71,9 +79,11 @@
   }
   btn.addEventListener("click", (e) => { e.stopPropagation(); open(!panel.classList.contains("show")); });
   document.addEventListener("click", (e) => { if (!slot.contains(e.target)) open(false); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && panel.classList.contains("show")) { open(false); btn.focus(); } });
-  // Same page (Clearance's own hash links): close and let the page follow the hash.
-  panel.addEventListener("click", (e) => { if (e.target.closest("a")) open(false); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && panel.classList.contains("show")) { e.stopPropagation(); open(false); btn.focus(); }
+  }, true);
+  // Close, and follow the link even when it is where the page already is.
+  panel.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { open(false); follow(e, a); } });
   load();
   setInterval(() => { if (!document.hidden) load(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });

@@ -215,6 +215,8 @@ def _clearance_named(q, data, context):
         if clearance.load() is None:
             return False
         context = context or {}
+        if context.get("clearance") == "0":           # a role without clearance.view
+            return False
         on_page = context.get("page") == "clearance"
         # "Summarise this view", "explain what I'm looking at": the page itself.
         # Not a PO question, a run shipment, the run, or how something works.
@@ -253,10 +255,10 @@ def _clearance_named(q, data, context):
         # run's own filters (assistant._filter_of): those stay with the run.
         from dashboard.assistant import detect_intent, _filter_of
         run_busy = bool(getattr(data, "shipments", None)) and bool(_filter_of(data, q))
-        if detect_intent(q) is None and not run_busy:
+        if detect_intent(q) is None and not run_busy and not CL_NOT.search(q) and not WEB_ASK.search(q):
             whole = clearance.query(None)
             named = whole and _cl_filters(q, dict(whole["values"], years=[]))
-            if (named and named.get("bu")) or CL_CUE.search(q):
+            if (named and named.get("bu") and CL_SHIP.search(q)) or CL_CUE.search(q):
                 return True
         return bool(clearance.awbs_in(q))
     except Exception:
@@ -547,9 +549,17 @@ def _step(name):
 
 
 MAIL_ASK = re.compile(r"\b(e-?mail|mail|draft|write|compose)\b", re.I)
-# The export's measures, in the words people use for them.
-CL_CUE = re.compile(r"\b(bus|business units?|which bu|bu is|on[- ]?time( rate)?|late shipments?|"
-                    r"delayed shipments?|in customs|customs release|duty payment|clearing|bottlenecks?)\b", re.I)
+# The export's measures, in the words people use for them. Specific phrases
+# only: "on time", "bus" or "clearing" alone are everyday words.
+CL_CUE = re.compile(r"\b(business units?|which bu|bu is|bus? (has|have|with)|on[- ]?time (rate|shipments?|percentage)|"
+                    r"on[- ]?time %|late shipments?|delayed shipments?|in customs|customs release|duty payment|"
+                    r"clearing agents?|bottlenecks?)\b", re.I)
+# With a BU or a country named, the question must be about its shipments.
+CL_SHIP = re.compile(r"\b(shipments?|late|past[- ]?due|overdue|on[- ]?time|delayed|stuck|open|completed|"
+                     r"doing|performance|clearance|customs|bottleneck|worst|best|escalat\w*)\b", re.I)
+# Never the export's figures: the web, news, weather, a meaning or a definition.
+CL_NOT = re.compile(r"\b(news|weather|capital|search the web|on the web|online|internet|google|"
+                    r"what does \w+( \w+)? mean|meaning of|define|definition)\b", re.I)
 CL_RANK = re.compile(r"\b(which|what|who|top|worst|most|slowest|biggest|rank)\b", re.I)
 CL_ESC = re.compile(r"\bescalat\w*", re.I)
 CL_FLAG = [("pastdue", re.compile(r"\b(past[- ]?due|overdue|late at|stuck|waiting longest|delayed)\b", re.I)),

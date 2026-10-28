@@ -42,6 +42,15 @@
         input = slot.querySelector("input"), out = slot.querySelector(".srch-r");
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const safe = (h) => (/^\/(?!\/)/.test(h || "") ? h : "/");
+  // An overlay (the Human Action live view, a drawer, a dialog) owns the keyboard.
+  const overlayOpen = () => !!document.querySelector('#rv:not([hidden]), [aria-modal="true"]:not([hidden]):not([aria-hidden="true"]), .drawer[aria-hidden="false"], .modal.show, .drawer.show');
+  // A link to where the page already is (same hash) still opens it.
+  function follow(e, a) {
+    const url = new URL(a.getAttribute("href"), location.href);
+    if (url.origin === location.origin && url.pathname === location.pathname && url.hash === location.hash) {
+      e.preventDefault(); dispatchEvent(new HashChangeEvent("hashchange"));
+    }
+  }
   let timer = null, seq = 0, active = -1;
   const hint = () => { out.innerHTML = `<div class="srch-e">Type at least 3 characters of an AWB, BOL or PO reference.</div>`; };
   hint();
@@ -58,8 +67,10 @@
     if (q.replace(/[^0-9a-z]/gi, "").length < 3) return hint();
     try {
       const r = await fetch("/api/search?q=" + encodeURIComponent(q), {credentials: "same-origin"});
-      const d = r.ok ? await r.json() : null;
-      if (my === seq) paint(d || {searched: true, query: q, groups: []});
+      if (my !== seq) return;
+      // A search that did not run is never shown as "nothing found".
+      if (!r.ok) { out.innerHTML = `<div class="srch-e">Search could not run (HTTP ${r.status}).</div>`; return; }
+      paint(await r.json());
     } catch (e) { if (my === seq) out.innerHTML = `<div class="srch-e">Search did not reach the server.</div>`; }
   }
   function open(on) {
@@ -81,16 +92,20 @@
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
     else if (e.key === "Enter") {
       const links = [...out.querySelectorAll("a")], pick = links[Math.max(active, 0)];
-      if (pick) { e.preventDefault(); open(false); location.href = pick.getAttribute("href"); }
+      if (pick) { e.preventDefault(); open(false); pick.click(); }
     }
   });
   document.addEventListener("click", (e) => { if (!slot.contains(e.target)) open(false); });
-  panel.addEventListener("click", (e) => { if (e.target.closest("a")) open(false); });
+  panel.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { open(false); follow(e, a); } });
+  // Escape closes this panel and nothing else (capture: before the page's own Escape).
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && panel.classList.contains("show")) { open(false); btn.focus(); return; }
+    if (e.key === "Escape" && panel.classList.contains("show")) { e.stopPropagation(); open(false); btn.focus(); }
+  }, true);
+  document.addEventListener("keydown", (e) => {
     // Never a key someone else already took: the Human Action live view
-    // forwards every key to the carrier's page (and marks it handled).
-    if (e.defaultPrevented || (e.target && e.target.closest && e.target.closest("#rvStage, [data-own-keys]"))) return;
+    // forwards every key to the carrier's page (and marks it handled), and
+    // nothing opens over a drawer or dialog.
+    if (e.defaultPrevented || overlayOpen() || (e.target && e.target.closest && e.target.closest("#rv, #rvStage, [data-own-keys]"))) return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "") || (e.target && e.target.isContentEditable);
     if ((e.key === "/" && !typing) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) { e.preventDefault(); open(true); }
   });

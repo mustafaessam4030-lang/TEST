@@ -388,7 +388,11 @@ print("\n5. THE PAGES")
 html = open(os.path.join(HERE, "dashboard", "static", "clearance.html"), encoding="utf-8").read()
 idx = open(os.path.join(HERE, "dashboard", "static", "index.html"), encoding="utf-8").read()
 check("the Control Tower menu opens Clearance", "href:'/clearance'" in idx and "location.href = p.href" in idx)
-check("the page loads nothing from the internet", "<script src=" not in html and "cdnjs" not in html and "https://" not in html.split("<script>")[1])
+import re as _re                                              # noqa: E402
+check("the page loads nothing from the internet (its scripts and styles are this server's own)",
+      not _re.search(r'(src|href)="(https?:)?//', html) and "cdnjs" not in html
+      and set(_re.findall(r'<script src="([^"]+)"', html)) <= {"/static/search.js", "/static/todo.js"}
+      and "https://" not in html.split("<script>")[1])
 check("uploads carry the session's CSRF token", '"X-CSRF-Token": PF.csrf' in html and "/api/clearance/upload" in html)
 check("the page links back to the Control Tower", 'href="/"' in html)
 
@@ -516,6 +520,14 @@ check("'which BU is the worst?' answers first with the BU and its count",
 check("'what is the on-time rate?' answers first with the rate",
       _as.answer("what is the on-time rate?", {}, {})["answer"].startswith(
           "The on-time rate is **{0}%**".format(round(100.0 * _q0["on_time"] / _q0["total"]))))
+_run0 = _a0.RunData({})
+for _q in ("search the web for customs news in Nigeria", "any news from Egypt", "what is the weather in Kenya",
+           "what is the capital of Ghana?", "what does clearing mean?", "who are the bus drivers", "is Emirates on time?"):
+    check("'{0}' is not answered with clearance figures".format(_q), atlas_skills.detect(_q, _run0, {}) != "clearance",
+          atlas_skills.detect(_q, _run0, {}))
+check("a role without clearance.view never gets clearance figures from ATLAS",
+      atlas_skills.detect("which BU is the worst?", _run0, {"clearance": "0"}) is None
+      and atlas_skills.detect("summarise this view", _run0, {"clearance": "0", "page": "clearance"}) is None)
 _srv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "server.py"), encoding="utf-8").read()
 check("the server takes the view only from the Clearance page, short strings, known keys",
       'if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)' in _srv

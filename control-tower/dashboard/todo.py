@@ -60,8 +60,8 @@ def _po_items():
     except Exception:
         return []
     latest = {}
-    for job in jobs:                     # newest first: a document's latest job counts
-        latest.setdefault(job.get("reference") or job.get("po_id"), job)
+    for job in jobs:                     # newest first: a document's latest job counts (as the PO page)
+        latest.setdefault((job.get("doctype"), job.get("reference") or job.get("po_id")), job)
     review = [j for j in latest.values() if j.get("kpi") == "validation_required"]
     failed = [j for j in latest.values() if j.get("kpi") == "failed"]
     out = []

@@ -837,8 +837,10 @@ function filterBar() {
   $("f-div").innerHTML = ["All", ...divs].map((d) => `<option${state.div === d ? " selected" : ""}>${esc(d)}</option>`).join("");
   // Forwarder and clearing agent: every name in the export, most shipments first.
   const named = (k) => { const c = {}; ROWS.forEach((r) => { if (r[F[k]]) c[r[F[k]]] = (c[r[F[k]]] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b)); };
-  const opts = (k) => `<option value="All"${state[k] === "All" ? " selected" : ""}>All</option>` +
-    named(k).map((v) => `<option value="${esc(v)}"${state[k] === v ? " selected" : ""}>${esc(v)}</option>`).join("");
+  // A name from a link that this export does not have is shown as such, not hidden behind "All".
+  const opts = (k) => { const vals = named(k); if (state[k] !== "All" && !vals.includes(state[k])) vals.unshift(state[k]);
+    return `<option value="All"${state[k] === "All" ? " selected" : ""}>All</option>` +
+      vals.map((v) => `<option value="${esc(v)}"${state[k] === v ? " selected" : ""}>${esc(v)}${ROWS.some((r) => r[F[k]] === v) ? "" : " (not in this export)"}</option>`).join(""); };
   $("f-ffw").innerHTML = opts("ffw"); $("f-agent").innerHTML = opts("agent");
   const p = [];
   if (state.status) p.push(["status", `Status: ${STATUS_LABEL[state.status] || state.status}`]);
