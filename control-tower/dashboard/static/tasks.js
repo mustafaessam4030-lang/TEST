@@ -1,5 +1,5 @@
-/* Tasks: the Overview's "Action required" card and the Task Center page.
-   Both read GET /api/todo (dashboard/todo.py: derived from the platform's
+/* To Do: the list on the Overview of everything that needs a person.
+   It reads GET /api/todo (dashboard/todo.py: derived from the platform's
    own records, filtered by access level); nothing is stored or counted here.
    Each task opens where it is dealt with. Styled with the platform's tokens
    and the console's card, chip and status-pill patterns. */
@@ -80,17 +80,12 @@
   let data = null, filter = "outstanding";
   function paintCard() {
     if (!card || !data) return;
-    const body = card.querySelector("[data-action-body]"), sum = card.querySelector("[data-action-sum]");
-    const top = data.items.filter((t) => t.state !== "completed").slice(0, 3);
-    const b = data.by_state || {};
+    const sum = card.querySelector("[data-action-sum]"), b = data.by_state || {};
     sum.innerHTML = data.outstanding
       ? `<span><b>${data.outstanding}</b> outstanding</span>` +
         [["overdue", "overdue"], ["urgent", "urgent"], ["pending_approval", "pending approval"]]
           .filter(([k]) => b[k]).map(([k, l]) => `<span><b>${b[k]}</b> ${l}</span>`).join("")
       : "Nothing outstanding";
-    body.innerHTML = (top.length ? `<ul class="tk-list">${top.map(row).join("")}</ul>`
-      : `<div class="tk-empty">Nothing needs a person right now.</div>`) +
-      `<div class="tk-foot"><a href="/#tasks" data-tasks-link>View all tasks${data.outstanding > 3 ? ` (${data.outstanding})` : ""} →</a></div>`;
     card.hidden = false;
   }
   function paintCenter() {
@@ -109,20 +104,13 @@
     filter = f.dataset.f; paintCenter();
     const again = center.querySelector(`[data-f="${filter}"]`); if (again) again.focus();
   });
-  function navBadge() {
-    ["n-tasks", "t-tasks"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (!el || !data) return;
-      el.hidden = !data.outstanding; el.textContent = String(data.outstanding || "");
-    });
-  }
   async function load() {
     try {
       const r = await fetch("/api/todo", {credentials: "same-origin"});
       if (r.status === 404) { if (card) card.hidden = true; return; }
       if (!r.ok) throw new Error("HTTP " + r.status);
       data = await r.json();
-      paintCard(); paintCenter(); navBadge();
+      paintCard(); paintCenter();
     } catch (e) {
       if (center && !data) center.innerHTML = `<div class="tk-empty">The tasks could not be loaded (${esc(e.message || e)}).</div>`;
     }
@@ -130,6 +118,12 @@
   load();
   setInterval(() => { if (!document.hidden) load(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
-  addEventListener("hashchange", () => { if (/^#tasks\b/.test(location.hash)) load(); });
+  // From the bell: "/#overview?todo=1" brings the list into view.
+  function toList() {
+    if (!card || !/[?&]todo=1/.test(location.hash)) return;
+    setTimeout(() => { card.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"}); }, 120);
+  }
+  addEventListener("hashchange", () => { load(); toList(); });
+  toList();
   window.ctTasks = {reload: load};
 })();

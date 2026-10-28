@@ -168,10 +168,12 @@ check("…closes on Escape (focus back), outside click, Tab away, or picking an 
       '"Escape"' in notify_js and "focusout" in notify_js and "!panel.contains(e.target)" in notify_js and "btn.focus()" in notify_js)
 check("…stays inside the screen and on the page (not clipped by the bar)",
       "document.body.appendChild(panel)" in notify_js and "innerWidth - w - 8" in notify_js)
-check("Overview: the Action required card (top three, outstanding, View all tasks)",
-      'data-action-card' in idx and ".slice(0, 3)" in tasks_js and 'href="/#tasks"' in idx and "outstanding" in tasks_js)
-check("the Task Center is a page in the menu, with a count", "{id:'tasks',     t:'Tasks'" in idx and 'data-p="tasks"' in idx
-      and "data-task-center" in idx and '"n-tasks", "t-tasks"' in tasks_js and '<a href="/#tasks">Tasks</a>' in cl)
+check("Overview: the To Do list itself (all tasks, filters by state, how many outstanding)",
+      'id="todo" data-action-card' in idx and "data-task-center" in idx and "FILTERS" in tasks_js
+      and "outstanding" in tasks_js and idx.index('id="todo"') < idx.index("data-clearmap"))
+check("no separate Tasks page; the bell leads to the list on the Overview",
+      "{id:'tasks'" not in idx and 'data-p="tasks"' not in idx and "/#tasks" not in cl
+      and '/#overview?todo=1' in notify_js and "scrollIntoView" in tasks_js)
 check("states shown as the console's status pills; every value escaped; same-site links only",
       "s-${esc(t.state)}" in tasks_js and "${esc(t.title)}" in tasks_js and "/^\\/(?!\\/)/.test" in tasks_js
       and "${esc(n.title)}" in notify_js)

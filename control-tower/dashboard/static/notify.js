@@ -1,7 +1,7 @@
 /* Notifications: the bell in the top bar and its compact popover.
    Recent events from GET /api/notifications (dashboard/todo.py: Human Action
    opened or finished, escalations opened or resolved, an export loaded, a
-   run finished). Separate from tasks: the footer leads to the Task Center.
+   run finished). Separate from tasks: the footer leads to the To Do list on the Overview.
    "Read" is this viewer's own (kept in this browser); nothing here changes a
    record. Closes on Escape (focus back to the bell), a click outside, Tab
    leaving it, or picking an item. Styled with the platform's tokens. */
@@ -52,7 +52,7 @@
   const panel = document.createElement("div");
   panel.className = "nt-p"; panel.id = "ntPanel"; panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", "Notifications");
   panel.innerHTML = `<div class="nt-h"><b>Notifications</b><button type="button" data-read>Mark all as read</button></div>
-    <ul class="nt-l"></ul><div class="nt-f"><a href="/#tasks" data-tasks-link>Open the Task Center</a></div>`;
+    <ul class="nt-l"></ul><div class="nt-f"><a href="/#overview?todo=1" data-tasks-link>Open the To Do list</a></div>`;
   document.body.appendChild(panel);
   const btn = slot.querySelector(".nt-b"), badge = slot.querySelector(".nt-n"), list = panel.querySelector(".nt-l");
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
