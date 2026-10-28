@@ -245,6 +245,19 @@ def _clearance_named(q, data, context):
         # The export's own words: the run has carriers, not forwarders or clearing agents.
         if re.search(r"\b(past[- ]?due|forwarders?|clearing agents?|ehub export)\b", q, re.I):
             return True
+        # Anywhere: a question the run's own rules do not recognise that names a
+        # BU or the export's measures ("which BU is the worst?", "how is EG
+        # doing?", "top 5 late shipments") is about the export: answered from
+        # it at once, instead of going to the model and finding nothing.
+        # While a run has shipments, "air shipments", "failed ones"… are the
+        # run's own filters (assistant._filter_of): those stay with the run.
+        from dashboard.assistant import detect_intent, _filter_of
+        run_busy = bool(getattr(data, "shipments", None)) and bool(_filter_of(data, q))
+        if detect_intent(q) is None and not run_busy:
+            whole = clearance.query(None)
+            named = whole and _cl_filters(q, dict(whole["values"], years=[]))
+            if (named and named.get("bu")) or CL_CUE.search(q):
+                return True
         return bool(clearance.awbs_in(q))
     except Exception:
         return False
@@ -534,6 +547,9 @@ def _step(name):
 
 
 MAIL_ASK = re.compile(r"\b(e-?mail|mail|draft|write|compose)\b", re.I)
+# The export's measures, in the words people use for them.
+CL_CUE = re.compile(r"\b(bus|business units?|which bu|bu is|on[- ]?time( rate)?|late shipments?|"
+                    r"delayed shipments?|in customs|customs release|duty payment|clearing|bottlenecks?)\b", re.I)
 CL_RANK = re.compile(r"\b(which|what|who|top|worst|most|slowest|biggest|rank)\b", re.I)
 CL_ESC = re.compile(r"\bescalat\w*", re.I)
 CL_FLAG = [("pastdue", re.compile(r"\b(past[- ]?due|overdue|late at|stuck|waiting longest|delayed)\b", re.I)),
@@ -549,12 +565,24 @@ CL_STEPS = [("Submit to BU", r"submit(ted)? to (the )?bu"), ("Assign Clearing Ag
 MONTHS_RX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
 
+# A country named in words: only where the BU code IS that country's ISO
+# code, and only if the export has that BU. (JR, LB… are not mapped.)
+COUNTRY_BU = {"egypt": "EG", "ghana": "GH", "tanzania": "TZ", "nigeria": "NG", "kenya": "KE",
+              "iraq": "IQ", "uganda": "UG", "djibouti": "DJ", "sierra leone": "SL",
+              "liberia": "LR", "ethiopia": "ET"}
+
+
 def _cl_filters(question, values):
     """What a question narrows to, from the loaded export's own values only."""
     q, f = question, {}
     for v in values["bu"]:
         if re.search(r"\b{0}\b".format(re.escape(v)), q):
             f["bu"] = v
+    if "bu" not in f:
+        for name, code in COUNTRY_BU.items():
+            if code in values["bu"] and re.search(r"\b" + name + r"\b", q, re.I):
+                f["bu"] = code
+                break
     for v in values["mode"]:
         if re.search(r"\b{0}\b".format(re.escape(v)), q, re.I):
             f["mode"] = v
@@ -644,6 +672,27 @@ def _cl_shipment(rows, escalations, log):
     return "\n".join(lines)
 
 
+CL_DIM = (("past_due_by_bu", re.compile(r"\b(bus?|business units?)\b", re.I), "BU", str),
+          ("past_due_by_agent", re.compile(r"\b(clearing )?agents?\b", re.I), "clearing agent", str),
+          ("past_due_by_ffw", re.compile(r"\b(forwarders?|ffw)\b", re.I), "forwarder", str),
+          ("past_due_by_step", re.compile(r"\b(steps?|stages?|bottleneck)\b", re.I), "step", _step))
+
+
+def _cl_lead(question, f, s):
+    """The direct answer first, when the question asks for one: which BU,
+    agent, forwarder or step is worst, or the on-time rate. From the same counts."""
+    if CL_RANK.search(question):
+        for key, rx, what, name in CL_DIM:
+            if rx.search(question) and s[key] and not (key == "past_due_by_bu" and f.get("bu")):
+                top, n = s[key][0]
+                return "**{0}** is the {1} with the most past-due shipments: **{2:,}** of {3:,}.".format(
+                    name(top), what, n, s["past_due"])
+    if re.search(r"\bon[- ]?time\b", question, re.I) and s["total"]:
+        return "The on-time rate is **{0}%**: {1:,} of {2:,} shipments (target 95%).".format(
+            round(100.0 * s["on_time"] / s["total"]), s["on_time"], s["total"])
+    return None
+
+
 def clearance_answer(question, view=None):
     """Answers about the loaded eHub export, counted from its rows only (dashboard/clearance.py).
     `view`: the filters on the Clearance page when the question was asked there."""
@@ -727,8 +776,10 @@ def clearance_answer(question, view=None):
         s["total"], "" if s["total"] == 1 else "s")
     if from_view:
         head = "In the view you have open, " + head[0].lower() + head[1:]
-    lines = [head + ", **{0}%** on time (the export's own On Time flag; target 95%).".format(
-        round(100.0 * s["on_time"] / s["total"]))]
+    lead = _cl_lead(question, f, s)
+    lines = ([lead, ""] if lead else []) + [
+        head + ", **{0}%** on time (the export's own On Time flag; target 95%).".format(
+            round(100.0 * s["on_time"] / s["total"]))]
     if f.get("flag") not in ("done",):
         lines.append("**{0:,}** open, **{1:,}** past their current step's due date, {2:,} completed.".format(
             s["open"], s["past_due"], s["done"]))

@@ -312,8 +312,13 @@ acts = {e.get("action") for e in entries}
 check("escalate, resolve, contacts and mail are all in the audit log",
       {"ESCALATE_SHIPMENT", "RESOLVE_ESCALATION", "CLEARANCE_CONTACTS_CHANGED", "CLEARANCE_MAIL"} <= acts, acts)
 check("a question asked on the Clearance page goes to the clearance data",
-      atlas_skills.detect("GH air shipments in June", None, {"page": "clearance"}) == "clearance"
-      and atlas_skills.detect("GH air shipments in June", None, {}) is None)
+      atlas_skills.detect("GH air shipments in June", None, {"page": "clearance"}) == "clearance")
+from dashboard import assistant as _a0                         # noqa: E402
+_run = _a0.RunData({"shipments": [{"reference": "157-49568713", "state": "updated", "mode": "air"}]})
+check("elsewhere, while a run has shipments, 'air shipments' stays the run's own filter",
+      atlas_skills.detect("GH air shipments in June", _run, {}) is None)
+check("…and with no run, a question naming a BU is answered from the export",
+      atlas_skills.detect("GH air shipments in June", _a0.RunData({}), {}) == "clearance")
 
 print("\n4b2. ATLAS WRITES THE EMAIL FOR THE SITUATION")
 def rowd(**kw):
@@ -497,6 +502,18 @@ check("a PO question on the Clearance page is not answered from the export",
       _r.get("intent") != "skill_clearance", _r.get("intent"))
 _r = _as.answer("summarise everything on my screen", {}, {"page": "clearance", "view": _view})
 check("'everything on my screen' still means the view", "view you have open" in _r["answer"], _r["answer"][:160])
+_q0 = clearance.query(None)
+for _q in ("which BU is the worst?", "top 5 late shipments", "what is the on-time rate?", "which step is the bottleneck?"):
+    _r = _as.answer(_q, {}, {})
+    check("'{0}' on the main page is answered from the export, not the model".format(_q),
+          _r.get("intent") == "skill_clearance", _r.get("intent"))
+_top_bu, _n = _q0["past_due_by_bu"][0]
+check("'which BU is the worst?' answers first with the BU and its count",
+      _as.answer("which BU is the worst?", {}, {})["answer"].startswith(
+          "**{0}** is the BU with the most past-due shipments: **{1:,}**".format(_top_bu, _n)))
+check("'what is the on-time rate?' answers first with the rate",
+      _as.answer("what is the on-time rate?", {}, {})["answer"].startswith(
+          "The on-time rate is **{0}%**".format(round(100.0 * _q0["on_time"] / _q0["total"]))))
 _srv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "server.py"), encoding="utf-8").read()
 check("the server takes the view only from the Clearance page, short strings, known keys",
       'if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)' in _srv

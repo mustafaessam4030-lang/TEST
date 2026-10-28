@@ -700,6 +700,8 @@ RECORD_INTENTS = {
     "worst_carrier", "all_of", "download", "ml_recs", "human", "latest_failure",
     "carrier_access_live", "failure_evidence", "failure_work", "identity", "capabilities",
     "help", "wait_time", "atlas_checks", "review_list", "arrived", "run_control", "glossary",
+    # What the screen shows (the run and the Clearance export): counted, nothing to reword.
+    "dashboard",
 }
 WEB_CUE = re.compile(r"\b(web|website|site|internet|online|search|google|news|notice|"
                      r"cloudflare|mean|means|meaning|what\s+is|how\s+(?:do|to|can)|"

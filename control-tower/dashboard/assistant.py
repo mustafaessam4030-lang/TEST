@@ -565,7 +565,8 @@ DASHBOARD_WHOLE = {"status", "overview", "dashboard", "the dashboard", "status u
                    "what's happening", "whats happening", "what is happening",
                    "what's happening today", "what is happening today", "how is everything",
                    "how is everything today", "how's everything", "give me an overview",
-                   "an overview", "overview please", "status please"}
+                   "an overview", "overview please", "status please", "what happened today",
+                   "what's new", "whats new", "what is new", "any news", "update me"}
 
 
 # Common misspellings, so a typo does not become "I did not understand".

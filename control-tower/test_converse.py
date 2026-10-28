@@ -615,7 +615,7 @@ check("Cores are left for Edge, the automation and the dashboard (at least two, 
       int(os.environ["ATLAS_LLM_THREADS"]) == model_threads() and
       [model_threads(c) for c in (2, 4, 8, 16)] == [1, 2, 6, 12])
 check("The model is loaded once in the background, kept for the day",
-      LOADS and LOADS[0].get("model") == "qwen3.5:4b" and LOADS[0].get("keep_alive") == "8h")
+      LOADS and LOADS[0].get("model") == "qwen3.5:4b" and LOADS[0].get("keep_alive") == "24h")
 check("The startup lines say what is on", any("conversation: ON" in x for x in lines))
 
 StandIn.models = []

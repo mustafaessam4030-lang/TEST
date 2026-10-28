@@ -110,9 +110,9 @@ def _use_model(url, model, warm=True):
     # Leave a core for Edge and the automation: with every core taken, a
     # CPU-only model stalls (measured) and the browser slows.
     os.environ.setdefault("ATLAS_LLM_THREADS", str(model_threads()))
-    # Loaded once, kept for the working day: reloading takes minutes on a
-    # cold disk.
-    os.environ.setdefault("ATLAS_LLM_KEEP_ALIVE", "8h")
+    # Loaded once and kept a whole day: reloading takes minutes on a cold
+    # disk, and 8 hours left the first question each morning waiting for it.
+    os.environ.setdefault("ATLAS_LLM_KEEP_ALIVE", "24h")
     # One question in the model at a time, two waiting, the rest answered
     # from the records at once (load test 2026-10-09: without it, 8 of 10
     # simultaneous questions timed out in Ollama's queue). 0 turns it off.
@@ -288,7 +288,7 @@ def _load_now(url, model, timeout=WARM_TIMEOUT_S):
     """Load `model` into memory and wait for it. -> True when loaded."""
     try:
         req = urllib.request.Request(url.rstrip("/") + "/api/generate", data=json.dumps(
-            {"model": model, "keep_alive": os.environ.get("ATLAS_LLM_KEEP_ALIVE") or "8h",
+            {"model": model, "keep_alive": os.environ.get("ATLAS_LLM_KEEP_ALIVE") or "24h",
              "options": {"num_thread": int(os.environ.get("ATLAS_LLM_THREADS") or
                                            model_threads())}}).encode("utf-8"),
             headers={"Content-Type": "application/json"})

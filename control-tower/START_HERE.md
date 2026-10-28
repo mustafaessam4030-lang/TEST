@@ -643,7 +643,7 @@ the existing automation works is in `ARCHITECTURE.md`.
 The tower finds Ollama by itself (`intelligence/autoconfig.py`) and loads the
 model in the background; the first answers come from ATLAS's rules until it
 is loaded (about 1–2 minutes after a restart). It keeps one CPU core free for
-Edge and the automation, and keeps the model in memory for 8 hours (about
+Edge and the automation, and keeps the model in memory for 24 hours (about
 3.7 GB of RAM). The automation itself never uses the model. Without Ollama,
 everything works as before. `set ATLAS_AI=0` switches it off.
 
