@@ -179,6 +179,16 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
    the change, so there is no flash of half-themed surfaces. */
 .theme-switching *,.theme-switching *::before,.theme-switching *::after{transition:none!important}
 ::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+/* Page to page (to Clearance and back): a short cross-fade with the bar held
+   still; the same rules as /static/platform.css. Only navigations: the theme
+   circle below is unchanged. */
+@view-transition{navigation:auto;types:nav}
+html:active-view-transition-type(nav)::view-transition-old(root){animation:pfOut .16s ease both}
+html:active-view-transition-type(nav)::view-transition-new(root){animation:pfIn .22s ease both;clip-path:none}
+html:active-view-transition-type(nav) .appbar {view-transition-name:appbar}
+html:active-view-transition-type(nav)::view-transition-group(appbar){animation:none}
+@keyframes pfOut{to{opacity:0}}
+@keyframes pfIn{from{opacity:0}}
 ::view-transition-new(root){animation:vtReveal .62s cubic-bezier(.32,.72,0,1)}
 @keyframes vtReveal{from{clip-path:circle(0 at var(--vt-x,50%) var(--vt-y,0))}
   to{clip-path:circle(var(--vt-r,150vmax) at var(--vt-x,50%) var(--vt-y,0))}}

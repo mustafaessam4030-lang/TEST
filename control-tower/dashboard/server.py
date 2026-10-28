@@ -13,6 +13,8 @@ Two ways to run it:
 
 import argparse
 import csv
+import gzip
+import hashlib
 import io
 import hmac
 import json
@@ -335,12 +337,28 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- helpers -----------------------------------------------------------
 
+    # Text over 1.4 KB goes compressed when the browser accepts it: the main
+    # page is 476 KB as text and 134 KB compressed, the Clearance data ~5x
+    # smaller. Over a VPN that is most of the wait. Nothing else changes.
+    GZIP_MIN = 1400
+    GZIP_TYPES = ("text/", "application/json", "application/javascript", "image/svg+xml")
+
+    def _gzip_ok(self, content_type, size):
+        return size >= self.GZIP_MIN and content_type.startswith(self.GZIP_TYPES) and \
+            "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+
     def _send(self, status, body, content_type="application/json; charset=utf-8", extra=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
+        packed = self._gzip_ok(content_type, len(body))
+        if packed:
+            body = gzip.compress(body, 6)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if packed:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Cache-Control", "no-store")
         for name, value in (extra or {}).items():
             self.send_header(name, value)
@@ -373,6 +391,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({"error": "not found"}))
             return
         guessed = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        if guessed.startswith("text/") and "charset" not in guessed:
+            guessed += "; charset=utf-8"
+        if not self.headers.get("Range") and guessed.startswith(self.GZIP_TYPES):
+            # Pages, styles and scripts: the browser keeps them and asks
+            # "changed?" (ETag) instead of downloading them again, and gets
+            # them compressed. A new release changes the ETag at once.
+            self._send_text_file(path, guessed, extra)
+            return
         data = path.read_bytes()
         total = len(data)
 
@@ -410,6 +436,51 @@ class Handler(BaseHTTPRequestHandler):
         self._maybe_set_cookie()
         self.end_headers()
         self.wfile.write(body)
+
+    _packed = {}                       # (path, mtime, size) -> (etag, raw, gzipped)
+    _packed_lock = threading.Lock()
+
+    def _send_text_file(self, path, content_type, extra=None):
+        st = path.stat()
+        key = (str(path), st.st_mtime_ns, st.st_size)
+        with self._packed_lock:
+            hit = self._packed.get(key)
+        if hit is None:
+            raw = path.read_bytes()
+            hit = ('"{0}"'.format(hashlib.sha256(raw).hexdigest()[:20]), raw,
+                   gzip.compress(raw, 6) if len(raw) >= self.GZIP_MIN else None)
+            with self._packed_lock:
+                if len(self._packed) > 200:
+                    self._packed.clear()
+                self._packed[key] = hit
+        etag, raw, packed = hit
+        extra = dict(extra or {})
+        cache = extra.pop("Cache-Control", "no-cache")       # a route's own rule wins
+        if (self.headers.get("If-None-Match") or "").strip() == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cache)
+            for name, value in (extra or {}).items():
+                self.send_header(name, value)
+            self._maybe_set_cookie()
+            self.end_headers()
+            return
+        use_gzip = packed is not None and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+        body = packed if use_gzip else raw
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", cache)
+        self.send_header("Vary", "Accept-Encoding")
+        if use_gzip:
+            self.send_header("Content-Encoding", "gzip")
+        for name, value in (extra or {}).items():
+            self.send_header(name, value)
+        self._maybe_set_cookie()
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     # -- routes ------------------------------------------------------------
 

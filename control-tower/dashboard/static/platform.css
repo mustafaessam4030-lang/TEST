@@ -1,0 +1,122 @@
+/* ══════════════════════════════════════════════════════════════
+   MANTRAC · the platform's shared look, for pages outside the main
+   console (Clearance today). The tokens are the console's own final
+   values (index.html: its base tokens + its POLISH LAYER); the test
+   test_platform_look.py fails if the two ever disagree.
+
+   Also here: the top bar every page shares, and the page-to-page
+   cross-fade (the bar stays still while the page under it changes).
+══════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#F5F5F7; --surface:#FFFFFF; --surface-2:#F9F9FB; --surface-3:#EEEEF1;
+  --ink:#1D1D1F; --mid:#4B4B52; --faint:#6E6E76;
+  --line:rgba(0,0,0,.08); --line-2:rgba(0,0,0,.055); --line-hi:rgba(0,0,0,.13);
+  --brand:#4B50D8; --brand-hi:#3E42C2; --brand-wash:rgba(75,80,216,.08);
+  --solid:#4B50D8; --on-solid:#FFFFFF;
+  --vio:#4B50D8; --vio-wash:rgba(75,80,216,.08); --vio-line:rgba(75,80,216,.24);
+  --nav-on:#FFFFFF; --on-nav:#1D1D1F;
+  --card-edge:rgba(0,0,0,.06);
+  --shadow:0 1px 2px rgba(0,0,0,.035);
+  --lift:0 1px 2px rgba(0,0,0,.06),0 0 0 .5px rgba(0,0,0,.04);
+  --r:12px; --r-sm:9px; --r-lg:16px;
+  --e:cubic-bezier(.23,1,.32,1);
+  --grn:#15803D; --grn-wash:rgba(22,163,74,.09); --grn-dot:#16A34A; --grn-line:rgba(22,163,74,.28);
+  --y:#B45309; --y-wash:rgba(217,119,6,.10); --y-dot:#D97706; --y-line:rgba(217,119,6,.30);
+  --red:#DC2626; --red-wash:rgba(220,38,38,.07); --red-line:rgba(220,38,38,.26);
+  --blu:#2563EB; --blu-wash:rgba(37,99,235,.08); --blu-line:rgba(37,99,235,.26);
+  --teal:#0F766E; --teal-dot:#0F9D8A; --teal-wash:rgba(15,157,138,.10);
+  --air:#3B82F6; --ocean:#0F9D8A; --road:#E85D04; --rail:#7C6BD6; --nomode:#94A3B8;
+  --s:-apple-system,BlinkMacSystemFont,'Segoe UI Variable Display','Segoe UI',
+      system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono','Cascadia Mono','Segoe UI Mono',
+      Menlo,Consolas,monospace;
+  --t-display:600 28px/1.15 var(--s);
+  --t-title:600 17px/1.3 var(--s);
+  --t-label:600 11px/1.2 var(--s);
+  --barh:64px;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#0B0E14; --surface:#141922; --surface-2:#10141C; --surface-3:#1C2230;
+  --ink:#F2F4F8; --mid:#B1B8C4; --faint:#8C95A4;
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.05); --line-hi:rgba(255,255,255,.14);
+  --brand:#8A8DF7; --brand-hi:#6E72F0; --brand-wash:rgba(138,141,247,.14);
+  --solid:#5A5EE6; --on-solid:#FFFFFF;
+  --vio:#9A9DF8; --vio-wash:rgba(154,157,248,.12); --vio-line:rgba(154,157,248,.32);
+  --nav-on:rgba(255,255,255,.11); --on-nav:#FFFFFF;
+  --card-edge:rgba(255,255,255,.07);
+  --shadow:0 1px 2px rgba(0,0,0,.45);
+  --lift:0 1px 2px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.06);
+  --grn:#4ADE80; --grn-wash:rgba(34,197,94,.14); --grn-dot:#22C55E; --grn-line:rgba(34,197,94,.36);
+  --y:#FDA25B; --y-wash:rgba(249,115,22,.14); --y-dot:#FB8A3C; --y-line:rgba(249,115,22,.38);
+  --red:#F87171; --red-wash:rgba(248,113,113,.12); --red-line:rgba(248,113,113,.36);
+  --blu:#6EA8FF; --blu-wash:rgba(96,165,250,.13); --blu-line:rgba(96,165,250,.34);
+  --teal:#2DD4BF; --teal-dot:#14B8A6; --teal-wash:rgba(20,184,166,.15);
+  --air:#6EA8FF; --ocean:#2DD4BF; --road:#FB923C; --rail:#A78BFA; --nomode:#64748B;
+  color-scheme:dark;
+}
+.theme-switching *,.theme-switching *::before,.theme-switching *::after{transition:none!important}
+
+/* ── The top bar (the console's .appbar, same sizes and states) ── */
+.appbar{position:sticky;top:0;z-index:40;height:var(--barh);display:flex;align-items:center;gap:12px;
+  padding:0 20px 0 18px;min-width:0;background:var(--bg);border-bottom:1px solid var(--line-2)}
+.appbar .sp{flex:1}
+.appbar .brand{display:flex;align-items:center;gap:14px;min-width:0;text-decoration:none;color:inherit}
+.appbar .logo{height:24px;display:flex;align-items:center;flex:none}
+.appbar .logo img{height:24px;width:auto;display:block;border-radius:5px;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
+:root[data-theme="dark"] .appbar .logo img{box-shadow:0 0 0 1px rgba(255,255,255,.16)}
+.appbar .brand-t{padding-left:14px;border-left:1px solid var(--line);font-size:13px;font-weight:600;
+  letter-spacing:-.01em;color:var(--ink);white-space:nowrap}
+.appbar .tnav{position:relative;display:flex;align-items:center;gap:0;padding:3px;border-radius:100px;
+  background:var(--surface-3);overflow-x:auto;scrollbar-width:none;max-width:100%;min-width:0}
+.appbar .tnav::-webkit-scrollbar{display:none}
+.appbar .tnav a{display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:100px;
+  font-size:13px;font-weight:500;letter-spacing:-.006em;color:var(--mid);white-space:nowrap;
+  text-decoration:none;transition:color .2s var(--e),background-color .2s var(--e)}
+.appbar .tnav a:hover{color:var(--ink)}
+.appbar .tnav a[aria-current]{background:var(--nav-on);color:var(--on-nav);font-weight:600;box-shadow:var(--lift)}
+.appbar .tnav a[hidden]{display:none}
+.appbar .pf{display:flex;align-items:center;gap:8px;min-width:0}
+.appbar .pf-me{display:inline-flex;align-items:center;gap:9px;padding:3px 10px 3px 3px;border-radius:100px;
+  border:1px solid var(--line);min-width:0}
+.appbar .pf-me[hidden]{display:none}
+.appbar .pf-av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;
+  background:var(--surface-3);color:var(--ink);font-size:11px;font-weight:700;letter-spacing:.04em}
+.appbar .pf-who{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+.appbar .pf-n{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:150px}
+.appbar .pf-r{font-size:10.5px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.appbar .pf-r.r-admin{color:var(--brand)}
+.appbar .pf-r.r-operator{color:var(--blu)}
+.appbar .pf-th{display:inline-flex;padding:2px;border-radius:100px;border:1px solid var(--line);background:var(--surface-2)}
+.appbar .pf-th button{width:28px;height:26px;border:0;border-radius:100px;display:grid;place-items:center;
+  color:var(--faint);background:transparent;cursor:pointer}
+.appbar .pf-th button svg{width:15px;height:15px}
+.appbar .pf-th button:hover{color:var(--ink)}
+.appbar .pf-th button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.appbar .pf-out{white-space:nowrap;padding:6px 12px;border-radius:100px;border:1px solid var(--line);
+  background:transparent;font:inherit;font-size:12.5px;font-weight:550;color:var(--mid);cursor:pointer}
+.appbar .pf-out:hover{color:var(--ink);border-color:var(--line-hi)}
+@media (min-width:881px) and (max-width:1239px){.appbar .brand-t{display:none}}
+@media (max-width:1100px){.appbar .pf-who{display:none}.appbar .pf-me{padding-right:3px}}
+@media (max-width:880px){
+  .appbar{height:auto;flex-wrap:wrap;gap:8px 12px;padding:10px 16px}
+  .appbar .brand-t{display:none}
+  .appbar .tnav{order:3;width:100%}
+  .appbar .sp:first-of-type{display:none}
+}
+
+/* ── Page to page: a short cross-fade, the bar held still (Chromium/Edge;
+   other browsers just navigate). The console's theme circle is untouched:
+   these rules apply only to navigations. ── */
+@view-transition{navigation:auto;types:nav}
+html:active-view-transition-type(nav)::view-transition-old(root){animation:pfOut .16s ease both}
+html:active-view-transition-type(nav)::view-transition-new(root){animation:pfIn .22s ease both;clip-path:none}
+html:active-view-transition-type(nav) .appbar{view-transition-name:appbar}
+html:active-view-transition-type(nav)::view-transition-group(appbar){animation:none}
+@keyframes pfOut{to{opacity:0}}
+@keyframes pfIn{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  html:active-view-transition-type(nav)::view-transition-old(root),
+  html:active-view-transition-type(nav)::view-transition-new(root){animation:none}
+}
