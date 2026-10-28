@@ -55,7 +55,7 @@ button{font:inherit}
 .chip{border:1px solid transparent;background:transparent;color:var(--mid);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:500;cursor:pointer;transition:background-color .18s var(--e),color .18s var(--e)}
 .chip:hover{background:var(--surface-3);color:var(--ink)}
 .chip[aria-pressed="true"]{background:var(--vio-wash);color:var(--vio)}
-select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:var(--r-sm);padding:5px 8px;background:var(--surface-2);color:var(--ink)}
+select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:var(--r-sm);padding:5px 8px;background:var(--surface-2);color:var(--ink);max-width:240px}
 .pills{display:flex;flex-wrap:wrap;gap:6px;width:100%}
 .pills:empty{display:none}
 .pill{display:inline-flex;align-items:center;gap:6px;background:var(--vio-wash);border:1px solid var(--vio-line);color:var(--vio);border-radius:999px;padding:3px 6px 3px 11px;font-size:12.5px}
@@ -70,6 +70,35 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .card h2{margin:0 0 14px;font-size:15px;font-weight:600;letter-spacing:-.012em;display:flex;align-items:center;gap:8px}
 .card h2 small{margin-left:auto;font-size:12px;font-weight:500;color:var(--muted)}
 .note{font-size:11.5px;color:var(--muted)}
+
+/* where shipments clear: map + headline */
+.mapcard{margin-bottom:16px}
+.headline{margin:-4px 0 14px;font-size:15px;line-height:1.45;font-weight:500;color:var(--ink)}
+.headline b{font-weight:650}
+.mapwrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(250px,1fr);gap:20px;align-items:start}
+.map{position:relative;border-radius:var(--r);background:var(--surface-2);overflow:hidden;min-height:120px}
+.map svg{width:100%;height:auto;max-height:430px;display:block}
+.map .land{fill:var(--surface-3);stroke:var(--surface-2);stroke-width:.9}
+.map .land.bu{fill:var(--line-hi)}
+.map .land.bu.on{fill:var(--vio-line)}
+.map .dot{cursor:pointer;stroke:var(--surface);stroke-width:2;transition:stroke-width .15s var(--e)}
+.map .dot:hover,.map .dot:focus-visible{stroke:var(--ink);outline:none}
+.map .dot.on{stroke:var(--vio);stroke-width:3.5}
+.map .dot.ok{fill:var(--grn-dot)} .map .dot.mid{fill:var(--y-dot)} .map .dot.bad{fill:var(--red)} .map .dot.none{fill:var(--nomode)}
+.map text{font:650 11px var(--s);fill:var(--ink);pointer-events:none;paint-order:stroke;stroke:var(--surface-2);stroke-width:3px;stroke-linejoin:round}
+.map .msg{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:13px}
+.maplist{display:grid;gap:2px;font-size:13px;max-height:430px;overflow:auto;align-content:start}
+.maplist .mr{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--r-sm);cursor:pointer}
+.maplist .mr:hover{background:var(--surface-3)}
+.maplist .mr.on{background:var(--vio-wash)}
+.maplist .mr b{font-weight:650}
+.maplist .mr small{display:block;color:var(--faint);font-size:11.5px}
+.maplist .mr .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.maplist .mr .n em{font-style:normal;color:var(--red);font-weight:600}
+.maplist .mh{font:var(--t-label);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:0 8px 6px}
+.maplegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--faint);margin-top:10px}
+.maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+@media (max-width:1100px){.mapwrap{grid-template-columns:minmax(0,1fr)}}
 
 /* KPI 360 */
 .kgroup{margin-top:10px}
@@ -328,9 +357,26 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
     <div class="fgroup" id="f-bu"><label>BU</label></div>
     <div class="fgroup" id="f-mode"><label>Mode</label></div>
     <div class="fgroup"><label for="f-div">Division</label><select id="f-div"></select></div>
+    <div class="fgroup"><label for="f-ffw">Forwarder</label><select id="f-ffw"></select></div>
+    <div class="fgroup"><label for="f-agent">Clearing agent</label><select id="f-agent"></select></div>
     <button class="reset" id="reset" type="button">Clear all filters</button>
     <div class="pills" id="pills"></div>
   </nav>
+
+  <section class="card mapcard" id="mapcard" aria-labelledby="map-h">
+    <h2 id="map-h">Where shipments clear <small id="map-note"></small></h2>
+    <p class="headline" id="headline"></p>
+    <div class="mapwrap">
+      <div class="map" id="map"><div class="msg">Loading the map…</div></div>
+      <div class="maplist" id="maplist"></div>
+    </div>
+    <div class="maplegend"><span>Bubble size: open shipments</span>
+      <span><i style="background:var(--grn-dot)"></i>under 20% of them past due</span>
+      <span><i style="background:var(--y-dot)"></i>20–50%</span>
+      <span><i style="background:var(--red)"></i>over 50%</span>
+      <span><i style="background:var(--nomode)"></i>none open</span>
+      <span>The export has no origin or position, so no routes are drawn.</span></div>
+  </section>
 
   <div class="grid">
     <section class="card" aria-labelledby="k-h">
@@ -442,8 +488,9 @@ const STATUS_LABEL = {"SubmittedToBU":"Submitted to BU","RequiredCorrection":"Co
 const FLAGS = {escalated:"Escalated (open)", late:"Not on time", open:"Open", pastdue:"Open and past due", done:"Completed", slow:"Completed slower than target"};
 const MODE_ORDER = ["Air","Ocean","Courier","Truck"];
 const TARGET = 0.95;
-const KEYS = ["bu","mode","div","status","group","stage","month","flag","ontime"];
-const state = {bu:"All", mode:"All", div:"All", status:null, group:null, stage:null, month:null, flag:null, ontime:null, q:"", sort:["overdue",-1], page:0};
+const KEYS = ["bu","mode","div","ffw","agent","status","group","stage","month","flag","ontime"];
+const ALLK = ["bu","mode","div","ffw","agent"];          // filters whose "nothing chosen" is "All"
+const state = {bu:"All", mode:"All", div:"All", ffw:"All", agent:"All", status:null, group:null, stage:null, month:null, flag:null, ontime:null, q:"", sort:["overdue",-1], page:0};
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -465,6 +512,8 @@ function match(r, skip) {
   if (!sk("bu") && s.bu !== "All" && r[F.bu] !== s.bu) return false;
   if (!sk("mode") && s.mode !== "All" && r[F.mode] !== s.mode) return false;
   if (!sk("div") && s.div !== "All" && r[F.div] !== s.div) return false;
+  if (!sk("ffw") && s.ffw !== "All" && r[F.ffw] !== s.ffw) return false;
+  if (!sk("agent") && s.agent !== "All" && r[F.agent] !== s.agent) return false;
   if (!sk("status") && s.status && r[F.status] !== s.status) return false;
   if (!sk("group") && s.group && groupOf(r) !== s.group) return false;
   if (!sk("stage") && s.stage != null && r[F.ach][s.stage] !== "N") return false;
@@ -486,7 +535,7 @@ const rows = (skip) => ROWS.filter((r) => match(r, skip));
 /* apply a click: every key in the object set; if all already equal, clear them (toggle) */
 function apply(o) {
   const same = Object.entries(o).every(([k, v]) => state[k] === v);
-  for (const [k, v] of Object.entries(o)) state[k] = same ? (["bu","mode","div"].includes(k) ? "All" : null) : v;
+  for (const [k, v] of Object.entries(o)) state[k] = same ? (ALLK.includes(k) ? "All" : null) : v;
   state.page = 0;
   render();
 }
@@ -784,6 +833,11 @@ function filterBar() {
   chips($("f-mode"), "mode", MODE_ORDER.filter((m) => ROWS.some((r) => r[F.mode] === m)));
   const divs = [...new Set(ROWS.map((r) => r[F.div]))].sort();
   $("f-div").innerHTML = ["All", ...divs].map((d) => `<option${state.div === d ? " selected" : ""}>${esc(d)}</option>`).join("");
+  // Forwarder and clearing agent: every name in the export, most shipments first.
+  const named = (k) => { const c = {}; ROWS.forEach((r) => { if (r[F[k]]) c[r[F[k]]] = (c[r[F[k]]] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b)); };
+  const opts = (k) => `<option value="All"${state[k] === "All" ? " selected" : ""}>All</option>` +
+    named(k).map((v) => `<option value="${esc(v)}"${state[k] === v ? " selected" : ""}>${esc(v)}</option>`).join("");
+  $("f-ffw").innerHTML = opts("ffw"); $("f-agent").innerHTML = opts("agent");
   const p = [];
   if (state.status) p.push(["status", `Status: ${STATUS_LABEL[state.status] || state.status}`]);
   if (state.group) p.push(["group", `Open: ${state.group}`]);
@@ -801,7 +855,7 @@ function saveHash() {
   history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
 }
 addEventListener("hashchange", () => {
-  KEYS.forEach((k) => state[k] = ["bu","mode","div"].includes(k) ? "All" : null); state.q = ""; state.page = 0;
+  KEYS.forEach((k) => state[k] = ALLK.includes(k) ? "All" : null); state.q = ""; state.page = 0;
   loadHash(); render();
 });
 function loadHash() {
@@ -817,10 +871,91 @@ function loadHash() {
   $("q").value = state.q;
 }
 
+/* ── where shipments clear: the headline and the map ──
+   Counted from the rows on screen; the map shows each BU with every other
+   filter applied, so the selected BU stands among the rest. A BU is placed
+   only where the server says which country it is (BU_COUNTRY). */
+let MAP = null, PLACES = null;
+async function loadMap() {
+  if (MAP) return;
+  try {
+    const [m, p] = await Promise.all([fetch("/static/maps/region.json", {credentials: "same-origin"}), api("/api/clearance/places")]);
+    if (!m.ok || !p.ok) throw new Error("HTTP " + (m.ok ? p.status : m.status));
+    MAP = await m.json(); PLACES = (await p.json()).places || {};
+  } catch (err) {
+    MAP = {failed: String(err.message || err)};
+  }
+  mapCard(); headline(rows());
+}
+function headline(R) {
+  const el = $("headline");
+  if (!R.length) { el.textContent = "No shipments match the filters on screen."; return; }
+  const open = R.filter(isOpen), late = open.filter(pastDue);
+  if (!open.length) { el.innerHTML = `All <b>${fmt(R.length)}</b> shipments in this view are completed.`; return; }
+  if (!late.length) { el.innerHTML = `<b>${fmt(open.length)}</b> open shipments, none past its step's due date.`; return; }
+  const count = (key) => { const c = {}; late.forEach((r) => { const k = r[F[key]]; if (k) c[k] = (c[k] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]; };
+  const bu = state.bu === "All" ? count("bu") : null, step = count("step");
+  const place = bu && PLACES && PLACES[bu[0]] ? ` (${esc(PLACES[bu[0]].country)})` : "";
+  el.innerHTML = `<b>${fmt(late.length)}</b> of ${fmt(open.length)} open shipments are past their step's due date` +
+    (bu ? `; <b>${fmt(bu[1])}</b> of them are in <b>${esc(bu[0])}</b>${place}` : "") +
+    (step ? `, most waiting at <b>${esc(stepName(step[0]))}</b> (${fmt(step[1])})` : "") + ".";
+}
+function mapCard() {
+  const box = $("map"), list = $("maplist");
+  if (!MAP) return;
+  if (MAP.failed) { box.innerHTML = `<div class="msg">The map could not be loaded (${esc(MAP.failed)}). The list beside it is complete.</div>`; }
+  const per = {};
+  rows(["bu"]).forEach((r) => {
+    const b = r[F.bu]; if (!b) return;
+    const x = per[b] || (per[b] = {n: 0, open: 0, late: 0, steps: {}});
+    x.n++; if (isOpen(r)) { x.open++; if (pastDue(r)) { x.late++; x.steps[r[F.step]] = (x.steps[r[F.step]] || 0) + 1; } }
+  });
+  const bus = Object.keys(per).sort((a, b) => per[b].late - per[a].late || per[b].open - per[a].open);
+  const tone = (x) => !x.open ? "none" : x.late / x.open > 0.5 ? "bad" : x.late / x.open >= 0.2 ? "mid" : "ok";
+  const tip = (b, x) => {
+    const top = Object.entries(x.steps).sort((p, q) => q[1] - p[1])[0];
+    const where = PLACES && PLACES[b] ? ` · ${PLACES[b].country}` : " · country not known from the BU code";
+    return `<b>${esc(b)}</b>${esc(where)}: ${fmt(x.open)} open, ${fmt(x.late)} past due${x.open ? ` (${pct(x.late, x.open)}%)` : ""}, ${fmt(x.n - x.open)} completed` +
+      (top ? `<small>Most past due at ${esc(stepName(top[0]))} (${fmt(top[1])}). Click to filter on ${esc(b)}.</small>` : `<small>Click to filter on ${esc(b)}.</small>`);
+  };
+  const off = bus.filter((b) => !(PLACES && PLACES[b]));
+  $("map-note").textContent = off.length ? `not on the map: ${off.join(", ")} (country not known from the code)` : "";
+  list.innerHTML = `<div class="mh">BU · open · past due</div>` + (bus.length ? bus.map((b) => {
+    const x = per[b], c = PLACES && PLACES[b] ? PLACES[b].country : "not on the map";
+    return `<div class="mr${state.bu === b ? " on" : ""}" data-set="${setAttr({bu: b})}" tabindex="0" role="button" data-tip="${esc(tip(b, x))}">
+      <b>${esc(b)}</b><span>${esc(c)}<small>${fmt(x.n)} shipments</small></span>
+      <span class="n">${fmt(x.open)} · <em>${fmt(x.late)}</em></span></div>`;
+  }).join("") : `<div class="empty">No shipments match the other filters.</div>`);
+  if (MAP.failed) return;
+  const byIso = {}; bus.forEach((b) => { if (PLACES && PLACES[b]) byIso[PLACES[b].iso] = b; });
+  const max = Math.max(1, ...bus.map((b) => per[b].open));
+  let land = "", dots = "", labels = "";
+  MAP.countries.forEach((c) => {
+    const b = byIso[c.id];
+    land += `<path class="land${b ? " bu" : ""}${b && state.bu === b ? " on" : ""}" d="${c.d}"><title>${esc(c.name)}</title></path>`;
+    if (!b) return;
+    const x = per[b], r = x.open ? 6 + 20 * Math.sqrt(x.open / max) : 5;
+    dots += `<circle class="dot ${tone(x)}${state.bu === b ? " on" : ""}" cx="${c.label[0]}" cy="${c.label[1]}" r="${r.toFixed(1)}"
+      data-set="${setAttr({bu: b})}" tabindex="0" role="button" aria-label="${esc(b)}: ${fmt(x.open)} open, ${fmt(x.late)} past due" data-tip="${esc(tip(b, x))}"></circle>`;
+    labels += `<text x="${c.label[0]}" y="${(c.label[1] + r + 12).toFixed(1)}" text-anchor="middle">${esc(b)} ${fmt(x.open)}</text>`;
+  });
+  // Framed on the BUs that are placed (with room around them), at the map's own shape.
+  const pts = MAP.countries.filter((c) => byIso[c.id]).map((c) => c.label);
+  let vb = MAP.viewBox;
+  if (pts.length) {
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), pad = 70, aspect = 1.75;
+    let x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+    let w = x1 - x0, h = y1 - y0;
+    if (w / h < aspect) { const nw = h * aspect; x0 -= (nw - w) / 2; w = nw; } else { const nh = w / aspect; y0 -= (nh - h) / 2; h = nh; }
+    vb = [x0, y0, w, h].map((v) => Math.round(v));
+  }
+  box.innerHTML = `<svg viewBox="${vb.join(" ")}" role="img" aria-label="Map: open shipments by BU">${land}${dots}${labels}</svg>`;
+}
+
 function render() {
   filterBar();
   const R = rows();
-  kpis(R); modes(); statusMix(); stages(); story(R); months(); bus(); alerts(R); explorer(R);
+  headline(R); mapCard(); kpis(R); modes(); statusMix(); stages(); story(R); months(); bus(); alerts(R); explorer(R);
   saveHash();
 }
 
@@ -851,7 +986,9 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-set],[data-row],th[data-sort]") && !e.target.matches("button")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", {bubbles: true})); }
 });
 $("f-div").onchange = (e) => { state.div = e.target.value; state.page = 0; render(); };
-$("reset").onclick = () => { KEYS.forEach((k) => state[k] = ["bu","mode","div"].includes(k) ? "All" : null); state.q = ""; $("q").value = ""; state.page = 0; render(); };
+$("f-ffw").onchange = (e) => { state.ffw = e.target.value; state.page = 0; render(); };
+$("f-agent").onchange = (e) => { state.agent = e.target.value; state.page = 0; render(); };
+$("reset").onclick = () => { KEYS.forEach((k) => state[k] = ALLK.includes(k) ? "All" : null); state.q = ""; $("q").value = ""; state.page = 0; render(); };
 let qt; $("q").addEventListener("input", (e) => { clearTimeout(qt); qt = setTimeout(() => { state.q = e.target.value; state.page = 0; filterBar(); explorer(rows()); saveHash(); }, 180); });
 $("prev").onclick = () => { state.page--; explorer(rows()); };
 $("next").onclick = () => { state.page++; explorer(rows()); };
@@ -903,7 +1040,7 @@ function watch() {
     if (st.state === "reading") { toast(st.message); return; }
     clearInterval(watching); watching = null;
     if (st.state === "error") toast(st.message, 10000);
-    else { toast(st.message, 5000); KEYS.forEach((k) => state[k] = ["bu","mode","div"].includes(k) ? "All" : null); await loadData(false); }
+    else { toast(st.message, 5000); KEYS.forEach((k) => state[k] = ALLK.includes(k) ? "All" : null); await loadData(false); }
   }, 2000);
 }
 async function uploadFile(file) {
@@ -1130,7 +1267,7 @@ $("pbOut").addEventListener("click", async () => {
 /* What ATLAS is told about the screen: the filters it can count by. */
 function atlasView() {
   const v = {};
-  ["bu", "mode", "div"].forEach((k) => { if (state[k] && state[k] !== "All") v[k] = state[k]; });
+  ALLK.forEach((k) => { if (state[k] && state[k] !== "All") v[k] = state[k]; });
   ["status", "group", "month"].forEach((k) => { if (state[k]) v[k] = state[k]; });
   if (["open", "pastdue", "done", "late"].includes(state.flag)) v.flag = state.flag;
   else if (state.ontime === false && !state.flag) v.flag = "late";
@@ -1164,6 +1301,7 @@ function atlasView() {
     $("askFab").hidden = !PF.can("atlas.chat");
     await Promise.all([loadEsc(), loadContacts()]);
     await loadData(true);
+    loadMap();
   } catch (err) {
     if (err.message !== "signed out") $("src").textContent = "The Clearance data could not be loaded: " + err.message;
   }

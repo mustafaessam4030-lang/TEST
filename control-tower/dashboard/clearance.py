@@ -583,6 +583,20 @@ def past_due(r):
     return is_open(r) and r["overdue"] is not None and r["overdue"] > 0
 
 
+# Where a BU clears its shipments, for the map: only where the BU code IS
+# that country's ISO 3166 alpha-2 code (EG is Egypt). A code that is not
+# (JR, LB…) is not guessed: the map lists it as "not on the map".
+BU_COUNTRY = {"EG": ("818", "Egypt"), "GH": ("288", "Ghana"), "TZ": ("834", "Tanzania"),
+              "NG": ("566", "Nigeria"), "KE": ("404", "Kenya"), "IQ": ("368", "Iraq"),
+              "UG": ("800", "Uganda"), "DJ": ("262", "Djibouti"), "SL": ("694", "Sierra Leone"),
+              "LR": ("430", "Liberia"), "ET": ("231", "Ethiopia")}
+
+
+def places():
+    """{BU: {"iso": ISO 3166 numeric, "country": name}} for the map."""
+    return {bu: {"iso": iso, "country": name} for bu, (iso, name) in BU_COUNTRY.items()}
+
+
 GROUPS = {"With BU": ("Submit to BU", "Assign Clearing Agent", "Correction Required"),
           "In customs": ("Customs Pre Entry", "Customs Declaration", "Duty Assessment",
                          "Duty Payment", "Customs Release"),

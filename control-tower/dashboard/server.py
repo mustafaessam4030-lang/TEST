@@ -1041,6 +1041,11 @@ class Handler(BaseHTTPRequestHandler):
                                 if e["awb"] == awb and (bu is None or e["bu"] == bu)]}))
             return
 
+        if route == "/api/clearance/places":
+            # Which BU is which country on the map (dashboard/clearance.py).
+            self._send(200, json.dumps({"places": _clearance.places()}))
+            return
+
         if route == "/api/clearance":
             # The loaded eHub export (a newer file in the inbox folder starts
             # being read first; the page polls the status and reloads).
@@ -1230,7 +1235,7 @@ class Handler(BaseHTTPRequestHandler):
                        # The filters on that page, so ATLAS answers about what is on
                        # screen. Short strings only; checked against the export later.
                        "view": {k: str(v)[:80] for k, v in (raw_context.get("view") or {}).items()
-                                if k in ("bu", "mode", "div", "status", "group", "month", "flag", "more")
+                                if k in ("bu", "mode", "div", "ffw", "agent", "status", "group", "month", "flag", "more")
                                 and isinstance(v, str)}
                        if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)
                        else {},

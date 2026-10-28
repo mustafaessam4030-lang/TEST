@@ -89,7 +89,7 @@ def clean_view(view, values):
     if not isinstance(view, dict):
         return out
     from dashboard import clearance
-    for key in ("bu", "mode", "div", "status"):
+    for key in ("bu", "mode", "div", "ffw", "agent", "status"):
         v = view.get(key)
         if isinstance(v, str) and v in values.get(key, ()):
             out[key] = v
@@ -567,9 +567,9 @@ MONTHS_RX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct
 
 # A country named in words: only where the BU code IS that country's ISO
 # code, and only if the export has that BU. (JR, LB… are not mapped.)
-COUNTRY_BU = {"egypt": "EG", "ghana": "GH", "tanzania": "TZ", "nigeria": "NG", "kenya": "KE",
-              "iraq": "IQ", "uganda": "UG", "djibouti": "DJ", "sierra leone": "SL",
-              "liberia": "LR", "ethiopia": "ET"}
+def _country_bu():
+    from dashboard import clearance
+    return {name.lower(): bu for bu, (_iso, name) in clearance.BU_COUNTRY.items()}
 
 
 def _cl_filters(question, values):
@@ -579,7 +579,7 @@ def _cl_filters(question, values):
         if re.search(r"\b{0}\b".format(re.escape(v)), q):
             f["bu"] = v
     if "bu" not in f:
-        for name, code in COUNTRY_BU.items():
+        for name, code in _country_bu().items():
             if code in values["bu"] and re.search(r"\b" + name + r"\b", q, re.I):
                 f["bu"] = code
                 break

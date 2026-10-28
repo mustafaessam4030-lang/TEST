@@ -224,6 +224,8 @@ check("a newer file in the inbox is read without anyone uploading", stt.get("sta
       and stt["current"]["source"] == "inbox", stt)
 call(V, "GET", "/api/clearance/status")
 check("the same inbox file is not read twice", js(call(V, "GET", "/api/clearance/status")[1]).get("state") == "ready")
+_st, _pb, _ = call(V, "GET", "/api/clearance/places")
+check("a Viewer gets the map's places (clearance.view)", _st == 200 and js(_pb)["places"]["EG"]["country"] == "Egypt", _st)
 
 print("\n3b. AN UPLOAD IS NOT REPLACED BY AN OLDER INBOX FILE")
 st, b, _h = call(O, "POST", "/api/clearance/upload", XLSX, O_csrf,
@@ -518,6 +520,28 @@ _srv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard"
 check("the server takes the view only from the Clearance page, short strings, known keys",
       'if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)' in _srv
       and 'str(v)[:80]' in _srv)
+
+print("\nWhere shipments clear: the map, the headline, forwarder and agent filters")
+from dashboard import atlas_skills as _sk                     # noqa: E402
+_pl = clearance.places()
+check("a BU is placed only where its code is the country's ISO code",
+      _pl["EG"] == {"iso": "818", "country": "Egypt"} and "JR" not in _pl and "LB" not in _pl)
+check("ATLAS reads a country name with the same table ('in Egypt' -> EG)",
+      _sk._cl_filters("late shipments in Egypt", {"bu": ["EG", "GH"], "mode": [], "div": [], "step": [],
+                                                    "agent": [], "ffw": [], "years": []}).get("bu") == "EG")
+_reg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "maps", "region.json")))
+check("the map's outlines ship with the platform (Natural Earth), every placed BU's country in them",
+      "Natural Earth" in _reg["source"] and {v["iso"] for v in _pl.values()} <= {c["id"] for c in _reg["countries"]})
+_cl0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "clearance.html"), encoding="utf-8").read()
+check("the page draws the map and the headline from the rows on screen",
+      "function mapCard()" in _cl0 and "function headline(R)" in _cl0 and 'rows(["bu"])' in _cl0
+      and "no routes are drawn" in _cl0)
+check("forwarder and clearing-agent filters, kept in the link and sent to ATLAS",
+      'id="f-ffw"' in _cl0 and 'id="f-agent"' in _cl0 and '"ffw","agent","status"' in _cl0
+      and 'ALLK.forEach((k) => { if (state[k] && state[k] !== "All") v[k] = state[k]; });' in _cl0)
+_ag = clearance.query(None)["values"]["agent"][0]
+check("ATLAS keeps an agent from the screen only if the export has it",
+      _sk.clean_view({"agent": _ag, "ffw": "NOT A FORWARDER"}, clearance.query(None)["values"]) == {"agent": _ag})
 
 print("\nThe platform menu on the Clearance page")
 _dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
