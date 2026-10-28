@@ -102,7 +102,7 @@
 .appbar .pf-gear:hover{background:var(--surface-3);color:var(--ink)}
 .appbar .pf-gear svg{width:18px;height:18px}
 @media (min-width:881px) and (max-width:1559px){.appbar .brand-t{display:none}}
-@media (max-width:600px){.appbar .pf-me{display:none}}
+@media (max-width:600px){.appbar .pf-who{display:none}.appbar .pf-me{padding-right:3px}}
 @media (max-width:1100px){.appbar .pf-who{display:none}.appbar .pf-me{padding-right:3px}}
 @media (max-width:880px){
   .appbar{height:auto;flex-wrap:wrap;gap:8px 12px;padding:10px 16px}

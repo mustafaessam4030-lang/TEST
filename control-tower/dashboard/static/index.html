@@ -2266,9 +2266,9 @@ body{letter-spacing:-.003em}
    the logo stands alone (the name is in the tab title either way). */
 .brand-p{white-space:nowrap}
 @media (min-width:881px) and (max-width:1559px){.brand.has-logo .brand-t{display:none}}
-/* Phones: the profile chip and the gear give way so Sign out, search and To Do
-   fit without overlapping (Settings is in the menu there). */
-@media (max-width:600px){.pf-me{display:none!important}.appbar .ibtn[data-go="settings"]{display:none}}
+/* Phones: the profile chip keeps only its initials and the gear gives way, so
+   Sign out, search and To Do fit without overlapping (Settings is in the menu). */
+@media (max-width:600px){.pf-who{display:none}.pf-me{padding-right:3px}.appbar .ibtn[data-go="settings"]{display:none}}
 .cmap{margin-bottom:24px}
 .cmap[hidden]{display:none}
 .cmap .cbtn{text-decoration:none;color:var(--ink);font-size:12.5px}
