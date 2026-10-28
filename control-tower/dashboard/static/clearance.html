@@ -1120,6 +1120,9 @@ function atlasView() {
   ["status", "group", "month"].forEach((k) => { if (state[k]) v[k] = state[k]; });
   if (["open", "pastdue", "done", "late"].includes(state.flag)) v.flag = state.flag;
   else if (state.ontime === false && !state.flag) v.flag = "late";
+  // Filters ATLAS cannot count by: it says so instead of claiming the view.
+  if (state.q || state.stage != null || state.ontime === true || (state.flag && !v.flag) ||
+      (state.ontime === false && state.flag && state.flag !== "late")) v.more = "1";
   return v;
 }
 

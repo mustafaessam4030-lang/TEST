@@ -78,7 +78,7 @@ VIEW_ASK = re.compile(r"\b(this|the|my|current) (view|page|dashboard|screen|sele
                       r"\bwhat am i (looking at|seeing)\b|\bwhat (do|can) i see\b|\bsummari[sz]e\b|"
                       r"\bwhat stands out\b|\bon (my |the )?screen\b|\bhere\b", re.I)
 # "overall", "all BUs": the whole export, whatever the page is filtered to.
-WHOLE_ASK = re.compile(r"\b(overall|in total|whole|entire|everything|every bu|all (bus?|business units|"
+WHOLE_ASK = re.compile(r"\b(overall|in total|whole|entire|every bu|all (bus?|business units|"
                        r"shipments|modes|divisions|of them)|ignore (the |my )?filters?|without (the |my )?filters?)\b", re.I)
 VIEW_FLAGS = ("open", "pastdue", "done", "late")
 
@@ -100,6 +100,12 @@ def clean_view(view, values):
     if view.get("flag") in VIEW_FLAGS:
         out["flag"] = view["flag"]
     return out
+
+
+def view_has_more(view):
+    """The screen also has a filter ATLAS cannot count by (a search, a missed
+    stage, "on time" only, escalated or slow)."""
+    return isinstance(view, dict) and view.get("more") == "1"
 
 
 # ── carriers and resources ───────────────────────────────────────────────
@@ -211,7 +217,11 @@ def _clearance_named(q, data, context):
         context = context or {}
         on_page = context.get("page") == "clearance"
         # "Summarise this view", "explain what I'm looking at": the page itself.
+        # Not a PO question, a run shipment, the run, or how something works.
         if on_page and VIEW_ASK.search(q) and not NOT_CLEARANCE.search(q) and \
+                context.get("domain") != "po" and \
+                not re.search(r"\b(po|p\.o\.|purchase orders?|boe|bill of entry)\b", q, re.I) and \
+                not _reference(q, data, context, named_only=True) and \
                 not re.search(r"\bhow (does|do|is|are)\b[^?]{0,40}\bwork", q, re.I):
             return True
         # Never the PO page's questions, the run's, sign-in, or how something works.
@@ -676,7 +686,8 @@ def clearance_answer(question, view=None):
     from_view = []
     # A question that names its own BU, mode, step, agent, month… gets exactly
     # that; "past due" alone does not count as naming one.
-    if view and not WHOLE_ASK.search(question) and not any(k != "flag" for k in f):
+    use_view = bool(view) and not WHOLE_ASK.search(question) and not any(k != "flag" for k in f)
+    if use_view:
         for k, v in clean_view(view, values).items():
             if k not in f:
                 f[k] = v
@@ -684,10 +695,16 @@ def clearance_answer(question, view=None):
     if CL_ESC.search(question):
         items = [e for e in clearance.escalations() if e["status"] == "open" and
                  all(not f.get(k) or e.get(k) == f[k] for k in ("bu", "mode", "agent"))]
+        scope = ", ".join(f[k] for k in ("bu", "mode", "agent") if f.get(k))
         if not items:
-            return "There are no open escalations{0}. Escalate a shipment with the Escalate button in the " \
-                   "[Clearance page](/clearance)'s shipment list.".format(" for " + f["bu"] if f.get("bu") else "")
-        lines = ["**{0}** open escalation{1}:".format(len(items), "" if len(items) == 1 else "s")]
+            return "There are no open escalations{0}{1}. Escalate a shipment with the Escalate button in the " \
+                   "[Clearance page](/clearance)'s shipment list.".format(
+                       " for " + scope if scope else "",
+                       " (that is the view on your screen; ask “overall” for all of them)"
+                       if from_view and scope else "")
+        lines = ["**{0}** open escalation{1}{2}:".format(len(items), "" if len(items) == 1 else "s",
+                                                       " in the view you have open ({0})".format(scope)
+                                                       if from_view and scope else "")]
         for e in sorted(items, key=lambda e: e["at"], reverse=True)[:10]:
             lines.append("- {0} ({1}, {2}) at {3}{4}: “{5}” by {6} on {7}".format(
                 e["awb"], e["bu"], e["mode"], _step(e["step"]),
@@ -740,6 +757,9 @@ def clearance_answer(question, view=None):
                      "dates…); the Clearance page lists them under Data checks.".format(checks))
     if from_view:
         lines.append("I used the filters on your screen; ask “overall” for the whole export.")
+    if use_view and view_has_more(view):
+        lines.append("Your screen also has a filter I can't count by (a search, a missed stage, "
+                     "on time only, escalated or slow), so the page may show fewer shipments.")
     lines.append("[Open this on the Clearance page]({0}) to see every shipment, act on it and download "
                  "the list.".format(_cl_link(f)))
     return "\n".join(lines)

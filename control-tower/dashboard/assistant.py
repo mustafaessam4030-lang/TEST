@@ -434,12 +434,13 @@ INTENTS = [
                         "last error", "most recent error"]),
     # The screen itself: what the Control Tower shows right now (the run and
     # the Clearance export), not one run's statistics.
+    # Only phrases about the screen itself; the generic ones ("status",
+    # "what's happening") count only as the whole question (DASHBOARD_WHOLE),
+    # so "what's happening with the failed shipments" stays a failed question.
     ("dashboard",   ["summarise the dashboard", "summarize the dashboard", "summary of the dashboard",
                      "what's on the dashboard", "whats on the dashboard", "what is on the dashboard",
                      "what does the dashboard show", "what's on my screen", "whats on my screen",
                      "what is on my screen", "what am i looking at", "what am i seeing",
-                     "how is everything", "what's happening", "whats happening",
-                     "what is happening", "give me an overview", "status update",
                      "explain the dashboard", "read the dashboard"]),
     ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "give me a summary", "show me the summary", "daily summary", "quick update",
                      "give me an update", "update me", "where are we", "summary of this run",
@@ -559,6 +560,14 @@ INTENTS = [
 ]
 
 
+# The whole question, nothing more: then it is about the screen.
+DASHBOARD_WHOLE = {"status", "overview", "dashboard", "the dashboard", "status update",
+                   "what's happening", "whats happening", "what is happening",
+                   "what's happening today", "what is happening today", "how is everything",
+                   "how is everything today", "how's everything", "give me an overview",
+                   "an overview", "overview please", "status please"}
+
+
 # Common misspellings, so a typo does not become "I did not understand".
 TYPOS = {
     "shippment": "shipment", "shipmnet": "shipment", "shipent": "shipment",
@@ -613,7 +622,7 @@ def detect_intent(question):
         return "code_request"
     if lowered.strip(" ?.!") in ("summary", "summary please", "a summary"):
         return "summary"
-    if lowered.strip(" ?.!") in ("status", "overview", "dashboard", "the dashboard"):
+    if lowered.strip(" ?.!") in DASHBOARD_WHOLE:
         return "dashboard"
 
     for name, phrases in INTENTS:

@@ -12,8 +12,9 @@ and its evidence is already on disk.
 
     python proof_runtime.py
 
-Needs Playwright and Chromium. No Hub, no credentials that mean anything, no
-internet.
+Needs Playwright and Chromium. Meant for a PC without the Hub. On the server
+it signs in with the stored Hub account like any run, but always as a DRY
+RUN (CT_DRY_RUN=1): it reads and never writes. Not part of run_tests.py.
 """
 
 import json
@@ -172,6 +173,9 @@ def run_production_entry_point(label, expect_model, mode=None):
     else:
         env["ML_MODE"] = mode
     env["PYTHONUNBUFFERED"] = "1"
+    # Never a write: on a PC that can reach the Hub (the server) this run
+    # signs in like any run, so it is always a dry run there.
+    env["CT_DRY_RUN"] = "1"
 
     before = set(Path(HERE).glob("C:\\Automation/logs/*.log"))
     started = time.time()

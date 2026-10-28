@@ -482,6 +482,21 @@ for _q in ("what's on the dashboard?", "status", "what am I looking at", "how is
           and "{0:,} shipments".format(_head["total"]) in _r["answer"], (_r.get("intent"), _r.get("answer", "")[:200]))
 check("an empty run's summary shows the dashboard, not 'nothing to summarize'",
       "On the Control Tower now" in _as.answer("give me a summary", {}, {})["answer"])
+for _q, _not in (("what's happening with the failed shipments", "dashboard"),
+                 ("give me an overview of the run", "dashboard"),
+                 ("how is everything with DHL", "dashboard"),
+                 ("what's happening right now", "dashboard"),
+                 ("what's happening with 157-49568713", "dashboard")):
+    check("'{0}' keeps its own meaning, not the dashboard overview".format(_q),
+          _as.detect_intent(_q) != _not, _as.detect_intent(_q))
+_r = _as.answer("summarise this view", {}, {"page": "clearance", "view": dict(_view, more="1")})
+check("a filter ATLAS cannot count by (search, stage…) is admitted, not hidden",
+      "can't count by" in _r["answer"], _r["answer"][-300:])
+_r = _as.answer("what's the PO status here", {}, {"page": "clearance", "view": _view})
+check("a PO question on the Clearance page is not answered from the export",
+      _r.get("intent") != "skill_clearance", _r.get("intent"))
+_r = _as.answer("summarise everything on my screen", {}, {"page": "clearance", "view": _view})
+check("'everything on my screen' still means the view", "view you have open" in _r["answer"], _r["answer"][:160])
 _srv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "server.py"), encoding="utf-8").read()
 check("the server takes the view only from the Clearance page, short strings, known keys",
       'if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)' in _srv
@@ -490,7 +505,8 @@ check("the server takes the view only from the Clearance page, short strings, kn
 print("\nThe platform menu on the Clearance page")
 _dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
 _cl = open(os.path.join(_dir, "clearance.html"), encoding="utf-8").read()
-check("the page sends ATLAS its filters", 'context: {page: "clearance", view: atlasView()}' in _cl)
+check("the page sends ATLAS its filters, and marks the ones it cannot count by",
+      'context: {page: "clearance", view: atlasView()}' in _cl and 'v.more = "1"' in _cl)
 _ix = open(os.path.join(_dir, "index.html"), encoding="utf-8").read()
 check("Clearance shows the platform's pages, itself marked current",
       all('href="/#{0}"'.format(x) in _cl for x in ("overview", "shipments", "po", "atlas", "human", "access"))

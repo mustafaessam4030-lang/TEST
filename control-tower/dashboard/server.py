@@ -1159,7 +1159,7 @@ class Handler(BaseHTTPRequestHandler):
                        # The filters on that page, so ATLAS answers about what is on
                        # screen. Short strings only; checked against the export later.
                        "view": {k: str(v)[:80] for k, v in (raw_context.get("view") or {}).items()
-                                if k in ("bu", "mode", "div", "status", "group", "month", "flag")
+                                if k in ("bu", "mode", "div", "status", "group", "month", "flag", "more")
                                 and isinstance(v, str)}
                        if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)
                        else {},
