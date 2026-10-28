@@ -4174,6 +4174,18 @@ function moveNavPill(){
 }
 addEventListener('resize', moveNavPill);
 requestAnimationFrame(moveNavPill);
+/* Other pages (Clearance) link back as /#shipments, /#atlas …: open that
+   page. Only ids in the menu count; a page the person may not see stays
+   hidden by the same rules as its menu item, and the server checks anyway. */
+function openFromHash(){
+  const id = decodeURIComponent(location.hash.slice(1));
+  const p = PAGES.find((x) => x.id === id && !x.href && !x.film);
+  if (!p) return;
+  if (p.admin && !document.body.classList.contains('can-admin')) return;
+  setTimeout(() => go(p.id), 0);
+}
+addEventListener('hashchange', openFromHash);
+Promise.resolve(platformReady).then(openFromHash, openFromHash);
 function badge(id, n, kind){
   ['n-', 't-'].forEach((pre) => {
     const el = $(pre + id);

@@ -444,5 +444,18 @@ try:
 except ImportError:
     print("  (Playwright not installed: browser checks skipped)")
 
+print("\nThe platform menu on the Clearance page")
+_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
+_cl = open(os.path.join(_dir, "clearance.html"), encoding="utf-8").read()
+_ix = open(os.path.join(_dir, "index.html"), encoding="utf-8").read()
+check("Clearance shows the platform's pages, itself marked current",
+      all('href="/#{0}"'.format(x) in _cl for x in ("overview", "shipments", "po", "atlas", "human", "access"))
+      and '<a href="/clearance" aria-current="page">' in _cl)
+check("Access appears only for those who manage users", 'id="pbAccess" hidden' in _cl
+      and 'PF.perms.includes("users.manage")' in _cl)
+check("Sign out on Clearance sends the CSRF token", '"/api/auth/logout"' in _cl and '"X-CSRF-Token": PF.csrf' in _cl)
+check("The Control Tower opens the page named after #, menu pages only",
+      "function openFromHash" in _ix and "!x.href && !x.film" in _ix and "can-admin" in _ix)
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

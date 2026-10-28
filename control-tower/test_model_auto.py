@@ -169,5 +169,48 @@ check("A download that fails: stays on the 4B and says it will try again",
       wait_for(lambda: any("stopped" in x for x in LOG)) and
       os.environ["ATLAS_LLM_MODEL"] == "qwen3.5:4b", LOG)
 
+print("\n2. Ollama installed but not running (after a restart)")
+STARTED = []
+
+
+class _Popen:
+    def __init__(self, args, **kw):
+        STARTED.append(args)
+
+
+import subprocess as _sp                                     # noqa: E402
+_real_popen, _real_default = _sp.Popen, AC.DEFAULT_OLLAMA
+_real_every, _real_for, _real_slow = AC.RETRY_EVERY_S, AC.RETRY_FOR_S, AC.RETRY_SLOW_S
+_sp.Popen = _Popen
+AC._ollama_exe = lambda: r"C:\Users\x\AppData\Local\Programs\Ollama\ollama.exe"
+try:
+    DEAD = "http://127.0.0.1:9"
+    AC.DEFAULT_OLLAMA = DEAD
+    AC.RETRY_EVERY_S, AC.RETRY_FOR_S, AC.RETRY_SLOW_S = 0.05, 0, 0.05
+    fresh(["qwen3.5:4b"], ram=16.0, ATLAS_LLM_URL=DEAD)
+    LOG = []
+    AC.apply(LOG.append)
+    check("Ollama installed but not answering: the tower starts it, hidden",
+          STARTED and STARTED[0][1:] == ["serve"] and any("started it" in x for x in LOG), (STARTED, LOG))
+    # Ollama answers only after the first (fast) ten minutes are over: still found.
+    os.environ["ATLAS_LLM_URL"] = URL
+    check("...and ATLAS switches on when it answers, even after the first ten minutes",
+          wait_for(lambda: any(x.startswith("ATLAS conversation: ON") for x in LOG)), LOG)
+    del STARTED[:]
+    fresh(["qwen3.5:4b"], ram=16.0, ATLAS_LLM_URL="http://10.9.9.9:9")
+    AC._probe = lambda warm=True: (False, "Ollama is not answering at x", True, "")
+    LOG = []
+    AC.apply(LOG.append)
+    check("Ollama on another machine: never started from here", STARTED == [], STARTED)
+    del STARTED[:]
+    fresh(["qwen3.5:4b"], ram=16.0, ATLAS_LLM_URL=DEAD)
+    AC._ollama_exe = lambda: None
+    LOG = []
+    AC.apply(LOG.append)
+    check("Not installed: nothing is started or downloaded", STARTED == [] and PULLS == [], STARTED)
+finally:
+    _sp.Popen, AC.DEFAULT_OLLAMA = _real_popen, _real_default
+    AC.RETRY_EVERY_S, AC.RETRY_FOR_S, AC.RETRY_SLOW_S = _real_every, _real_for, _real_slow
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

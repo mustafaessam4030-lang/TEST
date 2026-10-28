@@ -22,12 +22,31 @@ button{font:inherit}
 [data-set]{cursor:pointer}
 [data-set]:focus-visible,.chip:focus-visible,select:focus-visible,input:focus-visible,button:focus-visible,tr[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
+/* platform bar: the same pages as the Control Tower's own menu */
+.pbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:16px;padding:10px 20px;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.pbar .pb-brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink);min-width:0}
+.pbar .pb-brand img{height:26px;display:block}
+.pbar .pb-brand span{font-size:14px;font-weight:600;white-space:nowrap}
+.pbar .sp{flex:1}
+.pnav{display:flex;align-items:center;gap:0;padding:3px;border-radius:100px;background:#EEF1F5;overflow-x:auto;scrollbar-width:none}
+.pnav::-webkit-scrollbar{display:none}
+.pnav a{padding:6px 14px;border-radius:100px;font-size:13px;font-weight:500;color:#4B5B70;text-decoration:none;white-space:nowrap}
+.pnav a:hover{color:var(--ink)}
+.pnav a[aria-current]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(23,48,89,.12)}
+.pnav a[hidden]{display:none}
+.pb-me{display:flex;align-items:center;gap:10px;font-size:13px;white-space:nowrap}
+.pb-me b{font-weight:600}
+.pb-me small{color:var(--blue);font-weight:700;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase}
+.pb-out{border:1px solid var(--line);background:#fff;border-radius:100px;padding:6px 14px;font-size:13px;cursor:pointer;color:var(--ink)}
+.pb-out:hover{background:var(--tint-blue)}
+@media (max-width:1100px){.pbar .pb-brand span,.pb-me span{display:none}}
+@media (max-width:700px){.pbar{flex-wrap:wrap;gap:8px 12px;padding:8px 16px}.pnav{order:3;width:100%}.pbar .sp{display:none}.pb-me{margin-left:auto}}
+
 /* header */
 header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;padding:6px 4px 14px}
 header .logo{display:flex;align-items:center;gap:14px}
 header .logo img{height:30px;display:block}
-header .back{font-size:13px;font-weight:600;color:var(--blue);text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;white-space:nowrap}
-header .back:hover{background:var(--tint-blue)}
 header h1{margin:0;font-size:30px;font-weight:700;color:var(--title);letter-spacing:.2px;text-align:center}
 header .asof{justify-self:end;text-align:right;display:flex;align-items:center;gap:14px}
 header .asof div span{display:block;font-size:12px;color:var(--muted)}
@@ -284,9 +303,24 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
 </style>
 </head>
 <body>
+<div class="pbar">
+  <a class="pb-brand" href="/" title="Control Tower overview"><img alt="Mantrac" src="/static/brand/mantrac-logo.png"><span>Enterprise Logistics Automation Platform</span></a>
+  <div class="sp"></div>
+  <nav class="pnav" aria-label="Pages">
+    <a href="/#overview">Overview</a>
+    <a href="/#shipments">Shipments</a>
+    <a href="/#po">PO Automation</a>
+    <a href="/clearance" aria-current="page">Clearance</a>
+    <a href="/#atlas">ATLAS</a>
+    <a href="/#human">Human Action</a>
+    <a href="/#access" id="pbAccess" hidden>Access</a>
+  </nav>
+  <div class="sp"></div>
+  <div class="pb-me" id="pbMe" hidden><span><b id="pbName"></b> <small id="pbRole"></small></span><button class="pb-out" id="pbOut" type="button">Sign out</button></div>
+</div>
 <div class="wrap">
   <header>
-    <div class="logo"><a class="back" href="/" title="Back to the Control Tower">‹ Control Tower</a><img alt="Mantrac" src="/static/brand/mantrac-logo.png"></div>
+    <div class="logo"></div>
     <h1>Shipment Control Tower</h1>
     <div class="asof">
       <button class="hbtn" id="contactsBtn" type="button" hidden>Contacts</button>
@@ -1068,6 +1102,17 @@ $("askLog").addEventListener("click", (e) => {
   const b = document.createElement("button"); b.type = "button"; b.textContent = t; b.onclick = () => askSend(t); $("askSugg").appendChild(b);
 });
 
+$("pbOut").addEventListener("click", async () => {
+  const btn = $("pbOut"); btn.disabled = true;
+  try {
+    const r = await fetch("/api/auth/logout", {method: "POST", credentials: "same-origin",
+                                               headers: {"X-CSRF-Token": PF.csrf || ""}});
+    if (r.ok || r.status === 401) { location.replace("/login"); return; }
+  } catch (err) { /* fall through */ }
+  btn.disabled = false;
+  toast("Sign out did not reach the server, so you are still signed in. Try again.", 5000);
+});
+
 (async function boot() {
   try {
     const r = await fetch("/api/auth/me", {credentials: "same-origin"});
@@ -1076,6 +1121,12 @@ $("askLog").addEventListener("click", (e) => {
       const me = await r.json();
       if (me.mode === "accounts" || me.mode === "remote") { PF.on = true; PF.perms = me.permissions || []; PF.csrf = me.csrf; ME = me.user; }
     }
+    if (ME) {
+      $("pbName").textContent = ME.display_name || ME.work_email || "";
+      $("pbRole").textContent = ME.role_label || ME.role || "";
+      $("pbMe").hidden = false;
+    }
+    $("pbAccess").hidden = !(PF.on && (PF.perms.includes("users.manage") || PF.perms.includes("audit.view")));
     $("loadBtn").hidden = !PF.can("clearance.upload");
     $("contactsBtn").hidden = !PF.can("clearance.contacts");
     $("askFab").hidden = !PF.can("atlas.chat");

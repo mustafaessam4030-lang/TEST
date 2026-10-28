@@ -48,6 +48,9 @@ DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_SEARCH = "http://127.0.0.1:8888"
 RETRY_FOR_S = 600
 RETRY_EVERY_S = 30
+# After the first ten minutes: keep looking, less often, for as long as the
+# tower runs (Ollama started by hand an hour later still switches ATLAS on).
+RETRY_SLOW_S = 300
 WARM_TIMEOUT_S = 900
 
 _started = {"done": False}
@@ -190,6 +193,39 @@ def _probe(warm=True):
     if search_ok:
         os.environ.setdefault("ATLAS_SEARCH_URL", search)
     return model_ok, model_detail, search_ok, search_detail
+
+
+def _ollama_exe():
+    """Ollama's own program on this PC, or None. Where its Windows installer
+    puts it (per user), else on PATH."""
+    import shutil
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        exe = os.path.join(local, "Programs", "Ollama", "ollama.exe")
+        if os.path.isfile(exe):
+            return exe
+    return shutil.which("ollama")
+
+
+def _start_ollama():
+    """Start Ollama when it is installed but not running and ATLAS uses this
+    PC's default address (after a restart its tray app may not be up yet).
+    -> True if started. Nothing is downloaded or installed here."""
+    if (os.environ.get("ATLAS_LLM_URL") or DEFAULT_OLLAMA).rstrip("/") != DEFAULT_OLLAMA:
+        return False
+    if (os.environ.get("ATLAS_LLM_PROVIDER") or "").strip().lower() not in ("", "ollama"):
+        return False
+    exe = _ollama_exe()
+    if not exe:
+        return False
+    import subprocess
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen([exe, "serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
+        return True
+    except OSError:
+        return False
 
 
 def _start_local_search():
@@ -411,6 +447,9 @@ def apply(log=print):
         pass
     log("ATLAS conversation: {0}".format(
         "ON — " + model_detail if model_ok else "off — " + model_detail))
+    if not model_ok and "not answering" in model_detail and _start_ollama():
+        log("ATLAS conversation: Ollama is installed but was not running; started it "
+            "(ATLAS switches on as soon as it answers)")
     if not search_ok and _start_local_search():
         log("ATLAS web research: starting the local search service (SETUP_WEB_SEARCH.bat "
             "installed it); it is used as soon as it answers")
@@ -422,9 +461,9 @@ def apply(log=print):
 
     def keep_looking():
         found_model, found_search = model_ok, search_ok
-        deadline = time.time() + RETRY_FOR_S
-        while time.time() < deadline and not (found_model and found_search):
-            time.sleep(RETRY_EVERY_S)
+        fast_until = time.time() + RETRY_FOR_S
+        while not (found_model and found_search):
+            time.sleep(RETRY_EVERY_S if time.time() < fast_until else RETRY_SLOW_S)
             m_ok, m_detail, s_ok, s_detail = _probe()
             if m_ok and not found_model:
                 found_model = True
