@@ -505,7 +505,7 @@ for name, source in (("assistant.py", ASSISTANT), ("insights.py", INSIGHTS)):
 check("insights.py only ever reads telemetry",
       '"r"' in INSIGHTS and '"w"' not in INSIGHTS and '"a"' not in INSIGHTS)
 check("The assistant receives a snapshot, never the bridge itself",
-      "assistant.answer(question, _assistant_state(), context)" in SERVER
+      "state = _assistant_state()" in SERVER and "assistant.answer(question, state, context)" in SERVER
       and "return build_payload(trim=False)" in SERVER)
 check("An action it asks for still goes through the control channel",
       "control.request(" in SERVER)
