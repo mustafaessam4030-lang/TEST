@@ -125,8 +125,8 @@ try:
     url, why = launch.audio_source({"ATA_LAUNCH_AUDIO": "off"})
     check("switched off: no music", url is None and "off" in why)
     url, why = launch.audio_source({})
-    check("nothing set: the audio folder's first file is used, no setting needed",
-          url is not None and url.startswith("/static/launch/audio/"), url)
+    check("nothing set: no music, even with a file left in the audio folder",
+          url is None and "no soundtrack" in why, url)
     for bad in ("../server.py", "..\\x.mp3", "sub/a.mp3", "evil.exe", "javascript:alert(1)", "http://x.test/a.mp3",
                 "https://user:secret@media.example.com/a.mp3", "https://", "\\\\host\\share\\a.mp3"):
         url, why = launch.audio_source({"ATA_LAUNCH_AUDIO": bad})

@@ -1156,6 +1156,13 @@ class Handler(BaseHTTPRequestHandler):
                        "domain": "po" if raw_context.get("domain") == "po" else "",
                        # Asked from the Clearance page (questions are about its export).
                        "page": "clearance" if raw_context.get("page") == "clearance" else "",
+                       # The filters on that page, so ATLAS answers about what is on
+                       # screen. Short strings only; checked against the export later.
+                       "view": {k: str(v)[:80] for k, v in (raw_context.get("view") or {}).items()
+                                if k in ("bu", "mode", "div", "status", "group", "month", "flag")
+                                and isinstance(v, str)}
+                       if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)
+                       else {},
                        "po_id": re.sub(r"[^0-9a-z-]", "", str(
                            raw_context.get("po_id") or ""))[:40],
                        # The tab's id for this one question, so it can ask

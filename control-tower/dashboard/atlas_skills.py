@@ -73,6 +73,35 @@ HOW_IT_WORKS = re.compile(r"\bhow (does|do|is|are)\b[^?]{0,40}\bwork|\bexplain\b
                           r"\bwhat (is|are|does) (a |the )?(customs|clearance)\b", re.I)
 
 
+# Asked on the Clearance page about what is on screen: the view's filters apply.
+VIEW_ASK = re.compile(r"\b(this|the|my|current) (view|page|dashboard|screen|selection|filters?|list|table)\b|"
+                      r"\bwhat am i (looking at|seeing)\b|\bwhat (do|can) i see\b|\bsummari[sz]e\b|"
+                      r"\bwhat stands out\b|\bon (my |the )?screen\b|\bhere\b", re.I)
+# "overall", "all BUs": the whole export, whatever the page is filtered to.
+WHOLE_ASK = re.compile(r"\b(overall|in total|whole|entire|everything|every bu|all (bus?|business units|"
+                       r"shipments|modes|divisions|of them)|ignore (the |my )?filters?|without (the |my )?filters?)\b", re.I)
+VIEW_FLAGS = ("open", "pastdue", "done", "late")
+
+
+def clean_view(view, values):
+    """The page's filters, kept only where they name something in the export."""
+    out = {}
+    if not isinstance(view, dict):
+        return out
+    from dashboard import clearance
+    for key in ("bu", "mode", "div", "status"):
+        v = view.get(key)
+        if isinstance(v, str) and v in values.get(key, ()):
+            out[key] = v
+    if view.get("group") in clearance.GROUPS:
+        out["group"] = view["group"]
+    if isinstance(view.get("month"), str) and re.match(r"^20\d\d-(0[1-9]|1[0-2])$", view["month"]):
+        out["month"] = view["month"]
+    if view.get("flag") in VIEW_FLAGS:
+        out["flag"] = view["flag"]
+    return out
+
+
 # ── carriers and resources ───────────────────────────────────────────────
 
 def carrier_sites():
@@ -181,6 +210,10 @@ def _clearance_named(q, data, context):
             return False
         context = context or {}
         on_page = context.get("page") == "clearance"
+        # "Summarise this view", "explain what I'm looking at": the page itself.
+        if on_page and VIEW_ASK.search(q) and not NOT_CLEARANCE.search(q) and \
+                not re.search(r"\bhow (does|do|is|are)\b[^?]{0,40}\bwork", q, re.I):
+            return True
         # Never the PO page's questions, the run's, sign-in, or how something works.
         if context.get("domain") == "po" or HOW_IT_WORKS.search(q) or NOT_CLEARANCE.search(q) or \
                 (re.search(r"\bunder clearance\b", q, re.I) and not on_page):
@@ -601,8 +634,9 @@ def _cl_shipment(rows, escalations, log):
     return "\n".join(lines)
 
 
-def clearance_answer(question):
-    """Answers about the loaded eHub export, counted from its rows only (dashboard/clearance.py)."""
+def clearance_answer(question, view=None):
+    """Answers about the loaded eHub export, counted from its rows only (dashboard/clearance.py).
+    `view`: the filters on the Clearance page when the question was asked there."""
     from dashboard import clearance
     data = clearance.load()
     if data is None:
@@ -637,6 +671,16 @@ def clearance_answer(question):
     values = dict(whole["values"], years=sorted({(r[data["fields"].index("eta")] or "")[:4]
                                                   for r in data["rows"] if r[data["fields"].index("eta")]}))
     f = _cl_filters(question, values)
+    # What the person has on screen fills in what the question does not say;
+    # anything the question names itself wins. "Overall" ignores the view.
+    from_view = []
+    # A question that names its own BU, mode, step, agent, month… gets exactly
+    # that; "past due" alone does not count as naming one.
+    if view and not WHOLE_ASK.search(question) and not any(k != "flag" for k in f):
+        for k, v in clean_view(view, values).items():
+            if k not in f:
+                f[k] = v
+                from_view.append(k)
     if CL_ESC.search(question):
         items = [e for e in clearance.escalations() if e["status"] == "open" and
                  all(not f.get(k) or e.get(k) == f[k] for k in ("bu", "mode", "agent"))]
@@ -655,14 +699,17 @@ def clearance_answer(question):
         words = {"pastdue": "past due", "open": "open", "done": "completed", "late": "not on time"}
         said = [_step(v) if k == "step" else words.get(v, v).lower() if k in ("flag", "group") else v
                 for k, v in f.items()]
-        return "None of the shipments in the loaded export (data as of {0}) match: {1}.".format(
-            s["asof"] or "an unknown date", ", ".join(said))
+        return "None of the shipments in the loaded export (data as of {0}) match: {1}{2}.".format(
+            s["asof"] or "an unknown date", ", ".join(said),
+            " (that includes the filters on your screen; ask “overall” for the whole export)" if from_view else "")
     label = ", ".join(_step(v) if k == "step" else v for k, v in f.items() if k not in ("flag",))
     flag_txt = {"pastdue": "past due", "open": "open", "done": "completed", "late": "not on time"}.get(f.get("flag"))
     head = "From the eHub export with data as of **{0}**{1}{2}: **{3:,}** shipment{4}".format(
         s["asof"] or "an unknown date (the export has no Last Date)",
         " for **{0}**".format(label) if label else "", " ({0})".format(flag_txt) if flag_txt else "",
         s["total"], "" if s["total"] == 1 else "s")
+    if from_view:
+        head = "In the view you have open, " + head[0].lower() + head[1:]
     lines = [head + ", **{0}%** on time (the export's own On Time flag; target 95%).".format(
         round(100.0 * s["on_time"] / s["total"]))]
     if f.get("flag") not in ("done",):
@@ -691,6 +738,8 @@ def clearance_answer(question):
     if checks:
         lines.append("The export also has {0:,} values that could not be used (no ETA, empty due "
                      "dates…); the Clearance page lists them under Data checks.".format(checks))
+    if from_view:
+        lines.append("I used the filters on your screen; ask “overall” for the whole export.")
     lines.append("[Open this on the Clearance page]({0}) to see every shipment, act on it and download "
                  "the list.".format(_cl_link(f)))
     return "\n".join(lines)
@@ -728,7 +777,9 @@ def answer(kind, question, data, context=None):
                     "full record.".format(ref, " ({0})".format(problem) if problem else ""))
         return dict(base, answer=text, intent="evidence", reference=ref, evidence=shots)
     if kind == "clearance":
-        return dict(base, answer=clearance_answer(question), intent="skill_clearance",
+        return dict(base, answer=clearance_answer(
+                        question, context.get("view") if context.get("page") == "clearance" else None),
+                    intent="skill_clearance",
                     reference=None, sources=["clearance.export"])
     if kind == "web":
         text, sources, research = web_answer(question)

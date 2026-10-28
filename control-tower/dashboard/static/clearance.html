@@ -1087,7 +1087,7 @@ async function askSend(q) {
   q = (q || "").trim(); if (!q) return;
   askAdd("me", esc(q)); const wait = askAdd("bot", "…");
   try {
-    const r = await api("/api/ask", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({question: q, context: {page: "clearance"}})});
+    const r = await api("/api/ask", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({question: q, context: {page: "clearance", view: atlasView()}})});
     const d = await r.json().catch(() => ({}));
     wait.innerHTML = r.ok ? askFmt(d.answer || "No answer.") : esc(d.message || `ATLAS could not answer (${r.status}).`);
   } catch (err) { wait.textContent = err.message === "signed out" ? "" : "ATLAS could not be reached."; }
@@ -1112,6 +1112,16 @@ $("pbOut").addEventListener("click", async () => {
   btn.disabled = false;
   toast("Sign out did not reach the server, so you are still signed in. Try again.", 5000);
 });
+
+/* What ATLAS is told about the screen: the filters it can count by. */
+function atlasView() {
+  const v = {};
+  ["bu", "mode", "div"].forEach((k) => { if (state[k] && state[k] !== "All") v[k] = state[k]; });
+  ["status", "group", "month"].forEach((k) => { if (state[k]) v[k] = state[k]; });
+  if (["open", "pastdue", "done", "late"].includes(state.flag)) v.flag = state.flag;
+  else if (state.ontime === false && !state.flag) v.flag = "late";
+  return v;
+}
 
 (async function boot() {
   try {

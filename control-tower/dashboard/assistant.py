@@ -432,6 +432,15 @@ INTENTS = [
     ("latest_failure", ["latest failure", "last failure", "most recent failure",
                         "why did the latest", "why did the last", "latest error",
                         "last error", "most recent error"]),
+    # The screen itself: what the Control Tower shows right now (the run and
+    # the Clearance export), not one run's statistics.
+    ("dashboard",   ["summarise the dashboard", "summarize the dashboard", "summary of the dashboard",
+                     "what's on the dashboard", "whats on the dashboard", "what is on the dashboard",
+                     "what does the dashboard show", "what's on my screen", "whats on my screen",
+                     "what is on my screen", "what am i looking at", "what am i seeing",
+                     "how is everything", "what's happening", "whats happening",
+                     "what is happening", "give me an overview", "status update",
+                     "explain the dashboard", "read the dashboard"]),
     ("summary",     ["الوضع", "اخبار التشغيل", "أخبار التشغيل", "ملخص", "summarize", "summarise", "sum up", "give me a summary", "show me the summary", "daily summary", "quick update",
                      "give me an update", "update me", "where are we", "summary of this run",
                      "summary of the run", "summarize this run",
@@ -604,6 +613,8 @@ def detect_intent(question):
         return "code_request"
     if lowered.strip(" ?.!") in ("summary", "summary please", "a summary"):
         return "summary"
+    if lowered.strip(" ?.!") in ("status", "overview", "dashboard", "the dashboard"):
+        return "dashboard"
 
     for name, phrases in INTENTS:
         if not any(_phrase_in(phrase, lowered) for phrase in phrases):
@@ -1841,9 +1852,54 @@ def _answer_latest_failure(data):
     return _explain(data, data.failed[0])
 
 
+def _clearance_headline():
+    """One line about the loaded eHub export, or None. Counted from its rows."""
+    try:
+        from dashboard import clearance
+        s = clearance.query(None)
+    except Exception:
+        return None
+    if not s or not s["total"]:
+        return None
+    return ("**Clearance** (eHub export, data as of {0}): {1:,} shipments, {2}% on time against the "
+            "95% target, {3:,} open, {4:,} past their step's due date{5}. [Open Clearance](/clearance)"
+            .format(s["asof"] or "an unknown date", s["total"], round(100.0 * s["on_time"] / s["total"]),
+                    s["open"], s["past_due"],
+                    ", {0} with an open escalation".format(len(s["escalated_open"]))
+                    if s["escalated_open"] else ""))
+
+
+def _answer_dashboard(data):
+    """What the Control Tower shows now: the automation, who is waiting on a
+    person, and the Clearance export. Only what the records say."""
+    lines = ["**On the Control Tower now**", ""]
+    if data.shipments or data.is_running:
+        lines.append("**Automation**: run {0}, {1}{2}. {3} shipment{4}: {5} completed, {6} failed, "
+                     "{7} waiting for a person, {8} processing, {9} skipped.".format(
+                         data.run.get("run_id") or UNKNOWN, data.status,
+                         " for " + data.runtime if data.runtime else "",
+                         len(data.shipments), "" if len(data.shipments) == 1 else "s",
+                         len(data.updated), len(data.failed), len(data.by_state("waiting_for_human")),
+                         len(data.processing), len(data.skipped)))
+    else:
+        lines.append("**Automation**: standing by, no run in progress and no shipment processed yet.")
+    waiting = data.by_state("waiting_for_human")
+    if waiting:
+        lines.append("**Needs a person**: {0} shipment{1} waiting on Human Action.".format(
+            len(waiting), "" if len(waiting) == 1 else "s"))
+    noticed = [n for n in notices(data) if n["level"] != "ok"] if data.shipments else []
+    if noticed:
+        lines.append("**ATLAS noticed**: " + " ".join(n["text"] for n in noticed[:3]))
+    clearance_line = _clearance_headline()
+    lines.append(clearance_line or "**Clearance**: no eHub export is loaded yet.")
+    lines += ["", "Ask me about any of it, for example “which shipments failed?” or "
+              "“which clearing agent has the most past due?”."]
+    return "\n".join(lines)
+
+
 def _answer_summary(data):
     if not data.shipments:
-        return "Nothing to summarize yet — no shipment has been processed in this run."
+        return _answer_dashboard(data)
     lines = ["Run {0} · {1}{2}".format(
         data.run.get("run_id") or UNKNOWN, data.status,
         " for " + data.runtime if data.runtime else "")]
@@ -3791,6 +3847,7 @@ def _answer_core(question, state, context=None):
             "potato": lambda: _answer_potato(data, question),
             "duration": lambda: _answer_duration(data),
             "health": lambda: _answer_health(data),
+            "dashboard": lambda: _answer_dashboard(data),
             "history": lambda: _answer_history(data),
             "report": lambda: _report_with_charts(data),
             "all_of": lambda: _answer_all_of(data, question),

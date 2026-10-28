@@ -283,7 +283,12 @@ CSV, a detail panel). Everything on the page is clickable to filter.
   date of 1899, a cycle time from a missing date) is left out and listed under
   *Data checks*. "On time" is the export's own flag.
 - **ATLAS** answers clearance questions ("how many EG shipments are past due in
-  customs?") from the loaded export only, and links to the page.
+  customs?") from the loaded export only, and links to the page. Asked on the
+  page, it also sees the filters on screen: "summarise this view" counts exactly
+  that view (and says so); a question naming its own BU, mode or step gets just
+  that, and "overall" ignores the view. On any page, "what's on the dashboard?"
+  or "status" gives the automation's state, anyone waiting on Human Action, and
+  the Clearance headline.
 
 ## ATLAS on Snowflake Cortex (optional, billed in Snowflake credits)
 

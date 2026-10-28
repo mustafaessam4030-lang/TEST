@@ -255,6 +255,10 @@ for _ in range(50):
     built.observe(features.keys(context), "xpath_ata_date", 1.0, duration_ms=700)
     built.observe(features.keys(context), "label_exact", 0.0)
 built.meta["feature_version"] = features.FEATURE_VERSION
+# ACTIVE also needs an approval on the model (python -m ml.trainer --approve);
+# this throwaway model in the sandbox carries one so section 5 can show what
+# an approved model does. A real model only gets one on a BETTER scorecard.
+built.meta["approval"] = {"approved_by": "verify_atlas sandbox", "shadow_verdict": "BETTER"}
 built.finalise()
 model_file = SANDBOX / "verify_model.json"
 model_file.write_text(built.to_json(), encoding="utf-8")

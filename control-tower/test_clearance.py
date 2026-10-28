@@ -444,9 +444,53 @@ try:
 except ImportError:
     print("  (Playwright not installed: browser checks skipped)")
 
+print("\nATLAS sees the dashboards")
+from dashboard import assistant as _as                       # noqa: E402
+_vals = clearance.query(None)["values"]
+_bu = clearance.query(None)["past_due_by_bu"][0][0]          # a BU with past-due shipments
+_other = [b for b in _vals["bu"] if b != _bu][0]
+_view = {"bu": _bu, "flag": "pastdue"}
+_r = _as.answer("summarise this view", {}, {"page": "clearance", "view": _view})
+_ans = _r.get("answer") or ""
+_want = clearance.query({"bu": _bu, "flag": "pastdue"})["total"]
+check("'summarise this view' counts the filters on screen, and says so",
+      _r.get("intent") == "skill_clearance" and _ans.startswith("In the view you have open")
+      and "**{0:,}** shipment".format(_want) in _ans and "filters on your screen" in _ans, _ans[:300])
+_r = _as.answer("how many shipments overall?", {}, {"page": "clearance", "view": _view})
+check("'overall' ignores the view",
+      "**{0:,}** shipment".format(clearance.query(None)["total"]) in _r["answer"]
+      and "view you have open" not in _r["answer"], _r["answer"][:200])
+_r = _as.answer("how many shipments in {0}?".format(_other), {}, {"page": "clearance", "view": _view})
+check("a question naming its own BU gets exactly that BU",
+      "**{0:,}** shipment".format(clearance.query({"bu": _other})["total"]) in _r["answer"]
+      and "view you have open" not in _r["answer"], _r["answer"][:200])
+_r = _as.answer("summarise this view", {}, {"page": "clearance",
+                "view": {"bu": "<script>", "flag": "anything", "month": "2026-13", "group": "x"}})
+check("a view naming nothing in the export is ignored, never echoed",
+      "<script>" not in _r["answer"] and "view you have open" not in _r["answer"], _r["answer"][:200])
+_r = _as.answer("summarise this view", {}, {"view": _view})
+check("the view counts only when asked from the Clearance page", "view you have open" not in (_r.get("answer") or ""))
+for _q in ("how does clearance work?", "what does the clearance page show?"):
+    _r = _as.answer(_q, {}, {"page": "clearance"})
+    check("'{0}' explains the page".format(_q), _r.get("intent") == "handbook" and
+          "Clearance KPI 360" in _r["answer"] and "Escalate" in _r["answer"], _r.get("intent"))
+_head = clearance.query(None)
+for _q in ("what's on the dashboard?", "status", "what am I looking at", "how is everything today?"):
+    _r = _as.answer(_q, {}, {})
+    check("'{0}' on the main page: the automation and the Clearance headline".format(_q),
+          _r.get("intent") == "dashboard" and "standing by" in _r["answer"]
+          and "{0:,} shipments".format(_head["total"]) in _r["answer"], (_r.get("intent"), _r.get("answer", "")[:200]))
+check("an empty run's summary shows the dashboard, not 'nothing to summarize'",
+      "On the Control Tower now" in _as.answer("give me a summary", {}, {})["answer"])
+_srv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "server.py"), encoding="utf-8").read()
+check("the server takes the view only from the Clearance page, short strings, known keys",
+      'if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)' in _srv
+      and 'str(v)[:80]' in _srv)
+
 print("\nThe platform menu on the Clearance page")
 _dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
 _cl = open(os.path.join(_dir, "clearance.html"), encoding="utf-8").read()
+check("the page sends ATLAS its filters", 'context: {page: "clearance", view: atlasView()}' in _cl)
 _ix = open(os.path.join(_dir, "index.html"), encoding="utf-8").read()
 check("Clearance shows the platform's pages, itself marked current",
       all('href="/#{0}"'.format(x) in _cl for x in ("overview", "shipments", "po", "atlas", "human", "access"))

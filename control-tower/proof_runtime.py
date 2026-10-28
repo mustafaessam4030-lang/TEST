@@ -108,8 +108,11 @@ def write_telemetry():
             persisted = found and random.random() < 0.97
             stamp = "2026-09-{0:02d}".format(index % 28 + 1)
             episode_id = "proof-{0}".format(index)
+            # Spread over 60 made-up shipment references: the trainer needs
+            # writes from at least 20 different shipments before it learns.
+            reference = "PROOF-{0:03d}".format(index % 60)
             handle.write(json.dumps({
-                "kind": "interaction", "episode_id": episode_id,
+                "kind": "interaction", "episode_id": episode_id, "reference": reference,
                 "context": ctx, "strategy": strategy,
                 "success": found, "rank": ATA_STRATEGIES.index(strategy),
                 "duration_ms": random.randint(250, 900) if found else None,
@@ -119,7 +122,7 @@ def write_telemetry():
                 "kind": "episode", "episode_id": episode_id,
                 "outcome": "VERIFIED" if persisted else "MISMATCH",
                 "verified": bool(persisted), "source": "automation",
-                "ts": stamp}) + "\n")
+                "reference": reference, "ts": stamp}) + "\n")
 
 
 def placeholder_credentials():
@@ -342,6 +345,14 @@ def _main():
     # ── 4, 5, 6 ──────────────────────────────────────────────────────
     rule("D. A REAL PREDICTION REACHING THE SEAM, AND THE GUARDS")
     os.environ["ML_TELEMETRY_PATH"] = str(WORK / "seam.jsonl")
+    # ACTIVE also needs an approval on the model (python -m ml.trainer
+    # --approve, refused without a BETTER shadow scorecard). This sandbox
+    # model gets one here so the seam can be shown; production models never
+    # get one this way.
+    champion = json.loads(MODEL.read_text(encoding="utf-8"))
+    champion.setdefault("meta", {})["approval"] = {"approved_by": "proof_runtime sandbox",
+                                                   "shadow_verdict": "BETTER"}
+    MODEL.write_text(json.dumps(champion), encoding="utf-8")
     os.environ["ML_MODE"] = "active"
     from ml import config, predictor
     config.reload_from_environment()
