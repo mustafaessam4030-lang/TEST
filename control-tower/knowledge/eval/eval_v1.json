@@ -1,0 +1,73 @@
+{
+  "schema": "atlas-kb-eval/1",
+  "version": "1.0",
+  "created": "2026-10-28",
+  "about": "The Logistics Assessment set for ATLAS's Knowledge Engine. Each case states what a correct answer must use (expect_items: any one of them), must say (must_include: every phrase, case-insensitive), must not say (must_not_include), or must compute (expect_value). expect_none: the engine must decline (out of scope, or a run question it must leave to the records). Questions are worded differently from the items on purpose: the set tests applying knowledge to unfamiliar situations, not repeating definitions. 'reference' names the authority the expected answer rests on.",
+  "cases": [
+    {"id": "def-01", "type": "definition", "question": "What is transshipment?", "expect_items": ["B.transshipment"], "must_include": ["intermediate port"], "reference": "general knowledge"},
+    {"id": "def-02", "type": "definition", "question": "What does a freight forwarder actually do?", "expect_items": ["A.freight-forwarder"], "must_include": ["books carriers"], "reference": "fiata"},
+    {"id": "def-03", "type": "definition", "question": "explain NVOCC", "expect_items": ["A.nvocc"], "must_include": ["does not operate the vessels"], "reference": "general knowledge"},
+    {"id": "def-04", "type": "definition", "question": "What is a 3PL?", "expect_items": ["A.third-party-logistics"], "reference": "general knowledge"},
+    {"id": "def-05", "type": "definition", "question": "what's VGM and why does it matter", "expect_items": ["B.vgm"], "must_include": ["SOLAS", "not loaded"], "reference": "imo-vgm"},
+    {"id": "def-06", "type": "definition", "question": "What is an HS code?", "expect_items": ["C.hs-classification"], "must_include": ["6 digits"], "reference": "wco-hs"},
+    {"id": "def-07", "type": "definition", "question": "define chargeable weight", "expect_items": ["B.chargeable-weight"], "must_include": ["volumetric"], "reference": "general knowledge"},
+    {"id": "def-08", "type": "definition", "question": "What is a proof of delivery?", "expect_items": ["D.proof-of-delivery"], "reference": "general knowledge"},
+    {"id": "def-09", "type": "definition", "question": "What is a blank sailing?", "expect_items": ["B.blank-sailing"], "must_include": ["cancels"], "reference": "general knowledge"},
+    {"id": "def-10", "type": "definition", "question": "What is a sea waybill?", "expect_items": ["C.sea-waybill"], "must_include": ["non-negotiable"], "reference": "general knowledge"},
+
+    {"id": "ar-01", "type": "terminology_ar", "question": "ما هو الديمراج؟", "expect_items": ["C.demurrage"], "must_include": ["الميناء"], "reference": "general knowledge"},
+    {"id": "ar-02", "type": "terminology_ar", "question": "ما معنى الإنكوترمز", "expect_items": ["C.incoterms"], "must_include": ["غرفة التجارة الدولية"], "reference": "icc-incoterms-2020"},
+    {"id": "ar-03", "type": "terminology_ar", "question": "اشرح التخليص الجمركي", "expect_items": ["C.customs-clearance"], "reference": "wco-rkc"},
+    {"id": "ar-04", "type": "terminology_ar", "question": "الفرق بين ETA و ATA", "expect_items": ["D.eta-ata"], "must_include": ["Estimated Time of Arrival"], "reference": "general knowledge"},
+
+    {"id": "cmp-01", "type": "compare", "question": "What's the difference between demurrage and detention?", "expect_items": ["C.demurrage", "C.detention"], "must_include": ["outside the terminal"], "reference": "general knowledge"},
+    {"id": "cmp-02", "type": "compare", "question": "FCL vs LCL — which is cheaper?", "expect_items": ["B.fcl", "B.lcl"], "must_include": ["consolidat"], "reference": "general knowledge"},
+    {"id": "cmp-03", "type": "compare", "question": "What is the difference between logistics and supply chain management?", "expect_items": ["A.supply-chain-management", "A.logistics"], "reference": "ascm-dictionary"},
+    {"id": "cmp-04", "type": "compare", "question": "difference between a bill of lading and an air waybill", "expect_items": ["C.bill-of-lading", "C.air-waybill"], "must_include": ["title"], "reference": "general knowledge"},
+    {"id": "cmp-05", "type": "compare", "question": "OTIF vs on-time delivery", "expect_items": ["E.otif", "E.on-time-delivery"], "must_include": ["in full"], "reference": "general knowledge"},
+
+    {"id": "inc-01", "type": "incoterm_apply", "question": "We bought FOB Shanghai and the machine was damaged at sea. Who bears the loss under FOB?", "expect_items": ["C.incoterm-fob"], "must_include": ["buyer's risk"], "reference": "icc-incoterms-2020"},
+    {"id": "inc-02", "type": "incoterm_apply", "question": "Under CIF who pays the ocean freight?", "expect_items": ["C.incoterm-cif"], "must_include": ["seller", "risk passed to the buyer at shipment"], "reference": "icc-incoterms-2020"},
+    {"id": "inc-03", "type": "incoterm_apply", "question": "Under DDP who pays the import duties in Ghana?", "expect_items": ["C.incoterm-ddp"], "must_include": ["seller"], "reference": "icc-incoterms-2020"},
+    {"id": "inc-04", "type": "incoterm_apply", "question": "Can FOB be used for an air shipment?", "expect_items": ["C.incoterm-fob"], "must_include": ["sea and inland waterway"], "reference": "icc-incoterms-2020"},
+    {"id": "inc-05", "type": "incoterm_apply", "question": "Under CIP what level of insurance must the seller buy?", "expect_items": ["C.incoterm-cip"], "must_include": ["(A)"], "reference": "icc-incoterms-2020"},
+    {"id": "inc-06", "type": "incoterm_apply", "question": "Under EXW who handles export clearance in the seller's country?", "expect_items": ["C.incoterm-exw"], "must_include": ["buyer"], "reference": "icc-incoterms-2020"},
+    {"id": "inc-07", "type": "incoterm_apply", "question": "Under DPU who unloads at destination?", "expect_items": ["C.incoterm-dpu"], "must_include": ["seller"], "reference": "icc-incoterms-2020"},
+
+    {"id": "life-01", "type": "lifecycle", "question": "An air shipment shows 'Arrived' in Amsterdam but its destination is Accra. Is that the ATA?", "expect_items": ["B.transshipment", "P.ata-only-at-destination", "D.arrival", "D.carrier-status-mapping"], "must_include": ["transit"], "reference": "proj-arrival-events"},
+    {"id": "life-02", "type": "lifecycle", "question": "What is the difference between ETD and ATD?", "expect_items": ["D.etd-atd"], "reference": "general knowledge"},
+    {"id": "life-03", "type": "lifecycle", "question": "Is a flight manifest the same as departure?", "expect_items": ["C.manifest", "D.departure"], "must_include": ["not"], "reference": "general knowledge"},
+    {"id": "life-04", "type": "lifecycle", "question": "What should happen when two carrier sources give different arrival dates?", "expect_items": ["D.conflicting-statuses"], "must_include": ["escalate"], "reference": "proj-arrival-events"},
+    {"id": "life-05", "type": "lifecycle", "question": "What does data freshness mean for tracking?", "expect_items": ["D.data-freshness"], "reference": "general knowledge"},
+
+    {"id": "cus-01", "type": "customs", "question": "What usually causes a customs hold?", "expect_items": ["C.customs-hold"], "must_include": ["document"], "reference": "general knowledge"},
+    {"id": "cus-02", "type": "customs", "question": "Customs says the invoice weight differs from the bill of lading. What kind of problem is that?", "expect_items": ["C.documentation-discrepancy", "F.case-invoice-mismatch", "F.documentation-diagnosis"], "reference": "general knowledge"},
+    {"id": "cus-03", "type": "customs", "question": "What is customs valuation based on?", "expect_items": ["C.customs-valuation"], "must_include": ["transaction value"], "reference": "wto-valuation"},
+    {"id": "cus-04", "type": "customs", "question": "What is a certificate of origin for?", "expect_items": ["C.certificate-of-origin"], "must_not_include": ["country of shipment is the origin"], "reference": "wco-origin"},
+    {"id": "cus-05", "type": "customs", "question": "Is duty in Ghana charged on the CIF value?", "expect_items": ["C.gh-cif-valuation"], "must_include": ["unverified"], "reference": "gra-customs"},
+
+    {"id": "kpi-01", "type": "kpi_calc", "question": "Calculate OTIF: 160 of 200 orders were on time and in full", "expect_value": 80, "expect_items": ["E.otif"], "reference": "general knowledge"},
+    {"id": "kpi-02", "type": "kpi_calc", "question": "34 of 40 deliveries were on time — what is the on-time delivery rate?", "expect_value": 85, "expect_items": ["E.on-time-delivery"], "reference": "general knowledge"},
+    {"id": "kpi-03", "type": "kpi_calc", "question": "Calculate the chargeable weight of a 120 x 100 x 100 cm crate weighing 150 kg", "expect_value": 200, "expect_items": ["B.chargeable-weight"], "reference": "general knowledge"},
+    {"id": "kpi-04", "type": "kpi_calc", "question": "Container discharged 01/10/2026 and gated out 12/10/2026 with 7 free days. How many demurrage days?", "expect_value": 5, "reference": "general knowledge"},
+    {"id": "kpi-05", "type": "kpi_calc", "question": "The freight was quoted 2000 and invoiced 2300. What is the cost variance?", "expect_value": 300, "reference": "general knowledge"},
+    {"id": "kpi-06", "type": "kpi_def", "question": "How is OTIF measured?", "expect_items": ["E.otif"], "must_include": ["Formula", "Aggregation"], "reference": "general knowledge"},
+    {"id": "kpi-07", "type": "kpi_def", "question": "What is our OTIF this month?", "expect_items": ["E.otif"], "must_include": ["won't estimate"], "must_not_include": ["% this month"], "reference": "insufficient data"},
+
+    {"id": "rca-01", "type": "rca", "question": "Why do vessels get delayed?", "expect_items": ["B.vessel-delay-causes"], "must_include": ["congestion"], "reference": "general knowledge"},
+    {"id": "rca-02", "type": "rca", "question": "How do I tell correlation from causation in carrier delays?", "expect_items": ["F.causal-vs-correlational"], "must_include": ["lane"], "reference": "general knowledge"},
+    {"id": "rca-03", "type": "rca", "question": "How do I do a root cause analysis?", "expect_items": ["F.root-cause-analysis"], "must_include": ["evidence"], "reference": "general knowledge"},
+    {"id": "rec-01", "type": "recommendation", "question": "What should a recovery plan for a delayed critical shipment consider?", "expect_items": ["F.recovery-planning"], "must_include": ["bottleneck"], "reference": "general knowledge"},
+    {"id": "rec-02", "type": "recommendation", "question": "How should I compare carriers fairly?", "expect_items": ["F.carrier-comparison"], "must_include": ["same lanes"], "reference": "general knowledge"},
+    {"id": "rec-03", "type": "recommendation", "question": "Which incoterm should we use for containers handed over at a terminal?", "expect_items": ["C.incoterm-fca"], "must_include": ["FCA"], "reference": "icc-incoterms-2020"},
+
+    {"id": "ins-01", "type": "insufficient", "question": "What is the import duty rate for HS 8429 in Ghana?", "must_not_include": ["% duty", "duty rate is"], "reference": "no data — must not state a rate"},
+    {"id": "ins-02", "type": "insufficient", "question": "Calculate OTIF", "must_include": ["won't assume"], "reference": "missing inputs"},
+    {"id": "ins-03", "type": "insufficient", "question": "Why was my shipment delayed?", "expect_none": true, "reference": "a run question: the records answer it, the knowledge base must not guess"},
+
+    {"id": "oos-01", "type": "out_of_scope", "question": "What is the weather in Cairo?", "expect_none": true, "reference": "not logistics knowledge"},
+    {"id": "oos-02", "type": "out_of_scope", "question": "which shipments failed", "expect_none": true, "reference": "a run question"},
+    {"id": "proj-01", "type": "project_rule", "question": "What does Needs review mean?", "expect_items": ["P.needs-review"], "must_include": ["wrote nothing"], "reference": "proj-arrival-events"},
+    {"id": "proj-02", "type": "project_rule", "question": "Does the platform ever write a delivery date as the ATA?", "expect_items": ["P.ata-only-at-destination", "D.delivery-milestone"], "must_include": ["never"], "reference": "proj-arrival-events"}
+  ]
+}

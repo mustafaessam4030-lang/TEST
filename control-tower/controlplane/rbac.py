@@ -32,6 +32,8 @@ PERMISSIONS = {
     "clearance.upload":   "Load a new eHub shipment export into the Clearance dashboard",
     "clearance.escalate": "Escalate a shipment on the Clearance page, and resolve escalations",
     "clearance.contacts": "Edit the Clearance contacts (clearing agents, BUs, forwarders)",
+    "knowledge.propose":  "Propose logistics knowledge or a correction for review",
+    "knowledge.review":   "Review, approve, supersede or retire ATLAS's logistics knowledge; ingest documents",
 }
 
 ROLE_PERMISSIONS = {
@@ -40,7 +42,7 @@ ROLE_PERMISSIONS = {
         "dashboard.view", "runs.view", "runs.start", "runs.stop", "human.act",
         "evidence.view", "evidence.upload", "atlas.chat", "health.view",
         "po.view", "po.process", "po.send", "clearance.view", "clearance.upload",
-        "clearance.escalate")),
+        "clearance.escalate", "knowledge.propose")),
     VIEWER: frozenset((
         "dashboard.view", "runs.view", "atlas.chat", "health.view", "po.view",
         "clearance.view")),

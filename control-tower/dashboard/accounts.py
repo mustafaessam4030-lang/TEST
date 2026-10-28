@@ -57,6 +57,8 @@ GET_PERMISSIONS = (
     ("/api/admin/rbac", "dashboard.view"),
     ("/clearance", "clearance.view"),
     ("/api/clearance", "clearance.view"),
+    ("/api/knowledge/proposals", "knowledge.propose"),
+    ("/api/knowledge/lessons", "runs.view"),
 )
 WRITE_PERMISSIONS = (
     ("/api/control", "runs.start"),
@@ -74,6 +76,10 @@ WRITE_PERMISSIONS = (
     ("/api/clearance/escalate", "clearance.escalate"),
     ("/api/clearance/resolve", "clearance.escalate"),
     ("/api/clearance/contact-log", "clearance.view"),
+    ("/api/knowledge/propose", "knowledge.propose"),
+    ("/api/knowledge/review", "knowledge.review"),
+    ("/api/knowledge/status", "knowledge.review"),
+    ("/api/knowledge/ingest", "knowledge.review"),
 )
 
 

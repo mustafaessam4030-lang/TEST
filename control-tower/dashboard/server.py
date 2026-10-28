@@ -240,6 +240,23 @@ def build_payload(trim=True, since_cold=None):
     return data
 
 
+def _knowledge_retrieval_stats():
+    """How retrieval is doing, from kb_queries.jsonl: volume, hit rate, latency,
+    and the questions nothing answered (redacted, for reviewers only)."""
+    try:
+        from intelligence import store as _st
+        rows = _st.read("kb_queries.jsonl")[-2000:]
+    except Exception:
+        rows = []
+    if not rows:
+        return {"queries": 0}
+    ms = sorted(r.get("ms") or 0 for r in rows)
+    misses = [r.get("q") for r in rows if not r.get("hit")][-20:]
+    return {"queries": len(rows), "hit_rate": round(sum(1 for r in rows if r.get("hit")) / float(len(rows)), 3),
+            "median_ms": ms[len(ms) // 2], "p95_ms": ms[int(len(ms) * 0.95) - 1] if len(ms) > 1 else ms[0],
+            "recent_misses": misses}
+
+
 def _assistant_state():
     """
     The run state ATLAS answers from: whatever the dashboard itself is
@@ -1051,6 +1068,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(_search.search(q, self._acc_can, _assistant_state()), default=str))
             return
 
+        if route.startswith("/api/knowledge/"):
+            self._knowledge_get(route)
+            return
+
         if route == "/api/todo":
             # What needs a person, from the records; only what this person may open.
             from dashboard import todo as _todo
@@ -1177,6 +1198,11 @@ class Handler(BaseHTTPRequestHandler):
         if route in ("/api/clearance/contacts", "/api/clearance/escalate",
                      "/api/clearance/resolve", "/api/clearance/contact-log"):
             self._clearance_action(route)
+            return
+
+        if route in ("/api/knowledge/propose", "/api/knowledge/review", "/api/knowledge/status",
+                     "/api/knowledge/ingest"):
+            self._knowledge_action(route)
             return
 
         if route == "/api/clearance/upload":
@@ -1438,6 +1464,93 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, json.dumps({"error": str(error)[:200]}))
             return
         self._send(404, json.dumps({"error": "not found"}))
+
+    def _knowledge_get(self, route):
+        """ATLAS's logistics knowledge, read-only (intelligence/kb.py)."""
+        from urllib.parse import urlparse, parse_qs
+        from intelligence import kb as _kb, kb_govern as _gov
+        qs = parse_qs(urlparse(self.path).query)
+        arg = lambda k, d=None: (qs.get(k) or [d])[0]
+        k = _kb.kb()
+        if route == "/api/knowledge/search":
+            res = _kb.search(str(arg("q", ""))[:300], limit=min(int(arg("limit", "10") or 10), 30),
+                             domain=arg("domain"), kind=arg("kind"), scope=arg("scope"),
+                             include_history=arg("history") == "1", approved_only=arg("approved") == "1")
+            self._send(200, json.dumps({"results": [{"id": r["id"], "score": r["score"], "named": r["named"],
+                                                     "flags": r["flags"], "term": r["item"]["term"],
+                                                     "definition": r["item"]["definition"],
+                                                     "review_status": r["item"].get("review_status"),
+                                                     "evidence_status": r["item"].get("evidence_status")}
+                                                    for r in res]}, default=str))
+            return
+        if route == "/api/knowledge/item":
+            it = k.get(str(arg("id", ""))[:80])
+            if it is None:
+                self._send(404, json.dumps({"error": "not found"}))
+                return
+            self._send(200, json.dumps({"item": it, "citations": k.cite(it), "history": _gov.history(it["id"]),
+                                        "related": [{"id": r, "type": t, "direction": d}
+                                                    for r, t, d, _ in k.related(it["id"])]}, default=str))
+            return
+        if route == "/api/knowledge/stats":
+            out = {"knowledge": k.stats(), "governance": _gov.stats(), "errors": k.errors[:20],
+                   "curriculum": [{"id": d["id"], "title": d["title"], "title_ar": d.get("title_ar")}
+                                  for d in k.curriculum["domains"]]}
+            if self._acc_can("knowledge.review"):
+                out["retrieval"] = _knowledge_retrieval_stats()
+            self._send(200, json.dumps(out, default=str))
+            return
+        if route == "/api/knowledge/lessons":
+            from intelligence import kb_lessons as _les
+            self._send(200, json.dumps({"lessons": _les.lessons()}, default=str))
+            return
+        if route == "/api/knowledge/proposals":
+            self._send(200, json.dumps({"proposals": sorted(_gov.proposals().values(),
+                                                            key=lambda p: -(p.get("seq") or 0))[:200]}, default=str))
+            return
+        self._send(404, json.dumps({"error": "not found"}))
+
+    def _knowledge_action(self, route):
+        """Propose (knowledge.propose); review, status and ingest (knowledge.review)."""
+        from intelligence import kb_govern as _gov
+        try:
+            body = self._acc_json(8 * 1024 * 1024 if route == "/api/knowledge/ingest" else 65536)
+        except (ValueError, TypeError):
+            body = None
+        if not isinstance(body, dict):
+            self._send(400, json.dumps({"ok": False, "message": "Bad request."}))
+            return
+        by = (self.user or {}).get("work_email") or "access key"
+        try:
+            if route == "/api/knowledge/propose":
+                out = _gov.propose(body.get("item"), by=by, kind=str(body.get("kind") or "new"),
+                                   note=body.get("note"), observation=body.get("observation"))
+                self._acc_audit("KNOWLEDGE_PROPOSED", "SUCCESS", "knowledge", out["proposal_id"])
+            elif route == "/api/knowledge/review":
+                out = _gov.review(str(body.get("proposal_id") or "")[:40], str(body.get("decision") or ""), by,
+                                  note=body.get("note"), acknowledge_flags=bool(body.get("acknowledge_flags")))
+                self._acc_audit("KNOWLEDGE_" + str(body.get("decision") or "").upper(), "SUCCESS", "knowledge",
+                                str(body.get("proposal_id") or "")[:40])
+            elif route == "/api/knowledge/status":
+                out = _gov.set_status(str(body.get("id") or "")[:80], str(body.get("status") or ""), by,
+                                      reason=body.get("reason"), superseded_by=body.get("superseded_by"))
+                self._acc_audit("KNOWLEDGE_STATUS", "SUCCESS", "knowledge", str(body.get("id") or "")[:80],
+                                {"status": body.get("status")})
+            else:
+                import base64
+                data = base64.b64decode(body["data_base64"]) if body.get("data_base64") else None
+                out = _gov.ingest(str(body.get("name") or "document.md")[:200], by, text=body.get("text"),
+                                  data=data, title=body.get("title"), authority=str(body.get("authority") or "internal"),
+                                  jurisdiction=body.get("jurisdiction"), domain=str(body.get("domain") or "P")[:1])
+                self._acc_audit("KNOWLEDGE_INGESTED", "SUCCESS", "knowledge", out["doc"]["id"],
+                                {"proposals": len(out["proposals"])})
+        except _gov.GovernanceError as e:
+            self._send(200, json.dumps({"ok": False, "message": str(e)}))
+            return
+        except (ValueError, KeyError, TypeError) as e:
+            self._send(400, json.dumps({"ok": False, "message": "Bad request: {0}".format(type(e).__name__)}))
+            return
+        self._send(200, json.dumps({"ok": True, "result": out}, default=str))
 
     def _clearance_action(self, route):
         """Contacts (Admin), escalations (Operator, Admin), the call / mail log (everyone)."""

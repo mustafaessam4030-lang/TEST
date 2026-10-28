@@ -1,0 +1,53 @@
+{
+  "schema": "atlas-kb-curriculum/1",
+  "about": "The logistics curriculum ATLAS's knowledge is organised by: six domains from fundamentals to advanced problem solving, plus the ATLAS project's own rules. Levels: 1 foundation, 2 intermediate, 3 advanced.",
+  "domains": [
+    {"id": "A", "title": "Logistics and supply chain fundamentals", "title_ar": "أساسيات اللوجستيات وسلاسل الإمداد", "level": 1,
+     "objectives": ["Tell logistics from supply chain management", "Name the parties to a shipment and what each is responsible for",
+                    "Use shipment, consignment, order, cargo and freight precisely", "Explain inventory, warehousing, capacity and demand planning"],
+     "categories": ["concepts", "flows", "parties", "units", "planning"]},
+    {"id": "B", "title": "Transportation and freight", "title_ar": "النقل والشحن", "level": 1,
+     "objectives": ["Compare air, ocean, road, rail and multimodal transport", "Choose between FCL and LCL and the right equipment",
+                    "Reason about transit time, lead time, cut-offs, routing and transshipment", "Read a freight rate and its surcharges"],
+     "categories": ["modes", "equipment", "time", "routing", "pricing", "capacity"]},
+    {"id": "C", "title": "International trade and customs", "title_ar": "التجارة الدولية والجمارك", "level": 2,
+     "objectives": ["Apply the Incoterms 2020 rules: costs, risk transfer, who clears", "Know what each trade document proves",
+                    "Explain HS classification, valuation, duties and clearance", "Diagnose holds, inspections and discrepancies; know demurrage from detention"],
+     "categories": ["incoterms", "documents", "classification", "valuation", "clearance", "charges"],
+     "note": "Educational explanations. Country rules differ and change: a jurisdiction item names its country, its source and when it was last reviewed, and is never presented as current law beyond that."},
+    {"id": "D", "title": "Shipment lifecycle and operational tracking", "title_ar": "دورة حياة الشحنة والتتبع التشغيلي", "level": 2,
+     "objectives": ["Follow a shipment from booking to proof of delivery", "Use ETA, ETD, ATA, ATD and milestones correctly",
+                    "Handle delays, missing updates, conflicting statuses and data freshness", "Escalate and involve a person at the right point"],
+     "categories": ["milestones", "times", "exceptions", "data-quality", "escalation", "carrier-mappings"]},
+    {"id": "E", "title": "Performance, analytics and KPIs", "title_ar": "الأداء والتحليلات ومؤشرات الأداء", "level": 2,
+     "objectives": ["Define each KPI with its formula, unit, aggregation, period, fields, exclusions and limits",
+                    "Calculate KPIs exactly", "Tell industry conventions from business definitions", "Compare carriers fairly"],
+     "categories": ["service", "time", "volume", "cost", "quality"]},
+    {"id": "F", "title": "Advanced operational problem solving", "title_ar": "حل المشكلات التشغيلية المتقدمة", "level": 3,
+     "objectives": ["Separate causal from correlational evidence", "Diagnose documentation and customs exceptions",
+                    "Plan recovery and alternatives", "Prioritise by risk and impact", "Say when the evidence is not enough"],
+     "categories": ["method", "diagnosis", "recovery", "risk", "cases"]},
+    {"id": "P", "title": "ATLAS project rules", "title_ar": "قواعد مشروع ATLAS", "level": 1,
+     "objectives": ["Know how this platform decides, writes and verifies", "Never let a textbook definition override a verified project rule"],
+     "categories": ["automation", "statuses", "clearance", "platform"],
+     "note": "Business rules of this platform, each verifiable in the code it cites. Where a general definition differs, ATLAS shows both and says which one the platform applies."}
+  ],
+  "relations": {
+    "is_a": "a kind of", "part_of": "part of", "contrasts_with": "often confused with", "causes": "can cause",
+    "measured_by": "measured by", "documented_by": "documented by", "precedes": "comes before",
+    "applies_to": "applies to", "example_of": "an example of", "related": "related to"
+  },
+  "review_statuses": {
+    "unreviewed": "written for ATLAS, not yet reviewed by a Mantrac subject-matter expert: shown, labelled as such",
+    "reviewed": "checked by a reviewer; not yet approved as Mantrac's position",
+    "approved": "approved as authoritative for ATLAS",
+    "superseded": "replaced by a newer item; kept for history, never answered as current",
+    "retired": "withdrawn; kept for history, never answered"
+  },
+  "evidence_statuses": {
+    "project_verified": "states what this platform's code does; checkable in the cited file",
+    "source_cited": "a real, checked source covers the topic; the text is ATLAS's own explanation, not a quotation",
+    "general_knowledge": "widely taught logistics knowledge; no specific source checked",
+    "unverified": "a claim not yet supported by a source; shown only with that label"
+  }
+}

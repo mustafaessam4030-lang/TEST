@@ -28,6 +28,7 @@ No paid AI API is used anywhere.
 import re
 
 from intelligence import knowledge as K
+from intelligence import kb_answer as KA
 from intelligence import research as R
 
 SEARCH_ASK = re.compile(r"\b(search|look (it |this |that )?up|google|on the (web|internet)|online|"
@@ -92,7 +93,14 @@ def brief(data, record=None, failure=None, run_reply=None, ranking=None):
 
 def classify(question, reply, data, record, failure):
     q = question or ""
-    if K.glossary(q) and not record and not SEARCH_ASK.search(q):
+    # A logistics knowledge question (what is, how is it measured, who pays
+    # under FOB, a calculation) — answered from the Knowledge Engine, unless
+    # it is about a shipment or the run.
+    # An answer the run's own rules already gave (the ETA, the slowest
+    # shipment, the skipped ones) is never replaced by a definition.
+    if not record and not SEARCH_ASK.search(q) and KA.applies(q) and \
+            (reply.get("understood") is False or reply.get("fallback") or KA.decisive(q)
+             or reply.get("intent") in (None, "general_knowledge", "handbook_guide")):
         return "general"
     if failure is not None and ERROR_ASK.search(q) and (record is None or
                                                         record.get("state") != "updated"):
@@ -252,13 +260,16 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
     # 1. ATLAS's own answer — always built, always authoritative.
     ranking = None
     if mode == "general":
-        title, text = K.glossary(question)
-        out = dict(reply, answer=text, intent="general_knowledge", understood=True,
-                   knowledge="general", grounded=True)
+        known = KA.answer(question, context, data)
+        if known is None:
+            return reply
+        out = dict(reply, **known)
         out.pop("fallback", None)
+        out.pop("card", None)
         if not (fresh and R.enabled()) or context.get("_raw"):
-            return _phrased(out, question, brief(data), [], pid,
-                            raw=context.get("_raw") or context.get("_no_phrase"))
+            # Not re-worded by a model: the citations and status lines are
+            # part of the answer and must reach the reader as written.
+            return out
     elif mode in ("error", "mixed") and failure is not None:
         R.stage(pid, "Reading the failure evidence…")
         ranking = K.investigate_failure(failure, data.shipments)
