@@ -1430,6 +1430,7 @@ try:
     from . import atlas_po
 except Exception:                                   # pragma: no cover
     import atlas_po
+from intelligence import trace as _trace  # noqa: E402
 try:
     from . import atlas_intel
 except Exception:                                   # pragma: no cover
@@ -3417,11 +3418,14 @@ def answer(question, state, context=None):
         try:
             from intelligence import converse
             if converse.enabled():
-                return _labelled(_also_waiting(
-                    converse.answer(question, state, context, _answer_chat), state))
+                with _trace.span("converse"):
+                    reply = converse.answer(question, state, context, _answer_chat)
+                return _labelled(_also_waiting(reply, state))
         except Exception:
             pass
-    return _labelled(_also_waiting(_answer_chat(question, state, context), state))
+    reply = _answer_chat(question, state, context)
+    _trace.useful("rules")
+    return _labelled(_also_waiting(reply, state))
 
 
 def _answer_chat(question, state, context=None):
@@ -3433,7 +3437,8 @@ def _answer_chat(question, state, context=None):
     reply = _answer_rules(question, state, context)
     try:
         from dashboard import brief
-        return brief.concise(question, reply, state, RunData(state))
+        with _trace.span("rules.brief"):
+            return brief.concise(question, reply, state, RunData(state))
     except Exception:
         return reply
 
@@ -3524,6 +3529,92 @@ def _setup_answer(question, context=None):
             "intent": "handbook_guide", "topic": "guide:" + g["doc"], "sources": ["handbook"]}
 
 
+def _routed_first(question, state, context):
+    """
+    A general logistics question or a calculation (intelligence/router) goes
+    to the Knowledge Engine before the run's rules, whose phrases ("average",
+    "compare", "count", "clearance") would otherwise answer it with this run's
+    figures. Returns None to leave the question to the rules as before.
+    """
+    try:
+        from intelligence import router, kb_answer
+        r = router.route(question, context, detect_intent((question or "").strip()))
+        context["_route"] = r["route"]
+        data = RunData(state)
+        if r["route"] in ("troubleshooting", "operational") and \
+                not any(data.find(c) is not None for c in data.references_in(question)):
+            # A problem described in words, about nothing this run holds: reasoned
+            # through from knowledge (hypotheses, not findings), else the rules.
+            from intelligence.kb_answer import is_scenario
+            if is_scenario(question) and context.get("domain") != "po" and not conduct_of(question):
+                known = kb_answer.answer(question, context, data, routed=True)
+                if known is not None and (known.get("knowledge") or {}).get("mode") == "scenario":
+                    return dict(known, card=None, reference=None, final=True, route="troubleshooting")
+            return None
+        if r["route"] not in ("knowledge", "calculation") or r["confidence"] < 0.6 or \
+                context.get("domain") == "po" or conduct_of(question):
+            return None
+        weak = r["confidence"] < 0.65            # domain words only, no explicit general cue
+        # ATLAS's skills (validate, PDF, web links) and its handbook's topics
+        # on how this platform works keep their questions, as before.
+        from dashboard import atlas_skills
+        if atlas_skills.detect(question, data, context):
+            return None
+        from intelligence import handbook as _HB
+        if not any(data.find(c) is not None for c in data.references_in(question)) and _HB.answer(question):
+            context["_route"] = "atlas_rules"
+            return None
+        known = kb_answer.answer(question, context, data, routed=True)
+        if known is not None and weak and (not (known.get("knowledge") or {}).get("items")
+                                          or "Closest entry" in (known.get("answer") or "")):
+            known = None        # only a confident match outranks the rules on a domain-words question
+        if known is not None:
+            return dict(known, card=None, reference=None, final=True, route=r["route"])
+        if r["route"] == "knowledge" and r["confidence"] >= 0.75 and "general" in r["signals"]:
+            # Plainly a general question the knowledge base has no entry for:
+            # said so, never answered with this run's records instead.
+            return {"answer": "That is a general logistics question, and ATLAS's knowledge base has no entry "
+                              "that answers it yet, so I won't guess. It has been noted for the reviewers. "
+                              "If it is about one of our shipments, give me its reference.",
+                    "intent": "general_knowledge", "understood": True, "grounded": True, "final": True,
+                    "card": None, "reference": None, "route": "knowledge",
+                    "knowledge": {"mode": "none", "items": [], "review": {}, "evidence": {}, "citations": []},
+                    "sources": ["knowledge base"]}
+    except Exception:
+        return None
+    return None
+
+
+def _with_reasoning(question, context, reply):
+    """A problem described about one of this run's shipments: the records'
+    answer first, then — labelled, separate — how to reason about it."""
+    try:
+        if context.get("_route") not in ("troubleshooting", "operational") or reply.get("intent") == "general_knowledge" \
+                or reply.get("request") or reply.get("conduct") or context.get("_raw_no_reasoning"):
+            return reply
+        from intelligence import kb_answer, kb as _KB
+        if not kb_answer.is_scenario(question):
+            return reply
+        k = _KB.kb()
+        sc = kb_answer._scenario(" ".join(question.split()), k, k.search(question, limit=6), context, None, records=True)
+        if sc is None:
+            return reply
+        return dict(reply, answer=(reply.get("answer") or "").rstrip() + "\n\n" + sc["answer"],
+                    knowledge=sc["knowledge"])
+    except Exception:
+        return reply
+
+
+def _clarify_if_vague(question, context, reply):
+    """Too vague to answer, and the rules found nothing: ask what is meant."""
+    if context.get("_route") == "ambiguous" and (reply.get("fallback") or reply.get("understood") is False
+                                                 or not reply.get("intent")):
+        return dict(reply, answer="Which shipment or topic do you mean? Give me a reference (AWB, B/L, "
+                                  "container or PO number) or say what it is about, and I'll answer.",
+                    intent="clarify", clarify=True, understood=True, fallback=False)
+    return reply
+
+
 def _answer_rules(question, state, context=None):
     """
     Answer one question and attach contextual follow-up chips.
@@ -3551,11 +3642,24 @@ def _answer_rules(question, state, context=None):
                      "intent": "conduct"}
         reply["conduct"] = {"kind": kind, "strikes": strikes + 1}
     else:
-        reply = _setup_answer(question, context) or _answer_core(question, state, context)
-        # A colleague's answer: shipment intelligence, error investigation,
-        # general knowledge, and research when the run is not enough.
-        reply = atlas_intel.enrich(question, state, context, reply, RunData(state),
-                                   run_failures, _pick_failure)
+        with _trace.span("route"):
+            routed = _routed_first(question, state, context)
+        if routed is not None:
+            reply = routed
+        else:
+            with _trace.span("rules.setup"):
+                setup = _setup_answer(question, context)
+            if setup is None:
+                with _trace.span("rules.core"):
+                    setup = _answer_core(question, state, context)
+            reply = setup
+            # A colleague's answer: shipment intelligence, error investigation,
+            # general knowledge, and research when the run is not enough.
+            with _trace.span("rules.enrich"):
+                reply = atlas_intel.enrich(question, state, context, reply, RunData(state),
+                                           run_failures, _pick_failure)
+            reply = _clarify_if_vague(question, context, reply)
+            reply = _with_reasoning(question, context, reply)
     reply.setdefault("sources", ["bridge.snapshot"])
     try:
         data = RunData(state)

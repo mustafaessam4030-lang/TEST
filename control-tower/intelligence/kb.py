@@ -269,14 +269,36 @@ class KB(object):
             for name in [it.get("term"), it.get("acronym"), it.get("full_form")] + list(it.get("synonyms") or []) + \
                     list(it.get("terms_ar") or []):
                 for key in name_keys(name):
+                    # A number alone, or a fragment left when common words are
+                    # dropped ("5" from "5 whys"), is not a name.
+                    if re.fullmatch(r"[\d\s]+", key) or (len(key) < 3 and " " not in key and
+                                                          str(it.get("acronym") or "").lower() != key):
+                        continue
                     self.names.setdefault(key, set()).add(iid)
         self.avg = (sum(n for _tf, n in self.docs.values()) / float(len(self.docs))) if self.docs else 1.0
+        # How many items' text uses a name's words: a one-word name many items
+        # use ("stock", "sea") is generic; "CFR" or "blank sailing" is not.
+        self.name_df = {key: sum(1 for tf, _n in self.docs.values() if all(t in tf for t in key.split()))
+                        for key in self.names}
         # The concept graph's reverse edges, so "what points here" is a lookup.
         self.incoming = {}
         for iid, it in self.items.items():
             for r in it.get("related") or []:
                 if isinstance(r, dict) and r.get("id") in self.items:
                     self.incoming.setdefault(r["id"], []).append((iid, r.get("type", "related")))
+
+    def _specific(self, name, it, query):
+        """A name that says which concept is meant: several words, an acronym
+        the operator typed in capitals ("EXW", "OTIF"), or the one-word name of
+        an Incoterm, KPI or document few items use. An everyday word ("buying",
+        "stock", "sea") is not."""
+        if len(name.split()) >= 2:
+            return True
+        if len(name) <= 6 and re.search(r"\b" + re.escape(name.upper()) + r"S?\b", str(query or "")):
+            return True
+        if name in name_keys(it.get("term")) or name == str(it.get("acronym") or "").lower():
+            return True                   # the concept's own one-word name ("Demurrage")
+        return it.get("kind") in ("incoterm", "kpi", "document") and self.name_df.get(name, 99) <= 5
 
     def current(self, it):
         return it.get("review_status", "unreviewed") in CURRENT
@@ -336,6 +358,9 @@ class KB(object):
                 name = max((k for k, v in self.names.items() if iid in v and " " + k + " " in qs),
                            key=lambda k: (len(k.split()), k))
                 s += 12.0 + 3.0 * len(name.split())
+                if len(name) <= 6 and len(name.split()) == 1 and \
+                        re.search(r"\b" + re.escape(name.upper()) + r"S?\b", str(query or "")):
+                    s += 6.0          # an acronym typed as such ("EXW") over an everyday word ("buying")
             if not s:
                 continue
             s *= (0.5 + 0.5 * hits / len(set(q))) if iid not in named else 1.0
@@ -349,10 +374,25 @@ class KB(object):
             # How much of the question the name is: 1.0 for "what is demurrage", low
             # for a generic word said in passing ("…proves who owns cargo at sea").
             cover = round(len(set(tokens(name)) & set(q)) / float(len(set(q))), 2) if name else 0.0
+            specific = bool(name) and self._specific(name, it, query)
             scored.append({"id": iid, "score": round(s, 3), "item": it, "named": iid in named, "name": name,
-                           "coverage": cover, "flags": flags})
+                           "coverage": cover, "specific": specific, "flags": flags})
         scored.sort(key=lambda r: (-r["score"], r["id"]))
         return scored[:limit]
+
+    def hit(self, iid, score, **extra):
+        """A search result for one item, in search()'s shape (for candidates
+        found another way, e.g. semantic retrieval)."""
+        it = self.items[iid]
+        flags = []
+        if it.get("review_status") != "approved":
+            flags.append(it.get("review_status", "unreviewed"))
+        if self.stale(it):
+            flags.append("stale")
+        if it.get("scope") == "jurisdiction":
+            flags.append("jurisdiction:" + str(it.get("jurisdiction")))
+        return dict({"id": iid, "score": round(score, 3), "item": it, "named": False, "name": None,
+                     "coverage": 0.0, "flags": flags}, **extra)
 
     def get(self, iid):
         return self.items.get(iid)

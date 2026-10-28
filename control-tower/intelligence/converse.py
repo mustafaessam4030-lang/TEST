@@ -37,6 +37,7 @@ import time
 
 from . import factguard, llm
 from . import research as R
+from . import trace
 
 ARABIC = re.compile(r"[؀-ۿ]")
 # Arabic success words, and the English word the records must affirm first.
@@ -345,7 +346,8 @@ def answer(question, state, context, rules):
     if quick is not None:
         return quick
     R.stage(R.clean_progress_id((context or {}).get("progress_id")), "Waiting for my turn…")
-    busy = _enter()
+    with trace.span("model.queue"):
+        busy = _enter()
     if busy:
         lang = language_of(question)
         reply = rules(question, state, dict(context or {}, _no_phrase=True))
@@ -417,7 +419,15 @@ def _answer(question, state, context, rules):
     # The rules read the question first: when they recognise it as a question
     # about the records (or a hello / thank-you), the model's "understand"
     # call is skipped — one model call instead of two, half the queue.
-    direct = rules(question, state, inner) if lang == "en" else None
+    with trace.span("converse.rules"):
+        read = rules(question, state, inner)
+    # The early returns below are for English: an Arabic question keeps its
+    # Arabic answer (written by the model from the records).
+    direct = read if lang == "en" else None
+    if _recognised(read):
+        trace.useful("rules")
+    if lang != "en" and _knowledge_built(read):
+        return _as_built_knowledge(read)
     route = "model"
     if direct and direct.get("intent") == "potato":
         # Read straight from Potato Mode: nothing for a model to add.
@@ -450,11 +460,18 @@ def _answer(question, state, context, rules):
         # ("What should I do next?" -> small talk) and changed its meaning
         # ("Finding PDF" -> "found a PDF"), which the fact guard cannot see.
         return _records_reply(question, state, context, rules)
+    _early(pid, read)
+    # Understood without a model when the signals are plain (fast_plan);
+    # the model reads the question only when they are not.
+    plan = fast_plan(question, read, lang)
+    if plan is not None:
+        route = "rules"
     else:
         try:
             R.stage(pid, "Understanding the question…")
             t = time.time()
-            plan = understand(question)
+            with trace.span("model.understand"):
+                plan = understand(question)
             timings["understand_s"] = round(time.time() - t, 1)
         except llm.LLMError as error:
             return fallback(str(error))
@@ -470,7 +487,11 @@ def _answer(question, state, context, rules):
         return _chat(question, state, inner, rules, lang, plan, timings, started)
 
     R.stage(pid, "Reading ELAP's records…")
-    base = rules(plan["question_en"], state, inner)
+    if plan["question_en"] == question:
+        base = read                        # the same question: the rules already read it
+    else:
+        with trace.span("converse.rules"):
+            base = rules(plan["question_en"], state, inner)
     known = _knowledge_built(base)
     if known and not plan["needs_web"]:
         # A knowledge answer (the model read an Arabic question as one): the
@@ -488,7 +509,8 @@ def _answer(question, state, context, rules):
     if plan["needs_web"]:
         R.stage(pid, "Searching the web…")
         t = time.time()
-        web, web_problem = web_research(plan["web_query"] or plan["question_en"])
+        with trace.span("web"):
+            web, web_problem = web_research(plan["web_query"] or plan["question_en"])
         timings["search_s"] = round(time.time() - t, 1)
 
     web_text = "\n".join("[{0}] {1} ({2}) — {3}: {4}".format(
@@ -505,9 +527,10 @@ def _answer(question, state, context, rules):
     try:
         R.stage(pid, "Writing the answer…")
         t = time.time()
-        text = llm.provider().generate(
-            COMPOSE.format(language="Arabic" if lang == "ar" else "English"), prompt,
-            json_mode=True, max_tokens=int(os.environ.get("ATLAS_LLM_MAX_TOKENS") or 450))
+        with trace.span("model.compose"):
+            text = llm.provider().generate(
+                COMPOSE.format(language="Arabic" if lang == "ar" else "English"), prompt,
+                json_mode=True, max_tokens=int(os.environ.get("ATLAS_LLM_MAX_TOKENS") or 450))
         timings["compose_s"] = round(time.time() - t, 1)
     except llm.LLMError as error:
         out = fallback(str(error), base)
@@ -783,7 +806,65 @@ def _records_question(reply, question):
         return False
     if intent == "glossary" or not WEB_CUE.search(question):
         return True
+    if reply.get("reference") and not STRONG_WEB.search(question):
+        return True                 # "and what is its ETA?" about the shipment in the conversation
     return not STRONG_WEB.search(question) and bool(ABOUT_RECORDS.search(question))
+
+
+# The outside world: only these send an English question to web research when
+# the model is not asked to decide (and only when a search service is set up).
+WEB_NEED = re.compile(r"(web|website|site|portal|internet|online|search|google|news|notice|advisor(?:y|ies)|"
+                      r"strike|weather|storm|closure|closed port|congestion at|holiday|how (?:do|can) i track)\b", re.I)
+
+
+def _recognised(reply):
+    return bool(reply) and bool(reply.get("intent")) and not reply.get("fallback") \
+        and reply.get("understood") is not False
+
+
+def fast_plan(question, read, lang):
+    """
+    What the model's 'understand' call would return, decided without a model
+    when the signals are plain; None when the model is needed.
+
+    English: the question needs no restating; web research only on an
+    outside-world cue and only when a search service is set up; small talk
+    by the personal-words list. Another language: only when the rules
+    recognised the question themselves (the model still writes the answer in
+    the operator's language).
+    """
+    q = " ".join(str(question or "").split())
+    specific = _recognised(read) and read.get("intent") not in WEAK_INTENTS and not read.get("request")
+    if lang == "en":
+        needs_web = bool(R.enabled()) and bool(STRONG_WEB.search(q))
+        if bool(PERSONAL.search(q)) and not WORK.search(q) and not needs_web and not _recognised(read):
+            return {"question_en": q[:500], "needs_web": False, "web_query": "", "chat": True, "fast": True}
+        if specific:
+            return {"question_en": q[:500], "needs_web": needs_web, "web_query": q[:200] if needs_web else "",
+                    "chat": False, "fast": True}
+        return None              # a vague or unrecognised question: the model's restatement helps the rules
+    if specific:
+        return {"question_en": q[:500], "needs_web": False, "web_query": "", "chat": False, "fast": True}
+    return None
+
+
+# Readings too general to stand in for the model's restatement: "which
+# failed?" read as a filter is answered better once restated as "Which
+# shipments failed?".
+WEAK_INTENTS = {"filter", "handbook_guide", None}
+
+
+def _early(pid, read):
+    """The rules' own answer, shown in the chat while the model writes — an
+    answer about the records, labelled as the quick one. Never for an action
+    (a re-run, a run control): its outcome is only known when the server has
+    checked it."""
+    if not pid or not _recognised(read) or read.get("request") or read.get("operation") or \
+            read.get("conduct") or read.get("intent") in ("run_control", "reprocess", "code_request", "human_resume"):
+        return
+    text = str(read.get("answer") or "").strip()
+    if text:
+        R.early(pid, text[:4000])
 
 
 def _kind_if_personal(reply, question, lang):

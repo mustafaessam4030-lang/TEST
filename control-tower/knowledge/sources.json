@@ -122,6 +122,8 @@
     {"id": "proj-po", "title": "PO.md — the duty PO automation", "publisher": "This repository",
      "path": "PO.md", "authority": "project", "kind": "guide"},
     {"id": "proj-human-queue", "title": "human_queue.py — the Human Action queue", "publisher": "This repository",
-     "path": "human_queue.py", "authority": "project", "kind": "code"}
+     "path": "human_queue.py", "authority": "project", "kind": "code"},
+    {"id": "wto-tfa-text", "title": "WTO Trade Facilitation Agreement — legal text", "publisher": "World Trade Organization (WTO)", "url": "https://www.wto.org/english/docs_e/legal_e/tfa-nov14_e.htm", "edition": "Protocol of 27 November 2014", "authority": "international-organisation", "kind": "treaty", "checked": {"on": "2026-10-28", "url_status": 200, "note": "Read on 28 Oct 2026: Article 7.1 pre-arrival processing, 7.3 release before final determination, 7.4 risk management, 7.5 post-clearance audit, 7.7 authorized operators, 7.8 expedited shipments; Article 10.9 temporary admission. Members implement these in national law."}},
+    {"id": "wco-safe", "title": "WCO SAFE Framework of Standards package", "publisher": "World Customs Organization (WCO)", "url": "https://www.wcoomd.org/en/topics/facilitation/instrument-and-tools/frameworks-of-standards/safe_package.aspx", "edition": "Check the current edition on the page", "authority": "international-organisation", "kind": "standard", "checked": {"on": "2026-10-28", "url_status": 200, "note": "The page names the AEO programme introduced by the SAFE Framework."}}
   ]
 }

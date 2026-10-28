@@ -120,6 +120,10 @@ class OllamaProvider(object):
         Reasoning ("thinking") is switched off: an operator is waiting."""
         if not self.health()["ok"]:
             raise LLMError(self.health()["detail"])
+        key = None if images else _cache_key(self.model, system, prompt, json_mode, max_tokens)
+        hit = _cache_get(key)
+        if hit is not None:
+            return hit
         # gpt-oss takes a reasoning level, not on/off: the lowest, an operator waits.
         body = {"model": self.model, "stream": False,
                 "think": "low" if str(self.model or "").startswith("gpt-oss") else False,
@@ -143,12 +147,15 @@ class OllamaProvider(object):
         last = None
         for attempt in range(self.retries + 1):
             try:
+                started = time.perf_counter()
                 answer = self._call("POST", "/api/chat", body, timeout)
+                _trace_call(body["model"], started, answer)
                 text = ((answer.get("message") or {}).get("content") or "").strip()
                 if not text:
                     raise LLMError("the local model returned no text")
                 if not images:
                     _report(True, body["model"], None)
+                    _cache_put(key, text)
                 return text
             except LLMError as error:
                 last = error
@@ -157,6 +164,69 @@ class OllamaProvider(object):
         if not images:
             _report(False, body["model"], str(last))
         raise last
+
+
+# Optional (ATLAS_LLM_CACHE_S=seconds; off by default): the same model given
+# byte-identical input (system prompt, prompt — which carries the records it
+# was shown — and settings) gives the stored text instead of a second
+# CPU-bound call. Different records mean a different prompt, so a cached reply
+# never stands in for newer data. Off by default because a model's output is
+# not deterministic: reusing it hides a second, different (perhaps rejected)
+# phrasing. ATLAS's own answers are deterministic and take milliseconds.
+_cache, _cache_lock = {}, threading.Lock()
+
+
+def _cache_ttl():
+    try:
+        return max(0.0, float(os.environ.get("ATLAS_LLM_CACHE_S") or 0))
+    except ValueError:
+        return 0.0
+
+
+def _cache_key(model, system, prompt, json_mode, max_tokens):
+    import hashlib
+    raw = json.dumps([model, system, prompt, bool(json_mode), int(max_tokens)], ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key):
+    if key is None or not _cache_ttl():
+        return None
+    with _cache_lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < _cache_ttl():
+        try:
+            from . import trace
+            trace.model({"cached": True, "wall_ms": 0.0})
+        except Exception:
+            pass
+        return hit[1]
+    return None
+
+
+def _cache_put(key, text):
+    if key is None or not _cache_ttl():
+        return
+    with _cache_lock:
+        if len(_cache) >= 256:
+            for k in sorted(_cache, key=lambda k: _cache[k][0])[:64]:
+                _cache.pop(k, None)
+        _cache[key] = (time.time(), text)
+
+
+def _trace_call(model, started, answer):
+    """The call's timings for intelligence/trace: Ollama reports its load,
+    prompt-processing and generation durations (nanoseconds). Time to first
+    token is about load + prompt processing."""
+    try:
+        from . import trace
+        ns = lambda k: (answer.get(k) or 0) / 1e6
+        trace.model({"model": model, "wall_ms": (time.perf_counter() - started) * 1000,
+                     "load_ms": ns("load_duration"), "prompt_ms": ns("prompt_eval_duration"),
+                     "gen_ms": ns("eval_duration"), "prompt_tokens": answer.get("prompt_eval_count"),
+                     "out_tokens": answer.get("eval_count")})
+    except Exception:
+        pass
 
 
 # How each text answer went, for autoconfig's automatic model choice: it moves

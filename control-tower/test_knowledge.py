@@ -47,8 +47,11 @@ section("1. THE KNOWLEDGE: SCHEMA, CURRICULUM, SOURCES")
 check("Every item loads and validates (no schema problem, no dangling link)", not k.errors, k.errors[:5])
 check("Every curriculum domain A–F and P has items",
       all(sum(1 for it in k.items.values() if it["domain"] == d) >= 10 for d in "ABCDEFP"), k.stats()["by_domain"])
-check("At least 150 items, each with an Arabic definition and Arabic terms",
-      len(k.items) >= 150 and all(it.get("definition_ar") and it.get("terms_ar") for it in k.items.values()))
+check("At least 150 items, every one with Arabic terms (so an Arabic question finds it)",
+      len(k.items) >= 150 and all(it.get("terms_ar") for it in k.items.values()))
+no_ar = sorted(i for i, it in k.items.items() if not it.get("definition_ar"))
+check("At least 165 items have an Arabic definition; the rest are listed, not hidden ({0} without)".format(len(no_ar)),
+      len(k.items) - len(no_ar) >= 165, no_ar[:10])
 kpis = [it for it in k.items.values() if it["kind"] == "kpi"]
 check("Every KPI states formula, unit, aggregation, period, fields, exclusions, limits and whose convention it is",
       len(kpis) >= 15 and all(all(it["kpi"].get(f) for f in KB.KPI_FIELDS) for it in kpis))

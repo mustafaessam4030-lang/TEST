@@ -149,6 +149,23 @@ def stage(pid, text, detail=None):
         entry["at"] = time.time()
 
 
+def early(pid, answer):
+    """A useful answer that exists before the final one (the records' own,
+    while the model writes): the chat shows it, labelled, until the final
+    answer replaces it."""
+    if not pid or not answer:
+        return
+    with _lock:
+        entry = _progress.setdefault(pid, {"stages": [], "done": False, "at": time.time()})
+        entry["early"] = str(answer)[:4000]
+        entry["at"] = time.time()
+    try:
+        from . import trace
+        trace.useful("early")
+    except Exception:
+        pass
+
+
 def progress_done(pid):
     if not pid:
         return
@@ -164,7 +181,7 @@ def progress(pid):
             return {"stage": None, "detail": None, "done": False, "steps": 0}
         last = entry["stages"][-1] if entry["stages"] else {}
         return {"stage": last.get("text"), "detail": last.get("detail"), "done": entry["done"],
-                "steps": len(entry["stages"])}
+                "steps": len(entry["stages"]), "early": entry.get("early")}
 
 
 def clean_progress_id(raw):

@@ -1261,6 +1261,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({"error": "not found"}))
             return
 
+        from intelligence import trace as _trace
+        _trace.begin()
+        _parse = _trace.span("server.parse")
+        _parse.__enter__()
         try:
             length = int(self.headers.get("Content-Length") or 0)
             if length > 4000:                      # nothing legitimate is bigger
@@ -1297,8 +1301,10 @@ class Handler(BaseHTTPRequestHandler):
                        "conduct": int(raw_context.get("conduct") or 0)
                        if str(raw_context.get("conduct") or "0").isdigit() else 0}
         except Exception:
+            _trace.end()
             self._send(400, json.dumps({"error": "bad request"}))
             return
+        _parse.__exit__(None, None, None)
 
         # The assistant only ever receives a snapshot. It has no handle on the
         # bridge, the browser or the credentials, so it cannot act on anything.
@@ -1313,9 +1319,14 @@ class Handler(BaseHTTPRequestHandler):
             # Clearance figures only for a role that may open the Clearance page.
             context["clearance"] = "1" if self._acc_can("clearance.view") else "0"
         try:
-            reply = assistant.answer(question, _assistant_state(), context)
+            with _trace.span("server.state"):
+                state = _assistant_state()
+            with _trace.span("answer"):
+                reply = assistant.answer(question, state, context)
         finally:
             _research.progress_done(context.get("progress_id"))
+        _record = _trace.span("server.record")
+        _record.__enter__()
         if self.user is not None:
             # Signed-in people are told in the chat window that this is kept.
             _conversations.record(self.user, question, reply)
@@ -1357,8 +1368,14 @@ class Handler(BaseHTTPRequestHandler):
             reply["evidence"] = []
             reply["answer"] = (reply.get("answer") or "") + (
                 "\n\nScreenshots are shown to Operators and Admins.")
-
-        self._send(200, json.dumps(reply))
+        _record.__exit__(None, None, None)
+        # Where this question's time went: stage names and milliseconds only.
+        timing = _trace.end(reply.get("intent"))
+        if timing:
+            reply["timing"] = {k: timing[k] for k in ("total_ms", "first_useful_ms", "first_useful_by", "stages")}
+            if timing["model"]:
+                reply["timing"]["model"] = timing["model"]
+        self._send(200, json.dumps(reply), extra={"Server-Timing": _trace.server_timing(timing)} if timing else None)
 
     # -- PO Automation ---------------------------------------------------------
 

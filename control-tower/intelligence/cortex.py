@@ -274,9 +274,17 @@ class CortexProvider(object):
                      "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN"})
         own = float(os.environ.get("ATLAS_CORTEX_TIMEOUT_S") or 30)
         limit = min(float(timeout), own) if timeout else own     # the caller's wait, at most Cortex's own
+        started = time.perf_counter()
         try:
             with self.opener(request, timeout=limit) as response:
                 answer = json.loads(response.read().decode("utf-8") or "{}")
+            try:
+                from . import trace
+                usage = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
+                trace.model({"model": "cortex:" + str(self.model), "wall_ms": (time.perf_counter() - started) * 1000,
+                             "prompt_tokens": usage.get("prompt_tokens"), "out_tokens": usage.get("completion_tokens")})
+            except Exception:
+                pass
         except urllib.error.HTTPError as error:
             self._fail("Snowflake answered HTTP {0}{1}".format(error.code, {
                 401: " (token expired or wrong)", 403: " (the user's role lacks Cortex, or a network policy refused this server)",

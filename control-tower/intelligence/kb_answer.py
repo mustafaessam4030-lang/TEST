@@ -18,6 +18,7 @@ a missing number is asked for, never assumed. A country rule says its
 country, its status and its review date. A superseded or retired item is
 never answered as current.
 """
+import os
 import re
 import time
 
@@ -97,29 +98,52 @@ def _intent(question, hits):
     inc = CALC.incoterm_question(question) if CALC.RULE.search(question or "") else None
     if inc and inc.get("aspect"):
         return "incoterm"
-    named = [h for h in hits if h["named"]]
-    if len(named) >= 2 and COMPARE.search(question or ""):
+    named = [h for h in hits if h["named"] and h.get("specific", True)]
+    if len(named) >= 2 and COMPARE.search(question or "") and _joined(question, named[0], named[1]):
         return "compare"
     return "definition"
 
 
-def match(question, k=None):
+def _joined(question, a, b):
+    """Both names are said, joined by vs / or / versus / and, or 'between …
+    and …' — a comparison, not two concepts that happen to match."""
+    keys = " | ".join(KB.name_keys(question))
+    ta, tb = a.get("name"), b.get("name")
+    if not ta or not tb:
+        return True
+    pa, pb = keys.find(ta), keys.find(tb)
+    if pa < 0 or pb < 0:
+        return True
+    lo, hi = sorted([(pa, ta), (pb, tb)])
+    between = keys[lo[0] + len(lo[1]):hi[0]]
+    return len(between.split()) <= 4 or bool(re.search(r"differ|between|compar|versus|vs", question, re.I))
+
+
+def match(question, k=None, routed=False):
     """The best results for a knowledge question, or [] when the question is
     not one (or nothing relevant is known)."""
     q = " ".join(str(question or "").split())
     if not q or len(q) > 400:
         return []
-    k = k or KB.kb()
-    hits = k.search(q, limit=6)
-    if not hits:
-        return []
-    strong = bool(GENERAL_ASK.search(q)) or CALC.calculate(q) is not None
+    from . import trace
+    with trace.span("kb.search"):
+        k = k or KB.kb()
+        hits = k.search(q, limit=6)
+    strong = bool(GENERAL_ASK.search(q)) or CALC.calculate(q) is not None or routed
     asks = strong or bool(BROAD_ASK.search(q))
     # A data question ("how many…", "which…", "our…") reaches the knowledge
     # only when it plainly asks what something is ("what is our OTIF").
     if RUN_FIELD.search(q) or RUN_SUBJECT.search(q) or REFERENCE.search(q) or SPECIFIC.search(q) or PAST_ASK.search(q) or \
             (DATA_ASK.search(q) and not strong):
         return []                                       # a data question: the records answer it
+    if asks:
+        # Routing decided this is a knowledge question; semantic retrieval
+        # (optional) may now say WHICH item — never whether to answer.
+        chosen = _semantic(q, k, hits)
+        if chosen is not None:
+            return chosen
+    if not hits:
+        return []
     top = hits[0]
     # A bare name ("HS code", "telex release", "OTIF") is a knowledge question;
     # a short question that merely contains a known word ("which shipments
@@ -131,6 +155,55 @@ def match(question, k=None):
     if asks and top["score"] >= MIN_SCORE:
         return hits
     return []
+
+
+def _semantic(q, k, hits):
+    """Semantic candidates over keyword hits, or None to keep the keyword
+    result. An exact name that is most of the question always wins; a
+    semantic candidate wins only when it is clearly ahead of the next one."""
+    from . import kb_embed, router
+    if not kb_embed.enabled():
+        return None
+    # Similarity is not relevance: without logistics words ("weather in Cairo"
+    # scores 0.47 against Egypt's customs entry) there is nothing to find.
+    if router.OFF_TOPIC.search(q) or not (router.DOMAIN.search(q) or router.INCOTERM.search(q)):
+        return None
+    if hits and hits[0]["named"] and hits[0].get("coverage", 0) >= PASSING:
+        return None                      # the name is most of the question ("what is demurrage?")
+    cands = kb_embed.candidates(q, k, limit=5)
+    if not cands:
+        return None
+    best, cos = cands[0]
+    margin = cos - (cands[1][1] if len(cands) > 1 else 0.0)
+    lo, gap = SEM_THRESHOLDS()
+    if cos >= lo and margin >= gap:
+        first = k.hit(best, cos * 100, semantic=round(cos, 3), coverage=1.0, specific=True)
+        return [first] + [h for h in hits if h["id"] != best]
+    if cos >= SEM_CLOSEST and not (hits and hits[0]["named"] and hits[0].get("specific")):
+        # Not decisive: offered only as the closest entry, said as such.
+        first = k.hit(best, cos * 100, semantic=round(cos, 3), coverage=0.0, specific=False)
+        return [first] + [h for h in hits if h["id"] != best]
+    return None
+
+
+def SEM_THRESHOLDS():
+    """(minimum cosine, minimum lead over the second candidate) — set from the
+    development set for the model in use (ATLAS_EMBED_MIN, ATLAS_EMBED_MARGIN)."""
+    from . import kb_embed
+    name = kb_embed.model() or ""
+    lo, gap = next((v for key, v in SEM_DEFAULTS.items() if key in name), (0.6, 0.03))
+    try:
+        lo = float(os.environ.get("ATLAS_EMBED_MIN") or lo)
+        gap = float(os.environ.get("ATLAS_EMBED_MARGIN") or gap)
+    except ValueError:
+        pass
+    return lo, gap
+
+
+# Calibrated on knowledge/eval/dev_v2.json only (never on the held-out set).
+SEM_DEFAULTS = {"bge-m3": (0.5, 0.03), "qwen3-embedding": (0.6, 0.03)}
+# A semantic candidate below the bar above is still the closest entry, labelled so.
+SEM_CLOSEST = 0.5
 
 
 def applies(question):
@@ -306,15 +379,133 @@ def _kpi_block(it):
     return ["\n".join(lines)]
 
 
-def answer(question, context=None, data=None):
+# ── scenarios: reasoning about a described situation ─────────────────────────
+
+SCENARIO_CUE = re.compile(
+    r"\b(what (?:should|do|can) (?:we|i)|what now|is (?:that|it|this) (?:right|wrong|correct|normal|actually)|"
+    r"why (?:is|did|was|has)|how (?:do|should) we (?:handle|fix|deal|recover|proceed)|who do i believe|what'?s going on|any idea|"
+    r"says|shows|billed|charged|but|won'?t|didn'?t|doesn'?t|still)\b|ليه|ايه اللي|أصدق|أصدّق|بس|نعمل ايه", re.I)
+
+
+DEFINE_START = re.compile(r"^\s*(what is|what's a|what are|define|explain|meaning of|ما هو|ما هي|يعني ايه)\b", re.I)
+
+
+def is_scenario(question):
+    """A described situation to reason about, not a term to define: ten words
+    or more, not a definition request. Whether a playbook fits decides the
+    rest (_playbook needs more evidence when no situation cue is present)."""
+    q = " ".join(str(question or "").split())
+    return len(q.split()) >= 10 and not DEFINE_START.search(q)
+
+
+def _clauses(q):
+    """The operator's own statements, verbatim: the facts the message gives."""
+    parts = re.split(r"(?<=[.;!?؟])\s+|\s+(?:but|and then|so now|however)\s+|,\s+(?=[a-z\u0600-\u06ff])|\s*،\s*|\s+و(?=[\u0600-\u06ff]{2,}\s)", q)
+    out = []
+    for p in parts:
+        p = p.strip(" ,.;")
+        if len(p.split()) < 3:
+            continue
+        if p.endswith("?") or p.endswith("؟") or re.match(r"^(what|why|how|who|is|are|should|can|could|do|does|any)\b", p, re.I) \
+                or re.match(r"^(نعمل ايه|ايه|ليه|مين|هل|ازاي)", p):
+            continue                          # the question, not a fact
+        out.append(p)
+    return out[:5]
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z\u0600-\u06ff]{4,}", (text or "").lower())}
+
+
+def _playbook(q, k, hits, cue=True):
+    low = q.lower()
+    near = {h["id"] for h in hits[:6]}
+    best, best_score = None, 0.0
+    for it in k.items.values():
+        diag = it.get("diagnostic")
+        if not diag or not k.current(it):
+            continue
+        score = sum(1.0 for t in diag.get("triggers") or [] if t in low)
+        score += 0.5 * sum(1 for r in it.get("related") or [] if r.get("id") in near)
+        if score > best_score:
+            best, best_score = it, score
+    # Two of its triggers, or one and a concept it rests on among the matches:
+    # one everyday word ("invoice") does not make a situation.
+    return best if best_score >= (1.5 if cue else 2.0) else None
+
+
+def _scenario(q, k, hits, context, data, records=False):
+    pb = _playbook(q, k, hits, cue=bool(SCENARIO_CUE.search(q)))
+    if pb is None:
+        return None
+    diag = pb["diagnostic"]
+    known = _clauses(q) or [q.strip(" ?؟")]
+    told = _words(" ".join(known))
+    missing = [f for f in diag.get("facts_needed") or []
+               if not (_words(f) and len(_words(f) & told) / float(len(_words(f))) >= 0.6)]
+    parts = ["_Reasoning from ATLAS's logistics knowledge about the situation you describe — not a finding "
+             "about a record, and nothing below is confirmed._"]
+    if records:
+        parts = ["**How to reason about it** _(general logistics knowledge, separate from the records above; "
+                 "nothing below is confirmed)_"]
+    if known and not records:
+        parts.append("**Known (from your message)**\n" + "\n".join("• " + x for x in known))
+    said = _words(q) | {w.lower() for w in re.findall(r"\b[A-Z]{3}\b", q)}
+    hyps = []
+    for x in diag.get("hypotheses") or []:
+        cue = _words(x["cause"] + " " + x["confirm"]) | {w.lower() for w in re.findall(r"\b[A-Z]{3}\b", x["confirm"])}
+        hyps.append((len(cue & said), x))
+    hyps.sort(key=lambda t: -t[0])
+    parts.append("**Possible causes — hypotheses, not confirmed**\n" + "\n".join(
+        "• {0}{1} — confirmed by: {2}; ruled out by: {3}".format(
+            x["cause"], " *(your message points to this)*" if n >= 2 else "", x["confirm"], x["rule_out"])
+        for n, x in hyps[:4]))
+    if missing:
+        parts.append("**Missing — what to establish first**\n" + "\n".join("• " + x for x in missing[:5]))
+    calc = CALC.calculate(q)
+    if calc is not None:
+        parts.append("**Calculation**\n" + CALC.describe(calc))
+    parts.append("**Next steps**\n" + "\n".join(
+        "• {0}{1}".format(x["text"], " — *needs approval: {0}*".format(x["approval"]) if x.get("approval") else "")
+        for x in diag.get("next_steps") or []))
+    refs = REFERENCE.findall(q)
+    tail = "From the message alone I can't tell which cause it is; the checks above decide it."
+    if refs:
+        tail += " For {0}, ask me about it by its reference and I'll answer from our records.".format(refs[0])
+    parts.append("**What I can't tell** — " + tail)
+    used = [pb]
+    rel = [k.items[r["id"]] for r in pb.get("related") or [] if r.get("id") in k.items][:4]
+    if rel:
+        parts.append("**Concepts behind it:** " + " · ".join(it["term"] for it in rel))
+    src = _sources(k, used + rel[:2])
+    if src:
+        parts.append("**Sources**\n" + "\n".join(src))
+    parts.append(_status_line(k, pb))
+    return {"answer": "\n\n".join(parts), "intent": "general_knowledge", "understood": True, "grounded": True,
+            "knowledge": {"mode": "scenario", "items": [pb["id"]] + [it["id"] for it in rel],
+                          "review": {pb["id"]: pb.get("review_status")}, "evidence": {pb["id"]: pb.get("evidence_status")},
+                          "citations": [c for it in used for c in k.cite(it)],
+                          "calculation": calc, "top": [[h["id"], h["score"]] for h in hits[:3]],
+                          "known": known, "missing": missing[:5]},
+            "sources": ["knowledge base"]}
+
+
+def answer(question, context=None, data=None, routed=False):
     """
     {"answer", "intent", "knowledge": {...}, "sources", "grounded"} for a
     logistics question, or None when it is not one ATLAS's knowledge covers.
+    `routed`: intelligence/router already decided this is a knowledge
+    question (so its wording need not look like "what is…").
     """
     t0 = time.perf_counter()
     k = KB.kb()
     q = " ".join(str(question or "").split())
-    hits = match(q, k)
+    hits = match(q, k, routed=routed)
+    if routed and is_scenario(q):
+        sc = _scenario(q, k, hits or k.search(q, limit=6), context, data)
+        if sc is not None:
+            KB.log_query(q, hits, (time.perf_counter() - t0) * 1000, "kb_answer:scenario", {"used": sc["knowledge"]["items"]})
+            return sc
     calc = CALC.calculate(q)
     inc = CALC.incoterm_question(q) if CALC.RULE.search(q) else None
     if not hits and calc is None and not (inc and inc.get("aspect")):
@@ -346,7 +537,7 @@ def answer(question, context=None, data=None):
         parts.append("_The Incoterms rule only settles these points if the sale contract names it "
                      "(with the edition, e.g. Incoterms 2020) and does not vary it._")
     elif mode == "compare":
-        named = [h["item"] for h in hits if h["named"]]
+        named = [h["item"] for h in hits if h["named"] and h.get("specific", True)]
         low = q.lower()
 
         def pos(it):
@@ -370,12 +561,13 @@ def answer(question, context=None, data=None):
     else:
         it = hits[0]["item"]
         used.append(it)
-        if hits[0].get("coverage", 1.0) < PASSING:
+        if hits[0].get("coverage", 1.0) < PASSING and not hits[0].get("specific"):
             # Matched on a word the question only mentions in passing: said as the
             # closest entry, not as the answer.
-            parts.append("_Closest entry I have: **{0}** — matched on “{1}” in your question, which may not be "
-                         "what you are asking about. If it is not, name the term you mean._".format(
-                             it["term"], hits[0].get("name") or "a few words"))
+            how = "by meaning (semantic search)" if hits[0].get("semantic") else \
+                "on “{0}” in your question".format(hits[0].get("name") or "a few words")
+            parts.append("_Closest entry I have: **{0}** — matched {1}, which may not be "
+                         "what you are asking about. If it is not, name the term you mean._".format(it["term"], how))
         parts += _definition_block(it, arabic)
         if it.get("example"):
             parts.append("*Example:* " + it["example"])

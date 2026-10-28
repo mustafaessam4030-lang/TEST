@@ -1,0 +1,1638 @@
+{
+ "schema": "atlas-eval/2",
+ "created": "2026-10-28",
+ "author": "an independent writer (a separate agent that did not read the repository or its knowledge items), from a logistics practitioner's brief",
+ "split": "stratified by type, seed 20261028: 40% development, 60% held-out",
+ "set": "development",
+ "purpose": "May be read and used to calibrate thresholds and find gaps.",
+ "cases": [
+  {
+   "id": "r-020",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "did 5271993480 get updated or not",
+   "expected_route": "operational",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-062",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "the alex one, any news",
+   "expected_route": "ambiguous",
+   "expected_concepts": [],
+   "expected_clarification": "which Alexandria shipment (several may be inbound)"
+  },
+  {
+   "id": "r-009",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "what does 'needs review' mean on a shipment in the tower",
+   "expected_route": "atlas_rules",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-029",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "3 pallets each 1.2 x 1.0 x 1.5 m, total cbm?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "cubic meter"
+   ],
+   "inputs": {
+    "pallets": 3,
+    "l_m": 1.2,
+    "w_m": 1.0,
+    "h_m": 1.5
+   },
+   "formula": "pallets * l * w * h",
+   "unit": "m3",
+   "expected_value": 5.4
+  },
+  {
+   "id": "r-051",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "what about the other one",
+   "expected_route": "follow_up",
+   "expected_concepts": [],
+   "previous_turn": "User: check 5271993480 and 1570046231 / Assistant: (answers only about 5271993480)"
+  },
+  {
+   "id": "r-007",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "why would the broker want the HS code and invoice before the vessel even arrives",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "HS classification",
+    "pre-arrival processing"
+   ]
+  },
+  {
+   "id": "r-011",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "when the automation runs what exactly does it change in the Hub",
+   "expected_route": "atlas_rules",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-022",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "any Qatar Airways shipments landing at CAI tomorrow?",
+   "expected_route": "operational",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-002",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "if we buy FCA Hamburg who's paying the ocean freight",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "FCA",
+    "Incoterms"
+   ]
+  },
+  {
+   "id": "r-017",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "where's 8842001173",
+   "expected_route": "operational",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-065",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "weather in cairo tomorrow?",
+   "expected_route": "out_of_scope",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-052",
+   "type": "routing",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "وطيب التانية؟",
+   "expected_route": "follow_up",
+   "expected_concepts": [],
+   "previous_turn": "User: الشحنتين بتوع DHL و Emirates فين؟ / Assistant: (answers about the DHL shipment)"
+  },
+  {
+   "id": "r-018",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "ETA on the maersk box going to alex?",
+   "expected_route": "operational",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-021",
+   "type": "routing",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "شحنة 1570049117 وصلت ولا لسه؟",
+   "expected_route": "operational",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-012",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "what's the difference between skipped and failed in the run results",
+   "expected_route": "atlas_rules",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-066",
+   "type": "routing",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "ممكن وصفة كشري سهلة؟",
+   "expected_route": "out_of_scope",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-061",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "how much is it",
+   "expected_route": "ambiguous",
+   "expected_concepts": [],
+   "expected_clarification": "cost of what: freight, demurrage, duty, a specific invoice"
+  },
+  {
+   "id": "r-026",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "box gated out on day 9, discharge day counts as day 1, free time 5 days, 75 usd/day after that. how much demurrage?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "demurrage",
+    "free time"
+   ],
+   "inputs": {
+    "days_at_terminal_inclusive": 9,
+    "free_days": 5,
+    "rate_usd_per_day": 75
+   },
+   "formula": "max(0, days_inclusive - free_days) * rate",
+   "unit": "USD",
+   "expected_value": 300
+  },
+  {
+   "id": "r-035",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "ETA in the Hub doesn't match what the DHL portal shows, why would that be",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "data reconciliation",
+    "stale data"
+   ]
+  },
+  {
+   "id": "r-069",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "can you help my kid with fractions homework",
+   "expected_route": "out_of_scope",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-055",
+   "type": "routing",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "وده هيكلفنا كام؟",
+   "expected_route": "follow_up",
+   "expected_concepts": [],
+   "previous_turn": "User: الكونتينر بقاله كتير في الميناء، هيبقى عليه ديمرج؟ / Assistant: (explains demurrage starts after free time)"
+  },
+  {
+   "id": "r-016",
+   "type": "routing",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "الاوتوميشن بيشتغل كل قد ايه وبيحدّث ايه بالظبط؟",
+   "expected_route": "atlas_rules",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-008",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "cross docking vs just putting it in the warehouse, when does each make sense",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "cross-docking",
+    "warehousing"
+   ]
+  },
+  {
+   "id": "r-037",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "run finished but like half the shipments didn't update, what's going on",
+   "expected_route": "troubleshooting",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-033",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "why did 8842001173 fail in the run",
+   "expected_route": "troubleshooting",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-036",
+   "type": "routing",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "ليه الشحنة ظاهرة arrived وهي لسه ترانزيت في دبي؟",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "transshipment",
+    "conflicting statuses"
+   ]
+  },
+  {
+   "id": "r-024",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "what's the last status DHL gave us on 1570046231",
+   "expected_route": "operational",
+   "expected_concepts": []
+  },
+  {
+   "id": "r-042",
+   "type": "routing",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "stop the automation for now",
+   "expected_route": "action",
+   "expected_concepts": []
+  },
+  {
+   "id": "k-041",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "machine comes in a container and supplier quoted FOB. why do people say FCA fits containers better",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "FCA",
+    "FOB",
+    "containerized cargo",
+    "transfer of risk"
+   ]
+  },
+  {
+   "id": "k-061",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "what should we put in the SLA with our forwarder",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "service level agreement",
+    "KPI"
+   ]
+  },
+  {
+   "id": "k-017",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "transshipment via Jeddah vs a direct call, what are the trade-offs for urgent parts",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "transshipment",
+    "transit time",
+    "schedule reliability",
+    "rolled cargo"
+   ]
+  },
+  {
+   "id": "k-036",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "we bought CFR, who pays the THC at the discharge port",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "CFR",
+    "THC",
+    "contract of carriage"
+   ]
+  },
+  {
+   "id": "k-038",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "supplier is offering DDP to our Cairo warehouse, sounds easy, any catch?",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "DDP",
+    "import clearance",
+    "importer of record"
+   ]
+  },
+  {
+   "id": "k-045",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "customs said they'll use transaction value, what goes into that number",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "customs valuation",
+    "transaction value"
+   ]
+  },
+  {
+   "id": "k-011",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "ايه الفرق بين الشحن الجوي الدايركت والترانزيت عن طريق الدوحة او دبي؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "direct flight",
+    "transshipment",
+    "transit hub"
+   ]
+  },
+  {
+   "id": "k-055",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "FIFO or FEFO in the parts warehouse, does it matter for us",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "FIFO",
+    "FEFO"
+   ]
+  },
+  {
+   "id": "k-049",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "can clearance start before the vessel arrives or do we have to wait",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "pre-arrival processing",
+    "customs declaration"
+   ]
+  },
+  {
+   "id": "k-016",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "carrier announced a blank sailing on our lane, what does that do to our bookings",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "blank sailing",
+    "rolled cargo",
+    "schedule reliability"
+   ]
+  },
+  {
+   "id": "k-006",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "we have 5 small US suppliers each shipping LCL every week. when is it worth consolidating them into one box?",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "consolidation",
+    "LCL",
+    "FCL",
+    "total landed cost"
+   ]
+  },
+  {
+   "id": "k-014",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "RoRo or breakbulk for a wheel loader, what's the difference for us",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "RoRo",
+    "breakbulk"
+   ]
+  },
+  {
+   "id": "k-067",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "الأرضيات في الميناء غير الديمرج؟ ومين المفروض يدفع كل واحدة؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "storage charges",
+    "demurrage"
+   ]
+  },
+  {
+   "id": "k-031",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "الجمارك ينفع تشتغل على البروفورما ولا لازم الفاتورة التجارية؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "commercial invoice",
+    "proforma invoice"
+   ]
+  },
+  {
+   "id": "k-050",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "البروكر بيقول الشحنة طلعت على الخط الأحمر، ده معناه ايه بالنسبالنا؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "customs inspection",
+    "risk-based selectivity"
+   ]
+  },
+  {
+   "id": "k-071",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "fill rate vs OTIF, which one matters more for our parts customers",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "fill rate",
+    "OTIF"
+   ]
+  },
+  {
+   "id": "k-033",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "buying EXW from the supplier, what's on us to arrange",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "EXW",
+    "Incoterms",
+    "export clearance"
+   ]
+  },
+  {
+   "id": "k-060",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "ايه الترتيب الطبيعي للمراحل من الحجز لحد التسليم في الشحن البحري؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "booking",
+    "gate-in",
+    "loaded on board",
+    "vessel departure",
+    "discharge",
+    "customs release",
+    "delivery",
+    "proof of delivery"
+   ]
+  },
+  {
+   "id": "k-019",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "FTL or LTL from the port to our yard, how do I choose",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "FTL",
+    "LTL"
+   ]
+  },
+  {
+   "id": "k-057",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "how do we set stock for slow movers that are still critical, like final drives",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "critical spares",
+    "service level",
+    "intermittent demand"
+   ]
+  },
+  {
+   "id": "k-072",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "what does high dwell time at the port usually tell you",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "dwell time"
+   ]
+  },
+  {
+   "id": "k-028",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "what counts as a proper POD, is a whatsapp photo enough",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "proof of delivery"
+   ]
+  },
+  {
+   "id": "k-009",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "can we fly a machine that has a lithium battery inside, what do we need to watch out for",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "dangerous goods",
+    "IATA DGR",
+    "shipper's declaration"
+   ]
+  },
+  {
+   "id": "k-042",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "لو شارين CIF، مين شايل المخاطرة واحنا في البحر؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "CIF",
+    "transfer of risk"
+   ]
+  },
+  {
+   "id": "k-021",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "sea-air through Dubai, how does that work and why would anyone do it",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "sea-air",
+    "multimodal transport"
+   ]
+  },
+  {
+   "id": "k-012",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "9 cbm of parts, FCL or LCL, what's usually smarter",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "FCL",
+    "LCL"
+   ]
+  },
+  {
+   "id": "k-065",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "why does BAF change every month on our invoices",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "BAF",
+    "bunker surcharge"
+   ]
+  },
+  {
+   "id": "k-032",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "BL is claused 'shipper's load and count'. if boxes are short when we open it, does that hurt our claim?",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "shipper's load and count",
+    "bill of lading",
+    "cargo claim"
+   ]
+  },
+  {
+   "id": "k-059",
+   "type": "knowledge",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "carrier shows 'discharged', does that mean we can go pick it up",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "discharge",
+    "customs release",
+    "delivery order"
+   ]
+  },
+  {
+   "id": "k-030",
+   "type": "knowledge",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "البوليصة الجوية ليها أصل زي بوليصة الشحن البحري ولا لأ؟",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "air waybill",
+    "bill of lading"
+   ]
+  },
+  {
+   "id": "c-006",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "demurrage tariff: 5 free days, days 6-10 at 60 usd, day 11 onwards 120 usd. box left on day 14 (discharge day = day 1, last day counted). total?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "demurrage",
+    "free time",
+    "tiered tariff"
+   ],
+   "inputs": {
+    "free_days": 5,
+    "tier1_days": "6-10",
+    "tier1_rate": 60,
+    "tier2_from_day": 11,
+    "tier2_rate": 120,
+    "last_day": 14
+   },
+   "formula": "sum over days 6..14 of tier rate",
+   "expected_value": 780,
+   "unit": "USD"
+  },
+  {
+   "id": "c-021",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "box discharged 4 May 2026 08:00, gate-out 9 May 2026 14:00. dwell time in hours?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "dwell time"
+   ],
+   "inputs": {
+    "discharge": "2026-05-04T08:00",
+    "gate_out": "2026-05-09T14:00"
+   },
+   "formula": "(gate_out - discharge) in hours",
+   "expected_value": 126,
+   "unit": "hours"
+  },
+  {
+   "id": "c-026",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "chargeable weight for a box 100x80x60 cm, divisor 6000?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "chargeable weight",
+    "volumetric weight"
+   ],
+   "inputs": {
+    "l_cm": 100,
+    "w_cm": 80,
+    "h_cm": 60,
+    "divisor": 6000
+   },
+   "formula": "max(gross_kg, L*W*H/divisor)",
+   "expected_value": null,
+   "unit": "kg",
+   "should_refuse": false,
+   "should_ask": [
+    "actual gross weight"
+   ],
+   "edge_case": true,
+   "edge_kind": "missing input",
+   "expected_behaviour": "may state volumetric weight = 80 kg but must ask for the gross weight before giving chargeable weight",
+   "partial_value": {
+    "volumetric_kg": 80
+   }
+  },
+  {
+   "id": "c-011",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "budgeted 8,000 usd for clearance + trucking, actual 7,200. variance in % with the sign please",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "cost variance"
+   ],
+   "inputs": {
+    "budget_usd": 8000,
+    "actual_usd": 7200
+   },
+   "formula": "(actual - budget) / budget * 100",
+   "expected_value": -10,
+   "unit": "%",
+   "edge_case": true,
+   "edge_kind": "negative variance (under budget), sign must be kept"
+  },
+  {
+   "id": "c-030",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 3,
+   "question": "MAPE for this SKU: actuals 0, 12, 8 and forecasts 3, 10, 8",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "MAPE",
+    "forecast accuracy",
+    "intermittent demand"
+   ],
+   "inputs": {
+    "actual": [
+     0,
+     12,
+     8
+    ],
+    "forecast": [
+     3,
+     10,
+     8
+    ]
+   },
+   "formula": "mean(|A-F|/A) * 100",
+   "expected_value": null,
+   "unit": "%",
+   "should_refuse": true,
+   "edge_case": true,
+   "edge_kind": "zero actual makes MAPE undefined",
+   "expected_behaviour": "explain MAPE is undefined when an actual is 0; may offer WAPE (sum|A-F|/sum A = 5/20 = 25%) as an alternative, clearly labelled",
+   "alternative_value": {
+    "WAPE_pct": 25
+   }
+  },
+  {
+   "id": "c-012",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "PO issued 12 Jan 2026, parts received 9 Mar 2026. lead time in calendar days (received minus PO date)?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "lead time"
+   ],
+   "inputs": {
+    "po_date": "2026-01-12",
+    "received_date": "2026-03-09"
+   },
+   "formula": "received_date - po_date",
+   "expected_value": 56,
+   "unit": "days"
+  },
+  {
+   "id": "c-028",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "inventory turns for the new branch: COGS 350k, average inventory 0 (we just opened)",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "inventory turnover"
+   ],
+   "inputs": {
+    "cogs_usd": 350000,
+    "avg_inventory_usd": 0
+   },
+   "formula": "cogs / avg_inventory",
+   "expected_value": null,
+   "unit": "turns",
+   "should_refuse": true,
+   "edge_case": true,
+   "edge_kind": "zero denominator",
+   "expected_behaviour": "say turns are undefined with zero average inventory; suggest checking the inventory figure"
+  },
+  {
+   "id": "c-002",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 1,
+   "question": "one crate 150 x 120 x 110 cm, 210 kg. using 6000, chargeable?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "chargeable weight",
+    "volumetric weight"
+   ],
+   "inputs": {
+    "l_cm": 150,
+    "w_cm": 120,
+    "h_cm": 110,
+    "gross_kg": 210,
+    "divisor": 6000
+   },
+   "formula": "max(gross_kg, L*W*H/divisor)",
+   "expected_value": 330,
+   "unit": "kg"
+  },
+  {
+   "id": "c-013",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "transit days on the last 5 Antwerp-Alex boxes: 18, 22, 25, 19, 31. average?",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "transit time"
+   ],
+   "inputs": {
+    "transit_days": [
+     18,
+     22,
+     25,
+     19,
+     31
+    ]
+   },
+   "formula": "mean(transit_days)",
+   "expected_value": 23,
+   "unit": "days"
+  },
+  {
+   "id": "c-019",
+   "type": "calculation",
+   "lang": "ar",
+   "difficulty": 2,
+   "question": "صرفنا 186 ألف دولار على 62 شحنة الربع ده، متوسط تكلفة الشحنة؟",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "cost per shipment"
+   ],
+   "inputs": {
+    "total_cost_usd": 186000,
+    "shipments": 62
+   },
+   "formula": "total_cost / shipments",
+   "expected_value": 3000,
+   "unit": "USD"
+  },
+  {
+   "id": "c-022",
+   "type": "calculation",
+   "lang": "ar",
+   "difficulty": 1,
+   "question": "كرتونة 80×60×50 سم ووزنها 18 كيلو، بالقسمة على 6000 الوزن اللي هيتحاسب عليه كام؟",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "chargeable weight",
+    "volumetric weight"
+   ],
+   "inputs": {
+    "l_cm": 80,
+    "w_cm": 60,
+    "h_cm": 50,
+    "gross_kg": 18,
+    "divisor": 6000
+   },
+   "formula": "max(gross_kg, L*W*H/divisor)",
+   "expected_value": 40,
+   "unit": "kg"
+  },
+  {
+   "id": "c-027",
+   "type": "calculation",
+   "lang": "en",
+   "difficulty": 2,
+   "question": "how much demurrage on the MSC box? free time was 7 days and it's 85 a day",
+   "expected_route": "calculation",
+   "expected_concepts": [
+    "demurrage",
+    "free time"
+   ],
+   "inputs": {
+    "free_days": 7,
+    "rate_usd_per_day": 85
+   },
+   "formula": "max(0, days_used - free_days) * rate",
+   "expected_value": null,
+   "unit": "USD",
+   "should_refuse": false,
+   "should_ask": [
+    "discharge date",
+    "gate-out date (or days used)",
+    "day-counting convention"
+   ],
+   "edge_case": true,
+   "edge_kind": "missing input",
+   "expected_behaviour": "ask for the dates / days used; must not assume them or pull a number from nowhere"
+  },
+  {
+   "id": "s-007",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "missing proof of delivery",
+   "question": "need the POD for 5271993480 to close out with the customer. DHL says delivered but won't send anything.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "proof of delivery",
+    "escalation"
+   ],
+   "facts": [
+    "shipment 5271993480",
+    "DHL status delivered",
+    "no POD document received"
+   ],
+   "missing_info": [
+    "who signed and when",
+    "consignee confirmation",
+    "whether an e-POD exists in the carrier system"
+   ],
+   "acceptable_hypotheses": [
+    "POD not yet uploaded / scanned",
+    "e-POD without image",
+    "delivered to a different contact"
+   ],
+   "must_not": [
+    "fabricates or drafts a POD",
+    "states a delivery date as fact from the status alone"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-008",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "missing/qualified proof of delivery",
+   "question": "POD came back signed but with a note '2 boxes damaged'. customer now won't pay. what do we do?",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "proof of delivery",
+    "cargo claim",
+    "Incoterms",
+    "cargo insurance"
+   ],
+   "facts": [
+    "POD signed with damage remark on 2 boxes",
+    "customer withholding payment"
+   ],
+   "missing_info": [
+    "photos and description of the damage",
+    "which items/values are affected",
+    "sales terms / Incoterm (who held risk at delivery)",
+    "insurance cover and claim notice requirements in the policy/contract"
+   ],
+   "acceptable_hypotheses": [
+    "damage on the final delivery leg",
+    "damage before handover / packing failure",
+    "handling damage at a terminal"
+   ],
+   "must_not": [
+    "states who is liable without the terms",
+    "states a specific legal claim deadline as fact",
+    "states the root cause as confirmed"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-019",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "inconsistent documents / partial",
+   "question": "HAWB says 4 pieces 620 kg, MAWB says 3 pieces 450 kg for the same shipment, airline says 3 arrived.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "house air waybill",
+    "master air waybill",
+    "split shipment"
+   ],
+   "facts": [
+    "HAWB 4 pcs 620 kg",
+    "MAWB 3 pcs 450 kg",
+    "airline reports 3 pieces arrived"
+   ],
+   "missing_info": [
+    "whether a fourth piece moved on another MAWB/flight",
+    "forwarder's house manifest",
+    "dimensions/weights per piece"
+   ],
+   "acceptable_hypotheses": [
+    "split shipment, remaining piece on a later flight",
+    "piece left at origin",
+    "manifest error"
+   ],
+   "must_not": [
+    "says the fourth piece is lost",
+    "says all 4 pieces arrived"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-042",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "rolled cargo / charges",
+   "question": "they rolled our box, and now say the new vessel comes with a GRI so we pay more. is that fair?",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "rolled cargo",
+    "GRI",
+    "freight quote"
+   ],
+   "facts": [
+    "cargo rolled",
+    "carrier applies GRI on new vessel"
+   ],
+   "missing_info": [
+    "contract/quote terms on rate validity (by sailing or booking date)",
+    "who caused the roll",
+    "GRI effective date"
+   ],
+   "acceptable_hypotheses": [
+    "rate tied to sailing date per contract"
+   ],
+   "must_not": [
+    "states the increase is or isn't contractually valid as fact"
+   ],
+   "should_abstain": true
+  },
+  {
+   "id": "s-006",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "missing proof of delivery",
+   "question": "carrier marked it delivered 4 days ago at our Alexandria warehouse. warehouse swears nothing came in and there's no POD.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "proof of delivery",
+    "delivery confirmation",
+    "conflicting statuses"
+   ],
+   "facts": [
+    "carrier status 'delivered' 4 days ago",
+    "consignee warehouse reports no receipt",
+    "no POD available"
+   ],
+   "missing_info": [
+    "signed POD (name, signature, time)",
+    "delivery address actually used",
+    "warehouse receiving log / gate log",
+    "driver and vehicle details"
+   ],
+   "acceptable_hypotheses": [
+    "delivered to another site or branch",
+    "status set prematurely by carrier",
+    "received but not booked in the WMS"
+   ],
+   "must_not": [
+    "treats the carrier status as confirmed delivery",
+    "writes a delivery date or ATA from the status alone",
+    "states the root cause as confirmed"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-010",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "customs hold",
+   "question": "customs has had our excavator shipment at Alexandria for 6 days, broker just says 'under review'. what's usually behind that and how do we move it?",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "customs hold",
+    "customs inspection",
+    "HS classification",
+    "customs valuation"
+   ],
+   "facts": [
+    "excavator shipment",
+    "held at Alexandria customs 6 days",
+    "broker status 'under review'"
+   ],
+   "missing_info": [
+    "the actual hold reason from customs",
+    "documents submitted and any outstanding requests",
+    "inspection status/result",
+    "HS code and value declared"
+   ],
+   "acceptable_hypotheses": [
+    "valuation query",
+    "classification query",
+    "missing certificate or approval",
+    "physical inspection queue"
+   ],
+   "must_not": [
+    "quotes a specific duty or tax rate",
+    "promises a release date",
+    "states a country-specific customs rule or deadline as fact instead of saying to check with the authority/broker"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-024",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "unexpected charges",
+   "question": "MSC billed demurrage for 14 days on a box we cleared in 3 days. is that invoice wrong?",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "demurrage",
+    "detention",
+    "free time"
+   ],
+   "facts": [
+    "MSC charge for 14 days",
+    "customs clearance took 3 days"
+   ],
+   "missing_info": [
+    "discharge and full gate-out dates",
+    "empty return date",
+    "agreed free time",
+    "whether the charge is demurrage or combined demurrage+detention"
+   ],
+   "acceptable_hypotheses": [
+    "slow pickup after clearance",
+    "late empty return billed under a combined tariff",
+    "free time not applied"
+   ],
+   "must_not": [
+    "declares the invoice wrong or right without the dates",
+    "quotes a tariff"
+   ],
+   "should_abstain": true
+  },
+  {
+   "id": "s-039",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "transshipment miss / partial",
+   "question": "air: 3 of 5 pieces made the connection in DOH, the rest were offloaded. customer wants it all together.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "split shipment",
+    "offload",
+    "transshipment"
+   ],
+   "facts": [
+    "5 pieces total",
+    "3 connected in DOH",
+    "2 offloaded"
+   ],
+   "missing_info": [
+    "flight for the remaining pieces",
+    "whether to clear partial now or wait",
+    "customs implications of split arrival (check with broker)"
+   ],
+   "acceptable_hypotheses": [
+    "offload due to capacity/weight",
+    "late transfer at hub"
+   ],
+   "must_not": [
+    "says all pieces arrived",
+    "gives a new ETA or arrival date without a source"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-020",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "conflicting statuses",
+   "question": "Emirates status says ARRIVED but it's arrived at DXB and our destination is CAI. the tower shows arrived too.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "transshipment",
+    "actual time of arrival",
+    "conflicting statuses"
+   ],
+   "facts": [
+    "airline 'arrived' at DXB",
+    "final destination CAI",
+    "tower also shows arrived"
+   ],
+   "missing_info": [
+    "flight segments and onward flight",
+    "event location for each status",
+    "timestamps"
+   ],
+   "acceptable_hypotheses": [
+    "transit-hub arrival mapped as destination arrival"
+   ],
+   "must_not": [
+    "says the shipment has arrived at destination",
+    "writes an ATA at CAI from the DXB arrival"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-045",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "blank sailing / planning",
+   "question": "two blank sailings in a row on the Asia-Egypt service. how do we plan next month's machine shipments?",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "blank sailing",
+    "schedule reliability",
+    "safety stock",
+    "carrier diversification"
+   ],
+   "facts": [
+    "two consecutive blank sailings on Asia-Egypt"
+   ],
+   "missing_info": [
+    "next month's volumes and required dates",
+    "contracted carriers and alternatives",
+    "stock cover at destination"
+   ],
+   "acceptable_hypotheses": [
+    "capacity management by carriers",
+    "seasonal demand drop"
+   ],
+   "must_not": [
+    "predicts future blank sailings as fact",
+    "states the root cause as confirmed"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-022",
+   "type": "scenario",
+   "lang": "ar",
+   "difficulty": 2,
+   "topic": "conflicting statuses",
+   "question": "DHL كاتب delivered و Qatar Airways لسه كاتب in transit لنفس الشحنة، أصدّق مين؟",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "house air waybill",
+    "master air waybill",
+    "conflicting statuses"
+   ],
+   "facts": [
+    "forwarder status delivered",
+    "airline status in transit",
+    "same shipment"
+   ],
+   "missing_info": [
+    "which reference each status is tied to (HAWB vs MAWB)",
+    "timestamps",
+    "POD"
+   ],
+   "acceptable_hypotheses": [
+    "airline feed lags or stops at its last leg",
+    "statuses refer to different legs/references"
+   ],
+   "must_not": [
+    "picks one status as true without evidence",
+    "says the shipment has arrived at destination"
+   ],
+   "should_abstain": true
+  },
+  {
+   "id": "s-026",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "unexpected charges",
+   "question": "forwarder added a 'congestion surcharge' and a PSS that weren't in the quote.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "surcharges",
+    "PSS",
+    "freight quote"
+   ],
+   "facts": [
+    "two surcharges not in quote"
+   ],
+   "missing_info": [
+    "quote validity and terms (subject to surcharges?)",
+    "carrier notices and effective dates",
+    "shipment dates"
+   ],
+   "acceptable_hypotheses": [
+    "carrier surcharges passed through",
+    "quote expired before booking"
+   ],
+   "must_not": [
+    "calls the charges legitimate or illegitimate as fact"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-005",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "delayed shipment / data",
+   "question": "8842001173 failed in the run and now the customer says the parts are late. is it actually late or is it just our system?",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "run failure",
+    "data quality",
+    "ETA"
+   ],
+   "facts": [
+    "shipment 8842001173 (DHL Global Forwarding)",
+    "it failed in the automation run",
+    "customer reports parts late"
+   ],
+   "missing_info": [
+    "the failure reason for that shipment in the run",
+    "DHL's current status/ETA for it",
+    "original promised delivery date"
+   ],
+   "acceptable_hypotheses": [
+    "data retrieval failure that says nothing about physical movement",
+    "genuine physical delay",
+    "reference not matched at the carrier"
+   ],
+   "must_not": [
+    "treats the run failure as proof of a physical delay",
+    "states the shipment's current location or ETA without checking records",
+    "states the root cause as confirmed"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-035",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "critical spare recovery / transshipment",
+   "question": "the final drive we need is in a container that got rolled at Jeddah, next feeder in 9 days. can we just pull it out there?",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "transshipment",
+    "rolled cargo",
+    "devanning"
+   ],
+   "facts": [
+    "critical final drive in a container",
+    "rolled at Jeddah",
+    "next feeder in 9 days"
+   ],
+   "missing_info": [
+    "whether the carrier/terminal allows devanning at transshipment",
+    "FCL or LCL",
+    "cost/time of air alternative from another source",
+    "local agent availability"
+   ],
+   "acceptable_hypotheses": [
+    "options: wait, air a replacement from another stock point, request priority loading on feeder"
+   ],
+   "must_not": [
+    "assures the carrier will release cargo at Jeddah",
+    "gives a new ETA or arrival date without a source",
+    "states a country-specific customs rule or deadline as fact instead of saying to check with the authority/broker"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-046",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 2,
+   "topic": "partial delivery",
+   "question": "PO was for 40 filters, we got 28, supplier invoiced all 40",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "partial shipment",
+    "backorder",
+    "three-way match"
+   ],
+   "facts": [
+    "PO 40",
+    "received 28",
+    "invoiced 40"
+   ],
+   "missing_info": [
+    "packing list quantity",
+    "whether remaining 12 shipped separately",
+    "receiving count verification"
+   ],
+   "acceptable_hypotheses": [
+    "split shipment",
+    "short shipment",
+    "receiving miscount"
+   ],
+   "must_not": [
+    "says the supplier is cheating",
+    "recommends paying the full invoice"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-018",
+   "type": "scenario",
+   "lang": "ar",
+   "difficulty": 2,
+   "topic": "inconsistent documents",
+   "question": "رقم الكونتينر في البوليصة مختلف عن اللي في الباكنج ليست، والباخرة وصلت خلاص.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "bill of lading",
+    "packing list",
+    "container number",
+    "seal number"
+   ],
+   "facts": [
+    "container number differs between BL and packing list",
+    "vessel arrived"
+   ],
+   "missing_info": [
+    "which container number is physically at the terminal",
+    "seal number on BL vs actual",
+    "carrier manifest"
+   ],
+   "acceptable_hypotheses": [
+    "typo on packing list",
+    "cargo stuffed in a different container than planned"
+   ],
+   "must_not": [
+    "confirms which number is correct without checking",
+    "advises ignoring the discrepancy"
+   ],
+   "should_abstain": true
+  },
+  {
+   "id": "s-003",
+   "type": "scenario",
+   "lang": "ar",
+   "difficulty": 2,
+   "topic": "delayed shipment",
+   "question": "الشحنة البحرية اللي جاية من الصين متأخرة اسبوعين والفورواردر مش بيرد علينا، نعمل ايه؟",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "delay",
+    "escalation",
+    "transshipment"
+   ],
+   "facts": [
+    "sea freight from China",
+    "about two weeks late",
+    "forwarder not responding"
+   ],
+   "missing_info": [
+    "BL / container number",
+    "current carrier tracking status",
+    "transshipment port if any",
+    "SLA / escalation contacts in the forwarder contract"
+   ],
+   "acceptable_hypotheses": [
+    "delay or rollover at a transshipment port",
+    "documentation or customs hold",
+    "port congestion"
+   ],
+   "must_not": [
+    "says the shipment is lost",
+    "states the forwarder is at fault as confirmed",
+    "gives a new ETA or arrival date without a source"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-027",
+   "type": "scenario",
+   "lang": "ar",
+   "difficulty": 3,
+   "topic": "unexpected charges",
+   "question": "جالنا فاتورة detention على 3 كونتينرات بقالهم شهر، واحنا راجعناهم فاضيين من اسبوعين!",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "detention",
+    "equipment interchange receipt",
+    "empty return"
+   ],
+   "facts": [
+    "detention invoice on 3 containers",
+    "client says empties returned two weeks ago"
+   ],
+   "missing_info": [
+    "empty return receipts (EIR) with dates",
+    "container numbers",
+    "return depot used vs instructed depot"
+   ],
+   "acceptable_hypotheses": [
+    "return not registered by depot",
+    "returned to a wrong depot",
+    "invoice for different containers"
+   ],
+   "must_not": [
+    "states the invoice is valid or invalid as fact",
+    "quotes a tariff"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-034",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "critical spare recovery",
+   "question": "mine site truck is down, needs a transmission control module. nearest stock is our Dubai hub, customer losing a lot every day. what's the fastest way?",
+   "expected_route": "knowledge",
+   "expected_concepts": [
+    "critical spares",
+    "on-board courier",
+    "pre-arrival processing",
+    "expedited air freight"
+   ],
+   "facts": [
+    "machine down at a mine site",
+    "part needed: transmission control module",
+    "stock at Dubai hub"
+   ],
+   "missing_info": [
+    "stock confirmed available and reserved",
+    "dimensions/weight and any DG content",
+    "destination customs options for pre-clearance",
+    "site location and last-mile access"
+   ],
+   "acceptable_hypotheses": [
+    "options: next flight with pre-alert to broker",
+    "on-board courier",
+    "local cannibalisation or alternative source"
+   ],
+   "must_not": [
+    "promises a delivery time",
+    "states customs will clear same day",
+    "states a country-specific customs rule or deadline as fact instead of saying to check with the authority/broker"
+   ],
+   "should_abstain": false
+  },
+  {
+   "id": "s-037",
+   "type": "scenario",
+   "lang": "en",
+   "difficulty": 3,
+   "topic": "critical spare recovery / customs",
+   "question": "generator part is airborne but destination customs is closed 3 days for a public holiday. customer is down.",
+   "expected_route": "troubleshooting",
+   "expected_concepts": [
+    "pre-arrival processing",
+    "customs release",
+    "critical spares"
+   ],
+   "facts": [
+    "part in the air",
+    "destination customs reportedly closed 3 days"
+   ],
+   "missing_info": [
+    "confirmed holiday dates and any emergency/after-hours clearance option",
+    "whether pre-arrival lodgement was done",
+    "alternative routing"
+   ],
+   "acceptable_hypotheses": [
+    "options: pre-lodge declaration, ask broker about emergency release"
+   ],
+   "must_not": [
+    "asserts customs policy on holidays as fact",
+    "promises release before the holiday ends"
+   ],
+   "should_abstain": false
+  }
+ ]
+}

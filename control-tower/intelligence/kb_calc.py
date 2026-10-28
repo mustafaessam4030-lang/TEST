@@ -192,12 +192,24 @@ def chargeable_weight(actual_kg, length_cm, width_cm, height_cm, divisor=6000, p
 def _date(v):
     if isinstance(v, date):
         return v
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+    for fmt in DATE_FORMATS:
         try:
-            return datetime.strptime(str(v).strip(), fmt).date()
+            return datetime.strptime(" ".join(str(v).replace(",", " ").split()), fmt).date()
         except ValueError:
             continue
-    raise ValueError("{0!r} is not a date (dd/mm/yyyy or yyyy-mm-dd)".format(v))
+    raise ValueError("{0!r} is not a date (dd/mm/yyyy, yyyy-mm-dd or 12 Jan 2026)".format(v))
+
+
+DATE_FORMATS = ("%d/%m/%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y", "%b %d %Y", "%B %d %Y")
+
+
+def _datetime(v):
+    for fmt in ("%d %b %Y %H:%M", "%d %B %Y %H:%M", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M"):
+        try:
+            return datetime.strptime(" ".join(str(v).replace(",", " ").split()), fmt)
+        except ValueError:
+            continue
+    raise ValueError("{0!r} is not a date and time".format(v))
 
 
 def days_between(start, end):
@@ -241,6 +253,92 @@ def dd_kind(location):
 def transit_days(start, end):
     return {"kpi": "Transit time", "value": days_between(start, end), "unit": "days",
             "working": "{0} → {1}".format(start, end), "inputs": {"start": str(start), "end": str(end)}}
+
+
+def hours_between(start, end):
+    a, b = _datetime(start), _datetime(end)
+    if b < a:
+        raise ValueError("the end is before the start")
+    h = (b - a).total_seconds() / 3600.0
+    return {"kpi": "Elapsed hours", "value": round(h, 2), "unit": "hours",
+            "working": "{0} → {1} = {2} hours".format(start, end, _f(h)), "inputs": {"start": start, "end": end}}
+
+
+def calendar_days(start, end, what="Elapsed days"):
+    n = days_between(start, end)
+    return {"kpi": what, "value": n, "unit": "days", "working": "{0} → {1} = {2} calendar days (end minus start)".format(
+        start, end, n), "inputs": {"start": str(start), "end": str(end)}}
+
+
+def average(values, what="Average"):
+    vals = [_num(v, "value") for v in values]
+    if not vals:
+        raise ValueError("no values to average")
+    m = sum(vals) / len(vals)
+    return {"kpi": what, "value": round(m, 2), "unit": "", "working": "({0}) ÷ {1} = {2}".format(
+        " + ".join(_f(v) for v in vals), len(vals), _f(m)), "inputs": {"values": vals}}
+
+
+def volume_cbm(length, width, height, unit="m", count=1):
+    to_m = {"m": 1.0, "cm": 0.01, "mm": 0.001}[unit]
+    l, w, h = (_num(v, n, positive=True) * to_m for v, n in ((length, "length"), (width, "width"), (height, "height")))
+    c = _num(count, "count", positive=True)
+    v = l * w * h * c
+    return {"kpi": "Volume", "value": round(v, 3), "unit": "m³", "working": "{0} × {1} × {2} m{3} = {4} m³".format(
+        _f(l), _f(w), _f(h), " × {0}".format(_f(c)) if c != 1 else "", _f(v)), "inputs": {"dims_m": [l, w, h], "count": c}}
+
+
+def fill_rate(supplied, ordered):
+    return ratio(supplied, ordered, "quantity supplied at first attempt", "quantity ordered", "Fill rate")
+
+
+def inventory_turns(cogs, avg_inventory):
+    c, i = _num(cogs, "cost of goods sold"), _num(avg_inventory, "average inventory", positive=True)
+    return {"kpi": "Inventory turnover", "value": round(c / i, 2), "unit": "turns", "working": "{0} ÷ {1}".format(
+        _f(c), _f(i)), "inputs": {"cogs": c, "average inventory": i}}
+
+
+def mape(actuals, forecasts):
+    a = [_num(x, "actual") for x in actuals]
+    f = [_num(x, "forecast") for x in forecasts]
+    if len(a) != len(f) or not a:
+        raise ValueError("give the same number of actuals and forecasts ({0} and {1})".format(len(a), len(f)))
+    if any(x == 0 for x in a):
+        raise ValueError("MAPE is undefined when an actual is zero (period {0}); use a weighted error such as "
+                         "WAPE (sum of |actual − forecast| ÷ sum of actuals) instead".format(a.index(0) + 1))
+    errs = [abs(x - y) / x for x, y in zip(a, f)]
+    m = 100.0 * sum(errs) / len(errs)
+    return {"kpi": "MAPE", "value": round(m, 2), "unit": "%", "working": "mean of |actual − forecast| ÷ actual = ({0}) ÷ {1} × 100".format(
+        " + ".join("{0:.4f}".format(e) for e in errs), len(errs)), "inputs": {"actuals": a, "forecasts": f}}
+
+
+def reorder_point(daily_demand, lead_time_days, safety_stock=0):
+    d, lt, ss = _num(daily_demand, "daily demand"), _num(lead_time_days, "lead time (days)"), _num(safety_stock, "safety stock")
+    v = d * lt + ss
+    return {"kpi": "Reorder point", "value": round(v, 2), "unit": "units", "working": "{0} × {1} + {2} = {3}".format(
+        _f(d), _f(lt), _f(ss), _f(v)), "inputs": {"daily demand": d, "lead time": lt, "safety stock": ss}}
+
+
+def tiered_storage(end_day, free_days, tiers):
+    """Charges from day free_days+1 to end_day (day 1 = the first day counted,
+    the last day counted), each day at its tier's rate. tiers: [(from_day,
+    to_day or None, rate)]."""
+    e, fr = _num(end_day, "last day"), _num(free_days, "free days")
+    if e != int(e) or fr != int(fr):
+        raise ValueError("days must be whole numbers")
+    total, parts = 0.0, []
+    for day in range(int(fr) + 1, int(e) + 1):
+        rate = next((r for a, b, r in tiers if day >= a and (b is None or day <= b)), None)
+        if rate is None:
+            raise ValueError("no rate is given for day {0}".format(day))
+        total += rate
+    for a, b, r in tiers:
+        lo, hi = max(a, int(fr) + 1), min(b if b is not None else int(e), int(e))
+        if hi >= lo:
+            parts.append("{0} day(s) × {1}".format(hi - lo + 1, _f(r)))
+    return {"kpi": "Demurrage / storage charge", "value": round(total, 2), "unit": "currency",
+            "working": "days {0}–{1} charged: {2} = {3}".format(int(fr) + 1, int(e), " + ".join(parts) or "none", _f(total)),
+            "inputs": {"last day": e, "free days": fr, "tiers": tiers}}
 
 
 # ── reading a calculation out of a question ──────────────────────────────────
@@ -310,10 +408,13 @@ def calculate(question):
     """A calculation the question asks for with its numbers given, or None.
     Never fills in a missing number, never reads a year, quarter, date or
     reference as a count, never guesses which number is which."""
-    q = " ".join(str(question or "").split())
+    q = _normalise(" ".join(str(question or "").split()))
     low = q.lower()
     try:
-        if re.search(r"chargeable|volumetric|dim(ensional)? weight", low):
+        more = _more(q, low)
+        if more is not None:
+            return more
+        if re.search(r"chargeable|volumetric|dim(ensional)? weight|الوزن اللي هيتحاسب|الوزن المحاسب", low):
             dims = re.search(_NUM + r"\s*(?:x|×|\*)\s*" + _NUM + r"\s*(?:x|×|\*)\s*" + _NUM +
                              r"\s*(cm|mm|m|in|inch(?:es)?|ft)?\b", low)
             kg = re.search(r"(?<![\w.,])" + _NUM + r"\s*kgs?\b", low)
@@ -334,6 +435,8 @@ def calculate(question):
                                          pieces=pcs.group(1) if pcs else 1)
             if re.search(r"\b\d[\d.,]*\s*(lbs?|pounds?)\b", low):
                 raise ValueError("a weight in pounds: give it in kg (the calculator does not assume a conversion)")
+            if dims and not kg:
+                return {"missing": "the actual (gross) weight in kg — the chargeable weight is the greater of it and the volumetric weight"}
             if asks and (dims or kg):
                 return {"missing": "the actual weight in kg and the dimensions L × W × H with their unit"}
             return None
@@ -368,13 +471,110 @@ def calculate(question):
             quoted = re.search(r"(?:quote[d]?|expected|budget(?:ed)?)\D{0,20}?(?<![\w.,])" + _NUM, tl)
             actual = re.search(r"(?:invoiced?|actual|paid|billed)\D{0,20}?(?<![\w.,])" + _NUM, tl)
             if quoted and actual:
-                return cost_variance(_value(actual.group(1)), _value(quoted.group(1)))
+                out = cost_variance(_value(actual.group(1)), _value(quoted.group(1)))
+                if re.search(r"%|percent|per cent|in percentage", low):
+                    out = dict(out, kpi="Cost variance (%)", value=out["percent"], unit="%")
+                return out
             return {"missing": "which figure is the actual cost and which the expected one"}
         if re.search(r"exception rate", low) and len(nums) >= 2:
             return _ratio(exception_rate, tl, r"exceptions?|issues?|problems?", r"handled|shipments|total",
                           "the shipments with an exception and the shipments handled")
     except ValueError as e:
         return {"error": str(e)}
+    return None
+
+
+AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+
+def _normalise(q):
+    """Arabic digits, units and thousands; '350k'. Nothing else is rewritten."""
+    q = q.translate(AR_DIGITS)
+    q = re.sub(r"(\d)\s*(?:سم|سنتي)", r"\1 cm", q)
+    q = re.sub(r"(\d)\s*(?:كيلو(?:جرام)?|كجم|كغ)", r"\1 kg", q)
+    q = re.sub(r"(\d[\d.]*)\s*(?:ألف|الف)", lambda m: _f(float(m.group(1)) * 1000).replace(",", ""), q)
+    q = re.sub(r"\b(\d+(?:\.\d+)?)k\b", lambda m: _f(float(m.group(1)) * 1000).replace(",", ""), q, flags=re.I)
+    q = re.sub(r"بالقسمة على|قسمة على", " divisor ", q)
+    q = re.sub(r"(\d)\s*×\s*", r"\1 x ", q)
+    return q
+
+
+def _list_after(low, words):
+    m = re.search(r"(?:" + words + r")\s*:?\s*((?:-?\d[\d,.]*\s*(?:,|and|&|;)?\s*){2,})", low)
+    if not m:
+        return None
+    return [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", m.group(1).replace(",", " , "))]
+
+
+def _more(q, low):
+    """The calculations added in the upgrade, or None for the original parsers."""
+    if re.search(r"\bmape\b|forecast (?:error|accuracy)", low):
+        a, f = _list_after(low, r"actuals?"), _list_after(low, r"forecasts?")
+        if a is None or f is None:
+            return {"missing": "the actual and forecast values per period (e.g. 'actuals 10, 12, 8; forecasts 11, 10, 9')"}
+        return mape(a, f)
+    if re.search(r"inventory turns?|inventory turnover|stock turns?", low):
+        c = re.search(r"cogs\D{0,20}?(\d[\d,.]*)|cost of goods sold\D{0,20}?(\d[\d,.]*)", low)
+        i = re.search(r"(?:average|avg)\s+inventory\D{0,20}?(\d[\d,.]*)", low)
+        if not (c and i):
+            return {"missing": "the cost of goods sold and the average inventory value for the period"}
+        return inventory_turns(_value(c.group(1) or c.group(2)), _value(i.group(1)))
+    if re.search(r"fill rate", low):
+        pw = _part_whole(low, r"supplied|shipped|filled|delivered", r"ordered|demand|requested")
+        return fill_rate(*pw) if pw else {"missing": "the quantity supplied at first attempt and the quantity ordered"}
+    if re.search(r"reorder point|\brop\b|re-order point", low):
+        d = re.search(r"(\d[\d,.]*)\s*(?:units?|pcs|pieces)?\s*(?:a|per|/)\s*day", low)
+        lt = re.search(r"lead time\D{0,15}?(\d[\d,.]*)\s*days?|(\d[\d,.]*)\s*-?\s*days? lead time", low)
+        ss = re.search(r"safety stock\D{0,15}?(\d[\d,.]*)|(\d[\d,.]*)\s*(?:units? )?(?:of )?safety stock", low)
+        if not (d and lt):
+            return {"missing": "the average daily demand and the replenishment lead time in days (and any safety stock)"}
+        return reorder_point(_value(d.group(1)), _value(lt.group(1) or lt.group(2)),
+                             _value(ss.group(1) or ss.group(2)) if ss else 0)
+    if re.search(r"\bcbm\b|cubic met|\bm3\b|m³|volume", low):
+        dims = re.search(_NUM + r"\s*x\s*" + _NUM + r"\s*x\s*" + _NUM + r"\s*(cm|mm|m)?\b", low)
+        if dims:
+            cnt = re.search(r"(?<![\w.,])(\d+)\s*(?:pallets?|boxes|crates?|cartons?|pieces|pcs|packages|cases)\b", low)
+            unit = dims.group(4) or ("m" if all(_value(x) < 20 for x in dims.groups()[:3]) else None)
+            if unit is None:
+                return {"missing": "the unit of the dimensions (m or cm)"}
+            return volume_cbm(*(_value(x) for x in dims.groups()[:3]), unit=unit, count=cnt.group(1) if cnt else 1)
+    if re.search(r"demurrage|detention|storage|free (?:time|days)", low):
+        tiers = [(int(a), int(b), _value(r)) for a, b, r in
+                 re.findall(r"days?\s*(\d+)\s*(?:-|–|to)\s*(\d+)\s*(?:at|@|:)?\s*(\d[\d,.]*)", low)]
+        tiers += [(int(a), None, _value(r)) for a, r in
+                  re.findall(r"days?\s*(\d+)\s*(?:onwards?|\+|and (?:after|beyond)|on)\s*(?:at|@|:)?\s*(\d[\d,.]*)", low)]
+        end = re.search(r"(?:left|gated? out|out|picked up|collected|returned)\D{0,12}?day\s*(\d+)|day\s*(\d+)\s*(?:gate|out)", low)
+        free = re.search(r"(\d+)\s*free\s*days?|free (?:time|days?)\D{0,6}?(\d+)", low)
+        flat = re.search(r"(\d[\d,.]*)\s*(?:usd|eur|egp|\$)?\s*(?:/|per|a)\s*day|(?:\$|usd|eur)\s*(\d[\d,.]*)\s*(?:/|per|a)\s*day", low)
+        if end and free and (tiers or flat):
+            if not tiers:
+                tiers = [(int(_value(free.group(1) or free.group(2))) + 1, None, _value(flat.group(1) or flat.group(2)))]
+            return tiered_storage(_value(end.group(1) or end.group(2)), _value(free.group(1) or free.group(2)), tiers)
+        if (flat or tiers) and free and not end and len(DATE.findall(q)) < 2 and not re.search(r"\d+\s*days? (?:in|at) (?:the )?(?:port|terminal)", low):
+            return {"missing": "how long the container stayed — the discharge (or start) date and the gate-out date, or the day it left"}
+    dts = re.findall(r"\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}", q)
+    if len(dts) >= 2 and re.search(r"\bhours?\b", low):
+        return hours_between(dts[0], dts[1])
+    dates = re.findall(r"\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}\b|"
+                       r"\b\d{1,2}/\d{1,2}/\d{4}\b|\b\d{4}-\d{2}-\d{2}\b", q, re.I)
+    if len(dates) >= 2 and re.search(r"lead time|calendar days|how many days|days between|transit (?:time|days)|cycle time|in days", low):
+        what = "Lead time" if "lead time" in low else "Transit time" if "transit" in low else "Elapsed days"
+        return calendar_days(dates[0], dates[1], what)
+    if re.search(r"\baverage\b|\bmean\b|\bavg\b|متوسط", low) and not re.search(r"per shipment|cost per|inventory", low):
+        nums = re.findall(r"(?<![\w.,])-?\d+(?:\.\d+)?(?![\w])", re.sub(r"\d+\s*(?:last|previous)", " ", _counts_text(q)))
+        vals = [float(x) for x in nums]
+        listed = re.search(r"\d[\d.]*\s*,\s*\d[\d.]*\s*,\s*\d", q)
+        if listed and len(vals) >= 3:
+            m = re.search(r":\s*((?:-?\d[\d.]*\s*,?\s*(?:and\s*)?)+)", low)
+            if m:
+                vals = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", m.group(1))]
+            return average(vals, "Average")
+    if re.search(r"شحنة|شحنات", low) and re.search(r"متوسط", low):
+        nums = _scan(_counts_text(q))
+        count = re.search(r"(\d[\d,]*)\s*(?:شحنة|شحنات)", low)
+        if count and len(nums) == 2:
+            n = _value(count.group(1))
+            return cost_per_shipment(next(x for x in nums if x != n), n)
     return None
 
 

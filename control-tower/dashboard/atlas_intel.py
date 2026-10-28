@@ -30,6 +30,7 @@ import re
 from intelligence import knowledge as K
 from intelligence import kb_answer as KA
 from intelligence import research as R
+from intelligence import trace
 
 SEARCH_ASK = re.compile(r"\b(search|look (it |this |that )?up|google|on the (web|internet)|online|"
                         r"find out|research|check (online|the web|the news)|any news|"
@@ -250,7 +251,8 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
     if failure is None and record is None and ERROR_ASK.search(question or ""):
         fs = run_failures(data)
         failure = fs[0] if len(fs) == 1 else None
-    mode = classify(question, reply, data, record, failure)
+    with trace.span("intel.classify"):
+        mode = classify(question, reply, data, record, failure)
     if mode is None:
         return reply
     pid = R.clean_progress_id(context.get("progress_id"))
@@ -260,7 +262,8 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
     # 1. ATLAS's own answer — always built, always authoritative.
     ranking = None
     if mode == "general":
-        known = KA.answer(question, context, data)
+        with trace.span("kb.answer"):
+            known = KA.answer(question, context, data)
         if known is None:
             return reply
         out = dict(reply, **known)
@@ -293,8 +296,9 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
         subject = (record or {}).get("reference") or (failure or {}).get("failure_id")
         research_mode = {"search": "mixed" if record else "general",
                          "fallback": "general"}.get(mode, mode)
-        result = R.investigate(question, research_mode, run_brief, subject=subject,
-                               fresh=fresh, pid=pid)
+        with trace.span("research"):
+            result = R.investigate(question, research_mode, run_brief, subject=subject,
+                                   fresh=fresh, pid=pid)
         out["research"] = {"ok": result.get("ok"), "searches": result.get("searches") or [],
                            "fetched": result.get("fetched") or [],
                            "cached": bool(result.get("cached")),
@@ -326,8 +330,9 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
     # 3. Optional local model: phrasing only, behind the fact guard.
     # A knowledge answer is never re-worded, research or not: its sources and
     # review status must reach the reader as written.
-    return _phrased(out, question, run_brief, web, pid,
-                    raw=raw or bool(context.get("_no_phrase")) or mode == "general")
+    with trace.span("phrase"):
+        return _phrased(out, question, run_brief, web, pid,
+                        raw=raw or bool(context.get("_no_phrase")) or mode == "general")
 
 
 def _web_section(web):

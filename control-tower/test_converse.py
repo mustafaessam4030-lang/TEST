@@ -414,11 +414,19 @@ use(two)
 converse.answer("What does ERR_HTTP2_PROTOCOL_ERROR mean?", STATE, {}, assistant._answer_rules)
 check("A web question still goes through 'understand' (it may need the web)",
       two.systems[0].startswith("You route"), two.systems)
-ar = Scripted(plan("Which shipments failed?"), {"answer": "الشحنة 8842001173 فشلت.",
+ar = Scripted(plan("How many shipments were updated?"), {"answer": "تم تحديث شحنتين.",
               "verified": [], "likely": [], "missing": [], "external": []})
 use(ar)
-converse.answer("ما هي الشحنات التي فشلت؟", STATE, {}, assistant._answer_rules)
-check("Arabic still goes through 'understand'", ar.systems[0].startswith("You route"))
+r = converse.answer("كم شحنة اتحدثت", STATE, {}, assistant._answer_rules)
+check("Arabic the rules recognise: no 'understand' call, one model call to answer in Arabic",
+      ar.systems and not ar.systems[0].startswith("You route") and len(ar.prompts) == 1
+      and r["llm"].get("language") == "ar", (ar.systems, r.get("llm")))
+ar2 = Scripted(plan("Which shipments failed?"), {"answer": "الشحنة 8842001173 فشلت.",
+               "verified": [], "likely": [], "missing": [], "external": []})
+use(ar2)
+converse.answer("هو احنا عندنا مشاكل كتير النهارده ولا ايه الموضوع بالظبط", STATE, {}, assistant._answer_rules)
+check("Arabic the rules do not recognise still goes through 'understand'",
+      ar2.systems and ar2.systems[0].startswith("You route"), ar2.systems)
 thanks = Scripted({"answer": "You're welcome, happy to help!"})
 use(thanks)
 t0 = time.time()
@@ -796,10 +804,10 @@ check("…with its sources and its review status intact",
 model = Scripted(plan("What is demurrage?"), REWORD)
 use(model)
 r = converse.answer("ما هو الديمراج؟", STATE, {}, assistant._answer_rules)
-check("An Arabic knowledge question: the model only reads it; the answer is built, in Arabic",
+check("An Arabic knowledge question: built in Arabic by the Knowledge Engine, with no model call",
       r.get("intent") == "general_knowledge" and r["llm"].get("mode") == "knowledge"
       and "الميناء" in r["answer"] and "_Knowledge status" in r["answer"]
-      and "Demurrage is a fee." not in r["answer"] and len(model.prompts) == 1,
+      and "Demurrage is a fee." not in r["answer"] and len(model.prompts) == 0,
       (r.get("llm"), len(model.prompts), r.get("answer", "")[:200]))
 model = Scripted(plan("Calculate OTIF: 160 of 200 orders"), REWORD)
 use(model)
