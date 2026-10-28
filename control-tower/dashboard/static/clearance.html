@@ -339,6 +339,7 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
       <button type="button" data-theme-set="dark" aria-label="Dark theme" title="Dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
       <button type="button" data-theme-set="system" aria-label="Follow the device" title="System"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button>
     </span>
+    <span data-todo-slot></span>
     <button class="pf-out" id="pbOut" type="button" hidden>Sign out</button>
   </div>
 </header>
@@ -864,6 +865,7 @@ function loadHash() {
     const r = ROWS.find((x) => x[F.awb] === p.get("q") && x[F.bu] === p.get("mail")) || ROWS.find((x) => x[F.awb] === p.get("q"));
     if (r) mailForm(r);
   }, 0);
+  if (p.get("contacts") && PF.can("clearance.contacts")) setTimeout(contactsForm, 0);    // from To Do
   for (const [k, v] of p) {
     if (k === "stage" || k === "ontime") state[k] = +v;
     else if (KEYS.includes(k) || k === "q") state[k] = v;
@@ -1270,10 +1272,10 @@ function atlasView() {
   ALLK.forEach((k) => { if (state[k] && state[k] !== "All") v[k] = state[k]; });
   ["status", "group", "month"].forEach((k) => { if (state[k]) v[k] = state[k]; });
   if (["open", "pastdue", "done", "late"].includes(state.flag)) v.flag = state.flag;
-  else if (state.ontime === false && !state.flag) v.flag = "late";
+  else if (state.ontime === 0 && !state.flag) v.flag = "late";
   // Filters ATLAS cannot count by: it says so instead of claiming the view.
-  if (state.q || state.stage != null || state.ontime === true || (state.flag && !v.flag) ||
-      (state.ontime === false && state.flag && state.flag !== "late")) v.more = "1";
+  if (state.q || state.stage != null || state.ontime === 1 || (state.flag && !v.flag) ||
+      (state.ontime === 0 && state.flag && state.flag !== "late")) v.more = "1";
   return v;
 }
 
@@ -1307,5 +1309,6 @@ function atlasView() {
   }
 })();
 </script>
+<script src="/static/todo.js" defer></script>
 </body>
 </html>

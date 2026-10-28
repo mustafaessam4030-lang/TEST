@@ -547,7 +547,8 @@ print("\nThe platform menu on the Clearance page")
 _dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static")
 _cl = open(os.path.join(_dir, "clearance.html"), encoding="utf-8").read()
 check("the page sends ATLAS its filters, and marks the ones it cannot count by",
-      'context: {page: "clearance", view: atlasView()}' in _cl and 'v.more = "1"' in _cl)
+      'context: {page: "clearance", view: atlasView()}' in _cl and 'v.more = "1"' in _cl
+      and "state.ontime === 0" in _cl and "state.ontime === false" not in _cl)
 _ix = open(os.path.join(_dir, "index.html"), encoding="utf-8").read()
 check("Clearance shows the platform's pages, itself marked current",
       all('href="/#{0}"'.format(x) in _cl for x in ("overview", "shipments", "po", "atlas", "human", "access"))

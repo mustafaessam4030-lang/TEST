@@ -1041,6 +1041,12 @@ class Handler(BaseHTTPRequestHandler):
                                 if e["awb"] == awb and (bu is None or e["bu"] == bu)]}))
             return
 
+        if route == "/api/todo":
+            # What needs a person, from the records; only what this person may open.
+            from dashboard import todo as _todo
+            self._send(200, json.dumps(_todo.build(self._acc_can, _assistant_state()), default=str))
+            return
+
         if route == "/api/clearance/places":
             # Which BU is which country on the map (dashboard/clearance.py).
             self._send(200, json.dumps({"places": _clearance.places()}))

@@ -56,6 +56,7 @@ SUITES = [
     ("test_launch_page.py",     "launch page: countdown, zone, soundtrack only when named; sign-in untouched"),
     ("test_verify_atlas.py",    "verify_atlas.py, the operator's ATLAS check, passes"),
     ("test_platform_look.py",   "one look: shared tokens equal the console's; Clearance uses them"),
+    ("test_todo.py",            "To Do: what needs a person, from the records, per access level"),
     ("test_login_page.py",      "sign-in page: ATLAS greets, looks away from the password, form unchanged"),
     ("test_model_bench.py",     "ATLAS model benchmark (stand-in Ollama)"),
     ("test_model_auto.py",      "ATLAS model chosen automatically: download, switch, fall back"),
