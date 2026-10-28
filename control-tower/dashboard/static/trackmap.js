@@ -9,7 +9,10 @@
    The console calls ctTrackMap.paint({items, selected, onSelect}); each item
    is {ref, carrier, where, k (journey), label, date, color, ring, icon}.
    Read-only. Drag to move, Ctrl/⌘ + scroll or the buttons to zoom, click a
-   marker to follow that shipment. */
+   marker to follow that shipment, a legend chip to show one state, a stop
+   in the journey strip to fly to it; full screen with the expand button.
+   Lines between two reported places follow the great circle between them:
+   they join the places, they do not say where the shipment was between. */
 (function () {
   const css = document.createElement("style");
   css.textContent = `
@@ -51,11 +54,40 @@
 .tm-pick{position:absolute;left:10px;top:10px;z-index:2;max-width:calc(100% - 60px)}
 .tm-pick select{max-width:100%;height:30px;border-radius:9px;border:1px solid var(--line);background:var(--tm-pill);color:var(--ink);
   font:500 12.5px var(--s);padding:0 26px 0 10px;box-shadow:0 2px 8px rgba(0,0,0,.08);cursor:pointer}
-.tm-foot{position:absolute;left:8px;bottom:8px;max-width:calc(100% - 16px);z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;
-  font-size:11px;line-height:1.5;color:var(--mid);pointer-events:none;background:color-mix(in srgb,var(--tm-pill) 88%,transparent);
-  border:1px solid var(--line-2);border-radius:8px;padding:3px 9px;backdrop-filter:blur(4px)}
-.tm-foot b{font-weight:600;color:var(--ink)}
-.tm-foot i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:0}
+.tm-chips{position:absolute;left:10px;top:48px;right:56px;z-index:2;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:1px}
+.tm-chips::-webkit-scrollbar{display:none}
+.tm-chips button{flex:none;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--line);
+  background:color-mix(in srgb,var(--tm-pill) 92%,transparent);color:var(--mid);font:500 11.5px var(--s);cursor:pointer;backdrop-filter:blur(4px)}
+.tm-chips button b{font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums}
+.tm-chips button i{width:7px;height:7px;border-radius:50%}
+.tm-chips button[aria-pressed="true"]{background:var(--tm-ink);border-color:var(--tm-ink);color:var(--tm-pill)}
+.tm-chips button[aria-pressed="true"] b{color:var(--tm-pill)}
+.tm-chips button:focus-visible{outline:2px solid var(--vio);outline-offset:1px}
+.tm-trip{position:absolute;left:8px;right:8px;bottom:8px;z-index:2;display:flex;align-items:center;gap:0;overflow-x:auto;scrollbar-width:thin;
+  background:color-mix(in srgb,var(--tm-pill) 90%,transparent);border:1px solid var(--line-2);border-radius:12px;padding:5px 6px;
+  backdrop-filter:blur(6px);box-shadow:0 4px 16px rgba(0,0,0,.06)}
+.tm-trip[hidden]{display:none}
+.tm-trip button{flex:none;display:grid;grid-template-columns:auto auto;align-items:center;gap:0 6px;border:0;background:transparent;color:var(--ink);
+  border-radius:8px;padding:3px 8px;cursor:pointer;text-align:left;font:inherit}
+.tm-trip button:hover,.tm-trip button:focus-visible,.tm-trip button.hl{background:var(--surface-3);outline:none}
+.tm-trip button i{grid-row:1/3;width:9px;height:9px;border-radius:50%;border:2px solid var(--tm-c);background:var(--tm-pill)}
+.tm-trip button.done i{background:var(--tm-c)}
+.tm-trip button.now i{width:11px;height:11px;background:var(--tm-c);box-shadow:0 0 0 3px color-mix(in srgb,var(--tm-c) 25%,transparent)}
+.tm-trip button.next i{border-style:dashed;border-color:var(--tm-next)}
+.tm-trip b{font-size:11.5px;font-weight:650;white-space:nowrap}
+.tm-trip small{font-size:10.5px;color:var(--faint);white-space:nowrap}
+.tm-trip button.now small{color:var(--mid)}
+.tm-trip .sep{flex:none;width:14px;height:2px;border-radius:1px;background:var(--tm-c)}
+.tm-trip .sep.next{background:repeating-linear-gradient(90deg,var(--tm-next) 0 2px,transparent 2px 5px)}
+.tm .stopc{cursor:pointer}
+.tm .stopc .hit{fill:transparent}
+.tm .stopc.hl .stop{stroke-width:3.4}
+.tm .vig{pointer-events:none}
+.tm.full{position:fixed;inset:20px;height:auto;z-index:120;min-height:0;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+.tm-back{position:fixed;inset:0;z-index:119;background:rgba(10,14,22,.45);backdrop-filter:blur(2px)}
+@keyframes tmFlow{to{stroke-dashoffset:-18}}
+.tm .tm-next{animation:tmFlow 1.4s linear infinite}
+@media (max-width:600px){.tm-chips{top:46px}.tm-trip{bottom:6px}}
 .tm-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;max-width:min(320px,86%);text-align:center;
   background:var(--tm-pill);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.45;color:var(--mid);
   box-shadow:0 8px 24px rgba(0,0,0,.10);pointer-events:none}
@@ -73,11 +105,11 @@
 :root[data-theme="dark"] .tm-tip{background:#262D3B}
 .tm-tip.show{opacity:1}
 .tm-tip small{display:block;color:#B8BCC6;margin-top:3px}
-:root{--tm-sea:#EEF2F7;--tm-dot:rgba(40,60,100,.12);--tm-grid:rgba(30,60,110,.07);--tm-land:#FFFFFF;--tm-border:rgba(30,45,70,.16);
+:root{--tm-vig:rgba(30,50,90,.10);--tm-sea:#EEF2F7;--tm-dot:rgba(40,60,100,.12);--tm-grid:rgba(30,60,110,.07);--tm-land:#FFFFFF;--tm-border:rgba(30,45,70,.16);
   --tm-pill:#FFFFFF;--tm-pill-edge:rgba(0,0,0,.08);--tm-ink:#0B1F33;--tm-next:#94A3B8;--tm-accent:var(--teal-dot)}
-:root[data-theme="dark"]{--tm-sea:#0C1018;--tm-dot:rgba(255,255,255,.07);--tm-grid:rgba(255,255,255,.04);--tm-land:#1A2130;
+:root[data-theme="dark"]{--tm-vig:rgba(0,0,0,.45);--tm-sea:#0C1018;--tm-dot:rgba(255,255,255,.07);--tm-grid:rgba(255,255,255,.04);--tm-land:#1A2130;
   --tm-border:rgba(255,255,255,.10);--tm-pill:#1C2331;--tm-pill-edge:rgba(255,255,255,.10);--tm-ink:#E6EAF2;--tm-next:#5B6678}
-@media (prefers-reduced-motion:reduce){.tm .pulse{animation:none;display:none}.tm .mk .b{transition:none}}`;
+@media (prefers-reduced-motion:reduce){.tm .pulse{animation:none;display:none}.tm .mk .b{transition:none}.tm .tm-next{animation:none}}`;
   document.head.appendChild(css);
 
   const NS = "http://www.w3.org/2000/svg";
@@ -88,9 +120,50 @@
     return m ? `${+m[1]} ${MON[+m[2] - 1]}${t ? " " + t : ""}` : String(d || "");
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // How long ago the carrier's event was, from its own date (dd/mm/yyyy).
+  const ago = (d) => {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(d || ""));
+    if (!m) return "";
+    const then = new Date(+m[3], +m[2] - 1, +m[1]), now = new Date();
+    const n = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - then) / 864e5);
+    return n < 0 ? "" : n === 0 ? "today" : n === 1 ? "yesterday" : n + " days ago";
+  };
+  /* The shortest way over the globe between two reported places (a great
+     circle), as points to project: the shape a long flight really draws on
+     a flat map. It joins two places; it is not a position between them. */
+  function gcPts(a, b) {
+    const R = Math.PI / 180, f1 = a.lat * R, l1 = a.lon * R, f2 = b.lat * R, l2 = b.lon * R;
+    const d = 2 * Math.asin(Math.sqrt(Math.sin((f2 - f1) / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin((l2 - l1) / 2) ** 2));
+    if (!(d > 1e-4)) return [a, b];
+    const n = Math.max(2, Math.min(64, Math.ceil(d / R / 1.5)));
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, A = Math.sin((1 - t) * d) / Math.sin(d), B = Math.sin(t * d) / Math.sin(d);
+      const x = A * Math.cos(f1) * Math.cos(l1) + B * Math.cos(f2) * Math.cos(l2);
+      const y = A * Math.cos(f1) * Math.sin(l1) + B * Math.cos(f2) * Math.sin(l2);
+      const z = A * Math.sin(f1) + B * Math.sin(f2);
+      out.push({lat: Math.atan2(z, Math.hypot(x, y)) / R, lon: Math.atan2(y, x) / R});
+    }
+    return out;
+  }
+  function gcPath(a, b) {
+    const W = world.viewBox[2];
+    let d = "", prev = null;
+    for (const p of gcPts(a, b)) {
+      const m = proj(p), q = scr(m);
+      // Across the date line the map is cut, and so is the line.
+      d += (prev && Math.abs(m[0] - prev[0]) < W / 2 ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1);
+      prev = m;
+    }
+    return d;
+  }
 
   let world = null, loading = null, root = null, svg = null, L = {}, size = {w: 0, h: 0};
   let cam = null, anim = 0, data = {items: [], selected: null}, fitKey = "", host = null;
+  // filt: the state the markers are narrowed to (a legend chip); hl: the
+  // journey stop under the pointer; revealT0: when the route on show began
+  // drawing itself in.
+  let filt = null, hl = -1, revealT0 = 0, revealRaf = 0, back = null, slotMark = null;
   const tip = document.createElement("div");
   tip.className = "tm-tip"; tip.setAttribute("role", "tooltip");
   document.body.appendChild(tip);
@@ -141,9 +214,33 @@
             destCC: w.destination && w.destination.cc};
   }
 
+  // The journey as a list: where it has been (done), the newest reported
+  // place (now), and the destination still ahead (next). The destination is
+  // left out when a stop already is it (Kotoka for Accra).
+  function stopsOf(it) {
+    if (!it) return [];
+    const r = routeOf(it), n = nowOf(it);
+    // Each stop shows the event that first reached it; the newest place
+    // shows the newest event there (DHL "Delivered", after "Arrived").
+    const out = r.done.map((d) => ({p: d.p, kind: d.kind, state: "done", ev: d.p.text ? d.p : null}));
+    if (n) {
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i].p.lat === n.pt.lat && out[i].p.lon === n.pt.lon) { out[i].state = "now"; out[i].ev = n.ev || out[i].ev; break; }
+      }
+    }
+    const near = (a, b) => Math.abs(a.lat - b.lat) < 0.3 && Math.abs(a.lon - b.lon) < 0.3;
+    if (!out.length && r.origin) out.push({p: r.origin, kind: "origin", state: "plan"});
+    if (r.dest) {
+      const arrived = it.k === "arrived";
+      const there = arrived ? out.some((o) => near(o.p, r.dest)) : out.length && near(out[out.length - 1].p, r.dest);
+      if (!there) out.push({p: r.dest, kind: "dest", state: arrived ? "done" : "next"});
+    }
+    return out;
+  }
+
   /* ── build once ── */
   function mount(box) {
-    if (root && root.parentNode === box) return;
+    if (root && (root.parentNode === box || slotMark)) return;     // (full screen: on <body> for now)
     box.innerHTML = "";
     root = document.createElement("div");
     root.className = "tm"; root.tabIndex = 0;
@@ -155,17 +252,22 @@
         <button type="button" data-z="out" aria-label="Zoom out" title="Zoom out">−</button>
         <button type="button" data-z="fit" aria-label="Fit the shipment" title="Fit the shipment's route"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
         <button type="button" data-z="all" aria-label="Show all shipments" title="Show all shipments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></button>
+        <button type="button" data-z="full" aria-label="Full screen" title="Full screen (Esc to close)" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg></button>
       </div>
-      <div class="tm-msg" hidden></div><div class="tm-hint" hidden>Ctrl + scroll to zoom</div><div class="tm-foot"></div>`;
+      <div class="tm-chips" role="toolbar" aria-label="Show shipments by state"></div>
+      <div class="tm-msg" hidden></div><div class="tm-hint" hidden>Ctrl + scroll to zoom</div>
+      <div class="tm-trip" role="list" aria-label="Where the carrier reported the shipment" hidden></div>`;
     svg = el("svg", {role: "presentation"});
     root.insertBefore(svg, root.firstChild);
     const defs = el("defs", {}, svg);
     defs.innerHTML = `<pattern id="tmDots" width="9" height="9" patternUnits="userSpaceOnUse"><circle class="dotp" cx="1.5" cy="1.5" r=".9"/></pattern>
-      <filter id="tmShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0B1F33" flood-opacity=".18"/></filter>`;
+      <filter id="tmShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0B1F33" flood-opacity=".18"/></filter>
+      <radialGradient id="tmVig" cx="50%" cy="45%" r="75%"><stop offset="55%" stop-color="var(--tm-vig)" stop-opacity="0"/><stop offset="100%" style="stop-color:var(--tm-vig)"/></radialGradient>`;
     el("rect", {class: "sea", width: "100%", height: "100%"}, svg);
     L.geo = el("g", {}, svg);
     L.grid = el("path", {class: "grid", "vector-effect": "non-scaling-stroke"}, L.geo);
     L.land = el("g", {class: "land"}, L.geo);
+    el("rect", {class: "vig", width: "100%", height: "100%", fill: "url(#tmVig)"}, svg);
     L.route = el("g", {}, svg);
     L.marks = el("g", {}, svg);
     L.labels = el("g", {}, svg);
@@ -175,8 +277,31 @@
       if (z === "in") zoomAt(size.w / 2, size.h / 2, 0.5, true);
       else if (z === "out") zoomAt(size.w / 2, size.h / 2, 2, true);
       else if (z === "all") flyTo(boundsAll(), true);
+      else if (z === "full") setFull(!root.classList.contains("full"));
       else flyTo(boundsSel() || boundsAll(), true);
     });
+    // Legend chips: the states on the map, each one narrowing the markers.
+    root.querySelector(".tm-chips").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-f]"); if (!b) return;
+      filt = b.dataset.f === "all" || filt === b.dataset.f ? null : b.dataset.f;
+      paintChrome(); if (cam) flyTo(boundsAll(), true);
+    });
+    // The journey strip: a stop flies the map to it; the pointer on one
+    // marks it on the map.
+    const trip = root.querySelector(".tm-trip");
+    trip.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-i]"); if (!b || !cam) return;
+      const st = stopsOf(selItem())[+b.dataset.i]; if (!st) return;
+      const m = proj(st.p), r = fullS() / 9 * Math.min(size.w, size.h) / 2;
+      flyTo([m[0] - r, m[1] - r, m[0] + r, m[1] + r], true);
+    });
+    trip.addEventListener("pointerover", (e) => { const b = e.target.closest("[data-i]"); setHl(b ? +b.dataset.i : -1); });
+    trip.addEventListener("pointerleave", () => setHl(-1));
+    trip.addEventListener("focusin", (e) => { const b = e.target.closest("[data-i]"); setHl(b ? +b.dataset.i : -1); });
+    trip.addEventListener("focusout", () => setHl(-1));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && root.classList.contains("full")) { e.stopPropagation(); setFull(false); }
+    }, true);
     root.querySelector(".tm-pick select").addEventListener("change", (e) => {
       if (data.onSelect) data.onSelect(e.target.value);
     });
@@ -195,6 +320,28 @@
     if (world) buildLand();
   }
   const shown = () => size.w >= 40 && size.h >= 40;
+  const selItem = () => data.items.find((i) => i.ref === data.selected) || null;
+  function setHl(i) {
+    if (hl === i) return;
+    hl = i;
+    root.querySelectorAll(".tm-trip button").forEach((b) => b.classList.toggle("hl", +b.dataset.i === i));
+    draw();
+  }
+  // Full screen: the same map, larger, over the page; Esc or the button
+  // brings it back. The page under it does not scroll meanwhile.
+  function setFull(on) {
+    // Moved to <body> while full: a page's own transform would otherwise
+    // pin a fixed element to the page instead of the window.
+    if (on && !slotMark) { slotMark = document.createComment("map"); root.parentNode.insertBefore(slotMark, root); document.body.appendChild(root); }
+    if (!on && slotMark) { slotMark.parentNode.insertBefore(root, slotMark); slotMark.remove(); slotMark = null; }
+    root.classList.toggle("full", on);
+    root.querySelector('[data-z="full"]').setAttribute("aria-pressed", String(on));
+    if (on && !back) { back = document.createElement("div"); back.className = "tm-back"; back.addEventListener("click", () => setFull(false)); document.body.appendChild(back); }
+    if (!on && back) { back.remove(); back = null; }
+    document.documentElement.style.overflow = on ? "hidden" : "";
+    if (on) root.focus();
+    measure(); if (cam) { cam = fitCam(boundsSel() || boundsAll()); draw(); }
+  }
   function keyOf() {
     const sel = data.items.find((i) => i.ref === data.selected);
     return sel ? JSON.stringify([sel.ref, sel.where && sel.where.last,
@@ -227,7 +374,7 @@
   }
   // Screen space the overlays take: the list at the top, the controls on the
   // right, the legend at the bottom. Fitting keeps places clear of them.
-  const PAD = {top: 70, bottom: 64, left: 60, right: 70};
+  const PAD = {top: 92, bottom: 88, left: 56, right: 66};
   function fitCam(b) {
     const w = Math.max(b[2] - b[0], 1), h = Math.max(b[3] - b[1], 1);
     const iw = Math.max(size.w - PAD.left - PAD.right, 60), ih = Math.max(size.h - PAD.top - PAD.bottom, 60);
@@ -286,7 +433,7 @@
   }
   function boundsAll() {
     const pts = [];
-    data.items.forEach((it) => { const n = nowOf(it); if (n) pts.push(proj(n.pt)); });
+    data.items.forEach((it) => { const n = nowOf(it); if (n && (!filt || it.k === filt)) pts.push(proj(n.pt)); });
     const sel = boundsSel();
     if (sel) pts.push([sel[0], sel[1]], [sel[2], sel[3]]);
     return boundsOf(pts) || boundsOf([proj({lat: 38, lon: -18}), proj({lat: -12, lon: 56})]);
@@ -296,7 +443,7 @@
   function wire() {
     let drag = null, hintT = 0;
     root.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || e.target.closest(".tm-ui,.tm-pick,.tm-pop,.mk")) return;
+      if (e.button !== 0 || e.target.closest(".tm-ui,.tm-pick,.tm-pop,.mk,.tm-chips,.tm-trip,.stopc")) return;
       closePop();
       drag = {x: e.clientX, y: e.clientY, cam: cam, moved: false};
       root.setPointerCapture(e.pointerId);
@@ -315,7 +462,7 @@
     root.addEventListener("pointercancel", end);
     root.addEventListener("wheel", (e) => {
       if (!cam) return;
-      if (!(e.ctrlKey || e.metaKey)) {                      // the page scrolls as usual
+      if (!(e.ctrlKey || e.metaKey || root.classList.contains("full"))) {   // the page scrolls as usual
         const h = root.querySelector(".tm-hint"); h.hidden = false;
         clearTimeout(hintT); hintT = setTimeout(() => { h.hidden = true; }, 1100);
         return;
@@ -372,15 +519,6 @@
   }
 
   /* ── drawing ── */
-  function arc(a, b) {
-    const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
-    if (len < 1) return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}`;
-    let nx = -dy / len, ny = dx / len;
-    if (ny > 0) { nx = -nx; ny = -ny; }                    // bend upwards, like a flight path
-    const bend = Math.min(len * 0.2, 90);
-    const c = [(a[0] + b[0]) / 2 + nx * bend, (a[1] + b[1]) / 2 + ny * bend];
-    return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}Q${c[0].toFixed(1)} ${c[1].toFixed(1)} ${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
-  }
   // A pill beside its point: right, left, above or below, whichever is
   // inside the map and clear of the pills and markers already placed.
   function label(x, y, title, sub, used, gap) {
@@ -421,7 +559,10 @@
     // Every shipment with a reported place: one marker each, gathered where
     // they would overlap; the shipment on show is drawn on top, with its mode.
     const pts = [];
-    data.items.forEach((it) => { if (it.ref === data.selected) return; const n = nowOf(it); if (n) pts.push({it, at: scr(proj(n.pt))}); });
+    data.items.forEach((it) => {
+      if (it.ref === data.selected || (filt && it.k !== filt)) return;
+      const n = nowOf(it); if (n) pts.push({it, at: scr(proj(n.pt))});
+    });
     const groups = [];
     pts.forEach((p) => {
       const g = groups.find((g) => Math.hypot(g.at[0] - p.at[0], g.at[1] - p.at[1]) < 16);
@@ -430,44 +571,77 @@
     // The shipment on show: where it has been (solid), what is left to its
     // destination (dotted), or only the route its carrier names (dotted).
     let selNow = null;
+    const rv = reduced() ? 1 : Math.min(1, (performance.now() - revealT0) / 1100);
+    if (rv < 1 && !revealRaf) revealRaf = requestAnimationFrame(() => { revealRaf = 0; draw(); });
     if (sel) {
-      const r = routeOf(sel), n = nowOf(sel);
+      const r = routeOf(sel), n = nowOf(sel), stops = stopsOf(sel);
       selNow = n;
       const P = r.done.map((d) => scr(proj(d.p)));
       let dpath = "";
-      for (let i = 1; i < P.length; i++) dpath += arc(P[i - 1], P[i]);
+      for (let i = 1; i < r.done.length; i++) dpath += gcPath(r.done[i - 1].p, r.done[i].p);
       if (dpath) {
-        el("path", {class: "tm-glow", d: dpath, stroke: sel.color}, L.route);
-        el("path", {class: "tm-done", d: dpath, stroke: sel.color}, L.route);
+        // The way it has come draws itself in when a shipment is chosen.
+        const glow = el("path", {class: "tm-glow", d: dpath, stroke: sel.color}, L.route);
+        const done = el("path", {class: "tm-done", d: dpath, stroke: sel.color}, L.route);
+        if (rv < 1) {
+          const len = done.getTotalLength();
+          [glow, done].forEach((x) => { x.style.strokeDasharray = len + " " + len; x.style.strokeDashoffset = String(len * (1 - rv)); });
+        }
       }
       const D = r.dest ? scr(proj(r.dest)) : null;
-      const from = n ? scr(proj(n.pt)) : P.length ? P[P.length - 1] : null;
+      const fromP = n ? n.pt : r.done.length ? r.done[r.done.length - 1].p : null;
+      let ahead = null;
       if (D && sel.k !== "arrived") {
-        if (from && Math.hypot(from[0] - D[0], from[1] - D[1]) > 4) el("path", {class: "tm-next", d: arc(from, D)}, L.route);
-        else if (!from && r.origin) el("path", {class: "tm-plan", d: arc(scr(proj(r.origin)), D), stroke: sel.color}, L.route);
+        const f = fromP && scr(proj(fromP));
+        if (f && Math.hypot(f[0] - D[0], f[1] - D[1]) > 4) ahead = el("path", {class: "tm-next", d: gcPath(fromP, r.dest)}, L.route);
+        else if (!f && r.origin) ahead = el("path", {class: "tm-plan", d: gcPath(r.origin, r.dest), stroke: sel.color}, L.route);
+        if (ahead) ahead.style.opacity = String(Math.max(0, rv * 1.6 - .6));
       }
-      // Stops: small rings; the origin and destination: labelled.
+      // Stops: rings you can point at (the carrier's event there); the
+      // origin and destination: labelled.
       r.done.forEach((d, i) => {
         const p = P[i];
-        el("circle", {class: "stop", cx: p[0], cy: p[1], r: i === 0 ? 5 : 3.6, stroke: sel.color}, L.route);
+        const g = el("g", {class: "stopc" + (hl === i ? " hl" : "")}, L.route);
+        el("circle", {class: "hit", cx: p[0], cy: p[1], r: 9}, g);
+        el("circle", {class: "stop", cx: p[0], cy: p[1], r: hl === i ? 6.5 : i === 0 ? 5 : 3.6, stroke: sel.color}, g);
+        g.addEventListener("pointerenter", (e) => showTip(e, `<b>${esc(d.p.code ? d.p.name + " (" + d.p.code + ")" : d.p.name)}</b>, ${esc(d.p.country || d.p.cc)}` +
+          (d.p.text ? `<small>${esc(d.p.text)} — ${esc(day(d.p.date, d.p.time))}${d.p.said && d.p.said !== d.p.name ? `<br>Carrier wrote “${esc(d.p.said)}”` : ""}</small>`
+                    : `<small>Origin, as the carrier names it</small>`)));
+        g.addEventListener("pointerleave", hideTip);
       });
       const O = r.done.length ? r.done[0].p : r.origin;
-      if (D) el("circle", {class: "end", cx: D[0], cy: D[1], r: 5.5}, L.route);
+      const dIdx = stops.findIndex((x) => x.kind === "dest");
+      if (D) el("circle", {class: "end", cx: D[0], cy: D[1], r: hl >= 0 && hl === dIdx ? 8 : 5.5}, L.route);
       if (!r.done.length && O) { const o = scr(proj(O)); el("circle", {class: "end", cx: o[0], cy: o[1], r: 5}, L.route); }
       // Labels, most important first: where it is now, where it goes,
       // where it came from. One too close to another place is left out
-      // (the side card and the tooltip still name it).
+      // (the journey strip and the tooltip still name it).
       const Q = n ? scr(proj(n.pt)) : null;
       const used = (Q ? [[Q[0] - 17, Q[1] - 17, 34, 34]] : [])
         .concat(groups.map((g) => [g.at[0] - 10, g.at[1] - 10, 20, 20]));
       const near = (a, b) => a && b && Math.hypot(a[0] - b[0], a[1] - b[1]) < 22;
       const seen = (p) => p && p[0] >= 0 && p[1] >= 0 && p[0] <= size.w && p[1] <= size.h;
       if (seen(Q) && !moving) label(Q[0], Q[1], short(n.pt), n.ev ? day(n.ev.date, n.ev.time) : "Arrived", used, 17);
-      if (seen(D) && !near(D, Q)) {
+      if (seen(D) && !near(D, Q) && rv >= 1) {
         label(D[0], D[1], short(r.dest), sel.k === "arrived" ? "Arrived" : sel.date ? "ETA " + day(sel.date) : "Destination", used, 7);
       }
       const Op = O ? scr(proj(O)) : null;
-      if (seen(Op) && !near(Op, Q) && !near(Op, D)) label(Op[0], Op[1], short(O), "Origin", used, 7);
+      if (seen(Op) && !near(Op, Q) && !near(Op, D) && rv >= 1) label(Op[0], Op[1], short(O), "Origin", used, 7);
+      // An aircraft points the way it goes: toward the destination while
+      // on the way, along the last leg once there. A direction between two
+      // reported places — not a heading anyone reported.
+      if (n && sel.mode === "air") {
+        let a = null, b = null;
+        if (r.dest && sel.k !== "arrived") { const g = gcPts(n.pt, r.dest); if (g.length > 1) { a = n.pt; b = g[1]; } }
+        if (!a) {
+          const k = r.done.findIndex((d) => d.p.lat === n.pt.lat && d.p.lon === n.pt.lon);
+          if (k > 0) { const g = gcPts(r.done[k - 1].p, n.pt); a = g[g.length - 2]; b = n.pt; }
+        }
+        if (a && b) {
+          const pa = scr(proj(a)), pb = scr(proj(b));
+          if (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) > .5) selNow = Object.assign({}, n, {turn: Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI + 90});
+        }
+      }
     }
 
     groups.forEach((g) => {
@@ -504,7 +678,8 @@
       if (sel.live) el("circle", {class: "pulse", r: 15, stroke: sel.ring}, a);
       const b = el("g", {class: "b"}, a);
       el("circle", {class: "face", r: 15, stroke: sel.ring, "stroke-width": 2.4}, b);
-      if (sel.icon) el("path", {d: sel.icon, fill: sel.color, transform: "translate(-9 -9) scale(.75)"}, b);
+      if (sel.icon) el("path", {d: sel.icon, fill: sel.color,
+        transform: (selNow.turn != null ? `rotate(${selNow.turn.toFixed(1)}) ` : "") + "translate(-9 -9) scale(.75)"}, b);
       a.addEventListener("pointerenter", (e) => showTip(e, tipFor(sel)));
       a.addEventListener("pointerleave", hideTip);
     }
@@ -517,16 +692,40 @@
     const opts = data.items.map((it) => `<option value="${esc(it.ref)}"${it.ref === data.selected ? " selected" : ""}>${esc(it.ref)} · ${esc(it.carrier || "")}${nowOf(it) ? "" : " · no place reported"}</option>`).join("");
     if (select._h !== opts) { select._h = opts; select.innerHTML = opts; }
     select.parentNode.hidden = !data.items.length;
-    const nPlaced = data.items.filter(nowOf).length;
-    // Only the states on the map are in its legend.
-    const shown = new Set(data.items.filter(nowOf).map((i) => i.k));
+    // Legend chips: only the states on the map, with their counts; each
+    // narrows the markers to that state.
+    const placedItems = data.items.filter(nowOf);
+    const count = {};
+    placedItems.forEach((i) => { count[i.k] = (count[i.k] || 0) + 1; });
+    if (filt && !count[filt]) filt = null;
     const legend = [["onway", "var(--teal-dot)", "On the way"], ["arrived", "var(--grn-dot)", "Arrived"],
                     ["processing", "var(--blu)", "Tracking"], ["human", "var(--y-dot)", "Waiting"],
-                    ["failed", "var(--red)", "Exception"]].filter((l) => shown.has(l[0]));
-    const foot = root.querySelector(".tm-foot");
-    const html = `<span title="Each marker is the last place the carrier reported, not a live GPS position"><b>${nPlaced} of ${data.items.length}</b> placed</span>` +
-      legend.map((l) => `<span><i style="background:${l[1]}"></i>${l[2]}</span>`).join("");
-    if (foot._h !== html) { foot._h = html; foot.innerHTML = html; }
+                    ["failed", "var(--red)", "Exception"]].filter((l) => count[l[0]]);
+    const chips = root.querySelector(".tm-chips");
+    const html = `<button type="button" data-f="all" aria-pressed="${!filt}" title="Each marker is the last place the carrier reported, not a live GPS position">All <b>${placedItems.length}</b> of ${data.items.length} placed</button>` +
+      legend.map((l) => `<button type="button" data-f="${l[0]}" aria-pressed="${filt === l[0]}"><i style="background:${l[1]}"></i>${l[2]} <b>${count[l[0]]}</b></button>`).join("");
+    if (chips._h !== html) { chips._h = html; chips.innerHTML = html; }
+    chips.hidden = !data.items.length;
+    // The journey strip of the shipment on show.
+    const trip = root.querySelector(".tm-trip");
+    const stops = stopsOf(sel);
+    const tripHtml = stops.map((st, i) => {
+      const p = st.p, ev = st.ev;
+      const when = st.kind === "dest" ? (st.state === "done" ? "Arrived" : sel.date ? "ETA " + day(sel.date) : "Destination")
+        : ev ? day(ev.date, ev.time) + (st.state === "now" && ago(ev.date) ? " · " + ago(ev.date) : "") : "Origin";
+      const title = [p.name + (p.country ? ", " + p.country : ""), ev && ev.text].filter(Boolean).join(" — ");
+      return (i ? `<span class="sep${st.state === "next" ? " next" : ""}" aria-hidden="true"></span>` : "") +
+        `<button type="button" role="listitem" data-i="${i}" class="${st.state}${hl === i ? " hl" : ""}" title="${esc(title)}">` +
+        `<i></i><b>${esc(short(p))}</b><small>${esc(when)}</small></button>`;
+    }).join("");
+    trip.hidden = !stops.length;
+    if (trip._h !== tripHtml) {
+      trip._h = tripHtml; trip.innerHTML = tripHtml;
+      if (sel) trip.style.setProperty("--tm-c", sel.color);
+      // The newest place in view, with what follows it.
+      const now = trip.querySelector(".now");
+      if (now) trip.scrollLeft = Math.max(0, now.offsetLeft + now.offsetWidth - trip.clientWidth + 90);
+    }
     const msg = root.querySelector(".tm-msg");
     let text = "";
     if (!data.items.length) text = "<b>No shipment yet</b>The first one picked up from the Hub appears here.";
@@ -559,11 +758,11 @@
     const key = keyOf();
     measure();
     if (!shown()) { cam = null; return; }        // hidden: fitted when it shows (ResizeObserver)
-    if (!cam) { cam = fitCam(boundsSel() || boundsAll()); fitKey = key; draw(); }
-    else if (key !== fitKey) { fitKey = key; flyTo(boundsSel() || boundsAll(), false); }
+    if (!cam) { cam = fitCam(boundsSel() || boundsAll()); fitKey = key; revealT0 = performance.now(); draw(); }
+    else if (key !== fitKey) { fitKey = key; revealT0 = performance.now(); hl = -1; flyTo(boundsSel() || boundsAll(), false); }
     else draw();
   }
 
-  window.ctTrackMap = {paint, nowOf: (it) => nowOf(it)};
+  window.ctTrackMap = {paint, nowOf: (it) => nowOf(it), ago};
   document.dispatchEvent(new Event("ct:trackmap"));     // the console paints it now
 })();

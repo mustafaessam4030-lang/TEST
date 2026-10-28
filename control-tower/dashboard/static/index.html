@@ -6415,7 +6415,7 @@ function routeItems(){
   return (S.shipments || []).map((x) => {
     const r = liveRec(x), mode = getTransportMode(r), j = journeyOf(r);
     return {ref:r.reference, carrier:r.carrier || sysName(r.provider || '') || '', where:r.where || null,
-            k:j.k, label:j.label, date:j.date, color:MODES[mode].color, ring:JOURNEY_RING[j.k] || '#94A3B8',
+            k:j.k, label:j.label, date:j.date, mode, color:MODES[mode].color, ring:JOURNEY_RING[j.k] || '#94A3B8',
             icon:MODE_ICON[mode], live:j.k === 'processing' || j.k === 'onway' || j.k === 'human'};
   });
 }
@@ -6452,7 +6452,8 @@ function paintRoute(){
   const said = (p) => p ? (p.code ? p.name + ' (' + p.code + ')' : p.name) + (p.country ? ', ' + p.country : '') : '';
   const whereHTML = now
     ? '<div class="sc-where"><small>Last reported by the carrier</small><b>' + esc(said(now.pt)) + '</b>' +
-        (now.ev ? '<small>' + esc(now.ev.text) + ' · ' + esc(now.ev.date || '') + (now.ev.time ? ' ' + esc(now.ev.time) : '') + '</small>' : '') + '</div>'
+        (now.ev ? '<small>' + esc(now.ev.text) + ' · ' + esc(now.ev.date || '') + (now.ev.time ? ' ' + esc(now.ev.time) : '') +
+          (tm && tm.ago(now.ev.date) ? ' (' + esc(tm.ago(now.ev.date)) + ')' : '') + '</small>' : '') + '</div>'
     : (w.origin || w.destination)
       ? '<div class="sc-where"><small>Route the carrier names</small><b>' + esc([said(w.origin), said(w.destination)].filter(Boolean).join(' → ')) +
           '</b><small>No place the shipment has reached yet</small></div>'

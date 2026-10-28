@@ -216,16 +216,31 @@ check("The marker is the newest reported place, or the destination once arrived 
       "if (w.last && placed(w.last.pt)) return {pt: w.last.pt, ev: w.last};" in page
       and 'if (it.k === "arrived" && placed(w.destination))' in page)
 check("It says on the map that it is not live GPS, and how many are placed",
-      "not a live GPS position" in page and "placed</span>" in page)
+      "not a live GPS position" in page and "placed</button>" in page)
 check("Interactive: drag, Ctrl + scroll, buttons, keyboard, click to follow a shipment",
       all(x in page for x in ('"pointerdown"', "e.ctrlKey || e.metaKey", 'data-z="in"', 'data-z="all"',
                               '"keydown"', "data.onSelect(it.ref)")))
 check("Plain scrolling still scrolls the page (the map shows a hint instead)",
-      "Ctrl + scroll to zoom" in page)
+      "Ctrl + scroll to zoom" in page and '.tm-chips,.tm-trip,.stopc")) return;' in page)
 check("Text from records is escaped before it reaches the page",
       "${esc(it.ref)}" in page and "${esc(ev.text)}" in page)
+check("Lines between reported places follow the great circle between them, and say they are not positions",
+      "function gcPts(a, b)" in page and "it is not a position between them" in page
+      and "dpath += gcPath(r.done[i - 1].p, r.done[i].p)" in page)
+check("The journey strip lists each reported stop with its date; the newest shows its newest event and its age",
+      "function stopsOf(it)" in page and 'out[i].ev = n.ev || out[i].ev' in page and "ago(ev.date)" in page
+      and 'class="tm-trip"' in page and "${esc(short(p))}" in page and "${esc(when)}" in page)
+check("Legend chips show only the states on the map, with counts, and narrow the markers",
+      "filter((l) => count[l[0]])" in page and "(filt && it.k !== filt)" in page and 'aria-pressed="${filt === l[0]}"' in page)
+check("Full screen: on the page itself, Esc or the backdrop closes it, the page does not scroll under it",
+      "document.body.appendChild(root)" in page and 'e.key === "Escape" && root.classList.contains("full")' in page
+      and 'back.addEventListener("click", () => setFull(false))' in page and "document.documentElement.style.overflow" in page)
+check("Only an aircraft is turned to face its way, and only between two reported places",
+      'sel.mode === "air"' in page and "not a heading anyone reported" in page and "mode, color:MODES[mode].color" in index)
+check("Motion respects reduced motion (route reveal, flowing line, pulse)",
+      "const rv = reduced() ? 1" in page and ".tm .tm-next{animation:none}" in page)
 check("Light and dark: its colours are tokens, redefined for dark",
-      ':root[data-theme="dark"]{--tm-sea' in page)
+      ':root[data-theme="dark"]{--tm-vig' in page and "--tm-sea:#0C1018" in page)
 
 section("8. MAP FILES AND RELEASE")
 world = json.loads((HERE / "dashboard" / "static" / "maps" / "world.json").read_text(encoding="utf-8"))
