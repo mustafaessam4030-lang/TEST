@@ -18,7 +18,8 @@ Accepted: .mp3 .m4a .ogg .oga .opus .webm .wav .flac. Nothing in this folder
 is committed to Git or packed into the release ZIP: the licence is for this
 installation, not for redistribution. With no file configured, or a file
 that cannot be played, the player shows "Soundtrack unavailable" and the
-page works normally.
+page works normally. Nothing set means no music: a file left in this folder
+is not played unless ATA_LAUNCH_AUDIO names it.
 
 Nothing about the music shows on the page.
 The music loops and starts by itself where the browser allows it; Chrome and
