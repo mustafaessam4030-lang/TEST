@@ -188,12 +188,21 @@ S = os.path.join(HERE, "dashboard", "static")
 idx = open(os.path.join(S, "index.html"), encoding="utf-8").read()
 cl = open(os.path.join(S, "clearance.html"), encoding="utf-8").read()
 js = open(os.path.join(S, "todo.js"), encoding="utf-8").read()
-check("the Overview keeps its layout: no To Do card, no Tasks page, no bell",
+check("the Overview: no Tasks page, no bell, no action-center card",
       "data-action-card" not in idx and "data-task-center" not in idx and "{id:'tasks'" not in idx
       and "data-notify-slot" not in idx + cl and not os.path.exists(os.path.join(S, "tasks.js"))
       and not os.path.exists(os.path.join(S, "notify.js")))
 check("the Overview still has its Tracking map, On the way and ATLAS card",
       'class="card route"' in idx and 'id="routeMap"' in idx and "On the way" in idx and "atlas-fig" in idx)
+_ovr = idx.split('<div class="ov-vis-r">')[1]
+check("the To Do list is a card on the Overview's right side, first in the right column, before On the way",
+      'data-todo-card' in _ovr and _ovr.index("data-todo-card") < _ovr.index('id="fleet"')
+      and idx.count("data-todo-card") == 1)
+check("…the same list as the panel, hidden until it loads (and on a server without To Do)",
+      'data-todo-card hidden' in idx and "card.hidden = false" in js and "if (card) card.hidden = true" in js
+      and "cardList.innerHTML = html" in js and "panel.querySelector(\".todo-l\").innerHTML = html" in js)
+check("…its links open where the item is dealt with, even the page already open",
+      'cardList.addEventListener("click"' in js and "follow(e, a)" in js)
 check("the To Do button in the top bar of both pages", idx.count("<span data-todo-slot></span>") == 1
       and cl.count("<span data-todo-slot></span>") == 1 and '<script src="/static/todo.js" defer></script>' in idx + cl)
 check("the slide-out opens only on a click, never on load", "open(true)" not in js and 'btn.addEventListener("click"' in js)

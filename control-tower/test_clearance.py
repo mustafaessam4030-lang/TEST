@@ -543,19 +543,13 @@ check("a BU is placed only where its code is the country's ISO code",
 check("ATLAS reads a country name with the same table ('in Egypt' -> EG)",
       _sk._cl_filters("late shipments in Egypt", {"bu": ["EG", "GH"], "mode": [], "div": [], "step": [],
                                                     "agent": [], "ffw": [], "years": []}).get("bu") == "EG")
-_reg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "maps", "region.json")))
-check("the map's outlines ship with the platform (Natural Earth), every placed BU's country in them",
-      "Natural Earth" in _reg["source"] and {v["iso"] for v in _pl.values()} <= {c["id"] for c in _reg["countries"]})
 _cl0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "clearance.html"), encoding="utf-8").read()
-check("Clearance keeps the headline from the rows on screen; the map is on the Overview",
+check("Clearance keeps the headline from the rows on screen, with no map of its own",
       "function headline(R)" in _cl0 and "function mapCard()" not in _cl0 and 'id="mapcard"' not in _cl0)
 _ix0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "index.html"), encoding="utf-8").read()
-_cm0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "clearmap.js"), encoding="utf-8").read()
-check("the Overview has the map card (hidden until the figures load) and its script",
-      '<section class="card cmap" data-clearmap hidden' in _ix0 and '<script src="/static/clearmap.js" defer></script>' in _ix0)
-check("the map escapes every value, links only to Clearance, says it draws no routes, hides for a role without access",
-      "${esc(b.bu)}" in _cm0 and '"/clearance#bu=" + encodeURIComponent(bu)' in _cm0 and "no routes are drawn" in _cm0
-      and "r.status === 403" in _cm0 and "box.hidden = true" in _cm0)
+check("the Overview no longer has the clearance map card (removed at the operator's request)",
+      "data-clearmap" not in _ix0 and "clearmap.js" not in _ix0
+      and not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "clearmap.js")))
 _ms = clearance.map_summary()
 _q1 = clearance.query(None)
 check("the map's figures are the export's own counts (open, past due, per BU)",

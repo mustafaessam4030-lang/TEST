@@ -290,17 +290,19 @@ CSV, a detail panel). Everything on the page is clickable to filter.
   or "status" gives the automation's state, anyone waiting on Human Action, and
   the Clearance headline.
 
-### Overview map, To Do and search
+### Tracking map, To Do and search
 
-- **Where shipments clear** (Overview): each BU's open shipments on a map of
-  Africa and the Middle East (bubble size) and the share past due (colour),
-  from the loaded export (`/api/clearance/map`). A BU is placed only where its
-  code is the country's ISO code; JR and LB are listed, not guessed. The
-  export has no origin or position, so no routes are drawn. Clicking a BU
-  opens Clearance filtered to it. Outlines: Natural Earth (public domain),
-  `tools/build_region_map.py`.
-- **To Do** (top bar, side panel): what needs a person, from the records
-  (`dashboard/todo.py`), each item for the roles that may open it.
+- **Tracking** (Overview): where each shipment of the run was last reported,
+  on a real map (`static/trackmap.js`). The places are the ones the carrier's
+  own events name (DHL timeline, DHL API, DHL Aviation and AFKL stations),
+  matched exactly to an airport, port or town in `dashboard/places/`
+  (OurAirports, GeoNames, Natural Earth; `tools/build_gazetteer.py`) by
+  `dashboard/geo.py`. Estimates and paperwork are never places; an ambiguous
+  or unknown name stays unplaced. Not GPS: nothing is drawn between reported
+  places. Outlines: Natural Earth, `tools/build_world_map.py`.
+- **To Do** (Overview card on the right, and the top bar's panel): what needs
+  a person, from the records (`dashboard/todo.py`), each item for the roles
+  that may open it.
 - **Search** (top bar, `/` or Ctrl+K): an AWB, BOL or PO in the run, the
   Clearance export and PO jobs (`dashboard/search.py`).
 

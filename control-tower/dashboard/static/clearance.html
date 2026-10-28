@@ -837,8 +837,7 @@ function loadHash() {
   $("q").value = state.q;
 }
 
-/* ── the headline: one sentence counted from the rows on screen. The map of
-   the same export by BU is on the Overview (static/clearmap.js). ── */
+/* ── the headline: one sentence counted from the rows on screen. ── */
 let PLACES = null;
 async function loadPlaces() {
   try { const p = await api("/api/clearance/places"); if (p.ok) PLACES = (await p.json()).places || {}; } catch (err) { /* the BU code alone */ }

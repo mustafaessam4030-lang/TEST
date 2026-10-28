@@ -1,8 +1,9 @@
 /* To Do: what needs a person, across the platform (dashboard/todo.py).
    One button in the top bar of every page, with a count of what needs action
    (red and amber items), and a panel listing each item with where to deal with
-   it. Shared by the console and Clearance; styled only with the platform's
-   tokens, so it follows Light and Dark. Reads /api/todo; changes nothing. */
+   it; on the Overview, the same list as a card ([data-todo-card]). Shared by
+   the console and Clearance; styled only with the platform's tokens, so it
+   follows Light and Dark. Reads /api/todo; changes nothing. */
 (function () {
   const slot = document.querySelector("[data-todo-slot]");
   if (!slot || slot.dataset.ready) return;
@@ -53,6 +54,10 @@
   panel.innerHTML = `<div class="todo-h"><b>To Do</b><span></span><button class="todo-x" type="button" aria-label="Close To Do">×</button></div><ul class="todo-l"></ul>`;
   document.body.appendChild(panel);
   const btn = slot.querySelector(".todo-b"), badge = slot.querySelector(".todo-n");
+  // The Overview's To Do card: the same list, always open.
+  const card = document.querySelector("[data-todo-card]");
+  const cardList = card && card.querySelector("[data-todo-list]");
+  const cardSum = card && card.querySelector("[data-todo-sum]");
   // Compact, under its own button, always inside the screen.
   function place() {
     const r = btn.getBoundingClientRect(), w = panel.offsetWidth || 340;
@@ -81,17 +86,24 @@
     badge.hidden = !d || !d.count;
     badge.textContent = d && d.count > 99 ? "99+" : String((d && d.count) || "");
     btn.setAttribute("aria-label", "To Do" + (d && d.count ? ": " + d.count + " need action" : ""));
-    panel.querySelector(".todo-h span").textContent = items.length ? `${d.count} need action · ${items.length} in all` : "";
-    panel.querySelector(".todo-l").innerHTML = items.length ? items.map((i) =>
+    const sum = items.length ? `${d.count} need action · ${items.length} in all` : "";
+    const html = items.length ? items.map((i) =>
       `<li><a href="${esc(safe(i.href))}"><i class="${esc(i.level)}"></i><span class="t">${esc(i.title)}</span>` +
       `${i.detail ? `<span class="d">${esc(i.detail)}</span>` : ""}<span class="s">${STATE[i.state] ? `<span class="st ${esc(i.state)}">${esc(STATE[i.state])}</span> · ` : ""}` +
       `${esc(i.source)}${i.due ? ` · due ${esc(day(i.due))}` : ""}</span></a></li>`).join("")
       : `<li class="todo-e">${d ? "Nothing needs a person right now." : "Could not load the list."}</li>`;
+    panel.querySelector(".todo-h span").textContent = sum;
+    panel.querySelector(".todo-l").innerHTML = html;
+    if (cardList) {
+      if (cardList._h !== html) { cardList._h = html; cardList.innerHTML = html; }
+      cardSum.textContent = sum || "What needs a person, across the platform";
+      card.hidden = false;
+    }
   }
   async function load() {
     try {
       const r = await fetch("/api/todo", {credentials: "same-origin"});
-      if (r.status === 404) { slot.hidden = true; return; }      // not on this kind of server
+      if (r.status === 404) { slot.hidden = true; if (card) card.hidden = true; return; }   // not on this kind of server
       if (!r.ok) return paint(last);
       paint(await r.json());
     } catch (e) { paint(last); }
@@ -113,6 +125,7 @@
   addEventListener("resize", () => { if (panel.classList.contains("show")) place(); });
   // Close, and follow the link even when it is where the page already is.
   panel.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { open(false); follow(e, a); } });
+  if (cardList) cardList.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) follow(e, a); });
   load();
   setInterval(() => { if (!document.hidden) load(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });

@@ -2261,9 +2261,9 @@ body{letter-spacing:-.003em}
 /* Phones: the profile chip keeps only its initials and the gear gives way, so
    Sign out, search and To Do fit without overlapping (Settings is in the menu). */
 @media (max-width:600px){.pf-who{display:none}.pf-me{padding-right:3px}.appbar .ibtn[data-go="settings"]{display:none}}
-.cmap{margin-bottom:24px}
-.cmap[hidden]{display:none}
-.cmap .cbtn{text-decoration:none;color:var(--ink);font-size:12.5px}
+.todo-card[hidden]{display:none}
+.todo-card .todo-l{max-height:318px;overflow:auto;padding:6px 8px 10px}
+@media(max-width:1240px){.todo-card{grid-column:1/-1}}
 
 /* Page rhythm: an 8-point scale, headings that state rather than shout. */
 .page{padding:28px 32px 56px}
@@ -2621,15 +2621,6 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
     <!-- ═══ OVERVIEW ═══ -->
     <section class="page on" data-p="overview">
       <div class="kpis" id="kpis"></div>
-      <!-- WHERE SHIPMENTS CLEAR: the eHub export by BU on a map
-           (static/clearmap.js, /api/clearance/map). Hidden for a role without
-           the Clearance page; a BU opens Clearance filtered to it. -->
-      <section class="card cmap" data-clearmap hidden aria-labelledby="cmapT">
-        <div class="card-h"><div><div class="card-t" id="cmapT">Where shipments clear</div>
-          <div class="card-s" data-clearmap-note></div></div>
-          <div class="sp"></div><a class="cbtn" href="/clearance">Open Clearance</a></div>
-        <div class="card-b" data-clearmap-body></div>
-      </section>
       <div class="ov-vis">
         <!-- TRACKING. Where each shipment was last reported, on a real map
              (static/trackmap.js): the places the carrier's own events name,
@@ -2645,6 +2636,13 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
           </div>
         </div>
         <div class="ov-vis-r">
+          <!-- TO DO: what needs a person across the platform, the same list
+               as the top bar's To Do (static/todo.js, /api/todo). -->
+          <section class="card todo-card" data-todo-card hidden aria-labelledby="todoCardT">
+            <div class="card-h"><div><div class="card-t" id="todoCardT">To Do</div>
+              <div class="card-s" data-todo-sum>What needs a person, across the platform</div></div></div>
+            <ul class="todo-l" data-todo-list></ul>
+          </section>
           <div class="card fleet" id="fleet">
             <div class="card-h"><div><div class="card-t">On the way</div>
               <div class="card-s">ETA known, not yet arrived</div></div></div>
@@ -8001,7 +7999,6 @@ setTimeout(() => document.body.classList.remove('first-load'), 1400);
   }, true);
 })();
 </script>
-<script src="/static/clearmap.js" defer></script>
 <script src="/static/trackmap.js" defer></script>
 <script src="/static/search.js" defer></script>
 <script src="/static/todo.js" defer></script>
