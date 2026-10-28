@@ -200,6 +200,7 @@ check("the To Do list is a card on the Overview's right side, first in the right
       and idx.count("data-todo-card") == 1)
 check("…the same list as the panel, hidden until it loads (and on a server without To Do)",
       'data-todo-card hidden' in idx and "card.hidden = false" in js and "if (card) card.hidden = true" in js
+      and "if (cardList && d) {" in js
       and "cardList.innerHTML = html" in js and "panel.querySelector(\".todo-l\").innerHTML = html" in js)
 check("…its links open where the item is dealt with, even the page already open",
       'cardList.addEventListener("click"' in js and "follow(e, a)" in js)

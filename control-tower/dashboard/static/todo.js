@@ -94,7 +94,7 @@
       : `<li class="todo-e">${d ? "Nothing needs a person right now." : "Could not load the list."}</li>`;
     panel.querySelector(".todo-h span").textContent = sum;
     panel.querySelector(".todo-l").innerHTML = html;
-    if (cardList) {
+    if (cardList && d) {            // shown once the list has loaded, never as an error first
       if (cardList._h !== html) { cardList._h = html; cardList.innerHTML = html; }
       cardSum.textContent = sum || "What needs a person, across the platform";
       card.hidden = false;

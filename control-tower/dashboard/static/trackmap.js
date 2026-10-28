@@ -100,7 +100,7 @@
 .tm-pop button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);border-radius:8px;padding:6px 8px;cursor:pointer;font:inherit}
 .tm-pop button:hover,.tm-pop button:focus-visible{background:var(--surface-3);outline:none}
 .tm-pop small{color:var(--faint);margin-left:6px}
-.tm-tip{position:fixed;z-index:95;pointer-events:none;max-width:290px;background:#1D1D1F;color:#fff;font-size:12.5px;line-height:1.42;
+.tm-tip{position:fixed;z-index:130;pointer-events:none;max-width:290px;background:#1D1D1F;color:#fff;font-size:12.5px;line-height:1.42;
   border-radius:8px;padding:7px 10px;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;transition:opacity .12s}
 :root[data-theme="dark"] .tm-tip{background:#262D3B}
 .tm-tip.show{opacity:1}
@@ -163,7 +163,7 @@
   // filt: the state the markers are narrowed to (a legend chip); hl: the
   // journey stop under the pointer; revealT0: when the route on show began
   // drawing itself in.
-  let filt = null, hl = -1, revealT0 = 0, revealRaf = 0, back = null, slotMark = null;
+  let filt = null, hl = -1, revealT0 = 0, revealRaf = 0, back = null, slotMark = null, flying = false;
   const tip = document.createElement("div");
   tip.className = "tm-tip"; tip.setAttribute("role", "tooltip");
   document.body.appendChild(tip);
@@ -209,6 +209,10 @@
     const visited = (w.path || []).filter(placed);
     if (visited.length) add(w.origin, "origin");
     visited.forEach((p) => add(p, "stop"));
+    // A place it came back to (A → B → A) is listed once, where it was
+    // first reached; the return is drawn as a last leg back to it.
+    const n = nowOf(it);
+    if (n && n.ev && pts.length) add(Object.assign({}, n.pt, {date: n.ev.date, time: n.ev.time, text: n.ev.text}), "stop");
     return {done: pts, origin: placed(w.origin) ? w.origin : null,
             dest: placed(w.destination) ? w.destination : null,
             destCC: w.destination && w.destination.cc};
@@ -302,6 +306,12 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && root.classList.contains("full")) { e.stopPropagation(); setFull(false); }
     }, true);
+    // Focus that leaves the full-screen map comes back to it; a page change
+    // (Back, a link, search) closes it.
+    document.addEventListener("focusin", (e) => {
+      if (root.classList.contains("full") && !root.contains(e.target)) root.focus();
+    });
+    addEventListener("hashchange", () => { if (root.classList.contains("full")) setFull(false); });
     root.querySelector(".tm-pick select").addEventListener("change", (e) => {
       if (data.onSelect) data.onSelect(e.target.value);
     });
@@ -335,11 +345,15 @@
     if (on && !slotMark) { slotMark = document.createComment("map"); root.parentNode.insertBefore(slotMark, root); document.body.appendChild(root); }
     if (!on && slotMark) { slotMark.parentNode.insertBefore(root, slotMark); slotMark.remove(); slotMark = null; }
     root.classList.toggle("full", on);
+    // While full it is a dialog: search and other shortcuts stand back, and
+    // Tab stays inside it.
+    if (on) { root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); }
+    else { root.removeAttribute("role"); root.removeAttribute("aria-modal"); }
     root.querySelector('[data-z="full"]').setAttribute("aria-pressed", String(on));
     if (on && !back) { back = document.createElement("div"); back.className = "tm-back"; back.addEventListener("click", () => setFull(false)); document.body.appendChild(back); }
     if (!on && back) { back.remove(); back = null; }
     document.documentElement.style.overflow = on ? "hidden" : "";
-    if (on) root.focus();
+    if (on) root.focus(); else root.querySelector('[data-z="full"]').focus();
     measure(); if (cam) { cam = fitCam(boundsSel() || boundsAll()); draw(); }
   }
   function keyOf() {
@@ -393,9 +407,11 @@
       const k = Math.min(1, (t - t0) / dur), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
       cam = {x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e,
              s: Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * e)};
+      flying = k < 1;
       draw(k < 1);
       if (k < 1) anim = requestAnimationFrame(step);
     };
+    flying = true;
     anim = requestAnimationFrame(step);
   }
   function zoomAt(px, py, f, smooth) {
@@ -412,9 +428,11 @@
       const k = Math.min(1, (t - t0) / 300), e = 1 - Math.pow(1 - k, 3);
       cam = {x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e,
              s: Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * e)};
+      flying = k < 1;
       draw(k < 1);
       if (k < 1) anim = requestAnimationFrame(step);
     };
+    flying = true;
     anim = requestAnimationFrame(step);
   }
   function boundsOf(points) {
@@ -572,7 +590,9 @@
     // destination (dotted), or only the route its carrier names (dotted).
     let selNow = null;
     const rv = reduced() ? 1 : Math.min(1, (performance.now() - revealT0) / 1100);
-    if (rv < 1 && !revealRaf) revealRaf = requestAnimationFrame(() => { revealRaf = 0; draw(); });
+    // While the camera flies it redraws every frame anyway; the reveal only
+    // schedules its own frames once it is still.
+    if (rv < 1 && !revealRaf && !flying) revealRaf = requestAnimationFrame(() => { revealRaf = 0; draw(); });
     if (sel) {
       const r = routeOf(sel), n = nowOf(sel), stops = stopsOf(sel);
       selNow = n;
@@ -612,7 +632,7 @@
       const O = r.done.length ? r.done[0].p : r.origin;
       const dIdx = stops.findIndex((x) => x.kind === "dest");
       if (D) el("circle", {class: "end", cx: D[0], cy: D[1], r: hl >= 0 && hl === dIdx ? 8 : 5.5}, L.route);
-      if (!r.done.length && O) { const o = scr(proj(O)); el("circle", {class: "end", cx: o[0], cy: o[1], r: 5}, L.route); }
+      if (!r.done.length && O) { const o = scr(proj(O)); el("circle", {class: "end", cx: o[0], cy: o[1], r: hl === 0 ? 8 : 5}, L.route); }
       // Labels, most important first: where it is now, where it goes,
       // where it came from. One too close to another place is left out
       // (the journey strip and the tooltip still name it).
@@ -634,7 +654,8 @@
         let a = null, b = null;
         if (r.dest && sel.k !== "arrived") { const g = gcPts(n.pt, r.dest); if (g.length > 1) { a = n.pt; b = g[1]; } }
         if (!a) {
-          const k = r.done.findIndex((d) => d.p.lat === n.pt.lat && d.p.lon === n.pt.lon);
+          let k = -1;
+          r.done.forEach((d, i) => { if (d.p.lat === n.pt.lat && d.p.lon === n.pt.lon) k = i; });
           if (k > 0) { const g = gcPts(r.done[k - 1].p, n.pt); a = g[g.length - 2]; b = n.pt; }
         }
         if (a && b) {
@@ -715,7 +736,7 @@
         : ev ? day(ev.date, ev.time) + (st.state === "now" && ago(ev.date) ? " · " + ago(ev.date) : "") : "Origin";
       const title = [p.name + (p.country ? ", " + p.country : ""), ev && ev.text].filter(Boolean).join(" — ");
       return (i ? `<span class="sep${st.state === "next" ? " next" : ""}" aria-hidden="true"></span>` : "") +
-        `<button type="button" role="listitem" data-i="${i}" class="${st.state}${hl === i ? " hl" : ""}" title="${esc(title)}">` +
+        `<button type="button" role="listitem" data-i="${i}" class="${st.state}" title="${esc(title)}">` +
         `<i></i><b>${esc(short(p))}</b><small>${esc(when)}</small></button>`;
     }).join("");
     trip.hidden = !stops.length;
@@ -752,14 +773,15 @@
       paintChrome();
       return;
     }
-    paintChrome();
     // Follow the shipment on show: fly to its route when it changes, or
     // when what is known about where it is changes.
     const key = keyOf();
+    if (key !== fitKey) hl = -1;                 // a new shipment: no stop marked
+    paintChrome();
     measure();
     if (!shown()) { cam = null; return; }        // hidden: fitted when it shows (ResizeObserver)
     if (!cam) { cam = fitCam(boundsSel() || boundsAll()); fitKey = key; revealT0 = performance.now(); draw(); }
-    else if (key !== fitKey) { fitKey = key; revealT0 = performance.now(); hl = -1; flyTo(boundsSel() || boundsAll(), false); }
+    else if (key !== fitKey) { fitKey = key; revealT0 = performance.now(); flyTo(boundsSel() || boundsAll(), false); }
     else draw();
   }
 

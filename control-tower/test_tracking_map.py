@@ -235,6 +235,15 @@ check("Legend chips show only the states on the map, with counts, and narrow the
 check("Full screen: on the page itself, Esc or the backdrop closes it, the page does not scroll under it",
       "document.body.appendChild(root)" in page and 'e.key === "Escape" && root.classList.contains("full")' in page
       and 'back.addEventListener("click", () => setFull(false))' in page and "document.documentElement.style.overflow" in page)
+check("Full screen is a dialog: tooltips above it, search stands back, Tab stays in, a page change closes it, focus returns",
+      ".tm-tip{position:fixed;z-index:130;" in page and 'root.setAttribute("aria-modal", "true")' in page
+      and 'addEventListener("hashchange", () => { if (root.classList.contains("full")) setFull(false); });' in page
+      and "!root.contains(e.target)) root.focus();" in page and "root.querySelector('[data-z=\"full\"]').focus()" in page)
+check("A place it came back to is drawn as a last leg back to it, and the strip ends there",
+      'if (n && n.ev && pts.length) add(Object.assign({}, n.pt, {date: n.ev.date' in page)
+check("The journey strip is not rebuilt for a highlight (keyboard focus stays)",
+      'class="${st.state}" title=' in page and "if (key !== fitKey) hl = -1;" in page)
+check("One redraw a frame: the reveal waits while the camera flies", "!revealRaf && !flying" in page)
 check("Only an aircraft is turned to face its way, and only between two reported places",
       'sel.mode === "air"' in page and "not a heading anyone reported" in page and "mode, color:MODES[mode].color" in index)
 check("Motion respects reduced motion (route reveal, flowing line, pulse)",
