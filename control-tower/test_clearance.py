@@ -393,7 +393,7 @@ check("the Control Tower menu opens Clearance", "href:'/clearance'" in idx and "
 import re as _re                                              # noqa: E402
 check("the page loads nothing from the internet (its scripts and styles are this server's own)",
       not _re.search(r'(src|href)="(https?:)?//', html) and "cdnjs" not in html
-      and set(_re.findall(r'<script src="([^"]+)"', html)) <= {"/static/search.js", "/static/todo.js"}
+      and set(_re.findall(r'<script src="([^"]+)"', html)) <= {"/static/search.js", "/static/notify.js"}
       and "https://" not in html.split("<script>")[1])
 check("uploads carry the session's CSRF token", '"X-CSRF-Token": PF.csrf' in html and "/api/clearance/upload" in html)
 check("the page links back to the Control Tower", 'href="/"' in html)

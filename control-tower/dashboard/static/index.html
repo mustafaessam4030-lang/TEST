@@ -2266,7 +2266,13 @@ body{letter-spacing:-.003em}
    the logo stands alone (the name is in the tab title either way). */
 .brand-p{white-space:nowrap}
 @media (min-width:881px) and (max-width:1559px){.brand.has-logo .brand-t{display:none}}
-.cmap{margin-bottom:24px}
+/* Eight pages in the bar: a little tighter where the screen is narrower. */
+@media (min-width:881px) and (max-width:1399px){.tnav-i{padding:6px 10px;font-size:12.5px}}
+/* Phones: the profile chip gives way so Sign out, search and the bell fit. */
+@media (max-width:600px){.pf-me{display:none!important}.appbar .ibtn[data-go="settings"]{display:none}}
+.cmap,.actreq{margin-bottom:24px}
+.actreq[hidden]{display:none}
+.actreq .cbtn{text-decoration:none;color:var(--ink);font-size:12.5px}
 .cmap[hidden]{display:none}
 .cmap .cbtn{text-decoration:none;color:var(--ink);font-size:12.5px}
 
@@ -2550,7 +2556,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
       <button class="pf-out" id="pfOut" hidden>Sign out</button>
     </span>
     <span data-search-slot></span>
-    <span data-todo-slot></span>
+    <span data-notify-slot></span>
     <button class="ibtn" data-go="settings" aria-label="Settings" title="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </header>
@@ -2626,6 +2632,14 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
     <!-- ═══ OVERVIEW ═══ -->
     <section class="page on" data-p="overview">
       <div class="kpis" id="kpis"></div>
+      <!-- ACTION REQUIRED: the three highest-priority tasks and how many are
+           outstanding (static/tasks.js, /api/todo); the rest in Tasks. -->
+      <section class="card actreq" data-action-card hidden aria-labelledby="actT">
+        <div class="card-h"><div><div class="card-t" id="actT">Action required</div>
+          <div class="card-s tk-sum" data-action-sum></div></div>
+          <div class="sp"></div><a class="cbtn" href="/#tasks" data-tasks-link>View all tasks</a></div>
+        <div class="card-b" data-action-body style="padding-top:4px;padding-bottom:14px"></div>
+      </section>
       <!-- WHERE SHIPMENTS CLEAR: the eHub export by BU on a map
            (static/clearmap.js, /api/clearance/map). Hidden for a role without
            the Clearance page; a BU opens Clearance filtered to it. -->
@@ -2885,6 +2899,13 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
     </section>
 
     <!-- ═══ HUMAN ACTION ═══ -->
+    <section class="page" data-p="tasks">
+      <div class="card">
+        <div class="card-h"><div><div class="card-t">Task Center</div>
+          <div class="card-s">What needs a person, from the platform's own records, highest priority first. Each task opens where it is dealt with.</div></div></div>
+        <div class="card-b" data-task-center><div class="hint">Loading…</div></div>
+      </div>
+    </section>
     <section class="page" data-p="human">
       <div class="card hq-page" style="margin-bottom:18px">
         <div class="card-h"><div><div class="card-t">Human Action queue</div>
@@ -4142,6 +4163,8 @@ const PAGES = [
   {g:'Intelligence'},
   {id:'atlas',     t:'ATLAS',         i:'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zm0 9l8-4.5M12 12v9m0-9L4 7.5'},
   {id:'human',     t:'Human Action',  i:'M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM4.5 21a7.5 7.5 0 0 1 15 0'},
+  /* The Task Center: every task from the platform's records (static/tasks.js). */
+  {id:'tasks',     t:'Tasks',         i:'M9 11l2 2 4-4M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z'},
   {id:'access',    t:'Access',        i:'M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6zM9.5 12l2 2 3.5-4', admin:true},
   {spacer:true},
   {id:'settings',  t:'Settings',      i:'M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2m12 0h2M12 4v2m0 12v2'},
@@ -8069,6 +8092,7 @@ setTimeout(() => document.body.classList.remove('first-load'), 1400);
 </script>
 <script src="/static/clearmap.js" defer></script>
 <script src="/static/search.js" defer></script>
-<script src="/static/todo.js" defer></script>
+<script src="/static/tasks.js" defer></script>
+<script src="/static/notify.js" defer></script>
 </body>
 </html>

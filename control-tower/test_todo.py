@@ -1,19 +1,23 @@
 """
-To Do (dashboard/todo.py): what needs a person, counted from the records,
-each item linking to where it is dealt with, and only what the person's
-access level lets them open. No browser, no network.
+Tasks and notifications (dashboard/todo.py): what needs a person, derived
+from the platform's records, with a state (overdue, urgent, pending
+approval, to do, completed), a priority, a due date where the record has
+one, a link to where it is dealt with, and only what the person's access
+level lets them open. Plus the pages: no overlay on load, the bell, the
+Overview card, the Task Center. No browser, no network.
 """
 import datetime as dt
 import json
 import os
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 TMP = tempfile.mkdtemp(prefix="todo_")
 os.environ.update({"ATA_RUNTIME_DIR": TMP, "ATA_CLEARANCE_INBOX": os.path.join(TMP, "inbox"),
-                   "ATLAS_INTEL_DIR": os.path.join(TMP, "intel")})
+                   "ATLAS_INTEL_DIR": os.path.join(TMP, "intel"), "PO_DATA_DIR": os.path.join(TMP, "po")})
 from dashboard import clearance, todo                         # noqa: E402
 
 PASS, FAIL = [], []
@@ -33,82 +37,146 @@ def row(**kw):
 
 
 ROWS = [row(awb="LATE-45", overdue=45, due="2026-09-13"),
-        row(awb="LATE-31", overdue=31, agent="AGENT TWO"),
+        row(awb="LATE-31", overdue=31, agent="AGENT TWO", due="2026-09-27"),
         row(awb="LATE-5", overdue=5),
-        row(awb="ESC-60", overdue=60, bu="GH"),
+        row(awb="ESC-60", overdue=60, bu="GH", due="2026-08-29"),
+        row(awb="ESC-DONE", overdue=12, bu="NG"),
         row(awb="FIX-1", status="RequiredCorrection", overdue=2),
         row(awb="DONE-1", step="Completed", ontime=1)]
 clearance.data_path().write_text(json.dumps({"asof": "2026-10-20", "rows": ROWS, "dq": {},
                                               "fields": clearance.FIELDS, "count": len(ROWS)}))
-ok, _msg, _e = clearance.escalate(dict(zip(clearance.FIELDS, ROWS[3])), "Agent not answering", "ops@mantrac.example")
+ok, _msg, ESC = clearance.escalate(dict(zip(clearance.FIELDS, ROWS[3])), "Agent not answering", "ops@mantrac.example")
 check("fixture: one open escalation", ok, _msg)
+ok, _msg, E2 = clearance.escalate(dict(zip(clearance.FIELDS, ROWS[4])), "Duty", "ops@mantrac.example")
+clearance.resolve(E2["id"], "Agent paid the duty", "lead@mantrac.example")
 clearance.save_contacts({"agents": {"AGENT ONE": {"email": "one@agent.example", "person": "One"},
                                     "AGENT TWO": {"email": "", "person": "No mail"}},
                          "bus": {}, "forwarders": {}, "coe": {}}, "admin@mantrac.example")
-STATE = {"shipments": [{"reference": "157-11111111", "state": "waiting_for_human"},
-                       {"reference": "157-22222222", "state": "failed"},
-                       {"reference": "157-33333333", "state": "updated"}]}
-TODAY = dt.date(2026, 10, 28)
+
+NOW = dt.datetime.now().replace(microsecond=0)
+EPOCH = time.mktime(NOW.timetuple())
+fmt = lambda d: d.strftime("%Y-%m-%d %H:%M:%S")             # noqa: E731
+STATE = {"human_queue": [
+    {"action_id": "late", "reference": "157-11111111", "carrier": "Qatar Airways Cargo", "status": "WAITING_FOR_HUMAN",
+     "created_at": fmt(NOW - dt.timedelta(hours=2)), "timeout_at": fmt(NOW - dt.timedelta(minutes=5)),
+     "timeout_epoch": EPOCH - 300, "label": "Waiting for a person"},
+    {"action_id": "fresh", "reference": "176-22222222", "carrier": "Emirates", "status": "OPERATOR_OPENED",
+     "created_at": fmt(NOW - dt.timedelta(minutes=10)), "timeout_at": fmt(NOW + dt.timedelta(minutes=50)),
+     "timeout_epoch": EPOCH + 3000},
+    {"action_id": "done", "reference": "057-33333333", "status": "SUCCESS", "label": "Written and read back",
+     "created_at": fmt(NOW - dt.timedelta(hours=3)), "closed_at": fmt(NOW - dt.timedelta(hours=1))},
+    {"action_id": "old", "reference": "057-44444444", "status": "SUCCESS",
+     "created_at": fmt(NOW - dt.timedelta(days=20)), "closed_at": fmt(NOW - dt.timedelta(days=19))}],
+    "shipments": [{"reference": "157-22222222", "state": "failed"}, {"reference": "157-33333333", "state": "updated"}],
+    "run": {"run_id": "R7", "status": "completed", "finished_at": (NOW - dt.timedelta(minutes=30)).isoformat()}}
+
+
+class _Svc:
+    """A stand-in PO service: summary() as po/service.py returns it."""
+    def summary(self):
+        return {"config": {"auto_send": False}, "jobs": [
+            {"po_id": "p-review", "reference": "MEDU0001", "doctype": "boe", "state": "NEEDS_REVIEW",
+             "kpi": "validation_required", "label": "Needs review", "updated": "2026-10-28T09:00:00"},
+            {"po_id": "p-send", "reference": "MEDU0002", "doctype": "boe", "state": "EMAIL_PREPARED",
+             "kpi": "generated", "label": "Ready (not sent)", "updated": "2026-10-28T09:30:00"},
+            {"po_id": "p-old", "reference": "MEDU0002", "doctype": "boe", "state": "VALIDATION_FAILED",
+             "kpi": "validation_required", "label": "older job, superseded"},
+            {"po_id": "p-fail", "reference": "MEDU0003", "doctype": "boe", "state": "PDF_NOT_FOUND",
+             "kpi": "failed", "label": "PDF not found"},
+            {"po_id": "p-sent", "reference": "MEDU0004", "doctype": "boe", "state": "EMAIL_SENT", "kpi": "sent"}]}
+
+
+from po import service as _po_service                        # noqa: E402
+_po_service.local = lambda: _Svc()
 everyone = lambda _p: True                                     # noqa: E731
 
-print("1. WHAT NEEDS A PERSON, FROM THE RECORDS")
-out = todo.build(everyone, STATE, today=TODAY)
+print("1. TASKS FROM THE RECORDS, WITH A STATE")
+out = todo.build(everyone, STATE, now=NOW)
 items = out["items"]
-by = {i["title"]: i for i in items}
-titles = [i["title"] for i in items]
-check("a shipment waiting on Human Action comes first, red, linking to Human Action",
-      items[0]["title"] == "1 shipment waiting for a person" and items[0]["level"] == "red"
-      and items[0]["href"] == "/#human" and "157-11111111" in items[0]["detail"], items[0])
-check("an open escalation is listed with who and when, linking to the shipment",
-      "Escalated: ESC-60 (GH)" in by and by["Escalated: ESC-60 (GH)"]["href"] == "/clearance#q=ESC-60"
-      and "ops@mantrac.example on " in by["Escalated: ESC-60 (GH)"]["detail"], titles)
-check("a failed run shipment is listed (amber)", by.get("1 shipment failed in this run", {}).get("level") == "amber", titles)
-long_late = [i for i in items if "past due, not escalated" in i["title"]]
-check("shipments 30+ days past due and not escalated: counted, the escalated one left out",
-      long_late and long_late[0]["count"] == 2 and "LATE-45" in long_late[0]["detail"], long_late)
-check("shipments eHub marks for correction", any(i["title"] == "1 shipment marked Correction required in eHub"
-                                                for i in items), titles)
-miss = [i for i in items if i["title"].startswith("Add contacts")]
-check("an agent with past-due shipments and no email on file (the same rule as Mail)",
-      miss and miss[0]["count"] == 1 and "AGENT TWO" in miss[0]["detail"] and "AGENT ONE" not in miss[0]["detail"]
-      and miss[0]["level"] == "grey", miss)
-check("an export 8 days old asks for a newer one (grey)",
-      any(i["title"] == "Load a newer eHub export" and "2026-10-20" in i["detail"] for i in items), titles)
-check("the count is what needs action: red and amber, not housekeeping",
-      out["count"] == sum(1 for i in items if i["level"] in ("red", "amber")), out["count"])
-check("every link stays on this site", all(i["href"].startswith("/") and not i["href"].startswith("//") for i in items))
-check("nothing is invented: every number is in the records",
-      all(isinstance(i["count"], int) and i["count"] > 0 for i in items))
+by_id = {i["id"]: i for i in items}
+check("every task has the fields the pages use",
+      all({"id", "source", "kind", "state", "priority", "title", "detail", "href", "due", "at", "count"} <= set(i) for i in items))
+check("ids are unique: no task listed twice", len(by_id) == len(items), [i["id"] for i in items])
+check("a Human Action past its own timeout is overdue, due at its timeout",
+      by_id["human:late"]["state"] == "overdue" and by_id["human:late"]["due"] == STATE["human_queue"][0]["timeout_at"])
+check("…one still inside it is urgent", by_id["human:fresh"]["state"] == "urgent")
+check("a Human Action finished today is completed; one 19 days ago is not listed",
+      by_id["human:done"]["state"] == "completed" and "human:old" not in by_id)
+esc = by_id["esc:" + ESC["id"]]
+check("an open escalation whose step is past due is overdue, due at the step's due date",
+      esc["state"] == "overdue" and esc["due"] == "2026-08-29" and esc["href"] == "/clearance#q=ESC-60")
+check("a resolved escalation is completed, with who resolved it",
+      by_id["esc:" + E2["id"]]["state"] == "completed" and "lead@mantrac.example" in by_id["esc:" + E2["id"]]["detail"])
+check("a PO job needing review is pending approval, opening that job",
+      by_id["po:review:p-review"]["state"] == "pending_approval" and by_id["po:review:p-review"]["href"] == "/#po?po=p-review")
+check("a prepared PO email (auto-send off) waits for a person to approve sending",
+      by_id["po:send:p-send"]["state"] == "pending_approval" and "Approve and send" in by_id["po:send:p-send"]["title"])
+check("only a document's latest PO job counts (the superseded one is not a task)", "po:review:p-old" not in by_id)
+check("a failed PO job is a task; a sent one is not", "po:failed:p-fail" in by_id and not any("p-sent" in k for k in by_id))
+long_late = by_id["clr:long-late"]
+check("shipments 30+ days past due and not escalated: one overdue task, counted, the escalated one left out",
+      long_late["state"] == "overdue" and long_late["count"] == 2 and "LATE-45" in long_late["detail"])
+check("agents without an email on file (the same rule as Mail): one task", by_id["clr:contacts"]["count"] == 1
+      and "AGENT TWO" in by_id["clr:contacts"]["detail"])
+check("an export 8 days old asks for a newer one", "clr:export" in by_id)
 
-print("\n2. ONLY WHAT THE PERSON MAY OPEN")
-viewer = {"dashboard.view", "runs.view", "clearance.view", "atlas.chat"}
-out_v = todo.build(lambda p: p in viewer, STATE, today=TODAY)
-tv = [i["title"] for i in out_v["items"]]
-check("a Viewer does not see Human Action (needs human.act)", not any("waiting for a person" in t for t in tv), tv)
-check("…nor contacts (clearance.contacts) or loading an export (clearance.upload)",
-      not any(t.startswith("Add contacts") or t == "Load a newer eHub export" for t in tv), tv)
-check("…but sees the escalation and the run's failure", "Escalated: ESC-60 (GH)" in tv and
-      "1 shipment failed in this run" in tv, tv)
-out_n = todo.build(lambda p: p == "dashboard.view", STATE, today=TODAY)
-check("without clearance.view: no Clearance items at all",
-      not any(i["source"] == "Clearance" for i in out_n["items"]), out_n["items"])
+print("\n2. PRIORITY")
+order = [i["id"] for i in items if i["state"] != "completed"]
+check("the overdue Human Action comes first, then the urgent one, then the escalation",
+      order[:3] == ["human:late", "human:fresh", "esc:" + ESC["id"]], order[:4])
+check("…then PO approvals before the run's failures and Clearance housekeeping",
+      order.index("po:review:p-review") < order.index("run:failed") < order.index("clr:correction") < order.index("clr:export"), order)
+check("completed tasks come last, newest first",
+      [i["id"] for i in items[-2:]] == ["esc:" + E2["id"], "human:done"], [i["id"] for i in items[-3:]])
+check("outstanding and the counts by state are counted from the list, not set",
+      out["outstanding"] == sum(1 for i in items if i["state"] != "completed")
+      and sum(out["by_state"].values()) == len(items) and out["by_state"]["pending_approval"] == 2)
 
-print("\n3. QUIET WHEN THERE IS NOTHING")
-os.remove(str(clearance.data_path()))
-clearance._cache.update(mtime=None, data=None)
-out_e = todo.build(everyone, {"shipments": []}, today=TODAY)
-check("no run, no export, no PO jobs: an empty list and a zero count",
-      out_e["count"] == 0 and not [i for i in out_e["items"] if i["source"] != "PO Automation"], out_e)
+print("\n3. ONLY WHAT THE PERSON MAY OPEN")
+viewer = {"dashboard.view", "runs.view", "clearance.view", "po.view", "atlas.chat"}
+tv = {i["id"] for i in todo.build(lambda p: p in viewer, STATE, now=NOW)["items"]}
+check("a Viewer sees no Human Action task (human.act), no send approval (po.send), no contacts or export (Admin)",
+      not any(t.startswith("human:") for t in tv) and "po:send:p-send" not in tv and "clr:contacts" not in tv
+      and "clr:export" not in tv, sorted(tv))
+check("…but sees the escalation, the PO review and the run's failures",
+      {"esc:" + ESC["id"], "po:review:p-review", "run:failed"} <= tv, sorted(tv))
+check("without clearance.view: no Clearance task",
+      not any(i["source"] == "Clearance" for i in todo.build(lambda p: p == "dashboard.view", STATE, now=NOW)["items"]))
 
-print("\n4. THE BUTTON")
-for page in ("index.html", "clearance.html"):
-    html = open(os.path.join(HERE, "dashboard", "static", page), encoding="utf-8").read()
-    check("{0}: the To Do button in the top bar".format(page),
-          "<span data-todo-slot></span>" in html and '<script src="/static/todo.js" defer></script>' in html)
-js = open(os.path.join(HERE, "dashboard", "static", "todo.js"), encoding="utf-8").read()
-check("todo.js escapes every value and follows only same-site links",
-      "const esc = " in js and "${esc(i.title)}" in js and "/^\\/(?!\\/)/.test" in js)
-check("…and reads only (GET /api/todo)", js.count("fetch(") == 1 and "method" not in js)
+print("\n4. NOTIFICATIONS")
+nt = todo.notifications(everyone, STATE, now=NOW)["items"]
+kinds = [n["id"].split(":")[0] for n in nt]
+check("recent events: Human Action opened and finished, escalations opened and resolved, a run finished",
+      {"human-open", "human-done", "esc-open", "esc-done", "run-done"} <= set(kinds), kinds)
+check("newest first, nothing older than 7 days",
+      [n["at"] for n in nt] == sorted([n["at"] for n in nt], reverse=True) and "human-open:old" not in [n["id"] for n in nt])
+check("a Viewer gets no Human Action notification", not any(n["kind"] == "human" for n in
+      todo.notifications(lambda p: p in viewer, STATE, now=NOW)["items"]))
+
+print("\n5. THE PAGES")
+S = os.path.join(HERE, "dashboard", "static")
+idx = open(os.path.join(S, "index.html"), encoding="utf-8").read()
+cl = open(os.path.join(S, "clearance.html"), encoding="utf-8").read()
+tasks_js = open(os.path.join(S, "tasks.js"), encoding="utf-8").read()
+notify_js = open(os.path.join(S, "notify.js"), encoding="utf-8").read()
+check("the old To Do overlay is gone from both pages", not os.path.exists(os.path.join(S, "todo.js"))
+      and "todo.js" not in idx and "todo.js" not in cl and "data-todo-slot" not in idx + cl)
+check("the bell in the top bar of both pages", idx.count("<span data-notify-slot></span>") == 1
+      and cl.count("<span data-notify-slot></span>") == 1 and "notify.js" in idx and "notify.js" in cl)
+check("the bell opens nothing by itself (only on a click)", "open(true" not in notify_js and 'btn.addEventListener("click"' in notify_js)
+check("…closes on Escape (focus back), outside click, Tab away, or picking an item",
+      '"Escape"' in notify_js and "focusout" in notify_js and "!panel.contains(e.target)" in notify_js and "btn.focus()" in notify_js)
+check("…stays inside the screen and on the page (not clipped by the bar)",
+      "document.body.appendChild(panel)" in notify_js and "innerWidth - w - 8" in notify_js)
+check("Overview: the Action required card (top three, outstanding, View all tasks)",
+      'data-action-card' in idx and ".slice(0, 3)" in tasks_js and 'href="/#tasks"' in idx and "outstanding" in tasks_js)
+check("the Task Center is a page in the menu, with a count", "{id:'tasks',     t:'Tasks'" in idx and 'data-p="tasks"' in idx
+      and "data-task-center" in idx and '"n-tasks", "t-tasks"' in tasks_js and '<a href="/#tasks">Tasks</a>' in cl)
+check("states shown as the console's status pills; every value escaped; same-site links only",
+      "s-${esc(t.state)}" in tasks_js and "${esc(t.title)}" in tasks_js and "/^\\/(?!\\/)/.test" in tasks_js
+      and "${esc(n.title)}" in notify_js)
+check("nothing is counted in the browser: counts come from /api/todo",
+      "data.outstanding" in tasks_js and "by_state" in tasks_js and "/api/todo" in tasks_js)
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
