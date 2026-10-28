@@ -1041,6 +1041,14 @@ class Handler(BaseHTTPRequestHandler):
                                 if e["awb"] == awb and (bu is None or e["bu"] == bu)]}))
             return
 
+        if route == "/api/search":
+            # One search across the run, the Clearance export and PO jobs.
+            from urllib.parse import urlparse, parse_qs
+            from dashboard import search as _search
+            q = (parse_qs(urlparse(self.path).query).get("q") or [""])[0]
+            self._send(200, json.dumps(_search.search(q, self._acc_can, _assistant_state()), default=str))
+            return
+
         if route == "/api/todo":
             # What needs a person, from the records; only what this person may open.
             from dashboard import todo as _todo

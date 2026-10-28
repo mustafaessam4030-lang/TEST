@@ -2546,6 +2546,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
       </span>
       <button class="pf-out" id="pfOut" hidden>Sign out</button>
     </span>
+    <span data-search-slot></span>
     <span data-todo-slot></span>
     <button class="ibtn" data-go="settings" aria-label="Settings" title="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
@@ -4189,11 +4190,26 @@ requestAnimationFrame(moveNavPill);
    page. Only ids in the menu count; a page the person may not see stays
    hidden by the same rules as its menu item, and the server checks anyway. */
 function openFromHash(){
-  const id = decodeURIComponent(location.hash.slice(1));
+  // "#shipments?ref=157-…" and "#po?po=…" (from the search) also open that one.
+  const raw = location.hash.slice(1), cut = raw.search(/[?&]/);
+  const id = decodeURIComponent(cut < 0 ? raw : raw.slice(0, cut));
+  const params = new URLSearchParams(cut < 0 ? '' : raw.slice(cut + 1));
   const p = PAGES.find((x) => x.id === id && !x.href && !x.film);
   if (!p) return;
   if (p.admin && !document.body.classList.contains('can-admin')) return;
-  setTimeout(() => go(p.id), 0);
+  setTimeout(() => {
+    go(p.id);
+    const ref = params.get('ref'), po = params.get('po');
+    if (ref && p.id === 'shipments'){
+      // The run's state may still be arriving: open once it is there.
+      const tryOpen = (n) => {
+        if (typeof S !== 'undefined' && S) openDrawer(ref);
+        else if (n < 40) setTimeout(() => tryOpen(n + 1), 150);
+      };
+      tryOpen(0);
+    }
+    if (po && p.id === 'po' && /^[0-9a-z-]{1,40}$/.test(po)) openPO(po);
+  }, 0);
 }
 addEventListener('hashchange', openFromHash);
 Promise.resolve(platformReady).then(openFromHash, openFromHash);
@@ -8039,6 +8055,7 @@ setTimeout(() => document.body.classList.remove('first-load'), 1400);
   }, true);
 })();
 </script>
+<script src="/static/search.js" defer></script>
 <script src="/static/todo.js" defer></script>
 </body>
 </html>
