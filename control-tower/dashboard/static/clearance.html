@@ -63,12 +63,12 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .reset{margin-left:auto;font-size:13px;color:var(--vio);background:none;border:0;cursor:pointer;padding:4px}
 
 /* layout */
-.grid{display:grid;grid-template-columns:300px minmax(0,1fr) 330px;gap:16px;align-items:stretch}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:stretch}
 .mid{display:grid;grid-template-rows:auto auto;gap:16px;min-width:0}
 .row2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;margin-top:14px}
-.card{background:var(--card);border:1px solid var(--card-edge);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:18px 20px;min-width:0}
-.card h2{margin:0 0 14px;font-size:15px;font-weight:600;letter-spacing:-.012em;display:flex;align-items:center;gap:8px}
-.card h2 small{margin-left:auto;font-size:12px;font-weight:500;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--card-edge);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:0 24px 20px;min-width:0}
+.card>h2{margin:0 -24px 18px;padding:18px 24px 16px;border-bottom:1px solid var(--line-2);font-size:15px;font-weight:600;letter-spacing:-.012em;display:flex;align-items:center;gap:8px}
+.card>h2 small{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--muted)}
 .note{font-size:11.5px;color:var(--muted)}
 
 /* where shipments clear: map + headline */
@@ -100,20 +100,22 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 @media (max-width:1100px){.mapwrap{grid-template-columns:minmax(0,1fr)}}
 
-/* KPI 360 */
-.kgroup{margin-top:10px}
-.kgroup h3{margin:0 0 6px;font:var(--t-label);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
-.kpi{display:grid;grid-template-columns:52px 1fr;border-radius:var(--r);overflow:hidden;min-height:76px;border:1px solid transparent;transition:transform .15s ease,border-color .15s ease}
-.kpi[data-set]:hover{transform:translateY(-1px);border-color:var(--vio-line)}
-.kpi.on{border-color:var(--vio);box-shadow:0 0 0 3px var(--vio-wash)}
-.kpi .ic{display:grid;place-items:center}
-.kpi .ic svg{width:26px;height:26px}
-.kpi .bd{padding:8px 12px 9px}
-.kpi .t{font-size:13px;font-weight:600;color:var(--mid);display:flex;justify-content:space-between;gap:6px}
-.kpi .t em{font-style:normal;font-size:11px;font-weight:500;color:var(--muted)}
-.kpi .v{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;margin-top:2px}
-.kpi .v b{font-size:24px;font-weight:600;letter-spacing:-.3px;white-space:nowrap}
-.kpi .v span{font-size:11.5px;color:var(--muted)}
+/* KPIs: the console's metric row (.kpis), clickable to filter */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));background:var(--surface);
+  border:1px solid var(--card-edge);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;margin-bottom:8px}
+.kpi{background:var(--surface);padding:18px 24px 18px;box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2);cursor:pointer;
+  transition:background-color .18s var(--e)}
+.kpi:hover{background:var(--surface-2)}
+.kpi.on{background:var(--vio-wash);box-shadow:inset 0 0 0 1.5px var(--vio)}
+.kpi-k{font-size:12.5px;font-weight:500;color:var(--faint);display:flex;align-items:center;gap:7px}
+.kpi-k i{width:6px;height:6px;border-radius:50%;background:var(--c,var(--faint));flex:none}
+.kpi-k em{margin-left:auto;font-style:normal;font-size:11px;color:var(--faint);opacity:0;transition:opacity .18s var(--e)}
+.kpi:hover .kpi-k em,.kpi.on .kpi-k em{opacity:1}
+.kpi-v.nil{color:var(--faint);font-weight:400}
+.kpi-v{font-size:28px;font-weight:600;letter-spacing:-.03em;line-height:1.05;margin-top:10px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.kpi-n{font-size:12px;color:var(--faint);margin-top:6px}
+.kpi .bar{height:4px;margin-top:12px}
+.kpis-note{font-size:12px;color:var(--faint);margin:0 0 16px 2px}
 .bar{position:relative;height:6px;border-radius:3px;background:var(--surface-3);margin-top:6px}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
 .bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.55}
@@ -154,8 +156,8 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .slist div:hover,.slist div.on{background:var(--tint-blue)}
 .slist i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
 .story{margin-top:12px}
-.story h3{margin:0 0 6px;font-size:17px}
-.story h3 span{color:var(--y)}
+.story h3{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--ink)}
+.story h3 span{color:var(--faint);font-weight:400}
 .story ul{margin:0;padding:10px 12px 10px 26px;background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r-sm);font-size:12.5px;color:var(--mid);display:grid;gap:4px}
 .story a{color:var(--vio);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .chart svg{width:100%;height:auto;display:block}
@@ -192,7 +194,7 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .al .b{display:block;width:100%;text-align:left;border:1px solid transparent;margin-top:4px;background:var(--surface-2);border-radius:var(--r-sm);padding:8px 10px;font-size:12.5px;color:var(--mid)}
 .al button.b{cursor:pointer}
 .al button.b:hover{border-color:var(--vio-line)}
-.al.dq .b{background:var(--tint-amber)}
+.al.dq .b{background:var(--surface-2)}
 .al .b code{font:12px var(--mono);color:var(--ink)}
 .empty{color:var(--muted);font-size:13px;padding:8px 0}
 
@@ -301,7 +303,7 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 
 @media (max-width:1280px){
-  .grid{grid-template-columns:280px minmax(0,1fr)}
+  .grid{grid-template-columns:minmax(0,1fr)}
   .alerts{grid-column:1/-1;max-height:none;min-height:0;position:static}
   .alist{max-height:420px}
 }
@@ -339,9 +341,10 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
       <button type="button" data-theme-set="dark" aria-label="Dark theme" title="Dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
       <button type="button" data-theme-set="system" aria-label="Follow the device" title="System"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button>
     </span>
+    <button class="pf-out" id="pbOut" type="button" hidden>Sign out</button>
     <span data-search-slot></span>
     <span data-todo-slot></span>
-    <button class="pf-out" id="pbOut" type="button" hidden>Sign out</button>
+    <a class="pf-gear" href="/#settings" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
   </div>
 </header>
 <div class="wrap">
@@ -365,6 +368,9 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
     <div class="pills" id="pills"></div>
   </nav>
 
+  <div class="kpis" id="kpis" role="group" aria-label="Clearance metrics"></div>
+  <div class="kpis-note" id="k-note"></div>
+
   <section class="card mapcard" id="mapcard" aria-labelledby="map-h">
     <h2 id="map-h">Where shipments clear <small id="map-note"></small></h2>
     <p class="headline" id="headline"></p>
@@ -381,12 +387,6 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
   </section>
 
   <div class="grid">
-    <section class="card" aria-labelledby="k-h">
-      <h2 id="k-h">Clearance KPI 360</h2>
-      <div class="note" id="k-note"></div>
-      <div id="kpis"></div>
-    </section>
-
     <div class="mid">
       <section class="card" aria-labelledby="x-h">
         <h2 id="x-h">Clearance Execution <small>click a mode, a ring segment or on-time / late</small></h2>
@@ -397,7 +397,7 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
         <div class="ins">
           <div>
             <div class="status"><div class="donut" id="st-donut"></div><div class="slist" id="st-list"></div></div>
-            <div class="story"><h3>Insight report – <span>What stands out</span></h3><ul id="story"></ul></div>
+            <div class="story"><h3>What stands out <span>· from the rows on screen</span></h3><ul id="story"></ul></div>
           </div>
           <div class="chart">
             <div class="legend"><span><i style="background:var(--blue)"></i>Met target</span><span><i style="background:var(--missed)"></i>Missed target</span><span><i class="line" style="background:var(--orange)"></i>95% target</span></div>
@@ -569,12 +569,12 @@ function kpis(R) {
   const mc = median(cyc), mt = median(tgt), lateMed = median(late.map((r) => r[F.overdue]));
   const slow = withCyc.filter((r) => r[F.target] != null && r[F.cycle] > r[F.target]).length;
   const card = (grp, flag, ic, color, tint, title, val, sub, w, mark, tip) => `
-    <div class="kgroup"><h3>${grp}</h3><div class="kpi${state.flag === flag ? " on" : ""}" style="background:${tint}" data-set="${setAttr({flag})}" tabindex="0" role="button" data-tip="${esc(tip)}">
-      <div class="ic" style="filter:brightness(.97);background:${tint}">${icon(ic, color)}</div>
-      <div class="bd"><div class="t">${title}<em>${state.flag === flag ? "filtering ✕" : "show ›"}</em></div>
-        <div class="v"><b style="color:${color}">${val}</b><span>${sub}</span></div>
-        <div class="bar"><i style="width:${Math.max(0, Math.min(100, w))}%;background:${color}"></i>${mark != null ? `<u style="left:${mark}%"></u>` : ""}</div>
-      </div></div></div>`;
+    <div class="kpi${state.flag === flag ? " on" : ""}" style="--c:${color}" data-set="${setAttr({flag})}" tabindex="0" role="button" data-tip="${esc(tip)}" aria-label="${esc(title)}: ${esc(String(val))}">
+      <div class="kpi-k"><i></i>${title}<em>${state.flag === flag ? "filtering ✕" : "show"}</em></div>
+      <div class="kpi-v${val === "–" ? " nil" : ""}">${val}</div>
+      <div class="kpi-n">${sub}</div>
+      <div class="bar"><i style="width:${Math.max(0, Math.min(100, w))}%;background:${color}"></i>${mark != null ? `<u style="left:${mark}%"></u>` : ""}</div>
+    </div>`;
   $("k-note").textContent = `${fmt(n)} shipment${n === 1 ? "" : "s"} in view · ETA ${span(R)}`;
   $("kpis").innerHTML =
     card("Reliable", "late", "check", "var(--blue)", "var(--tint-blue)", "On-time shipments", pctTxt(on, n), `${fmt(on)} of ${fmt(n)} · target 95%`, pct(on, n), 95, `<b>${fmt(n - on)}</b> shipments are not on time.<small>Click to list them.</small>`) +

@@ -17,31 +17,40 @@
 .todo-n{position:absolute;top:-4px;right:-5px;min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--red);
   color:var(--surface);font:700 10.5px/17px var(--s);text-align:center;box-shadow:0 0 0 2px var(--bg)}
 .todo-n[hidden]{display:none}
-.todo-p{position:absolute;right:0;top:calc(100% + 10px);width:min(400px,calc(100vw - 24px));max-height:min(560px,calc(100vh - 96px));
-  overflow:auto;background:var(--surface);color:var(--ink);border:1px solid var(--card-edge);border-radius:var(--r-lg,16px);
-  box-shadow:0 18px 50px rgba(0,0,0,.18);z-index:90;opacity:0;transform:translateY(-4px);pointer-events:none;
-  transition:opacity .16s var(--e),transform .16s var(--e)}
-.todo-p.show{opacity:1;transform:none;pointer-events:auto}
-.todo-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line-2)}
+.todo-p{position:fixed;top:var(--barh,64px);right:0;bottom:0;width:min(340px,100vw);display:flex;flex-direction:column;
+  background:var(--surface);color:var(--ink);border-left:1px solid var(--line);box-shadow:-12px 0 32px rgba(0,0,0,.08);z-index:85;
+  transform:translateX(102%);visibility:hidden;transition:transform .24s var(--e),visibility 0s linear .24s}
+.todo-p.show{transform:none;visibility:visible;transition:transform .24s var(--e),visibility 0s}
+.todo-x{margin-left:auto;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
+.todo-x:hover{background:var(--surface-3);color:var(--ink)}
+.todo-l{flex:1;overflow:auto}
+.todo-h{display:flex;align-items:center;gap:10px;padding:14px 12px 12px 16px;border-bottom:1px solid var(--line-2)}
 .todo-h b{font-size:15px;font-weight:600}
 .todo-h span{font-size:12px;color:var(--faint)}
 .todo-l{list-style:none;margin:0;padding:6px}
-.todo-l a{display:grid;grid-template-columns:10px minmax(0,1fr);gap:4px 10px;padding:9px 10px;border-radius:10px;text-decoration:none;color:inherit}
+.todo-l a{display:grid;grid-template-columns:10px minmax(0,1fr);gap:2px 10px;padding:8px 10px;border-radius:10px;text-decoration:none;color:inherit}
 .todo-l a:hover,.todo-l a:focus-visible{background:var(--surface-3);outline:none}
 .todo-l i{width:8px;height:8px;border-radius:50%;margin-top:6px;background:var(--faint)}
 .todo-l i.red{background:var(--red)} .todo-l i.amber{background:var(--y-dot)}
-.todo-l .t{font-size:13.5px;font-weight:600;line-height:1.35}
-.todo-l .d{grid-column:2;font-size:12.5px;color:var(--mid);line-height:1.4}
+.todo-l .t{font-size:13px;font-weight:600;line-height:1.35}
+.todo-l .d{grid-column:2;font-size:12px;color:var(--mid);line-height:1.4}
 .todo-l .s{grid-column:2;font-size:11px;color:var(--faint);letter-spacing:.02em}
 .todo-e{padding:22px 16px;color:var(--faint);font-size:13px;text-align:center}
-@media (prefers-reduced-motion:reduce){.todo-p{transition:none}}`;
+@media (prefers-reduced-motion:reduce){.todo-p,.todo-p.show{transition:none}}`;
   document.head.appendChild(css);
   slot.className = "todo";
   slot.innerHTML = `<button class="todo-b" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="todoPanel" title="To Do: what needs a person">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l2 2 4-4"/><rect x="3.5" y="3.5" width="17" height="17" rx="4"/></svg>
       <span class="todo-n" hidden></span><span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">To Do</span></button>
-    <div class="todo-p" id="todoPanel" role="dialog" aria-label="To Do"><div class="todo-h"><b>To Do</b><span></span></div><ul class="todo-l"></ul></div>`;
-  const btn = slot.querySelector(".todo-b"), panel = slot.querySelector(".todo-p"), badge = slot.querySelector(".todo-n");
+`;
+  // A side panel on the right, under the top bar: the page stays usable
+  // beside it. On the page itself (not in the bar), so nothing clips it.
+  const panel = document.createElement("aside");
+  panel.className = "todo-p"; panel.id = "todoPanel"; panel.setAttribute("aria-label", "To Do");
+  panel.innerHTML = `<div class="todo-h"><b>To Do</b><span></span><button class="todo-x" type="button" aria-label="Close To Do">×</button></div><ul class="todo-l"></ul>`;
+  document.body.appendChild(panel);
+  const btn = slot.querySelector(".todo-b"), badge = slot.querySelector(".todo-n");
+  panel.querySelector(".todo-x").addEventListener("click", () => { open(false); btn.focus(); });
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const safe = (h) => (/^\/(?!\/)/.test(h || "") ? h : "/");
   // A link to where the page already is (same hash) still opens it.
@@ -78,7 +87,6 @@
     if (on) load();
   }
   btn.addEventListener("click", (e) => { e.stopPropagation(); open(!panel.classList.contains("show")); });
-  document.addEventListener("click", (e) => { if (!slot.contains(e.target)) open(false); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && panel.classList.contains("show")) { e.stopPropagation(); open(false); btn.focus(); }
   }, true);

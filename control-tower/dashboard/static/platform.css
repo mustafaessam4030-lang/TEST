@@ -97,7 +97,11 @@
 .appbar .pf-out{white-space:nowrap;padding:6px 12px;border-radius:100px;border:1px solid var(--line);
   background:transparent;font:inherit;font-size:12.5px;font-weight:550;color:var(--mid);cursor:pointer}
 .appbar .pf-out:hover{color:var(--ink);border-color:var(--line-hi)}
-@media (min-width:881px) and (max-width:1239px){.appbar .brand-t{display:none}}
+.appbar .pf-gear{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--mid);text-decoration:none;
+  transition:background-color .18s var(--e),color .18s var(--e)}
+.appbar .pf-gear:hover{background:var(--surface-3);color:var(--ink)}
+.appbar .pf-gear svg{width:18px;height:18px}
+@media (min-width:881px) and (max-width:1559px){.appbar .brand-t{display:none}}
 @media (max-width:1100px){.appbar .pf-who{display:none}.appbar .pf-me{padding-right:3px}}
 @media (max-width:880px){
   .appbar{height:auto;flex-wrap:wrap;gap:8px 12px;padding:10px 16px}
