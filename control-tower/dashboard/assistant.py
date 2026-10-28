@@ -3668,6 +3668,15 @@ def _answer_core(question, state, context=None):
             defined = None
         _q = (question or "").replace("\u2019", "'").rstrip("?! ") + "?"
         if defined and DEFINE_ASK.search(_q) and not NOT_A_DEFINITION.search(_q):
+            # The Knowledge Engine's entry for the platform's own term (P.*): the same
+            # meaning, with its code source, its review status and this run's count.
+            try:
+                from intelligence import kb_answer as _KA
+                known = _KA.answer(question, context, data)
+            except Exception:
+                known = None
+            if known and str((known.get("knowledge") or {}).get("items", [""])[0]).startswith("P."):
+                return dict(known, card=None, reference=None, final=True)
             return {"answer": "**{0}** — {1}".format(*defined), "card": None,
                     "reference": None, "grounded": True, "intent": "glossary",
                     "final": True}

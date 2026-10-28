@@ -285,6 +285,43 @@ written alongside the engine and used to find its gaps. The real measure is
 a held-out set written by Mantrac's logistics staff (`eval_v2.json`), run
 unchanged.
 
+`knowledge/eval/probe_paraphrase.json` is a second, small set: 20 questions
+in everyday wording far from the items' own words (16 English, 4 Arabic),
+written after the engine and not used to tune it. It measures the limit of
+keyword retrieval. Run it with
+`python tools/kb_eval.py --set knowledge/eval/probe_paraphrase.json`.
+**Current result: 2 of 20.** 14 get no answer (ATLAS declines). 4 get the
+wrong concept; 3 of those are labelled "Closest entry I have: … may not be
+what you are asking about". Search has the right item in its top 3 for 13 of
+the 20.
+
+### Would local embeddings help? (measured 28 Oct 2026, not shipped)
+
+The probe and the in-sample set were run against a local embedding model in a
+scratch environment (fastembed, CPU only, no network at query time). Top-1
+means the right item ranked first.
+
+| Retrieval | eval_v1 top-1 (46) | probe top-1 (20) | probe top-3 |
+|---|---|---|---|
+| BM25 (shipped) | 43 | 5 | 13 |
+| paraphrase-multilingual-MiniLM-L12-v2 | 39 | 9 | 13 |
+| multilingual-e5-large | 42 | **17** | 19 |
+| BM25 + e5-large, reciprocal-rank fusion | **44** | 13 | 18 |
+
+- e5-large is a 2.2 GB model. Indexing all 165 items took about 3 minutes
+  once; each question took about 70–80 ms on this CPU.
+- Its similarity scores do not separate off-topic questions: "weather in
+  Cairo" scored 0.74, "What is demurrage?" 0.86. The existing routing must
+  still decide *whether* a question is a knowledge question; embeddings
+  should only choose *which* item.
+- Verdict: a material improvement for questions worded in everyday language,
+  in both English and Arabic, and no loss on the in-sample set. It is
+  recommended as an optional, local candidate source (kb.search() unchanged
+  as the fallback), adopted only if a held-out set from Mantrac staff confirms
+  the gain. The 20-question probe is small and was written by the developer.
+  bge-m3 through the already-approved Ollama would avoid a second runtime,
+  but it was not measured.
+
 ## 8. Observability
 
 Every knowledge answer is logged to `kb_queries.jsonl` in the ATLAS store.
@@ -302,48 +339,75 @@ the top items with scores, whether anything was found, and the time taken.
 
 ## 9. Implementation report
 
+Verified on 28 Oct 2026 against the code, with the results in this section.
+
 **Complete and tested**:
 
-- **Curriculum:** the curriculum and taxonomy: 7 domains, 165 items in English
-  and Arabic, 19 fully specified KPIs and 6 worked cases.
-- **Validation and sources:** schema validation, and a source registry whose
-  URLs were checked on 28 Oct 2026.
-- **Retrieval:** search with synonyms, acronyms and Arabic, filters, and a
-  two-way concept graph.
-- **ATLAS answers:** layered, cited answers with status labels, from inside
-  ATLAS. Run and data questions are left to the records, and every existing
-  ATLAS suite still passes.
-- **Calculations:** exact, never assumed, never silently repaired.
-- **Governance:** proposals, four-eyes review, corrections as versions,
-  supersede and retire, ingestion with location and injection flags, the
-  audit log, the API, permissions and the command line.
+- **Curriculum:** 7 domains and 165 items. Every item has an English and an
+  Arabic definition and Arabic terms. There are 19 fully specified KPIs, 6
+  worked cases and 361 concept links. Every item is unreviewed.
+- **Validation and sources:** schema validation; an item that fails it is
+  never searched or answered. The source registry's links were checked on 28
+  Oct 2026, and answers say "link reachable on", not that the content was
+  verified.
+- **Retrieval:** BM25 with synonyms, acronyms and Arabic, filters, and a
+  two-way concept graph. A name said only in passing is answered as the
+  "closest entry", said as such.
+- **In the ATLAS chat:**
+  - All knowledge answers are integrated: the rules path, the
+    platform's own terms (Needs review, Skipped and others, with this run's
+    count), the conversation layer and the research path.
+  - Knowledge answers are never reworded by a model.
+  - Run, shipment, carrier and past-tense questions are left to the records.
+- **Calculations:** exact and shown. Division by zero, negatives, NaN,
+  ambiguous numbers, missing units and fractional free days are refused.
+  Quarters, years and references are never read as counts.
+- **Governance:**
+  - Four-eyes review, re-checked at approval against the current knowledge.
+  - Corrections become new versions.
+  - A retired or superseded item is never brought back by an approval;
+    reinstating it needs a reason.
+  - Log writes are locked across threads and processes.
+  - Ingestion records where each definition came from, flags injected
+    instructions, and drops notes and steps.
+  - Reviewing is refused with the shared access key, because two reviewers
+    can't be told apart.
 - **Lessons:** derived from verified outcomes.
-- **Assessment:** the set, the runner and the report.
+- **Assessment:** in-sample set, paraphrase probe, runner and report.
 - **Observability:** the query log and its statistics.
 
 **Partly done**:
 
-- **No review screen.** Reviewing is by API and command line; there is no
-  page in the console for it yet.
-- **Ingestion finds simple definitions only.** It extracts definitions written
-  as "Term: …", "Term (ABC) means …" and similar. Prose rules in an SOP need a
-  reviewer to propose them as items.
-- **Few carrier mappings.** Carrier-specific status mappings are documented
-  only where this platform's code verifies them (DHL Forwarding, DHL Express,
-  DHL Aviation stations).
+- **No review screen.** Reviewing is by API and command line only.
+- **Arabic answers are partly English.** An Arabic question gets the Arabic
+  definition first; the explanation, KPI details, related labels and status
+  line are in English.
+- **Wording far from an item's words is mostly missed.** The paraphrase probe
+  scores 2 of 20 (see section 7).
+- **Ingestion finds simple definitions only** ("Term: …", "Term (ABC)
+  means …"). Prose rules need a reviewer to propose them as items.
+- **Few carrier mappings.** Carrier-specific status mappings exist only where
+  this platform's code verifies them (DHL).
 
 **Needs people or outside sources**:
 
-- **Reviewer approval.** A Mantrac logistics expert must review and approve
-  items before ATLAS presents them as Mantrac's position. Until then every
+- **Reviewer approval** by a Mantrac logistics expert. Until then every
   answer says "not yet reviewed".
-- **Country rules.** These must be checked against the authorities: the Ghana
-  CIF valuation basis and Egypt's ACI requirement are unverified. Any other
-  country rule needs its own item, with the authority and a review date.
-- **Mantrac's SOPs and training material.** These should be ingested so
-  Mantrac's own rules are cited as such.
-- **A held-out assessment** written by Mantrac staff, to measure real
-  performance.
-- **Semantic retrieval** would need an embedding model. None is installed.
-  If one is approved later, it can rerank `kb.search()` results; keyword
-  search stays the fallback.
+- **Country rules** checked against the authorities: the Ghana CIF valuation
+  basis and Egypt's ACI requirement are unverified, with review due
+  2027-04-30.
+- **Mantrac's SOPs and training material**, ingested so that Mantrac's rules
+  are cited as such. No business-scope item exists yet.
+- **A held-out assessment** written by Mantrac staff.
+- **Approval to add local semantic retrieval.** It was measured, not shipped
+  (section 7).
+
+**Next phase, in order**:
+
+1. Expert review of the 165 items (the API or CLI; a review screen in the
+   console next).
+2. Mantrac's held-out set (`eval_v2.json`) and its baseline.
+3. An optional local embedding candidate source, measured on that set.
+4. Ingesting Mantrac's SOPs.
+5. Arabic explanations for the most-asked items (from the query log).
+6. Verifying the country rules.

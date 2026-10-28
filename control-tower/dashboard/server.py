@@ -1473,7 +1473,12 @@ class Handler(BaseHTTPRequestHandler):
         arg = lambda k, d=None: (qs.get(k) or [d])[0]
         k = _kb.kb()
         if route == "/api/knowledge/search":
-            res = _kb.search(str(arg("q", ""))[:300], limit=min(int(arg("limit", "10") or 10), 30),
+            try:
+                limit = max(1, min(int(arg("limit", "10") or 10), 30))
+            except ValueError:
+                self._send(400, json.dumps({"error": "limit must be a number"}))
+                return
+            res = _kb.search(str(arg("q", ""))[:300], limit=limit,
                              domain=arg("domain"), kind=arg("kind"), scope=arg("scope"),
                              include_history=arg("history") == "1", approved_only=arg("approved") == "1")
             self._send(200, json.dumps({"results": [{"id": r["id"], "score": r["score"], "named": r["named"],
@@ -1521,6 +1526,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, json.dumps({"ok": False, "message": "Bad request."}))
             return
         by = (self.user or {}).get("work_email") or "access key"
+        if by == "access key" and route in ("/api/knowledge/review", "/api/knowledge/status"):
+            # Everyone holding the key is the same "person": four eyes cannot be told apart.
+            self._send(200, json.dumps({"ok": False, "message": "Reviewing knowledge needs named accounts "
+                                        "(two different people); it is not possible with the shared access key."}))
+            return
         try:
             if route == "/api/knowledge/propose":
                 out = _gov.propose(body.get("item"), by=by, kind=str(body.get("kind") or "new"),
@@ -1549,6 +1559,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         except (ValueError, KeyError, TypeError) as e:
             self._send(400, json.dumps({"ok": False, "message": "Bad request: {0}".format(type(e).__name__)}))
+            return
+        except Exception as e:
+            self._send(500, json.dumps({"ok": False, "message": "The knowledge action failed ({0}).".format(
+                type(e).__name__)}))
             return
         self._send(200, json.dumps({"ok": True, "result": out}, default=str))
 

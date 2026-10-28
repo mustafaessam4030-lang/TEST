@@ -192,6 +192,8 @@ check("A cited item put under Likely is moved to External", "**Likely" not in a)
 check("A bare citation item is dropped", "\n- [1]" not in a)
 check("web_sources carry the publisher and its kind",
       r["web_sources"][0]["publisher"] == "qrcargo.com" and r["web_sources"][0]["kind"])
+check("The knowledge-base entry it drew on keeps its review status, and is not called ELAP records",
+      "_Knowledge status (C.air-waybill" in a and "ELAP records" not in a, a[-400:])
 
 use(Scripted(plan("What does ERR_HTTP2_PROTOCOL_ERROR mean?", True, "ERR_HTTP2_PROTOCOL_ERROR"),
              {"answer": "It is a browser network error [1].", "verified": [], "likely": [],
@@ -777,6 +779,42 @@ r = assistant._answer_rules("tell me about K316521", DS, {"_raw": True})
 check("A DHL shipment's answer quotes the page line ATLAS checked",
       "ATLAS checked the page and agrees" in r["answer"] and "Carrier: Arrived" in r["answer"],
       r["answer"][:400])
+
+print("=" * 68)
+print("10. KNOWLEDGE ANSWERS ARE SHOWN AS BUILT, NEVER REWORDED")
+print("=" * 68)
+REWORD = {"answer": "Demurrage is a fee.", "verified": [], "likely": [], "missing": [], "external": []}
+model = Scripted(plan("What is demurrage?"), REWORD)
+use(model)
+r = converse.answer("What is demurrage?", STATE, {}, assistant._answer_rules)
+check("An English knowledge question: the Knowledge Engine's answer, no model call",
+      r.get("intent") == "general_knowledge" and r["llm"].get("mode") == "knowledge" and not model.prompts,
+      (r.get("llm"), len(model.prompts)))
+check("…with its sources and its review status intact",
+      "**Sources**" in r["answer"] and "_Knowledge status" in r["answer"] and "Demurrage is a fee." not in r["answer"],
+      r["answer"][-300:])
+model = Scripted(plan("What is demurrage?"), REWORD)
+use(model)
+r = converse.answer("ما هو الديمراج؟", STATE, {}, assistant._answer_rules)
+check("An Arabic knowledge question: the model only reads it; the answer is built, in Arabic",
+      r.get("intent") == "general_knowledge" and r["llm"].get("mode") == "knowledge"
+      and "الميناء" in r["answer"] and "_Knowledge status" in r["answer"]
+      and "Demurrage is a fee." not in r["answer"] and len(model.prompts) == 1,
+      (r.get("llm"), len(model.prompts), r.get("answer", "")[:200]))
+model = Scripted(plan("Calculate OTIF: 160 of 200 orders"), REWORD)
+use(model)
+r = converse.answer("Calculate OTIF: 160 of 200 orders were on time and in full", STATE, {},
+                    assistant._answer_rules)
+check("A calculation is exact as built (80%), not reworded",
+      "OTIF = 80%" in r.get("answer", "") and not model.prompts, r.get("answer", "")[:200])
+use(Scripted(plan("Which shipments failed?"), {
+    "answer": "Shipment 8842001173 failed: the Save/Update button was not found.",
+    "verified": ["8842001173 failed with UNEXPECTED PAGE STATE"],
+    "likely": [], "missing": [], "external": []}))
+r = converse.answer("which failed?", STATE, {}, assistant._answer_rules)
+check("A run question still goes through the conversation as before",
+      r.get("intent") != "general_knowledge" and r["llm"].get("mode") != "knowledge", r.get("llm"))
+llm.provider = real_provider
 
 print()
 print("{0} passed, {1} failed".format(len(PASS), len(FAIL)))

@@ -31,7 +31,7 @@ from . import kb_calc as CALC
 BROAD_ASK = re.compile(r"^\s*(what|why|how|when|where|does|do|is|are|can|should|could|would|will)\b|\?\s*$|"
                        r"\b(vs\.?|versus)\b", re.I)
 GENERAL_ASK = re.compile(
-    r"^\s*(what('?s| is| are| does| do| was| were)|define|definition of|explain|meaning of|"
+    r"^\s*(what('?s| is| are| does| do)|define|definition of|explain|meaning of|"
     r"how (does|do|is|are|to|can i|should i|should we|do i|do we) |how (?:is|are) .{0,40} (calculated|measured)|"
     r"why (do|does|are|is|would)|difference between|tell me (what|about)|is (a|an|the|it)\b|"
     r"can (a|an|the|i|we|fob|cif|exw|fca|cpt|cip|dap|dpu|ddp|fas|cfr)\b|who (pays|bears|is responsible|does|clears|insures|books)|"
@@ -43,16 +43,31 @@ GENERAL_ASK = re.compile(
 # shipments — is answered from the records, even when it names a concept.
 DATA_ASK = re.compile(
     r"\b(how many|which|show|list|count|number of|status of|latest|today|yesterday|this (run|week|month)|"
-    r"right now|currently|our|my|we|did|has|have|were|was there|any)\b|\d{6,}|"
+    r"right now|currently|our|my|we|did|has|have|were|was|any)\b|\d{6,}|"
     r"كم عدد|كام|أي شحنات|اعرض|حالة الشحنة", re.I)
 # "Why was MY shipment delayed?" is about one of your shipments: the run's
 # records answer it, never a general explanation.
 RUN_SUBJECT = re.compile(r"\b(my|our|this|that|these|those)\s+(shipments?|containers?|orders?|consignments?|cargo|"
                          r"deliver(y|ies)|flights?|vessels?|awbs?|b/?ls?|bols?)\b|شحنتي|شحنتنا|الحاوية دي", re.I)
+# A particular vessel, booking, container or carrier ("the Maersk vessel", "the
+# containers at Tema", "Hapag"): about those, which the records answer.
+SPECIFIC = re.compile(
+    r"\bthe\s+(?:[\w-]+\s+){0,2}?(?:vessel|ship|booking|containers?|shipments?|flight|awb|b/?l|bol|cargo|"
+    r"consignments?|orders?|deliver(?:y|ies)|trucks?)(?=\s*(?:$|[?.,!;:]|(?:at|in|from|to|for|of|on|with|that|"
+    r"which|we|i|you|was|were|has|had|arrived|left|departed|got|went|been)\b))|"
+    r"\b(?:maersk|msc|cma(?:\s*cgm)?|hapag(?:-lloyd)?|evergreen|cosco|yang ming|zim|dhl|fedex|ups|qatar|emirates|"
+    r"lufthansa|turkish|klm|ethiopian|saudia|egyptair|air france|kenya airways)\b", re.I)
+# "What was…", "when were…": something that happened, which the records hold.
+PAST_ASK = re.compile(r"^\s*(?:what|when|where|why|how(?:\s+\w+)?)\s+(?:was|were)\b", re.I)
+# Below this share of the question's words, a matched name is a passing mention.
+PASSING = 0.34
 # A shipment, container or document reference: the question is about that one.
-REFERENCE = re.compile(r"\b[A-Z]{0,4}-?\d{6,}\b|\b[A-Z]\d{5,}\b|\b\d{3}-\d{8}\b")
+# MSC-style bills of lading ("MEDUAHP69377") too: letters and 5+ digits, 8+ long.
+REFERENCE = re.compile(r"\b[A-Z]{0,4}-?\d{6,}\b|\b[A-Z]\d{5,}\b|\b\d{3}-\d{8}\b|"
+                       r"\b(?=[A-Za-z0-9]*\d{5})(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{8,}\b")
 # "What is the ETA?" asks for a shipment's value, not the meaning of ETA.
-RUN_FIELD = re.compile(r"^\s*what(?:'s| is| was) the (?:eta|ata|etd|atd|status|latest\s+\w+)\s*\??\s*$", re.I)
+RUN_FIELD = re.compile(r"^\s*what(?:'s| is| was) the (?:eta|ata|etd|atd|status|latest\s+\w+)"
+                       r"(?:\s+(?:of|for|on)\s+\S+)?\s*\??\s*$", re.I)
 # "What does X mean?", "define X": a definition, whatever else X is.
 DEFINE = re.compile(r"^\s*(what does .{1,60} mean|what is the meaning of|meaning of|define|definition of)|"
                     r"ماذا يعني|ما معنى|يعني ايه|يعني إيه", re.I)
@@ -102,7 +117,8 @@ def match(question, k=None):
     asks = strong or bool(BROAD_ASK.search(q))
     # A data question ("how many…", "which…", "our…") reaches the knowledge
     # only when it plainly asks what something is ("what is our OTIF").
-    if RUN_FIELD.search(q) or RUN_SUBJECT.search(q) or REFERENCE.search(q) or (DATA_ASK.search(q) and not strong):
+    if RUN_FIELD.search(q) or RUN_SUBJECT.search(q) or REFERENCE.search(q) or SPECIFIC.search(q) or PAST_ASK.search(q) or \
+            (DATA_ASK.search(q) and not strong):
         return []                                       # a data question: the records answer it
     top = hits[0]
     # A bare name ("HS code", "telex release", "OTIF") is a knowledge question;
@@ -126,7 +142,7 @@ def decisive(question):
     run's rules made of it: an Incoterms 'who does what', a calculation with
     its numbers, or a comparison of two concepts it knows by name."""
     q = " ".join(str(question or "").split())
-    if DATA_ASK.search(q):
+    if DATA_ASK.search(q) or SPECIFIC.search(q) or REFERENCE.search(q) or RUN_SUBJECT.search(q):
         return False
     if CALC.RULE.search(q):
         inc = CALC.incoterm_question(q)
@@ -197,7 +213,7 @@ def _sources(k, items):
             if c.get("authority") == "project":
                 note = " (this platform's code)"
             elif checked.get("url_status") == 200:
-                note = " (page checked {0})".format(checked.get("on"))
+                note = " (link reachable on {0})".format(checked.get("on"))
             elif checked.get("url_status"):
                 note = " (not confirmed reachable)"
             lines.append("• {0}{1}{2}".format(what, " — " + where if where else "", note))
@@ -241,10 +257,12 @@ def _data_line(it, data, context):
                 return "No eHub export is loaded, so there are no figures to show."
             asof = q.get("asof") or "the export's date"
             if iid == "E.past-due-share":
-                share = 100.0 * q["past_due"] / q["open"] if q.get("open") else 0
+                if not q.get("open"):
+                    return "The export has no open shipments, so there is no past-due share to show (as of {0}).".format(asof)
+                share = 100.0 * q["past_due"] / q["open"]
                 return "{0} of {1} open shipments are past due ({2:.0f}%), as of {3}.".format(
                     q["past_due"], q["open"], share, asof)
-            share = 100.0 * q["on_time"] / q["total"] if q.get("total") else 0
+            share = 100.0 * q["on_time"] / q["total"]
             return "{0} of {1} shipments are marked on time by eHub ({2:.0f}%), as of {3}.".format(
                 q["on_time"], q["total"], share, asof)
         if iid in ("P.needs-review", "P.skipped", "P.partial") and data is not None:
@@ -352,6 +370,12 @@ def answer(question, context=None, data=None):
     else:
         it = hits[0]["item"]
         used.append(it)
+        if hits[0].get("coverage", 1.0) < PASSING:
+            # Matched on a word the question only mentions in passing: said as the
+            # closest entry, not as the answer.
+            parts.append("_Closest entry I have: **{0}** — matched on “{1}” in your question, which may not be "
+                         "what you are asking about. If it is not, name the term you mean._".format(
+                             it["term"], hits[0].get("name") or "a few words"))
         parts += _definition_block(it, arabic)
         if it.get("example"):
             parts.append("*Example:* " + it["example"])

@@ -138,6 +138,15 @@ check("An Operator cannot ingest", st == 403, st)
 st, b = call(A1, "POST", "/api/knowledge/ingest", {"name": "sop.md", "text": sop, "title": "Clearance SOP"}, A1c)
 check("An Admin ingests: a proposal per definition, with its location",
       b.get("ok") and b["result"]["proposals"][0]["provenance"]["location"] == "sop.md › Terms, line 3", b)
+import base64  # noqa: E402
+st, b = call(A1, "POST", "/api/knowledge/ingest", {"name": "broken.pdf", "title": "Broken",
+                                                   "data_base64": base64.b64encode(b"%PDF-1.4 not a pdf").decode()}, A1c)
+check("A damaged PDF gets a reason, not a dropped connection", st == 200 and not b.get("ok")
+      and "could not be read" in b.get("message", ""), (st, b))
+st, b = call(V, "GET", "/api/knowledge/search?q=demurrage&limit=abc")
+check("A bad limit is a 400, not a crash", st == 400, (st, b))
+st, b = call(V, "GET", "/api/knowledge/search?q=demurrage&limit=-5")
+check("…and a negative one is at least one result", st == 200 and len(b["results"]) == 1, (st, b))
 st, b = call(A1, "GET", "/api/knowledge/stats")
 check("Reviewers see retrieval quality: queries, hit rate, latency, recent misses",
       "retrieval" in b and ("hit_rate" in b["retrieval"] or b["retrieval"].get("queries") == 0), b.get("retrieval"))

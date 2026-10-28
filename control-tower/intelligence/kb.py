@@ -236,10 +236,14 @@ class KB(object):
         except Exception as e:                       # a broken store never hides the KB
             self.errors.append("governance overlay: {0}".format(type(e).__name__))
         ids = set(self.items)
+        # An item that fails its schema is never searched or answered (fail
+        # closed); it is kept in self.invalid with its problems for the reviewers.
+        self.invalid = {}
         for iid, it in list(self.items.items()):
             problems = validate(it, self.sources, ids)
             if problems:
                 self.errors.append("{0}: {1}".format(iid, "; ".join(problems)))
+                self.invalid[iid] = self.items.pop(iid)
         self._index()
 
     # ── index ──
@@ -326,10 +330,12 @@ class KB(object):
                 df = self.df.get(t, 1)
                 idf = math.log(1 + (n - df + 0.5) / (df + 0.5))
                 s += idf * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * length / self.avg))
+            name = None
             if iid in named:
                 # Longer names said outright beat a word they share ("OTIF" over "on-time").
-                longest = max(len(k.split()) for k, v in self.names.items() if iid in v and " " + k + " " in qs)
-                s += 12.0 + 3.0 * longest
+                name = max((k for k, v in self.names.items() if iid in v and " " + k + " " in qs),
+                           key=lambda k: (len(k.split()), k))
+                s += 12.0 + 3.0 * len(name.split())
             if not s:
                 continue
             s *= (0.5 + 0.5 * hits / len(set(q))) if iid not in named else 1.0
@@ -340,7 +346,11 @@ class KB(object):
                 flags.append("stale")
             if it.get("scope") == "jurisdiction":
                 flags.append("jurisdiction:" + str(it.get("jurisdiction")))
-            scored.append({"id": iid, "score": round(s, 3), "item": it, "named": iid in named, "flags": flags})
+            # How much of the question the name is: 1.0 for "what is demurrage", low
+            # for a generic word said in passing ("…proves who owns cargo at sea").
+            cover = round(len(set(tokens(name)) & set(q)) / float(len(set(q))), 2) if name else 0.0
+            scored.append({"id": iid, "score": round(s, 3), "item": it, "named": iid in named, "name": name,
+                           "coverage": cover, "flags": flags})
         scored.sort(key=lambda r: (-r["score"], r["id"]))
         return scored[:limit]
 

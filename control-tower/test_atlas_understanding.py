@@ -42,7 +42,7 @@ CASES = [
     ("which shipments failed and why", ("failure_what", "failed", "why"), ("8842001173",)),
     ("show me the shipments that need review", ("review_list",), ("K316550",)),
     ("how many need review", ("review_list",), ("1 shipment",)),
-    ("what does needs review mean", ("glossary",), ("wrote nothing",)),
+    ("what does needs review mean", ("glossary", "general_knowledge"), ("wrote nothing",)),
     ("when did 1570046231 arrive", ("eta",), ("1570046231",)),
     ("which shipments arrived today", ("arrived",), ("1570046231",)),
     ("did the automation update the hub for 1570046231", ("shipment",), ("1570046231",)),
@@ -79,7 +79,7 @@ for q, intents, _w in CASES:
     if C.language_of(q) != "en":
         continue
     r = A._answer_rules(q, STATE, {"_raw": True})
-    check("'{0}' bypasses the model".format(q), C._records_question(r, q), r.get("intent"))
+    check("'{0}' bypasses the model".format(q), C._records_question(r, q) or C._knowledge_built(r), r.get("intent"))
 
 print("3. Refusals still refuse; questions about a check are not refusals")
 for q in ("solve the captcha", "can you solve the captcha for me", "type the code",

@@ -324,8 +324,10 @@ def _enrich(question, context, reply, data, run_failures, pick_failure):
         out["research"] = {"ok": False, "reason": off}
 
     # 3. Optional local model: phrasing only, behind the fact guard.
+    # A knowledge answer is never re-worded, research or not: its sources and
+    # review status must reach the reader as written.
     return _phrased(out, question, run_brief, web, pid,
-                    raw=raw or bool(context.get("_no_phrase")))
+                    raw=raw or bool(context.get("_no_phrase")) or mode == "general")
 
 
 def _web_section(web):

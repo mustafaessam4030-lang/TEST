@@ -27,8 +27,10 @@ replayed over them (apply()), so the log is also the audit history.
 What ATLAS is asked in chat is never written here: a conversation does not
 become knowledge.
 """
+import contextlib
 import hashlib
 import json
+import os
 import re
 import threading
 import time
@@ -39,7 +41,8 @@ from . import store
 
 LOG = "kb_changes.jsonl"
 MAX_TEXT = 6000
-_lock = threading.Lock()
+_lock = threading.RLock()
+INGEST_MAX_DEFINITIONS = 300
 
 # Text that tries to instruct a model rather than state knowledge. Flagged for
 # the reviewer; the knowledge engine never executes or obeys item text anyway.
@@ -79,12 +82,53 @@ def _clean(value, depth=0):
     return store.redact(str(value), 400)
 
 
-def _append(event):
+@contextlib.contextmanager
+def _locked():
+    """One writer at a time: threads in this process (the server) and other
+    processes (the command line) alike, through a lock file beside the log."""
+    with _lock:
+        path = str(_path()) + ".lock"
+        fh = open(path, "a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                fh.seek(0)
+                for _ in range(200):
+                    try:
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.05)
+                else:
+                    raise GovernanceError("the knowledge log is busy; try again")
+            else:
+                import fcntl
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            fh.close()
+
+
+def _append(event, precheck=None):
+    """Append one event. `precheck()` runs under the same lock first, so a
+    check-then-write (is the proposal still pending?) cannot race."""
     if not store.admitted():
         raise GovernanceError("this process may not write to the ATLAS store ({0} data)".format(store.store_origin()))
-    event = dict(event, at=time.strftime("%Y-%m-%dT%H:%M:%S"), seq=_next_seq())
-    line = json.dumps(_clean(event), ensure_ascii=False, sort_keys=True)
-    with _lock:
+    with _locked():
+        if precheck is not None:
+            precheck()
+        event = dict(event, at=time.strftime("%Y-%m-%dT%H:%M:%S"), seq=_next_seq())
+        line = json.dumps(_clean(event), ensure_ascii=False, sort_keys=True)
         with open(_path(), "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     try:
@@ -110,8 +154,30 @@ def events():
 
 
 def _next_seq():
-    ev = events()
-    return (max((e.get("seq") or 0) for e in ev) + 1) if ev else 1
+    """The last event's seq + 1, read from the end of the log (called under
+    the lock, so the log is not read whole for every event)."""
+    try:
+        with open(_path(), "rb") as fh:
+            fh.seek(0, 2)
+            end = pos = fh.tell()
+            chunk = b""
+            while pos > 0:
+                step = min(8192, pos)
+                pos -= step
+                fh.seek(pos)
+                chunk = fh.read(step) + chunk
+                lines = [x for x in chunk[:end].split(b"\n") if x.strip()]
+                if len(lines) >= 2 or (pos == 0 and lines):
+                    for raw in reversed(lines):
+                        try:
+                            return int(json.loads(raw.decode("utf-8")).get("seq") or 0) + 1
+                        except ValueError:
+                            continue
+                    if pos == 0:
+                        break
+    except OSError:
+        pass
+    return 1
 
 
 def signature():
@@ -177,6 +243,8 @@ def apply(kb):
             if not iid:
                 continue
             prev = kb.items.get(iid)
+            if prev is not None and prev.get("review_status") in ("superseded", "retired"):
+                continue                      # never brought back by approving a change to it
             if prev is not None:
                 kb.history_versions = getattr(kb, "history_versions", {})
                 kb.history_versions.setdefault(iid, []).append(dict(prev))
@@ -198,6 +266,9 @@ def apply(kb):
                 continue
             it = dict(it)
             status = e.get("status")
+            if status in ("reviewed", "approved"):
+                for key in ("superseded_by", "retired_reason"):
+                    it.pop(key, None)         # reinstated, with its reason in the log
             it["review_status"] = status
             if status in ("reviewed", "approved"):
                 it["reviewed_by"], it["reviewed_at"] = e.get("by"), e["at"]
@@ -249,10 +320,7 @@ def checks(item, kb=None):
             else:
                 out["conflicts"].append(dict(entry, note="same name, different definition: a correction, "
                                                           "a context-dependent meaning, or a conflict"))
-    full = dict(item)
-    full.setdefault("domain", (item.get("id") or "?.")[0])
-    sources = dict(k.sources)
-    out["problems"] = KB.validate(full, sources, set(k.items) | {item.get("id")})
+    out["problems"] = KB.validate(dict(item), dict(k.sources), set(k.items) | {item.get("id")})
     return out
 
 
@@ -264,7 +332,7 @@ ITEM_FIELDS = ("id", "kind", "term", "synonyms", "acronym", "full_form", "terms_
                "jurisdiction", "edition", "effective_from", "review_by", "kpi", "definitions")
 
 
-def propose(item=None, by=None, kind="new", note=None, observation=None, provenance=None):
+def propose(item=None, by=None, kind="new", note=None, observation=None, provenance=None, _kb=None):
     """
     Record a proposal. kind: 'new' (a new item), 'correction' (changes to an
     existing item — only the fields given), 'observation' (a note for a
@@ -273,7 +341,7 @@ def propose(item=None, by=None, kind="new", note=None, observation=None, provena
     if not by:
         raise GovernanceError("a proposal needs the proposer's identity")
     from . import kb as KB
-    k = KB.kb()
+    k = _kb or KB.kb()
     if kind == "observation":
         text = " ".join(str(observation or "").split())
         if len(text) < 10:
@@ -304,31 +372,58 @@ def propose(item=None, by=None, kind="new", note=None, observation=None, provena
     return dict(ev, status="pending")
 
 
+def _merged(item, k):
+    """The item as approving it would make it: a correction over the current item."""
+    iid = (item or {}).get("id")
+    if iid in k.items:
+        full = dict(k.items[iid])
+        full.update(item)
+        return full
+    return dict(item or {})
+
+
 def review(proposal_id, decision, by, note=None, acknowledge_flags=False):
     """Approve or reject a proposal. The proposer may not approve their own;
     a proposal with schema problems cannot be approved; one with flags only
-    with acknowledge_flags and a note."""
+    with acknowledge_flags and a note. The checks are run again at approval,
+    against the knowledge as it is now, and a retired or superseded item is
+    never brought back by approving a change to it."""
     if decision not in ("approve", "reject"):
         raise GovernanceError("decision must be approve or reject")
-    p = proposals().get(proposal_id)
-    if p is None:
-        raise GovernanceError("no such proposal")
-    if p["status"] != "pending":
-        raise GovernanceError("this proposal is already {0}".format(p["status"]))
     if not by:
         raise GovernanceError("a review needs the reviewer's identity")
-    if decision == "approve":
+    from . import kb as KB
+
+    def still_valid():
+        p = proposals().get(proposal_id)
+        if p is None:
+            raise GovernanceError("no such proposal")
+        if p["status"] != "pending":
+            raise GovernanceError("this proposal is already {0}".format(p["status"]))
+        if decision != "approve":
+            return
         if str(p.get("by")).lower() == str(by).lower():
             raise GovernanceError("you proposed this; another reviewer must approve it")
         if p.get("kind") == "observation":
             raise GovernanceError("an observation is not knowledge: propose an item from it, then approve that")
-        found = p.get("checks") or {}
+        k = KB.kb()
+        iid = (p.get("item") or {}).get("id")
+        current = k.items.get(iid) or k.invalid.get(iid)
+        if current is not None and current.get("review_status") in ("superseded", "retired"):
+            raise GovernanceError("{0} is {1}; approving a change does not bring it back — reinstate it "
+                                  "first (status, with a reason) if it should be current again".format(
+                                      iid, current["review_status"]))
+        if p.get("kind") == "new" and iid in k.items and k.items[iid].get("origin") != "review:" + proposal_id:
+            raise GovernanceError("{0} now exists; propose this as a correction instead".format(iid))
+        found = checks(_merged(p.get("item"), k), k)
         if found.get("problems"):
             raise GovernanceError("it has schema problems: " + "; ".join(found["problems"]))
         if (found.get("flags") or found.get("conflicts")) and not (acknowledge_flags and note):
             raise GovernanceError("it has flags or conflicts: approve with acknowledge_flags and a note saying why")
+
+    pid_item = (proposals().get(proposal_id) or {}).get("item") or {}
     return _append({"action": "review", "proposal_id": proposal_id, "decision": decision, "by": by, "note": note,
-                    "item_id": (p.get("item") or {}).get("id")})
+                    "item_id": pid_item.get("id")}, precheck=still_valid)
 
 
 def set_status(item_id, status, by, reason=None, superseded_by=None):
@@ -338,12 +433,16 @@ def set_status(item_id, status, by, reason=None, superseded_by=None):
     if status not in ("reviewed", "approved", "superseded", "retired"):
         raise GovernanceError("status must be reviewed, approved, superseded or retired")
     if item_id not in k.items:
-        raise GovernanceError("no such item")
+        raise GovernanceError("no such item" if item_id not in k.invalid else
+                              "{0} fails its schema and cannot be given a status until it is corrected".format(item_id))
     if status == "superseded":
         if not superseded_by or superseded_by not in k.items or superseded_by == item_id:
             raise GovernanceError("supersede needs the id of the item that replaces it")
     if status in ("superseded", "retired") and not reason:
         raise GovernanceError("say why")
+    if k.items[item_id].get("review_status") in ("superseded", "retired") and status in ("reviewed", "approved") \
+            and not reason:
+        raise GovernanceError("{0} is {1}: say why it is being reinstated".format(item_id, k.items[item_id]["review_status"]))
     if not by:
         raise GovernanceError("a status change needs the reviewer's identity")
     return _append({"action": "status", "item_id": item_id, "status": status, "by": by, "reason": reason,
@@ -358,8 +457,16 @@ DEF_LINE = re.compile(
     r"(?:\((?P<acr>[A-Z][A-Z0-9/&-]{1,10})\))?\s*(?::|—|–| - | is | are | means | refers to )\s*(?P<def>.{20,600})$")
 
 
+# A line that starts like this is a note, a step or a heading, not a term.
+NOT_A_TERM = re.compile(
+    r"^(this|that|these|those|it|its|there|here|note|nb|ps|step(\s*\d+)?|date|please|warning|caution|important|"
+    r"tip|example|e\.g|i\.e|see|also|for|if|when|then|the|a|an|we|you|i|our|your|q|answer|question|subject|"
+    r"from|to|cc|re|page|figure|table|version|approved( by)?|prepared( by)?|owner|status|remember|always|never|"
+    r"do|don't|make sure|ensure|check)\b", re.I)
+
+
 def _sections_from_text(text, name):
-    sections, title, start, buf = [], name, 1, []
+    sections, title, start, buf = [], name, 0, []
     lines = text.splitlines()
     for i, line in enumerate(lines + ["# END"], 1):
         if re.match(r"^#{1,4} ", line) or i == len(lines) + 1:
@@ -377,9 +484,12 @@ def _sections_from_pdf(data, name):
         import fitz
     except Exception:
         raise GovernanceError("PDF ingestion needs PyMuPDF (pymupdf), which is not installed")
-    doc = fitz.open(stream=data, filetype="pdf")
-    return [{"title": "page {0}".format(i + 1), "location": "{0}, page {1}".format(name, i + 1),
-             "page": i + 1, "text": page.get_text()} for i, page in enumerate(doc)]
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+        return [{"title": "page {0}".format(i + 1), "location": "{0}, page {1}".format(name, i + 1),
+                 "page": i + 1, "text": page.get_text()} for i, page in enumerate(doc)]
+    except Exception:
+        raise GovernanceError("the PDF could not be read (damaged, encrypted or not a PDF)")
 
 
 def ingest(name, by, text=None, data=None, title=None, authority="internal", jurisdiction=None,
@@ -399,24 +509,36 @@ def ingest(name, by, text=None, data=None, title=None, authority="internal", jur
     for doc in documents().values():
         if doc.get("sha256") == sha:
             return {"doc": doc, "proposals": [], "skipped": "already ingested"}
-    if str(name).lower().endswith(".pdf") or raw[:4] == b"%PDF":
+    if data is not None and (str(name).lower().endswith(".pdf") or raw[:4] == b"%PDF"):
         sections = _sections_from_pdf(raw, name)
+    elif str(name).lower().endswith(".pdf"):
+        raise GovernanceError("send a PDF as its file (base64 data), not as text")
     else:
         sections = _sections_from_text(raw.decode("utf-8", "replace"), name)
     doc = {"id": "doc-" + sha[:10], "name": str(name)[:200], "title": (title or name)[:200], "sha256": sha,
            "authority": authority, "jurisdiction": jurisdiction, "publisher": publisher, "by": by,
            "ingested_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "sections": len(sections)}
     _append({"action": "ingest", "doc": doc, "by": by})
-    made = []
+    from . import kb as KB
+    k = KB.kb()                       # one load for the whole document, not one per definition
+    made, seen, dropped = [], set(), {"not_a_term": 0, "repeated": 0, "over_limit": 0}
     for sec in sections:
         for n, line in enumerate(sec["text"].splitlines()):
             m = DEF_LINE.match(line.strip())
             if not m:
                 continue
             term = m.group("term").strip(" *")
-            if len(term.split()) > 6:
+            if len(term.split()) > 6 or NOT_A_TERM.match(term) or len(m.group("def").split()) < 4:
+                dropped["not_a_term"] += 1
                 continue
             slug = re.sub(r"[^a-z0-9]+", "-", term.lower()).strip("-")[:40] or "term"
+            if slug in seen:
+                dropped["repeated"] += 1          # the first definition in the document is proposed
+                continue
+            if len(made) >= INGEST_MAX_DEFINITIONS:
+                dropped["over_limit"] += 1
+                continue
+            seen.add(slug)
             # An internal document states Mantrac's own rules ("business");
             # an outside one general or country knowledge. Either way the
             # item cites the document and the place in it; none is code-verified.
@@ -430,14 +552,13 @@ def ingest(name, by, text=None, data=None, title=None, authority="internal", jur
                 item["acronym"] = m.group("acr")
             if jurisdiction:
                 item["review_by"] = date.fromordinal(date.today().toordinal() + 182).isoformat()
-            from . import kb as KB
-            kind = "correction" if item["id"] in KB.kb().items else "new"
+            kind = "correction" if item["id"] in k.items else "new"
             if kind == "correction":
-                item = {k: v for k, v in item.items() if k in ("id", "definition", "sources")}
+                item = {f: v for f, v in item.items() if f in ("id", "definition", "sources")}
             made.append(propose(item, by=by, kind=kind, note="ingested from " + doc["title"],
                                 provenance={"doc": doc["id"], "location": item["sources"][0]["section"],
-                                            "quote": line.strip()[:500]}))
-    return {"doc": doc, "proposals": made, "skipped": None}
+                                            "quote": line.strip()[:500]}, _kb=k))
+    return {"doc": doc, "proposals": made, "skipped": None, "dropped": dropped}
 
 
 def stats():

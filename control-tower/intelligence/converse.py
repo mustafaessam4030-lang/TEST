@@ -382,6 +382,9 @@ def _instant(question, state, context, rules):
             return reply
         if _records_question(reply, question):
             return _records_reply(question, state, context, rules)
+        if _knowledge_built(reply):
+            # Built by the Knowledge Engine, no model call: never queues for one.
+            return _as_built_knowledge(rules(question, state, dict(context or {}, _no_phrase=True)))
     except Exception:
         pass
     return None
@@ -428,6 +431,8 @@ def _answer(question, state, context, rules):
         direct["llm"] = {"used": False, "mode": "skill",
                          "reason": "built directly by ATLAS's skills and handbook"}
         return direct
+    if _knowledge_built(direct):
+        return _as_built_knowledge(direct)
     if direct and direct.get("intent") in ("analysis", "report") and direct.get("charts"):
         # Counts and charts computed from the run: exact, instant, nothing
         # for a model to add (live, its rewording was refused 3 times of 3).
@@ -466,6 +471,13 @@ def _answer(question, state, context, rules):
 
     R.stage(pid, "Reading ELAP's records…")
     base = rules(plan["question_en"], state, inner)
+    known = _knowledge_built(base)
+    if known and not plan["needs_web"]:
+        # A knowledge answer (the model read an Arabic question as one): the
+        # Knowledge Engine answers the operator's own words, in their language
+        # where the item has it, and it is shown as built.
+        own = rules(question, state, inner) if lang != "en" else None
+        return _as_built_knowledge(own if _knowledge_built(own) else base)
     if base.get("request"):
         # An action is only ever taken from the operator's own words, through
         # the rules and the dashboard's own checks — never from the model's
@@ -485,6 +497,11 @@ def _answer(question, state, context, rules):
         web_text = "(no web research: {0})".format(web_problem)
     prompt = "OPERATOR'S QUESTION: {0}\n\nRECORDS (ELAP, authoritative):\n{1}\n\nWEB:\n{2}".format(
         question[:800], records[:5000], web_text[:3500] or "(none)")
+    if known:
+        # Needs the web, and ATLAS's knowledge base has a general entry on it:
+        # that entry is reference knowledge, not ELAP's run records.
+        prompt = prompt.replace("RECORDS (ELAP, authoritative):",
+                                "ATLAS KNOWLEDGE BASE (general reference, NOT ELAP run records):", 1)
     try:
         R.stage(pid, "Writing the answer…")
         t = time.time()
@@ -509,6 +526,8 @@ def _answer(question, state, context, rules):
 
     sections = _sort(sections, "\n".join([question, plan["question_en"], records]), web)
     reply = dict(base, answer=render(sections, lang, web), understood=True)
+    if known:
+        reply["answer"] = _knowledge_labelled(reply["answer"], records, lang)
     # The run's own answer stays one click away only when it is one: not the
     # "I didn't understand" text, which would read as a second, robotic reply.
     if base.get("intent") and not base.get("fallback"):
@@ -710,6 +729,35 @@ PERSONAL = re.compile(r"\b(sad|tired|stress(?:ed)?|happy|bored|angry|upset|lonel
                       r"hate|feel|feeling|mood|cry|worried|anxious|thanks?|thank\s+you|hi|"
                       r"hello|hey|good\s+(?:morning|evening|night))\b|"
                       r"حزين|تعبان|زعلان|شكرا|مرحبا|صباح الخير", re.I)
+
+
+def _knowledge_built(reply):
+    """An answer the Knowledge Engine built (intelligence/kb_answer.py)."""
+    return bool(reply) and reply.get("intent") == "general_knowledge" and \
+        isinstance(reply.get("knowledge"), dict)
+
+
+KNOWLEDGE_LABEL = {"en": "From ATLAS's knowledge base (general reference, not run records)",
+                   "ar": "من قاعدة معرفة ATLAS (مرجع عام، وليس سجلات التشغيل)"}
+
+
+def _knowledge_labelled(text, built, lang):
+    """A composed answer that drew on the knowledge base: its points are not
+    called ELAP records, and the entry's sources and review status are kept
+    exactly as the Knowledge Engine wrote them."""
+    text = text.replace("**{0}**".format(LABELS[lang]["verified"]), "**{0}**".format(KNOWLEDGE_LABEL[lang]))
+    tail = [p for p in built.split("\n\n") if p.startswith(("**Sources**", "_Knowledge status"))]
+    return "\n\n".join([text.rstrip()] + tail)
+
+
+def _as_built_knowledge(reply):
+    # Never reworded: its sources and its review status ("not yet reviewed")
+    # are part of the answer, and a rewording can drop them unseen by the
+    # fact guard - presenting unreviewed knowledge as settled.
+    reply["llm"] = {"used": False, "mode": "knowledge",
+                    "reason": "built by ATLAS's Knowledge Engine with its sources and review status; "
+                              "never reworded by a model"}
+    return reply
 
 
 def _records_reply(question, state, context, rules):
