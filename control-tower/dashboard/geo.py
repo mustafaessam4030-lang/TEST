@@ -40,7 +40,12 @@ COUNTRY_ALIASES = {
     "IVORY COAST": "CI", "COTE D IVOIRE": "CI",
     "CONGO THE DEMOCRATIC REPUBLIC OF THE": "CD", "DEMOCRATIC REPUBLIC OF THE CONGO": "CD",
     "DR CONGO": "CD", "CONGO DR": "CD", "CONGO REPUBLIC OF": "CG",
+    "CONGO THE DEMOCRATIC REPUBLIC OF": "CD", "CONGO DEMOCRATIC REPUBLIC OF": "CD",
+    "CONGO DEMOCRATIC REPUBLIC OF THE": "CD", "DEMOCRATIC REPUBLIC OF CONGO": "CD",
     "TANZANIA UNITED REPUBLIC OF": "TZ", "UNITED REPUBLIC OF TANZANIA": "TZ",
+    "IRAN ISLAMIC REPUBLIC OF": "IR", "SYRIAN ARAB REPUBLIC": "SY", "LIBYAN ARAB JAMAHIRIYA": "LY",
+    "LAO PEOPLES DEMOCRATIC REPUBLIC": "LA", "MACEDONIA": "MK", "SWAZILAND": "SZ",
+    "CAPE VERDE": "CV", "EGYPT ARAB REPUBLIC OF": "EG",
     "KOREA REPUBLIC OF": "KR", "SOUTH KOREA": "KR", "REPUBLIC OF KOREA": "KR",
     "RUSSIAN FEDERATION": "RU", "VIET NAM": "VN", "TURKIYE": "TR", "TURKEY": "TR",
     "CZECH REPUBLIC": "CZ", "CZECHIA": "CZ", "HONG KONG SAR CHINA": "HK",
@@ -83,7 +88,7 @@ def _load():
     with _lock:
         if _index is not None:
             return _index
-        idx = {"iata": {}, "airport": {}, "port": {}, "town": {}, "country": {}, "cname": {}}
+        idx = {"iata": {}, "airport": {}, "port": {}, "town": {}, "country": {}, "code": {}, "cname": {}}
         try:
             with gzip.open(TABLE, "rt", encoding="utf-8") as fh:
                 for line in fh:
@@ -93,10 +98,14 @@ def _load():
                     row = {"name": name, "cc": cc, "lat": float(lat), "lon": float(lon),
                            "pop": int(pop)}
                     if kind == "N":
+                        # Names are read in place text; codes only where a
+                        # field is a country code ("CA" beside a town is
+                        # as likely California as Canada).
                         idx["cname"][cc] = name
-                        for n in (name, code, alt):
+                        idx["country"][fold(name)] = cc
+                        for n in (code, alt):
                             if n:
-                                idx["country"][fold(n)] = cc
+                                idx["code"][fold(n)] = cc
                     elif kind == "A":
                         row.update(kind="airport", code=code, town=alt)
                         idx["iata"][code] = row
@@ -109,7 +118,7 @@ def _load():
                         for n in {fold(name)} | {fold(a) for a in alt.split("|") if a}:
                             idx["town"].setdefault(n, []).append(row)
         except (OSError, ValueError):
-            idx = {"iata": {}, "airport": {}, "port": {}, "town": {}, "country": {}, "cname": {}}
+            idx = {"iata": {}, "airport": {}, "port": {}, "town": {}, "country": {}, "code": {}, "cname": {}}
         for k, v in COUNTRY_ALIASES.items():
             idx["country"].setdefault(k, v)
         _index = idx
@@ -128,8 +137,20 @@ def _point(row, said):
 
 
 def country_of(text):
-    """ISO alpha-2 for a country name or code, or None."""
-    return _load()["country"].get(fold(text)) if text else None
+    """ISO alpha-2 for a country name or ISO code (a country field), or None."""
+    if not text:
+        return None
+    idx = _load()
+    return idx["country"].get(fold(text)) or idx["code"].get(fold(text))
+
+
+def country_point(text):
+    """A country field on its own: the country, with no coordinates."""
+    cc = country_of(text)
+    if not cc:
+        return None
+    name = _load()["cname"].get(cc, cc)
+    return {"name": name, "kind": "country", "cc": cc, "country": name, "said": str(text)}
 
 
 def resolve_iata(code, said=None):
@@ -169,8 +190,6 @@ def _variants(head):
         add(paren.group(2))
     for v in list(seen):
         add(PART_WORDS.sub("", v))
-    if "-" in head and " - " not in head:                # LONDON-HEATHROW
-        add(head.split("-")[0])
     return seen
 
 
@@ -189,6 +208,8 @@ def resolve(text, country=None):
     code = re.fullmatch(r"([A-Z]{3})\s*\((.+)\)", said)
     if code:
         return resolve_iata(code.group(1), said)
+    if re.fullmatch(r"[A-Z]{3}", said):
+        return None          # a code, not a name: placed only where a field is a station code
     cc = country_of(country) if country else None
     head = said
     for sep in (" - ", ", ", ","):
@@ -200,27 +221,36 @@ def resolve(text, country=None):
                     return None
                 head, cc = left.strip(), named
                 break
-    whole = idx["country"].get(fold(head))
-    if whole and head == said:
-        return {"name": idx["cname"].get(whole, whole), "kind": "country", "cc": whole,
-                "country": idx["cname"].get(whole, whole), "said": said}
+    if head == said and idx["country"].get(fold(head)):
+        return country_point(head)
     # An airport by its own name first, then the town, then a port; an
     # airport by its town's name ("EAST MIDLANDS") only when no town has it.
+    # The first kind that knows the name decides: a name it holds more than
+    # once, with none far the biggest, is ambiguous and stays unplaced — it
+    # is never handed on to a rarer kind that happens to hold it once
+    # ("Portland" is not Portland Airport, Australia).
     names = _variants(head)
     for look in (lambda v: idx["airport"].get(v), lambda v: idx["town"].get(v),
                  lambda v: idx["port"].get(v), lambda v: idx["airport"].get(v + " AIRPORT"),
                  lambda v: idx["airport"].get(v + " INTERNATIONAL AIRPORT")):
         for v in names:
             rows = look(v)
-            hit = _pick(rows, cc) if rows else None
+            if not rows:
+                continue
+            hit = _pick(rows, cc)
             if hit:
                 return _point(hit, said)
+            if not cc or any(r["cc"] == cc for r in rows):
+                return None                               # ambiguous: not guessed
     return None
 
 
-def _when(e, i):
+def _when(e, i, newest_first=True):
     """When an event happened, in UTC when the carrier gave its offset ("UTC
     +03:00"): a timeline crosses time zones, and local clocks misorder it."""
+    # Two events at the same time keep the carrier's own order: most pages
+    # list the newest first, the DHL API the oldest first.
+    tie = -i if newest_first else i
     day = str(e.get("date") or "")
     clock = str(e.get("time") or "").upper().replace(" ", "")
     tz = re.match(r"^UTC\s*([+-])(\d{1,2}):?(\d{2})?", str(e.get("tz") or "").upper().strip())
@@ -230,13 +260,13 @@ def _when(e, i):
         shift = shift if tz.group(1) == "+" else -shift
     for fmt in ("%d/%m/%Y%I:%M%p", "%d/%m/%Y%H:%M"):
         try:
-            return (datetime.strptime(day + clock, fmt) - shift, -i)
+            return (datetime.strptime(day + clock, fmt) - shift, tie)
         except ValueError:
             continue
     try:
-        return (datetime.strptime(day, "%d/%m/%Y"), -i)
+        return (datetime.strptime(day, "%d/%m/%Y"), tie)
     except ValueError:
-        return (datetime.min, -i)
+        return (datetime.min, tie)
 
 
 def where(places):
@@ -267,13 +297,14 @@ def where(places):
                 return p
         if text:
             return resolve(text, country)
-        return resolve(country) if country else None      # the country alone
+        return country_point(country) if country else None   # the country alone
 
     origin = at(places.get("origin"), places.get("origin_code"), places.get("origin_country"))
     dest = at(places.get("destination"), places.get("destination_code"),
               places.get("destination_country"))
     events = [e for e in (places.get("events") or []) if isinstance(e, dict)]
-    ordered = sorted(enumerate(events), key=lambda p: _when(p[1], p[0]))
+    newest_first = places.get("order") != "oldest_first"
+    ordered = sorted(enumerate(events), key=lambda p: _when(p[1], p[0], newest_first))
     path, unplaced, last = [], [], None
     for _i, e in ordered:
         said = " ".join(str(e.get("place") or "").split())

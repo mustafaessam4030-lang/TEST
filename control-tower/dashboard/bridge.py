@@ -11,6 +11,21 @@ import threading
 from collections import deque
 from datetime import datetime
 
+def _warm_places():
+    """Load the place table in the background, so the first shipment's
+    provider_result does not wait for it."""
+    def load():
+        try:
+            try:
+                from . import geo
+            except ImportError:
+                import geo
+            geo._load()
+        except Exception:
+            pass
+    threading.Thread(target=load, name="places-warm", daemon=True).start()
+
+
 def _where(places):
     """geo.where(places), or None: a map problem never touches the run."""
     if not places:
@@ -609,6 +624,7 @@ class ControlTowerState:
 
     @_guard
     def run_started(self, **config):
+        _warm_places()
         with self._lock:
             self.run_status = "running"
             self.started_at = _now()

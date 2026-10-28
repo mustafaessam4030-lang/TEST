@@ -6436,9 +6436,11 @@ function paintRoute(){
     r ? [r.state, r.step, r.provider_eta, r.provider_ata, r.provider_ata_source, r.provider_eta_source,
          r.provider_status, r.carrier, mode, list.map((x) => x.st + x.t + (x.note || '')).join('|')] : 0]);
   if (key === routeSig){ if (r) put($('scUpd'), r.updated ? String(r.updated) : '—'); return; }
-  if (!window.ctTrackMap) return;                // the map script is still loading
   routeSig = key;
-  window.ctTrackMap.paint({el:$('routeMap'), items, selected:r ? r.reference : null,
+  // The map is its own script; the card below does not wait for it (it
+  // repaints with the map once that loads: the ct:trackmap event).
+  const tm = window.ctTrackMap;
+  if (tm) tm.paint({el:$('routeMap'), items, selected:r ? r.reference : null,
     onSelect:(ref) => { routeRef = ref; routeSig = ''; paintRoute(); }});
 
   putHTML($('routeTag'), r ? jpill(j) : '');
@@ -6447,7 +6449,7 @@ function paintRoute(){
     return;
   }
   // Where the carrier last put it, as the carrier said it.
-  const now = window.ctTrackMap.nowOf({where:r.where, k:j.k});
+  const now = tm ? tm.nowOf({where:r.where, k:j.k}) : null;
   const w = r.where || {};
   const said = (p) => p ? (p.code ? p.name + ' (' + p.code + ')' : p.name) + (p.country ? ', ' + p.country : '') : '';
   const whereHTML = now

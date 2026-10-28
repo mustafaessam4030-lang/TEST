@@ -170,7 +170,7 @@
     L.marks = el("g", {}, svg);
     L.labels = el("g", {}, svg);
     root.querySelector(".tm-ui").addEventListener("click", (e) => {
-      const b = e.target.closest("[data-z]"); if (!b) return;
+      const b = e.target.closest("[data-z]"); if (!b || !cam) return;
       const z = b.dataset.z;
       if (z === "in") zoomAt(size.w / 2, size.h / 2, 0.5, true);
       else if (z === "out") zoomAt(size.w / 2, size.h / 2, 2, true);
@@ -181,9 +181,24 @@
       if (data.onSelect) data.onSelect(e.target.value);
     });
     wire();
-    new ResizeObserver(() => { measure(); if (cam) draw(); }).observe(root);
+    // The card can be measured while its page is hidden (0 × 0): the
+    // camera is fitted only once it has a real size, and kept in bounds on
+    // every resize after that.
+    new ResizeObserver(() => {
+      measure();
+      if (!world || !shown()) return;
+      if (!cam) { cam = fitCam(boundsSel() || boundsAll()); fitKey = keyOf(); }
+      else cam = clampCam(cam);
+      draw();
+    }).observe(root);
     measure();
     if (world) buildLand();
+  }
+  const shown = () => size.w >= 40 && size.h >= 40;
+  function keyOf() {
+    const sel = data.items.find((i) => i.ref === data.selected);
+    return sel ? JSON.stringify([sel.ref, sel.where && sel.where.last,
+      sel.where && sel.where.destination && sel.where.destination.name, sel.k]) : "all";
   }
   function measure() {
     const r = root.getBoundingClientRect();
@@ -389,7 +404,7 @@
   const short = (p) => p.code || p.name;
 
   function draw(moving) {
-    if (!world || !root || !cam) return;
+    if (!world || !root || !cam || !shown()) return;
     L.geo.setAttribute("transform", `matrix(${1 / cam.s} 0 0 ${1 / cam.s} ${size.w / 2 - cam.x / cam.s} ${size.h / 2 - cam.y / cam.s})`);
     L.route.textContent = ""; L.marks.textContent = ""; L.labels.textContent = "";
     hideTip();                                   // its marker is being redrawn
@@ -468,8 +483,11 @@
         hideTip();
         if (one) { if (data.onSelect) data.onSelect(it.ref); return; }
         const same = g.items.every((x) => { const n = nowOf(x).pt, m = nowOf(it).pt; return n.lat === m.lat && n.lon === m.lon; });
-        if (same || cam.s <= fullS() / 50) openPop(g.items, g.at[0], g.at[1]);
-        else flyTo(boundsOf(g.items.map((x) => proj(nowOf(x).pt))), true);
+        // Zoom in to separate them; where zooming cannot (the same place, or
+        // already as close as the map goes), list them instead.
+        const b = boundsOf(g.items.map((x) => proj(nowOf(x).pt)));
+        if (same || fitCam(b).s >= cam.s * 0.9) openPop(g.items, g.at[0], g.at[1]);
+        else flyTo(b, true);
         if (e) e.stopPropagation();
       };
       a.addEventListener("click", pick);
@@ -538,10 +556,11 @@
     paintChrome();
     // Follow the shipment on show: fly to its route when it changes, or
     // when what is known about where it is changes.
-    const sel = data.items.find((i) => i.ref === data.selected);
-    const key = sel ? JSON.stringify([sel.ref, sel.where && sel.where.last, sel.where && sel.where.destination && sel.where.destination.name, sel.k]) : "all";
-    if (!cam) cam = fitCam(boundsSel() || boundsAll());
-    if (key !== fitKey) { const first = fitKey === ""; fitKey = key; if (first) { cam = fitCam(boundsSel() || boundsAll()); draw(); } else flyTo(boundsSel() || boundsAll(), false); }
+    const key = keyOf();
+    measure();
+    if (!shown()) { cam = null; return; }        // hidden: fitted when it shows (ResizeObserver)
+    if (!cam) { cam = fitCam(boundsSel() || boundsAll()); fitKey = key; draw(); }
+    else if (key !== fitKey) { fitKey = key; flyTo(boundsSel() || boundsAll(), false); }
     else draw();
   }
 

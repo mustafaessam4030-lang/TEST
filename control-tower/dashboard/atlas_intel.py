@@ -149,10 +149,13 @@ def atlas_check_line(record):
 def where_line(record):
     """Where the carrier last reported the shipment (geo.sentence), or None."""
     try:
-        from . import geo
-    except ImportError:
-        import geo
-    return geo.sentence(record.get("where"))
+        try:
+            from . import geo
+        except ImportError:
+            import geo
+        return geo.sentence(record.get("where"))
+    except Exception:
+        return None                    # a map reading never breaks an answer
 
 
 def shipment_picture(record):

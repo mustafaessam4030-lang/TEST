@@ -65,6 +65,16 @@ check("A bare three letters is not read as an airport outside a station field", 
 check("An unknown station code is not an airport", geo.resolve_iata("ZZZ") is None)
 check("Empty, None and oversized text are unplaced",
       geo.resolve("") is None and geo.resolve(None) is None and geo.resolve("x" * 200) is None)
+check("An ambiguous town is not handed on to a rarer airport or port of that name",
+      all(geo.resolve(n) is None for n in ("Portland", "Hamilton", "Córdoba", "Cambridge", "Bangor", "Valencia")))
+check("A two-letter tail is not read as a country ('Richmond, CA' is not Canada)",
+      geo.resolve("Richmond, CA") is None and geo.resolve("London, CA") is None)
+check("'TOWN-SOMETHING' is never cut to its first word",
+      at("Frankfurt-Hahn") == ("airport", "Frankfurt-Hahn Airport", "DE") and geo.resolve("Accra-Nowhere") is None)
+check("A bare code-like word is not a town ('HUB', 'LOG')", geo.resolve("HUB") is None and geo.resolve("LOG") is None)
+check("DHL's spelling of the DR Congo is the DR Congo",
+      at("KINSHASA - CONGO, THE DEMOCRATIC REPUBLIC OF") == ("town", "Kinshasa", "CD"))
+check("A country field may be its ISO code", (geo.country_point("GH") or {}).get("name") == "Ghana")
 check("A name shared with a far smaller town is the big one (London, UK over London, Canada)",
       at("London") == ("town", "London", "GB"))
 
@@ -90,12 +100,18 @@ late = geo.where({"events": [
     {"date": "24/09/2026", "time": "6:46 AM", "tz": "UTC +02:00", "text": "Shipment has departed", "place": "LEIPZIG - GERMANY"},
     {"date": "24/09/2026", "time": "6:09 AM", "tz": "UTC +01:00", "text": "Arrived at DHL Sort Facility", "place": "LONDON-HEATHROW - UK"}]})
 check("Events are ordered in UTC across time zones (06:46 +02 is before 06:09 +01)",
-      [p["name"] for p in late["path"]] == ["Leipzig", "London"], [p["name"] for p in late["path"]])
+      [p["name"] for p in late["path"]] == ["Leipzig", "London Heathrow Airport"], [p["name"] for p in late["path"]])
 newest = geo.where({"events": [
     {"date": "01/10/2026", "time": "09:00", "text": "Arrived", "place": "Accra"},
     {"date": "02/10/2026", "time": "09:00", "text": "Arrived", "place": "Machelen"}]})
 check("A newest place that cannot be placed is said, not replaced by an older one",
       newest["last"]["said"] == "Machelen" and newest["last"]["pt"] is None and newest["unplaced"] == ["Machelen"])
+same = [{"date": "02/10/2026", "time": "09:00", "text": "Arrived", "place": "Accra"},
+        {"date": "02/10/2026", "time": "09:00", "text": "Departed", "place": "Lagos"}]
+check("Two events at one time keep the carrier's order: newest first on a page...",
+      geo.where({"events": same})["last"]["said"] == "Accra")
+check("...oldest first from the DHL API",
+      geo.where({"events": same, "order": "oldest_first"})["last"]["said"] == "Lagos")
 check("Nothing named, nothing returned", geo.where({"events": []}) is None and geo.where(None) is None)
 check("The sentence ATLAS uses names the place and the event",
       geo.sentence(w).startswith("The carrier last reported it at Brussels Airport (BRU), Belgium: Carrier: Departed"))
@@ -146,6 +162,7 @@ res, _why, _stop = dhl_api.interpret(payload, "1234567890")
 wd = geo.where(res["places"])
 check("DHL API: each event's locality and country, its offset kept",
       res["places"]["events"][0]["tz"] == "UTC +02:00" and wd["last"]["pt"]["name"] == "Leipzig")
+check("...and says its list is oldest first", res["places"]["order"] == "oldest_first")
 check("...a destination given only as a country is that country, not a point",
       wd["destination"]["kind"] == "country" and wd["destination"]["cc"] == "GH" and "lat" not in wd["destination"])
 
@@ -166,11 +183,17 @@ check("A carrier that names no place leaves where empty", rec2.get("where") is N
 tower.shipment_started({"bol_awb": "1570046231", "carrier": "DHL", "provider": "DHL", "table_page": 1})
 tower.provider_result({"provider": "DHL", "eta": "01/11/2026", "places": {"events": "not a list"}})
 rec3 = next(r for r in tower.snapshot()["shipments"] if r["reference"] == "1570046231")
+import threading as _t  # noqa: E402
+check("A run start loads the place table in the background, not on the run's thread",
+      any(th.name == "places-warm" for th in _t.enumerate()) or geo._index is not None)
 check("Malformed places never break the record", rec3.get("provider_eta") == "01/11/2026" and rec3.get("where") is None)
 from dashboard import assistant, atlas_intel  # noqa: E402
 ans = assistant.answer("where is K179801", tower.snapshot())["answer"]
 check("ATLAS answers 'where is' with the carrier's last reported place",
       "Kotoka International Airport (ACC), Ghana" in ans, ans[:200])
+check("ATLAS's place line never raises on a malformed reading",
+      atlas_intel.where_line({"where": {"last": "not a dict"}}) is None
+      and atlas_intel.where_line({"where": ["x"]}) is None)
 check("ATLAS says nothing about a place for a shipment whose carrier named none",
       atlas_intel.where_line(rec2) is None)
 
@@ -178,8 +201,15 @@ section("7. THE PAGE")
 page = (HERE / "dashboard" / "static" / "trackmap.js").read_text(encoding="utf-8")
 index = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
 check("The Tracking card draws the map in place of the abstract route",
-      'id="routeMap"' in index and "window.ctTrackMap.paint({el:$('routeMap')" in index
+      'id="routeMap"' in index and "if (tm) tm.paint({el:$('routeMap')" in index
       and "function routeMapSVG" not in index and "ROUTE_PATHS" not in index)
+check("The shipment card does not wait for the map script (it still shows if the map fails)",
+      index.index("if (tm) tm.paint(") < index.index("putHTML($('routeSide'),", index.index("function paintRoute(){"))
+      and "if (!window.ctTrackMap) return;" not in index)
+check("A map measured while hidden is fitted when it shows, never at 0 × 0",
+      "if (!shown()) { cam = null; return; }" in page and "if (!cam) { cam = fitCam(" in page)
+check("A cluster zoom cannot separate opens the list of its shipments",
+      "fitCam(b).s >= cam.s * 0.9" in page)
 check("The page never makes up coordinates: every point is a record's lat/lon, projected",
       "Math.random" not in page and re.search(r"lat:\s*-?\d", page.split("function boundsAll")[0]) is None)
 check("The marker is the newest reported place, or the destination once arrived — nothing between",

@@ -94,7 +94,7 @@ def places(s, events):
         out.append({"date": _day(e.get("timestamp")), "time": clock, "tz": zone,
                     "text": _text(e).strip()[:160], "place": _locality(e.get("location")),
                     "country": _country(e.get("location")) or None})
-    return {"source": "DHL Shipment Tracking API",
+    return {"source": "DHL Shipment Tracking API", "order": "oldest_first",
             "origin": _locality(s.get("origin")), "origin_country": _country(s.get("origin")) or None,
             "destination": _locality(s.get("destination")),
             "destination_country": _country(s.get("destination")) or None,

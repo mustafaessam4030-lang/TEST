@@ -70,7 +70,9 @@ def airports(path):
     return out
 
 
-ALT_OK = re.compile(r"^[A-Za-z][A-Za-z .'\-()]{2,39}$")
+# Four letters or more: shorter alternates are codes and abbreviations
+# ("LOG", "HUB") that a carrier's text could match by accident.
+ALT_OK = re.compile(r"^[A-Za-z][A-Za-z .'\-()]{3,39}$")
 
 
 def towns(path):
