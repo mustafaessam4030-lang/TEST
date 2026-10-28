@@ -339,6 +339,12 @@ the top items with scores, whether anything was found, and the time taken.
 
 ## 9. Implementation report
 
+The later upgrade (routing, fast understanding, scenarios, 58 more items,
+calculators, optional semantic retrieval) and its measured results against an
+independent held-out set are in `ATLAS_UPGRADE.md`. The counts below are from
+before it.
+
+
 Verified on 28 Oct 2026 against the code, with the results in this section.
 
 **Complete and tested**:

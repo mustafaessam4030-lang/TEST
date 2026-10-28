@@ -1944,6 +1944,15 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
             print("ATLAS AI check skipped: {0}".format(error), flush=True)
     _shared_host = host not in ("127.0.0.1", "localhost")
     _shared_port = port
+    # Load the knowledge once, and build the optional semantic index
+    # (ATLAS_EMBED_MODEL), in the background: the first question never pays.
+    def _warm_knowledge():
+        try:
+            from intelligence import kb as _kbm, kb_embed as _emb
+            _emb.warm(_kbm.kb())
+        except Exception:
+            pass
+    threading.Thread(target=_warm_knowledge, name="atlas-knowledge-warm", daemon=True).start()
     try:
         class QuietServer(ThreadingHTTPServer):
             """
