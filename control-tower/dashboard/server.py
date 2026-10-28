@@ -998,6 +998,14 @@ class Handler(BaseHTTPRequestHandler):
                 default=str))
             return
 
+        if route == "/api/atlas/perf":
+            # Where ATLAS's questions spend their time (stage names and
+            # milliseconds only — no question text): intelligence/trace.py.
+            from intelligence import trace as _trace, kb_embed as _emb
+            self._send(200, json.dumps({"recent": _trace.stats(), "last_hour": _trace.stats(3600),
+                                        "semantic": _emb.status()}, default=str))
+            return
+
         if route.startswith("/api/atlas/") or route.startswith("/api/evidence"):
             self._intel_get(route)
             return
@@ -1071,6 +1079,7 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/api/knowledge/"):
             self._knowledge_get(route)
             return
+
 
         if route == "/api/todo":
             # What needs a person, from the records; only what this person may open.

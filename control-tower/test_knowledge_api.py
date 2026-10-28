@@ -162,5 +162,20 @@ st, b = call(V, "POST", "/api/ask", {"question": "what is the past due share"}, 
 check("…and 'in your data' respects the role (a Viewer may open Clearance)",
       "cannot open the Clearance page" not in b.get("answer", ""), b.get("answer", "")[:300])
 
+print("\nTIMING")
+req = urllib.request.Request(BASE + "/api/ask", data=json.dumps({"question": "What is demurrage?"}).encode(), method="POST")
+req.add_header("Origin", BASE)
+req.add_header("Content-Type", "application/json")
+req.add_header("X-CSRF-Token", Vc)
+with V.open(req, timeout=30) as resp:
+    st_hdr = resp.headers.get("Server-Timing") or ""
+    body = json.loads(resp.read())
+check("Each answer says where its time went (Server-Timing and timing, no question text)",
+      st_hdr.startswith("total;dur=") and "route" in st_hdr and body.get("timing", {}).get("total_ms") is not None, st_hdr)
+st, b = call(V, "GET", "/api/atlas/perf")
+check("The timing summary is for Admins only", st == 403, st)
+st, b = call(A1, "GET", "/api/atlas/perf")
+check("…an Admin sees the percentiles by stage", st == 200 and b["recent"]["requests"] >= 1 and "answer" in b["recent"]["stages"], b)
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

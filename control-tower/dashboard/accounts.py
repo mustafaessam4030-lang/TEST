@@ -59,6 +59,7 @@ GET_PERMISSIONS = (
     ("/api/clearance", "clearance.view"),
     ("/api/knowledge/proposals", "knowledge.propose"),
     ("/api/knowledge/lessons", "runs.view"),
+    ("/api/atlas/perf", "users.manage"),
 )
 WRITE_PERMISSIONS = (
     ("/api/control", "runs.start"),
