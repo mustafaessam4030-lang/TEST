@@ -1051,12 +1051,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(_search.search(q, self._acc_can, _assistant_state()), default=str))
             return
 
-        if route == "/api/notifications":
-            # Recent events from the same records as the tasks; read-only.
-            from dashboard import todo as _todo
-            self._send(200, json.dumps(_todo.notifications(self._acc_can, _assistant_state()), default=str))
-            return
-
         if route == "/api/todo":
             # What needs a person, from the records; only what this person may open.
             from dashboard import todo as _todo

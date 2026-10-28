@@ -1,17 +1,21 @@
 """
-Tasks and notifications: what needs a person, across the platform.
+To Do: what needs a person, across the platform.
 
 TASKS (build) — derived on each request from the records the platform
 already keeps; nothing is stored, so nothing can be duplicated or drift:
 
-    Human Action queue (human_queue.py, via the run state): every task not
-    finished; overdue once its own timeout has passed, urgent before.
+    Human Action queue (human_queue.py, via the run state): a task waiting
+    for a person (overdue once its own timeout has passed, urgent before), a
+    task a person is working on (urgent); and a shipment waiting for a person
+    with no task in the queue (the queue off, or the wait before a task).
     PO Automation (po/service.py): a job needing a person's review (pending
-    approval), a prepared email waiting for a person to send it when
-    auto-send is off (pending approval), a failed job.
+    approval, for those who may review), a prepared email waiting for a
+    person to send it when auto-send is off (pending approval), a job whose
+    email needs checking, a failed job.
     The run: shipments that failed (one task).
     Clearance (dashboard/clearance.py): every open escalation (overdue when
-    its step is past due), shipments 30+ days past due nobody escalated
+    the current export says its step is past due, or, if it has left the
+    export, when its step's due date has passed), shipments 30+ days past due nobody escalated
     (overdue, one task), shipments eHub marks for correction, clearing agents
     with past-due shipments and no email on file, an export over 3 days old.
     Completed: escalations resolved and Human Action tasks finished in the
@@ -22,11 +26,6 @@ open | completed), priority (higher first), level (red | amber | grey, for
 older callers), count, title, detail, href (where it is dealt with), due
 (the record's own date, or None), at (when it started or was completed).
 Each person sees only what their access level lets them open.
-
-NOTIFICATIONS (notifications) — recent events from the same records, newest
-first: a Human Action opened or finished, an escalation opened or resolved,
-an export loaded, a run finished. Read/unread is the viewer's own (kept in
-their browser); nothing here changes any record.
 """
 
 import datetime as _dt
@@ -70,21 +69,19 @@ def _recent(stamp, now):
 
 # ── the run and its Human Action queue ────────────────────────────────────
 
+# Human Action statuses (human_queue.py): who has the next move.
+HUMAN_WAITING = "WAITING_FOR_HUMAN"                     # a person must pick it up (has a timeout)
+HUMAN_WITH_PERSON = {"OPERATOR_OPENED", "VERIFICATION_PENDING"}       # a person is on it
+# HUMAN_COMPLETED, POST_VERIFICATION_CHECK, RESUMING: the run continues by itself, no task.
+
+
 def _human_items(state, now_epoch, now):
-    queue = (state or {}).get("human_queue")
-    out = []
-    if queue is None:
-        # An older state without the queue: the shipments marked waiting.
-        waiting = [s for s in (state or {}).get("shipments") or [] if s.get("state") == "waiting_for_human"]
-        if waiting:
-            out.append(_task("human:waiting", "Human Action", "human_action", "urgent", 95, "red",
-                             "{0} waiting for a person".format(_plural(len(waiting), "shipment")),
-                             "Open Human Action to continue: " + _names([s.get("reference") for s in waiting]),
-                             "/#human", "human.act", count=len(waiting)))
-        return out
+    queue = (state or {}).get("human_queue") or []
+    out, queued = [], set()
     for t in queue:
         status = str(t.get("status") or "")
         ref = t.get("reference") or "a shipment"
+        queued.add(str(t.get("reference") or ""))
         if status in HUMAN_TERMINAL:
             if status == "SUCCESS" and _recent(t.get("closed_at") or t.get("updated_at"), now):
                 out.append(_task("human:" + str(t.get("action_id")), "Human Action", "human_action", "completed", 0,
@@ -92,13 +89,29 @@ def _human_items(state, now_epoch, now):
                                  t.get("label") or "Completed", "/#human", "human.act",
                                  at=t.get("closed_at") or t.get("updated_at")))
             continue
-        timeout = t.get("timeout_epoch")
-        late = isinstance(timeout, (int, float)) and now_epoch > timeout
-        out.append(_task("human:" + str(t.get("action_id")), "Human Action", "human_action",
-                         "overdue" if late else "urgent", 100 if late else 95, "red",
-                         "{0} needs a person: {1}".format(t.get("carrier") or "The carrier page", ref),
-                         t.get("label") or t.get("reason") or "Open Human Action to continue.",
-                         "/#human", "human.act", due=t.get("timeout_at"), at=t.get("created_at")))
+        if status == HUMAN_WAITING:
+            # Only a waiting task has a timeout (human_queue.expire): past it, overdue.
+            timeout = t.get("timeout_epoch")
+            late = isinstance(timeout, (int, float)) and now_epoch > timeout
+            out.append(_task("human:" + str(t.get("action_id")), "Human Action", "human_action",
+                             "overdue" if late else "urgent", 100 if late else 95, "red",
+                             "{0} needs a person: {1}".format(t.get("carrier") or "The carrier page", ref),
+                             t.get("label") or t.get("reason") or "Open Human Action to continue.",
+                             "/#human", "human.act", due=t.get("timeout_at"), at=t.get("created_at")))
+        elif status in HUMAN_WITH_PERSON:
+            out.append(_task("human:" + str(t.get("action_id")), "Human Action", "human_action", "urgent", 90, "red",
+                             "In progress with a person: {0}".format(ref),
+                             t.get("label") or "Finish it in Human Action.", "/#human", "human.act",
+                             at=t.get("created_at")))
+    # A shipment waiting for a person with no task in the queue (the queue off,
+    # or the in-place wait before a task is made) still needs a person.
+    waiting = [s for s in (state or {}).get("shipments") or []
+               if s.get("state") == "waiting_for_human" and str(s.get("reference") or "") not in queued]
+    if waiting:
+        out.append(_task("human:waiting", "Human Action", "human_action", "urgent", 95, "red",
+                         "{0} waiting for a person".format(_plural(len(waiting), "shipment")),
+                         "Open Human Action to continue: " + _names([s.get("reference") for s in waiting]),
+                         "/#human", "human.act", count=len(waiting)))
     return out
 
 
@@ -130,9 +143,16 @@ def _po_items():
         pid, ref = str(j.get("po_id") or ""), j.get("reference") or "a PO job"
         href = "/#po?po=" + quote(pid, safe="") if pid else "/#po"
         what = j.get("label") or j.get("state")
-        if j.get("kpi") == "validation_required" or j.get("state") in PO_REVIEW_STATES:
+        if j.get("state") in PO_REVIEW_STATES:
+            # Approving needs po.process (the PO page's Review): only those who can.
             out.append(_task("po:review:" + pid, "PO Automation", "po_review", "pending_approval", 80, "red",
                              "Review PO {0}".format(ref), "{0} — a person decides; nothing is sent until then.".format(what),
+                             href, "po.process", at=j.get("updated") or j.get("created")))
+        elif j.get("kpi") == "validation_required":
+            # Not a review: e.g. the email's fate is unknown or does not match. Said as it is,
+            # never "nothing is sent" (it may have been).
+            out.append(_task("po:check:" + pid, "PO Automation", "po_check", "urgent", 76, "red",
+                             "Check PO {0}".format(ref), "{0} — open it before doing anything else.".format(what),
                              href, "po.view", at=j.get("updated") or j.get("created")))
         elif j.get("state") == "EMAIL_PREPARED" and not auto_send:
             out.append(_task("po:send:" + pid, "PO Automation", "po_send", "pending_approval", 78, "amber",
@@ -158,12 +178,24 @@ def _clearance_items(today, now):
         return []
     out = []
     escalations = [e for e in all_esc if e.get("status") == "open"]
+    # The current export's own day count, the same figure the Clearance page shows.
+    current = {(r["awb"], r["bu"]): r for r in clearance.records(data)} if data else {}
     for e in escalations:
-        late = isinstance(e.get("overdue"), int) and e["overdue"] > 0
+        row = current.get((e.get("awb"), e.get("bu")))
+        if row is not None and isinstance(row.get("overdue"), int):
+            days = row["overdue"]
+        else:
+            # Not in the current export: from the step's due date as of today
+            # (the count stored when it was escalated would be stale).
+            try:
+                days = (today - _dt.date.fromisoformat(str(e.get("due"))[:10])).days
+            except (TypeError, ValueError):
+                days = None
+        late = days is not None and days > 0
         out.append(_task("esc:" + str(e.get("id")), "Clearance", "escalation", "overdue" if late else "urgent",
                          90 if late else 85, "red", "Escalated: {0} ({1})".format(e.get("awb"), e.get("bu")),
                          "{0}{1} · by {2} on {3}".format(
-                             e.get("step") or "", ", {0:,} days past due".format(e["overdue"]) if late else "",
+                             e.get("step") or "", ", {0:,} days past due".format(days) if late else "",
                              e.get("by"), str(e.get("at") or "")[:10]),
                          "/clearance#q={0}".format(quote(str(e.get("awb") or ""), safe="")), "clearance.view",
                          due=e.get("due"), at=e.get("at")))
@@ -229,60 +261,11 @@ def build(can, state=None, today=None, now=None):
     # Outstanding: highest priority first, then the earliest due date. Completed last, newest first.
     todo = sorted((i for i in items if i["state"] != "completed"),
                   key=lambda i: (-i["priority"], str(i["due"] or "9999"), i["title"]))
-    done = sorted((i for i in items if i["state"] == "completed"), key=lambda i: str(i["at"] or ""), reverse=True)
+    done = sorted((i for i in items if i["state"] == "completed"),
+                  key=lambda i: str(i["at"] or "").replace(" ", "T")[:19], reverse=True)
     items = todo + done
     by_state = {s: sum(1 for i in items if i["state"] == s) for s in STATES}
     outstanding = len(items) - by_state["completed"]
     return {"items": items, "outstanding": outstanding, "by_state": by_state,
             # The number that needs action (red and amber), as before.
             "count": sum(1 for i in items if i["state"] != "completed" and i["level"] != "grey")}
-
-
-# ── notifications ─────────────────────────────────────────────────────────
-
-def notifications(can, state=None, limit=20, now=None):
-    now = now or _dt.datetime.now()
-    out = []
-    if can("human.act"):
-        for t in (state or {}).get("human_queue") or []:
-            ref = t.get("reference") or "a shipment"
-            if t.get("created_at"):
-                out.append({"id": "human-open:{0}".format(t.get("action_id")), "at": t["created_at"], "kind": "human",
-                            "title": "Human Action needed: {0}".format(ref),
-                            "detail": t.get("carrier") or "", "href": "/#human"})
-            if t.get("closed_at") and str(t.get("status") or "") in HUMAN_TERMINAL:
-                out.append({"id": "human-done:{0}".format(t.get("action_id")), "at": t["closed_at"], "kind": "human",
-                            "title": "Human Action finished: {0}".format(ref),
-                            "detail": t.get("label") or t.get("status") or "", "href": "/#human"})
-    if can("runs.view"):
-        run = (state or {}).get("run") or {}
-        if run.get("finished_at"):
-            out.append({"id": "run-done:{0}".format(run.get("run_id")), "at": run["finished_at"], "kind": "run",
-                        "title": "Run finished", "detail": "Run {0} · {1}".format(run.get("run_id") or "", run.get("status") or ""),
-                        "href": "/#shipments"})
-    if can("clearance.view"):
-        try:
-            from dashboard import clearance
-            for e in clearance.escalations():
-                awb = str(e.get("awb") or "")
-                href = "/clearance#q=" + quote(awb, safe="")
-                if e.get("at"):
-                    out.append({"id": "esc-open:{0}".format(e.get("id")), "at": e["at"], "kind": "escalation",
-                                "title": "Escalated: {0} ({1})".format(awb, e.get("bu")),
-                                "detail": "by {0}".format(e.get("by")), "href": href})
-                if e.get("resolved_at"):
-                    out.append({"id": "esc-done:{0}".format(e.get("id")), "at": e["resolved_at"], "kind": "escalation",
-                                "title": "Resolved: {0} ({1})".format(awb, e.get("bu")),
-                                "detail": "by {0}".format(e.get("resolved_by")), "href": href})
-            current = (clearance.status() or {}).get("current") or {}
-            if current.get("loaded_at"):
-                out.append({"id": "export:{0}".format(current["loaded_at"]), "at": current["loaded_at"], "kind": "export",
-                            "title": "eHub export loaded",
-                            "detail": "{0} · {1:,} shipments · by {2}".format(current.get("file") or "", int(current.get("count") or 0),
-                                                                             current.get("by") or ""),
-                            "href": "/clearance"})
-        except Exception:
-            pass
-    out = [n for n in out if _recent(n["at"], now)]
-    out.sort(key=lambda n: str(n["at"]), reverse=True)
-    return {"items": out[:limit]}

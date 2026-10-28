@@ -2266,11 +2266,10 @@ body{letter-spacing:-.003em}
    the logo stands alone (the name is in the tab title either way). */
 .brand-p{white-space:nowrap}
 @media (min-width:881px) and (max-width:1559px){.brand.has-logo .brand-t{display:none}}
-/* Phones: the profile chip gives way so Sign out, search and the bell fit. */
+/* Phones: the profile chip and the gear give way so Sign out, search and To Do
+   fit without overlapping (Settings is in the menu there). */
 @media (max-width:600px){.pf-me{display:none!important}.appbar .ibtn[data-go="settings"]{display:none}}
-.cmap,.actreq{margin-bottom:24px}
-.actreq[hidden]{display:none}
-.actreq [data-task-center] .tk-list{max-height:430px;overflow:auto}
+.cmap{margin-bottom:24px}
 .cmap[hidden]{display:none}
 .cmap .cbtn{text-decoration:none;color:var(--ink);font-size:12.5px}
 
@@ -2554,7 +2553,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
       <button class="pf-out" id="pfOut" hidden>Sign out</button>
     </span>
     <span data-search-slot></span>
-    <span data-notify-slot></span>
+    <span data-todo-slot></span>
     <button class="ibtn" data-go="settings" aria-label="Settings" title="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </header>
@@ -2630,13 +2629,6 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
     <!-- ═══ OVERVIEW ═══ -->
     <section class="page on" data-p="overview">
       <div class="kpis" id="kpis"></div>
-      <!-- TO DO: everything that needs a person, highest priority first, from
-           the platform's own records (static/tasks.js, /api/todo). -->
-      <section class="card actreq" id="todo" data-action-card hidden aria-labelledby="actT">
-        <div class="card-h"><div><div class="card-t" id="actT">To Do</div>
-          <div class="card-s tk-sum" data-action-sum></div></div></div>
-        <div class="card-b" data-task-center style="padding-top:14px;padding-bottom:12px"></div>
-      </section>
       <!-- WHERE SHIPMENTS CLEAR: the eHub export by BU on a map
            (static/clearmap.js, /api/clearance/map). Hidden for a role without
            the Clearance page; a BU opens Clearance filtered to it. -->
@@ -8080,7 +8072,6 @@ setTimeout(() => document.body.classList.remove('first-load'), 1400);
 </script>
 <script src="/static/clearmap.js" defer></script>
 <script src="/static/search.js" defer></script>
-<script src="/static/tasks.js" defer></script>
-<script src="/static/notify.js" defer></script>
+<script src="/static/todo.js" defer></script>
 </body>
 </html>

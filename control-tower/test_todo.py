@@ -1,10 +1,10 @@
 """
-Tasks and notifications (dashboard/todo.py): what needs a person, derived
+To Do (dashboard/todo.py): what needs a person, derived
 from the platform's records, with a state (overdue, urgent, pending
 approval, to do, completed), a priority, a due date where the record has
 one, a link to where it is dealt with, and only what the person's access
-level lets them open. Plus the pages: no overlay on load, the bell, the
-Overview card, the Task Center. No browser, no network.
+level lets them open. Plus the pages: the original Overview layout and the
+To Do slide-out. No browser, no network.
 """
 import datetime as dt
 import json
@@ -60,7 +60,7 @@ STATE = {"human_queue": [
     {"action_id": "late", "reference": "157-11111111", "carrier": "Qatar Airways Cargo", "status": "WAITING_FOR_HUMAN",
      "created_at": fmt(NOW - dt.timedelta(hours=2)), "timeout_at": fmt(NOW - dt.timedelta(minutes=5)),
      "timeout_epoch": EPOCH - 300, "label": "Waiting for a person"},
-    {"action_id": "fresh", "reference": "176-22222222", "carrier": "Emirates", "status": "OPERATOR_OPENED",
+    {"action_id": "fresh", "reference": "176-22222222", "carrier": "Emirates", "status": "WAITING_FOR_HUMAN",
      "created_at": fmt(NOW - dt.timedelta(minutes=10)), "timeout_at": fmt(NOW + dt.timedelta(minutes=50)),
      "timeout_epoch": EPOCH + 3000},
     {"action_id": "done", "reference": "057-33333333", "status": "SUCCESS", "label": "Written and read back",
@@ -138,47 +138,73 @@ tv = {i["id"] for i in todo.build(lambda p: p in viewer, STATE, now=NOW)["items"
 check("a Viewer sees no Human Action task (human.act), no send approval (po.send), no contacts or export (Admin)",
       not any(t.startswith("human:") for t in tv) and "po:send:p-send" not in tv and "clr:contacts" not in tv
       and "clr:export" not in tv, sorted(tv))
-check("…but sees the escalation, the PO review and the run's failures",
-      {"esc:" + ESC["id"], "po:review:p-review", "run:failed"} <= tv, sorted(tv))
+check("…nor a PO review it cannot approve (po.process)", "po:review:p-review" not in tv, sorted(tv))
+check("…but sees the escalation and the run's failures", {"esc:" + ESC["id"], "run:failed"} <= tv, sorted(tv))
 check("without clearance.view: no Clearance task",
       not any(i["source"] == "Clearance" for i in todo.build(lambda p: p == "dashboard.view", STATE, now=NOW)["items"]))
 
-print("\n4. NOTIFICATIONS")
-nt = todo.notifications(everyone, STATE, now=NOW)["items"]
-kinds = [n["id"].split(":")[0] for n in nt]
-check("recent events: Human Action opened and finished, escalations opened and resolved, a run finished",
-      {"human-open", "human-done", "esc-open", "esc-done", "run-done"} <= set(kinds), kinds)
-check("newest first, nothing older than 7 days",
-      [n["at"] for n in nt] == sorted([n["at"] for n in nt], reverse=True) and "human-open:old" not in [n["id"] for n in nt])
-check("a Viewer gets no Human Action notification", not any(n["kind"] == "human" for n in
-      todo.notifications(lambda p: p in viewer, STATE, now=NOW)["items"]))
+print("\n4. FROM THE REVIEW")
+q = todo.build(everyone, {"human_queue": [], "shipments": [{"reference": "X1", "state": "waiting_for_human"}]}, now=NOW)
+check("queue off or empty: a shipment waiting for a person is still a task",
+      [i["id"] for i in q["items"] if i["source"] == "Human Action"] == ["human:waiting"], q["items"])
+q = todo.build(everyone, {"human_queue": [
+    {"action_id": "busy", "reference": "R1", "status": "OPERATOR_OPENED", "timeout_epoch": EPOCH - 999},
+    {"action_id": "auto", "reference": "R2", "status": "RESUMING", "timeout_epoch": EPOCH - 999}],
+    "shipments": [{"reference": "R2", "state": "waiting_for_human"}]}, now=NOW)
+hq = {i["id"]: i for i in q["items"] if i["source"] == "Human Action"}
+check("a person already on it: urgent, never overdue (only a waiting task has a timeout)",
+      hq.get("human:busy", {}).get("state") == "urgent" and "In progress" in hq["human:busy"]["title"], hq)
+check("the run resuming by itself is not a task, and its shipment is not counted twice", list(hq) == ["human:busy"], list(hq))
+_esc = {"id": "e9", "awb": "A9", "bu": "EG", "step": "Customs Release", "due": "2099-01-01", "overdue": 40,
+        "by": "x@y", "at": "2026-10-01T10:00:00", "status": "open"}
+_orig = clearance.escalations
+clearance.escalations = lambda: [_esc]
+q = {i["id"]: i for i in todo.build(everyone, {}, now=NOW)["items"]}
+check("an escalation no longer in the export: state from its step's due date today, not the count stored when made",
+      q["esc:e9"]["state"] == "urgent" and "days past due" not in q["esc:e9"]["detail"], q["esc:e9"])
+clearance.escalations = _orig
 
-print("\n5. THE PAGES")
+
+class _Unknown:
+    def summary(self):
+        return {"config": {"auto_send": True}, "jobs": [
+            {"po_id": "p-unk", "reference": "MEDU0009", "doctype": "boe", "state": "EMAIL_UNKNOWN",
+             "kpi": "validation_required", "label": "UNKNOWN — reconcile, do not resend"}]}
+
+
+_po_service.local = lambda: _Unknown()
+q = {i["id"]: i for i in todo.build(everyone, {}, now=NOW)["items"]}
+check("a PO email whose fate is unknown is 'Check', never 'nothing is sent'",
+      "po:check:p-unk" in q and "nothing is sent" not in q["po:check:p-unk"]["detail"]
+      and "do not resend" in q["po:check:p-unk"]["detail"], q.get("po:check:p-unk"))
+_po_service.local = lambda: _Svc()
+
+_e = {i["id"]: i for i in todo.build(everyone, STATE, now=NOW)["items"]}["esc:" + ESC["id"]]
+check("an escalation in the export shows the export's own day count (as the Clearance page)",
+      "60 days past due" in _e["detail"] and _e["state"] == "overdue", _e["detail"])
+
+print("\n5. THE PAGES: the original layout, the To Do slide-out")
 S = os.path.join(HERE, "dashboard", "static")
 idx = open(os.path.join(S, "index.html"), encoding="utf-8").read()
 cl = open(os.path.join(S, "clearance.html"), encoding="utf-8").read()
-tasks_js = open(os.path.join(S, "tasks.js"), encoding="utf-8").read()
-notify_js = open(os.path.join(S, "notify.js"), encoding="utf-8").read()
-check("the old To Do overlay is gone from both pages", not os.path.exists(os.path.join(S, "todo.js"))
-      and "todo.js" not in idx and "todo.js" not in cl and "data-todo-slot" not in idx + cl)
-check("the bell in the top bar of both pages", idx.count("<span data-notify-slot></span>") == 1
-      and cl.count("<span data-notify-slot></span>") == 1 and "notify.js" in idx and "notify.js" in cl)
-check("the bell opens nothing by itself (only on a click)", "open(true" not in notify_js and 'btn.addEventListener("click"' in notify_js)
-check("…closes on Escape (focus back), outside click, Tab away, or picking an item",
-      '"Escape"' in notify_js and "focusout" in notify_js and "!panel.contains(e.target)" in notify_js and "btn.focus()" in notify_js)
-check("…stays inside the screen and on the page (not clipped by the bar)",
-      "document.body.appendChild(panel)" in notify_js and "innerWidth - w - 8" in notify_js)
-check("Overview: the To Do list itself (all tasks, filters by state, how many outstanding)",
-      'id="todo" data-action-card' in idx and "data-task-center" in idx and "FILTERS" in tasks_js
-      and "outstanding" in tasks_js and idx.index('id="todo"') < idx.index("data-clearmap"))
-check("no separate Tasks page; the bell leads to the list on the Overview",
-      "{id:'tasks'" not in idx and 'data-p="tasks"' not in idx and "/#tasks" not in cl
-      and '/#overview?todo=1' in notify_js and "scrollIntoView" in tasks_js)
-check("states shown as the console's status pills; every value escaped; same-site links only",
-      "s-${esc(t.state)}" in tasks_js and "${esc(t.title)}" in tasks_js and "/^\\/(?!\\/)/.test" in tasks_js
-      and "${esc(n.title)}" in notify_js)
-check("nothing is counted in the browser: counts come from /api/todo",
-      "data.outstanding" in tasks_js and "by_state" in tasks_js and "/api/todo" in tasks_js)
+js = open(os.path.join(S, "todo.js"), encoding="utf-8").read()
+check("the Overview keeps its layout: no To Do card, no Tasks page, no bell",
+      "data-action-card" not in idx and "data-task-center" not in idx and "{id:'tasks'" not in idx
+      and "data-notify-slot" not in idx + cl and not os.path.exists(os.path.join(S, "tasks.js"))
+      and not os.path.exists(os.path.join(S, "notify.js")))
+check("the Overview still has its Tracking map, On the way and ATLAS card",
+      'class="card route"' in idx and "routeMap" in idx and "On the way" in idx and "atlas-fig" in idx)
+check("the To Do button in the top bar of both pages", idx.count("<span data-todo-slot></span>") == 1
+      and cl.count("<span data-todo-slot></span>") == 1 and '<script src="/static/todo.js" defer></script>' in idx + cl)
+check("the slide-out opens only on a click, never on load", "open(true)" not in js and 'btn.addEventListener("click"' in js)
+check("…compact, under its button, inside the screen (not the full height of the window)",
+      "max-height:min(480px" in js and "bottom:0" not in js and "function place()" in js and "innerWidth - w - 8" in js)
+check("…dismissible: x, Escape (focus back), a click elsewhere, picking an item",
+      ".todo-x" in js and '"Escape"' in js and "!panel.contains(e.target)" in js and "btn.focus()" in js
+      and 'closest("a")' in js)
+check("…lists what is still to do, with its state and due date; every value escaped; same-site links only",
+      'i.state !== "completed"' in js and "STATE[i.state]" in js and "esc(day(i.due))" in js
+      and "${esc(i.title)}" in js and "/^\\/(?![\\/\\\\])/.test" in js)
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
