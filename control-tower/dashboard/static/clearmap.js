@@ -14,16 +14,31 @@
 .cm-head{margin:0 0 14px;font-size:14.5px;line-height:1.45;color:var(--ink)}
 .cm-head b{font-weight:650}
 .cm-wrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:20px;align-items:start}
-.cm-map{position:relative;border-radius:12px;background:var(--surface-2);overflow:hidden;min-height:140px}
-.cm-map svg{width:100%;height:auto;max-height:420px;display:block}
-.cm-map .land{fill:var(--surface-3);stroke:var(--surface-2);stroke-width:.9}
-.cm-map .land.bu{fill:var(--line-hi)}
-.cm-map a{cursor:pointer}
-.cm-map .dot{stroke:var(--surface);stroke-width:2;transition:stroke .15s}
-.cm-map a:hover .dot,.cm-map a:focus-visible .dot{stroke:var(--ink)}
-.cm-map a:focus-visible{outline:none}
-.cm-map .dot.ok{fill:var(--grn-dot)} .cm-map .dot.mid{fill:var(--y-dot)} .cm-map .dot.bad{fill:var(--red)} .cm-map .dot.none{fill:var(--nomode)}
-.cm-map text{font:650 11px var(--s);fill:var(--ink);pointer-events:none;paint-order:stroke;stroke:var(--surface-2);stroke-width:3px;stroke-linejoin:round}
+.cm-map{position:relative;border-radius:14px;overflow:hidden;min-height:140px;border:1px solid var(--line-2);
+  background:radial-gradient(120% 90% at 30% 20%,var(--cm-sea-hi) 0%,var(--cm-sea) 70%)}
+.cm-map svg{width:100%;height:auto;max-height:440px;display:block}
+.cm-map .grid{fill:none;stroke:var(--cm-grid);stroke-width:.6}
+.cm-map .land{fill:var(--cm-land);stroke:var(--cm-border);stroke-width:.55;stroke-linejoin:round}
+.cm-map .land.bu{fill:var(--cm-bu);stroke:var(--cm-bu-edge);stroke-width:.8}
+.cm-map a{cursor:pointer;outline:none}
+.cm-map .b{transform-box:fill-box;transform-origin:center;transition:transform .22s var(--e)}
+.cm-map a:hover .b,.cm-map a:focus-visible .b{transform:scale(1.12)}
+.cm-map .halo{opacity:.16}
+.cm-map .dot{stroke:var(--cm-ring);stroke-width:2.2;filter:url(#cmShadow)}
+.cm-map a:focus-visible .dot{stroke:var(--vio);stroke-width:3}
+.cm-map .ok{fill:var(--grn-dot)} .cm-map .mid{fill:var(--y-dot)} .cm-map .bad{fill:var(--red)} .cm-map .none{fill:var(--nomode)}
+.cm-map .pill rect{fill:var(--cm-pill);stroke:var(--line);stroke-width:.6;filter:url(#cmShadow)}
+.cm-map .pill text{font:650 10.5px var(--s);fill:var(--ink);letter-spacing:.01em}
+.cm-map .pill text tspan.n{font-weight:500;fill:var(--mid)}
+.cm-map .grow{animation:cmIn .55s var(--e) both}
+@keyframes cmIn{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.cm-map .grow{animation:none}.cm-map .b{transition:none}}
+:root{--cm-sea:#EEF2F7;--cm-sea-hi:#F7F9FC;--cm-grid:rgba(30,60,110,.07);--cm-land:#FFFFFF;--cm-border:rgba(30,45,70,.16);
+  --cm-bu:#F1F3FF;--cm-bu-edge:rgba(75,80,216,.38);--cm-ring:#FFFFFF;--cm-pill:rgba(255,255,255,.94)}
+:root[data-theme="dark"]{--cm-sea:#0E131C;--cm-sea-hi:#141B27;--cm-grid:rgba(255,255,255,.05);--cm-land:#1B2230;--cm-border:rgba(255,255,255,.10);
+  --cm-bu:#232A44;--cm-bu-edge:rgba(154,157,248,.45);--cm-ring:#0B0E14;--cm-pill:rgba(20,25,34,.92)}
+.cm-leg .sz{display:inline-flex;align-items:center;gap:4px}
+.cm-leg .sz b{display:inline-block;border-radius:50%;border:1.5px solid var(--faint);background:transparent}
 .cm-msg{padding:28px 16px;text-align:center;color:var(--faint);font-size:13px}
 .cm-msg a{color:var(--vio)}
 .cm-list{display:grid;gap:2px;font-size:13px;max-height:420px;overflow:auto;align-content:start}
@@ -85,29 +100,40 @@
     if (REGION && REGION.countries) {
       const byIso = {}; bus.forEach((b) => { if (places[b.bu]) byIso[places[b.bu].iso] = b; });
       const max = Math.max(1, ...bus.map((b) => b.open));
-      let land = "", dots = "";
+      const size = (b) => (b.open ? 7 + 21 * Math.sqrt(b.open / max) : 5);
+      let land = "", spots = [];
       const pts = [];
       REGION.countries.forEach((c) => {
         const b = byIso[c.id];
         land += `<path class="land${b ? " bu" : ""}" d="${c.d}"><title>${esc(c.name)}</title></path>`;
-        if (!b) return;
-        pts.push(c.label);
-        const r = b.open ? 6 + 20 * Math.sqrt(b.open / max) : 5;
+        if (b) { pts.push(c.label); spots.push({b, x: c.label[0], y: c.label[1], r: size(b)}); }
+      });
+      // Smaller bubbles drawn last, so none hides behind a bigger neighbour.
+      spots.sort((p, q) => q.r - p.r);
+      let dots = "";
+      spots.forEach((p, i) => {
+        const b = p.b, t = tone(b), label = `${esc(b.bu)} `, n = fmt(b.open);
+        const w = 12 + 6.4 * (b.bu.length + 1) + 6 * n.length, h = 17, ly = p.y + p.r + 6;
         dots += `<a href="${link(b.bu)}" aria-label="${esc(b.bu)}: ${fmt(b.open)} open, ${fmt(b.late)} past due" data-tip="${esc(tipFor(b, places[b.bu]))}">` +
-          `<circle class="dot ${tone(b)}" cx="${c.label[0]}" cy="${c.label[1]}" r="${r.toFixed(1)}"></circle>` +
-          `<text x="${c.label[0]}" y="${(c.label[1] + r + 12).toFixed(1)}" text-anchor="middle">${esc(b.bu)} ${fmt(b.open)}</text></a>`;
+          `<g class="grow" style="animation-delay:${(i * 45)}ms;transform-origin:${p.x}px ${p.y}px"><g class="b">` +
+          `<circle class="halo ${t}" cx="${p.x}" cy="${p.y}" r="${(p.r * 1.65).toFixed(1)}"></circle>` +
+          `<circle class="dot ${t}" cx="${p.x}" cy="${p.y}" r="${p.r.toFixed(1)}"></circle></g>` +
+          `<g class="pill"><rect x="${(p.x - w / 2).toFixed(1)}" y="${ly.toFixed(1)}" width="${w.toFixed(1)}" height="${h}" rx="8.5"></rect>` +
+          `<text x="${p.x}" y="${(ly + 12).toFixed(1)}" text-anchor="middle">${label}<tspan class="n">${n}</tspan></text></g></g></a>`;
       });
       let vb = REGION.viewBox;
       if (pts.length) {          // framed on the BUs that are placed, at the map's own shape
-        const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), pad = 70, aspect = 1.75;
-        let x0 = Math.min(...xs) - pad, w = Math.max(...xs) + pad - x0, y0 = Math.min(...ys) - pad, h = Math.max(...ys) + pad - y0;
+        const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), pad = 74, aspect = 1.75;
+        let x0 = Math.min(...xs) - pad, w = Math.max(...xs) + pad - x0, y0 = Math.min(...ys) - pad, h = Math.max(...ys) + pad + 18 - y0;
         if (w / h < aspect) { const nw = h * aspect; x0 -= (nw - w) / 2; w = nw; } else { const nh = w / aspect; y0 -= (nh - h) / 2; h = nh; }
         vb = [x0, y0, w, h].map((v) => Math.round(v));
       }
-      map = `<svg viewBox="${vb.join(" ")}" role="img" aria-label="Map: open shipments by BU">${land}${dots}</svg>`;
+      map = `<svg viewBox="${vb.join(" ")}" role="img" aria-label="Map: open shipments by BU">` +
+        `<defs><filter id="cmShadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#0B1F33" flood-opacity=".22"/></filter></defs>` +
+        `${REGION.graticule ? `<path class="grid" d="${REGION.graticule}"></path>` : ""}${land}${dots}</svg>`;
     }
     body.innerHTML = `<p class="cm-head">${head}</p><div class="cm-wrap"><div class="cm-map">${map}</div><div class="cm-list">${list}</div></div>
-      <div class="cm-leg"><span>Bubble size: open shipments</span><span><i style="background:var(--grn-dot)"></i>under 20% of them past due</span>
+      <div class="cm-leg"><span class="sz"><b style="width:8px;height:8px"></b><b style="width:14px;height:14px"></b><b style="width:20px;height:20px"></b>&nbsp;open shipments</span><span><i style="background:var(--grn-dot)"></i>under 20% of them past due</span>
       <span><i style="background:var(--y-dot)"></i>20–50%</span><span><i style="background:var(--red)"></i>over 50%</span>
       <span><i style="background:var(--nomode)"></i>none open</span><span>The export has no origin or position, so no routes are drawn.</span></div>`;
   }

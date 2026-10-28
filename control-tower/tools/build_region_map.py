@@ -51,7 +51,7 @@ def ring(arcs, ids):
     return out
 
 
-def simplify(points, tol=1.6):
+def simplify(points, tol=0.55):
     keep = [points[0]]
     for p in points[1:]:
         if abs(p[0] - keep[-1][0]) + abs(p[1] - keep[-1][1]) >= tol:
@@ -89,7 +89,7 @@ def main(path):
                 pts = simplify([project(lo, la) for lo, la in lonlat])
                 if len(pts) < 3:
                     continue
-                d.append("M" + "L".join("{0:.0f} {1:.0f}".format(x, y) for x, y in pts) + "Z")
+                d.append("M" + "L".join("{0:.1f} {1:.1f}".format(x, y) for x, y in pts) + "Z")
                 if k == 0:
                     size, c = area_centroid(pts)
                     if size > best[0]:
@@ -101,8 +101,16 @@ def main(path):
             continue                          # centred outside the map: not drawn
         countries.append({"id": str(g.get("id") or ""), "name": (g.get("properties") or {}).get("name", ""),
                           "d": "".join(d), "label": [round(best[1][0], 1), round(best[1][1], 1)]})
+    # A faint graticule every 10 degrees, for the map's sense of place.
+    grid = []
+    for lon in range(-20, 61, 10):
+        (x0, y0), (x1, y1) = project(lon, LAT1), project(lon, LAT0)
+        grid.append("M{0:.1f} {1:.1f}L{2:.1f} {3:.1f}".format(x0, y0, x1, y1))
+    for lat in range(-10, 41, 10):
+        (x0, y0), (x1, y1) = project(LON0, lat), project(LON1, lat)
+        grid.append("M{0:.1f} {1:.1f}L{2:.1f} {3:.1f}".format(x0, y0, x1, y1))
     out = {"source": "Natural Earth 1:50m (public domain) via world-atlas 2.0.2 (ISC)",
-           "viewBox": [0, 0, round(WIDTH), round(HEIGHT)], "countries": countries}
+           "viewBox": [0, 0, round(WIDTH), round(HEIGHT)], "graticule": "".join(grid), "countries": countries}
     target = Path(__file__).resolve().parent.parent / "dashboard" / "static" / "maps" / "region.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
