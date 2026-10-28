@@ -2266,6 +2266,9 @@ body{letter-spacing:-.003em}
    the logo stands alone (the name is in the tab title either way). */
 .brand-p{white-space:nowrap}
 @media (min-width:881px) and (max-width:1559px){.brand.has-logo .brand-t{display:none}}
+.cmap{margin-bottom:24px}
+.cmap[hidden]{display:none}
+.cmap .cbtn{text-decoration:none;color:var(--ink);font-size:12.5px}
 
 /* Page rhythm: an 8-point scale, headings that state rather than shout. */
 .page{padding:28px 32px 56px}
@@ -2623,6 +2626,15 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
     <!-- ═══ OVERVIEW ═══ -->
     <section class="page on" data-p="overview">
       <div class="kpis" id="kpis"></div>
+      <!-- WHERE SHIPMENTS CLEAR: the eHub export by BU on a map
+           (static/clearmap.js, /api/clearance/map). Hidden for a role without
+           the Clearance page; a BU opens Clearance filtered to it. -->
+      <section class="card cmap" data-clearmap hidden aria-labelledby="cmapT">
+        <div class="card-h"><div><div class="card-t" id="cmapT">Where shipments clear</div>
+          <div class="card-s" data-clearmap-note></div></div>
+          <div class="sp"></div><a class="cbtn" href="/clearance">Open Clearance</a></div>
+        <div class="card-b" data-clearmap-body></div>
+      </section>
       <div class="ov-vis">
         <!-- TRACKING. A map of the shipment's way through ATA — Hub, carrier,
              data, Hub write, verified — not a GPS map: no position is
@@ -8055,6 +8067,7 @@ setTimeout(() => document.body.classList.remove('first-load'), 1400);
   }, true);
 })();
 </script>
+<script src="/static/clearmap.js" defer></script>
 <script src="/static/search.js" defer></script>
 <script src="/static/todo.js" defer></script>
 </body>

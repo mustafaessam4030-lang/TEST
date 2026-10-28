@@ -224,6 +224,8 @@ check("a newer file in the inbox is read without anyone uploading", stt.get("sta
       and stt["current"]["source"] == "inbox", stt)
 call(V, "GET", "/api/clearance/status")
 check("the same inbox file is not read twice", js(call(V, "GET", "/api/clearance/status")[1]).get("state") == "ready")
+_st, _mb, _ = call(V, "GET", "/api/clearance/map")
+check("a Viewer gets the Overview map's figures (clearance.view)", _st == 200 and "bus" in js(_mb) and "places" in js(_mb), _st)
 _st, _pb, _ = call(V, "GET", "/api/clearance/places")
 check("a Viewer gets the map's places (clearance.view)", _st == 200 and js(_pb)["places"]["EG"]["country"] == "Egypt", _st)
 
@@ -545,9 +547,21 @@ _reg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "
 check("the map's outlines ship with the platform (Natural Earth), every placed BU's country in them",
       "Natural Earth" in _reg["source"] and {v["iso"] for v in _pl.values()} <= {c["id"] for c in _reg["countries"]})
 _cl0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "clearance.html"), encoding="utf-8").read()
-check("the page draws the map and the headline from the rows on screen",
-      "function mapCard()" in _cl0 and "function headline(R)" in _cl0 and 'rows(["bu"])' in _cl0
-      and "no routes are drawn" in _cl0)
+check("Clearance keeps the headline from the rows on screen; the map is on the Overview",
+      "function headline(R)" in _cl0 and "function mapCard()" not in _cl0 and 'id="mapcard"' not in _cl0)
+_ix0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "index.html"), encoding="utf-8").read()
+_cm0 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "static", "clearmap.js"), encoding="utf-8").read()
+check("the Overview has the map card (hidden until the figures load) and its script",
+      '<section class="card cmap" data-clearmap hidden' in _ix0 and '<script src="/static/clearmap.js" defer></script>' in _ix0)
+check("the map escapes every value, links only to Clearance, says it draws no routes, hides for a role without access",
+      "${esc(b.bu)}" in _cm0 and '"/clearance#bu=" + encodeURIComponent(bu)' in _cm0 and "no routes are drawn" in _cm0
+      and "r.status === 403" in _cm0 and "box.hidden = true" in _cm0)
+_ms = clearance.map_summary()
+_q1 = clearance.query(None)
+check("the map's figures are the export's own counts (open, past due, per BU)",
+      _ms["open"] == _q1["open"] and _ms["late"] == _q1["past_due"] and _ms["total"] == _q1["total"]
+      and sum(b["late"] for b in _ms["bus"]) == _q1["past_due"]
+      and {b["bu"]: b["late"] for b in _ms["bus"] if b["late"]} == dict(_q1["past_due_by_bu"]), _ms)
 check("forwarder and clearing-agent filters, kept in the link and sent to ATLAS",
       'id="f-ffw"' in _cl0 and 'id="f-agent"' in _cl0 and '"ffw","agent","status"' in _cl0
       and 'ALLK.forEach((k) => { if (state[k] && state[k] !== "All") v[k] = state[k]; });' in _cl0)

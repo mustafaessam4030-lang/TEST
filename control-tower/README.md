@@ -290,6 +290,20 @@ CSV, a detail panel). Everything on the page is clickable to filter.
   or "status" gives the automation's state, anyone waiting on Human Action, and
   the Clearance headline.
 
+### Overview map, To Do and search
+
+- **Where shipments clear** (Overview): each BU's open shipments on a map of
+  Africa and the Middle East (bubble size) and the share past due (colour),
+  from the loaded export (`/api/clearance/map`). A BU is placed only where its
+  code is the country's ISO code; JR and LB are listed, not guessed. The
+  export has no origin or position, so no routes are drawn. Clicking a BU
+  opens Clearance filtered to it. Outlines: Natural Earth (public domain),
+  `tools/build_region_map.py`.
+- **To Do** (top bar, side panel): what needs a person, from the records
+  (`dashboard/todo.py`), each item for the roles that may open it.
+- **Search** (top bar, `/` or Ctrl+K): an AWB, BOL or PO in the run, the
+  Clearance export and PO jobs (`dashboard/search.py`).
+
 ## ATLAS on Snowflake Cortex (optional, billed in Snowflake credits)
 
 ATLAS can word its answers with a model in Mantrac's Snowflake account

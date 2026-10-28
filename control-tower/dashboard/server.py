@@ -1057,6 +1057,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(_todo.build(self._acc_can, _assistant_state()), default=str))
             return
 
+        if route == "/api/clearance/map":
+            # The Overview's map: per BU counts from the export (dashboard/clearance.py).
+            summary = _clearance.map_summary()
+            self._send(200, json.dumps(summary if summary else {"empty": True}, default=str))
+            return
+
         if route == "/api/clearance/places":
             # Which BU is which country on the map (dashboard/clearance.py).
             self._send(200, json.dumps({"places": _clearance.places()}))

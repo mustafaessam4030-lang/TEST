@@ -71,34 +71,9 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .card>h2 small{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--muted)}
 .note{font-size:11.5px;color:var(--muted)}
 
-/* where shipments clear: map + headline */
-.mapcard{margin-bottom:16px}
-.headline{margin:-4px 0 14px;font-size:15px;line-height:1.45;font-weight:500;color:var(--ink)}
-.headline b{font-weight:650}
-.mapwrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(250px,1fr);gap:20px;align-items:start}
-.map{position:relative;border-radius:var(--r);background:var(--surface-2);overflow:hidden;min-height:120px}
-.map svg{width:100%;height:auto;max-height:430px;display:block}
-.map .land{fill:var(--surface-3);stroke:var(--surface-2);stroke-width:.9}
-.map .land.bu{fill:var(--line-hi)}
-.map .land.bu.on{fill:var(--vio-line)}
-.map .dot{cursor:pointer;stroke:var(--surface);stroke-width:2;transition:stroke-width .15s var(--e)}
-.map .dot:hover,.map .dot:focus-visible{stroke:var(--ink);outline:none}
-.map .dot.on{stroke:var(--vio);stroke-width:3.5}
-.map .dot.ok{fill:var(--grn-dot)} .map .dot.mid{fill:var(--y-dot)} .map .dot.bad{fill:var(--red)} .map .dot.none{fill:var(--nomode)}
-.map text{font:650 11px var(--s);fill:var(--ink);pointer-events:none;paint-order:stroke;stroke:var(--surface-2);stroke-width:3px;stroke-linejoin:round}
-.map .msg{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:13px}
-.maplist{display:grid;gap:2px;font-size:13px;max-height:430px;overflow:auto;align-content:start}
-.maplist .mr{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--r-sm);cursor:pointer}
-.maplist .mr:hover{background:var(--surface-3)}
-.maplist .mr.on{background:var(--vio-wash)}
-.maplist .mr b{font-weight:650}
-.maplist .mr small{display:block;color:var(--faint);font-size:11.5px}
-.maplist .mr .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.maplist .mr .n em{font-style:normal;color:var(--red);font-weight:600}
-.maplist .mh{font:var(--t-label);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:0 8px 6px}
-.maplegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--faint);margin-top:10px}
-.maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
-@media (max-width:1100px){.mapwrap{grid-template-columns:minmax(0,1fr)}}
+/* the headline under the metrics (the map is on the Overview) */
+.headline{margin:-8px 0 16px 2px;font-size:14px;line-height:1.45;font-weight:400;color:var(--mid)}
+.headline b{font-weight:650;color:var(--ink)}
 
 /* KPIs: the console's metric row (.kpis), clickable to filter */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));background:var(--surface);
@@ -370,21 +345,7 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
 
   <div class="kpis" id="kpis" role="group" aria-label="Clearance metrics"></div>
   <div class="kpis-note" id="k-note"></div>
-
-  <section class="card mapcard" id="mapcard" aria-labelledby="map-h">
-    <h2 id="map-h">Where shipments clear <small id="map-note"></small></h2>
-    <p class="headline" id="headline"></p>
-    <div class="mapwrap">
-      <div class="map" id="map"><div class="msg">Loading the map…</div></div>
-      <div class="maplist" id="maplist"></div>
-    </div>
-    <div class="maplegend"><span>Bubble size: open shipments</span>
-      <span><i style="background:var(--grn-dot)"></i>under 20% of them past due</span>
-      <span><i style="background:var(--y-dot)"></i>20–50%</span>
-      <span><i style="background:var(--red)"></i>over 50%</span>
-      <span><i style="background:var(--nomode)"></i>none open</span>
-      <span>The export has no origin or position, so no routes are drawn.</span></div>
-  </section>
+  <p class="headline" id="headline"></p>
 
   <div class="grid">
     <div class="mid">
@@ -876,21 +837,12 @@ function loadHash() {
   $("q").value = state.q;
 }
 
-/* ── where shipments clear: the headline and the map ──
-   Counted from the rows on screen; the map shows each BU with every other
-   filter applied, so the selected BU stands among the rest. A BU is placed
-   only where the server says which country it is (BU_COUNTRY). */
-let MAP = null, PLACES = null;
-async function loadMap() {
-  if (MAP) return;
-  try {
-    const [m, p] = await Promise.all([fetch("/static/maps/region.json", {credentials: "same-origin"}), api("/api/clearance/places")]);
-    if (!m.ok || !p.ok) throw new Error("HTTP " + (m.ok ? p.status : m.status));
-    MAP = await m.json(); PLACES = (await p.json()).places || {};
-  } catch (err) {
-    MAP = {failed: String(err.message || err)};
-  }
-  mapCard(); headline(rows());
+/* ── the headline: one sentence counted from the rows on screen. The map of
+   the same export by BU is on the Overview (static/clearmap.js). ── */
+let PLACES = null;
+async function loadPlaces() {
+  try { const p = await api("/api/clearance/places"); if (p.ok) PLACES = (await p.json()).places || {}; } catch (err) { /* the BU code alone */ }
+  headline(rows());
 }
 function headline(R) {
   const el = $("headline");
@@ -905,62 +857,10 @@ function headline(R) {
     (bu ? `; <b>${fmt(bu[1])}</b> of them are in <b>${esc(bu[0])}</b>${place}` : "") +
     (step ? `, most waiting at <b>${esc(stepName(step[0]))}</b> (${fmt(step[1])})` : "") + ".";
 }
-function mapCard() {
-  const box = $("map"), list = $("maplist");
-  if (!MAP) return;
-  if (MAP.failed) { box.innerHTML = `<div class="msg">The map could not be loaded (${esc(MAP.failed)}). The list beside it is complete.</div>`; }
-  const per = {};
-  rows(["bu"]).forEach((r) => {
-    const b = r[F.bu]; if (!b) return;
-    const x = per[b] || (per[b] = {n: 0, open: 0, late: 0, steps: {}});
-    x.n++; if (isOpen(r)) { x.open++; if (pastDue(r)) { x.late++; x.steps[r[F.step]] = (x.steps[r[F.step]] || 0) + 1; } }
-  });
-  const bus = Object.keys(per).sort((a, b) => per[b].late - per[a].late || per[b].open - per[a].open);
-  const tone = (x) => !x.open ? "none" : x.late / x.open > 0.5 ? "bad" : x.late / x.open >= 0.2 ? "mid" : "ok";
-  const tip = (b, x) => {
-    const top = Object.entries(x.steps).sort((p, q) => q[1] - p[1])[0];
-    const where = PLACES && PLACES[b] ? ` · ${PLACES[b].country}` : " · country not known from the BU code";
-    return `<b>${esc(b)}</b>${esc(where)}: ${fmt(x.open)} open, ${fmt(x.late)} past due${x.open ? ` (${pct(x.late, x.open)}%)` : ""}, ${fmt(x.n - x.open)} completed` +
-      (top ? `<small>Most past due at ${esc(stepName(top[0]))} (${fmt(top[1])}). Click to filter on ${esc(b)}.</small>` : `<small>Click to filter on ${esc(b)}.</small>`);
-  };
-  const off = bus.filter((b) => !(PLACES && PLACES[b]));
-  $("map-note").textContent = off.length ? `not on the map: ${off.join(", ")} (country not known from the code)` : "";
-  list.innerHTML = `<div class="mh">BU · open · past due</div>` + (bus.length ? bus.map((b) => {
-    const x = per[b], c = PLACES && PLACES[b] ? PLACES[b].country : "not on the map";
-    return `<div class="mr${state.bu === b ? " on" : ""}" data-set="${setAttr({bu: b})}" tabindex="0" role="button" data-tip="${esc(tip(b, x))}">
-      <b>${esc(b)}</b><span>${esc(c)}<small>${fmt(x.n)} shipments</small></span>
-      <span class="n">${fmt(x.open)} · <em>${fmt(x.late)}</em></span></div>`;
-  }).join("") : `<div class="empty">No shipments match the other filters.</div>`);
-  if (MAP.failed) return;
-  const byIso = {}; bus.forEach((b) => { if (PLACES && PLACES[b]) byIso[PLACES[b].iso] = b; });
-  const max = Math.max(1, ...bus.map((b) => per[b].open));
-  let land = "", dots = "", labels = "";
-  MAP.countries.forEach((c) => {
-    const b = byIso[c.id];
-    land += `<path class="land${b ? " bu" : ""}${b && state.bu === b ? " on" : ""}" d="${c.d}"><title>${esc(c.name)}</title></path>`;
-    if (!b) return;
-    const x = per[b], r = x.open ? 6 + 20 * Math.sqrt(x.open / max) : 5;
-    dots += `<circle class="dot ${tone(x)}${state.bu === b ? " on" : ""}" cx="${c.label[0]}" cy="${c.label[1]}" r="${r.toFixed(1)}"
-      data-set="${setAttr({bu: b})}" tabindex="0" role="button" aria-label="${esc(b)}: ${fmt(x.open)} open, ${fmt(x.late)} past due" data-tip="${esc(tip(b, x))}"></circle>`;
-    labels += `<text x="${c.label[0]}" y="${(c.label[1] + r + 12).toFixed(1)}" text-anchor="middle">${esc(b)} ${fmt(x.open)}</text>`;
-  });
-  // Framed on the BUs that are placed (with room around them), at the map's own shape.
-  const pts = MAP.countries.filter((c) => byIso[c.id]).map((c) => c.label);
-  let vb = MAP.viewBox;
-  if (pts.length) {
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), pad = 70, aspect = 1.75;
-    let x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
-    let w = x1 - x0, h = y1 - y0;
-    if (w / h < aspect) { const nw = h * aspect; x0 -= (nw - w) / 2; w = nw; } else { const nh = w / aspect; y0 -= (nh - h) / 2; h = nh; }
-    vb = [x0, y0, w, h].map((v) => Math.round(v));
-  }
-  box.innerHTML = `<svg viewBox="${vb.join(" ")}" role="img" aria-label="Map: open shipments by BU">${land}${dots}${labels}</svg>`;
-}
-
 function render() {
   filterBar();
   const R = rows();
-  headline(R); mapCard(); kpis(R); modes(); statusMix(); stages(); story(R); months(); bus(); alerts(R); explorer(R);
+  headline(R); kpis(R); modes(); statusMix(); stages(); story(R); months(); bus(); alerts(R); explorer(R);
   saveHash();
 }
 
@@ -1306,7 +1206,7 @@ function atlasView() {
     $("askFab").hidden = !PF.can("atlas.chat");
     await Promise.all([loadEsc(), loadContacts()]);
     await loadData(true);
-    loadMap();
+    loadPlaces();
   } catch (err) {
     if (err.message !== "signed out") $("src").textContent = "The Clearance data could not be loaded: " + err.message;
   }

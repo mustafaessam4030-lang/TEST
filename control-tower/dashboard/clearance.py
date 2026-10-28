@@ -597,6 +597,38 @@ def places():
     return {bu: {"iso": iso, "country": name} for bu, (iso, name) in BU_COUNTRY.items()}
 
 
+def map_summary(data=None):
+    """Per BU, for the Overview's map: shipments, open, past due and where most
+    of the past-due ones wait; plus the totals for its headline. Counted from
+    the loaded export's rows; None when nothing is loaded."""
+    data = data or load()
+    if not data:
+        return None
+    rows = records(data)
+    per, steps = {}, {}
+    for r in rows:
+        if not r["bu"]:
+            continue
+        x = per.setdefault(r["bu"], {"bu": r["bu"], "n": 0, "open": 0, "late": 0, "steps": {}})
+        x["n"] += 1
+        if is_open(r):
+            x["open"] += 1
+            if past_due(r):
+                x["late"] += 1
+                x["steps"][r["step"]] = x["steps"].get(r["step"], 0) + 1
+                steps[r["step"]] = steps.get(r["step"], 0) + 1
+    bus = []
+    for x in per.values():
+        top = max(x["steps"].items(), key=lambda kv: kv[1]) if x["steps"] else (None, 0)
+        bus.append({"bu": x["bu"], "n": x["n"], "open": x["open"], "late": x["late"],
+                    "top_step": top[0], "top_n": top[1]})
+    bus.sort(key=lambda b: (-b["late"], -b["open"], b["bu"]))
+    top = max(steps.items(), key=lambda kv: kv[1]) if steps else (None, 0)
+    return {"asof": data.get("asof"), "total": len(rows), "open": sum(b["open"] for b in bus),
+            "late": sum(b["late"] for b in bus), "top_step": top[0], "top_n": top[1],
+            "bus": bus, "places": places()}
+
+
 GROUPS = {"With BU": ("Submit to BU", "Assign Clearing Agent", "Correction Required"),
           "In customs": ("Customs Pre Entry", "Customs Declaration", "Duty Assessment",
                          "Duty Payment", "Customs Release"),
