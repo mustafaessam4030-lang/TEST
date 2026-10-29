@@ -224,6 +224,22 @@ check("Headline and BU pins use one metric (past due), and both say so",
 check("The hub draws only what the server sends: no hard-coded counts",
       "/api/hub/overview" in html and "/api/hub/list" in html and "Illustration — the counts are real" in html)
 
+print("\n5b. THE MAP AND THE SCENE: NOTHING FROM OUTSIDE, DATA AS TEXT ONLY")
+import re as _re0
+for name in ("map3d.js", "opsscene.js"):
+    js = (HERE / "dashboard" / "static" / "hub" / name).read_text(encoding="utf-8")
+    ext = [u for u in _re0.findall(r"https?://[^\s'\"`)]+", js) if u != "http://www.w3.org/2000/svg"]
+    check("{0}: no external URL, font, tile or library".format(name),
+          not ext and "@import" not in js and "XMLHttpRequest" not in js and "import(" not in js, ext)
+    check("{0}: innerHTML only for its own fixed markup, never for data".format(name),
+          all("${" not in ln for ln in js.splitlines() if "innerHTML" in ln))
+mj = (HERE / "dashboard" / "static" / "hub" / "map3d.js").read_text(encoding="utf-8")
+check("Map: if the browser cannot draw, it says so instead of breaking",
+      "This browser cannot draw the map" in mj and "Map outline unavailable" in mj)
+oj = (HERE / "dashboard" / "static" / "hub" / "opsscene.js").read_text(encoding="utf-8")
+check("Scene: animation stops off-screen, in a hidden tab and with reduced motion",
+      "IntersectionObserver" in oj and "visibilitychange" in oj and "prefers-reduced-motion" in oj)
+
 print("\n6. ADDED, NOTHING REPLACED")
 import re as _re
 cl = (HERE / "dashboard" / "static" / "clearance.html").read_text(encoding="utf-8")
