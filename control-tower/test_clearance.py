@@ -605,6 +605,10 @@ check("A click on a chart opens the list of exactly those shipments (the page's 
       and "if (e.shiftKey || active) apply(o); else drill(o);" in _h)
 check("The list: counts, search, sortable columns, CSV of the list, a row opens its details, filter the page to it",
       all(x in _h for x in ('id="dd-sum"', 'id="dd-q"', "data-ddsort", 'id="dd-csv"', 'id="dd-filter"', "data-row=")))
+check("Every part of a mode card opens its list: on-time label, total, completed bar, past-due centre",
+      'class="ok ${good ? "good" : "bad"}" data-set="${setAttr({mode: m, ontime: 0})}"' in _h
+      and 'class="tot" data-set="${setAttr({mode: m})}"' in _h and 'data-set="${setAttr({mode: m, flag: "done"})}"' in _h
+      and 'class="cset" data-set="${setAttr({mode: m, flag: "pastdue"})}"' in _h and "on-time below 95%" in _h)
 check("Closed, the list is hidden (the '/' search is not blocked by it)",
       'aria-labelledby="dd-title" hidden>' in _h and '$("dd").hidden = true' in _h)
 check("The list sits under the shipment drawer and closes with Escape",
