@@ -97,11 +97,14 @@ Rules:
    snapshot, clearance export, escalations, PO store, telemetry), behind the
    existing permission checks. Each is checked against existing endpoints
    first; nothing is duplicated.
-3. **Same domain, same sign-in.** New pages live on the same server and
-   session as today (`/hub`, then `/` once accepted).
-4. **Incremental switch.** The new shell ships next to the current pages.
-   Every module links to the current page until its new view is equal or
-   better; then the old view is retired. No big-bang replacement.
+3. **Same domain, same sign-in.** The hub lives at `/hub` on the same server
+   and session as today. `/`, `/clearance` and every existing page stay
+   exactly where they are; nothing redirects to the hub.
+4. **Adding, never replacing.** The hub is added next to the current pages.
+   Existing pages, files, ATLAS and its icon are not removed, renamed,
+   redirected or redesigned. A hub module that has no view of its own yet
+   links to the existing page. Changes to existing files are limited to
+   adding new routes and lines.
 5. **No new runtime dependencies.** No framework, no npm, no external map
    tiles. Maps and animations are drawn from data the server already serves
    (Natural Earth outlines in `static/maps`, the place resolver).
@@ -155,7 +158,7 @@ labelled "illustration — counts from the eHub export as of <date>".
 | Stage | Delivers | Exit check |
 |---|---|---|
 | **A** | This audit and plan | Agreed |
-| **B** | Design tokens + app shell (`/hub`): sidebar, top bar, search, To Do, profile, theme; all modules listed with status (live / partial / not connected) | Old pages unchanged; shell tests; screenshots light/dark/desktop/tablet |
+| **B** | Design tokens + app shell (`/hub`): sidebar, top bar, search, To Do, profile, theme; all modules listed with status (live / partial / not connected); the ATLAS character as ATLAS's icon | Old pages unchanged; shell tests; screenshots light/dark/desktop/tablet |
 | **C** | Overview + Shipment Tracking: stage strip (§3), 3D map + sheets, live shipment list and cards, one shipment view joining run + export | Counts equal the Clearance page's; no position without a source |
 | **D** | ATA workspace: run status, queue, human actions, verification, evidence, errors, run history — on the existing APIs | Existing automation tests + Human Action e2e pass unchanged |
 | **E** | Clearance, Documents (what exists), To Do & Approvals, Carrier, Master Data views | Each view's numbers traced to a source |

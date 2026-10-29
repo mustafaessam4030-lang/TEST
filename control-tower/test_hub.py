@@ -108,5 +108,16 @@ html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
 check("The hub draws only what the server sends: no hard-coded counts",
       "/api/hub/overview" in html and "/api/hub/list" in html and "Illustration — the counts are real" in html)
 
+print("\n6. ADDED, NOTHING REPLACED")
+import re as _re
+cl = (HERE / "dashboard" / "static" / "clearance.html").read_text(encoding="utf-8")
+tpl = lambda t: _re.search(r'<template id="axTpl">.*?</template>', t, _re.S).group(0)
+check("ATLAS keeps its own character as its icon in the hub, byte for byte the existing one", tpl(html) == tpl(cl))
+check("'/' still serves the existing dashboard and '/clearance' the Clearance page; nothing redirects to the hub",
+      'if route == "/":\n            self._send_file(STATIC_DIR / "index.html")' in src
+      and 'if route == "/clearance":\n            self._send_file(STATIC_DIR / "clearance.html")' in src
+      and "Location\", \"/hub" not in src)
+check("ATLAS is in the hub's navigation", any(m["id"] == "atlas" for m in H.MODULES))
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

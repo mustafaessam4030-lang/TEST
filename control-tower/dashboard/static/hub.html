@@ -21,8 +21,13 @@
 .app{display:grid;grid-template-columns:var(--hub-side) 1fr;min-height:100vh}
 .side{position:sticky;top:0;height:100vh;background:var(--hub-bg-2);border-right:1px solid var(--hub-line);display:flex;flex-direction:column;padding:14px 10px 12px;overflow:auto}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 16px;color:var(--hub-ink)}
-.brand .gl{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(145deg,#1d1d1f,#3a3a3c);color:#ffcd11}
-.brand .gl svg{width:20px;height:20px}
+/* the ATLAS character, unchanged (same template as the Clearance page) */
+.axf{display:inline-block;flex:none}
+.axf svg{width:100%;height:100%;display:block}
+.axf .ax-rx,.axf .ax-steam{display:none}
+.brand .axf{width:38px;height:38px}
+.nav a .axf{width:19px;height:19px}
+.top .hub-pill .axf{width:22px;height:22px;margin-left:-6px}
 .brand b{display:block;font-size:15px;letter-spacing:.06em}
 .brand span{display:block;font-size:11.5px;color:var(--hub-ink-3)}
 .grp{margin:10px 0 2px;padding:0 12px;font-size:11px;font-weight:600;color:var(--hub-ink-4);letter-spacing:.02em}
@@ -140,10 +145,19 @@
 </style>
 </head>
 <body>
+<template id="axTpl"><span class="axf" aria-hidden="true"><svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true"><defs><radialGradient id="axShell" cx="38%" cy="28%" r="80%">
+    <stop offset="0" stop-color="#FFFFFF"/><stop offset=".62" stop-color="#F1F2F5"/>
+    <stop offset="1" stop-color="#D9DCE3"/></radialGradient>
+  <linearGradient id="axVisor" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#2B2E37"/><stop offset="1" stop-color="#07080A"/></linearGradient>
+  <linearGradient id="axAmber" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#FFC04A"/><stop offset="1" stop-color="#E0761A"/></linearGradient>
+  <radialGradient id="axHalo"><stop offset="0" stop-color="#FFC14D" stop-opacity=".55"/>
+    <stop offset="1" stop-color="#FFC14D" stop-opacity="0"/></radialGradient></defs><g class="ax-body"><rect x="49" y="92" width="9" height="14" rx="4.5" fill="url(#axShell)"/><rect x="62" y="92" width="9" height="14" rx="4.5" fill="url(#axShell)"/><g class="ax-arm-l"><rect x="37.5" y="74" width="8.5" height="16" rx="4.25" fill="url(#axShell)" stroke="rgba(0,0,0,.07)" transform="rotate(14 42 77)"/></g><g class="ax-arm-r"><rect x="74" y="74" width="8.5" height="16" rx="4.25" fill="url(#axShell)" stroke="rgba(0,0,0,.07)" transform="rotate(-150 78 77)"/></g><rect x="44.5" y="71" width="31" height="26" rx="12" fill="url(#axShell)" stroke="rgba(0,0,0,.07)"/><path d="M56.6 89.5 L60 81 L63.4 89.5 M57.7 86.7 H62.3" fill="none" stroke="#F0901E" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><g class="ax-head"><circle cx="28" cy="46" r="8.5" fill="url(#axAmber)"/><circle cx="28" cy="46" r="4.4" fill="#EEF0F4"/><circle cx="92" cy="46" r="8.5" fill="url(#axAmber)"/><circle cx="92" cy="46" r="4.4" fill="#EEF0F4"/><ellipse cx="60" cy="45" rx="32" ry="30" fill="url(#axShell)" stroke="rgba(0,0,0,.07)"/><path d="M49.5 17.6 Q60 12.2 70.5 17.6" fill="none" stroke="#F0901E" stroke-width="4.4" stroke-linecap="round"/><rect x="33.5" y="26.5" width="53" height="39" rx="19.5" fill="url(#axVisor)"/><path d="M40.5 36 Q46.5 29.6 56.5 29.4" fill="none" stroke="#FFFFFF" stroke-opacity=".26" stroke-width="2.4" stroke-linecap="round"/><ellipse cx="50" cy="46.5" rx="9" ry="9" fill="url(#axHalo)"/><ellipse cx="70" cy="46.5" rx="9" ry="9" fill="url(#axHalo)"/><g class="ax-look"><g class="ax-eyes"><ellipse cx="50" cy="46" rx="4" ry="5.2" fill="#FFC14D"/><ellipse cx="70" cy="46" rx="4" ry="5.2" fill="#FFC14D"/></g></g><g class="ax-rx ax-rx-closed"><path d="M45.5 46 Q50 49.6 54.5 46" fill="none" stroke="#FFC14D" stroke-width="3" stroke-linecap="round"/><path d="M65.5 46 Q70 49.6 74.5 46" fill="none" stroke="#FFC14D" stroke-width="3" stroke-linecap="round"/></g><g class="ax-rx ax-rx-happy"><path d="M45.5 48.5 Q50 42 54.5 48.5" fill="none" stroke="#FFC14D" stroke-width="3.2" stroke-linecap="round"/><path d="M65.5 48.5 Q70 42 74.5 48.5" fill="none" stroke="#FFC14D" stroke-width="3.2" stroke-linecap="round"/></g><g class="ax-rx ax-rx-wide"><circle cx="50" cy="46" r="6.6" fill="#FFC14D"/><circle cx="70" cy="46" r="6.6" fill="#FFC14D"/><circle cx="52.4" cy="43.4" r="1.9" fill="#FFF3D6"/><circle cx="72.4" cy="43.4" r="1.9" fill="#FFF3D6"/></g><g class="ax-rx ax-rx-dizzy"><path d="M45.5 41.5 L54.5 50.5 M54.5 41.5 L45.5 50.5" fill="none" stroke="#FFC14D" stroke-width="3.2" stroke-linecap="round"/><path d="M65.5 41.5 L74.5 50.5 M74.5 41.5 L65.5 50.5" fill="none" stroke="#FFC14D" stroke-width="3.2" stroke-linecap="round"/></g><g class="ax-rx ax-rx-squint"><path d="M45 44.5 L54.5 47 L45 49.5" fill="none" stroke="#FFC14D" stroke-width="3.2" stroke-linecap="round"/><path d="M75 44.5 L65.5 47 L75 49.5" fill="none" stroke="#FFC14D" stroke-width="3.2" stroke-linecap="round"/></g><g class="ax-rx ax-rx-angry"><rect x="33.5" y="26.5" width="53" height="39" rx="19.5" fill="#E5484D" opacity=".22"/><ellipse cx="50" cy="48" rx="4.4" ry="2.6" fill="#FFC14D"/><ellipse cx="70" cy="48" rx="4.4" ry="2.6" fill="#FFC14D"/><path d="M43 38 L56 43 M77 38 L64 43" stroke="#E5484D" stroke-width="3.4" stroke-linecap="round"/></g></g><g class="ax-steam"><circle cx="40" cy="12" r="4" fill="#C9CED6"/><circle cx="80" cy="12" r="4" fill="#C9CED6"/><circle cx="34" cy="5" r="3" fill="#DDE1E7"/><circle cx="86" cy="5" r="3" fill="#DDE1E7"/></g></g></svg></span></template>
 <div class="app">
   <aside class="side" id="side" aria-label="Modules">
     <a class="brand" href="/hub#overview">
-      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+      <span class="axf-slot gl"></span>
       <span><b>ATLAS</b><span>Logistics Control Tower</span></span>
     </a>
     <nav class="nav" id="nav"></nav>
@@ -159,7 +173,7 @@
       <span class="sp"></span>
       <span data-search-slot></span>
       <span data-todo-slot></span>
-      <a class="hub-pill" href="/#atlas">Ask ATLAS</a>
+      <a class="hub-pill" href="/#atlas"><span class="axf-slot"></span>Ask ATLAS</a>
     </header>
     <main class="content" id="content">
       <section data-view="overview">
@@ -243,7 +257,8 @@
     masterdata: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
   };
-  const icon = (id) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] || ICONS.overview}</svg>`;
+  const atlasIcon = () => document.getElementById("axTpl").content.firstElementChild.cloneNode(true);
+  const icon = (id) => id === "atlas" ? '<span class="axf-slot"></span>' : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] || ICONS.overview}</svg>`;
   const EXT = '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>';
 
   let DATA = null, MODS = [], map = null, scene = null;
@@ -261,6 +276,7 @@
       html += `<a href="${esc(href)}" data-mod="${esc(m.id)}"${view === m.id ? ' aria-current="page"' : ""} title="${esc(m.note || m.title)}">${icon(m.id)}<span>${esc(m.title)}</span>${st}${own ? "" : EXT}</a>`;
     }
     $("nav").innerHTML = html;
+    document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
   }
   function route() {
     const view = (location.hash.slice(1) || "overview").split("?")[0];
