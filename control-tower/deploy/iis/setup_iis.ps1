@@ -126,6 +126,17 @@ if (Test-Path "IIS:\Sites\$SiteName") {
     New-Website -Name $SiteName -PhysicalPath $SitePath -HostHeader $HostName -Port 80 | Out-Null
     Ok "site created"
 }
+# The tower has its own sign-in page: IIS must let everyone reach it.
+# Windows or Basic authentication on this site shows IIS's own
+# "401 - Unauthorized: Access is denied due to invalid credentials" page instead.
+foreach ($auth in @(@("anonymousAuthentication", "True"), @("windowsAuthentication", "False"), @("basicAuthentication", "False"))) {
+    try {
+        Set-WebConfigurationProperty -PSPath IIS:\ -Location $SiteName -Filter ("system.webServer/security/authentication/" + $auth[0]) `
+            -Name enabled -Value $auth[1] -ErrorAction Stop
+    } catch { }   # a feature that is not installed is already off
+}
+Ok "anonymous access on, Windows/Basic sign-in off for '$SiteName' (the tower signs people in itself)"
+
 if (-not $HttpOnly) {
     if (-not (Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName -ErrorAction SilentlyContinue)) {
         New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1

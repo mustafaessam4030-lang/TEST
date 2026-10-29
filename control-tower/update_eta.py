@@ -788,6 +788,18 @@ def click_postback(locator, description, timeout_ms=None):
     locator.click(timeout=budget, force=True)
 
 
+def pause_for_enter(prompt):
+    """Wait for ENTER when a person is at the console. Started from the
+    dashboard or a scheduled task there is no keyboard: input() raised
+    EOFError, which replaced the real error in the report."""
+    try:
+        if _cp_sys.stdin is None or not _cp_sys.stdin.isatty():
+            return
+        input(prompt)
+    except (EOFError, KeyboardInterrupt, OSError, ValueError):
+        pass
+
+
 def first_visible(candidates, timeout_ms=2500):
     for candidate in candidates:
         try:
@@ -2344,9 +2356,14 @@ def wait_between_shipments():
 # CREDENTIALS AND RESULTS
 # ============================================================
 
+# Where the Hub account came from, for the sign-in messages (never the secret).
+HUB_ACCOUNT_SOURCE = "not loaded"
+
+
 def load_credentials():
     """The Hub sign-in: Windows Credential Manager first (hub_credentials.py),
     then credentials.txt for a server that has not moved yet."""
+    global HUB_ACCOUNT_SOURCE
     try:
         import hub_credentials
         stored = hub_credentials.read()
@@ -2355,6 +2372,7 @@ def load_credentials():
             type(error).__name__, CREDENTIALS_FILE.name), flush=True)
         stored = None
     if stored:
+        HUB_ACCOUNT_SOURCE = "Windows Credential Manager"
         return stored
 
     if not CREDENTIALS_FILE.exists():
@@ -2376,6 +2394,7 @@ def load_credentials():
     if not username or not password:
         raise Exception("credentials.txt must contain USERNAME= and PASSWORD= lines.")
 
+    HUB_ACCOUNT_SOURCE = str(CREDENTIALS_FILE)
     return username, password
 
 
@@ -2633,21 +2652,69 @@ def latest_date(date_values):
 # INTERNAL LOGIN
 # ============================================================
 
+# The Hub's own sign-in page ("WinLogin.aspx"). Basic auth on the browser
+# context is not always the whole sign-in: the Hub can still answer with this
+# form, and a page that merely loaded is not a signed-in page.
+HUB_LOGIN_PATH = re.compile(r"(?:^|/)(?:win)?log(?:in|on)[^/]*\.aspx$|/account/log(?:in|on)\b|/sign-?in\b", re.I)
+
+
+def on_hub_login_page(page):
+    """True when the Hub shows its sign-in form instead of the application."""
+    try:
+        path = page.url.split("?", 1)[0].split("#", 1)[0]
+        if HUB_LOGIN_PATH.search(path):
+            return True
+    except Exception:
+        pass
+    try:
+        return page.locator("input[type='password']").first.is_visible(timeout=800)
+    except Exception:
+        return False
+
+
+def hub_refused(page, response=None):
+    """The Hub's IIS refused the account: HTTP 401 / "401 - Unauthorized"."""
+    try:
+        if response is not None and response.status == 401:
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(re.search(r"401\s*-\s*Unauthorized|Access is denied due to invalid credentials",
+                              page.locator("body").inner_text(timeout=1500)))
+    except Exception:
+        return False
+
+
+def hub_refused_message(username):
+    user = str(username or "")
+    hint = "" if "\\" in user or "@" in user else \
+        " If the Hub uses Windows (domain) accounts, store the user as DOMAIN\\username."
+    return ("Hub sign-in failed: the Hub refused the account (401 Unauthorized) for user {0}, taken from {1}. "
+            "Check the password (it may have changed), then store it again with STORE_HUB_PASSWORD.bat; "
+            "Windows Credential Manager is used before credentials.txt.{2}".format(user, HUB_ACCOUNT_SOURCE, hint))
+
+
 def login_internal(page, username, password):
     write_log("Opening internal website...")
-    page.goto(INTERNAL_URL, wait_until="domcontentloaded", timeout=60000)
+    response = page.goto(INTERNAL_URL, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1200)
+    if hub_refused(page, response):
+        raise Exception(hub_refused_message(username))
 
-    if not page.url.startswith("chrome-error"):
+    if not page.url.startswith("chrome-error") and not on_hub_login_page(page):
         write_log("Internal authentication succeeded.")
         return
 
+    write_log("The Hub shows its sign-in page; signing in with the stored Hub account.")
     username_field = first_visible(
         [
-            page.get_by_label(re.compile(r"email|username|user name", re.I)),
+            page.get_by_label(re.compile(r"email|username|user name|user id|login", re.I)),
             page.locator("input[type='email']"),
             page.locator("input[name*='user' i]"),
             page.locator("input[id*='user' i]"),
+            page.locator("input[name*='login' i]:not([type='password']):not([type='submit']):not([type='hidden'])"),
+            page.locator("input[type='text']"),
         ]
     )
 
@@ -2661,16 +2728,19 @@ def login_internal(page, username, password):
     )
 
     if username_field is None or password_field is None:
-        raise Exception("Automatic internal login fields were not found.")
+        raise Exception("Hub sign-in failed: the Hub shows a sign-in page ({0}) but its username and "
+                        "password fields were not found.".format(page.url.split("?", 1)[0]))
 
     username_field.fill(username)
     password_field.fill(password)
 
     login_button = first_visible(
         [
-            page.get_by_role("button", name=re.compile(r"sign in|login|log in", re.I)),
+            page.get_by_role("button", name=re.compile(r"sign in|login|log in|logon|log on", re.I)),
             page.locator("button[type='submit']"),
             page.locator("input[type='submit']"),
+            page.locator("input[type='image']"),
+            page.get_by_role("link", name=re.compile(r"^\s*(sign in|login|log in|logon|log on)\s*$", re.I)),
         ]
     )
 
@@ -2679,8 +2749,23 @@ def login_internal(page, username, password):
     else:
         password_field.press("Enter")
 
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=30000)
+    except Exception:
+        pass
     page.wait_for_timeout(2000)
-    page.goto(INTERNAL_URL, wait_until="domcontentloaded", timeout=60000)
+    response = page.goto(INTERNAL_URL, wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_timeout(1200)
+    if hub_refused(page, response):
+        raise Exception(hub_refused_message(username))
+    # Fail closed: still on the sign-in form means the account was refused
+    # (or the form changed). Never carry on as though signed in.
+    if page.url.startswith("chrome-error") or on_hub_login_page(page):
+        raise Exception("Hub sign-in failed: the Hub still shows its sign-in page ({0}) after entering the "
+                        "stored username and password. Check the Hub account with STORE_HUB_PASSWORD.bat "
+                        "(or credentials.txt) and sign in once by hand to see the Hub's message."
+                        .format(page.url.split("?", 1)[0]))
+    write_log("Internal authentication succeeded (signed in through the Hub's sign-in page).")
 
 
 # ============================================================
@@ -12492,7 +12577,7 @@ def main():
                     )
                 print(f"Log file: {LOG_FILE}", flush=True)
                 print("Microsoft Edge will remain open for inspection.", flush=True)
-                input("Press ENTER only after reviewing/copying the error...")
+                pause_for_enter("Press ENTER only after reviewing/copying the error...")
 
         finally:
             # Strategies 3 and 4 may have left a browser of their own open so
@@ -12527,8 +12612,8 @@ if __name__ == "__main__":
                 f"http://127.0.0.1:{DASHBOARD_PORT}/",
                 flush=True,
             )
-            input("Press ENTER to close the dashboard and this window...")
+            pause_for_enter("Press ENTER to close the dashboard and this window...")
     except Exception as error:
         print(f"\nAUTOMATION FAILED: {type(error).__name__}: {error}", flush=True)
         print(f"Full details were saved in: {LOG_FILE}", flush=True)
-        input("Press ENTER to close this CMD run...")
+        pause_for_enter("Press ENTER to close this CMD run...")

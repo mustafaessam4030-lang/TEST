@@ -948,6 +948,33 @@ tr.r-partial .err{color:var(--y)}
 .rec-t{font-size:14px;font-weight:550;line-height:1.4}
 .rec-n{font-size:12px;color:var(--faint);margin-top:4px}
 
+/* ═══════════ THE LIST BEHIND A CHART ═══════════
+   A click on a KPI tile, a chart bar in ATLAS's answer or an Analysis group
+   lists exactly those shipments. Over the chat (71), under the shipment
+   drawer (80/81), so a row opens its details on top. */
+.drill{position:fixed;inset:0;z-index:76;background:rgba(10,20,40,.30);display:none;place-items:center;padding:16px}
+.drill.on{display:grid}
+.drill-b{background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:16px;
+  box-shadow:0 24px 70px rgba(0,0,0,.22);width:min(1000px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
+.drill-h{display:flex;gap:12px;align-items:flex-start;padding:18px 20px 10px;border-bottom:1px solid var(--line-2)}
+.drill-t{font-size:18px;font-weight:600;letter-spacing:-.01em}
+.drill-s{color:var(--muted);font-size:12.5px;margin-top:3px}
+.drill-x{margin-left:auto;flex:none;width:32px;height:32px;border:0;border-radius:9px;background:var(--surface-2);color:var(--ink);font-size:18px;cursor:pointer}
+.drill-sum{display:flex;flex-wrap:wrap;gap:8px;padding:10px 20px 0}
+.drill-sum span{border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;font-size:12.5px;background:var(--surface-2)}
+.drill-sum b{font-variant-numeric:tabular-nums}
+.drill-tools{display:flex;gap:8px;flex-wrap:wrap;padding:10px 20px}
+.drill-tools input{flex:1 1 220px;min-width:0;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink)}
+.drill-body{overflow:auto;padding:0 20px;flex:1 1 auto;min-height:100px}
+.drill-body th{position:sticky;top:0;background:var(--surface);z-index:1}
+.drill-body tbody tr{cursor:pointer}
+.drill-f{padding:10px 20px 14px;border-top:1px solid var(--line-2);color:var(--muted);font-size:12.5px}
+[data-drill]{cursor:pointer}
+.kpi[data-drill]:hover{background:var(--surface-2)}
+.kpi[data-drill]:focus-visible,.cc-row[data-drill]:focus-visible,#anGroups .row[data-drill]:focus-visible{outline:2px solid var(--blu);outline-offset:-2px}
+.cc-row[data-drill]:hover .cc-lab,#anGroups .row[data-drill]:hover .a{text-decoration:underline}
+@media (max-width:700px){.drill{padding:0}.drill-b{border-radius:0;max-height:100vh;height:100dvh}.drill-tools input{flex-basis:100%}}
+
 /* ═══════════ DETAIL DRAWER ═══════════
    Slides in over the page from the right. Transform-only, so opening it
    never re-lays-out the table underneath. */
@@ -3165,6 +3192,18 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
   <!-- SHIPMENT DETAIL. Opens over the page from the right; the table under
        it is never re-rendered to make room. -->
   <div class="dw-scrim" id="dwScrim"></div>
+  <div class="drill" id="drill" role="dialog" aria-modal="true" aria-labelledby="drillT">
+    <div class="drill-b">
+      <div class="drill-h"><div><div class="drill-t" id="drillT"></div><div class="drill-s" id="drillS"></div></div>
+        <button class="drill-x" id="drillX" type="button" aria-label="Close">×</button></div>
+      <div class="drill-sum" id="drillSum"></div>
+      <div class="drill-tools"><input id="drillQ" type="search" placeholder="Search in this list: BOL/AWB, carrier, result…" aria-label="Search in this list">
+        <button class="btn ghost" id="drillCsv" type="button">Download CSV</button></div>
+      <div class="drill-body tw"><table><thead><tr><th>BOL / AWB</th><th>Carrier</th><th>Result</th><th>Carrier ETA</th><th>Carrier ATA</th><th>Time</th><th>Why / note</th></tr></thead>
+        <tbody id="drillRows"></tbody></table></div>
+      <div class="drill-f" id="drillF"></div>
+    </div>
+  </div>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dwRef" aria-hidden="true">
     <div class="dw-h">
       <div class="dw-top"><span class="kick">Shipment</span><span id="dwTag"></span>
@@ -4372,22 +4411,23 @@ function paint(force){
     const none = (v) => v === '—' || v === null || v === undefined || v === '';
     const total = Math.max(pr.discovered || 0, all.length);
     const K = [
-      {k:'Total shipments', v:total, c:'var(--ink)',
+      {k:'Total shipments', v:total, c:'var(--ink)', d:'all',
        n:(pr.pages_scanned || 0) + ' hub list page(s) scanned'},
-      {k:'Processing', v:inFlight, c:'var(--blu)',
+      {k:'Processing', v:inFlight, c:'var(--blu)', d:'processing',
        n:inFlight ? 'On a carrier site now' : 'Nothing in flight'},
-      {k:'Completed', v:c.successful, c:'var(--signal)',
+      {k:'Completed', v:c.successful, c:'var(--signal)', d:'completed',
        n:(c.success_rate == null ? 'Written and read back'
           : c.success_rate + '% of processed') + (c.partial ? ' · ' + c.partial + ' partly' : '')},
-      {k:'Waiting for human', v:waiting, c:'var(--amber)',
+      {k:'Waiting for human', v:waiting, c:'var(--amber)', d:'waiting',
        n:waiting ? 'A person is needed now'
          : (c.needs_human ? c.needs_human + ' needed a person this run' : 'None this run')},
-      {k:'Failed', v:c.failed, c:'var(--alarm)',
+      {k:'Failed', v:c.failed, c:'var(--alarm)', d:'failed',
        n:(timedOut ? timedOut + ' human timeout · ' : '') + (c.skipped || 0) + ' skipped'}
     ];
     putHTML($('kpis'), K.map((x) =>
-      '<div class="kpi" style="--c:' + (zero(x.v) || none(x.v) ? 'var(--line-hi)' : x.c) +
-      '"><div class="kpi-k" title="' + x.k + '"><i></i>' + x.k +
+      '<div class="kpi" data-drill="kpi:' + x.d + '" tabindex="0" role="button" aria-label="' + x.k + ': ' + x.v +
+      ', click to list them" style="--c:' + (zero(x.v) || none(x.v) ? 'var(--line-hi)' : x.c) +
+      '"><div class="kpi-k" title="' + x.k + ' · click to list them"><i></i>' + x.k +
       '</div><div class="kpi-v' + (none(x.v) ? ' none' : zero(x.v) ? ' nil' : '') +
       '">' + x.v + '</div><div class="kpi-n">' + esc(x.n) + '</div></div>').join(''));
   }
@@ -4613,6 +4653,101 @@ function analysisRows(){
   });
 }
 
+/* The list behind a click: the run's own shipment records, never re-counted
+   or estimated. KPI tiles, ATLAS's chart bars and the Analysis groups. */
+const AN_DRILL = {rows: [], keyFor: null, by: ''};
+const DRILL = {list: [], back: null, name: ''};
+const carrierOf = (r) => r.carrier || 'Unknown carrier';
+function drillOpen(title, sub, list, name){
+  DRILL.list = list; DRILL.back = document.activeElement; DRILL.name = name || 'shipments';
+  put($('drillT'), title); put($('drillS'), sub);
+  const n = (st) => list.filter((r) => st.indexOf(r.state) >= 0).length;
+  putHTML($('drillSum'), [[list.length, 'shipments'], [n(['updated', 'partial']), 'written to the Hub'],
+    [n(['failed']), 'failed'], [n(['skipped']), 'skipped'], [n(['waiting_for_human', 'human_timeout']), 'needed a person']]
+    .filter((x, i) => i === 0 || x[0]).map((x) => '<span><b>' + x[0] + '</b> ' + x[1] + '</span>').join(''));
+  $('drillQ').value = '';
+  drillDraw();
+  $('drill').classList.add('on');
+  $('drillX').focus();
+}
+function drillDraw(){
+  const q = $('drillQ').value.trim().toLowerCase();
+  const X = q ? DRILL.list.filter((r) => [r.reference, r.carrier, TAGS[r.state], r.error, r.outcome, r.coe_action, r.bu_action]
+    .some((v) => String(v || '').toLowerCase().indexOf(q) >= 0)) : DRILL.list;
+  DRILL.shown = X;
+  putHTML($('drillRows'), X.map((r) =>
+    '<tr data-ref="' + esc(r.reference) + '" tabindex="0"><td class="ref">' + esc(r.reference) + '</td><td>' + dash(r.carrier) + '</td><td>' +
+    tag(r.state) + '</td>' + dtCell(r.provider_eta) + dtCell(r.provider_ata, true) +
+    '<td>' + (r.duration_ms != null ? ms(r.duration_ms) : '—') + '</td><td style="font-size:12px;white-space:normal;min-width:180px">' +
+    dash(r.error || r.coe_action || r.bu_action || r.outcome) + '</td></tr>').join('') ||
+    '<tr><td colspan="7" class="empty">' + (q ? 'Nothing in this list matches.' : 'No shipment in this run is in this group.') + '</td></tr>');
+  put($('drillF'), X.length ? X.length + ' shown · from this run\'s shipment records · click a row for its details' : '');
+}
+function drillClose(){
+  $('drill').classList.remove('on');
+  if (DRILL.back && document.contains(DRILL.back)) DRILL.back.focus();
+}
+function drillFrom(el){
+  const all = (S && S.shipments) || [];
+  const kind = el.dataset.drill;
+  if (kind.indexOf('kpi:') === 0){
+    const k = kind.slice(4), pick = {all: null, processing: ['processing'], completed: ['updated', 'partial'],
+      waiting: ['waiting_for_human'], failed: ['failed', 'human_timeout']}[k];
+    const title = {all: 'Every shipment in this run', processing: 'Processing now', completed: 'Completed: written to the Hub',
+      waiting: 'Waiting for a person', failed: 'Failed'}[k];
+    drillOpen(title, 'This run' + (S.run && S.run.run_id ? ' · ' + S.run.run_id : ''),
+      pick ? all.filter((r) => pick.indexOf(r.state) >= 0) : all.slice(), k);
+    return;
+  }
+  const label = el.dataset.drillLabel;
+  if (kind === 'group'){
+    drillOpen(label, 'Analysis · grouped by ' + AN_DRILL.by.toLowerCase() + ', within the filters on the page',
+      AN_DRILL.rows.filter((r) => AN_DRILL.keyFor(r) === label), label);
+    return;
+  }
+  // An ATLAS chart: a row is a carrier (or an outcome); a segment narrows to one result.
+  const seg = el._seg, chart = el.closest('[data-drill-title]');
+  const keys = (el.dataset.drillKeys || '').split(',').filter(Boolean);
+  const isCarrier = all.some((r) => carrierOf(r) === label);
+  const stateOfLabel = Object.keys(TAGS).find((k) => TAGS[k] === label);
+  let list = all, parts = [];
+  if (isCarrier){ list = list.filter((r) => carrierOf(r) === label); parts.push(label); }
+  else if (stateOfLabel || keys.length === 1){
+    const st = stateOfLabel || keys[0]; list = list.filter((r) => r.state === st); parts.push(TAGS[st] || label);
+  }
+  if (seg && TAGS[seg] && !(stateOfLabel === seg)){ list = list.filter((r) => r.state === seg); parts.push(TAGS[seg]); }
+  drillOpen(parts.join(' · ') || label, (chart ? chart.dataset.drillTitle + ' · ' : '') + 'this run', list, parts.join('-') || label);
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-drill]');
+  if (!el || e.target.closest('#drill')) return;
+  const segEl = e.target.closest('.cc-seg');
+  el._seg = segEl ? segEl.dataset.drillKey : null;
+  drillFrom(el);
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-drill]')){
+    e.preventDefault(); e.target._seg = null; drillFrom(e.target);
+  }
+  if (e.key === 'Escape' && $('drill').classList.contains('on') && !$('drawer').classList.contains('on')) drillClose();
+});
+$('drillX').onclick = drillClose;
+$('drill').addEventListener('click', (e) => {
+  if (e.target === $('drill')) { drillClose(); return; }
+  const tr = e.target.closest('tr[data-ref]'); if (tr) openDrawer(tr.dataset.ref);
+});
+$('drillQ').addEventListener('input', drillDraw);
+$('drillCsv').onclick = () => {
+  const cols = ['reference', 'carrier', 'state', 'provider_eta', 'provider_ata', 'duration_ms', 'outcome', 'error'];
+  const cell = (v) => { v = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const lines = [cols.join(',')].concat((DRILL.shown || DRILL.list).map((r) => cols.map((c) => cell(r[c])).join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], {type: 'text/csv'}));
+  a.download = 'shipments_' + String(DRILL.name).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase() + '.csv'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+
 function paintAnalysis(){
   if (!S) return;
   if (activePage !== 'analysis' && sig.anInit) return;
@@ -4672,6 +4807,8 @@ function paintAnalysis(){
     page: 'Hub page ' + (r.table_page == null ? '?' : r.table_page)
   })[groupBy];
 
+  AN_DRILL.rows = rows; AN_DRILL.keyFor = keyFor;
+  AN_DRILL.by = $('anGroup').selectedOptions[0] ? $('anGroup').selectedOptions[0].textContent : groupBy;
   const groups = {};
   rows.forEach((r) => {
     const g = groups[keyFor(r)] || (groups[keyFor(r)] = {total:0, ok:0});
@@ -4681,7 +4818,7 @@ function paintAnalysis(){
   const max = entries.length ? entries[0][1].total : 1;
   putHTML($('anGroups'), entries.length
     ? entries.map((e) =>
-        '<div class="row"><div class="a" title="' + esc(e[0]) + '">' + esc(e[0]) + '</div>' +
+        '<div class="row" data-drill="group" data-drill-label="' + esc(e[0]) + '" tabindex="0" role="button"><div class="a" title="' + esc(e[0] + ' · click to list them') + '">' + esc(e[0]) + '</div>' +
         /* A bar's colour says how the group DID, not how big it is. All
            written is healthy; none written wants attention; anything in
            between is neutral. QATAR at 0/8 was rendering in the accent,
@@ -7410,8 +7547,9 @@ document.addEventListener('click', (e) => {
       const fmtv = (v) => (c.unit === 'seconds' ? (Math.round(v * 10) / 10) + ' s' : String(v));
       const box = document.createElement('div');
       box.className = 'ch-chart';
-      box.setAttribute('role', 'img');
-      box.setAttribute('aria-label', c.title + ': ' + rows.map((r, i) =>
+      box.setAttribute('role', 'group');
+      box.dataset.drillTitle = c.title;
+      box.setAttribute('aria-label', c.title + ' (click a bar to list its shipments): ' + rows.map((r, i) =>
         r.label + ' ' + fmtv(totals[i])).join(', '));
       let html = '<div class="ch-chart-h">' + esc(c.title) + '<em>' + esc(c.unit || '') + '</em></div>';
       if (c.kind === 'stacked' && series.length > 1){
@@ -7422,10 +7560,11 @@ document.addEventListener('click', (e) => {
         const segs = series.map((s) => {
           const v = Number(r.values[s.key]) || 0;
           if (!v) return '';
-          return '<span class="cc-seg" title="' + esc(s.label + ': ' + fmtv(v)) + '" style="width:' +
+          return '<span class="cc-seg" data-drill-key="' + esc(s.key) + '" title="' + esc(s.label + ': ' + fmtv(v) + ' · click to list them') + '" style="width:' +
             (v / totals[i] * 100) + '%;background:' + (CHART_COLOURS[s.key] || 'var(--blu)') + '"></span>';
         }).join('');
-        return '<div class="cc-row"><span class="cc-lab" title="' + esc(r.label) + '">' + esc(r.label) +
+        return '<div class="cc-row" data-drill="chart" data-drill-label="' + esc(r.label) + '" data-drill-keys="' +
+          esc(series.map((s) => s.key).join(',')) + '" tabindex="0" role="button"><span class="cc-lab" title="' + esc(r.label + ' · click to list them') + '">' + esc(r.label) +
           '</span><span class="cc-track"><span class="cc-bar" style="width:' + (totals[i] / nice * 100) +
           '%">' + segs + '</span><span class="cc-val">' + fmtv(totals[i]) + '</span></span></div>';
       }).join('') + '</div>';

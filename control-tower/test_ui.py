@@ -94,6 +94,12 @@ check("The human step never shows a code: an operator completes it",
       "Operator completes this step" in FILM_SRC
       and not re.search(r"captcha|security code", FILM_SRC.split("function Piece")[1], re.I))
 
+check("Dashboard: a KPI tile, an ATLAS chart bar or an Analysis group opens the list of those shipments",
+      'data-drill="kpi:' in INDEX and 'data-drill="chart"' in INDEX and 'data-drill="group"' in INDEX
+      and "function drillFrom(el)" in INDEX and "function drillOpen(" in INDEX)
+check("...the list is the run's own records, searchable, as CSV, and a row opens its details over it",
+      'id="drillQ"' in INDEX and 'id="drillCsv"' in INDEX and "openDrawer(tr.dataset.ref)" in INDEX
+      and ".drill{position:fixed;inset:0;z-index:76" in INDEX)
 check("No SVG logo installed: the PNG is served at its address, not a 404 in every console",
       'route == "/static/brand/mantrac-logo.svg" and not candidate.is_file()' in SERVER
       and 'relative == "brand/mantrac-logo.svg" and not candidate.is_file()' in SERVER)
