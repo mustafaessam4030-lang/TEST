@@ -55,6 +55,11 @@ MODULES = [
 ]
 
 
+# Modules whose records (the run, To Do, PO documents, evidence, contacts) are
+# not limited by business unit: hidden from a BU-limited person.
+UNSCOPED = ("ata", "todo", "documents", "carriers", "reports", "masterdata")
+
+
 def modules(can):
     """The modules this person may open, each with its real status."""
     return [dict(m) for m in MODULES if can(m["perm"])]
@@ -148,7 +153,7 @@ def stage_list(stage, bu=None, data=None, limit=None, allowed=None):
             keep = _stage_of(r, asof) == stage
         if keep:
             rows.append({k: r.get(k) for k in LIST_FIELDS})
-    rows.sort(key=lambda r: -(r.get("overdue") or -10 ** 6))
+    rows.sort(key=lambda r: -(r["overdue"] if isinstance(r.get("overdue"), (int, float)) else -10 ** 6))
     return {"asof": data.get("asof"), "stage": stage, "bu": bu, "total": len(rows), "rows": rows[:limit]}
 
 
@@ -274,7 +279,10 @@ def overview(state, can, allowed=None):
     `allowed`: the BU codes this person may see (None = all). The run's own
     records carry no BU, so a BU-restricted person does not get the run's
     figures or places at all (never another BU's shipments by accident)."""
-    out = {"modules": modules(can), "scope": sorted(allowed) if allowed is not None else None}
+    mods = modules(can)
+    if allowed is not None:         # views whose records carry no BU are not for a BU-limited person
+        mods = [m for m in mods if m["id"] not in UNSCOPED]
+    out = {"modules": mods, "scope": sorted(allowed) if allowed is not None else None}
     if can("clearance.view"):
         data = _clearance.load()
         out["clearance"] = stages(data, allowed=allowed) if data else None
@@ -367,7 +375,7 @@ def carriers(state=None):
     try:
         h = carrier_health.health()
     except Exception as error:          # no telemetry yet on a fresh install
-        h = {"carriers": [], "window_days": 7, "minimum": None, "records": 0, "error": str(error)[:120]}
+        h = {"carriers": [], "window_days": 7, "minimum": None, "records": 0, "error": "Carrier results could not be read."}
     now = {}
     for rec in (state or {}).get("shipments") or []:
         c = rec.get("carrier") or "Unknown"
@@ -419,7 +427,7 @@ def kpis(data=None, allowed=None):
         {"id": "open", "name": "Open shipments", "value": len(opn), "unit": "shipments", "num": None, "den": len(rows),
          "definition": "Shipments whose current step is not Completed."},
     ]
-    st = stages(rows=rows)
+    st = stages(data, rows=rows)
     for s in st["stages"]:
         cat.append({"id": "stage_" + s["id"], "name": s["label"], "value": s["count"], "unit": "shipments", "num": None,
                     "den": st["total"], "definition": s["definition"]})

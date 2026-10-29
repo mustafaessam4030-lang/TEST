@@ -391,6 +391,14 @@
     }
   };
 
+  // Views whose records carry no business unit refuse a BU-limited account (the server hides them too).
+  for (const id of ["ata", "todo", "documents", "carriers", "reports", "masterdata"]) {
+    const render = V[id].render;
+    V[id].render = function (el, ctx) {
+      if (ctx && ctx.data && ctx.data() && ctx.data().scope) { stop(); el.innerHTML = empty("Not available for your account", "Its records are not limited by business unit."); return; }
+      return render.call(this, el, ctx);
+    };
+  }
   V._leave = () => { stop(); closeDrawer(); };
   V._css = css;
   V._openShipment = openShipment;

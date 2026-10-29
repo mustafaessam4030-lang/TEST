@@ -658,13 +658,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _acc_bus(self):
         """The business units the signed-in person may see on the hub: None =
-        all (today every account; no BU limit is stored yet), or a set of BU
-        codes when the account carries one ("bus")."""
-        if self.user is None:
+        all (no "bus" on the account: today every account), or a set of BU
+        codes. A "bus" that is set but empty means none (fails closed); a
+        string is one code or a comma-separated list."""
+        if self.user is None or not hasattr(self.user, "get"):
             return None
-        bus = self.user.get("bus") if hasattr(self.user, "get") else None
-        if not bus:
+        bus = self.user.get("bus")
+        if bus is None:
             return None
+        if isinstance(bus, str):
+            bus = bus.split(",")
         return {str(b).strip().upper() for b in bus if str(b).strip()}
 
     def _acc_audit(self, action, result="SUCCESS", target_type=None, target_id=None,
@@ -976,7 +979,7 @@ class Handler(BaseHTTPRequestHandler):
             stage = (q.get("stage") or ["all"])[0]
             bu = (q.get("bu") or [None])[0]
             if stage not in ("all", "late", "pastdue") + tuple(x[0] for x in _hub.STAGES) or \
-                    (bu is not None and not re.match(r"^[A-Z]{2,3}$", bu)):
+                    (bu is not None and not re.fullmatch(r"[A-Z]{2,3}", bu)):
                 self._send(400, json.dumps({"error": "unknown stage or BU"}))
                 return
             if not self._acc_can("clearance.view"):
@@ -995,7 +998,7 @@ class Handler(BaseHTTPRequestHandler):
             from dashboard import hub as _hub
             from urllib.parse import urlsplit, parse_qs
             ref = ((parse_qs(urlsplit(self.path).query).get("ref") or [""])[0])[:60]
-            if not re.match(r"^[A-Za-z0-9 \-./]{4,60}$", ref):
+            if not re.fullmatch(r"[A-Za-z0-9 \-./]{4,60}", ref):
                 self._send(400, json.dumps({"error": "give an AWB/BOL"}))
                 return
             if not (self._acc_can("clearance.view") or self._acc_can("runs.view")):

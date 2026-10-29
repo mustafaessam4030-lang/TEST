@@ -59,6 +59,8 @@ GET_PERMISSIONS = (
     ("/api/clearance", "clearance.view"),
     ("/hub", "hub.preview"),                 # Admin-only until the hub is reviewed
     ("/api/hub/", "hub.preview"),
+    ("/static/hub.html", "hub.preview"),
+    ("/static/hub/", "hub.preview"),
     ("/api/knowledge/proposals", "knowledge.propose"),
     ("/api/knowledge/lessons", "runs.view"),
     ("/api/atlas/perf", "users.manage"),

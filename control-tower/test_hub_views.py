@@ -173,6 +173,32 @@ check("Every new hub endpoint is closed to non-admins while the hub is in review
       all(call(OPR, p)[0] in (401, 403) for p in ("/api/hub/shipment?ref=EGX2", "/api/hub/carriers", "/api/hub/kpis")))
 check("...and answers GET only", call(ADM, "/api/hub/kpis", "POST", {})[0] in (403, 404, 405))
 
+print("\n5. FROM THE SECURITY REVIEW")
+
+
+class _U:
+    def __init__(self, user):
+        self.user = user
+
+
+bus = lambda u: _orig(_U(u))
+check("No BU limit on the account: every BU", bus({"role": "ADMIN"}) is None and bus(None) is None)
+check("A BU limit that is set but empty means none (fails closed, never 'all')", bus({"bus": []}) == set() and bus({"bus": ""}) == set())
+check("A BU limit given as text is one code or a comma list, not letters", bus({"bus": "EG"}) == {"EG"} and bus({"bus": "eg, GH"}) == {"EG", "GH"})
+ovs = H.overview(STATE, lambda p_: True, {"GH"})
+check("A BU-limited person's navigation has no module whose records carry no BU",
+      not {m["id"] for m in ovs["modules"]} & set(H.UNSCOPED) and "tracking" in {m["id"] for m in ovs["modules"]})
+check("The hub's own page and scripts also need hub.preview",
+      call(OPR, "/static/hub.html")[0] in (302, 401, 403) and call(OPR, "/static/hub/views.js")[0] in (302, 401, 403)
+      and call(ADM, "/static/hub/views.js")[0] == 200)
+check("A BU code with a trailing newline is refused", call(ADM, "/api/hub/list?stage=all&bu=EG%0A")[0] == 400)
+srt = H.stage_list("all", data={"asof": "2026-10-26", "fields": C.FIELDS, "rows": [[r[k] for k in C.FIELDS] for r in
+      [row("EG", "Submit to BU", "A", overdue=-3), row("EG", "Submit to BU", "B", overdue=0), row("EG", "Completed", "C")]]})
+check("Lists sort a shipment due today (0) above one not yet due (-3)", [r["awb"] for r in srt["rows"]] == ["B", "A", "C"], [r["awb"] for r in srt["rows"]])
+check("The overview's dates are reformatted only when ISO, otherwise shown escaped",
+      ': esc(s);' in html.split("const dmy")[1].split("\n")[0])
+check("A carrier-results failure does not send internal error text", "str(error)" not in (HERE / "dashboard" / "hub.py").read_text(encoding="utf-8").split("def carriers")[1].split("def ")[0])
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:

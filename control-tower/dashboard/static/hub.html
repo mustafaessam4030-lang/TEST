@@ -244,7 +244,8 @@
   const fmt = (n) => Number(n || 0).toLocaleString("en-US");
   const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
   const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const dmy = (s) => s ? `${+s.slice(8, 10)} ${MON[+s.slice(5, 7) - 1]} ${s.slice(0, 4)}` : "unknown date";
+  // only an ISO date is reformatted; anything else is shown as text, escaped
+  const dmy = (s) => !s ? "unknown date" : /^\d{4}-\d\d-\d\d/.test(String(s)) ? `${+s.slice(8, 10)} ${MON[+s.slice(5, 7) - 1]} ${s.slice(0, 4)}` : esc(s);
   const TONE = {blue: "var(--hub-blue)", green: "var(--hub-green)", amber: "var(--hub-amber)", red: "var(--hub-red)", teal: "var(--hub-teal)"};
   const ICONS = {
     overview: '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 4v3h6V4z"/>',
@@ -379,6 +380,10 @@
       ["Failed", b.failed || 0], ["Waiting for a person", b.waiting_for_human || 0]].map(([k, v]) => `<div><span>${k}</span><b>${fmt(v)}</b></div>`).join("");
   }
   function todo() {
+    // To Do's tasks are not limited by business unit: not for a BU-limited account
+    const card = document.querySelector('[aria-labelledby="tdT"]');
+    if (DATA && DATA.scope) { card.hidden = true; return; }
+    card.hidden = false;
     fetch("/api/todo", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((t) => {
       const items = (t && (t.items || t.tasks)) || [];
       $("tdP").textContent = items.length ? `${items.length} open` : "Nothing needs a person right now";
