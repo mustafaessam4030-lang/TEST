@@ -73,7 +73,8 @@ def _browser(playwright):
     context = browser.new_context(**dict(A.hub_context_options(username, password),
                                          accept_downloads=True))
     page = context.new_page()
-    A.login_internal(page, username, password)
+    context, page, username, password = A.sign_in_hub(browser, context, page, username, password,
+                                                      context_extra={"accept_downloads": True})
     return browser, page
 
 

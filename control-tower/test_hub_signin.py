@@ -42,6 +42,17 @@ class Hub(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        if STATE.get("basic"):
+            import base64
+            got = self.headers.get("Authorization") or ""
+            if got.startswith("Basic "):
+                STATE["attempts"] = STATE.get("attempts", 0) + 1
+            if got != "Basic " + base64.b64encode(STATE["basic"].encode()).decode():
+                self.send_response(401); self.send_header("WWW-Authenticate", 'Basic realm="hub"')
+                self.send_header("Content-Type", "text/html"); self.end_headers()
+                self.wfile.write(b"<html><body><h2>401 - Unauthorized: Access is denied due to invalid credentials.</h2></body></html>")
+                return
+            self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers(); self.wfile.write(APP_HTML.encode()); return
         if STATE.get("refuse"):
             self.send_response(401); self.send_header("Content-Type", "text/html"); self.end_headers()
             self.wfile.write(b"<html><body><h1>Server Error</h1><h2>401 - Unauthorized: Access is denied due to invalid credentials.</h2></body></html>")
@@ -120,9 +131,38 @@ with sync_playwright() as pw:
           raised is not None and "401 Unauthorized" in raised and "Windows Credential Manager" in raised
           and "DOMAIN\\username" in raised and not any(m.startswith("Internal authentication succeeded") for m in logged), raised)
     STATE["refuse"] = False
+
+    print("\n2. THE OLD ACCOUNT IN CREDENTIAL MANAGER, THE NEW ONE IN credentials.txt")
+    STATE["basic"] = "hubuser:new-pass"
+    U.hub_accounts = lambda: [("hubuser", "old-pass", "Windows Credential Manager"),
+                              ("hubuser", "new-pass", r"C:\Automation\credentials.txt")]
+    U.HUB_ACCOUNT_SOURCE = "Windows Credential Manager"
+    ctx = browser.new_context(**U.hub_context_options("hubuser", "old-pass")); pg = ctx.new_page(); logged.clear()
+    ctx2, pg2, user, secret = U.sign_in_hub(browser, ctx, pg, "hubuser", "old-pass")
+    check("Credential Manager's old account is refused: the different one in credentials.txt is tried and signs in",
+          secret == "new-pass" and pg2.url.endswith(LIST) and U.HUB_ACCOUNT_SOURCE.endswith("credentials.txt")
+          and any("trying the account in" in m for m in logged) and any("hub_credentials move" in m for m in logged), logged)
+    check("...and no password is logged", not any("pass" in m and ("old-pass" in m or "new-pass" in m) for m in logged))
+    STATE["basic"] = "hubuser:another-pass"; STATE["attempts"] = 0
+    U.HUB_ACCOUNT_SOURCE = "Windows Credential Manager"
+    ctx = browser.new_context(**U.hub_context_options("hubuser", "old-pass")); pg = ctx.new_page()
+    try:
+        U.sign_in_hub(browser, ctx, pg, "hubuser", "old-pass"); raised = None
+    except Exception as error:
+        raised = str(error)
+    check("Both refused: it stops with the reason after ONE extra attempt (never enough to lock the account)",
+          raised is not None and "credentials.txt" in raised and STATE["attempts"] <= 4, (raised, STATE["attempts"]))
+    U.hub_accounts = lambda: [("hubuser", "old-pass", "Windows Credential Manager")]
+    ctx = browser.new_context(**U.hub_context_options("hubuser", "old-pass")); pg = ctx.new_page()
+    try:
+        U.sign_in_hub(browser, ctx, pg, "hubuser", "old-pass"); raised = None
+    except Exception as error:
+        raised = str(error)
+    check("Only one stored account: refused means stop, nothing else is tried", raised is not None and "Windows Credential Manager" in raised)
+    STATE["basic"] = None
     browser.close()
 
-print("\n2. NO KEYBOARD, NO EOFError")
+print("\n3. NO KEYBOARD, NO EOFError")
 _stdin = sys.stdin
 try:
     import io

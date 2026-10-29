@@ -11821,6 +11821,56 @@ def hub_context_options(username, password):
     return {"http_credentials": {"username": username, "password": password}}
 
 
+def hub_accounts():
+    """[(user, password, source)] to sign in with, in order: Windows Credential
+    Manager, then credentials.txt when it holds a different account. An
+    operator who updates the file while an old entry sits in Credential
+    Manager is not left with the refused one."""
+    accounts = []
+    try:
+        import hub_credentials
+        stored = hub_credentials.read()
+        if stored:
+            accounts.append((stored[0], stored[1], "Windows Credential Manager"))
+        found = hub_credentials.read_file(CREDENTIALS_FILE)
+        if found and (found[0], found[1]) not in [(a[0], a[1]) for a in accounts]:
+            accounts.append((found[0], found[1], str(CREDENTIALS_FILE)))
+    except Exception as error:
+        note_suppressed("reading the Hub accounts", error)
+    return accounts
+
+
+def sign_in_hub(browser, context, page, username, password, context_extra=None):
+    """login_internal, and when the Hub refuses the first account, ONE more
+    attempt with the other stored account (never more: an account is locked
+    after repeated failures). -> (context, page, username, password)."""
+    global HUB_ACCOUNT_SOURCE
+    try:
+        login_internal(page, username, password)
+        return context, page, username, password
+    except Exception as error:
+        if not str(error).startswith("Hub sign-in failed"):
+            raise
+        others = [a for a in hub_accounts() if (a[0], a[1]) != (username, password)]
+        if not others:
+            raise
+        refused_from = HUB_ACCOUNT_SOURCE
+        user, secret, source = others[0]
+        write_log("The Hub refused the account from {0}; trying the account in {1} (one more attempt)."
+                  .format(refused_from, source))
+    HUB_ACCOUNT_SOURCE = source
+    try:
+        context.close()
+    except Exception as error:
+        note_suppressed("closing the refused Hub context", error)
+    context = browser.new_context(**dict(hub_context_options(user, secret), **(context_extra or {})))
+    page = context.new_page()
+    login_internal(page, user, secret)
+    write_log("Signed in to the Hub with the account in {0}. To make it the stored one: "
+              "py -m hub_credentials move".format(source))
+    return context, page, user, secret
+
+
 def main():
     if DASHBOARD_ENABLED and TOWER_AVAILABLE:
         if os.environ.get("CT_STATE_FILE"):
@@ -12008,7 +12058,8 @@ def main():
 
         try:
             tower.step("Signing in to the Logistics Hub", system="hub")
-            login_internal(internal_page, username, password)
+            context, internal_page, username, password = sign_in_hub(
+                browser, context, internal_page, username, password)
             tower.system_ok("hub", "Signed in")
 
             # Carrier pacing (carrier_pacing.py): one lookup at a time, spaced
