@@ -250,6 +250,20 @@ check("Motion respects reduced motion (route reveal, flowing line, pulse)",
       "const rv = reduced() ? 1" in page and ".tm .tm-next{animation:none}" in page)
 check("Light and dark: its colours are tokens, redefined for dark",
       ':root[data-theme="dark"]{--tm-vig' in page and "--tm-sea:#0C1018" in page)
+check("A group of markers shows its count ringed by how many are in each state, and names its place only when all share it",
+      'class: "seg", r: R - 1.6, pathLength: 100' in page and "g.same = false" in page
+      and "function tipForGroup(g)" in page and '" near here"' in page)
+check("Place names beside markers are left out where there is no free room (never drawn over another)",
+      "if (!free && opt) { g.remove(); return null; }" in page)
+check("Keyboard: the map shows its focus, a marker shows its tooltip on focus and keeps focus across a redraw",
+      ".tm:focus-visible{" in page and "tipOnFocus(a, html)" in page and "n.focus({preventScroll: true})" in page)
+check("Touch: one finger up and down scrolls the page, two fingers pinch to zoom; full screen takes every gesture",
+      "touch-action:pan-y" in page and ".tm.full{touch-action:none}" in page and "pinch.d / Math.max(m.d, 1)" in page)
+check("Empty states: nothing placed is said in the middle; one unplaced shipment is a note in a corner, the fit leaving it room",
+      "None of the ${data.items.length} shipment" in page and 'msg.classList.toggle("note", note)' in page
+      and '.tm-msg.note:not([hidden])' in page and ".tm-chips[hidden]" in page)
+check("Projected places are cached per paint, not worked out on every frame",
+      "function placedOf()" in page and "pcache.items !== data.items" in page)
 
 section("8. MAP FILES AND RELEASE")
 world = json.loads((HERE / "dashboard" / "static" / "maps" / "world.json").read_text(encoding="utf-8"))

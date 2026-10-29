@@ -17,8 +17,10 @@
   const css = document.createElement("style");
   css.textContent = `
 .tm{position:relative;height:100%;min-height:360px;border-radius:14px;overflow:hidden;border:1px solid var(--line-2);
-  background:var(--tm-sea);touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;outline:none}
+  background:var(--tm-sea);touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:grab;outline:none}
+.tm:focus-visible{box-shadow:inset 0 0 0 2px var(--vio)}
 .tm.drag{cursor:grabbing}
+.tm.full{touch-action:none}
 .tm svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 .tm .sea{fill:url(#tmDots)}
 .tm .dotp{fill:var(--tm-dot)}
@@ -40,8 +42,14 @@
 .tm .mk .b{transition:transform .18s var(--e)}
 .tm .mk:hover .b,.tm .mk:focus-visible .b{transform:scale(1.18)}
 .tm .mk .rim{stroke:var(--tm-pill);stroke-width:2}
-.tm .mk:focus-visible .rim{stroke:var(--vio);stroke-width:3}
-.tm .mk .n{font:700 10.5px var(--s);fill:var(--tm-pill);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.tm .mk .halo{fill:var(--tm-ink);opacity:.13}
+.tm .mk .face{fill:var(--tm-pill)}
+.tm .mk .seg{fill:none;stroke-width:3.2}
+.tm .mk .edge{fill:none;stroke:var(--tm-pill-edge);stroke-width:1}
+.tm .mk:focus-visible .rim,.tm .mk:focus-visible .edge{stroke:var(--vio);stroke-width:3}
+.tm .mk .n{font:700 10.5px var(--s);fill:var(--tm-ink);text-anchor:middle;dominant-baseline:central;pointer-events:none;font-variant-numeric:tabular-nums}
+.tm .lab.pl rect{fill:color-mix(in srgb,var(--tm-pill) 88%,transparent);filter:none}
+.tm .lab.pl text{font:600 10.5px var(--s);fill:var(--mid)}
 .tm .mk.sel .face{fill:var(--tm-pill);filter:url(#tmShadow)}
 .tm .pulse{fill:none;stroke-width:2;animation:tmPulse 2s var(--e) infinite;transform-box:fill-box;transform-origin:center}
 @keyframes tmPulse{from{opacity:.7;transform:scale(.7)}to{opacity:0;transform:scale(1.9)}}
@@ -87,12 +95,18 @@
 .tm-back{position:fixed;inset:0;z-index:119;background:rgba(10,14,22,.45);backdrop-filter:blur(2px)}
 @keyframes tmFlow{to{stroke-dashoffset:-18}}
 .tm .tm-next{animation:tmFlow 1.4s linear infinite}
-@media (max-width:600px){.tm-chips{top:46px}.tm-trip{bottom:6px}}
+@media (max-width:600px){.tm{min-height:340px}.tm-chips{top:46px}.tm-trip{bottom:6px}.tm-pick select{font-size:12px}}
 .tm-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;max-width:min(320px,86%);text-align:center;
   background:var(--tm-pill);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.45;color:var(--mid);
   box-shadow:0 8px 24px rgba(0,0,0,.10);pointer-events:none}
 .tm-msg b{display:block;color:var(--ink);font-size:13px;margin-bottom:2px}
-.tm-msg[hidden],.tm-hint[hidden]{display:none}
+/* A note about the shipment on show sits in a corner: the markers of the
+   others stay in view around it. */
+.tm-msg.note{left:10px;top:auto;bottom:10px;transform:none;text-align:left;max-width:min(300px,calc(100% - 20px));
+  padding:9px 12px 10px;font-size:12px;border-left:3px solid var(--tm-next)}
+.tm-msg.note b{font-size:12.5px}
+.tm.has-trip .tm-msg.note{bottom:62px}
+.tm-msg[hidden],.tm-hint[hidden],.tm-chips[hidden],.tm-pick[hidden]{display:none}
 .tm-hint{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:3;background:rgba(20,24,32,.82);color:#fff;
   font-size:12px;border-radius:8px;padding:5px 10px;pointer-events:none}
 .tm-pop{position:absolute;z-index:4;min-width:200px;max-width:280px;background:var(--tm-pill);border:1px solid var(--line);border-radius:11px;
@@ -105,6 +119,9 @@
 :root[data-theme="dark"] .tm-tip{background:#262D3B}
 .tm-tip.show{opacity:1}
 .tm-tip small{display:block;color:#B8BCC6;margin-top:3px}
+.tm-tip .tm-st{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:4px;color:#E4E7EE}
+.tm-tip .tm-st i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+@media (pointer:coarse){.tm-ui button{width:36px;height:36px}.tm-pick select{height:36px}.tm-chips{top:54px;right:62px}.tm-chips button{height:30px}}
 :root{--tm-vig:rgba(30,50,90,.10);--tm-sea:#EEF2F7;--tm-dot:rgba(40,60,100,.12);--tm-grid:rgba(30,60,110,.07);--tm-land:#FFFFFF;--tm-border:rgba(30,45,70,.16);
   --tm-pill:#FFFFFF;--tm-pill-edge:rgba(0,0,0,.08);--tm-ink:#0B1F33;--tm-next:#94A3B8;--tm-accent:var(--teal-dot)}
 :root[data-theme="dark"]{--tm-vig:rgba(0,0,0,.45);--tm-sea:#0C1018;--tm-dot:rgba(255,255,255,.07);--tm-grid:rgba(255,255,255,.04);--tm-land:#1A2130;
@@ -120,6 +137,13 @@
     return m ? `${+m[1]} ${MON[+m[2] - 1]}${t ? " " + t : ""}` : String(d || "");
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // The journey states the console sends (item.k), in the order the legend,
+  // a cluster's ring and its tooltip list them.
+  const LEGEND = [["onway", "var(--teal-dot)", "On the way"], ["arrived", "var(--grn-dot)", "Arrived"],
+                  ["processing", "var(--blu)", "Tracking"], ["human", "var(--y-dot)", "Waiting"],
+                  ["failed", "var(--red)", "Exception"]];
+  const RANK = Object.fromEntries(LEGEND.map((l, i) => [l[0], i]));
+  const placeName = (p) => p ? (p.code ? `${p.name} (${p.code})` : p.name) + (p.country || p.cc ? `, ${p.country || p.cc}` : "") : "";
   // How long ago the carrier's event was, from its own date (dd/mm/yyyy).
   const ago = (d) => {
     const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(d || ""));
@@ -178,6 +202,15 @@
     return [(p.lon + 180) / 360 * W, mercY(world.projection.lat_top) - mercY(p.lat)];
   }
   const placed = (p) => p && typeof p.lat === "number" && typeof p.lon === "number";
+  // The shipments with a reported place and that place projected, worked
+  // out once per paint rather than on every frame of a drag or a flight.
+  let pcache = {items: null, list: []};
+  function placedOf() {
+    if (pcache.items !== data.items) {
+      pcache = {items: data.items, list: data.items.map((it) => { const n = nowOf(it); return n && {it, n, m: proj(n.pt)}; }).filter(Boolean)};
+    }
+    return pcache.list;
+  }
   const scr = (m) => [(m[0] - cam.x) / cam.s + size.w / 2, (m[1] - cam.y) / cam.s + size.h / 2];
   const fullS = () => Math.max(world.viewBox[2] / size.w, world.viewBox[3] / size.h);
 
@@ -389,12 +422,25 @@
   // Screen space the overlays take: the list at the top, the controls on the
   // right, the legend at the bottom. Fitting keeps places clear of them.
   const PAD = {top: 92, bottom: 88, left: 56, right: 66};
+  // Where the overlays end, measured (the legend row is taller on a touch
+  // screen): labels stay below the legend and above the journey strip.
+  let topY = 46, botY = 34;
+  function room() {
+    const c = root.querySelector(".tm-chips"), t = root.querySelector(".tm-trip");
+    topY = c && !c.hidden && c.offsetHeight ? c.offsetTop + c.offsetHeight + 6 : 46;
+    botY = t && !t.hidden && t.offsetHeight ? size.h - t.offsetTop + 6 : 34;
+  }
   function fitCam(b) {
     const w = Math.max(b[2] - b[0], 1), h = Math.max(b[3] - b[1], 1);
-    const iw = Math.max(size.w - PAD.left - PAD.right, 60), ih = Math.max(size.h - PAD.top - PAD.bottom, 60);
+    // A note in the bottom corner (a shipment not on the map) takes its own room.
+    const note = root.querySelector(".tm-msg.note:not([hidden])");
+    const pb = note && !root.classList.contains("has-trip") ? Math.max(PAD.bottom, note.offsetHeight + 28) : PAD.bottom;
+    room();
+    const pt = Math.max(PAD.top, topY + 20);
+    const iw = Math.max(size.w - PAD.left - PAD.right, 60), ih = Math.max(size.h - pt - pb, 60);
     let s = Math.max(w / iw, h / ih);
     s = Math.max(s, fullS() / 14);               // never closer than a region
-    const cx = PAD.left + iw / 2 - size.w / 2, cy = PAD.top + ih / 2 - size.h / 2;
+    const cx = PAD.left + iw / 2 - size.w / 2, cy = pt + ih / 2 - size.h / 2;
     return clampCam({x: (b[0] + b[2]) / 2 - cx * s, y: (b[1] + b[3]) / 2 - cy * s, s});
   }
   function flyTo(b, user) {
@@ -460,13 +506,33 @@
   /* ── pointer: drag, Ctrl + wheel, double click ── */
   function wire() {
     let drag = null, hintT = 0;
+    // Two fingers on a touch screen: pinch to zoom about their midpoint.
+    // (One finger moves the map sideways; up and down it scrolls the page,
+    // unless the map is full screen.)
+    const touch = new Map();
+    let pinch = null;
+    const mid = () => { const [a, b] = [...touch.values()]; return {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y)}; };
     root.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") {
+        touch.set(e.pointerId, {x: e.clientX, y: e.clientY});
+        if (touch.size === 2 && cam) { drag = null; const m = mid(); pinch = {d: Math.max(m.d, 1), cam}; return; }
+      }
       if (e.button !== 0 || e.target.closest(".tm-ui,.tm-pick,.tm-pop,.mk,.tm-chips,.tm-trip,.stopc")) return;
       closePop();
       drag = {x: e.clientX, y: e.clientY, cam: cam, moved: false};
       root.setPointerCapture(e.pointerId);
     });
+    const lift = (e) => { touch.delete(e.pointerId); if (touch.size < 2) pinch = null; };
+    root.addEventListener("pointerup", lift);
+    root.addEventListener("pointercancel", lift);
     root.addEventListener("pointermove", (e) => {
+      if (touch.has(e.pointerId)) touch.set(e.pointerId, {x: e.clientX, y: e.clientY});
+      if (pinch && touch.size === 2 && cam) {
+        const m = mid(), r = root.getBoundingClientRect();
+        cam = pinch.cam; cancelAnimationFrame(anim); hideTip();
+        zoomAt(m.x - r.left, m.y - r.top, pinch.d / Math.max(m.d, 1), false);
+        return;
+      }
       if (!drag || !cam) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
@@ -506,19 +572,39 @@
   /* ── tooltip and the list for shipments reported at one place ── */
   function showTip(e, html) {
     tip.innerHTML = html; tip.classList.add("show");
-    const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+    const x = Math.max(8, Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8));
     const y = e.clientY + 16 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 12 : e.clientY + 16;
     tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  // A marker reached by Tab shows the same tooltip, beside the marker.
+  function tipOnFocus(node, html) {
+    node.addEventListener("focus", () => { const r = node.getBoundingClientRect(); showTip({clientX: r.right - 6, clientY: r.bottom - 10}, html()); });
+    node.addEventListener("blur", hideTip);
   }
   function hideTip() { tip.classList.remove("show"); }
   function tipFor(it) {
     const n = nowOf(it);
     const ev = n && n.ev;
-    const where = n ? (n.pt.code ? `${n.pt.name} (${n.pt.code})` : n.pt.name) + `, ${n.pt.country || n.pt.cc}` : "";
+    const where = n ? placeName(n.pt) : "";
     return `<b>${esc(it.ref)}</b> · ${esc(it.carrier || "")}<br>${esc(it.label || "")}` +
       (ev ? `<small>Last reported: ${esc(ev.text)} — ${esc(where)}, ${esc(day(ev.date, ev.time))}` +
             (ev.said && ev.said !== n.pt.name ? `<br>Carrier wrote “${esc(ev.said)}”` : "") + `</small>`
           : n && n.arrived ? `<small>Arrived at ${esc(where)}</small>` : "");
+  }
+  // Several shipments at one marker: where (when they share one place),
+  // how many in each state, and which.
+  function tipForGroup(g) {
+    const c = {};
+    g.items.forEach((x) => { c[x.k] = (c[x.k] || 0) + 1; });
+    const st = LEGEND.filter((l) => c[l[0]]).map((l) => `<span><i style="background:${l[1]}"></i>${l[2]} ${c[l[0]]}</span>`).join("");
+    // Not one place: the places they were reported at, most first.
+    const pl = {};
+    if (!g.same) g.items.forEach((x) => { const n = placeName(nowOf(x).pt); pl[n] = (pl[n] || 0) + 1; });
+    const where = Object.entries(pl).sort((a, b) => b[1] - a[1]);
+    return `<b>${g.items.length} shipments</b>${g.same ? " · " + esc(placeName(g.pt)) : " near here"}` +
+      (where.length ? `<small>${where.slice(0, 3).map(([n, v]) => esc(n) + " · " + v).join("<br>")}${where.length > 3 ? "<br>and " + (where.length - 3) + " more places" : ""}</small>` : "") +
+      (st ? `<span class="tm-st">${st}</span>` : "") +
+      `<small>${g.items.slice(0, 6).map((x) => esc(x.ref)).join(", ")}${g.items.length > 6 ? " and " + (g.items.length - 6) + " more" : ""}</small>`;
   }
   function closePop() { const p = root && root.querySelector(".tm-pop"); if (p) p.remove(); }
   function openPop(group, x, y) {
@@ -538,22 +624,25 @@
 
   /* ── drawing ── */
   // A pill beside its point: right, left, above or below, whichever is
-  // inside the map and clear of the pills and markers already placed.
-  function label(x, y, title, sub, used, gap) {
-    const g = el("g", {class: "lab"}, L.labels);
+  // inside the map and clear of the pills and markers already placed. A
+  // place name (opt) is left out when no such spot is free.
+  function label(x, y, title, sub, used, gap, opt) {
+    const g = el("g", {class: opt ? "lab pl" : "lab"}, L.labels);
     const t = el("text", {x: 0, y: 0}, g);
     t.textContent = title;
     if (sub) { const s = el("tspan", {class: "s", dx: 6}, t); s.textContent = sub; }
-    const w = t.getComputedTextLength() + 16, h = 22, r = gap || 8;
-    const fits = (b) => b[0] >= 6 && b[1] >= 46 && b[0] + b[2] <= size.w - 46 && b[1] + b[3] <= size.h - 34;
+    const w = t.getComputedTextLength() + (opt ? 12 : 16), h = opt ? 18 : 22, r = gap || 8;
+    const fits = (b) => b[0] >= 6 && b[1] >= topY && b[0] + b[2] <= size.w - 46 && b[1] + b[3] <= size.h - botY;
     const clear = (b) => !used.some((u) => b[0] < u[0] + u[2] + 3 && u[0] < b[0] + b[2] + 3 && b[1] < u[1] + u[3] + 3 && u[1] < b[1] + b[3] + 3);
     const tries = [[x + r + 4, y - h / 2], [x - r - 4 - w, y - h / 2], [x - w / 2, y - r - 4 - h], [x - w / 2, y + r + 4],
                    [x + r + 4, y - r - h], [x - r - 4 - w, y + r]].map((p) => [p[0], p[1], w, h]);
-    const box = tries.find((b) => fits(b) && clear(b)) || tries.find(fits) || tries[0];
+    const free = tries.find((b) => fits(b) && clear(b));
+    if (!free && opt) { g.remove(); return null; }
+    const box = free || tries.find(fits) || tries[0];
     box[0] = Math.min(Math.max(box[0], 6), size.w - w - 6);
-    box[1] = Math.min(Math.max(box[1], 46), size.h - h - 34);
+    box[1] = Math.min(Math.max(box[1], topY), size.h - h - botY);
     g.insertBefore(el("rect", {x: box[0], y: box[1], width: w, height: h, rx: 7}), t);   // the pill behind its text
-    t.setAttribute("x", box[0] + 8); t.setAttribute("y", box[1] + 15);
+    t.setAttribute("x", box[0] + (opt ? 6 : 8)); t.setAttribute("y", box[1] + (opt ? 12.5 : 15));
     used.push(box);
     return box;
   }
@@ -562,6 +651,9 @@
   function draw(moving) {
     if (!world || !root || !cam || !shown()) return;
     L.geo.setAttribute("transform", `matrix(${1 / cam.s} 0 0 ${1 / cam.s} ${size.w / 2 - cam.x / cam.s} ${size.h / 2 - cam.y / cam.s})`);
+    // A marker that had keyboard focus has it again once redrawn.
+    if (!moving) room();
+    const fa = document.activeElement, refocus = fa && L.marks.contains(fa) ? fa.getAttribute("data-k") : null;
     L.route.textContent = ""; L.marks.textContent = ""; L.labels.textContent = "";
     hideTip();                                   // its marker is being redrawn
     const sel = data.items.find((i) => i.ref === data.selected) || null;
@@ -576,16 +668,30 @@
 
     // Every shipment with a reported place: one marker each, gathered where
     // they would overlap; the shipment on show is drawn on top, with its mode.
-    const pts = [];
-    data.items.forEach((it) => {
+    // Each marker is gathered with the first group within 16 px of it (a
+    // 16 px grid, so this stays quick with hundreds of shipments); those off
+    // screen are not drawn.
+    const groups = [], cell = new Map();
+    placedOf().forEach(({it, n, m}) => {
       if (it.ref === data.selected || (filt && it.k !== filt)) return;
-      const n = nowOf(it); if (n) pts.push({it, at: scr(proj(n.pt))});
+      const at = scr(m);
+      if (at[0] < -30 || at[1] < -30 || at[0] > size.w + 30 || at[1] > size.h + 30) return;
+      const cx = Math.floor(at[0] / 16), cy = Math.floor(at[1] / 16);
+      let g = null;
+      for (let i = -1; i <= 1 && !g; i++) for (let j = -1; j <= 1 && !g; j++) {
+        g = (cell.get((cx + i) + "," + (cy + j)) || []).find((g) => Math.hypot(g.at[0] - at[0], g.at[1] - at[1]) < 16) || null;
+      }
+      if (g) {
+        g.items.push(it);
+        if (g.same && !(n.pt.lat === g.pt.lat && n.pt.lon === g.pt.lon)) g.same = false;
+      } else {
+        g = {at, items: [it], pt: n.pt, same: true};
+        groups.push(g);
+        const k = cx + "," + cy; if (!cell.has(k)) cell.set(k, []); cell.get(k).push(g);
+      }
     });
-    const groups = [];
-    pts.forEach((p) => {
-      const g = groups.find((g) => Math.hypot(g.at[0] - p.at[0], g.at[1] - p.at[1]) < 16);
-      if (g) { g.items.push(p.it); } else groups.push({at: p.at, items: [p.it]});
-    });
+    // Room the labels must leave: every marker (and, below, the shipment on show).
+    const labUsed = groups.map((g) => { const r = g.items.length > 1 ? 16 : 10; return [g.at[0] - r, g.at[1] - r, 2 * r, 2 * r]; });
     // The shipment on show: where it has been (solid), what is left to its
     // destination (dotted), or only the route its carrier names (dotted).
     let selNow = null;
@@ -637,8 +743,8 @@
       // where it came from. One too close to another place is left out
       // (the journey strip and the tooltip still name it).
       const Q = n ? scr(proj(n.pt)) : null;
-      const used = (Q ? [[Q[0] - 17, Q[1] - 17, 34, 34]] : [])
-        .concat(groups.map((g) => [g.at[0] - 10, g.at[1] - 10, 20, 20]));
+      if (Q) labUsed.unshift([Q[0] - 17, Q[1] - 17, 34, 34]);
+      const used = labUsed;
       const near = (a, b) => a && b && Math.hypot(a[0] - b[0], a[1] - b[1]) < 22;
       const seen = (p) => p && p[0] >= 0 && p[1] >= 0 && p[0] <= size.w && p[1] <= size.h;
       if (seen(Q) && !moving) label(Q[0], Q[1], short(n.pt), n.ev ? day(n.ev.date, n.ev.time) : "Arrived", used, 17);
@@ -665,15 +771,41 @@
       }
     }
 
+    // Place names beside the markers, largest group first, where there is
+    // room: only for a group whose shipments all share that one place.
+    if (!moving) {
+      groups.filter((g) => g.same).sort((a, b) => b.items.length - a.items.length).slice(0, 8)
+        .forEach((g) => label(g.at[0], g.at[1], short(g.pt), "", labUsed, g.items.length > 1 ? 15 : 9, true));
+    }
     groups.forEach((g) => {
-      if (g.at[0] < -20 || g.at[1] < -20 || g.at[0] > size.w + 20 || g.at[1] > size.h + 20) return;
       const one = g.items.length === 1, it = g.items[0];
-      const a = el("g", {class: "mk", tabindex: 0, role: "button", transform: `translate(${g.at[0].toFixed(1)} ${g.at[1].toFixed(1)})`,
-                         "aria-label": one ? `${it.ref}, ${it.label}` : `${g.items.length} shipments here`}, L.marks);
+      const where = g.same ? placeName(g.pt) : "";
+      const a = el("g", {class: "mk", tabindex: 0, role: "button", "data-k": one ? "1:" + it.ref : "n:" + g.items.map((x) => x.ref).join("|"),
+                         transform: `translate(${g.at[0].toFixed(1)} ${g.at[1].toFixed(1)})`,
+                         "aria-label": one ? `${it.ref}, ${it.label}${where ? ", last reported at " + where : ""}`
+                                           : `${g.items.length} shipments${where ? " at " + where : " near here"}`}, L.marks);
       el("circle", {class: "hit", r: 14}, a);
       const b = el("g", {class: "b"}, a);
-      el("circle", {class: "rim", r: one ? 6.5 : 10, fill: one ? it.ring : "var(--tm-ink)"}, b);
-      if (!one) { const t = el("text", {class: "n"}, b); t.textContent = g.items.length; }
+      if (one) {
+        el("circle", {class: "halo", r: 9.5}, b);
+        el("circle", {class: "rim", r: 6.5, fill: it.ring}, b);
+      } else {
+        // A group: its count, ringed by how many are in each state.
+        const R = Math.min(14, 10 + Math.log2(g.items.length) * 1.1), c = {};
+        g.items.forEach((x) => { const k = x.ring + "\u0000" + x.k; c[k] = (c[k] || 0) + 1; });
+        el("circle", {class: "halo", r: R + 3}, b);
+        el("circle", {class: "face", r: R}, b);
+        el("circle", {class: "edge", r: R}, b);
+        let at = 0;
+        Object.entries(c).sort((x, y) => (RANK[x[0].split("\u0000")[1]] ?? 9) - (RANK[y[0].split("\u0000")[1]] ?? 9)).forEach(([k, v]) => {
+          const len = v / g.items.length * 100;
+          el("circle", {class: "seg", r: R - 1.6, pathLength: 100, stroke: k.split("\u0000")[0], transform: "rotate(-90)",
+                        "stroke-dasharray": `${Math.max(len - (len < 100 ? 2 : 0), .5)} ${100 - len + (len < 100 ? 2 : 0)}`,
+                        "stroke-dashoffset": String(-at)}, b);
+          at += len;
+        });
+        const t = el("text", {class: "n"}, b); t.textContent = g.items.length;
+      }
       const pick = (e) => {
         hideTip();
         if (one) { if (data.onSelect) data.onSelect(it.ref); return; }
@@ -687,8 +819,9 @@
       };
       a.addEventListener("click", pick);
       a.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(e); } });
-      a.addEventListener("pointerenter", (e) => showTip(e, one ? tipFor(it)
-        : `<b>${g.items.length} shipments</b><small>${g.items.slice(0, 6).map((x) => esc(x.ref)).join(", ")}${g.items.length > 6 ? "…" : ""}</small>`));
+      const html = () => one ? tipFor(it) : tipForGroup(g);
+      a.addEventListener("pointerenter", (e) => showTip(e, html()));
+      tipOnFocus(a, html);
       a.addEventListener("pointermove", (e) => { if (tip.classList.contains("show")) { const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8); tip.style.left = x + "px"; tip.style.top = (e.clientY + 16) + "px"; } });
       a.addEventListener("pointerleave", hideTip);
     });
@@ -704,6 +837,7 @@
       a.addEventListener("pointerenter", (e) => showTip(e, tipFor(sel)));
       a.addEventListener("pointerleave", hideTip);
     }
+    if (refocus) { const n = L.marks.querySelector(`[data-k="${CSS.escape(refocus)}"]`); if (n) n.focus({preventScroll: true}); }
   }
 
   function paintChrome() {
@@ -719,9 +853,7 @@
     const count = {};
     placedItems.forEach((i) => { count[i.k] = (count[i.k] || 0) + 1; });
     if (filt && !count[filt]) filt = null;
-    const legend = [["onway", "var(--teal-dot)", "On the way"], ["arrived", "var(--grn-dot)", "Arrived"],
-                    ["processing", "var(--blu)", "Tracking"], ["human", "var(--y-dot)", "Waiting"],
-                    ["failed", "var(--red)", "Exception"]].filter((l) => count[l[0]]);
+    const legend = LEGEND.filter((l) => count[l[0]]);
     const chips = root.querySelector(".tm-chips");
     const html = `<button type="button" data-f="all" aria-pressed="${!filt}" title="Each marker is the last place the carrier reported, not a live GPS position">All <b>${placedItems.length}</b> of ${data.items.length} placed</button>` +
       legend.map((l) => `<button type="button" data-f="${l[0]}" aria-pressed="${filt === l[0]}"><i style="background:${l[1]}"></i>${l[2]} <b>${count[l[0]]}</b></button>`).join("");
@@ -740,6 +872,7 @@
         `<i></i><b>${esc(short(p))}</b><small>${esc(when)}</small></button>`;
     }).join("");
     trip.hidden = !stops.length;
+    root.classList.toggle("has-trip", !!stops.length);
     if (trip._h !== tripHtml) {
       trip._h = tripHtml; trip.innerHTML = tripHtml;
       if (sel) trip.style.setProperty("--tm-c", sel.color);
@@ -748,15 +881,22 @@
       if (now) trip.scrollLeft = Math.max(0, now.offsetLeft + now.offsetWidth - trip.clientWidth + 90);
     }
     const msg = root.querySelector(".tm-msg");
-    let text = "";
+    // In the middle when the map has nothing to show; in a corner, clear of
+    // the other shipments' markers, when only the one on show is not placed.
+    let text = "", note = false;
     if (!data.items.length) text = "<b>No shipment yet</b>The first one picked up from the Hub appears here.";
     else if (sel && !nowOf(sel)) {
       const r = routeOf(sel);
       text = r.dest || r.origin
         ? `<b>${esc(sel.ref)}: route only</b>${esc(sel.carrier || "The carrier")} names ${r.origin ? esc(short(r.origin)) + " → " : ""}${r.dest ? esc(short(r.dest)) : ""}, but no place the shipment has reached yet.`
         : `<b>${esc(sel.ref)}: no place reported</b>${esc(sel.carrier || "The carrier")} gives status and dates for this shipment, not a place, so it is not on the map.`;
+      note = !!(placedItems.length || r.dest || r.origin);
+      if (!note) text += ` None of the ${data.items.length} shipments has a reported place yet.`;
+    } else if (!placedItems.length) {
+      text = `<b>No reported place yet</b>None of the ${data.items.length} shipment${data.items.length === 1 ? "" : "s"} has a place its carrier named that the map can show. Each appears once its carrier names an airport, port or town.`;
     }
     if (msg._h !== text) { msg._h = text; msg.innerHTML = text; }
+    msg.classList.toggle("note", note);
     msg.hidden = !text;
   }
 
