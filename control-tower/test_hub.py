@@ -71,6 +71,11 @@ for s in st["stages"]:
     check("'{0}' lists exactly its {1}".format(s["label"], s["count"]), lst["total"] == s["count"], lst["total"])
 check("A BU's list holds only that BU", {r["bu"] for r in H.stage_list("all", "GH", data=DATA)["rows"]} == {"GH"})
 check("Past due = open and beyond the step's due date", H.stage_list("pastdue", data=DATA)["total"] == 2)
+BIG = {"asof": ASOF, "fields": C.FIELDS,
+       "rows": [[r[k] for k in C.FIELDS] for r in [row("EG", "Submit to BU", eta="2026-10-01", awb="B%d" % i) for i in range(2500)]]}
+big = H.stage_list("all", data=BIG)
+check("The list (and the CSV built from it) carries every row, not a first 2,000",
+      big["total"] == 2500 and len(big["rows"]) == 2500, (big["total"], len(big["rows"])))
 
 print("\n3. PLACES: A BU'S COUNTRY, NEVER A GUESS")
 bus = {b["bu"]: b for b in H.bu_places(DATA)}
@@ -213,6 +218,9 @@ check("/hub, /api/hub/overview and /api/hub/list are served, read-only (GET only
 check("The list needs clearance.view and refuses an unknown stage or BU",
       'self._acc_can("clearance.view")' in src.split('route == "/api/hub/list"')[1][:1500] and "unknown stage or BU" in src)
 html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
+check("Headline and BU pins use one metric (past due), and both say so",
+      "count: b.late," in html and "past due of ${fmt(worst.open)} open" in html
+      and "Number on a BU pin = open shipments past due" in html and 'countLabel: "past due"' in html)
 check("The hub draws only what the server sends: no hard-coded counts",
       "/api/hub/overview" in html and "/api/hub/list" in html and "Illustration — the counts are real" in html)
 

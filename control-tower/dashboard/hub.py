@@ -127,7 +127,7 @@ def stages(data=None, rows=None, allowed=None):
 LIST_FIELDS = ("awb", "bu", "mode", "step", "eta", "ata", "overdue", "ontime", "ffw", "agent", "status")
 
 
-def stage_list(stage, bu=None, data=None, limit=2000, allowed=None):
+def stage_list(stage, bu=None, data=None, limit=None, allowed=None):
     """The export's shipments in one stage (or 'all', or 'late'), optionally of
     one BU: exactly the rows behind a number on the hub. -> {asof, total, rows}."""
     data = data or _clearance.load()

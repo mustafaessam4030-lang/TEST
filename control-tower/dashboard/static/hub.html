@@ -186,8 +186,8 @@
               <div class="card-h"><div><h2 id="mapT">Where shipments are</h2>
                 <p>Business units where shipments clear, and the places carriers last reported. Not live GPS.</p></div></div>
               <div class="mapbox" id="map"></div>
-              <div class="legend"><span><i style="background:var(--hub-red)"></i>Past due</span><span><i style="background:var(--hub-amber)"></i>Open</span>
-                <span><i style="background:var(--hub-green)"></i>On track / written</span><span><i style="background:var(--hub-blue)"></i>Carrier-reported place</span>
+              <div class="legend"><span><b>Number on a BU pin = open shipments past due</b></span><span><i style="background:var(--hub-red)"></i>Some past due</span><span><i style="background:var(--hub-amber)"></i>Open, none past due</span>
+                <span><i style="background:var(--hub-green)"></i>On track / written</span><span><i style="background:var(--hub-blue)"></i>Carrier-reported place (number = shipments in this run)</span>
                 <span>Solid line: reported · dashed: to destination</span></div>
               <p class="hub-src" id="unplaced" hidden></p>
             </section>
@@ -346,7 +346,7 @@
     const late = c.past_due, open = c.open;
     const worst = bus[0];
     $("headline").innerHTML = `<em>${fmt(late)}</em> of ${fmt(open)} open shipments are past their step's due date` +
-      (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)}).` : ".");
+      (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)} past due of ${fmt(worst.open)} open).` : ".");
     $("sub").textContent = `${fmt(st.transit)} in transit · ${fmt(st.arrived + st.customs)} arrived and clearing · ${fmt(st.awaiting)} cleared, awaiting delivery — eHub export, data as of ${dmy(c.asof)}`;
   }
   function runCard(r, hidden) {
@@ -373,7 +373,7 @@
     const pins = [], routes = [];
     for (const b of d.bus || []) {
       const s = b.stages || {};
-      pins.push({id: "bu:" + b.bu, lat: b.lat, lon: b.lon, label: b.bu, count: b.open,
+      pins.push({id: "bu:" + b.bu, lat: b.lat, lon: b.lon, label: b.bu, count: b.late,
         tone: b.late ? "red" : b.open ? "amber" : "green",
         sheet: {title: `${b.bu} · ${b.country}`, subtitle: `Business unit · ${fmt(b.n)} shipments in the eHub export`,
           actions: [{label: "Shipments", primary: true, event: "list"}, {label: "Past due", event: "pastdue"}, {label: "Clearance", event: "clearance"}],
@@ -403,7 +403,7 @@
           rows: it.slice(0, 6).map((x) => ({ref: x.ref, text: `${x.carrier || ""} · ${x.event || x.status || ""}${x.eta ? " · ETA " + x.eta : ""}`, tone: x.state === "failed" ? "red" : x.ata ? "green" : "blue"})),
           note: `The place the carrier named (${it[0].source || "carrier timeline"}), not live GPS.`}});
     }
-    return {focus: (d.bus || []).map((b) => b.cc), pins, routes};
+    return {focus: (d.bus || []).map((b) => b.cc), pins, routes, countLabel: "past due"};
   }
   function mountMap(d) {
     if (!window.HubMap3D) { $("map").innerHTML = '<div class="hub-empty"><b>Map unavailable</b>The map component did not load.</div>'; return; }
