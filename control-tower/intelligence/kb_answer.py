@@ -72,9 +72,10 @@ RUN_FIELD = re.compile(r"^\s*what(?:'s| is| was) the (?:eta|ata|etd|atd|status|l
 # "What does X mean?", "define X": a definition, whatever else X is.
 DEFINE = re.compile(r"^\s*(what does .{1,60} mean|what is the meaning of|meaning of|define|definition of)|"
                     r"ماذا يعني|ما معنى|يعني ايه|يعني إيه", re.I)
-COMPARE = re.compile(r"difference between|\bvs\.?\b|\bversus\b|compared? (to|with)|\bor\b|الفرق بين|مقارنة", re.I)
+COMPARE = re.compile(r"difference between|\bvs\.?\b|\bversus\b|compared? (to|with)|\bor\b|الفرق بين|الفرق|مقارنة|غير|ولا", re.I)
 ARABIC = re.compile(r"[؀-ۿ]")
-CALC_ITEM = {"OTIF": "E.otif", "On-time delivery": "E.on-time-delivery", "Chargeable weight": "B.chargeable-weight",
+CALC_ITEM = {"Reorder point": "A.reorder-point", "Inventory turnover": "E.inventory-turnover", "MAPE": "E.forecast-accuracy",
+             "OTIF": "E.otif", "On-time delivery": "E.on-time-delivery", "Chargeable weight": "B.chargeable-weight",
              "Chargeable days": "C.demurrage", "Cost variance": "E.cost-variance", "Cost per shipment": "E.cost-per-shipment",
              "Exception rate": "E.exception-rate", "Past-due share": "E.past-due-share", "Transit time": "E.transit-time-kpi"}
 MIN_SCORE = 8.0            # below this an unnamed match is not an answer
@@ -92,8 +93,15 @@ EVIDENCE_TEXT = {
 }
 
 
+def _is_compare(question, hits):
+    """Two concepts ATLAS knows by name, set against each other."""
+    named = [h for h in hits or [] if h["named"] and h.get("specific", True)]
+    return len(named) >= 2 and bool(COMPARE.search(question or "")) and _joined(question, named[0], named[1])
+
+
 def _intent(question, hits):
-    if CALC.calculate(question) is not None:
+    calc = CALC.calculate(question)
+    if calc is not None and not (calc.get("missing") and _is_compare(question, hits)):
         return "calculation"
     inc = CALC.incoterm_question(question) if CALC.RULE.search(question or "") else None
     if inc and inc.get("aspect"):
@@ -119,6 +127,11 @@ def _joined(question, a, b):
     return len(between.split()) <= 4 or bool(re.search(r"differ|between|compar|versus|vs", question, re.I))
 
 
+WHAT_IS_X = re.compile(r"^\s*(?:what(?:'s| is| are| does)|define|explain|meaning of|ايه هو|ايه هي|ما هو|ما هي)\s+(.+)", re.I)
+# A question, not a described situation ("they rolled our box…").
+ASK_START = re.compile(r"^\s*(how|what|which|when|where|who|why|should|can|could|do|does|is|are|will|would|"
+                       r"ايه|إيه|هل|ازاي|إزاي|امتى|إمتى|مين|ينفع|ليه)\b", re.I)
+QUOTED = re.compile(r"(?:(?<=\s)|^)['\"“‘]([^\"”]{2,40}?)['\"”’](?=[\s,.;:?!؟]|$)")
 # Said to ATLAS about itself ("are you good", "you ok"): not a bare name.
 TO_ATLAS = re.compile(r"\b(you|u|your|yours|yourself|ya)\b", re.I)
 
@@ -140,11 +153,32 @@ def match(question, k=None, routed=False):
     with trace.span("kb.search"):
         k = k or KB.kb()
         hits = k.search(q, limit=6)
+    asked = WHAT_IS_X.match(q)
+    if asked and hits:
+        rest = " " + " ".join(KB.tokens(asked.group(1))) + " "
+        first = [h for h in hits if h.get("named") and h.get("name") and rest.startswith(" " + h["name"] + " ")]
+        if first:
+            # Longest name first; between equals, the item whose own term carries it
+            # ("THC" is in "Terminal handling … (THC, BAF)", not in "Surcharges").
+            first.sort(key=lambda h: (-len(h["name"]), 0 if set(h["name"].split()) <= set(KB.tokens(h["item"].get("term"))) else 1))
+            ids = {h["id"] for h in first[:1]}
+            hits = first[:1] + [h for h in hits if h["id"] not in ids]
+    # A status or term the operator quotes ("carrier shows 'discharged'") is
+    # what the question is about: its entry comes first.
+    quoted = QUOTED.findall(q)
+    if quoted and hits:
+        keys = {key for x in quoted for key in KB.name_keys(x)}
+        first = [dict(h, specific=True) for h in hits if h.get("named") and h.get("name") in keys]
+        ids = {h["id"] for h in first}
+        hits = first + [h for h in hits if h["id"] not in ids]
     strong = bool(GENERAL_ASK.search(q)) or CALC.calculate(q) is not None or routed
     asks = strong or bool(BROAD_ASK.search(q))
     # A data question ("how many…", "which…", "our…") reaches the knowledge
     # only when it plainly asks what something is ("what is our OTIF").
-    if RUN_FIELD.search(q) or RUN_SUBJECT.search(q) or REFERENCE.search(q) or SPECIFIC.search(q) or PAST_ASK.search(q) or \
+    # "Which Incoterm … when the supplier loads the truck": "the truck" names
+    # no record here; an Incoterms question is general by nature.
+    specific = SPECIFIC.search(q) and not re.search(r"\bincoterms?\b", q, re.I)
+    if RUN_FIELD.search(q) or RUN_SUBJECT.search(q) or REFERENCE.search(q) or specific or PAST_ASK.search(q) or \
             (DATA_ASK.search(q) and not strong):
         return []                                       # a data question: the records answer it
     if asks:
@@ -512,7 +546,12 @@ def answer(question, context=None, data=None, routed=False):
     k = KB.kb()
     q = " ".join(str(question or "").split())
     hits = match(q, k, routed=routed)
-    if routed and is_scenario(q):
+    # "How do we set stock for critical slow movers?": a question about one
+    # concept it knows by its own name, with no situation described, is
+    # answered from that concept, not reasoned through as a scenario.
+    about_one = bool(ASK_START.match(q)) and bool(hits) and hits[0]["named"] and hits[0].get("specific", True) and hits[0]["score"] >= 30 and \
+        not SCENARIO_CUE.search(re.sub(r"\bstill\b", " ", q))
+    if routed and is_scenario(q) and not _is_compare(q, hits) and not about_one:
         sc = _scenario(q, k, hits or k.search(q, limit=6), context, data)
         if sc is not None:
             KB.log_query(q, hits, (time.perf_counter() - t0) * 1000, "kb_answer:scenario", {"used": sc["knowledge"]["items"]})
@@ -530,6 +569,7 @@ def answer(question, context=None, data=None, routed=False):
         parts.append(CALC.describe(calc))
         # The item for what was calculated; else the KPI the question names.
         kpi_item = k.get(CALC_ITEM.get((calc or {}).get("kpi"), "")) or \
+            next((h["item"] for h in hits if h["named"] and h.get("specific", True)), None) or \
             next((h["item"] for h in hits if h["item"].get("kind") == "kpi"), None)
         if kpi_item:
             used.append(kpi_item)

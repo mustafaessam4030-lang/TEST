@@ -60,7 +60,10 @@ GENERAL = re.compile(
     r"who(?:'s| is)? (?:pays?|paying|bears?|carr(?:y|ies)|responsible|on the hook)|what'?s on us|who arranges|"
     r"what goes into|vs\.?|versus|or .{1,30}\?|difference between|what is|what's a|what are|define|explain|meaning of)\b|"
     r"ايه الفرق|إيه الفرق|الفرق بين|يعني ايه|يعني إيه|ما هو|ما هي|مين (?:المفروض )?(?:يدفع|شايل)|مين بيدفع|ينفع|ولا لازم|ده معناه|"
-    r"الترتيب الطبيعي|ليها أصل", re.I)
+    r"الترتيب الطبيعي|ليها أصل|\bcan (?:clearance|customs|we|it) (?:start|begin|be done|happen) before\b|"
+    r"\bdo we have to wait\b|\bis (?:it|that) enough\b|\bhow many [\w ]{1,25}\b(?:fit|go|can (?:we|you) (?:load|put))\b|"
+    r"\bwhen (?:is|are|should) [\w ]{1,40}\b(?:better|cheaper|faster)\b|\bbetter than\b|"
+    r"\bwhich incoterms?\b|\bwhat (?:documents|papers)\b|\bwhen do (?:we|i|you) need\b", re.I)
 INCOTERM = re.compile(r"\b(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)\b")
 CALC_SHAPE = re.compile(r"(\d[\d,.]*\s*(?:x|×|\*)\s*\d)|\b(calculate|compute|work out|how much|total\??|average\??|"
                         r"variance|in %|percent|per cent|cbm|chargeable|volumetric|turns?|mape|dwell time in|lead time in|"
@@ -98,6 +101,44 @@ INTENT_ROUTE = {"run_control": "action", "reprocess": "action", "download": "act
                 "recovery": "troubleshooting"}
 
 
+VERSUS = re.compile(r"\b(vs\.?|versus|or|difference|differ|compared?|which one)\b|الفرق|ولا|غير|مقابل|أو|او", re.I)
+
+
+_SEARCHED = {}
+
+
+def _hits(q):
+    """The knowledge base's matches for a question, looked up once."""
+    if q not in _SEARCHED:
+        try:
+            from . import kb as KB
+            found = [h for h in KB.kb().search(q, limit=6) if h.get("named") and h.get("score", 0) >= 15]
+        except Exception:
+            found = []
+        if len(_SEARCHED) > 500:
+            _SEARCHED.clear()
+        _SEARCHED[q] = found
+    return _SEARCHED[q]
+
+
+def _named_concepts(q):
+    """Knowledge items named in the question by names that do not overlap
+    ("fill rate" and "OTIF"; not "carrier comparison" and "carrier")."""
+    out, words = [], set()
+    for h in _hits(q):
+        name = set(str(h.get("name") or "").split())
+        if name and not (name & words):
+            out.append(h["id"])
+            words |= name
+    return out
+
+
+def _specific_concepts(q):
+    """Logistics items named by their own specific name ("post clearance
+    audit", "3PL"); this platform's own rules (P.) stay with the run's rules."""
+    return [h["id"] for h in _hits(q) if h.get("specific") and not h["id"].startswith("P.")]
+
+
 def route(question, context=None, intent=None):
     """`intent`: the rules' own reading (detect_intent), when the caller has it."""
     q = " ".join(str(question or "").split())
@@ -112,7 +153,16 @@ def route(question, context=None, intent=None):
         return out("ambiguous", 0.9)
     ref = REF.search(q)
     words = len(q.split())
+    # The knowledge base's own vocabulary counts as logistics too: "3PL",
+    # "certificate of origin", "reorder point" are not in DOMAIN.
     domain = bool(DOMAIN.search(q)) or bool(INCOTERM.search(q))
+    known = None
+
+    def knows():
+        nonlocal known
+        if known is None:
+            known = bool(_specific_concepts(q))
+        return known
     if ref:
         s.append("reference")
     if intent:
@@ -139,6 +189,14 @@ def route(question, context=None, intent=None):
     if platform and PLATFORM_HOW.search(q) and not ref and not STATUS.search(q):
         s.append("platform")
         return out("atlas_rules", 0.8)
+    status = STATUS.search(q)
+    if not ref and not RUN.search(q) and not (status and status.group(0).lower() != "which one") and \
+            not re.search(r"\bshipments?\b|الشحنات|شحنات", q, re.I) and not CARRIER.search(q) and \
+            VERSUS.search(q) and len(_named_concepts(q)) >= 2:
+        # Two concepts ATLAS knows by name, set against each other ("fill rate
+        # vs OTIF", "الأرضيات غير الديمرج؟"): a comparison, not the run's data.
+        s.append("two concepts")
+        return out("knowledge", 0.75)
     listing = re.search(r"^\s*(show|list|give me|display|filter)\b.{0,40}\bshipments?\b|\b(the|our|my) (?:\w+ ){0,2}shipments\b", q, re.I)
     data = ref or RUN.search(q) or STATUS.search(q) or listing or (CARRIER.search(q) and re.search(
         r"\b(box|container|shipment|booking|flight|awb|landing|going to|for alex|to alex|to cairo)\b", q, re.I)) or \
@@ -157,7 +215,9 @@ def route(question, context=None, intent=None):
     weak_general = general and not INCOTERM.search(q) and not GENERAL.search(WHAT_IS.sub(" ", q))
     if WHY.search(q) and re.search(r"\b(hub|portal|doesn'?t match|didn'?t update|half the|our run|the run)\b", q, re.I):
         return out("troubleshooting", 0.7)
-    if general and domain and not (weak_general and intent and words <= 12):
+    if general and not domain and knows():
+        domain = True
+    if general and domain and not (weak_general and intent and words <= 12 and not knows()):
         s.append("general")
         return out("knowledge", 0.75 if not weak_general else 0.65)
     if intent and words <= 12:
@@ -167,7 +227,7 @@ def route(question, context=None, intent=None):
         return out(INTENT_ROUTE.get(intent, "operational"), 0.7)
     if platform:
         return out("atlas_rules", 0.6)
-    if not domain:
+    if not domain and not knows():
         return out("out_of_scope" if words >= 2 else "ambiguous", 0.6)
     s.append("domain words")
     return out("knowledge", 0.6 if (q.endswith("?") or words >= 5) else 0.5)

@@ -614,7 +614,7 @@ def _phrase_in(phrase, lowered):
 # looked up as cargo ("goods") in the knowledge base.
 HOW_ARE_YOU = re.compile(
     r"^\s*(?:(?:hi|hey|hello|yo)[\s,!]+)?(?:atlas[\s,]+)?(?:"
-    r"how (?:are|r) (?:you|u|ya)(?: doing| today| atlas)?|how(?:'?s| is) it going|how(?:'?s| is) life|how (?:you|u) doing|"
+    r"how (?:are|r) (?:you|u|ya)(?: doing| today| atlas)?|how(?:'?s| is) life|how (?:you|u) doing|"
     r"(?:are|r) (?:you|u) (?:good|ok|okay|fine|alright|all right|there|alive|awake|online|up|working|with me)|"
     r"(?:you|u) (?:good|ok|okay|alright|there)|what'?s up|wh?ass?up|sup"
     r")(?:[\s,]+atlas)?[\s?!.]*$", re.I)
@@ -3662,7 +3662,8 @@ def _routed_first(question, state, context):
         if atlas_skills.detect(question, data, context):
             return None
         from intelligence import handbook as _HB
-        if not any(data.find(c) is not None for c in data.references_in(question)) and _HB.answer(question):
+        if not any(data.find(c) is not None for c in data.references_in(question)) and \
+                _HB.answer(question):
             context["_route"] = "atlas_rules"
             return None
         known = kb_answer.answer(question, context, data, routed=True)

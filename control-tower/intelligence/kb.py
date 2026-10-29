@@ -100,7 +100,12 @@ def tokens(text):
     for raw in re.findall(r"[A-Za-z0-9]+(?:[/&-][A-Za-z0-9]+)*|[\u0621-\u063A\u0641-\u0652\u0660-\u0669\u0671-\u06D3]+", text):
         if re.match(r"[؀-ۿ]", raw):
             w = norm_ar(raw)
-            if w.startswith("ال") and len(w) > 3:
+            # Attached prepositions and "and" before the article: والـ بالـ فالـ كالـ لـلـ
+            if len(w) > 5 and w[:3] in ("وال", "بال", "فال", "كال"):
+                w = w[3:]
+            elif len(w) > 4 and w.startswith("لل"):
+                w = w[2:]
+            elif w.startswith("ال") and len(w) > 3:
                 w = w[2:]
             if w in STOP_AR or len(w) < 2:
                 continue
@@ -305,6 +310,8 @@ class KB(object):
             return True
         if name in name_keys(it.get("term")) or name == str(it.get("acronym") or "").lower():
             return True                   # the concept's own one-word name ("Demurrage")
+        if any(name in name_keys(t) for t in it.get("terms_ar") or []):
+            return True                   # its own Arabic name ("الديمرج")
         return it.get("kind") in ("incoterm", "kpi", "document") and self.name_df.get(name, 99) <= 5
 
     def current(self, it):

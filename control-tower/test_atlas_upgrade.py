@@ -286,5 +286,37 @@ check("The dashboard sends the open page; the server accepts known page names on
       "page: activePage" in (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
       and '"exceptions", "human"' in (HERE / "dashboard" / "server.py").read_text(encoding="utf-8"))
 
+section("11. KNOWLEDGE: THE RIGHT ENTRY FOR THE QUESTION")
+for _q, _want in (("RoRo or breakbulk for a wheel loader, what's the difference for us", {"B.roro", "B.breakbulk"}),
+                  ("BL is claused 'shipper's load and count'. if boxes are short, does that hurt our claim?", {"C.shippers-load-count"}),
+                  ("can we fly a machine that has a lithium battery inside", {"C.lithium-batteries"}),
+                  ("how do we set stock for slow movers that are still critical, like final drives", {"A.critical-spares"}),
+                  ("can clearance start before the vessel arrives or do we have to wait", {"C.pre-arrival-processing"}),
+                  ("carrier shows 'discharged', does that mean we can go pick it up", {"D.discharge"}),
+                  ("fill rate vs OTIF, which one matters more for our parts customers", {"E.fill-rate", "E.otif"}),
+                  ("customs said they'll use transaction value, what goes into that number", {"C.customs-valuation"}),
+                  ("الأرضيات في الميناء غير الديمرج؟", {"C.storage-charges", "C.demurrage"}),
+                  ("البروكر بيقول الشحنة طلعت على الخط الأحمر، ده معناه ايه؟", {"C.customs-risk-management"}),
+                  ("what is the role of a 3PL", {"A.third-party-logistics"}),
+                  ("what is post clearance audit", {"C.post-clearance-audit"}),
+                  ("what is a reorder point", {"A.reorder-point"}),
+                  ("what is chargeable weight in air freight", {"B.chargeable-weight"}),
+                  ("what is THC and who pays it under FOB", {"B.thc-baf"}),
+                  ("how many pallets fit in a 40ft container", {"B.palletization"}),
+                  ("which incoterm should we use when the supplier only loads the truck at his factory", {"C.incoterm-fca"}),
+                  ("what documents does customs in Egypt need for importing spare parts", {"C.eg-import-documents"}),
+                  ("ايه المستندات المطلوبة للإفراج الجمركي في مصر", {"C.eg-import-documents"}),
+                  ("what is CargoX", {"C.eg-nafeza"})):
+    _r = _assistant.answer(_q, STATE, {})
+    _used = (_r.get("knowledge") or {}).get("items") or []
+    check("'{0}' -> {1}".format(_q[:60], "/".join(sorted(_want))),
+          bool(_used) and set(_used[:len(_want)]) == _want and "Closest entry" not in _r.get("answer", ""), _used[:3])
+for _q, _not in (("which shipments failed or skipped?", "general_knowledge"), ("how many shipments failed", "general_knowledge"),
+                 ("when the automation runs what exactly does it change in the Hub", None)):
+    _r = _assistant.answer(_q, STATE, {})
+    check("'{0}' stays with the run, not the knowledge base".format(_q),
+          _r.get("intent") != "general_knowledge" if _not else "B.direct-vs-transit" not in ((_r.get("knowledge") or {}).get("items") or []))
+check("Arabic attached prepositions are read: للإفراج is الإفراج", _kb.tokens("للإفراج") == _kb.tokens("الإفراج"))
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

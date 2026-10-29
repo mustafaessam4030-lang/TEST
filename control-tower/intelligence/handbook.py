@@ -253,7 +253,7 @@ TOPICS = [
      "in time, the shipment is left for the next run and nothing is written. Viewers can see "
      "Human Actions but only Operators and Admins can complete them."),
     ("roles", "Roles and access",
-     r"\b(access levels?|roles?|permissions?)\b|\bwho can (start|stop|send|approve|see|open|"
+     r"\b(access levels?|roles?(?! of (?:an?|the) )|permissions?)\b|\bwho can (start|stop|send|approve|see|open|"
      r"manage|add|complete)\b|\b(viewer|operator|admin)s? (role|can|access)\b|\bwhat can (a |an )?"
      r"(viewer|operator|admin)\b",
      "**Three access levels:**\n\n"

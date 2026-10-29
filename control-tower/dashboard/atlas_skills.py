@@ -55,7 +55,9 @@ WEB_ASK = re.compile(
     r"\b(search|google|browse|look ?up|find)\b[^.?!]{0,40}\b(web|internet|online|websites?|sites?|google|news)\b|"
     r"\bsearch (the )?(web|internet|online)\b|\bsearch (for|about)\b|\bgoogle\b|"
     r"\bon (the )?[\w\- ]{2,25} (website|site|web ?site)\b|\b(latest|any) (news|advisor(y|ies)|notices?|alerts?)\b|"
-    r"\b(port|terminal) (congestion|delays?|strike|closure|notice)s?\b", re.I)
+    r"\b(?:current|currently|now|today|this week|latest|any)\b[^.?!]{0,30}\b(port|terminal) (congestion|delays?|strike|closure|notice)s?\b|"
+    r"\b(port|terminal) (congestion|delays?|strike|closure|notice)s?\b[^.?!]{0,30}\b(?:now|today|this week|currently|at the moment)\b|"
+    r"\b(?:congestion|strike|closure) (?:at|in) [A-Z][a-z]+", re.I)
 DATE_ASK = re.compile(r"\b(valid|invalid|ok|okay|correct|right|wrong|check|validate|verify|real|"
                       r"allowed|acceptable)\b", re.I)
 CAN_YOU_SEARCH = re.compile(r"^\s*(can|could|do|will|are) (you|atlas)( be able to)? (search|browse|"
@@ -69,6 +71,15 @@ CLEARANCE_ASK = re.compile(
 # details offered, not with every figure the export has on it.
 KNOW_ASK = re.compile(r"^\s*(?:(?:do|did) (?:you|u) know(?: about| anything about)?|have you heard (?:of|about)|"
                       r"are you familiar with|(?:you|u) know)\b", re.I)
+# "Customs said they'll use transaction value, what goes into that?", "can
+# clearance start before the vessel arrives?": how customs works, for the
+# Knowledge Engine — unless the question asks for the export's figures.
+GENERAL_CUSTOMS = re.compile(r"\b(what (?:goes|is|are|does|do|documents|papers)|which documents|how (?:does|do|is|are|can|long)|can (?:clearance|customs|we|i)|"
+                             r"do we (?:have|need)|should we|why (?:does|do|is|would)|when (?:does|do|can)|"
+                             r"who (?:pays|is responsible)|difference|mean|means)\b", re.I)
+FIGURES_ASK = re.compile(r"\b(how many|number of|list|show|count|past[- ]?due|overdue|late|on[- ]?time|open|"
+                         r"status|top|worst|best|slowest|stuck|shipments?|this (?:week|month)|today|our (?:numbers|figures)|"
+                         r"by (?:bu|agent|step|mode|forwarder)|which (?:bu|agent|forwarder|clearing))\b", re.I)
 # The run, its Human Actions, the PO worker and sign-in are not the export.
 NOT_CLEARANCE = re.compile(r"\b(this run|the run|run (fail|stop)\w*|human action|log ?in|sign(ed)? in|worker|"
                            r"job|carriers?)\b", re.I)
@@ -203,6 +214,7 @@ def detect(question, data=None, context=None):
     if _clearance_named(q, data, context):
         return "clearance"
     if CLEARANCE_ASK.search(q) and not PO_WORDS.search(q) and not WEB_ASK.search(q) and \
+            (FIGURES_ASK.search(q) or not GENERAL_CUSTOMS.search(q)) and \
             not _reference(q, data, context, named_only=True) and not HOW_IT_WORKS.search(q) and \
             not re.search(r"\bunder clearance\b", q, re.I) and \
             (context or {}).get("domain") != "po" and not NOT_CLEARANCE.search(q):   # the run, PO, sign-in
