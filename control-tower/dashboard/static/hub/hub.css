@@ -1,0 +1,116 @@
+/* ATLAS Control Tower — design system (CONTROL_TOWER_PLAN.md §5).
+   One set of tokens for every hub page and component. Light by default, as in
+   the reference; a midnight-navy dark mode for control-room screens. Status
+   colours are for status only; one system blue is for action and selection. */
+
+:root{
+  color-scheme:light;
+  --hub-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI Variable Text","Segoe UI",Inter,system-ui,sans-serif;
+  --hub-mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+
+  --hub-bg:#f5f5f7;            /* window background */
+  --hub-bg-2:#ececf0;          /* sidebar */
+  --hub-surface:#ffffff;       /* cards */
+  --hub-surface-2:#f5f5f7;     /* insets, table heads */
+  --hub-glass:rgba(255,255,255,.72);
+  --hub-glass-edge:rgba(255,255,255,.65);
+  --hub-ink:#1d1d1f;
+  --hub-ink-2:#424245;
+  --hub-ink-3:#6e6e73;
+  --hub-ink-4:#a1a1a6;
+  --hub-line:rgba(0,0,0,.08);
+  --hub-line-2:rgba(0,0,0,.05);
+
+  --hub-blue:#0071e3;  --hub-blue-wash:rgba(0,113,227,.10);
+  --hub-green:#28a745; --hub-green-wash:rgba(40,167,69,.12);
+  --hub-amber:#e08a00; --hub-amber-wash:rgba(224,138,0,.13);
+  --hub-red:#e5383b;   --hub-red-wash:rgba(229,56,59,.11);
+  --hub-teal:#0a9fb5;  --hub-teal-wash:rgba(10,159,181,.12);
+  --hub-purple:#7d5bd6;
+
+  /* map and scene "clay" */
+  --hub-water:#dfe9f3; --hub-water-2:#cfdeec;
+  --hub-land:#fbfbfa;  --hub-land-side:#dcdcd6; --hub-land-edge:#c9c9c2;
+  --hub-land-focus:#eef4ff; --hub-border:#d6d6d0;
+  --hub-tree:#7cc46a; --hub-road:#e9e9ec;
+
+  --hub-r-sm:10px; --hub-r:14px; --hub-r-lg:20px; --hub-r-xl:26px;
+  --hub-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.05);
+  --hub-shadow-lg:0 10px 40px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.05);
+  --hub-e:cubic-bezier(.2,.8,.2,1);
+  --hub-side:256px; --hub-top:60px;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  color-scheme:dark;
+  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
+  --hub-glass:rgba(18,27,45,.70); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
+  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
+  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
+  --hub-green:#3fcf6f; --hub-green-wash:rgba(63,207,111,.15);
+  --hub-amber:#ffb340; --hub-amber-wash:rgba(255,179,64,.15);
+  --hub-red:#ff5c61; --hub-red-wash:rgba(255,92,97,.15);
+  --hub-teal:#4fd1e4; --hub-teal-wash:rgba(79,209,228,.14);
+  --hub-water:#0d1b30; --hub-water-2:#0a1628;
+  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
+  --hub-tree:#3f8f52; --hub-road:#24334d;
+  --hub-shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
+  --hub-shadow-lg:0 14px 50px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
+  --hub-glass:rgba(18,27,45,.70); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
+  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
+  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
+  --hub-green:#3fcf6f; --hub-green-wash:rgba(63,207,111,.15);
+  --hub-amber:#ffb340; --hub-amber-wash:rgba(255,179,64,.15);
+  --hub-red:#ff5c61; --hub-red-wash:rgba(255,92,97,.15);
+  --hub-teal:#4fd1e4; --hub-teal-wash:rgba(79,209,228,.14);
+  --hub-water:#0d1b30; --hub-water-2:#0a1628;
+  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
+  --hub-tree:#3f8f52; --hub-road:#24334d;
+  --hub-shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
+  --hub-shadow-lg:0 14px 50px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
+}
+
+/* ── base ── */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--hub-bg);color:var(--hub-ink);font:14px/1.45 var(--hub-font);-webkit-font-smoothing:antialiased;
+  font-feature-settings:"tnum" 0}
+.num,.hub-num{font-variant-numeric:tabular-nums}
+a{color:var(--hub-blue);text-decoration:none}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--hub-blue);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--hub-mono)}
+[hidden]{display:none!important}
+
+/* ── components ── */
+.hub-card{background:var(--hub-surface);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);border:1px solid var(--hub-line-2)}
+.hub-glass{background:var(--hub-glass);border:1px solid var(--hub-glass-edge);box-shadow:var(--hub-shadow-lg);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+.hub-pill{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:999px;border:0;
+  background:var(--hub-surface-2);color:var(--hub-ink);font-weight:500;font-size:13px;cursor:pointer;white-space:nowrap}
+.hub-pill:hover{filter:brightness(.97)}
+.hub-pill.primary{background:var(--hub-blue);color:#fff}
+.hub-pill.primary:hover{filter:brightness(1.07)}
+.hub-pill svg{width:15px;height:15px}
+.hub-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600;line-height:18px;white-space:nowrap}
+.hub-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.hub-badge.plain::before{display:none}
+.hub-badge.live{background:var(--hub-green-wash);color:var(--hub-green)}
+.hub-badge.part{background:var(--hub-amber-wash);color:var(--hub-amber)}
+.hub-badge.off{background:var(--hub-surface-2);color:var(--hub-ink-3)}
+.hub-badge.red{background:var(--hub-red-wash);color:var(--hub-red)}
+.hub-badge.blue{background:var(--hub-blue-wash);color:var(--hub-blue)}
+.hub-badge.teal{background:var(--hub-teal-wash);color:var(--hub-teal)}
+.hub-seg{display:inline-flex;background:var(--hub-surface-2);border-radius:10px;padding:2px;gap:2px}
+.hub-seg button{border:0;background:transparent;border-radius:8px;padding:5px 12px;font-size:12.5px;font-weight:500;cursor:pointer;color:var(--hub-ink-2)}
+.hub-seg button[aria-pressed="true"]{background:var(--hub-surface);color:var(--hub-ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.hub-label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--hub-ink-3)}
+.hub-empty{padding:28px 18px;text-align:center;color:var(--hub-ink-3)}
+.hub-empty b{display:block;color:var(--hub-ink);font-size:15px;margin-bottom:4px}
+.hub-src{font-size:11.5px;color:var(--hub-ink-3)}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}

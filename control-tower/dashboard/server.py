@@ -951,6 +951,34 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(STATIC_DIR / "index.html")
             return
 
+        if route == "/hub":
+            # The unified Control Tower (CONTROL_TOWER_PLAN.md), next to the
+            # current pages until each of its views has replaced theirs.
+            self._send_file(STATIC_DIR / "hub.html")
+            return
+
+        if route == "/api/hub/list":
+            # The rows behind one hub number (a stage, late, past due), read-only.
+            from dashboard import hub as _hub
+            from urllib.parse import urlsplit, parse_qs
+            q = parse_qs(urlsplit(self.path).query)
+            stage = (q.get("stage") or ["all"])[0]
+            bu = (q.get("bu") or [None])[0]
+            if stage not in ("all", "late", "pastdue") + tuple(x[0] for x in _hub.STAGES) or \
+                    (bu is not None and not re.match(r"^[A-Z]{2,3}$", bu)):
+                self._send(400, json.dumps({"error": "unknown stage or BU"}))
+                return
+            out = _hub.stage_list(stage, bu)
+            self._send(200, json.dumps(out or {"empty": True}, default=str))
+            return
+
+        if route == "/api/hub/overview":
+            # Read-only: the run's snapshot and the loaded eHub export, counted
+            # once (dashboard/hub.py); each part only for who may see it.
+            from dashboard import hub as _hub
+            self._send(200, json.dumps(_hub.overview(_assistant_state(), self._acc_can), default=str))
+            return
+
         if route == "/api/state":
             self._send(200, json.dumps(build_payload()))
             return

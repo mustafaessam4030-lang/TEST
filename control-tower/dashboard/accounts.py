@@ -57,6 +57,7 @@ GET_PERMISSIONS = (
     ("/api/admin/rbac", "dashboard.view"),
     ("/clearance", "clearance.view"),
     ("/api/clearance", "clearance.view"),
+    ("/api/hub/list", "clearance.view"),
     ("/api/knowledge/proposals", "knowledge.propose"),
     ("/api/knowledge/lessons", "runs.view"),
     ("/api/atlas/perf", "users.manage"),

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATLAS Control Tower — Mantrac</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23FFCD11%27/%3E%3Cpath d=%27M7 24V8h4l5 8 5-8h4v16h-4V15l-5 7-5-7v9z%27 fill=%27%23111%27/%3E%3C/svg%3E">
+<script>
+  /* The theme before first paint: no light flash for a dark-mode user. */
+  try { const t = localStorage.getItem("ct-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/hub/hub.css">
+<style>
+/* The shared search and To Do widgets speak the platform's token names. */
+:root{--bg:var(--hub-bg);--surface:var(--hub-surface);--surface-3:var(--hub-surface-2);--ink:var(--hub-ink);--mid:var(--hub-ink-2);
+  --faint:var(--hub-ink-3);--line:var(--hub-line);--line-2:var(--hub-line-2);--card-edge:var(--hub-line);--blu:var(--hub-blue);
+  --red:var(--hub-red);--y:var(--hub-amber);--y-dot:var(--hub-amber);--mono:var(--hub-mono);--r-lg:var(--hub-r-lg);
+  --e:var(--hub-e);--s:var(--hub-shadow-lg);--barh:var(--hub-top);--t-label:11px}
+
+/* ── shell ── */
+.app{display:grid;grid-template-columns:var(--hub-side) 1fr;min-height:100vh}
+.side{position:sticky;top:0;height:100vh;background:var(--hub-bg-2);border-right:1px solid var(--hub-line);display:flex;flex-direction:column;padding:14px 10px 12px;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 10px 16px;color:var(--hub-ink)}
+.brand .gl{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(145deg,#1d1d1f,#3a3a3c);color:#ffcd11}
+.brand .gl svg{width:20px;height:20px}
+.brand b{display:block;font-size:15px;letter-spacing:.06em}
+.brand span{display:block;font-size:11.5px;color:var(--hub-ink-3)}
+.grp{margin:10px 0 2px;padding:0 12px;font-size:11px;font-weight:600;color:var(--hub-ink-4);letter-spacing:.02em}
+.nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;white-space:nowrap;border-radius:9px;color:var(--hub-ink-2);font-size:13.5px;font-weight:500;margin:1px 0;position:relative}
+.nav a:hover{background:var(--hub-line-2)}
+.nav a[aria-current="page"]{background:var(--hub-surface);color:var(--hub-ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.nav a svg{width:17px;height:17px;flex:none;color:var(--hub-ink-3)}
+.nav a>span:not(.st){overflow:hidden;text-overflow:ellipsis;min-width:0}
+.nav a[aria-current="page"] svg{color:var(--hub-blue)}
+.nav a .st{margin-left:auto;flex:none;font-size:10px;font-weight:600;border-radius:999px;padding:0 7px;line-height:17px}
+.nav a .st.part{color:var(--hub-amber);background:var(--hub-amber-wash)}
+.nav a .st.off{color:var(--hub-ink-3);background:var(--hub-line-2)}
+.nav a .ext{width:12px;height:12px;margin-left:auto;opacity:.45}
+.nav a .st + .ext{margin-left:4px}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px}
+.me .av{width:34px;height:34px;border-radius:50%;background:#ffcd11;color:#1d1d1f;display:grid;place-items:center;font-weight:700;font-size:13px}
+.me b{display:block;font-size:13px}.me span{display:block;font-size:11.5px;color:var(--hub-ink-3)}
+.main{min-width:0}
+.top{position:sticky;top:0;z-index:30;height:var(--hub-top);display:flex;align-items:center;gap:12px;padding:0 24px;
+  background:color-mix(in srgb,var(--hub-bg) 78%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);border-bottom:1px solid var(--hub-line-2)}
+.top h1{font-size:19px;margin:0;letter-spacing:-.01em}
+.top .fresh{font-size:12px;color:var(--hub-ink-3);display:flex;align-items:center;gap:6px}
+.top .fresh i{width:7px;height:7px;border-radius:50%;background:var(--hub-green);box-shadow:0 0 0 3px var(--hub-green-wash)}
+.top .fresh.stale i{background:var(--hub-amber);box-shadow:0 0 0 3px var(--hub-amber-wash)}
+.top .sp{flex:1}
+.burger{display:none;border:0;background:transparent;width:34px;height:34px;border-radius:9px;cursor:pointer}
+.content{padding:22px 24px 40px;max-width:1500px}
+
+/* ── overview ── */
+.headline{font-size:22px;font-weight:600;letter-spacing:-.015em;margin:2px 0 4px;max-width:1000px}
+.headline em{font-style:normal;color:var(--hub-red)}
+.sub{color:var(--hub-ink-3);font-size:13px;margin-bottom:16px}
+.strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.chip{width:100%;font:inherit;color:inherit;background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);padding:14px 16px 13px;cursor:pointer;text-align:left;transition:transform .2s var(--hub-e),box-shadow .2s var(--hub-e)}
+.chip:hover{transform:translateY(-1px);box-shadow:var(--hub-shadow-lg)}
+.chip .k{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--hub-ink-3);font-weight:500}
+.chip .k i{width:8px;height:8px;border-radius:50%;flex:none}
+.chip .v{font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
+.chip .n{font-size:11.5px;color:var(--hub-ink-3);margin-top:2px;min-height:16px}
+.chip.total{background:var(--hub-ink);color:var(--hub-surface)}
+.chip.total .k,.chip.total .n{color:color-mix(in srgb,var(--hub-surface) 70%,transparent)}
+.chip .bar{height:5px;border-radius:5px;background:var(--hub-red);margin-top:9px;overflow:hidden}
+.chip .bar b{display:block;height:100%;background:var(--hub-green)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.card{background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-xl);box-shadow:var(--hub-shadow);overflow:hidden}
+.card-h{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 10px}
+.card-h h2{margin:0;font-size:16px;letter-spacing:-.01em}
+.card-h p{margin:2px 0 0;font-size:12.5px;color:var(--hub-ink-3)}
+.card-h .sp{flex:1}
+.mapbox{position:relative;height:560px;margin:0 10px 10px;border-radius:18px;overflow:hidden;background:var(--hub-water)}
+.opsbox{position:relative;min-height:380px;margin:0 10px 10px;border-radius:18px;overflow:hidden}
+.legend{display:flex;flex-wrap:wrap;gap:14px;padding:0 18px 14px;font-size:12px;color:var(--hub-ink-3)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:9px;height:9px;border-radius:50%}
+.stack{display:grid;gap:16px}
+.run-st{display:flex;align-items:center;gap:10px;padding:0 18px 12px}
+.run-st .dot{width:10px;height:10px;border-radius:50%;background:var(--hub-ink-4)}
+.run-st .dot.on{background:var(--hub-green);box-shadow:0 0 0 4px var(--hub-green-wash)}
+.run-st b{font-size:15px}
+.run-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--hub-line-2);border-top:1px solid var(--hub-line-2)}
+.run-grid div{background:var(--hub-surface);padding:10px 18px}
+.run-grid span{display:block;font-size:11.5px;color:var(--hub-ink-3)}
+.run-grid b{font-size:18px;font-variant-numeric:tabular-nums}
+.card-f{display:flex;gap:8px;padding:12px 18px 16px;flex-wrap:wrap}
+.todo-l{list-style:none;margin:0;padding:0 8px 8px}
+.todo-l li a{display:block;padding:9px 10px;border-radius:12px;color:var(--hub-ink)}
+.todo-l li a:hover{background:var(--hub-surface-2)}
+.todo-l b{display:block;font-size:13.5px;font-weight:600;line-height:1.3}
+.todo-l span{font-size:12px;color:var(--hub-ink-3)}
+.todo-l i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.defs{margin:16px 0 0;font-size:12px;color:var(--hub-ink-3)}
+.defs summary{cursor:pointer;font-weight:600;color:var(--hub-ink-2)}
+.defs dl{display:grid;grid-template-columns:200px 1fr;gap:6px 14px;margin:10px 0 0}
+.defs dt{font-weight:600;color:var(--hub-ink-2)}
+.defs dd{margin:0}
+/* a module that is not connected */
+.off-card{max-width:620px;margin:40px auto;text-align:center;padding:36px 28px}
+.off-card .ic{width:56px;height:56px;border-radius:16px;margin:0 auto 14px;display:grid;place-items:center;background:var(--hub-surface-2);color:var(--hub-ink-3)}
+.off-card h2{margin:0 0 6px;font-size:22px}
+.off-card p{color:var(--hub-ink-3);margin:0 0 6px}
+/* the list behind a number: an Apple-style sheet */
+.dl{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.28);display:grid;place-items:center;padding:20px;opacity:0;transition:opacity .2s var(--hub-e)}
+.dl.on{opacity:1}
+.dl-b{width:min(1100px,100%);max-height:calc(100vh - 40px);display:flex;flex-direction:column;border-radius:var(--hub-r-xl);overflow:hidden;
+  transform:translateY(12px) scale(.985);transition:transform .25s var(--hub-e)}
+.dl.on .dl-b{transform:none}
+.dl-h{display:flex;gap:12px;align-items:flex-start;padding:18px 20px 8px}
+.dl-h h3{margin:0;font-size:20px;letter-spacing:-.01em}
+.dl-h p{margin:3px 0 0;color:var(--hub-ink-3);font-size:12.5px}
+.dl-x{margin-left:auto;flex:none;width:30px;height:30px;border-radius:50%;border:0;background:var(--hub-line);cursor:pointer;font-size:16px;color:var(--hub-ink-2)}
+.dl-tools{display:flex;gap:8px;flex-wrap:wrap;padding:6px 20px 12px}
+.dl-tools input{flex:1 1 240px;min-width:0;height:34px;border-radius:10px;border:0;background:var(--hub-line-2);padding:0 12px;font:inherit;color:var(--hub-ink)}
+.dl-body{overflow:auto;flex:1 1 auto;padding:0 12px}
+.dl table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+.dl th{position:sticky;top:0;background:var(--hub-glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);text-align:left;font-size:11.5px;font-weight:600;color:var(--hub-ink-3);padding:8px 10px;border-bottom:1px solid var(--hub-line)}
+.dl td{padding:9px 10px;border-bottom:1px solid var(--hub-line-2)}
+.dl td.n{text-align:right;font-variant-numeric:tabular-nums}
+.dl tr:hover td{background:var(--hub-blue-wash)}
+.dl-f{padding:10px 20px 14px;font-size:12px;color:var(--hub-ink-3);display:flex;gap:10px;align-items:center}
+.dl-f .sp{flex:1}
+@media (max-width:700px){.dl{padding:0;place-items:end stretch}.dl-b{border-radius:22px 22px 0 0;max-height:92vh}}
+@media (max-width:1280px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}.grid{grid-template-columns:1fr}}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .side{position:fixed;inset:0 auto 0 0;width:min(280px,86vw);z-index:60;transform:translateX(-102%);transition:transform .3s var(--hub-e);box-shadow:var(--hub-shadow-lg)}
+  .side.open{transform:none}
+  .burger{display:grid;place-items:center}
+  .content{padding:16px}
+  .strip{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mapbox{height:440px}
+  .top{padding:0 14px}
+  .headline{font-size:18px}
+  .defs dl{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side" aria-label="Modules">
+    <a class="brand" href="/hub#overview">
+      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+      <span><b>ATLAS</b><span>Logistics Control Tower</span></span>
+    </a>
+    <nav class="nav" id="nav"></nav>
+    <div class="me" id="me" hidden><span class="av" id="meAv"></span><span><b id="meName"></b><span id="meRole"></span></span></div>
+    <div style="padding:6px 10px 0"><div class="hub-seg" role="group" aria-label="Theme" id="theme">
+      <button type="button" data-t="light">Light</button><button type="button" data-t="dark">Dark</button><button type="button" data-t="system">Auto</button></div></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <button class="burger" id="burger" type="button" aria-label="Modules"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <h1 id="title">Overview</h1>
+      <span class="fresh" id="fresh"><i></i><span id="freshT">Loading…</span></span>
+      <span class="sp"></span>
+      <span data-search-slot></span>
+      <span data-todo-slot></span>
+      <a class="hub-pill" href="/#atlas">Ask ATLAS</a>
+    </header>
+    <main class="content" id="content">
+      <section data-view="overview">
+        <h2 class="headline" id="headline">&nbsp;</h2>
+        <div class="sub" id="sub">&nbsp;</div>
+        <div class="strip" id="strip" role="group" aria-label="Shipments by stage"></div>
+        <div class="grid">
+          <div class="stack">
+            <section class="card" aria-labelledby="mapT">
+              <div class="card-h"><div><h2 id="mapT">Where shipments are</h2>
+                <p>Business units where shipments clear, and the places carriers last reported. Not live GPS.</p></div></div>
+              <div class="mapbox" id="map"></div>
+              <div class="legend"><span><i style="background:var(--hub-red)"></i>Past due</span><span><i style="background:var(--hub-amber)"></i>Open</span>
+                <span><i style="background:var(--hub-green)"></i>On track / written</span><span><i style="background:var(--hub-blue)"></i>Carrier-reported place</span>
+                <span>Solid line: reported · dashed: to destination</span></div>
+            </section>
+            <section class="card" aria-labelledby="opsT">
+              <div class="card-h"><div><h2 id="opsT">Today's flow</h2><p id="opsP">How the export's shipments are spread across the stages.</p></div></div>
+              <div class="opsbox" id="ops"></div>
+            </section>
+          </div>
+          <div class="stack">
+            <section class="card" aria-labelledby="runT">
+              <div class="card-h"><div><h2 id="runT">ATA automation</h2><p id="runP">The Hub ETA / ATA run</p></div><span class="sp"></span><span id="runBadge"></span></div>
+              <div class="run-st"><span class="dot" id="runDot"></span><b id="runState">—</b></div>
+              <div class="run-grid" id="runGrid"></div>
+              <div class="card-f"><a class="hub-pill primary" href="/#overview">Open the run</a><a class="hub-pill" href="/#human">Human Actions</a></div>
+            </section>
+            <section class="card" aria-labelledby="tdT">
+              <div class="card-h"><div><h2 id="tdT">To Do</h2><p id="tdP">What needs a person</p></div></div>
+              <ul class="todo-l" id="todoL"></ul>
+            </section>
+          </div>
+        </div>
+        <details class="defs"><summary>How these numbers are counted</summary><dl id="defs"></dl></details>
+      </section>
+      <section data-view="off" hidden>
+        <div class="card off-card"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6M12 9v6"/><rect x="3" y="3" width="18" height="18" rx="5"/></svg></div>
+          <h2 id="offT"></h2><p id="offP"></p><p class="hub-src">Shown so the platform's full shape is visible. Nothing here is simulated.</p></div>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="dl" id="dl" role="dialog" aria-modal="true" aria-labelledby="dlT" hidden>
+  <div class="dl-b hub-glass">
+    <div class="dl-h"><div><h3 id="dlT"></h3><p id="dlS"></p></div><button class="dl-x" id="dlX" type="button" aria-label="Close">×</button></div>
+    <div class="dl-tools"><input id="dlQ" type="search" placeholder="Search AWB/BOL, BU, step, forwarder, agent" aria-label="Search in this list">
+      <button class="hub-pill" id="dlCsv" type="button">Download CSV</button><a class="hub-pill primary" id="dlOpen" href="/clearance">Open in Clearance</a></div>
+    <div class="dl-body"><table><thead><tr><th>AWB / BOL</th><th>BU</th><th>Mode</th><th>Current step</th><th>ETA</th><th>ATA</th><th style="text-align:right">Days past due</th><th>On time</th><th>Forwarder</th><th>Clearing agent</th></tr></thead><tbody id="dlRows"></tbody></table></div>
+    <div class="dl-f"><span id="dlInfo"></span><span class="sp"></span><button class="hub-pill" id="dlMore" type="button">Show more</button></div>
+  </div>
+</div>
+<script src="/static/search.js" defer></script>
+<script src="/static/todo.js" defer></script>
+<script src="/static/hub/map3d.js" defer></script>
+<script src="/static/hub/opsscene.js" defer></script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  const fmt = (n) => Number(n || 0).toLocaleString("en-US");
+  const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+  const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const dmy = (s) => s ? `${+s.slice(8, 10)} ${MON[+s.slice(5, 7) - 1]} ${s.slice(0, 4)}` : "unknown date";
+  const TONE = {blue: "var(--hub-blue)", green: "var(--hub-green)", amber: "var(--hub-amber)", red: "var(--hub-red)", teal: "var(--hub-teal)"};
+  const ICONS = {
+    overview: '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 4v3h6V4z"/>',
+    tracking: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+    ata: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="5"/>',
+    clearance: '<path d="M12 3l8 3v5c0 4.5-3.2 8.3-8 10-4.8-1.7-8-5.5-8-10V6z"/><path d="M9 12l2 2 4-4"/>',
+    documents: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+    todo: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+    rates: '<path d="M20 12l-8 8-8-8 8-8h6a2 2 0 0 1 2 2z"/><circle cx="15.5" cy="8.5" r="1.5"/>',
+    tender: '<path d="M14 4l6 6M4 20l8-8M10 6l8 8M7 9l8 8"/>',
+    carriers: '<path d="M3 7h11v9H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+    analytics: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    atlas: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zm0 9l8-4.5M12 12v9m0-9L4 7.5"/>',
+    reports: '<path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6M9 7h3"/>',
+    optimization: '<path d="M4 18c4 0 4-12 8-12s4 12 8 12"/><circle cx="12" cy="6" r="1.5"/>',
+    masterdata: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+  };
+  const icon = (id) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] || ICONS.overview}</svg>`;
+  const EXT = '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>';
+
+  let DATA = null, MODS = [], map = null, scene = null;
+
+  /* ── navigation ── */
+  function drawNav() {
+    const view = (location.hash.slice(1) || "overview").split("?")[0];
+    let html = "", group = "";
+    for (const m of MODS) {
+      if (m.group !== group) { group = m.group; html += `<div class="grp">${esc(group)}</div>`; }
+      const own = m.id === "overview" || m.status === "off";
+      const href = own ? `/hub#${m.id}` : m.href || `/hub#${m.id}`;
+      const st = m.status === "partial" ? '<span class="st part" title="Real data; this view is still the current page">Partial</span>'
+        : m.status === "off" ? '<span class="st off" title="Not connected: no data source yet">Soon</span>' : "";
+      html += `<a href="${esc(href)}" data-mod="${esc(m.id)}"${view === m.id ? ' aria-current="page"' : ""} title="${esc(m.note || m.title)}">${icon(m.id)}<span>${esc(m.title)}</span>${st}${own ? "" : EXT}</a>`;
+    }
+    $("nav").innerHTML = html;
+  }
+  function route() {
+    const view = (location.hash.slice(1) || "overview").split("?")[0];
+    const m = MODS.find((x) => x.id === view);
+    const off = m && m.status === "off";
+    document.querySelector('[data-view="overview"]').hidden = off;
+    document.querySelector('[data-view="off"]').hidden = !off;
+    if (off) {
+      $("title").textContent = m.title;
+      $("offT").textContent = m.title + " is not connected yet";
+      $("offP").textContent = m.note || "It needs a data source before it can show anything.";
+    } else $("title").textContent = "Overview";
+    drawNav();
+    $("side").classList.remove("open");
+  }
+  addEventListener("hashchange", route);
+  $("burger").onclick = () => $("side").classList.toggle("open");
+
+  /* ── theme ── */
+  function setTheme(t, save) {
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+    if (save) { try { localStorage.setItem("ct-theme", t); } catch (e) {} }
+    document.querySelectorAll("#theme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.t === t)));
+  }
+  let cur = "system"; try { cur = localStorage.getItem("ct-theme") || "system"; } catch (e) {}
+  setTheme(cur, false);
+  $("theme").onclick = (e) => { const b = e.target.closest("button"); if (b) setTheme(b.dataset.t, true); };
+
+  /* ── who is signed in ── */
+  fetch("/api/auth/me", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((me) => {
+    const u = me && (me.user || me);
+    if (!u || !u.display_name) return;
+    $("me").hidden = false; $("meName").textContent = u.display_name;
+    $("meRole").textContent = (u.role_label || u.role || "").toString();
+    $("meAv").textContent = u.display_name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  }).catch(() => {});
+
+  /* ── overview ── */
+  function strip(c) {
+    if (!c) { $("strip").innerHTML = `<div class="hub-card hub-empty" style="grid-column:1/-1"><b>No eHub export loaded</b>Load one on the Clearance page to see shipments by stage.</div>`; return; }
+    const st = Object.fromEntries(c.stages.map((s) => [s.id, s]));
+    const chips = [
+      {id: "all", cls: "total", k: "Shipments", v: c.total, n: `eHub export · ${dmy(c.asof)}`},
+      {id: "transit", s: st.transit}, {id: "arrived", s: st.arrived}, {id: "customs", s: st.customs}, {id: "awaiting", s: st.awaiting},
+    ];
+    let html = chips.map((x) => {
+      const s = x.s;
+      const k = s ? s.label : x.k, v = s ? s.count : x.v, n = s ? `${pct(s.count, c.total)}% of all` : x.n;
+      return `<button type="button" class="chip ${x.cls || ""}" data-list="${x.id}" title="${esc((s ? s.definition : "Every shipment in the loaded export") + " · click for the list")}">
+        <div class="k">${s ? `<i style="background:${TONE[s.tone]}"></i>` : ""}${esc(k)}</div><div class="v">${fmt(v)}</div><div class="n">${esc(n)}</div></button>`;
+    }).join("");
+    html += `<button type="button" class="chip" data-list="late" title="The export's own On Time flag · click for the late ones"><div class="k">On time / late</div>
+      <div class="v" style="font-size:24px;white-space:nowrap;margin-top:8px"><span style="color:var(--hub-green)">${fmt(c.on_time)}</span><span style="color:var(--hub-ink-4);font-weight:400"> / </span><span style="color:var(--hub-red)">${fmt(c.late)}</span></div>
+      <div class="bar"><b style="width:${pct(c.on_time, c.total)}%"></b></div></button>`;
+    $("strip").innerHTML = html;
+    $("defs").innerHTML = c.stages.map((s) => `<dt>${esc(s.label)}</dt><dd>${esc(s.definition)}</dd>`).join("") +
+      `<dt>On time / late</dt><dd>The export's own On Time flag.</dd>` +
+      (c.other ? `<dt>Not counted in a stage</dt><dd>${fmt(c.other)} open shipments have no ETA or an unknown step.</dd>` : "") +
+      `<dt>Source</dt><dd>${esc(c.source)}, data as of ${dmy(c.asof)}. Booked shipments are not shown: neither the Hub run nor the export holds bookings.</dd>`;
+  }
+  function headline(d) {
+    const c = d.clearance, bus = d.bus || [];
+    if (!c) { $("headline").textContent = "Good to see you."; $("sub").textContent = "No eHub export is loaded yet."; return; }
+    const st = Object.fromEntries(c.stages.map((s) => [s.id, s.count]));
+    // Whole-export counts: a BU that cannot be placed on the map still counts here.
+    const late = c.past_due, open = c.open;
+    const worst = bus[0];
+    $("headline").innerHTML = `<em>${fmt(late)}</em> of ${fmt(open)} open shipments are past their step's due date` +
+      (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)}).` : ".");
+    $("sub").textContent = `${fmt(st.transit)} in transit · ${fmt(st.arrived + st.customs)} arrived and clearing · ${fmt(st.awaiting)} cleared, awaiting delivery — eHub export, data as of ${dmy(c.asof)}`;
+  }
+  function runCard(r) {
+    if (!r) return;
+    const on = /running|processing|started/i.test(r.status || "");
+    $("runDot").classList.toggle("on", on);
+    $("runState").textContent = r.id ? `${r.status || "idle"}${r.dry_run ? " · dry run" : ""}` : "No run yet";
+    $("runP").textContent = r.id ? `Run ${r.id}` : "The Hub ETA / ATA run";
+    const b = r.by_state || {};
+    $("runGrid").innerHTML = [["Shipments", r.shipments], ["Written to the Hub", (b.updated || 0) + (b.partial || 0)],
+      ["Failed", b.failed || 0], ["Waiting for a person", b.waiting_for_human || 0]].map(([k, v]) => `<div><span>${k}</span><b>${fmt(v)}</b></div>`).join("");
+  }
+  function todo() {
+    fetch("/api/todo", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((t) => {
+      const items = (t && (t.items || t.tasks)) || [];
+      $("tdP").textContent = items.length ? `${items.length} open` : "Nothing needs a person right now";
+      $("todoL").innerHTML = items.slice(0, 6).map((x) => `<li><a href="${esc(x.href || x.link || "#")}"><b><i style="background:${x.level === "high" || x.priority === "high" ? "var(--hub-red)" : "var(--hub-amber)"}"></i>${esc(x.title || x.text)}</b><span>${esc(x.detail || x.sub || x.source || "")}</span></a></li>`).join("");
+    }).catch(() => {});
+  }
+
+  /* map pins: BUs from the export, places from the run — never anything else */
+  function mapData(d) {
+    const pins = [], routes = [];
+    for (const b of d.bus || []) {
+      const s = b.stages || {};
+      pins.push({id: "bu:" + b.bu, lat: b.lat, lon: b.lon, label: b.bu, count: b.open,
+        tone: b.late ? "red" : b.open ? "amber" : "green",
+        sheet: {title: `${b.bu} · ${b.country}`, subtitle: `Business unit · ${fmt(b.n)} shipments in the eHub export`,
+          actions: [{label: "Shipments", primary: true, event: "list"}, {label: "Past due", event: "pastdue"}, {label: "Clearance", event: "clearance"}],
+          stats: [{k: "OPEN", v: fmt(b.open)}, {k: "PAST DUE", v: fmt(b.late), tone: b.late ? "red" : "green"}, {k: "COMPLETED", v: fmt(s.done || 0)}],
+          bars: {title: "Open shipments by stage", live: false, items: [["transit", "Transit"], ["arrived", "With BU"], ["customs", "Customs"], ["awaiting", "Awaiting"]]
+            .map(([k, l]) => ({label: l, v: s[k] || 0})).map((x, i, a) => ({...x, hi: x.v === Math.max(...a.map((y) => y.v)) && x.v > 0}))},
+          note: `Where shipments clear: the BU's country, not a position. eHub export, data as of ${dmy(d.clearance && d.clearance.asof)}.`}});
+    }
+    const groups = {};
+    for (const p of d.places || []) {
+      const key = `${p.at.lat},${p.at.lon}`;
+      (groups[key] = groups[key] || {at: p.at, items: []}).items.push(p);
+      if (p.path.length || p.destination) {
+        const pts = p.path.map((x) => ({lat: x.lat, lon: x.lon}));
+        if (!pts.length) pts.push({lat: p.at.lat, lon: p.at.lon});
+        const reached = pts.length - 1;
+        if (p.destination) pts.push({lat: p.destination.lat, lon: p.destination.lon});
+        if (pts.length > 1) routes.push({id: "r:" + p.ref, points: pts, reached, tone: p.state === "failed" ? "red" : "blue"});
+      }
+    }
+    for (const [key, g] of Object.entries(groups)) {
+      const it = g.items, failed = it.filter((x) => x.state === "failed").length;
+      pins.push({id: "pl:" + key, lat: g.at.lat, lon: g.at.lon, label: g.at.name || "", count: it.length, tone: failed ? "red" : "blue",
+        sheet: {title: g.at.name || "Reported place", subtitle: `Carrier-reported place · ${it.length} shipment${it.length === 1 ? "" : "s"} in this run`,
+          actions: [{label: "Open the run", primary: true, event: "run"}, {label: "Ask ATLAS", event: "ask"}],
+          stats: [{k: "SHIPMENTS", v: fmt(it.length)}, {k: "FAILED", v: fmt(failed), tone: failed ? "red" : "green"}, {k: "LAST REPORT", v: it[0].when || "—"}],
+          rows: it.slice(0, 6).map((x) => ({ref: x.ref, text: `${x.carrier || ""} · ${x.event || x.status || ""}${x.eta ? " · ETA " + x.eta : ""}`, tone: x.state === "failed" ? "red" : x.ata ? "green" : "blue"})),
+          note: `The place the carrier named (${it[0].source || "carrier timeline"}), not live GPS.`}});
+    }
+    return {focus: (d.bus || []).map((b) => b.cc), pins, routes};
+  }
+  function mountMap(d) {
+    if (!window.HubMap3D) { $("map").innerHTML = '<div class="hub-empty"><b>Map unavailable</b>The map component did not load.</div>'; return; }
+    if (!map) {
+      map = HubMap3D.mount($("map"), {worldUrl: "/static/maps/world.json"});
+      map.on("action", (pin, ev) => {
+        if (!pin) return;
+        const bu = pin.id.startsWith("bu:") ? pin.id.slice(3) : null;
+        if (ev === "list" && bu) openList("all", bu);
+        else if (ev === "pastdue" && bu) openList("pastdue", bu);
+        else if (ev === "clearance" && bu) location.href = "/clearance#bu=" + encodeURIComponent(bu);
+        else if (ev === "run") location.href = "/#overview";
+        else if (ev === "ask") location.href = "/#atlas";
+      });
+    }
+    map.setData(mapData(d));
+  }
+  function mountOps(d) {
+    if (!window.HubOpsScene) { $("ops").innerHTML = '<div class="hub-empty"><b>Scene unavailable</b></div>'; return; }
+    const c = d.clearance;
+    if (!c) { $("ops").innerHTML = '<div class="hub-empty"><b>No eHub export loaded</b>The flow appears once an export is loaded.</div>'; return; }
+    if (!scene) {
+      scene = HubOpsScene.mount($("ops"));
+      scene.on("select", (id) => openList(id));
+    }
+    scene.setData({zones: c.stages.map((s) => ({id: s.id, label: s.label, count: s.count, tone: s.tone, hint: s.definition})),
+      note: `Illustration — the counts are real: eHub export, data as of ${dmy(c.asof)}`});
+  }
+
+  /* ── the list behind a number (/api/hub/list): exactly those rows ── */
+  const LIST = {rows: [], shown: 60, back: null, stage: "", bu: null};
+  const TITLES = {all: "Every shipment", late: "Not on time", pastdue: "Open and past due", transit: "In transit",
+    arrived: "Arrived, with the BU", customs: "At customs", awaiting: "Cleared, awaiting delivery", done: "Completed"};
+  async function openList(stage, bu) {
+    LIST.back = document.activeElement; LIST.stage = stage; LIST.bu = bu || null;
+    $("dlT").textContent = (bu ? bu + " · " : "") + (TITLES[stage] || stage);
+    $("dlS").textContent = "Loading…"; $("dlRows").innerHTML = ""; $("dlQ").value = ""; $("dlInfo").textContent = "";
+    $("dlOpen").href = "/clearance" + (bu ? "#bu=" + encodeURIComponent(bu) : "");
+    const box = $("dl"); box.hidden = false; requestAnimationFrame(() => box.classList.add("on")); $("dlX").focus();
+    try {
+      const r = await fetch("/api/hub/list?stage=" + encodeURIComponent(stage) + (bu ? "&bu=" + encodeURIComponent(bu) : ""), {credentials: "same-origin"});
+      const d = await r.json();
+      LIST.rows = d.rows || []; LIST.shown = 60;
+      const def = (DATA && DATA.clearance && DATA.clearance.stages.find((x) => x.id === stage)) || null;
+      $("dlS").textContent = `${fmt(d.total || 0)} shipments · eHub export, data as of ${dmy(d.asof)}` + (def ? ` · ${def.definition}` : "");
+      drawList();
+    } catch (e) { $("dlS").textContent = "Could not load the list."; }
+  }
+  function drawList() {
+    const q = $("dlQ").value.trim().toLowerCase();
+    const X = q ? LIST.rows.filter((r) => ["awb", "bu", "step", "ffw", "agent", "mode", "status"].some((k) => String(r[k] || "").toLowerCase().includes(q))) : LIST.rows;
+    LIST.view = X;
+    $("dlRows").innerHTML = X.slice(0, LIST.shown).map((r) => `<tr><td class="mono">${esc(r.awb || "–")}</td><td>${esc(r.bu)}</td><td>${esc(r.mode)}</td>
+      <td>${esc(r.step === "Awaiting Reciept" ? "Awaiting Receipt" : r.step)}</td><td>${r.eta ? dmy(r.eta) : "–"}</td><td>${r.ata ? dmy(r.ata) : "–"}</td>
+      <td class="n" style="${r.overdue > 0 ? "color:var(--hub-red);font-weight:600" : ""}">${r.overdue == null ? "–" : fmt(r.overdue)}</td>
+      <td>${r.ontime ? '<span class="hub-badge live plain">Yes</span>' : '<span class="hub-badge red plain">No</span>'}</td>
+      <td>${esc(r.ffw || "–")}</td><td>${esc(r.agent || "–")}</td></tr>`).join("") ||
+      `<tr><td colspan="10" class="hub-empty">${q ? "Nothing in this list matches." : "No shipments."}</td></tr>`;
+    $("dlInfo").textContent = X.length ? `Showing ${fmt(Math.min(LIST.shown, X.length))} of ${fmt(X.length)}` : "";
+    $("dlMore").hidden = X.length <= LIST.shown;
+  }
+  function closeList() {
+    const box = $("dl"); box.classList.remove("on");
+    setTimeout(() => { box.hidden = true; }, 200);
+    if (LIST.back && document.contains(LIST.back)) LIST.back.focus();
+  }
+  $("dlX").onclick = closeList;
+  $("dl").addEventListener("click", (e) => { if (e.target === $("dl")) closeList(); });
+  $("dlQ").addEventListener("input", () => { LIST.shown = 60; drawList(); });
+  $("dlMore").onclick = () => { LIST.shown += 200; drawList(); };
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("dl").hidden) closeList(); });
+  $("strip").addEventListener("click", (e) => { const b = e.target.closest("[data-list]"); if (b) openList(b.dataset.list); });
+  $("dlCsv").onclick = () => {
+    const cols = ["awb", "bu", "mode", "step", "eta", "ata", "overdue", "ontime", "ffw", "agent", "status"];
+    const cell = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const lines = [cols.join(",")].concat((LIST.view || LIST.rows).map((r) => cols.map((c) => cell(c === "ontime" ? (r[c] ? "yes" : "no") : r[c])).join(",")));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], {type: "text/csv"}));
+    a.download = `shipments_${LIST.bu ? LIST.bu + "_" : ""}${LIST.stage}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  let last = 0;
+  async function load() {
+    try {
+      const r = await fetch("/api/hub/overview", {credentials: "same-origin"});
+      if (r.status === 401) { location.replace("/login?next=" + encodeURIComponent("/hub" + location.hash)); return; }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      DATA = await r.json(); last = Date.now();
+      MODS = DATA.modules || [];
+      route(); strip(DATA.clearance); headline(DATA); runCard(DATA.run); mountMap(DATA); mountOps(DATA); todo();
+      fresh();
+    } catch (e) {
+      $("fresh").classList.add("stale"); $("freshT").textContent = "Could not refresh — showing the last data";
+    }
+  }
+  function fresh() {
+    if (!last) return;
+    const s = Math.round((Date.now() - last) / 1000);
+    $("fresh").classList.toggle("stale", s > 120);
+    $("freshT").textContent = s < 10 ? "Updated just now" : s < 60 ? `Updated ${s}s ago` : `Updated ${Math.round(s / 60)} min ago`;
+  }
+  setInterval(fresh, 5000);
+  setInterval(() => { if (!document.hidden) load(); }, 30000);
+  addEventListener("DOMContentLoaded", load);
+})();
+</script>
+</body>
+</html>
