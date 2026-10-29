@@ -107,7 +107,9 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .mode .tot b{font-size:17px}
 .pbar{display:flex;align-items:center;gap:8px;justify-content:center}
 .pbar .bar{flex:1;max-width:150px;margin:0;height:7px}
-.pbar .ok{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;color:var(--on-dot);font-size:10px;font-weight:700}
+.pbar .ok{flex:none;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;line-height:17px;white-space:nowrap}
+.pbar .ok.good{background:var(--tint-green);color:var(--grn)}
+.pbar .ok.bad{background:var(--tint-red);color:var(--red)}
 .split{display:flex;justify-content:center;gap:10px;font-size:12px;margin:7px 0 4px;color:var(--mid)}
 .split span:hover{color:var(--vio)}
 .split em{font-style:normal;color:var(--line)}
@@ -597,7 +599,7 @@ function modes() {
       <h4 data-set="${setAttr({mode: m})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(m)}</b>: ${fmt(n)} shipments<small>Click to list them · Shift+click filters the page</small>`)}">${esc(m)}</h4>
       <div class="tot">total: <b>${fmt(n)}</b></div>
       <div class="pbar"><div class="bar" data-tip="${esc(`<b>${pctTxt(done, n)}</b> completed (${fmt(done)} of ${fmt(n)})`)}"><i style="width:${pct(done, n)}%;background:var(--amber)"></i></div>
-        <span class="ok" style="background:${good ? "var(--green)" : "var(--red)"}" data-tip="${good ? "On-time at or above 95%" : "On-time below the 95% target"}">${good ? "✓" : "!"}</span></div>
+        <span class="ok ${good ? "good" : "bad"}" data-tip="${esc(`<b>${pctTxt(on, n)}</b> of ${esc(m)} shipments on time · target 95%`)}">${good ? "✓ on-time on target" : "on-time below 95%"}</span></div>
       <div class="split"><span data-set="${setAttr({mode: m, ontime: 1})}" tabindex="0" role="button" data-tip="Click to list on-time ${m} shipments">on time: ${fmt(on)} (${pctTxt(on, n)})</span><em>|</em>
         <span data-set="${setAttr({mode: m, ontime: 0})}" tabindex="0" role="button" data-tip="Click to list late ${m} shipments">late: ${fmt(n - on)} (${pctTxt(n - on, n)})</span></div>
       <div class="donut">${donut(segs, 118, 16, `<span>past due</span><b>${fmt(late.length)}/${fmt(open.length)}</b><span>open</span>`)}</div>
