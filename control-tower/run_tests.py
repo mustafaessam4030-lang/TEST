@@ -57,6 +57,7 @@ SUITES = [
     ("test_knowledge_api.py",  "Logistics Knowledge Engine over HTTP: roles, review, ingestion, ATLAS chat"),
     ("test_atlas_upgrade.py",  "ATLAS upgrade: router, timing, early answers, scenarios, calculators, semantic"),
     ("test_hub.py",            "Control Tower hub: stage definitions, lists behind each number, places, permissions"),
+    ("test_hub_map3d.py",      "Hub 3D map: three.js self-hosted, 2D fallback (no WebGL / too slow) once, sheet opens the real list"),
     ("test_hub_signin.py",     "Hub sign-in page (WinLogin.aspx), 401 refusals, no EOFError without a console"),
     ("test_cortex.py",         "ATLAS on Snowflake Cortex first, local model as fallback, budget, token kept safe"),
     ("test_launch_page.py",     "launch page: countdown, zone, soundtrack only when named; sign-in untouched"),

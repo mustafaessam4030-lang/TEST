@@ -197,6 +197,11 @@ check("Admin: /hub opens", _call(ADM, "GET", "/hub")[0] == 200)
 a_ov = json.loads(_call(ADM, "GET", "/api/hub/overview")[1])
 check("Admin (no BU limit): every BU, the run, and JR listed as not on the map",
       a_ov["clearance"]["total"] == len(ROWS) and "run" in a_ov and a_ov["unplaced"][0]["bu"] == "JR")
+C.load = lambda: BIG
+a_big = json.loads(_call(ADM, "GET", "/api/hub/list?stage=all")[1])
+C.load = lambda: DATA
+check("Through the server: a list of 2,500 shipments returns all 2,500 rows (the CSV is built from them)",
+      a_big["total"] == 2500 and len(a_big["rows"]) == 2500, (a_big.get("total"), len(a_big.get("rows", []))))
 g_ov = json.loads(_call(GHA, "GET", "/api/hub/overview")[1])
 blob = json.dumps(g_ov)
 check("BU-limited account: overview totals are its BU's only, no run, no other BU anywhere in the response",

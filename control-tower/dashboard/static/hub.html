@@ -230,6 +230,7 @@
 <script src="/static/search.js" defer></script>
 <script src="/static/todo.js" defer></script>
 <script src="/static/hub/map3d.js" defer></script>
+<script src="/static/hub/map3d_gl.js" defer></script>
 <script src="/static/hub/opsscene.js" defer></script>
 <script>
 (() => {
@@ -373,11 +374,11 @@
     const pins = [], routes = [];
     for (const b of d.bus || []) {
       const s = b.stages || {};
-      pins.push({id: "bu:" + b.bu, lat: b.lat, lon: b.lon, label: b.bu, count: b.late,
+      pins.push({id: "bu:" + b.bu, lat: b.lat, lon: b.lon, label: b.bu, cc: b.cc, count: b.late,
         tone: b.late ? "red" : b.open ? "amber" : "green",
         sheet: {title: `${b.bu} · ${b.country}`, subtitle: `Business unit · ${fmt(b.n)} shipments in the eHub export`,
-          actions: [{label: "Shipments", primary: true, event: "list"}, {label: "Past due", event: "pastdue"}, {label: "Clearance", event: "clearance"}],
-          stats: [{k: "OPEN", v: fmt(b.open)}, {k: "PAST DUE", v: fmt(b.late), tone: b.late ? "red" : "green"}, {k: "COMPLETED", v: fmt(s.done || 0)}],
+          actions: [{label: "Open shipments", primary: true, event: "list"}, {label: "Past due", event: "pastdue"}, {label: "Clearance", event: "clearance"}],
+          stats: [{k: "OPEN", v: fmt(b.open)}, {k: "PAST DUE", v: fmt(b.late), tone: b.late ? "red" : "green"}, {k: "IN TRANSIT", v: fmt(s.transit || 0)}, {k: "AT CUSTOMS", v: fmt(s.customs || 0)}],
           bars: {title: "Open shipments by stage", live: false, items: [["transit", "Transit"], ["arrived", "With BU"], ["customs", "Customs"], ["awaiting", "Awaiting"]]
             .map(([k, l]) => ({label: l, v: s[k] || 0})).map((x, i, a) => ({...x, hi: x.v === Math.max(...a.map((y) => y.v)) && x.v > 0}))},
           note: `Where shipments clear: the BU's country, not a position. eHub export, data as of ${dmy(d.clearance && d.clearance.asof)}.`}});

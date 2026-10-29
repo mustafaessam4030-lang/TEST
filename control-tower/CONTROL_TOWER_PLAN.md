@@ -108,6 +108,11 @@ Rules:
 5. **No new runtime dependencies.** No framework, no npm, no external map
    tiles. Maps and animations are drawn from data the server already serves
    (Natural Earth outlines in `static/maps`, the place resolver).
+   **One approved exception (29 Oct 2026): three.js** for the 3D map only —
+   version 0.169.0 (r169, Sept 2024), the single file `build/three.module.min.js`
+   from https://registry.npmjs.org/three/-/three-0.169.0.tgz, unmodified,
+   self-hosted at `dashboard/static/vendor/three.module.min.js` with its MIT
+   `LICENSE` beside it. Core only, no add-ons, no CDN, no build step.
 
 ## 5. Design system ("Apple" direction)
 
@@ -142,6 +147,15 @@ Rules:
   driven part solid and the remaining part dashed; never a guessed position
   between reported places.
 * **Freshness** on every pin and sheet ("reported 11 Oct 08:38, 18 days ago").
+
+**3D map and its fallback (`hub/map3d_gl.js` → `hub/map3d.js`).** The 3D
+map (three.js, WebGL) is used when the browser has WebGL. It switches to the
+2D canvas map **once, and never back automatically**, when: WebGL is
+unavailable or the context cannot be created; three.js fails to load; the
+WebGL context is lost; or the **median frame time over the first 2 seconds
+of drawing is above 50 ms**. The chosen mode and the reason are written to
+the browser console (`[hub map] mode: 3d|2d — reason`). The 2D/3D button
+still switches by hand in both directions.
 
 ## 7. Daily operations scene
 
