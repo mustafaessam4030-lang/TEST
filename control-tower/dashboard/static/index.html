@@ -3192,7 +3192,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
   <!-- SHIPMENT DETAIL. Opens over the page from the right; the table under
        it is never re-rendered to make room. -->
   <div class="dw-scrim" id="dwScrim"></div>
-  <div class="drill" id="drill" role="dialog" aria-modal="true" aria-labelledby="drillT">
+  <div class="drill" id="drill" role="dialog" aria-modal="true" aria-labelledby="drillT" hidden>
     <div class="drill-b">
       <div class="drill-h"><div><div class="drill-t" id="drillT"></div><div class="drill-s" id="drillS"></div></div>
         <button class="drill-x" id="drillX" type="button" aria-label="Close">×</button></div>
@@ -4667,7 +4667,7 @@ function drillOpen(title, sub, list, name){
     .filter((x, i) => i === 0 || x[0]).map((x) => '<span><b>' + x[0] + '</b> ' + x[1] + '</span>').join(''));
   $('drillQ').value = '';
   drillDraw();
-  $('drill').classList.add('on');
+  $('drill').hidden = false; $('drill').classList.add('on');
   $('drillX').focus();
 }
 function drillDraw(){
@@ -4684,7 +4684,7 @@ function drillDraw(){
   put($('drillF'), X.length ? X.length + ' shown · from this run\'s shipment records · click a row for its details' : '');
 }
 function drillClose(){
-  $('drill').classList.remove('on');
+  $('drill').classList.remove('on'); $('drill').hidden = true;
   if (DRILL.back && document.contains(DRILL.back)) DRILL.back.focus();
 }
 function drillFrom(el){

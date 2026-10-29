@@ -100,6 +100,8 @@ check("Dashboard: a KPI tile, an ATLAS chart bar or an Analysis group opens the 
 check("...the list is the run's own records, searchable, as CSV, and a row opens its details over it",
       'id="drillQ"' in INDEX and 'id="drillCsv"' in INDEX and "openDrawer(tr.dataset.ref)" in INDEX
       and ".drill{position:fixed;inset:0;z-index:76" in INDEX)
+check("...and closed it is hidden, so the '/' search shortcut is not blocked by a dialog that is not open",
+      'aria-labelledby="drillT" hidden>' in INDEX and "$('drill').hidden = true" in INDEX)
 check("No SVG logo installed: the PNG is served at its address, not a 404 in every console",
       'route == "/static/brand/mantrac-logo.svg" and not candidate.is_file()' in SERVER
       and 'relative == "brand/mantrac-logo.svg" and not candidate.is_file()' in SERVER)

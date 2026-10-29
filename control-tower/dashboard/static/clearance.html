@@ -430,7 +430,7 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
 </aside>
 <div class="drop" id="drop">Drop the eHub export (.xlsx) to load it for everyone</div>
 <div class="toast" id="toast" role="status"></div>
-<div class="dd" id="dd" role="dialog" aria-modal="true" aria-labelledby="dd-title">
+<div class="dd" id="dd" role="dialog" aria-modal="true" aria-labelledby="dd-title" hidden>
   <div class="ddbox">
     <div class="ddh"><div><h3 id="dd-title"></h3><p id="dd-sub"></p></div><button class="x" id="dd-close" type="button" aria-label="Close">×</button></div>
     <div class="ddsum" id="dd-sum"></div>
@@ -815,7 +815,7 @@ function drill(o) {
   $("dd-sum").innerHTML = [[R.length, "shipments"], [open.length, "open"], [late.length, "past due"], [pctTxt(on, R.length), "on time"],
     [R.length - open.length, "completed"]].map(([v, l]) => `<span><b>${typeof v === "number" ? fmt(v) : v}</b> ${l}</span>`).join("");
   ddDraw();
-  $("dd").classList.add("show"); tip.classList.remove("show");
+  $("dd").hidden = false; $("dd").classList.add("show"); tip.classList.remove("show");
   $("dd-close").focus();
 }
 function ddDraw() {
@@ -839,7 +839,7 @@ function ddDraw() {
   $("dd-more").hidden = X.length <= DD.shown;
 }
 function ddClose() {
-  $("dd").classList.remove("show");
+  $("dd").classList.remove("show"); $("dd").hidden = true;
   if (DD.back && document.contains(DD.back)) DD.back.focus();
 }
 $("dd-close").onclick = ddClose;
