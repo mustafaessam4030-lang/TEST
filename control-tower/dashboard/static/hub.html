@@ -55,6 +55,9 @@
 .top .sp{flex:1}
 .burger{display:none;border:0;background:transparent;width:34px;height:34px;border-radius:9px;cursor:pointer}
 .content{padding:22px 24px 40px;max-width:1500px}
+/* an existing page, opened inside the hub as it is */
+.content.embedded{padding:0;max-width:none}
+#embedF{display:block;width:100%;height:calc(100vh - var(--hub-top));height:calc(100dvh - var(--hub-top));border:0;background:var(--hub-bg)}
 
 /* ── overview ── */
 .headline{font-size:22px;font-weight:600;letter-spacing:-.015em;margin:2px 0 4px;max-width:1000px}
@@ -130,7 +133,7 @@
 .dl-f .sp{flex:1}
 @media (max-width:700px){.dl{padding:0;place-items:end stretch}.dl-b{border-radius:22px 22px 0 0;max-height:92vh}}
 @media (max-width:600px){.top h1{font-size:17px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .top #freshT{display:none}.top a.hub-pill[href="/#atlas"]{font-size:0;gap:0;padding:0 9px}}
+  .top #freshT{display:none}.top a.hub-pill[href="/hub#atlas"]{font-size:0;gap:0;padding:0 9px}}
 @media (max-width:1280px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}.grid{grid-template-columns:1fr}}
 @media (max-width:900px){
   .app{grid-template-columns:1fr}
@@ -175,7 +178,7 @@
       <span class="sp"></span>
       <span data-search-slot></span>
       <span data-todo-slot></span>
-      <a class="hub-pill" href="/#atlas"><span class="axf-slot"></span>Ask ATLAS</a>
+      <a class="hub-pill" href="/hub#atlas"><span class="axf-slot"></span>Ask ATLAS</a>
     </header>
     <main class="content" id="content">
       <section data-view="overview">
@@ -203,7 +206,7 @@
               <div class="card-h"><div><h2 id="runT">ATA automation</h2><p id="runP">The Hub ETA / ATA run</p></div><span class="sp"></span><span id="runBadge"></span></div>
               <div class="run-st"><span class="dot" id="runDot"></span><b id="runState">—</b></div>
               <div class="run-grid" id="runGrid"></div>
-              <div class="card-f"><a class="hub-pill primary" href="/#overview">Open the run</a><a class="hub-pill" href="/#human">Human Actions</a></div>
+              <div class="card-f"><a class="hub-pill primary" href="/hub#ata">Open the run</a><a class="hub-pill" href="/hub#human">Human Actions</a></div>
             </section>
             <section class="card" aria-labelledby="tdT">
               <div class="card-h"><div><h2 id="tdT">To Do</h2><p id="tdP">What needs a person</p></div></div>
@@ -214,6 +217,7 @@
         <details class="defs"><summary>How these numbers are counted</summary><dl id="defs"></dl></details>
       </section>
       <section data-view="mod" hidden><div id="modBody" class="hv"></div></section>
+      <section data-view="embed" hidden><iframe id="embedF" title="Page"></iframe></section>
       <section data-view="off" hidden>
         <div class="card off-card"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6M12 9v6"/><rect x="3" y="3" width="18" height="18" rx="5"/></svg></div>
           <h2 id="offT"></h2><p id="offP"></p><p class="hub-src">Shown so the platform's full shape is visible. Nothing here is simulated.</p></div>
@@ -225,7 +229,7 @@
   <div class="dl-b hub-glass">
     <div class="dl-h"><div><h3 id="dlT"></h3><p id="dlS"></p></div><button class="dl-x" id="dlX" type="button" aria-label="Close">×</button></div>
     <div class="dl-tools"><input id="dlQ" type="search" placeholder="Search AWB/BOL, BU, step, forwarder, agent" aria-label="Search in this list">
-      <button class="hub-pill" id="dlCsv" type="button">Download CSV</button><a class="hub-pill primary" id="dlOpen" href="/clearance">Open in Clearance</a></div>
+      <button class="hub-pill" id="dlCsv" type="button">Download CSV</button><a class="hub-pill primary" id="dlOpen" href="/hub#clearance">Open in Clearance</a></div>
     <div class="dl-body"><table><thead><tr><th>AWB / BOL</th><th>BU</th><th>Mode</th><th>Current step</th><th>ETA</th><th>ATA</th><th style="text-align:right">Days past due</th><th>On time</th><th>Forwarder</th><th>Clearing agent</th></tr></thead><tbody id="dlRows"></tbody></table></div>
     <div class="dl-f"><span id="dlInfo"></span><span class="sp"></span><button class="hub-pill" id="dlMore" type="button">Show more</button></div>
   </div>
@@ -262,6 +266,11 @@
     reports: '<path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6M9 7h3"/>',
     optimization: '<path d="M4 18c4 0 4-12 8-12s4 12 8 12"/><circle cx="12" cy="6" r="1.5"/>',
     masterdata: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+    runs: '<path d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4"/>',
+    po: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+    human: '<path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM4.5 21a7.5 7.5 0 0 1 15 0"/>',
+    history: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    access: '<path d="M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6z"/><path d="M9.5 12l2 2 3.5-4"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
   };
   const atlasIcon = () => document.getElementById("axTpl").content.firstElementChild.cloneNode(true);
@@ -277,7 +286,7 @@
     let html = "", group = "";
     for (const m of MODS) {
       if (m.group !== group) { group = m.group; html += `<div class="grp">${esc(group)}</div>`; }
-      const own = m.id === "overview" || m.status === "off" || !!(window.HubViews && window.HubViews[m.id]);
+      const own = m.id === "overview" || m.status === "off" || !!m.embed || !!(window.HubViews && window.HubViews[m.id]);
       const href = own ? `/hub#${m.id}` : m.href || `/hub#${m.id}`;
       const st = m.status === "partial" ? `<span class="st part" title="${esc(m.note || "Real data; part of it has no source yet")}">Partial</span>`
         : m.status === "off" ? '<span class="st off" title="Not connected: no data source yet">Soon</span>' : "";
@@ -291,8 +300,12 @@
     const view = (location.hash.slice(1) || "overview").split("?")[0];
     const m = MODS.find((x) => x.id === view);
     const off = m && m.status === "off";
-    const mod = !off && m && window.HubViews && window.HubViews[view];
-    document.querySelector('[data-view="overview"]').hidden = off || !!mod;
+    const emb = !off && m && m.embed ? m : null;
+    const mod = !off && !emb && m && window.HubViews && window.HubViews[view];
+    document.querySelector('[data-view="embed"]').hidden = !emb;
+    $("content").classList.toggle("embedded", !!emb);
+    if (emb) openPage(emb);
+    document.querySelector('[data-view="overview"]').hidden = off || !!mod || !!emb;
     document.querySelector('[data-view="off"]').hidden = !off;
     document.querySelector('[data-view="mod"]').hidden = !mod;
     if (mod) {
@@ -308,17 +321,36 @@
       $("title").textContent = m.title;
       $("offT").textContent = m.title + " is not connected yet";
       $("offP").textContent = m.note || "It needs a data source before it can show anything.";
-    } else if (!mod) $("title").textContent = "Overview";
+    } else if (emb) $("title").textContent = emb.title;
+    else if (!mod) $("title").textContent = "Overview";
     drawNav();
     $("side").classList.remove("open");
   }
   addEventListener("hashchange", route);
+
+  /* ── an existing page inside the hub: /hub#po?po=… opens /#po?po=… with ?embed=1 ── */
+  const isDark = () => document.documentElement.dataset.theme === "dark" ||
+    (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  function openPage(m) {
+    const rest = (location.hash.split("?")[1] || "");
+    const [path, hash] = m.embed.split("#");
+    const h = hash ? "#" + hash + (rest ? "?" + rest : "") : (rest ? "#" + rest : "");
+    const src = path + "?embed=1&theme=" + (isDark() ? "dark" : "light") + h;
+    const f = $("embedF");
+    f.title = m.title;
+    let same = false;
+    try { same = f.contentWindow && f.contentWindow.location.pathname === path && f.getAttribute("src"); } catch (e) { same = false; }
+    if (same) { if (f.contentWindow.location.hash !== h) f.contentWindow.location.hash = h || "#"; }
+    else f.setAttribute("src", src);
+  }
   $("burger").onclick = () => $("side").classList.toggle("open");
 
   /* ── theme ── */
   function setTheme(t, save) {
     if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
-    if (save) { try { localStorage.setItem("ct-theme", t); } catch (e) {} }
+    if (save) { try { localStorage.setItem("ct-theme", t); localStorage.setItem("ata-theme", t === "light" || t === "dark" ? t : "system"); } catch (e) {} }
+    const f = document.getElementById("embedF");
+    try { if (f && f.contentWindow) f.contentWindow.postMessage({type: "hub-theme", theme: isDark() ? "dark" : "light"}, location.origin); } catch (e) {}
     document.querySelectorAll("#theme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.t === t)));
   }
   let cur = "system"; try { cur = localStorage.getItem("ct-theme") || "system"; } catch (e) {}
@@ -387,7 +419,7 @@
     fetch("/api/todo", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((t) => {
       const items = (t && (t.items || t.tasks)) || [];
       $("tdP").textContent = items.length ? `${items.length} open` : "Nothing needs a person right now";
-      $("todoL").innerHTML = items.slice(0, 6).map((x) => `<li><a href="${esc(x.href || x.link || "#")}"><b><i style="background:${x.level === "high" || x.priority === "high" ? "var(--hub-red)" : "var(--hub-amber)"}"></i>${esc(x.title || x.text)}</b><span>${esc(x.detail || x.sub || x.source || "")}</span></a></li>`).join("");
+      $("todoL").innerHTML = items.slice(0, 6).map((x) => `<li><a href="${esc(window.HubViews && x.href ? window.HubViews._hubHref(x.href) : x.href || x.link || "#")}"><b><i style="background:${x.level === "high" || x.priority === "high" ? "var(--hub-red)" : "var(--hub-amber)"}"></i>${esc(x.title || x.text)}</b><span>${esc(x.detail || x.sub || x.source || "")}</span></a></li>`).join("");
     }).catch(() => {});
   }
 
@@ -437,9 +469,9 @@
         const bu = pin.id.startsWith("bu:") ? pin.id.slice(3) : null;
         if (ev === "list" && bu) openList("all", bu);
         else if (ev === "pastdue" && bu) openList("pastdue", bu);
-        else if (ev === "clearance" && bu) location.href = "/clearance#bu=" + encodeURIComponent(bu);
-        else if (ev === "run") location.href = "/#overview";
-        else if (ev === "ask") location.href = "/#atlas";
+        else if (ev === "clearance" && bu) location.hash = "#clearance?bu=" + encodeURIComponent(bu);
+        else if (ev === "run") location.hash = "#ata";
+        else if (ev === "ask") location.hash = "#atlas";
       });
     }
     map.setData(mapData(d));
@@ -469,7 +501,7 @@
     LIST.back = document.activeElement; LIST.stage = stage; LIST.bu = bu || null;
     $("dlT").textContent = (bu ? bu + " · " : "") + (TITLES[stage] || stage);
     $("dlS").textContent = "Loading…"; $("dlRows").innerHTML = ""; $("dlQ").value = ""; $("dlInfo").textContent = "";
-    $("dlOpen").href = "/clearance" + (bu ? "#bu=" + encodeURIComponent(bu) : "");
+    $("dlOpen").href = "/hub#clearance" + (bu ? "?bu=" + encodeURIComponent(bu) : "");
     const box = $("dl"); box.hidden = false; requestAnimationFrame(() => box.classList.add("on")); $("dlX").focus();
     try {
       const r = await fetch("/api/hub/list?stage=" + encodeURIComponent(stage) + (bu ? "&bu=" + encodeURIComponent(bu) : ""), {credentials: "same-origin"});

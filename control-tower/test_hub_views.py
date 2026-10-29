@@ -100,18 +100,23 @@ check("A BU-limited person's catalogue counts only their BU", {b["bu"] for b in 
 print("\n3. THE NAVIGATION: EVERY CONNECTED MODULE HAS ITS VIEW IN THE HUB")
 js = (HERE / "dashboard" / "static" / "hub" / "views.js").read_text(encoding="utf-8")
 html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
-for mid in ("tracking", "ata", "todo", "documents", "carriers", "analytics", "reports", "masterdata"):
+for mid in ("tracking", "todo", "carriers", "analytics", "reports", "masterdata"):
     if "V.{0} = {{".format(mid) not in js:
         check("A view for " + mid, False)
         break
 else:
-    check("A hub view for Tracking, ATA, To Do, Documents, Carriers, KPIs, Reports and Master Data", True)
+    check("A hub view for Tracking, To Do, Carriers, KPIs, Reports and Master Data", True)
 check("Not-connected modules stay 'not connected' (no view, no numbers)",
       all(m["status"] == "off" for m in H.MODULES if m["id"] in ("rates", "tender", "optimization"))
       and not any("V.{0} = {{".format(i) in js for i in ("rates", "tender", "optimization")))
 check("The views only read: no POST/PUT/DELETE anywhere in them", not re.search(r"method\s*:\s*['\"](POST|PUT|DELETE)", js) and "XMLHttpRequest" not in js)
-check("Run controls and Human Actions stay on the existing run page (links, not copies)",
-      'pill("/#overview", "Run controls", true)' in js and "/api/control" not in js)
+EMB = {m["id"]: m.get("embed") for m in H.MODULES if m.get("embed")}
+check("Every existing page is in the hub, as it is: run, run shipments, BOE / PO, Clearance, Human Action, history, ATLAS, Access, Settings",
+      EMB == {"ata": "/#overview", "runs": "/#shipments", "po": "/#po", "clearance": "/clearance", "human": "/#human",
+              "history": "/#analysis", "atlas": "/#atlas", "access": "/#access", "settings": "/#settings"}, EMB)
+check("The hub's own copies of those pages are gone (no second run page, no second document list)",
+      "V.ata = {" not in js and "V.documents = {" not in js and "/api/control" not in js)
+check("The BOE page is named so it can be found", any(m["title"] == "BOE / PO Automation" for m in H.MODULES))
 check("The page adds one script for them", html.count('<script src="/static/hub/views.js" defer></script>') == 1)
 check("Nothing from outside", not re.findall(r"https?://", js))
 
@@ -222,7 +227,7 @@ else:
         pg.goto(BASE + "/hub?map=2d")
         pg.wait_for_timeout(2500)
         seen = {}
-        for v in ("tracking", "ata", "todo", "documents", "carriers", "analytics", "reports", "masterdata"):
+        for v in ("tracking", "todo", "carriers", "analytics", "reports", "masterdata"):
             pg.evaluate("location.hash = %r" % ("#" + v))
             pg.wait_for_timeout(1300)
             seen[v] = (pg.locator('[data-view="mod"]').is_visible(), pg.locator("#modBody h2").first.inner_text() if pg.locator("#modBody h2").count() else "")
@@ -251,6 +256,33 @@ else:
         check("A not-connected module still says so", pg.locator('[data-view="off"]').is_visible() and "not connected" in pg.locator("#offT").inner_text())
         pg.evaluate("location.hash = '#overview'"); pg.wait_for_timeout(800)
         check("Back to the Overview, unchanged", pg.locator('[data-view="overview"]').is_visible() and not pg.locator('[data-view="mod"]').is_visible())
+        # the existing pages, inside the hub
+        pg.evaluate("location.hash = '#po'"); pg.wait_for_timeout(3500)
+        fr = pg.frame_locator("#embedF")
+        src = pg.locator("#embedF").get_attribute("src") or ""
+        check("BOE / PO Automation opens the existing PO page inside the hub", pg.locator('[data-view="embed"]').is_visible()
+              and src.startswith("/?embed=1") and src.endswith("#po") and fr.locator('.page[data-p="po"].on').count() == 1, src)
+        check("...only its brand bar is hidden; its own title and controls are there",
+              not fr.locator(".appbar").is_visible() and fr.locator("#pageTitle").inner_text().strip() == "PO Automation")
+        pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(1500)
+        check("Moving between existing pages switches the page, not the frame", fr.locator('.page[data-p="overview"].on').count() == 1
+              and (pg.locator("#embedF").get_attribute("src") or "").endswith("#po"))
+        pg.evaluate("location.hash = '#history'"); pg.wait_for_timeout(1500)
+        check("Run History opens the History · Analysis page", fr.locator('.page[data-p="analysis"].on').count() == 1)
+        pg.locator('#theme button[data-t="dark"]').click(); pg.wait_for_timeout(500)
+        check("The hub's theme reaches the page inside", pg.frame(url=re.compile(r".*embed=1.*")).evaluate("document.documentElement.dataset.theme") == "dark")
+        pg.locator('#theme button[data-t="light"]').click(); pg.wait_for_timeout(300)
+        pg.frame(url=re.compile(r".*embed=1.*")).evaluate("""() => { const a = document.createElement('a'); a.href = '/clearance#bu=EG'; a.id = 'tst';
+            document.body.appendChild(a); a.click(); }""")
+        pg.wait_for_timeout(2500)
+        check("A link to another page opens it in the hub, not inside the frame", pg.url.endswith("/hub#clearance?bu=EG"), pg.url)
+        check("Clearance inside the hub: the existing page, brand bar hidden",
+              (pg.locator("#embedF").get_attribute("src") or "").startswith("/clearance?embed=1") and
+              pg.frame(url=re.compile(r".*/clearance\?embed=1.*")).evaluate("getComputedStyle(document.querySelector('.appbar')).display") == "none")
+        alone = ctx.new_page(); alone.goto(BASE + "/#po"); alone.wait_for_timeout(2500)
+        check("Opened directly, the existing page is exactly as before (brand bar, its own menu)",
+              alone.locator(".appbar").is_visible() and not alone.evaluate("document.documentElement.classList.contains('in-hub')"))
+        alone.close()
         check("No page errors, nothing from outside, no write requests", not errors and not outside and not posts, (errors, outside, posts))
         br.close()
 

@@ -100,6 +100,16 @@
   const head = (title, sub, right) => `<div class="hv-head"><div><h2>${esc(title)}</h2>${sub ? `<p>${sub}</p>` : ""}</div><span class="sp"></span>${right || ""}</div>`;
   const tile = (k, v, d) => `<div class="hv-tile"><div class="k">${esc(k)}</div><div class="v">${v}</div>${d ? `<div class="d">${d}</div>` : ""}</div>`;
   const pill = (href, text, primary) => `<a class="hub-pill${primary ? " primary" : ""}" href="${esc(href)}">${esc(text)}</a>`;
+  // A link to an existing page ("/#po?po=…", "/clearance#bu=EG") opens that page inside the hub.
+  const PAGE_OF = {overview: "ata", shipments: "runs", po: "po", human: "human", atlas: "atlas", settings: "settings",
+                   access: "access", analysis: "history", exceptions: "history", logs: "history"};
+  function hubHref(h) {
+    const u = String(h || "");
+    if (/^\/clearance(\b|$|#)/.test(u)) { const f = u.split("#")[1]; return "/hub#clearance" + (f ? "?" + f : ""); }
+    const m = /^\/#([a-z]+)(?:\?(.*))?$/.exec(u);
+    if (m && PAGE_OF[m[1]]) return "/hub#" + PAGE_OF[m[1]] + (m[2] ? "?" + m[2] : "");
+    return u;
+  }
   const V = window.HubViews = window.HubViews || {};
   let live = null;                         // the view's refresh timer, cleared on leaving it
   const stop = () => { if (live) { clearInterval(live); live = null; } };
@@ -197,58 +207,13 @@
         </dl><p class="hv-src">${esc(s.export.source)}</p></section>`;
     } else html += `<section><h4>From the eHub export</h4><p class="hv-src">Not in the loaded export (or not in your business units).</p></section>`;
     if (s.run) html += `<section><h4>From the ATA run</h4><dl class="hv-kv">${s.run.fields.map((f) => `<dt>${esc(f.label)}</dt><dd>${val(f)}</dd>`).join("")}</dl>
-      <p class="hv-src">${esc(s.run.source)} · ${pill("/#shipments?ref=" + encodeURIComponent(ref), "Open in the run")}</p></section>`;
+      <p class="hv-src">${esc(s.run.source)} · ${pill("/hub#runs?ref=" + encodeURIComponent(ref), "Open in the run")}</p></section>`;
     else html += `<section><h4>From the ATA run</h4><p class="hv-src">Not in the current run.</p></section>`;
     html += `<section><h4>Timeline</h4>${s.timeline.length ? `<ul class="hv-tl">${s.timeline.map((t) => `<li><b>${esc(t.label)}</b> · ${dmy(t.date)}<small>${esc(t.source)}</small></li>`).join("")}</ul>`
       : '<p class="hv-src">No dated events.</p>'}</section>`;
-    html += `<div class="hv-links">${pill("/clearance", "Open Clearance")}${pill("/#atlas", "Ask ATLAS")}</div>`;
+    html += `<div class="hv-links">${pill("/hub#clearance", "Open Clearance")}${pill("/hub#atlas", "Ask ATLAS")}</div>`;
     body.innerHTML = html;
   }
-
-  /* ── ATA Automation workspace (stage D) ───────────────────────────────── */
-  V.ata = {
-    title: "ATA Automation",
-    async render(el) {
-      stop();
-      el.innerHTML = head("ATA Automation", "The Hub ETA / ATA run as the automation reports it. Start, stop and Human Actions stay on the run page, unchanged.",
-        `<div class="hv-links">${pill("/#overview", "Run controls", true)}${pill("/#human", "Human Actions")}${pill("/#logs", "Logs")}</div>`) + `<div id="hvAta">${empty("Loading…")}</div>`;
-      const box = el.querySelector("#hvAta");
-      let filter = "";
-      async function load() {
-        const r = await get("/api/state");
-        if (r.status === 403) { box.innerHTML = denied("the run"); stop(); return; }
-        if (!r.data) { box.innerHTML = empty("The run's state could not be read"); return; }
-        const s = r.data, run = s.run || {}, ships = s.shipments || [], by = {};
-        for (const x of ships) by[x.state || "unknown"] = (by[x.state || "unknown"] || 0) + 1;
-        const prog = s.progress || {};
-        const hq = (s.human_queue || []).filter((h) => !/SUCCESS|TIMEOUT|LOST|FAILED|NOT_CONFIRMED/.test(h.status || ""));
-        const states = Object.keys(by).sort();
-        const X = filter ? ships.filter((x) => (x.state || "unknown") === filter) : ships;
-        box.innerHTML = `<div class="hv-tiles">
-          ${tile("Run", esc(run.status || "No run yet"), run.run_id ? `Run ${esc(run.run_id)}${run.dry_run ? " · dry run" : ""}` : "")}
-          ${tile("Shipments in this run", fmt(ships.length), prog.total ? `processed ${fmt(prog.processed)} of ${fmt(prog.total)}` : "")}
-          ${tile("Written to the Hub", fmt((by.updated || 0) + (by.partial || 0)), "read back after writing")}
-          ${tile("Failed", fmt(by.failed || 0))}
-          ${tile("Waiting for a person", fmt(by.waiting_for_human || 0), hq.length ? `${fmt(hq.length)} in the Human Action queue` : "")}
-          ${tile("Heartbeat", run.heartbeat_age == null ? "—" : fmt(run.heartbeat_age) + " s", run.started_at ? "started " + esc(String(run.started_at).replace("T", " ").slice(0, 16)) : "")}
-        </div>
-        ${s.human_action ? `<div class="hv-card"><h3>A person is needed now</h3><div class="hv-pad"><b>${esc(s.human_action.reference || "")}</b> · ${esc(s.human_action.reason || s.human_action.status || "")}
-          <p class="hv-src">Open it from Human Actions; the run waits and resumes by itself.</p>${pill("/#human", "Human Actions", true)}</div></div>` : ""}
-        ${s.recovery ? `<div class="hv-card"><h3>Recovering from an error</h3><div class="hv-pad">${esc(s.recovery.summary || s.recovery.error || "")}</div></div>` : ""}
-        <div class="hv-card"><h3>Shipments in this run</h3><div class="hv-pad"><div class="hv-tools">
-          <select id="hvSt" aria-label="Run state"><option value="">Every state (${fmt(ships.length)})</option>${states.map((k) => `<option value="${esc(k)}"${k === filter ? " selected" : ""}>${esc(k.replace(/_/g, " "))} (${fmt(by[k])})</option>`).join("")}</select>
-          <span class="hv-src">Refreshes every 10 s · ${pill("/api/report.pdf", "Run PDF")} ${pill("/api/export.csv", "CSV")}</span></div></div>
-          ${X.length ? `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>Reference</th><th>Carrier</th><th>State</th><th>Last step</th><th>Carrier ETA</th><th>Carrier ATA</th><th>Outcome</th><th>Updated</th></tr></thead><tbody>
-            ${X.slice(0, 300).map((x) => `<tr><td class="hv-mono">${esc(x.reference)}</td><td>${esc(x.carrier || "—")}</td><td>${esc(String(x.state || "").replace(/_/g, " "))}</td>
-            <td>${esc(x.step || "—")}</td><td>${esc(x.provider_eta || "—")}</td><td>${esc(x.provider_ata || "—")}</td><td>${esc(x.outcome || x.error || "—")}</td><td>${esc(x.updated || "—")}</td></tr>`).join("")}
-            </tbody></table></div>` : empty(ships.length ? "No shipment in that state" : "No shipments in this run", ships.length ? "" : "They appear while a run works through the Hub.")}</div>`;
-        const sel = box.querySelector("#hvSt");
-        if (sel) sel.onchange = () => { filter = sel.value; load(); };
-      }
-      await load();
-      live = setInterval(() => { if (!document.hidden) load(); }, 10000);
-    }
-  };
 
   /* ── To Do & Approvals (stage E) ──────────────────────────────────────── */
   V.todo = {
@@ -268,36 +233,10 @@
             ${[["", "All"]].concat(Object.entries(LBL)).map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${esc(l.split(" (")[0])}</button>`).join("")}</div></div>
           ${X.length ? `<ul class="hv-list">${X.map((i) => `<li><span class="hv-dot ${i.state === "completed" ? "green" : esc(i.level)}"></span><div class="hv-li-b"><b>${esc(i.title)}</b>
             <span>${esc(i.detail || "")}</span><span>${esc(LBL[i.state] || i.state)} · ${esc(i.source || "")}${i.due ? " · due " + dmy(i.due) : ""}</span></div>
-            ${i.href ? `<a class="hub-pill" href="${esc(i.href)}">Open</a>` : ""}</li>`).join("")}</ul>` : empty("Nothing here", filter ? "No task in this state." : "Nothing needs a person right now.")}</div>`;
+            ${i.href ? `<a class="hub-pill" href="${esc(hubHref(i.href))}">Open</a>` : ""}</li>`).join("")}</ul>` : empty("Nothing here", filter ? "No task in this state." : "Nothing needs a person right now.")}</div>`;
         box.querySelectorAll("[data-f]").forEach((b) => { b.onclick = () => { filter = b.dataset.f; draw(); }; });
       }
       draw();
-    }
-  };
-
-  /* ── Documents (stage E): what exists ─────────────────────────────────── */
-  V.documents = {
-    title: "Documents",
-    async render(el) {
-      stop();
-      el.innerHTML = head("Documents", "PO documents (Bill of Entry PDFs and the duty templates made from them) and the run's evidence. The eHub export carries no clearance-document list, so missing documents are not claimed here.") +
-        `<div class="hv-grid2"><div class="hv-card" id="hvPo"><h3>PO documents</h3>${empty("Loading…")}</div><div class="hv-card" id="hvEv"><h3>Run evidence</h3>${empty("Loading…")}</div></div>`;
-      const [po, ev] = await Promise.all([get("/api/po"), get("/api/evidence?limit=40")]);
-      const P = el.querySelector("#hvPo"), E = el.querySelector("#hvEv");
-      if (po.status === 403) P.innerHTML = "<h3>PO documents</h3>" + denied("PO documents");
-      else if (!po.data) P.innerHTML = "<h3>PO documents</h3>" + empty("Could not be read");
-      else {
-        const jobs = po.data.jobs || [];
-        P.innerHTML = `<h3>PO documents</h3><p class="hv-src">${fmt(jobs.length)} most recent jobs · ${pill("/#po", "Open PO Automation")}</p>` + (jobs.length ? `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>Reference</th><th>Document</th><th>State</th><th>Validation</th></tr></thead><tbody>
-          ${jobs.map((j) => `<tr class="click" data-href="/#po?po=${encodeURIComponent(j.po_id)}"><td class="hv-mono">${esc(j.reference || "—")}</td><td>${esc(j.document || j.doctype || "—")}</td><td>${esc(j.label || j.state)}</td><td>${esc(j.validation || "—")}</td></tr>`).join("")}</tbody></table></div>`
-          : empty("No PO documents yet"));
-      }
-      if (ev.status === 403) E.innerHTML = "<h3>Run evidence</h3>" + denied("run evidence");
-      else if (!Array.isArray(ev.data)) E.innerHTML = "<h3>Run evidence</h3>" + empty("Could not be read");
-      else E.innerHTML = `<h3>Run evidence</h3><p class="hv-src">Screenshots and page text the run kept, newest first</p>` + (ev.data.length ? `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>Reference</th><th>Carrier</th><th>What</th><th>When</th><th></th></tr></thead><tbody>
-          ${ev.data.map((x) => `<tr><td class="hv-mono">${esc(x.reference || "—")}</td><td>${esc(x.carrier || x.provider || "—")}</td><td>${esc(x.event || x.step || x.name || x.source || "—")}</td><td>${esc(String(x.at || "").replace("T", " ").slice(0, 16))}</td>
-          <td><a href="${esc(x.url)}" target="_blank" rel="noopener">Open</a></td></tr>`).join("")}</tbody></table></div>` : empty("No evidence kept yet"));
-      el.querySelectorAll("tr[data-href]").forEach((tr) => { tr.onclick = () => { location.href = tr.dataset.href; }; });
     }
   };
 
@@ -363,7 +302,7 @@
         ["Run shipments (CSV)", "Every shipment in the current run with its result.", "/api/export.csv", "runs.view"],
         ["Shipment lists (CSV)", "Any stage, BU or past-due list: open it from Overview or Shipment Tracking and choose Download CSV.", "/hub#tracking", "clearance.view"],
         ["KPI catalogue (CSV)", "Every KPI with its definition, numerator and denominator.", "/hub#analytics", "clearance.view"],
-        ["Clearance follow-up", "Escalations, contacts and draft mails by agent and BU.", "/clearance", "clearance.view"],
+        ["Clearance follow-up", "Escalations, contacts and draft mails by agent and BU.", "/hub#clearance", "clearance.view"],
       ];
       el.innerHTML = head("Reports", "The exports the platform already produces. Each opens with the same permissions as its page.") +
         `<div class="hv-card"><ul class="hv-list">${R.map(([t, d, h]) => `<li><span class="hv-dot blue"></span><div class="hv-li-b"><b>${esc(t)}</b><span>${esc(d)}</span></div>${pill(h, "Open")}</li>`).join("")}</ul></div>
@@ -377,7 +316,7 @@
     async render(el) {
       stop();
       el.innerHTML = head("Master Data", "Clearance contacts used for escalations and mails. Edit them on the Clearance page; this view only reads them.",
-        pill("/clearance", "Edit on Clearance")) + `<div id="hvMd">${empty("Loading…")}</div>`;
+        pill("/hub#clearance", "Edit on Clearance")) + `<div id="hvMd">${empty("Loading…")}</div>`;
       const box = el.querySelector("#hvMd"), r = await get("/api/clearance/contacts");
       if (r.status === 403) { box.innerHTML = denied("clearance contacts"); return; }
       if (!r.data) { box.innerHTML = empty("Contacts could not be read"); return; }
@@ -392,7 +331,7 @@
   };
 
   // Views whose records carry no business unit refuse a BU-limited account (the server hides them too).
-  for (const id of ["ata", "todo", "documents", "carriers", "reports", "masterdata"]) {
+  for (const id of ["todo", "carriers", "reports", "masterdata"]) {
     const render = V[id].render;
     V[id].render = function (el, ctx) {
       if (ctx && ctx.data && ctx.data() && ctx.data().scope) { stop(); el.innerHTML = empty("Not available for your account", "Its records are not limited by business unit."); return; }
@@ -402,4 +341,5 @@
   V._leave = () => { stop(); closeDrawer(); };
   V._css = css;
   V._openShipment = openShipment;
+  V._hubHref = hubHref;
 })();

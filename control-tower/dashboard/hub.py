@@ -28,12 +28,17 @@ MODULES = [
     {"id": "overview", "title": "Overview", "status": "live", "perm": "dashboard.view", "group": "Operations"},
     {"id": "tracking", "title": "Shipment Tracking", "status": "live", "perm": "dashboard.view", "group": "Operations",
      "note": "The eHub export and the run's record, joined by AWB/BOL"},
-    {"id": "ata", "title": "ATA Automation", "status": "live", "perm": "runs.view", "group": "Operations",
-     "note": "Run, progress, Human Actions, read-back; controls on the run page"},
+    # The existing pages, opened inside the hub exactly as they are (embed mode hides only their brand bar).
+    {"id": "ata", "title": "ATA Automation", "status": "live", "perm": "dashboard.view", "group": "Operations",
+     "embed": "/#overview", "note": "The run page: start, dry run, stop, live progress"},
+    {"id": "runs", "title": "Run Shipments", "status": "live", "perm": "dashboard.view", "group": "Operations",
+     "embed": "/#shipments", "note": "Every shipment in the run, with its carrier result and evidence"},
+    {"id": "po", "title": "BOE / PO Automation", "status": "live", "perm": "po.view", "group": "Operations",
+     "embed": "/#po", "note": "Bill of Entry PDF to duty template, validated, sent"},
     {"id": "clearance", "title": "Clearance", "status": "live", "perm": "clearance.view", "group": "Operations",
-     "href": "/clearance"},
-    {"id": "documents", "title": "Documents", "status": "partial", "perm": "po.view", "group": "Operations",
-     "note": "PO documents and run evidence; the eHub export has no clearance-document list"},
+     "embed": "/clearance", "note": "The eHub shipment export: escalations, contacts, mails"},
+    {"id": "human", "title": "Human Action", "status": "live", "perm": "dashboard.view", "group": "Operations",
+     "embed": "/#human", "note": "Shipments waiting for a person, open and resume"},
     {"id": "todo", "title": "To Do & Approvals", "status": "live", "perm": "dashboard.view", "group": "Operations"},
     {"id": "rates", "title": "Rate Management", "status": "off", "perm": "dashboard.view", "group": "Commercial",
      "note": "Not connected: no freight-rate source yet"},
@@ -43,21 +48,24 @@ MODULES = [
      "note": "Dates read, verified updates, failures and Human Actions by carrier"},
     {"id": "analytics", "title": "Analytics & KPIs", "status": "live", "perm": "clearance.view", "group": "Insight",
      "note": "The KPI catalogue: definition, numerator, denominator"},
-    {"id": "atlas", "title": "ATLAS", "status": "live", "perm": "atlas.chat", "group": "Insight", "href": "/#atlas"},
+    {"id": "history", "title": "Run History", "status": "live", "perm": "runs.view", "group": "Insight",
+     "embed": "/#analysis", "note": "Analysis, exceptions and the activity log"},
+    {"id": "atlas", "title": "ATLAS", "status": "live", "perm": "atlas.chat", "group": "Insight", "embed": "/#atlas"},
     {"id": "reports", "title": "Reports", "status": "partial", "perm": "runs.view", "group": "Insight",
      "note": "Run PDF, CSV exports; no scheduled reports yet"},
     {"id": "optimization", "title": "Optimization", "status": "off", "perm": "dashboard.view", "group": "Insight",
      "note": "Not connected: needs rates, lanes and volumes"},
     {"id": "masterdata", "title": "Master Data", "status": "live", "perm": "clearance.contacts", "group": "Admin",
      "note": "Clearance contacts (read here, edited on Clearance)"},
-    {"id": "settings", "title": "Settings", "status": "live", "perm": "dashboard.view", "group": "Admin",
-     "href": "/#settings"},
+    {"id": "access", "title": "Access", "status": "live", "perm": "users.manage", "group": "Admin", "embed": "/#access",
+     "note": "Accounts and access levels"},
+    {"id": "settings", "title": "Settings", "status": "live", "perm": "dashboard.view", "group": "Admin", "embed": "/#settings"},
 ]
 
 
-# Modules whose records (the run, To Do, PO documents, evidence, contacts) are
-# not limited by business unit: hidden from a BU-limited person.
-UNSCOPED = ("ata", "todo", "documents", "carriers", "reports", "masterdata")
+# Modules whose records (the run, the existing pages, To Do, PO documents,
+# contacts) are not limited by business unit: hidden from a BU-limited person.
+UNSCOPED = ("ata", "runs", "po", "clearance", "human", "todo", "carriers", "history", "atlas", "reports", "masterdata")
 
 
 def modules(can):
