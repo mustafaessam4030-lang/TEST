@@ -208,3 +208,53 @@ the same Q4_K_M files that Ollama's `qwen3.5:4b`, `qwen3.5:2b` and
 `qwen3.5:0.8b` tags serve. Ollama's release download was not reachable from
 the test environment. The prompt prefix was reused between calls, as Ollama
 does.
+
+## Follow-up, 29 October: understanding first, page awareness, knowledge gaps
+
+Reported problems from operators, and what changed:
+
+- **"are you good?" answered with the cargo/freight entry.** Small talk
+  (how are you, عامل ايه, مرحبا) is now a greeting answered at once in the
+  operator's language, and "good" no longer matches "goods". A
+  knowledge-base match on a question the router did not take as logistics is
+  not answered as it stands: the model reads it first, and without a model
+  ATLAS says it did not understand and names the entry it would have guessed.
+- **"do you know Egypt?" dumped every EG figure.** A yes/no question gets one
+  line with the details offered; a shipment number the export does not hold is
+  said to be missing.
+- **ATLAS knows the open page.** The dashboard sends the page with each
+  question; "what am I looking at?" / "explain this page" / "الصفحة دي فيها
+  ايه" is answered from that page's data.
+
+Knowledge: 223 → 238 items. New: RoRo, breakbulk, out-of-gauge, direct vs
+transit, shipper's load and count, lithium batteries, critical slow-moving
+spares, service level, proforma invoice, gross/net/tare weight, CBM, freight
+prepaid/collect, customs bond, and — **unverified, for review** — Egypt's
+Nafeza/CargoX and the documents for an import into Egypt. Egyptian-Arabic
+names added (الخط الأحمر, الأرضيات, الديمرج, ديتنشن, تليكس ريليز, منفستو…), and
+Arabic attached prepositions (للـ بالـ والـ) are stripped before matching.
+
+Routing: the knowledge base's own vocabulary counts as logistics; two named
+concepts set against each other are compared; general customs questions no
+longer go to the Clearance export's figures; "what is X in Y" answers X; a
+quoted status is what the question is about; a question about one concept is
+not turned into a scenario.
+
+Measured (no model, same tool as above):
+
+| Set | Metric | Start of 29 Oct | Now |
+|---|---|---|---|
+| dev (worked from) | routing | 66.7% | 74.4% |
+| dev | knowledge correct | 53.3% | 96.7% |
+| held-out (not tuned on) | routing | 42.6% | 49.3% |
+| held-out | knowledge correct | 45.7% | 52.2% |
+| held-out | unsupported (confident, wrong entry) | 8.7% | 13.0% |
+| held-out | scenario unsupported | 13.3% | 23.3% |
+
+The dev gain is mostly fitting to the dev set; the held-out gain is the
+honest one, and it is modest. The unsupported rate went **up** on held-out
+(two more of 46 knowledge questions, one more scenario): one traced to a
+ranking threshold shifted by a longer entry, not investigated further to
+avoid tuning on the held-out set. Two probe sets of 120 questions written on
+29 Oct (not in either eval set) were read answer by answer; all but one
+(an unusual Incoterms split with no standard rule) now land on the right entry.
