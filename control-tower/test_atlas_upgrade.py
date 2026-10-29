@@ -213,5 +213,27 @@ for key in ("ATLAS_EMBED_MODEL", "ATLAS_EMBED_URL", "ATLAS_EMBED_MIN", "ATLAS_EM
     os.environ.pop(key, None)
 srv.shutdown()
 
+section("8. ONE TOWER PER PORT")
+import io as _io  # noqa: E402
+import socket as _socket  # noqa: E402
+import contextlib as _ctx  # noqa: E402
+from dashboard import server as _srv  # noqa: E402
+_s = _socket.socket()
+_s.bind(("127.0.0.1", 0))
+_port = _s.getsockname()[1]
+_s.close()
+first = _srv.start(port=_port, open_browser=False, host="127.0.0.1", access_key="one-tower-key-123456")
+_out = _io.StringIO()
+with _ctx.redirect_stdout(_out):
+    second = _srv.start(port=_port, open_browser=False, host="127.0.0.1", access_key="one-tower-key-123456")
+check("A second tower on the same port does not start, and says why",
+      first is not None and second is None and "already in use" in _out.getvalue(), _out.getvalue()[:200])
+src = (HERE / "dashboard" / "server.py").read_text(encoding="utf-8")
+check("On Windows the port is taken exclusively (SO_EXCLUSIVEADDRUSE, no SO_REUSEADDR)",
+      "SO_EXCLUSIVEADDRUSE" in src and "allow_reuse_address = False" in src)
+sup = (HERE / "dashboard" / "supervisor.py").read_text(encoding="utf-8")
+check("The supervisor stops instead of running headless when the dashboard cannot start",
+      "is None:" in sup and "sys.exit(1)" in sup)
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

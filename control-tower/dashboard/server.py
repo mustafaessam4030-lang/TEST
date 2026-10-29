@@ -1964,6 +1964,19 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
             """
 
             daemon_threads = True
+            if os.name == "nt":
+                # Windows lets a second process bind a port another one is
+                # listening on when SO_REUSEADDR is set (socketserver's
+                # default). Two towers then share port 8787 and connections go
+                # to either at random — an old copy answered the browser while
+                # the gateway's health probe timed out. Exclusive use instead:
+                # a second tower now fails with "port already in use".
+                allow_reuse_address = False
+
+                def server_bind(self):
+                    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                    ThreadingHTTPServer.server_bind(self)
 
             def handle_error(self, request, client_address):
                 import sys as _sys
@@ -2040,8 +2053,8 @@ def start(port=DEFAULT_PORT, open_browser=True, host="127.0.0.1", access_key=Non
         if getattr(error, "errno", None) in (98, 48, 10048):
             print(
                 "Control Tower could not start: port {0} is already in use.\n"
-                "  Another run is probably still open at http://127.0.0.1:{0}/\n"
-                "  Close it, or set DASHBOARD_PORT to a different number in update_eta.py."
+                "  Another Control Tower is probably still running (Task Scheduler →\n"
+                "  Mantrac Tower, or a START_TOWER window). Stop it first: only one may run."
                 .format(port),
                 flush=True,
             )

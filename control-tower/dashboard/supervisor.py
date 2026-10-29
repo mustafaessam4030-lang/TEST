@@ -360,8 +360,12 @@ def main():
     from dashboard import access
     key, source = access.resolve(args.key)
     print(access.explain(source), flush=True)
-    tower_server.start(port=args.port, open_browser=True, host=host,
-                       access_key=key, learning=True)
+    if tower_server.start(port=args.port, open_browser=True, host=host,
+                          access_key=key, learning=True) is None:
+        # No dashboard (usually: another tower already has the port). Never
+        # keep running headless beside it — a second automation could start.
+        print("Supervisor stopped: the dashboard did not start (see the reason above).", flush=True)
+        sys.exit(1)
 
     print("The dashboard stays up whether or not a run is in progress.", flush=True)
     print("Use Start and Stop in the dashboard header.", flush=True)
