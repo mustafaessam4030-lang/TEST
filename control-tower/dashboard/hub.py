@@ -77,6 +77,16 @@ STAGES = [
 ]
 
 
+def scoped_rows(data, allowed=None):
+    """The export's rows this person may see: every row, or only the BUs in
+    `allowed` (a set of BU codes). Every hub number is counted from these,
+    so a BU-restricted person never sees another BU in any total."""
+    rows = _clearance.records(data)
+    if allowed is None:
+        return rows
+    return [r for r in rows if r.get("bu") in allowed]
+
+
 def _stage_of(r, asof):
     if not _clearance.is_open(r):
         return "done"
@@ -93,12 +103,12 @@ def _stage_of(r, asof):
     return "other"                       # open but not classifiable (no ETA, unknown step)
 
 
-def stages(data=None, rows=None):
+def stages(data=None, rows=None, allowed=None):
     """{asof, total, stages:[{id,label,tone,count,definition}], other, on_time, late} or None."""
     data = data or _clearance.load()
     if not data:
         return None
-    rows = rows if rows is not None else _clearance.records(data)
+    rows = rows if rows is not None else scoped_rows(data, allowed)
     asof = (data.get("asof") or date.today().isoformat())[:10]
     counts = {}
     for r in rows:
@@ -117,7 +127,7 @@ def stages(data=None, rows=None):
 LIST_FIELDS = ("awb", "bu", "mode", "step", "eta", "ata", "overdue", "ontime", "ffw", "agent", "status")
 
 
-def stage_list(stage, bu=None, data=None, limit=2000):
+def stage_list(stage, bu=None, data=None, limit=2000, allowed=None):
     """The export's shipments in one stage (or 'all', or 'late'), optionally of
     one BU: exactly the rows behind a number on the hub. -> {asof, total, rows}."""
     data = data or _clearance.load()
@@ -125,7 +135,7 @@ def stage_list(stage, bu=None, data=None, limit=2000):
         return None
     asof = (data.get("asof") or date.today().isoformat())[:10]
     rows = []
-    for r in _clearance.records(data):
+    for r in scoped_rows(data, allowed):
         if bu and r.get("bu") != bu:
             continue
         if stage == "late":
@@ -184,7 +194,7 @@ def _country_centres():
     return _CENTRES
 
 
-def bu_places(data=None):
+def bu_places(data=None, allowed=None, want_unplaced=False):
     """Per BU of the export: where it is (its country's centre), its counts
     by stage and its past-due. The BU is where a shipment clears: its country,
     never a position."""
@@ -194,7 +204,7 @@ def bu_places(data=None):
     asof = (data.get("asof") or date.today().isoformat())[:10]
     centres = _country_centres()
     per = {}
-    for r in _clearance.records(data):
+    for r in scoped_rows(data, allowed):
         bu = r.get("bu")
         if not bu:
             continue
@@ -206,7 +216,7 @@ def bu_places(data=None):
             x["open"] += 1
             if _clearance.past_due(r):
                 x["late"] += 1
-    out = []
+    out, unplaced = [], []
     for bu, x in per.items():
         iso_name = _clearance.BU_COUNTRY.get(bu)
         country = iso_name[1] if iso_name else None
@@ -214,10 +224,13 @@ def bu_places(data=None):
         if cc is None and country:
             cc = next((k for k, v in _country_names().items() if v == country), None)
         if not cc or cc not in centres:
+            unplaced.append({"bu": bu, "n": x["n"], "open": x["open"], "late": x["late"]})
             continue                     # no country for this BU: not placed, never guessed
         lat, lon = centres[cc]
         out.append(dict(x, cc=cc, country=country or cc, lat=lat, lon=lon))
     out.sort(key=lambda b: (-b["late"], -b["n"]))
+    if want_unplaced:
+        return out, unplaced
     return out
 
 
@@ -256,13 +269,19 @@ def run_places(state):
     return out
 
 
-def overview(state, can):
-    """Everything the Overview draws, each part only for who may see it."""
-    out = {"modules": modules(can)}
+def overview(state, can, allowed=None):
+    """Everything the Overview draws, each part only for who may see it.
+    `allowed`: the BU codes this person may see (None = all). The run's own
+    records carry no BU, so a BU-restricted person does not get the run's
+    figures or places at all (never another BU's shipments by accident)."""
+    out = {"modules": modules(can), "scope": sorted(allowed) if allowed is not None else None}
     if can("clearance.view"):
         data = _clearance.load()
-        out["clearance"] = stages(data) if data else None
-        out["bus"] = bu_places(data) if data else []
+        out["clearance"] = stages(data, allowed=allowed) if data else None
+        out["bus"], out["unplaced"] = bu_places(data, allowed, want_unplaced=True) if data else ([], [])
+    if allowed is not None:
+        out["run_hidden"] = "The run's records carry no business unit, so they are not shown to a BU-restricted account."
+        return out
     if can("runs.view") or can("dashboard.view"):
         run = (state or {}).get("run") or {}
         rows = (state or {}).get("shipments") or []

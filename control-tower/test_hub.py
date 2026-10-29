@@ -13,7 +13,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 TMP = tempfile.mkdtemp(prefix="hub_")
-os.environ.update({"ATA_RUNTIME_DIR": os.path.join(TMP, "rt"), "ATA_CLEARANCE_INBOX": os.path.join(TMP, "inbox")})
+os.environ.update({"ATA_RUNTIME_DIR": os.path.join(TMP, "rt"), "ATA_CLEARANCE_INBOX": os.path.join(TMP, "inbox"),
+                   "DASHBOARD_ACCOUNTS_DB": os.path.join(TMP, "accounts.db"), "DASHBOARD_ACCOUNTS": "auto",
+                   "ATLAS_INTEL_DIR": os.path.join(TMP, "intel"), "PO_DATA_DIR": os.path.join(TMP, "po"),
+                   "PO_AUTO": "0", "DASHBOARD_ACCESS_KEY_FILE": os.path.join(TMP, "access_key")})
 os.makedirs(os.environ["ATA_CLEARANCE_INBOX"])
 
 PASSED, FAILED = [], []
@@ -96,6 +99,111 @@ off = [m for m in H.MODULES if m["status"] == "off"]
 check("Modules with no data source are marked not connected, never live",
       {m["id"] for m in off} >= {"rates", "tender", "optimization"} and all("Not connected" in m.get("note", "") for m in off))
 
+print("\n4b. A BU-RESTRICTED PERSON NEVER SEES ANOTHER BU'S NUMBERS")
+GH = {"GH"}
+mine = [r for r in ROWS if r["bu"] == "GH"]
+sg = H.stages(DATA, allowed=GH)
+check("Headline: total, open and past due count only their BU",
+      sg["total"] == len(mine) and sg["open"] == sum(r["step"] != "Completed" for r in mine)
+      and sg["past_due"] == sum(r["step"] != "Completed" and (r["overdue"] or 0) > 0 for r in mine),
+      (sg["total"], sg["open"], sg["past_due"]))
+check("Stages: every stage count is their BU's own", sg["stages"] and
+      all(s["count"] == H.stage_list(s["id"], data=DATA, allowed=GH)["total"] for s in sg["stages"])
+      and sum(s["count"] for s in sg["stages"]) + sg["other"] == len(mine))
+check("On time / late: only their BU", sg["on_time"] + sg["late"] == len(mine))
+for st_id in ("all", "late", "pastdue", "transit", "arrived", "customs", "awaiting", "done"):
+    rows_ = H.stage_list(st_id, data=DATA, allowed=GH)["rows"]
+    if any(r["bu"] != "GH" for r in rows_):
+        check("List '{0}' (and so its CSV) holds only their BU".format(st_id), False, rows_)
+        break
+else:
+    check("Every list (and so every CSV, built from the list) holds only their BU", True)
+check("Asking for another BU's list returns nothing, not that BU",
+      H.stage_list("all", "EG", data=DATA, allowed=GH)["total"] == 0)
+check("Map: only their BU's pin, and no other BU in 'not on the map'",
+      [b["bu"] for b in H.bu_places(DATA, GH)] == ["GH"] and H.bu_places(DATA, GH, want_unplaced=True)[1] == [])
+ovg = H.overview(state, lambda p: True, GH)
+check("Overview: their BU only, and no run figures or carrier places (run records carry no BU)",
+      ovg["clearance"]["total"] == len(mine) and [b["bu"] for b in ovg["bus"]] == ["GH"]
+      and "run" not in ovg and "places" not in ovg and ovg["run_hidden"] and ovg["scope"] == ["GH"])
+check("Everyone else (no BU limit stored) still sees every BU, including the unplaced JR",
+      H.overview(state, lambda p: True)["unplaced"] == [{"bu": "JR", "n": 1, "open": 1, "late": 0}])
+
+print("\n4c. THROUGH THE REAL SERVER: ADMIN-ONLY PREVIEW, BU SCOPE ENFORCED")
+import http.cookiejar  # noqa: E402
+import socket  # noqa: E402
+import time  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+from controlplane import rbac  # noqa: E402
+from dashboard import accounts as A, server as S  # noqa: E402
+PW = "Hub-Test-2026-Secret!"
+st_ = A.store()
+st_.users.create("admin@mantrac.example", "Ama Admin", "ADMIN", password=PW)
+st_.users.create("ghadmin@mantrac.example", "Kwame GH", "ADMIN", password=PW)
+st_.users.create("oper@mantrac.example", "Kofi Operator", "OPERATOR", password=PW)
+st_.users.create("view@mantrac.example", "Esi Viewer", "VIEWER", password=PW)
+# No BU limit is stored on accounts yet; the test gives one account a limit
+# the way a stored one would arrive (user["bus"]).
+_orig_bus = S.Handler._acc_bus
+S.Handler._acc_bus = lambda self: ({"GH"} if self.user and self.user.get("work_email") == "ghadmin@mantrac.example"
+                                   else _orig_bus(self))
+with socket.socket() as so:
+    so.bind(("127.0.0.1", 0))
+    PORT = so.getsockname()[1]
+S.start(port=PORT, open_browser=False, host="127.0.0.1", access_key="hub-test-key-123456")
+BASE = "http://127.0.0.1:{0}".format(PORT)
+time.sleep(0.4)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def _call(o, method, path, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(BASE + path, data=data, method=method)
+    req.add_header("Origin", BASE)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with o.open(req, timeout=30) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def _as(email):
+    o = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), _NoRedirect())
+    _call(o, "POST", "/api/auth/login", {"email": email, "password": PW})
+    return o
+
+
+ADM, GHA, OPR, VW = (_as(e) for e in ("admin@mantrac.example", "ghadmin@mantrac.example",
+                                     "oper@mantrac.example", "view@mantrac.example"))
+check("Only ADMIN holds hub.preview", rbac.allowed({"role": "ADMIN", "active": 1}, "hub.preview")
+      and not rbac.allowed({"role": "OPERATOR", "active": 1}, "hub.preview") and not rbac.allowed({"role": "VIEWER", "active": 1}, "hub.preview"))
+for who, o in (("Operator", OPR), ("Viewer", VW)):
+    codes = [_call(o, "GET", p)[0] for p in ("/hub", "/api/hub/overview", "/api/hub/list?stage=all")]
+    check("{0}: /hub, its overview and its lists are refused while the hub is in review".format(who),
+          all(c in (302, 401, 403) for c in codes) and 200 not in codes, codes)
+check("Admin: /hub opens", _call(ADM, "GET", "/hub")[0] == 200)
+a_ov = json.loads(_call(ADM, "GET", "/api/hub/overview")[1])
+check("Admin (no BU limit): every BU, the run, and JR listed as not on the map",
+      a_ov["clearance"]["total"] == len(ROWS) and "run" in a_ov and a_ov["unplaced"][0]["bu"] == "JR")
+g_ov = json.loads(_call(GHA, "GET", "/api/hub/overview")[1])
+blob = json.dumps(g_ov)
+check("BU-limited account: overview totals are its BU's only, no run, no other BU anywhere in the response",
+      g_ov["clearance"]["total"] == len(mine) and g_ov["clearance"]["past_due"] == sg["past_due"]
+      and "run" not in g_ov and "places" not in g_ov
+      and all('"bu": "{0}"'.format(b) not in blob for b in ("EG", "JR")), blob[:300])
+g_all = json.loads(_call(GHA, "GET", "/api/hub/list?stage=all")[1])
+check("BU-limited account: the full list (the CSV's source) holds only its BU",
+      g_all["total"] == len(mine) and {r["bu"] for r in g_all["rows"]} == {"GH"})
+check("BU-limited account: asking for another BU's list is refused (403)",
+      _call(GHA, "GET", "/api/hub/list?stage=all&bu=EG")[0] == 403)
+
 print("\n5. THE SERVER")
 src = (HERE / "dashboard" / "server.py").read_text(encoding="utf-8")
 acc = (HERE / "dashboard" / "accounts.py").read_text(encoding="utf-8")
@@ -103,7 +211,7 @@ check("/hub, /api/hub/overview and /api/hub/list are served, read-only (GET only
       'route == "/hub"' in src and 'route == "/api/hub/overview"' in src and 'route == "/api/hub/list"' in src
       and "/api/hub" not in acc.split("WRITE_PERMISSIONS")[1])
 check("The list needs clearance.view and refuses an unknown stage or BU",
-      '("/api/hub/list", "clearance.view")' in acc and "unknown stage or BU" in src)
+      'self._acc_can("clearance.view")' in src.split('route == "/api/hub/list"')[1][:1500] and "unknown stage or BU" in src)
 html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
 check("The hub draws only what the server sends: no hard-coded counts",
       "/api/hub/overview" in html and "/api/hub/list" in html and "Illustration — the counts are real" in html)

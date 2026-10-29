@@ -656,6 +656,17 @@ class Handler(BaseHTTPRequestHandler):
         from controlplane import rbac
         return rbac.allowed(self.user, permission)
 
+    def _acc_bus(self):
+        """The business units the signed-in person may see on the hub: None =
+        all (today every account; no BU limit is stored yet), or a set of BU
+        codes when the account carries one ("bus")."""
+        if self.user is None:
+            return None
+        bus = self.user.get("bus") if hasattr(self.user, "get") else None
+        if not bus:
+            return None
+        return {str(b).strip().upper() for b in bus if str(b).strip()}
+
     def _acc_audit(self, action, result="SUCCESS", target_type=None, target_id=None,
                    metadata=None):
         if self.user is None:
@@ -968,7 +979,14 @@ class Handler(BaseHTTPRequestHandler):
                     (bu is not None and not re.match(r"^[A-Z]{2,3}$", bu)):
                 self._send(400, json.dumps({"error": "unknown stage or BU"}))
                 return
-            out = _hub.stage_list(stage, bu)
+            if not self._acc_can("clearance.view"):
+                self._send(403, json.dumps({"error": "clearance.view needed"}))
+                return
+            allowed = self._acc_bus()
+            if bu is not None and allowed is not None and bu not in allowed:
+                self._send(403, json.dumps({"error": "not your business unit"}))
+                return
+            out = _hub.stage_list(stage, bu, allowed=allowed)
             self._send(200, json.dumps(out or {"empty": True}, default=str))
             return
 
@@ -976,7 +994,8 @@ class Handler(BaseHTTPRequestHandler):
             # Read-only: the run's snapshot and the loaded eHub export, counted
             # once (dashboard/hub.py); each part only for who may see it.
             from dashboard import hub as _hub
-            self._send(200, json.dumps(_hub.overview(_assistant_state(), self._acc_can), default=str))
+            self._send(200, json.dumps(_hub.overview(_assistant_state(), self._acc_can, self._acc_bus()),
+                                       default=str))
             return
 
         if route == "/api/state":

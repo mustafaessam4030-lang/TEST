@@ -189,6 +189,7 @@
               <div class="legend"><span><i style="background:var(--hub-red)"></i>Past due</span><span><i style="background:var(--hub-amber)"></i>Open</span>
                 <span><i style="background:var(--hub-green)"></i>On track / written</span><span><i style="background:var(--hub-blue)"></i>Carrier-reported place</span>
                 <span>Solid line: reported · dashed: to destination</span></div>
+              <p class="hub-src" id="unplaced" hidden></p>
             </section>
             <section class="card" aria-labelledby="opsT">
               <div class="card-h"><div><h2 id="opsT">Today's flow</h2><p id="opsP">How the export's shipments are spread across the stages.</p></div></div>
@@ -348,7 +349,8 @@
       (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)}).` : ".");
     $("sub").textContent = `${fmt(st.transit)} in transit · ${fmt(st.arrived + st.customs)} arrived and clearing · ${fmt(st.awaiting)} cleared, awaiting delivery — eHub export, data as of ${dmy(c.asof)}`;
   }
-  function runCard(r) {
+  function runCard(r, hidden) {
+    if (hidden) { $("runState").textContent = "Not shown"; $("runP").textContent = hidden; $("runGrid").innerHTML = ""; return; }
     if (!r) return;
     const on = /running|processing|started/i.test(r.status || "");
     $("runDot").classList.toggle("on", on);
@@ -418,6 +420,11 @@
       });
     }
     map.setData(mapData(d));
+    const un = d.unplaced || [];
+    $("unplaced").hidden = !un.length;
+    $("unplaced").textContent = un.length ? "Not on the map (no country known for the business unit): " +
+      un.map((u) => `${u.bu} — ${fmt(u.n)} shipment${u.n === 1 ? "" : "s"}, ${fmt(u.open)} open`).join(" · ") +
+      ". They are still counted in every number above and listed in the stage lists." : "";
   }
   function mountOps(d) {
     if (!window.HubOpsScene) { $("ops").innerHTML = '<div class="hub-empty"><b>Scene unavailable</b></div>'; return; }
@@ -443,6 +450,7 @@
     const box = $("dl"); box.hidden = false; requestAnimationFrame(() => box.classList.add("on")); $("dlX").focus();
     try {
       const r = await fetch("/api/hub/list?stage=" + encodeURIComponent(stage) + (bu ? "&bu=" + encodeURIComponent(bu) : ""), {credentials: "same-origin"});
+      if (r.status === 403) { LIST.rows = []; drawList(); $("dlS").textContent = "You don't have access to this list."; return; }
       const d = await r.json();
       LIST.rows = d.rows || []; LIST.shown = 60;
       const def = (DATA && DATA.clearance && DATA.clearance.stages.find((x) => x.id === stage)) || null;
@@ -488,10 +496,12 @@
     try {
       const r = await fetch("/api/hub/overview", {credentials: "same-origin"});
       if (r.status === 401) { location.replace("/login?next=" + encodeURIComponent("/hub" + location.hash)); return; }
+      if (r.status === 403) { document.querySelector("main").innerHTML = '<div class="hub-empty"><b>The Control Tower preview is open to administrators only</b>' +
+        'It is being reviewed. The <a href="/">dashboard</a> and <a href="/clearance">Clearance</a> pages work as before.</div>'; return; }
       if (!r.ok) throw new Error("HTTP " + r.status);
       DATA = await r.json(); last = Date.now();
       MODS = DATA.modules || [];
-      route(); strip(DATA.clearance); headline(DATA); runCard(DATA.run); mountMap(DATA); mountOps(DATA); todo();
+      route(); strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); mountMap(DATA); mountOps(DATA); todo();
       fresh();
     } catch (e) {
       $("fresh").classList.add("stale"); $("freshT").textContent = "Could not refresh — showing the last data";

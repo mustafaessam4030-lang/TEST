@@ -57,7 +57,8 @@ GET_PERMISSIONS = (
     ("/api/admin/rbac", "dashboard.view"),
     ("/clearance", "clearance.view"),
     ("/api/clearance", "clearance.view"),
-    ("/api/hub/list", "clearance.view"),
+    ("/hub", "hub.preview"),                 # Admin-only until the hub is reviewed
+    ("/api/hub/", "hub.preview"),
     ("/api/knowledge/proposals", "knowledge.propose"),
     ("/api/knowledge/lessons", "runs.view"),
     ("/api/atlas/perf", "users.manage"),

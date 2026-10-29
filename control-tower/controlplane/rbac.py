@@ -34,6 +34,7 @@ PERMISSIONS = {
     "clearance.contacts": "Edit the Clearance contacts (clearing agents, BUs, forwarders)",
     "knowledge.propose":  "Propose logistics knowledge or a correction for review",
     "knowledge.review":   "Review, approve, supersede or retire ATLAS's logistics knowledge; ingest documents",
+    "hub.preview":        "Open the Control Tower hub preview (/hub) while it is being reviewed",
 }
 
 ROLE_PERMISSIONS = {
