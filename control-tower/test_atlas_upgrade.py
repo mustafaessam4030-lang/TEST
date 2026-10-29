@@ -249,6 +249,25 @@ for q in ("what are dangerous goods?", "are you good at customs questions?", "ho
           "hi, which shipments failed?"):
     check("'{0}' is not taken as small talk".format(q), _assistant.small_talk(q) is None)
 check("'is everything good' asks about the run", _assistant.detect_intent("is everything good") == "health")
+from intelligence import kb as _kb, kb_answer as _ka, converse as _cv  # noqa: E402
+check("'good' is not 'goods' (cargo) to the knowledge base", _kb.tokens("good") != _kb.tokens("goods"))
+for q in ("good", "are you a good assistant", "are you good"):
+    check("'{0}' finds no knowledge entry".format(q), not _ka.match(q))
+for q, item in (("goods", "A.cargo-freight"), ("dangerous goods", "C.dangerous-goods"), ("telex release", None),
+                ("OTIF", "E.otif"), ("demurrage", "C.demurrage")):
+    hits = _ka.match(q)
+    check("'{0}' still finds its entry".format(q), bool(hits) and (item is None or hits[0]["id"] == item))
+_built = {"intent": "general_knowledge", "knowledge": {"items": ["A.cargo-freight"]}, "answer": "Cargo is..."}
+check("A knowledge match on a question the router took as small talk / out of scope is not trusted",
+      _cv._unsure_knowledge("you good bro", _built, {"_route": "out_of_scope"}))
+check("... unless the question is just the entry's name",
+      not _cv._unsure_knowledge("cargo and freight", _built, {"_route": "out_of_scope"}))
+check("... and a question routed as knowledge is trusted",
+      not _cv._unsure_knowledge("what is cargo", _built, {"_route": "knowledge"}))
+_nu = _cv._not_understood(_built, "en")
+check("Not understood: ATLAS asks, and names what it guessed instead of answering it",
+      _nu["intent"] == "clarify" and "not sure" in _nu["answer"] and "Cargo and freight" in _nu["answer"]
+      and "Cargo is" not in _nu["answer"])
 
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

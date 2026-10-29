@@ -119,6 +119,17 @@ def _joined(question, a, b):
     return len(between.split()) <= 4 or bool(re.search(r"differ|between|compar|versus|vs", question, re.I))
 
 
+# Said to ATLAS about itself ("are you good", "you ok"): not a bare name.
+TO_ATLAS = re.compile(r"\b(you|u|your|yours|yourself|ya)\b", re.I)
+
+
+def exact_name(question, item_id, k=None):
+    """The question, beyond its asking words, is just this item's name
+    ("telex release", "what is OTIF?")."""
+    k = k or KB.kb()
+    return any(item_id in k.names.get(key, ()) for key in KB.name_keys(question))
+
+
 def match(question, k=None, routed=False):
     """The best results for a knowledge question, or [] when the question is
     not one (or nothing relevant is known)."""
@@ -150,7 +161,7 @@ def match(question, k=None, routed=False):
     # failed") is not — it is about the run.
     bare = set(KB.tokens(q)) <= set(t for key in k.names for t in key.split()
                                      if top["id"] in k.names[key] and " " + key + " " in " " + " | ".join(KB.name_keys(q)) + " ")
-    if top["named"] and (asks or bare):
+    if top["named"] and (asks or (bare and not TO_ATLAS.search(q))):
         return hits
     if asks and top["score"] >= MIN_SCORE:
         return hits

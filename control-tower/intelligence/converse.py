@@ -403,6 +403,8 @@ def _answer(question, state, context, rules):
         # The rules on the operator's own words, with their own research but
         # without a second model call: the model already failed this question.
         reply = base or rules(question, state, dict(context or {}, _no_phrase=True))
+        if _unsure_knowledge(question, reply, inner):
+            reply = _not_understood(reply, lang)
         reply["llm"] = {"used": False, "reason": reason, "mode": "conversation"}
         return _kind_if_personal(reply, question, lang)
 
@@ -421,12 +423,17 @@ def _answer(question, state, context, rules):
     # call is skipped — one model call instead of two, half the queue.
     with trace.span("converse.rules"):
         read = rules(question, state, inner)
+    # A knowledge answer the router did not ask for ("are you a good
+    # assistant?" read as cargo): the model understands the question first.
+    unsure = _unsure_knowledge(question, read, inner)
+    if unsure:
+        timings["unsure"] = "knowledge match on a question the router did not take as logistics"
     # The early returns below are for English: an Arabic question keeps its
     # Arabic answer (written by the model from the records).
-    direct = read if lang == "en" else None
+    direct = read if lang == "en" and not unsure else None
     if _recognised(read):
         trace.useful("rules")
-    if lang != "en" and _knowledge_built(read):
+    if lang != "en" and _knowledge_built(read) and not unsure:
         return _as_built_knowledge(read)
     if lang == "ar" and read.get("intent") == "greeting" and re.search(r"[\u0600-\u06FF]", read.get("answer") or ""):
         # An Arabic hello / how-are-you: the rules already answered in Arabic.
@@ -465,10 +472,11 @@ def _answer(question, state, context, rules):
         # ("What should I do next?" -> small talk) and changed its meaning
         # ("Finding PDF" -> "found a PDF"), which the fact guard cannot see.
         return _records_reply(question, state, context, rules)
-    _early(pid, read)
+    if not unsure:
+        _early(pid, read)
     # Understood without a model when the signals are plain (fast_plan);
     # the model reads the question only when they are not.
-    plan = fast_plan(question, read, lang)
+    plan = fast_plan(question, None if unsure else read, lang)
     if plan is not None:
         route = "rules"
     else:
@@ -776,6 +784,41 @@ def _knowledge_labelled(text, built, lang):
     text = text.replace("**{0}**".format(LABELS[lang]["verified"]), "**{0}**".format(KNOWLEDGE_LABEL[lang]))
     tail = [p for p in built.split("\n\n") if p.startswith(("**Sources**", "_Knowledge status"))]
     return "\n\n".join([text.rstrip()] + tail)
+
+
+def _unsure_knowledge(question, reply, ctx):
+    """A knowledge answer to a question the router did not take as logistics
+    (out of scope, ambiguous, small talk) and that is not simply an item's
+    name: a guess from one shared word, so it is not answered as it stands."""
+    if not _knowledge_built(reply) or (ctx or {}).get("_route") not in ("out_of_scope", "ambiguous", "chat"):
+        return False
+    items = (reply.get("knowledge") or {}).get("items") or []
+    try:
+        from intelligence import kb_answer
+        return not (items and kb_answer.exact_name(question, items[0]))
+    except Exception:
+        return True
+
+
+NOT_UNDERSTOOD = {
+    "en": "I'm not sure I understood that. Could you say a bit more — is it about a shipment, the run, "
+          "or a logistics term?",
+    "ar": "مش متأكد إني فهمت قصدك. ممكن توضح أكتر — السؤال عن شحنة، ولا عن التشغيل، ولا عن مصطلح في اللوجستيات؟",
+}
+
+
+def _not_understood(reply, lang):
+    items = (reply.get("knowledge") or {}).get("items") or []
+    try:
+        from intelligence import kb as KB
+        title = str((KB.kb().items.get(items[0]) or {}).get("term") or "").strip() if items else ""
+    except Exception:
+        title = ""
+    text = NOT_UNDERSTOOD.get(lang, NOT_UNDERSTOOD["en"])
+    if title and lang == "en":
+        text += " If you meant **{0}**, ask \"What is {0}?\"".format(title)
+    return {"answer": text, "card": None, "intent": "clarify", "understood": False, "grounded": True,
+            "suggestions": reply.get("suggestions") or [], "reference": reply.get("reference")}
 
 
 def _as_built_knowledge(reply):

@@ -73,7 +73,14 @@ mean means meaning define definition difference between versus vs""".split())
 STOP_AR = set(norm_ar(w) for w in "ما هو هي ماذا ايه إيه يعني في من الى إلى على عن و او أو ال هل كيف ازاي اشرح الفرق بين".split())
 
 
+# Plurals whose singular means something else: "goods" (cargo) is not
+# "good" ("are you good?" was answered with the cargo entry).
+NO_STEM = {"goods"}
+
+
 def _stem(w):
+    if w in NO_STEM:
+        return w
     if len(w) > 4 and w.endswith("ies"):
         return w[:-3] + "y"
     if len(w) > 3 and w.endswith("es") and w[-3] in "sxz":
