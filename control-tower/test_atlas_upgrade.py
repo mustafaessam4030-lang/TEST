@@ -306,7 +306,20 @@ for _q, _want in (("RoRo or breakbulk for a wheel loader, what's the difference 
                   ("which incoterm should we use when the supplier only loads the truck at his factory", {"C.incoterm-fca"}),
                   ("what documents does customs in Egypt need for importing spare parts", {"C.eg-import-documents"}),
                   ("ايه المستندات المطلوبة للإفراج الجمركي في مصر", {"C.eg-import-documents"}),
-                  ("what is CargoX", {"C.eg-nafeza"})):
+                  ("what is CargoX", {"C.eg-nafeza"}),
+                  ("يعني ايه ديتنشن", {"C.detention"}),
+                  ("يعني ايه تليكس ريليز", {"C.sea-waybill"}),
+                  ("يعني ايه منفستو", {"C.manifest"}),
+                  ("يعني ايه التفتيش الجمركي", {"C.customs-inspection"}),
+                  ("يعني ايه الإفراج الجمركي", {"C.customs-release"}),
+                  ("what happens if the original BL is lost", {"C.bill-of-lading"}),
+                  ("why would customs reject our invoice value", {"C.customs-valuation"}),
+                  ("is it cheaper to consolidate small shipments", {"B.consolidation"}),
+                  ("what does freight collect mean", {"B.freight-terms"}),
+                  ("what is a customs bond", {"C.customs-bond"}),
+                  ("what is the difference between gross weight and net weight", {"B.weights"}),
+                  ("how much does a 40ft container hold in cbm", {"B.cbm"}),
+                  ("how do we measure carrier performance", {"E.carrier-performance"})):
     _r = _assistant.answer(_q, STATE, {})
     _used = (_r.get("knowledge") or {}).get("items") or []
     check("'{0}' -> {1}".format(_q[:60], "/".join(sorted(_want))),

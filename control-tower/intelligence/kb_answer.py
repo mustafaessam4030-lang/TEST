@@ -127,7 +127,7 @@ def _joined(question, a, b):
     return len(between.split()) <= 4 or bool(re.search(r"differ|between|compar|versus|vs", question, re.I))
 
 
-WHAT_IS_X = re.compile(r"^\s*(?:what(?:'s| is| are| does)|define|explain|meaning of|ايه هو|ايه هي|ما هو|ما هي)\s+(.+)", re.I)
+WHAT_IS_X = re.compile(r"^\s*(?:what(?:'s| is| are| does)|define|explain|meaning of|ايه هو|ايه هي|ما هو|ما هي|يعني (?:ايه|إيه))\s+(.+)", re.I)
 # A question, not a described situation ("they rolled our box…").
 ASK_START = re.compile(r"^\s*(how|what|which|when|where|who|why|should|can|could|do|does|is|are|will|would|"
                        r"ايه|إيه|هل|ازاي|إزاي|امتى|إمتى|مين|ينفع|ليه)\b", re.I)

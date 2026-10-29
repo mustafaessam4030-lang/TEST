@@ -25,6 +25,7 @@ the answer then says nothing was found rather than guessing.
 """
 import json
 import math
+import os
 import re
 import threading
 import time
@@ -312,6 +313,11 @@ class KB(object):
             return True                   # the concept's own one-word name ("Demurrage")
         if any(name in name_keys(t) for t in it.get("terms_ar") or []):
             return True                   # its own Arabic name ("الديمرج")
+        term = name_keys(it.get("term"))
+        # (not a status in "-ed": "discharged" inside a described situation names no concept)
+        if len(name) >= 7 and not name.endswith("ed") and term and len(term[0].split()) == 1 and \
+                len(os.path.commonprefix([name, term[0]])) >= max(6, len(term[0]) - 3):
+            return True                   # a form of its own one-word name ("consolidating", "discharged")
         return it.get("kind") in ("incoterm", "kpi", "document") and self.name_df.get(name, 99) <= 5
 
     def current(self, it):

@@ -125,7 +125,7 @@
      "evidence_status": "general_knowledge", "scope": "general"},
 
     {"id": "E.carrier-performance", "kind": "kpi", "domain": "E", "category": "service", "difficulty": 3,
-     "term": "Carrier performance scorecard", "synonyms": ["carrier scorecard", "carrier KPIs", "carrier performance", "schedule reliability", "vendor scorecard"], "terms_ar": ["بطاقة أداء الناقل"],
+     "term": "Carrier performance scorecard", "synonyms": ["carrier scorecard", "carrier KPIs", "carrier performance", "schedule reliability", "vendor scorecard", "scorecard", "measure carrier performance", "how do we measure carrier performance"], "terms_ar": ["بطاقة أداء الناقل"],
      "definition": "A carrier scorecard combines measures per carrier — on-time performance, transit time and its spread, tracking data quality, claims, invoice accuracy, responsiveness — over the same lanes and period.",
      "definition_ar": "بطاقة أداء الناقل تجمع مقاييس لكل ناقل (الالتزام بالمواعيد، زمن العبور وتباينه، جودة بيانات التتبع، المطالبات، دقة الفواتير، الاستجابة) على نفس المسارات والفترة.",
      "kpi": {"formula": "each measure per carrier on comparable lanes; optional weighted score = Σ(weight × normalised measure)", "unit": "per measure; score unitless",

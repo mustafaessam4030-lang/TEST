@@ -63,7 +63,8 @@ GENERAL = re.compile(
     r"الترتيب الطبيعي|ليها أصل|\bcan (?:clearance|customs|we|it) (?:start|begin|be done|happen) before\b|"
     r"\bdo we have to wait\b|\bis (?:it|that) enough\b|\bhow many [\w ]{1,25}\b(?:fit|go|can (?:we|you) (?:load|put))\b|"
     r"\bwhen (?:is|are|should) [\w ]{1,40}\b(?:better|cheaper|faster)\b|\bbetter than\b|"
-    r"\bwhich incoterms?\b|\bwhat (?:documents|papers)\b|\bwhen do (?:we|i|you) need\b", re.I)
+    r"\bwhich incoterms?\b|\bwhat (?:documents|papers)\b|\bwhen do (?:we|i|you) need\b|"
+    r"\bhow (?:do|should|can) (?:we|i|you) (?:measure|avoid|reduce|calculate|choose)\b|\bwhat happens if\b", re.I)
 INCOTERM = re.compile(r"\b(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)\b")
 CALC_SHAPE = re.compile(r"(\d[\d,.]*\s*(?:x|×|\*)\s*\d)|\b(calculate|compute|work out|how much|total\??|average\??|"
                         r"variance|in %|percent|per cent|cbm|chargeable|volumetric|turns?|mape|dwell time in|lead time in|"
