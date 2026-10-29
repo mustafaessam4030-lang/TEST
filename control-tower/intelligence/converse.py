@@ -428,6 +428,11 @@ def _answer(question, state, context, rules):
         trace.useful("rules")
     if lang != "en" and _knowledge_built(read):
         return _as_built_knowledge(read)
+    if lang == "ar" and read.get("intent") == "greeting" and re.search(r"[\u0600-\u06FF]", read.get("answer") or ""):
+        # An Arabic hello / how-are-you: the rules already answered in Arabic.
+        read["llm"] = {"used": False, "mode": "instant",
+                       "reason": "a greeting is answered at once, without the model"}
+        return read
     route = "model"
     if direct and direct.get("intent") == "potato":
         # Read straight from Potato Mode: nothing for a model to add.

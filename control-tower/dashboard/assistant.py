@@ -513,7 +513,7 @@ INTENTS = [
                      "how long did the run"]),
     ("health",      ["how is it going", "how are we doing", "everything ok",
                      "everything okay", "is it healthy", "any problems",
-                     "anything wrong", "all good"]),
+                     "anything wrong", "all good", "everything good", "everything fine"]),
     ("history",     ["history", "what happened before", "earlier", "so far",
                      "recap", "summary of everything"]),
     # Re-run is checked next: "re-run 157-49568713" must not be read as a
@@ -609,6 +609,34 @@ def _phrase_in(phrase, lowered):
     return phrase in lowered
 
 
+# Small talk addressed to ATLAS itself, the whole message: "are you good?",
+# "how are you", "عامل ايه". Without this, "good" in "are you good" was
+# looked up as cargo ("goods") in the knowledge base.
+HOW_ARE_YOU = re.compile(
+    r"^\s*(?:(?:hi|hey|hello|yo)[\s,!]+)?(?:atlas[\s,]+)?(?:"
+    r"how (?:are|r) (?:you|u|ya)(?: doing| today| atlas)?|how(?:'?s| is) it going|how(?:'?s| is) life|how (?:you|u) doing|"
+    r"(?:are|r) (?:you|u) (?:good|ok|okay|fine|alright|all right|there|alive|awake|online|up|working|with me)|"
+    r"(?:you|u) (?:good|ok|okay|alright|there)|what'?s up|wh?ass?up|sup"
+    r")(?:[\s,]+atlas)?[\s?!.]*$", re.I)
+HOW_ARE_YOU_AR = re.compile(
+    r"^\s*(?:(?:يا\s*)?(?:اطلس|أطلس)[\s،,]*)?(?:"
+    r"(?:ا|إ)?نت(?:ي)? (?:كويس(?:ة)?|تمام|بخير)|عامل(?:ة)? (?:ا|إ)يه|(?:ا|إ)زي(?:ك|َك)(?: عامل(?:ة)? (?:ا|إ)يه)?|"
+    r"كيف(?: |)حالك|كيفك|شلونك|(?:ا|أ)خبارك(?: (?:ا|إ)يه)?|(?:ا|إ)يه (?:ا|أ)لا?خبار|(?:ا|أ)خبارك (?:ا|إ)يه"
+    r")[\s?؟!.]*$")
+HELLO_AR = re.compile(r"^\s*(?:مرحبا|مرحباً|(?:ا|أ)هلا|(?:ا|أ)هلاً|السلام عليكم|سلام|صباح الخير|مساء الخير|هاي)"
+                      r"(?:\s*(?:يا\s*)?(?:اطلس|أطلس))?[\s?؟!.]*$")
+
+
+def small_talk(question):
+    """"how" for a how-are-you, "hello" for an Arabic hello, else None."""
+    q = str(question or "").strip()
+    if HOW_ARE_YOU.match(q) or HOW_ARE_YOU_AR.match(q):
+        return "how"
+    if HELLO_AR.match(q):
+        return "hello"
+    return None
+
+
 def detect_intent(question):
     """
     First intent with a matching phrase wins; INTENTS is ordered by specificity.
@@ -621,6 +649,8 @@ def detect_intent(question):
     # Asking ATLAS to do a security check is refused, however it is worded.
     if SOLVE_REQUEST.search(lowered):
         return "code_request"
+    if small_talk(question):
+        return "greeting"
     if lowered.strip(" ?.!") in ("summary", "summary please", "a summary"):
         return "summary"
     if lowered.strip(" ?.!") in DASHBOARD_WHOLE:
@@ -645,9 +675,29 @@ def _ms(value):
     return "{0} ms".format(value) if value < 1000 else "{0:.1f} s".format(value / 1000)
 
 
-def _answer_greeting(data):
+def _answer_greeting(data, question=""):
     """Warm, one line, and instant: a greeting never waits for a model."""
     counters = data.counters
+    if re.search(r"[\u0600-\u06FF]", question or ""):
+        lead = "أنا تمام، شكراً على سؤالك! 😊" if small_talk(question) == "how" else "أهلاً! 👋"
+        if data.is_running:
+            return lead + " التشغيل شغال الآن، تم {0} حتى الآن. تحب تعرف إيه؟".format(counters.get("processed", 0))
+        if data.shipments:
+            return lead + " مفيش تشغيل دلوقتي. آخر تشغيل عالج {0} شحنة: {1} اتسجلت في الـ Hub و{2} فشلت. " \
+                          "تحب تعرف إيه؟".format(counters.get("processed", 0), counters.get("successful", 0),
+                                                counters.get("failed", 0))
+        return lead + " لسه مفيش تشغيل بدأ. أول ما يبدأ، اسألني أي حاجة عنه."
+    if small_talk(question) == "how":
+        if data.is_running:
+            return "I'm good, thanks for asking! 😊 The run is going: {0} done so far. " \
+                   "What would you like to check?".format(counters.get("processed", 0))
+        if data.shipments:
+            return "I'm good, thanks for asking! 😊 Nothing's running right now. The last run handled {0}: " \
+                   "{1} written to the Hub, {2} failed. What would you like to check?".format(
+                       "{0} shipment{1}".format(counters.get("processed", 0),
+                                                "" if counters.get("processed") == 1 else "s"),
+                       counters.get("successful", 0), counters.get("failed", 0))
+        return "I'm good, thanks for asking! 😊 No run has started yet. Once one does, ask me anything about it."
     if data.is_running:
         current = data.in_flight
         where = "I'm on {0}".format(current.get("reference")) if current else \
@@ -3973,7 +4023,7 @@ def _answer_core(question, state, context=None):
             "latest_failure": lambda: _answer_latest_failure(data),
             "summary": lambda: _answer_summary(data),
             "changed": lambda: _answer_changed(data),
-            "greeting": lambda: _answer_greeting(data),
+            "greeting": lambda: _answer_greeting(data, question),
             "thanks": lambda: _answer_thanks(data),
             "identity": lambda: _answer_identity(data),
             "capabilities": lambda: _answer_capabilities(data),

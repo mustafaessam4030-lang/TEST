@@ -235,5 +235,20 @@ sup = (HERE / "dashboard" / "supervisor.py").read_text(encoding="utf-8")
 check("The supervisor stops instead of running headless when the dashboard cannot start",
       "is None:" in sup and "sys.exit(1)" in sup)
 
+section("9. SMALL TALK IS SMALL TALK")
+from dashboard import assistant as _assistant  # noqa: E402
+for q in ("are you good ?", "you good?", "how are you", "Hey ATLAS, how are you doing?", "what's up",
+          "are you there", "انت كويس", "عامل ايه", "ازيك", "كيف حالك؟", "مرحبا", "السلام عليكم"):
+    check("'{0}' is a greeting, not a knowledge lookup".format(q),
+          _assistant.detect_intent(q) == "greeting" and _assistant.small_talk(q) is not None)
+check("'are you good?' does not answer about cargo",
+      "Cargo" not in _assistant._answer_greeting(_assistant.RunData({}), "are you good ?"))
+check("An Arabic how-are-you is answered in Arabic",
+      "تمام" in _assistant._answer_greeting(_assistant.RunData({}), "عامل ايه"))
+for q in ("what are dangerous goods?", "are you good at customs questions?", "how are you calculating demurrage?",
+          "hi, which shipments failed?"):
+    check("'{0}' is not taken as small talk".format(q), _assistant.small_talk(q) is None)
+check("'is everything good' asks about the run", _assistant.detect_intent("is everything good") == "health")
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)
