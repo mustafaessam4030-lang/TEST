@@ -94,6 +94,10 @@ check("The human step never shows a code: an operator completes it",
       "Operator completes this step" in FILM_SRC
       and not re.search(r"captcha|security code", FILM_SRC.split("function Piece")[1], re.I))
 
+check("No SVG logo installed: the PNG is served at its address, not a 404 in every console",
+      'route == "/static/brand/mantrac-logo.svg" and not candidate.is_file()' in SERVER
+      and 'relative == "brand/mantrac-logo.svg" and not candidate.is_file()' in SERVER)
+
 print()
 print("=" * 72)
 print("2. THERE IS NO AUDIO ANYWHERE")

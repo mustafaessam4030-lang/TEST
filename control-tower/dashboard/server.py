@@ -675,6 +675,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route.startswith("/static/brand/") and method in ("GET", "HEAD"):
             candidate = (STATIC_DIR / route[len("/static/"):]).resolve()
+            if route == "/static/brand/mantrac-logo.svg" and not candidate.is_file():
+                # No official SVG installed: the PNG, instead of a 404 in every console.
+                candidate = (STATIC_DIR / "brand" / "mantrac-logo.png").resolve()
             if STATIC_DIR.resolve() in candidate.parents:
                 self._send_file(candidate)
             else:
@@ -946,6 +949,8 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/static/"):
             relative = route[len("/static/"):]
             candidate = (STATIC_DIR / relative).resolve()
+            if relative == "brand/mantrac-logo.svg" and not candidate.is_file():
+                candidate = (STATIC_DIR / "brand" / "mantrac-logo.png").resolve()   # no SVG installed
             if STATIC_DIR.resolve() in candidate.parents or candidate == STATIC_DIR.resolve():
                 self._send_file(candidate)
             else:
