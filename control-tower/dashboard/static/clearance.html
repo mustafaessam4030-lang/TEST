@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Clearance · Shipment Control Tower — Mantrac</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23FFCD11%27/%3E%3Cpath d=%27M7 24V8h4l5 8 5-8h4v16h-4V15l-5 7-5-7v9z%27 fill=%27%23111%27/%3E%3C/svg%3E">
 <!-- The platform's theme (Light, Dark or System), before the first paint, from
      the same saved choice the console uses; the account's choice follows. -->
 <script>(function(){var c='system';try{c=localStorage.getItem('ata-theme')||'system';}catch(e){}
@@ -237,6 +238,25 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .hbtn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:var(--r-sm);padding:7px 14px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
 .hbtn:hover{background:var(--surface-2);border-color:var(--line-hi)}
 /* modal */
+/* the list behind a chart click: under the shipment drawer (70/71), over the page */
+.dd{position:fixed;inset:0;z-index:69;background:rgba(15,30,55,.32);display:none;place-items:center;padding:16px}
+.dd.show{display:grid}
+.ddbox{background:var(--surface);color:var(--ink);border-radius:var(--r-lg);box-shadow:0 20px 60px rgba(10,25,50,.3);width:min(1100px,100%);
+  max-height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
+.ddh{display:flex;gap:12px;align-items:flex-start;padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.ddh h3{margin:0;font-size:18px}
+.ddh p{margin:4px 0 0;color:var(--muted);font-size:12.5px}
+.ddh .x{margin-left:auto;border:0;background:var(--surface-3);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;color:var(--ink);flex:none}
+.ddsum{display:flex;flex-wrap:wrap;gap:8px;padding:10px 18px 0}
+.ddsum span{background:var(--surface-2);border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;font-size:12.5px}
+.ddsum b{font-variant-numeric:tabular-nums}
+.ddtools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 18px}
+.ddtools input{flex:1 1 220px;min-width:0;border:1px solid var(--line);border-radius:var(--r-sm);padding:7px 10px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink)}
+.ddbody{overflow:auto;padding:0 18px;flex:1 1 auto;min-height:120px}
+.ddbody .xt th{top:0}
+.ddfoot{display:flex;gap:8px;align-items:center;padding:10px 18px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+.ddfoot .sp{flex:1}
+@media (max-width:700px){.dd{padding:0}.ddbox{border-radius:0;max-height:100vh;height:100vh}.ddtools input{flex-basis:100%}.ddtools .btn{flex:1}}
 .modal{position:fixed;inset:0;z-index:85;background:rgba(15,30,55,.32);display:none;place-items:center;padding:16px}
 .modal.show{display:grid}
 .mbox{background:var(--surface);color:var(--ink);border-radius:var(--r-lg);box-shadow:0 20px 60px rgba(10,25,50,.3);width:min(620px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column}
@@ -350,11 +370,11 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
   <div class="grid">
     <div class="mid">
       <section class="card" aria-labelledby="x-h">
-        <h2 id="x-h">Clearance Execution <small>click a mode, a ring segment or on-time / late</small></h2>
+        <h2 id="x-h">Clearance Execution <small>click any part for its list · shift+click to filter</small></h2>
         <div class="modes" id="modes"></div>
       </section>
       <section class="card" aria-labelledby="i-h">
-        <h2 id="i-h">Clearance Insights <small>click a status or a stage</small></h2>
+        <h2 id="i-h">Clearance Insights <small>click a status or a stage for its list</small></h2>
         <div class="ins">
           <div>
             <div class="status"><div class="donut" id="st-donut"></div><div class="slist" id="st-list"></div></div>
@@ -376,12 +396,12 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
 
   <div class="row2">
     <section class="card" aria-labelledby="m-h">
-      <h2 id="m-h">Monthly Volume &amp; On-time <small>click a month</small></h2>
+      <h2 id="m-h">Monthly Volume &amp; On-time <small>click a month for its list</small></h2>
       <div class="legend"><span><i style="background:var(--blue)"></i>On time</span><span><i style="background:var(--cyan)"></i>Late</span><span><i class="line" style="background:var(--orange)"></i>On-time %</span></div>
       <div class="chart" id="months"></div>
     </section>
     <section class="card" aria-labelledby="b-h">
-      <h2 id="b-h">Business Units <small>click a row</small></h2>
+      <h2 id="b-h">Business Units <small>click a row for its list</small></h2>
       <table class="butable"><thead><tr><th>BU</th><th>Shipments</th><th>On time</th><th>Open</th><th>Past due</th></tr></thead><tbody id="bus"></tbody></table>
     </section>
   </div>
@@ -410,6 +430,19 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
 </aside>
 <div class="drop" id="drop">Drop the eHub export (.xlsx) to load it for everyone</div>
 <div class="toast" id="toast" role="status"></div>
+<div class="dd" id="dd" role="dialog" aria-modal="true" aria-labelledby="dd-title">
+  <div class="ddbox">
+    <div class="ddh"><div><h3 id="dd-title"></h3><p id="dd-sub"></p></div><button class="x" id="dd-close" type="button" aria-label="Close">×</button></div>
+    <div class="ddsum" id="dd-sum"></div>
+    <div class="ddtools">
+      <input id="dd-q" type="search" placeholder="Search in this list: AWB/BOL, forwarder, agent, step…" aria-label="Search in this list">
+      <button class="btn" id="dd-csv" type="button">Download CSV</button>
+      <button class="btn primary" id="dd-filter" type="button">Filter the page to this</button>
+    </div>
+    <div class="ddbody"><table class="xt"><thead><tr id="dd-head"></tr></thead><tbody id="dd-rows"></tbody></table></div>
+    <div class="ddfoot"><span id="dd-info"></span><span class="sp"></span><button class="btn" id="dd-more" type="button">Show more</button></div>
+  </div>
+</div>
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
   <div class="mbox"><h3 id="m-title"></h3><div class="mbody" id="m-body"></div><div class="mact" id="m-act"></div></div>
 </div>
@@ -558,10 +591,10 @@ function modes() {
     const open = M.filter(isOpen), late = open.filter(pastDue), done = n - open.length;
     const segs = GROUPS.map((g) => ({n: g.name, c: g.color, v: open.filter((r) => g.steps.includes(r[F.step])).length,
       set: {mode: m, group: g.name}, on: state.mode === m && state.group === g.name, dim: state.group && state.group !== g.name,
-      hint: `open ${m} shipments · ${open.filter((r) => g.steps.includes(r[F.step]) && pastDue(r)).length} past due · click to filter`}));
+      hint: `open ${m} shipments · ${open.filter((r) => g.steps.includes(r[F.step]) && pastDue(r)).length} past due · click to list them`}));
     const good = n && on / n >= TARGET, cls = state.mode === "All" ? "" : state.mode === m ? " on" : " dim";
     return `<div class="mode${cls}">
-      <h4 data-set="${setAttr({mode: m})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(m)}</b>: ${fmt(n)} shipments<small>Click to filter on ${esc(m)}</small>`)}">${esc(m)}</h4>
+      <h4 data-set="${setAttr({mode: m})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(m)}</b>: ${fmt(n)} shipments<small>Click to list them · Shift+click filters the page</small>`)}">${esc(m)}</h4>
       <div class="tot">total: <b>${fmt(n)}</b></div>
       <div class="pbar"><div class="bar" data-tip="${esc(`<b>${pctTxt(done, n)}</b> completed (${fmt(done)} of ${fmt(n)})`)}"><i style="width:${pct(done, n)}%;background:var(--amber)"></i></div>
         <span class="ok" style="background:${good ? "var(--green)" : "var(--red)"}" data-tip="${good ? "On-time at or above 95%" : "On-time below the 95% target"}">${good ? "✓" : "!"}</span></div>
@@ -577,7 +610,7 @@ function statusMix() {
   const R = rows(["status"]), c = {};
   R.forEach((r) => c[r[F.status]] = (c[r[F.status]] || 0) + 1);
   const segs = Object.entries(c).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({n: STATUS_LABEL[k] || k, v, c: STATUS_COLORS[k] || "var(--soft)",
-    set: {status: k}, on: state.status === k, dim: state.status && state.status !== k, hint: "click to filter"}));
+    set: {status: k}, on: state.status === k, dim: state.status && state.status !== k, hint: "click to list them"}));
   const sel = state.status ? (c[state.status] || 0) : (c["Completed"] || 0);
   $("st-donut").innerHTML = donut(segs, 120, 18, `<span>${esc(state.status ? (STATUS_LABEL[state.status] || state.status) : "Completed")}</span><b>${pctTxt(sel, R.length)}</b>`);
   $("st-list").innerHTML = segs.map((s) => `<div class="${s.on ? "on" : ""}" data-set="${setAttr(s.set)}" tabindex="0" role="button"><span><i style="background:${s.c}"></i>${esc(s.n)}</span><b>${pctTxt(s.v, R.length)}</b></div>`).join("");
@@ -597,7 +630,7 @@ function stages() {
   S.forEach((st) => {
     const x = L + st.i * cw + cw * .2, w = cw * .6, p = st.t ? st.y / st.t : 0, hy = ph * p, [l1, l2] = st.label.split("|");
     const dim = state.stage != null && state.stage !== st.i ? " dimmed" : "", on = state.stage === st.i ? " on" : "";
-    s += `<g class="${on}${dim}" data-set="${setAttr({stage: st.i})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(st.name)}</b> (owner ${esc(st.owner)})<br>${fmt(st.y)} of ${fmt(st.t)} met target (${pctTxt(st.y, st.t)})<small>Click to list the ${fmt(st.n)} that missed it</small>`)}">
+    s += `<g class="${on}${dim}" data-set="${setAttr({stage: st.i})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(st.name)}</b> (owner ${esc(st.owner)})<br>${fmt(st.y)} of ${fmt(st.t)} met target (${pctTxt(st.y, st.t)})<small>Click to list the ${fmt(st.n)} that missed it · Shift+click filters the page</small>`)}">
       <rect class="hl" x="${L + st.i * cw}" y="${T - 6}" width="${cw}" height="${H - T}" fill="transparent" rx="6"/>
       <rect x="${x}" y="${T}" width="${w}" height="${ph}" rx="3" fill="var(--missed)" opacity=".55"/>
       <rect class="b" x="${x}" y="${T + ph - hy}" width="${w}" height="${hy}" rx="3" fill="${p >= TARGET ? "var(--green)" : "var(--blue)"}"/>
@@ -648,7 +681,7 @@ function months() {
   M.forEach((m, i) => {
     const x = L + i * cw + cw * .22, w = cw * .56, ho = ph * m.on / top, hl = ph * (m.n - m.on) / top, base = T + ph;
     const dim = state.month && state.month !== m.k ? " dimmed" : "", on = state.month === m.k ? " on" : "";
-    s += `<g class="${on}${dim}" data-set="${setAttr({month: m.k})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(mon(m.k))}</b> · ${fmt(m.n)} shipments<br>${fmt(m.on)} on time, ${fmt(m.n - m.on)} late${m.past && m.n ? ` · ${pct(m.on, m.n)}% on time` : ""}<small>${m.past ? "Click to filter on this ETA month" : "ETA after the data date: volume only"}</small>`)}">
+    s += `<g class="${on}${dim}" data-set="${setAttr({month: m.k})}" tabindex="0" role="button" data-tip="${esc(`<b>${esc(mon(m.k))}</b> · ${fmt(m.n)} shipments<br>${fmt(m.on)} on time, ${fmt(m.n - m.on)} late${m.past && m.n ? ` · ${pct(m.on, m.n)}% on time` : ""}<small>${m.past ? "Click to list them · Shift+click filters the page" : "ETA after the data date: volume only · click to list them"}</small>`)}">
       <rect class="hl" x="${L + i * cw}" y="${T - 6}" width="${cw}" height="${ph + 6}" fill="transparent" rx="6"/>
       <rect class="b" x="${x}" y="${base - ho}" width="${w}" height="${ho}" fill="var(--blue)"/>
       <rect class="b" x="${x}" y="${base - ho - hl}" width="${w}" height="${hl}" fill="var(--cyan)"/>
@@ -668,7 +701,7 @@ function bus() {
   R.forEach((r) => { const b = g[r[F.bu]] || (g[r[F.bu]] = {n: 0, on: 0, open: 0, late: 0}); b.n++; b.on += r[F.ontime]; if (isOpen(r)) b.open++; if (pastDue(r)) b.late++; });
   $("bus").innerHTML = Object.entries(g).sort((a, b) => b[1].n - a[1].n).map(([k, b]) => {
     const p = pct(b.on, b.n);
-    return `<tr class="${state.bu === k ? "on" : ""}" tabindex="0" data-set="${setAttr({bu: k})}" data-tip="${esc(`<b>${esc(k)}</b>: ${fmt(b.n)} shipments, ${p}% on time<br>${fmt(b.open)} open, ${fmt(b.late)} past due<small>Click to filter on ${esc(k)}</small>`)}"><td>${esc(k)}</td><td>${fmt(b.n)}</td>
+    return `<tr class="${state.bu === k ? "on" : ""}" tabindex="0" data-set="${setAttr({bu: k})}" data-tip="${esc(`<b>${esc(k)}</b>: ${fmt(b.n)} shipments, ${p}% on time<br>${fmt(b.open)} open, ${fmt(b.late)} past due<small>Click to list them · Shift+click filters the page</small>`)}"><td>${esc(k)}</td><td>${fmt(b.n)}</td>
       <td>${p}%<span class="mini"><i style="width:${p}%;background:${p >= 95 ? "var(--green)" : p >= 70 ? "var(--blue)" : "var(--orange)"}"></i></span></td>
       <td>${fmt(b.open)}</td><td style="color:${b.late ? "var(--red)" : "inherit"}">${fmt(b.late)}</td></tr>`;
   }).join("") || `<tr><td colspan="5" class="empty">No shipments match these filters.</td></tr>`;
@@ -736,17 +769,89 @@ function explorer(R) {
   explorer.current = X;
 }
 
-function csv() {
+function csv(list, name) {
+  list = Array.isArray(list) ? list : explorer.current;
   const cols = ["awb","bu","div","mode","ffw","agent","status","step","next","eta","ata","submitted","release","completed","due","overdue","ontime","cycle","target"];
   // A cell that Excel would run as a formula (= + - @) is kept as text.
   const cell = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
     return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
-  const lines = [cols.join(",")].concat(explorer.current.map((r) => cols.map((c) => cell(c === "ontime" ? (r[F[c]] ? "yes" : "no") : r[F[c]])).join(",")));
+  const lines = [cols.join(",")].concat(list.map((r) => cols.map((c) => cell(c === "ontime" ? (r[F[c]] ? "yes" : "no") : r[F[c]])).join(",")));
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
-  a.download = `shipments_${DATA.asof || "export"}.csv`; a.click();
+  a.download = `shipments_${name ? name + "_" : ""}${DATA.asof || "export"}.csv`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
+
+/* the list behind a click: exactly the rows the page would show with that
+   filter added to the ones already on, as a table — nothing estimated. */
+const DD = {set: null, rows: [], shown: 50, sort: ["overdue", -1], back: null};
+const DD_COLS = [["awb", "AWB / BOL"], ["bu", "BU"], ["mode", "Mode"], ["step", "Current step"], ["eta", "ETA"],
+  ["overdue", "Days past due", "n"], ["ontime", "On time"], ["ffw", "Forwarder"], ["agent", "Clearing agent"]];
+function rowsWith(o) {
+  const keep = {...state}; Object.assign(state, o);
+  try { return ROWS.filter((r) => match(r)); } finally { Object.assign(state, keep); }
+}
+function setLabel(o) {
+  const parts = [];
+  for (const [k, v] of Object.entries(o)) {
+    if (k === "mode" || k === "bu" || k === "div" || k === "ffw" || k === "agent") parts.push(v);
+    else if (k === "group") parts.push(v.toLowerCase() === "receipt" ? "awaiting receipt" : v.toLowerCase());
+    else if (k === "status") parts.push(STATUS_LABEL[v] || v);
+    else if (k === "stage") parts.push("missed the " + STAGES[v][0] + " target");
+    else if (k === "month") parts.push("ETA " + mon(v));
+    else if (k === "ontime") parts.push(v ? "on time" : "not on time");
+    else if (k === "flag") parts.push(FLAGS[v] || v);
+  }
+  return parts.join(" · ");
+}
+function drill(o) {
+  DD.set = o; DD.rows = rowsWith(o); DD.shown = 50; DD.sort = ["overdue", -1]; DD.back = document.activeElement;
+  $("dd-q").value = "";
+  const others = KEYS.filter((k) => !(k in o) && state[k] != null && state[k] !== "All").map((k) => setLabel({[k]: state[k]}));
+  $("dd-title").textContent = setLabel(o) || "Shipments";
+  $("dd-sub").textContent = (others.length ? "Within the filters on the page: " + others.join(", ") + (state.q ? `, search “${state.q}”` : "") + " · " : "") +
+    `eHub export, data as of ${DATA.asof || "unknown"}`;
+  const R = DD.rows, open = R.filter(isOpen), late = open.filter(pastDue), on = R.filter((r) => r[F.ontime]).length;
+  $("dd-sum").innerHTML = [[R.length, "shipments"], [open.length, "open"], [late.length, "past due"], [pctTxt(on, R.length), "on time"],
+    [R.length - open.length, "completed"]].map(([v, l]) => `<span><b>${typeof v === "number" ? fmt(v) : v}</b> ${l}</span>`).join("");
+  ddDraw();
+  $("dd").classList.add("show"); tip.classList.remove("show");
+  $("dd-close").focus();
+}
+function ddDraw() {
+  const q = $("dd-q").value.trim().toLowerCase();
+  let X = q ? DD.rows.filter((r) => [F.awb, F.ffw, F.agent, F.step, F.bu, F.status, F.div].some((i) => String(r[i] || "").toLowerCase().includes(q))) : DD.rows;
+  const [k, dir] = DD.sort, i = F[k];
+  X = [...X].sort((a, b) => { const x = a[i], y = b[i]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+  DD.current = X;
+  $("dd-head").innerHTML = DD_COLS.map(([c, l]) => `<th scope="col" data-ddsort="${c}" tabindex="0" aria-sort="${k === c ? (dir > 0 ? "ascending" : "descending") : "none"}">${l}${k === c ? `<span class="s">${dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`).join("");
+  $("dd-rows").innerHTML = X.slice(0, DD.shown).map((r) => `<tr data-row="${ROWS.indexOf(r)}" tabindex="0">${DD_COLS.map(([c, , cls]) => {
+    let v = r[F[c]];
+    if (c === "eta") v = v ? dmy(v) : "–";
+    else if (c === "step") v = esc(stepName(v));
+    else if (c === "overdue") v = v == null ? "–" : v > 0 ? `<span style="color:var(--red);font-weight:600">${fmt(v)}</span>` : fmt(v);
+    else if (c === "ontime") v = v ? `<span class="tag" style="background:var(--tint-green);color:var(--grn)">Yes</span>` : `<span class="tag" style="background:var(--tint-red);color:var(--red)">No</span>`;
+    else v = esc(v || "–");
+    return `<td${cls ? ` class="${cls}"` : ""}>${c === "awb" ? `<code>${v}</code>${openEsc(r) ? `<span class="tag esc">Escalated</span>` : ""}` : v}</td>`;
+  }).join("")}</tr>`).join("") || `<tr><td colspan="${DD_COLS.length}" class="empty">No shipments${q ? " match this search" : ""}.</td></tr>`;
+  const n = Math.min(DD.shown, X.length);
+  $("dd-info").textContent = X.length ? `Showing ${fmt(n)} of ${fmt(X.length)}${q ? " matching" : ""} · click a row for its details` : "";
+  $("dd-more").hidden = X.length <= DD.shown;
+}
+function ddClose() {
+  $("dd").classList.remove("show");
+  if (DD.back && document.contains(DD.back)) DD.back.focus();
+}
+$("dd-close").onclick = ddClose;
+$("dd").addEventListener("click", (e) => { if (e.target === $("dd")) ddClose(); });
+$("dd-q").addEventListener("input", () => { DD.shown = 50; ddDraw(); });
+$("dd-more").onclick = () => { DD.shown += 100; ddDraw(); };
+$("dd-csv").onclick = () => csv(DD.current || DD.rows, setLabel(DD.set).replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase());
+$("dd-filter").onclick = () => { const o = DD.set; ddClose(); for (const [k, v] of Object.entries(o)) state[k] = v; state.page = 0; render(); };
+$("dd-head").addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-ddsort]"); if (!th) return;
+  const c = th.dataset.ddsort; DD.sort = [c, DD.sort[0] === c ? -DD.sort[1] : (c === "overdue" ? -1 : 1)]; ddDraw();
+});
 
 /* drawer */
 let lastFocus = null;
@@ -877,7 +982,14 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("focusin", (e) => { const t = e.target.closest("[data-tip]"); if (!t) return; const b = t.getBoundingClientRect(); tip.innerHTML = t.getAttribute("data-tip"); tip.classList.add("show"); tip.style.left = Math.min(b.left, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (b.bottom + 8) + "px"; });
 document.addEventListener("focusout", () => tip.classList.remove("show"));
 document.addEventListener("click", (e) => {
-  const set = e.target.closest("[data-set]"); if (set) { tip.classList.remove("show"); apply(JSON.parse(set.getAttribute("data-set"))); return; }
+  const set = e.target.closest("[data-set]");
+  if (set) {
+    tip.classList.remove("show");
+    const o = JSON.parse(set.getAttribute("data-set"));
+    const active = Object.entries(o).every(([k, v]) => state[k] === v);
+    if (e.shiftKey || active) apply(o); else drill(o);     // the list; shift+click (or a filter already on) filters the page
+    return;
+  }
   const clr = e.target.closest("[data-clear]"); if (clr) { const k = clr.dataset.clear; if (k === "q") { state.q = ""; $("q").value = ""; } else state[k] = null; state.page = 0; render(); return; }
   const act = e.target.closest("[data-act]"); if (act) { e.stopPropagation(); doAction(act.dataset.act, +act.dataset.i); return; }
   const esc_ = e.target.closest("[data-esc]"); if (esc_) { const x = ESC.find((y) => y.id === esc_.dataset.esc); if (x) escalationView(x); return; }
@@ -887,7 +999,8 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && $("modal").classList.contains("show")) { closeModal(); return; }
   if (e.key === "Escape" && $("drawer").classList.contains("show")) { closeRow(); return; }
-  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-set],[data-row],th[data-sort]") && !e.target.matches("button")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", {bubbles: true})); }
+  if (e.key === "Escape" && $("dd").classList.contains("show")) { ddClose(); return; }
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-set],[data-row],th[data-sort],th[data-ddsort]") && !e.target.matches("button")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", {bubbles: true, shiftKey: e.shiftKey})); }
 });
 $("f-div").onchange = (e) => { state.div = e.target.value; state.page = 0; render(); };
 $("f-ffw").onchange = (e) => { state.ffw = e.target.value; state.page = 0; render(); };
@@ -896,7 +1009,7 @@ $("reset").onclick = () => { KEYS.forEach((k) => state[k] = ALLK.includes(k) ? "
 let qt; $("q").addEventListener("input", (e) => { clearTimeout(qt); qt = setTimeout(() => { state.q = e.target.value; state.page = 0; filterBar(); explorer(rows()); saveHash(); }, 180); });
 $("prev").onclick = () => { state.page--; explorer(rows()); };
 $("next").onclick = () => { state.page++; explorer(rows()); };
-$("csv").onclick = csv;
+$("csv").onclick = () => csv();
 $("d-close").onclick = closeRow; $("scrim").onclick = closeRow;
 
 /* ── the server: sign-in, data, loading a new export ───────────────────

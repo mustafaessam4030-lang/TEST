@@ -393,6 +393,13 @@ class Handler(BaseHTTPRequestHandler):
             )
             self._set_cookie = False
 
+    def _send_no_icon(self):
+        """The pages declare their icon inline; an old-style /favicon.ico
+        request gets an empty answer instead of a 404 in every console."""
+        self.send_response(204)
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+
     def _send_file(self, path, extra=None):
         """
         Serve a file, honouring Range.
@@ -662,6 +669,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _acc_public(self, acc, method, route):
         from controlplane.users import AccessError, public as public_user
+        if route == "/favicon.ico":
+            self._send_no_icon()
+            return
         if route in ("/login", "/set-password") and method in ("GET", "HEAD"):
             self._send_file(ROOT.parent / "controlplane" / "static" / "login.html")
             return
@@ -894,6 +904,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(launch.LAUNCH_DIR / "launch.html", extra={
                 "Content-Security-Policy": self.LAUNCH_CSP, "Cache-Control": "no-cache",
                 "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin"})
+            return True
+        if route == "/favicon.ico":
+            self._send_no_icon()
             return True
         if route == "/api/launch":
             self._send(200, json.dumps(launch.config()))

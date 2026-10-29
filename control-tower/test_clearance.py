@@ -414,7 +414,17 @@ try:
         check("in a browser: the page shows the loaded export", "6 shipments" in pg.locator("#e-count").inner_text())
         check("in a browser: an Operator sees 'Load new export'", pg.locator("#loadBtn").is_visible())
         pg.locator('.kpi[data-set*="pastdue"]').click()
-        check("in a browser: clicking a card filters", pg.locator("#e-count").inner_text() == "2 shipments", pg.locator("#e-count").inner_text())
+        pg.wait_for_selector("#dd.show", timeout=5000)
+        check("in a browser: clicking a card lists exactly those shipments in a pop-up",
+              pg.locator("#dd-rows tr").count() == 2 and "2" in pg.locator("#dd-sum").inner_text()
+              and pg.locator("#e-count").inner_text() == "6 shipments", pg.locator("#dd-info").inner_text())
+        pg.click("#dd-filter")
+        check("in a browser: 'Filter the page to this' filters the page", pg.locator("#e-count").inner_text() == "2 shipments"
+              and not pg.locator("#dd").is_visible(), pg.locator("#e-count").inner_text())
+        pg.locator('[data-clear="flag"]').click()
+        pg.locator('.kpi[data-set*="pastdue"]').click(modifiers=["Shift"])
+        check("in a browser: Shift+click filters directly", pg.locator("#e-count").inner_text() == "2 shipments"
+              and not pg.locator("#dd").is_visible())
         pg.locator('[data-clear="flag"]').click()
         row = pg.locator("#xbody tr", has_text="TEST-0002")
         check("in a browser: the table has Escalate (shown as Escalated), Call and Mail",
@@ -588,6 +598,17 @@ check("'Tell me about Ghana' anywhere is the export's GH figures",
 _missing = atlas_skills.answer("clearance", "do you know the status of 8842001173", None)["answer"]
 check("A shipment number the export does not hold is said to be missing, not answered with the whole export",
       "can't find 8842001173" in _missing and "Past due by step" not in _missing)
+
+_h = open(os.path.join(HERE, "dashboard", "static", "clearance.html"), encoding="utf-8").read()
+check("A click on a chart opens the list of exactly those shipments (the page's filters plus the clicked one)",
+      "function drill(o)" in _h and "function rowsWith(o)" in _h and "Object.assign(state, o)" in _h
+      and "if (e.shiftKey || active) apply(o); else drill(o);" in _h)
+check("The list: counts, search, sortable columns, CSV of the list, a row opens its details, filter the page to it",
+      all(x in _h for x in ('id="dd-sum"', 'id="dd-q"', "data-ddsort", 'id="dd-csv"', 'id="dd-filter"', "data-row=")))
+check("The list sits under the shipment drawer and closes with Escape",
+      ".dd{position:fixed;inset:0;z-index:69" in _h and '$("dd").classList.contains("show")) { ddClose()' in _h)
+check("Every page declares an icon (no /favicon.ico 404 in the console)",
+      'rel="icon"' in _h and "def _send_no_icon" in open(os.path.join(HERE, "dashboard", "server.py"), encoding="utf-8").read())
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
