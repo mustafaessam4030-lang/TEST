@@ -185,3 +185,23 @@ connected — needs a rates source"** until a data owner and source exist.
 
 Deploying to MAN-ATAAZ-01, live Hub writes, production runs, new credentials
 or external services.
+
+## 10. Status (29 Oct 2026)
+
+| Stage | Status | What was delivered | Exit check |
+|---|---|---|---|
+| A | Done | This document | Agreed |
+| B | Done | Tokens (`hub/hub.css`), `/hub` shell, modules with live / partial / not connected, the ATLAS character as ATLAS's icon (byte-identical template) | `test_hub.py` §6: `/` and `/clearance` unchanged, nothing redirects |
+| C | Done | Stage strip, 3D map (three.js r169 self-hosted, Apple Maps visual language, 2D fallback once), daily-flow scene, lists behind every number, Shipment Tracking with one shipment joined from the export and the run (each field with its source) | `test_hub.py`, `test_hub_map3d.py`, `test_hub_views.py`; counts equal the Clearance page's (same `clearance.records`) |
+| D | Done (read-only) | ATA workspace: run, progress, states, Human Action waiting, shipments; controls and Human Actions stay on the run page | Existing automation and Human Action suites unchanged in the full run |
+| E | Done | To Do & Approvals, Documents (PO documents, run evidence), Carriers, Master Data (read) | `test_hub_views.py` |
+| F | Done | KPI catalogue (definition, numerator, denominator; unmeasurable KPIs listed as not available), Reports (existing exports), security review, full suite, smoke | See the final report |
+
+Still not connected (no data source): Rate Management, Spot Tender,
+Optimization, scheduled reports, a clearance-document list, bookings.
+
+Access while in review: `/hub` and `/api/hub/*` need the admin-only
+`hub.preview` permission. Every hub number is counted from the rows of the
+business units the person may see; no account carries a BU limit yet (adding
+one would change the existing Clearance page, To Do, search and ATLAS too —
+a decision for the owner).

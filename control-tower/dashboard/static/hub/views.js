@@ -75,6 +75,8 @@
 .hv-steps i{width:16px;height:6px;border-radius:2px;background:var(--hub-line)}
 .hv-steps i.y{background:var(--hub-green)}.hv-steps i.n{background:var(--hub-red)}
 .hv-links{display:flex;gap:8px;flex-wrap:wrap}
+.hv .hub-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}
+.hv .hub-seg button{white-space:nowrap;flex:none}
 @media (prefers-reduced-motion:reduce){.hv-drawer{transition:none}}`;
   function css() {
     if (document.getElementById("hubviews-css")) return;
