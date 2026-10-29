@@ -211,6 +211,7 @@
         </div>
         <details class="defs"><summary>How these numbers are counted</summary><dl id="defs"></dl></details>
       </section>
+      <section data-view="mod" hidden><div id="modBody" class="hv"></div></section>
       <section data-view="off" hidden>
         <div class="card off-card"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6M12 9v6"/><rect x="3" y="3" width="18" height="18" rx="5"/></svg></div>
           <h2 id="offT"></h2><p id="offP"></p><p class="hub-src">Shown so the platform's full shape is visible. Nothing here is simulated.</p></div>
@@ -232,6 +233,7 @@
 <script src="/static/hub/map3d.js" defer></script>
 <script src="/static/hub/map3d_gl.js" defer></script>
 <script src="/static/hub/opsscene.js" defer></script>
+<script src="/static/hub/views.js" defer></script>
 <script>
 (() => {
   "use strict";
@@ -264,6 +266,7 @@
   const EXT = '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>';
 
   let DATA = null, MODS = [], map = null, scene = null;
+  window.HubCtx = {openList: (stage, bu) => openList(stage, bu)};
 
   /* ── navigation ── */
   function drawNav() {
@@ -271,26 +274,38 @@
     let html = "", group = "";
     for (const m of MODS) {
       if (m.group !== group) { group = m.group; html += `<div class="grp">${esc(group)}</div>`; }
-      const own = m.id === "overview" || m.status === "off";
+      const own = m.id === "overview" || m.status === "off" || !!(window.HubViews && window.HubViews[m.id]);
       const href = own ? `/hub#${m.id}` : m.href || `/hub#${m.id}`;
-      const st = m.status === "partial" ? '<span class="st part" title="Real data; this view is still the current page">Partial</span>'
+      const st = m.status === "partial" ? `<span class="st part" title="${esc(m.note || "Real data; part of it has no source yet")}">Partial</span>`
         : m.status === "off" ? '<span class="st off" title="Not connected: no data source yet">Soon</span>' : "";
       html += `<a href="${esc(href)}" data-mod="${esc(m.id)}"${view === m.id ? ' aria-current="page"' : ""} title="${esc(m.note || m.title)}">${icon(m.id)}<span>${esc(m.title)}</span>${st}${own ? "" : EXT}</a>`;
     }
     $("nav").innerHTML = html;
     document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
   }
+  let shownHash = null;
   function route() {
     const view = (location.hash.slice(1) || "overview").split("?")[0];
     const m = MODS.find((x) => x.id === view);
     const off = m && m.status === "off";
-    document.querySelector('[data-view="overview"]').hidden = off;
+    const mod = !off && m && window.HubViews && window.HubViews[view];
+    document.querySelector('[data-view="overview"]').hidden = off || !!mod;
     document.querySelector('[data-view="off"]').hidden = !off;
+    document.querySelector('[data-view="mod"]').hidden = !mod;
+    if (mod) {
+      $("title").textContent = mod.title;
+      if (shownHash !== location.hash) {           // drawn once per address; the 30 s refresh does not redraw it
+        shownHash = location.hash;
+        window.HubViews._leave(); window.HubViews._css();
+        mod.render($("modBody"), {data: () => DATA, openList, fmt, esc, dmy});
+        $("content").scrollTop = 0; window.scrollTo(0, 0);
+      }
+    } else if (shownHash !== null) { shownHash = null; window.HubViews && window.HubViews._leave(); $("modBody").textContent = ""; }
     if (off) {
       $("title").textContent = m.title;
       $("offT").textContent = m.title + " is not connected yet";
       $("offP").textContent = m.note || "It needs a data source before it can show anything.";
-    } else $("title").textContent = "Overview";
+    } else if (!mod) $("title").textContent = "Overview";
     drawNav();
     $("side").classList.remove("open");
   }

@@ -13,6 +13,7 @@ records here, once, so every page shows the same number.
 
 import json
 import math
+import re
 from datetime import date
 from pathlib import Path
 
@@ -25,31 +26,30 @@ STATIC = Path(__file__).resolve().parent / "static"
 # existing page; off = not connected (no data source) — shown, never faked.
 MODULES = [
     {"id": "overview", "title": "Overview", "status": "live", "perm": "dashboard.view", "group": "Operations"},
-    {"id": "tracking", "title": "Shipment Tracking", "status": "partial", "perm": "dashboard.view",
-     "group": "Operations", "href": "/#shipments", "note": "Run records and the eHub export"},
-    {"id": "ata", "title": "ATA Automation", "status": "partial", "perm": "runs.view", "group": "Operations",
-     "href": "/#overview", "note": "Run, progress, Human Actions, read-back"},
+    {"id": "tracking", "title": "Shipment Tracking", "status": "live", "perm": "dashboard.view", "group": "Operations",
+     "note": "The eHub export and the run's record, joined by AWB/BOL"},
+    {"id": "ata", "title": "ATA Automation", "status": "live", "perm": "runs.view", "group": "Operations",
+     "note": "Run, progress, Human Actions, read-back; controls on the run page"},
     {"id": "clearance", "title": "Clearance", "status": "live", "perm": "clearance.view", "group": "Operations",
      "href": "/clearance"},
     {"id": "documents", "title": "Documents", "status": "partial", "perm": "po.view", "group": "Operations",
-     "href": "/#po", "note": "PO documents and run evidence; no clearance-document list in eHub"},
-    {"id": "todo", "title": "To Do & Approvals", "status": "partial", "perm": "dashboard.view", "group": "Operations",
-     "href": "/#human"},
+     "note": "PO documents and run evidence; the eHub export has no clearance-document list"},
+    {"id": "todo", "title": "To Do & Approvals", "status": "live", "perm": "dashboard.view", "group": "Operations"},
     {"id": "rates", "title": "Rate Management", "status": "off", "perm": "dashboard.view", "group": "Commercial",
      "note": "Not connected: no freight-rate source yet"},
     {"id": "tender", "title": "Spot Tender", "status": "off", "perm": "dashboard.view", "group": "Commercial",
      "note": "Not connected: no tender data yet"},
-    {"id": "carriers", "title": "Carriers", "status": "partial", "perm": "runs.view", "group": "Commercial",
-     "note": "Holds, pacing, access and failures by carrier"},
-    {"id": "analytics", "title": "Analytics & KPIs", "status": "partial", "perm": "runs.view", "group": "Insight",
-     "href": "/clearance"},
+    {"id": "carriers", "title": "Carriers", "status": "live", "perm": "runs.view", "group": "Commercial",
+     "note": "Dates read, verified updates, failures and Human Actions by carrier"},
+    {"id": "analytics", "title": "Analytics & KPIs", "status": "live", "perm": "clearance.view", "group": "Insight",
+     "note": "The KPI catalogue: definition, numerator, denominator"},
     {"id": "atlas", "title": "ATLAS", "status": "live", "perm": "atlas.chat", "group": "Insight", "href": "/#atlas"},
     {"id": "reports", "title": "Reports", "status": "partial", "perm": "runs.view", "group": "Insight",
-     "note": "Run PDF, shipment PDF, CSV exports"},
+     "note": "Run PDF, CSV exports; no scheduled reports yet"},
     {"id": "optimization", "title": "Optimization", "status": "off", "perm": "dashboard.view", "group": "Insight",
      "note": "Not connected: needs rates, lanes and volumes"},
-    {"id": "masterdata", "title": "Master Data", "status": "partial", "perm": "clearance.contacts", "group": "Admin",
-     "note": "Clearance contacts, carriers, places"},
+    {"id": "masterdata", "title": "Master Data", "status": "live", "perm": "clearance.contacts", "group": "Admin",
+     "note": "Clearance contacts (read here, edited on Clearance)"},
     {"id": "settings", "title": "Settings", "status": "live", "perm": "dashboard.view", "group": "Admin",
      "href": "/#settings"},
 ]
@@ -293,3 +293,150 @@ def overview(state, can, allowed=None):
                       "counters": (state or {}).get("counters") or {}}
         out["places"] = run_places(state)
     return out
+
+
+# ── one shipment: the export's row and the run's record, joined by AWB/BOL ───
+# Each field carries where it came from; nothing is merged into a new value.
+EXPORT_FIELDS = [
+    ("bu", "Business unit", None), ("div", "Division", None), ("mode", "Mode", None),
+    ("status", "eHub status", None), ("step", "Current step", None), ("next", "Next step", None),
+    ("ffw", "Forwarder", None), ("agent", "Clearing agent", None),
+    ("eta", "ETA", "date"), ("ata", "ATA", "date"), ("submitted", "Submitted to BU", "date"),
+    ("due", "Step due (Expected Completion Date)", "date"), ("overdue", "Days past the step's due date", "days"),
+    ("release", "Customs release", "date"), ("completed", "Completed", "date"),
+    ("cycle", "Actual days", "days"), ("target", "Expected cycle days", "days"), ("ontime", "On time (eHub flag)", "bool"),
+]
+RUN_FIELDS = [
+    ("carrier", "Carrier"), ("state", "Run state"), ("step", "Last step"), ("provider_status", "Carrier status"),
+    ("provider_eta", "Carrier ETA"), ("provider_ata", "Carrier ATA"), ("internal_eta", "Hub ETA before the run"),
+    ("outcome", "Outcome"), ("error", "Error"), ("updated", "Updated"),
+]
+
+
+def shipment(ref, state=None, can=lambda p: True, allowed=None, data=None):
+    """-> {ref, export: {rows, source}, run: {record, source} | None, timeline}; None when nothing matches."""
+    key = _clearance.norm_awb(ref)
+    if not key or len(key) < 4:
+        return None
+    out = {"ref": ref, "export": None, "run": None, "timeline": []}
+    if can("clearance.view"):
+        data = data or _clearance.load()
+        if data:
+            rows = [r for r in scoped_rows(data, allowed) if _clearance.norm_awb(r.get("awb")) == key]
+            if rows:
+                src = "eHub export, data as of {0}".format(data.get("asof"))
+                out["export"] = {"source": src, "rows": [
+                    {"awb": r.get("awb"), "fields": [{"key": k, "label": label, "value": r.get(k), "kind": kind}
+                                                     for k, label, kind in EXPORT_FIELDS],
+                     "achieved": r.get("ach")} for r in rows]}
+                r = rows[0]
+                for k, label in (("eta", "ETA (eHub)"), ("ata", "ATA (eHub)"), ("submitted", "Submitted to BU"),
+                                 ("due", "Current step due"), ("release", "Customs released"), ("completed", "Completed")):
+                    if r.get(k):
+                        out["timeline"].append({"date": r[k], "label": label, "source": src})
+    if allowed is None and (can("runs.view") or can("dashboard.view")):
+        for rec in (state or {}).get("shipments") or []:
+            if _clearance.norm_awb(rec.get("reference")) != key:
+                continue
+            run = (state or {}).get("run") or {}
+            src = "ATA run {0}{1}".format(run.get("run_id") or "", " (dry run)" if run.get("dry_run") else "")
+            out["run"] = {"source": src, "fields": [{"key": k, "label": label, "value": rec.get(k)} for k, label in RUN_FIELDS],
+                          "where": rec.get("where")}
+            for k, label in (("provider_eta", "ETA (carrier)"), ("provider_ata", "ATA (carrier)")):
+                if rec.get(k):
+                    out["timeline"].append({"date": str(rec[k]), "label": label,
+                                            "source": "{0}, {1}".format(rec.get("carrier") or "carrier", src)})
+            last = ((rec.get("where") or {}).get("last") or {})
+            if last.get("text"):
+                out["timeline"].append({"date": " ".join(str(x) for x in (last.get("date"), last.get("time")) if x),
+                                        "label": "Carrier event: " + str(last.get("text"))[:80],
+                                        "source": (rec.get("where") or {}).get("source") or "carrier timeline"})
+            break
+    if not out["export"] and not out["run"]:
+        return None
+    # ISO dates in order; a carrier's own date text (03/10/2026 could be either way round) is
+    # never reinterpreted: it follows the dated events, as the carrier wrote it.
+    iso = re.compile(r"^\d{4}-\d\d-\d\d")
+    out["timeline"].sort(key=lambda t: (0, str(t["date"])) if iso.match(str(t["date"])) else (1, ""))
+    return out
+
+
+# ── carriers: how each did, from the run records (intelligence/carrier_health.py) ─
+def carriers(state=None):
+    from intelligence import carrier_health
+    try:
+        h = carrier_health.health()
+    except Exception as error:          # no telemetry yet on a fresh install
+        h = {"carriers": [], "window_days": 7, "minimum": None, "records": 0, "error": str(error)[:120]}
+    now = {}
+    for rec in (state or {}).get("shipments") or []:
+        c = rec.get("carrier") or "Unknown"
+        e = now.setdefault(c, {"carrier": c, "shipments": 0, "by_state": {}})
+        e["shipments"] += 1
+        s = rec.get("state") or "unknown"
+        e["by_state"][s] = e["by_state"].get(s, 0) + 1
+    h["this_run"] = sorted(now.values(), key=lambda e: -e["shipments"])
+    return h
+
+
+# ── the KPI catalogue: each KPI with its definition, numerator and denominator ─
+def _median(vals):
+    vals = sorted(vals)
+    if not vals:
+        return None
+    m = len(vals) // 2
+    return vals[m] if len(vals) % 2 else (vals[m - 1] + vals[m]) / 2.0
+
+
+def kpis(data=None, allowed=None):
+    data = data or _clearance.load()
+    if not data:
+        return None
+    rows = scoped_rows(data, allowed)
+    opn = [r for r in rows if _clearance.is_open(r)]
+    late = [r for r in opn if _clearance.past_due(r)]
+    done = [r for r in rows if not _clearance.is_open(r)]
+    pct = lambda a, b: round(100.0 * a / b, 1) if b else None
+    cyc = [r["cycle"] for r in done if isinstance(r.get("cycle"), (int, float))]
+    tgt = [r for r in done if isinstance(r.get("cycle"), (int, float)) and isinstance(r.get("target"), (int, float))]
+    within = sum(1 for r in tgt if r["cycle"] <= r["target"])
+    over = [r["overdue"] for r in late]
+    src = "eHub export, data as of {0}".format(data.get("asof"))
+    cat = [
+        {"id": "ontime", "name": "On time", "value": pct(sum(1 for r in rows if r.get("ontime")), len(rows)), "unit": "%",
+         "num": sum(1 for r in rows if r.get("ontime")), "den": len(rows),
+         "definition": "Shipments the export flags On Time = Yes, of every shipment in the export."},
+        {"id": "pastdue", "name": "Open and past due", "value": pct(len(late), len(opn)), "unit": "%", "num": len(late), "den": len(opn),
+         "definition": "Open shipments (step not Completed) whose eHub Performance is above 0 days, i.e. beyond the current step's Expected Completion Date, of all open shipments."},
+        {"id": "pastdue_days", "name": "Median days past due", "value": _median(over), "unit": "days", "num": None, "den": len(over),
+         "definition": "The median eHub Performance (days past the current step's due date) of the open, past-due shipments."},
+        {"id": "longpast", "name": "Over 30 days past due", "value": sum(1 for d in over if d > 30), "unit": "shipments", "num": None, "den": len(late),
+         "definition": "Open shipments more than 30 days past their current step's due date."},
+        {"id": "cycle", "name": "Median cycle (completed)", "value": _median(cyc), "unit": "days", "num": None, "den": len(cyc),
+         "definition": "The median Actual Days of completed shipments that carry it."},
+        {"id": "cycle_target", "name": "Completed within the expected cycle", "value": pct(within, len(tgt)), "unit": "%", "num": within, "den": len(tgt),
+         "definition": "Completed shipments whose Actual Days are at or under their Expected Cycle Days, of completed shipments that carry both."},
+        {"id": "open", "name": "Open shipments", "value": len(opn), "unit": "shipments", "num": None, "den": len(rows),
+         "definition": "Shipments whose current step is not Completed."},
+    ]
+    st = stages(rows=rows)
+    for s in st["stages"]:
+        cat.append({"id": "stage_" + s["id"], "name": s["label"], "value": s["count"], "unit": "shipments", "num": None,
+                    "den": st["total"], "definition": s["definition"]})
+    by = {}
+    for r in rows:
+        b = by.setdefault(r.get("bu") or "?", {"bu": r.get("bu") or "?", "n": 0, "open": 0, "late": 0, "ontime": 0})
+        b["n"] += 1
+        b["ontime"] += 1 if r.get("ontime") else 0
+        if _clearance.is_open(r):
+            b["open"] += 1
+            b["late"] += 1 if _clearance.past_due(r) else 0
+    bus = sorted(by.values(), key=lambda b: -b["late"])
+    for b in bus:
+        b["ontime_pct"] = pct(b["ontime"], b["n"])
+        b["late_pct"] = pct(b["late"], b["open"])
+    return {"asof": data.get("asof"), "source": src, "period": "Every shipment in the loaded export", "kpis": cat, "bus": bus,
+            "not_available": [
+                {"name": "OTIF (on time in full)", "why": "The export has no quantity or in-full field."},
+                {"name": "Freight cost per shipment", "why": "No rate or cost source is connected."},
+                {"name": "Dwell time at port", "why": "The export has no gate-in / gate-out times."}]}
