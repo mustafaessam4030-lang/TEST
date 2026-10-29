@@ -65,6 +65,10 @@ ALL_WORDS = re.compile(r"\b(all|every|each|the run|this run|whole run|everything
 CLEARANCE_ASK = re.compile(
     r"\b(clearance|customs|clearing agents?|duty (payment|assessment)|submit(ted)? to (the )?bu|"
     r"assign(ing)? (the )?clearing|ehub export|shipment update export)\b", re.I)
+# "Do you know Egypt?": a yes/no question, answered in a line with the
+# details offered, not with every figure the export has on it.
+KNOW_ASK = re.compile(r"^\s*(?:(?:do|did) (?:you|u) know(?: about| anything about)?|have you heard (?:of|about)|"
+                      r"are you familiar with|(?:you|u) know)\b", re.I)
 # The run, its Human Actions, the PO worker and sign-in are not the export.
 NOT_CLEARANCE = re.compile(r"\b(this run|the run|run (fail|stop)\w*|human action|log ?in|sign(ed)? in|worker|"
                            r"job|carriers?)\b", re.I)
@@ -253,6 +257,13 @@ def _clearance_named(q, data, context):
         # it at once, instead of going to the model and finding nothing.
         # While a run has shipments, "air shipments", "failed ones"… are the
         # run's own filters (assistant._filter_of): those stay with the run.
+        # "Do you know Egypt?", "tell me about Ghana": a short question about
+        # a BU itself, anywhere in the platform.
+        if (KNOW_ASK.search(q) or re.search(r"^\s*tell me about\b", q, re.I)) and len(q.split()) <= 7:
+            whole = clearance.query(None)
+            named = whole and _cl_filters(q, dict(whole["values"], years=[]))
+            if named and named.get("bu"):
+                return True
         from dashboard.assistant import detect_intent, _filter_of
         run_busy = bool(getattr(data, "shipments", None)) and bool(_filter_of(data, q))
         if detect_intent(q) is None and not run_busy and not CL_NOT.search(q) and not WEB_ASK.search(q):
@@ -736,6 +747,14 @@ def clearance_answer(question, view=None):
             out.append(_cl_shipment(rows, [e for e in clearance.escalations() if e["awb"] == awb and e["bu"] in bus],
                                     [c for c in clearance.contact_log(awb) if c.get("bu") in bus | {None}]))
         return "\n\n".join(out)
+    asked = re.findall(r"\b\d{3}-\d{8}\b|\b\d{8,12}\b", question)
+    if asked:
+        # A shipment number the export does not hold: said so, not answered
+        # with the whole export's figures.
+        return ("I can't find {0} in the eHub export (data as of {1}). Check the number, or it may only be in a "
+                "newer export; the [Clearance page](/clearance) has a search too.").format(
+                    " / ".join(asked[:3]), (data.get("asof") or clearance.query(None, data=data).get("asof")
+                                            or "an unknown date"))
     whole = clearance.query(None, data=data)
     values = dict(whole["values"], years=sorted({(r[data["fields"].index("eta")] or "")[:4]
                                                   for r in data["rows"] if r[data["fields"].index("eta")]}))
@@ -779,6 +798,14 @@ def clearance_answer(question, view=None):
             s["asof"] or "an unknown date", ", ".join(said),
             " (that includes the filters on your screen; ask “overall” for the whole export)" if from_view else "")
     label = ", ".join(_step(v) if k == "step" else v for k, v in f.items() if k not in ("flag",))
+    if KNOW_ASK.search(question) and label and not from_view:
+        country = clearance.BU_COUNTRY.get(f.get("bu") or "", (None, None))[1]
+        name = "{0} ({1})".format(country, f["bu"]) if country and len(f) == 1 else label
+        return ("Yes 🙂 **{0}** is in the eHub export (data as of {1}): **{2:,}** shipment{3}, **{4:,}** past "
+                "their current step's due date.\n\nWant more? Ask for example “{5} past due by step”, "
+                "“longest waits in {5}” or “{5} by clearing agent”.").format(
+                    name, s["asof"] or "an unknown date", s["total"], "" if s["total"] == 1 else "s",
+                    s["past_due"], label)
     flag_txt = {"pastdue": "past due", "open": "open", "done": "completed", "late": "not on time"}.get(f.get("flag"))
     head = "From the eHub export with data as of **{0}**{1}{2}: **{3:,}** shipment{4}".format(
         s["asof"] or "an unknown date (the export has no Last Date)",

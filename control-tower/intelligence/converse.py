@@ -734,7 +734,7 @@ def _image(question, state, context, inner, rules, lang, timings, started):
 # its emails, screenshots, a refused verification code): no model call at
 # all - nothing to add, and no tokens spent (Snowflake Cortex is billed).
 SKILL_INTENTS = {"skill_pdf", "skill_validate", "skill_web", "handbook",
-                 "setup_admin_only", "skill_clearance", "evidence", "code_request", "conduct"}
+                 "setup_admin_only", "skill_clearance", "evidence", "code_request", "conduct", "page_view"}
 
 # Intents the rules answer from the run's records. "general_knowledge" and
 # "filter" are left to the model: they may need the web.

@@ -3579,6 +3579,57 @@ def _setup_answer(question, context=None):
             "intent": "handbook_guide", "topic": "guide:" + g["doc"], "sources": ["handbook"]}
 
 
+# "What am I looking at?", "explain this page": about the page the operator
+# has open (context["page"], sent by the dashboard), answered from what it shows.
+PAGE_ASK = re.compile(
+    r"\b(this|the|my|current) (page|screen|view|tab|dashboard)\b|\bwhat am i (looking at|seeing)\b|"
+    r"\bwhat (do|can) i see\b|\bon (my |the )?screen\b|\bwhat(?:'s| is) (?:this|here)\b|"
+    r"^\s*(?:explain|summari[sz]e|describe) (?:this|it|here)\s*[?!.]*$|\bwhat should i do here\b|"
+    r"الصفحة دي|الصفحه دي|هذه الصفحة|هذه الصفحه|الشاشة دي|الشاشه دي|ايه ده|إيه ده|ايه دا|ما هذا", re.I)
+PAGES = {
+    "overview": ("Overview", "the platform at a glance: the automation, who is waiting on a person, and the "
+                             "Clearance export"),
+    "live": ("Live", "the run as it happens: the shipment being worked on, progress and the latest events"),
+    "shipments": ("Shipments", "every shipment the run has handled, with its state, ETA and carrier"),
+    "analysis": ("Analysis", "the run in numbers: outcomes, results by carrier and time per carrier"),
+    "exceptions": ("Exceptions", "the shipments that failed and why"),
+    "human": ("Human Actions", "the shipments waiting for a person (a carrier check, a code or a decision)"),
+    "logs": ("Logs", "the run's most recent log lines"),
+    "systems": ("Systems", "the health of the systems the automation depends on"),
+    "atlas": ("ATLAS", "what ATLAS is doing and what it can answer"),
+    "settings": ("Settings", "the platform's settings; Admins manage users under Access levels"),
+    "access": ("Access levels", "who can sign in and what each access level allows; Admins add users here"),
+}
+
+
+def _answer_page(question, state, context):
+    """The open page, explained from its own data; None when the question is
+    not about the page (or the page answers for itself: Clearance, PO)."""
+    page = (context or {}).get("page") or ""
+    if page not in PAGES or not PAGE_ASK.search(question or "") or (context or {}).get("domain") == "po":
+        return None
+    data = RunData(state)
+    produce = {"overview": lambda: _answer_dashboard(data), "live": lambda: _answer_run(data),
+               "shipments": lambda: _answer_counts(data), "analysis": lambda: _answer_analysis(data),
+               "exceptions": lambda: _answer_failed(data), "human": lambda: _answer_queue(data),
+               "logs": lambda: _answer_logs(data), "systems": lambda: _answer_system(data, ""),
+               "atlas": lambda: _answer_capabilities(data)}.get(page)
+    name, what = PAGES[page]
+    text, extras = "", {}
+    if produce is not None:
+        produced = produce()
+        if isinstance(produced, dict):
+            text, extras = produced["text"], {k: v for k, v in produced.items() if k != "text"}
+        else:
+            text = produced
+    if text == NO_DATA:
+        text = "There's nothing on this page yet: the run hasn't recorded anything for it."
+    lead = "You're on **{0}**: {1}.".format(name, what)
+    return dict({"answer": lead + ("\n\n" + text if text else ""), "card": None, "reference": None,
+                 "grounded": True, "sources": ["bridge.snapshot"], "intent": "page_view", "final": True},
+                **extras)
+
+
 def _routed_first(question, state, context):
     """
     A general logistics question or a calculation (intelligence/router) goes
@@ -3692,8 +3743,9 @@ def _answer_rules(question, state, context=None):
                      "intent": "conduct"}
         reply["conduct"] = {"kind": kind, "strikes": strikes + 1}
     else:
+        page = _answer_page(question, state, context)
         with _trace.span("route"):
-            routed = _routed_first(question, state, context)
+            routed = page or _routed_first(question, state, context)
         if routed is not None:
             reply = routed
         else:

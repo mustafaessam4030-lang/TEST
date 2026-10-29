@@ -7697,7 +7697,8 @@ document.addEventListener('click', (e) => {
     };
     setTimeout(poll, 650);
     const ask = withPoContext({question: q, context: {reference: lastReference, action_id: lastFocus,
-                                                   evidence_id: lastEvidence, conduct: conductCount}});
+                                                   evidence_id: lastEvidence, conduct: conductCount,
+                                                   page: activePage}});
     ask.context.progress_id = pid;
 
     fetch('/api/ask', {

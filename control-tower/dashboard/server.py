@@ -1292,7 +1292,10 @@ class Handler(BaseHTTPRequestHandler):
                        # Asked from the PO Automation page, about which job.
                        "domain": "po" if raw_context.get("domain") == "po" else "",
                        # Asked from the Clearance page (questions are about its export).
-                       "page": "clearance" if raw_context.get("page") == "clearance" else "",
+                       # The page the question was asked from (a known page name only).
+                       "page": str(raw_context.get("page") or "") if str(raw_context.get("page") or "") in (
+                           "clearance", "overview", "live", "shipments", "analysis", "exceptions", "human",
+                           "logs", "systems", "atlas", "settings", "access", "po") else "",
                        # The filters on that page, so ATLAS answers about what is on
                        # screen. Short strings only; checked against the export later.
                        "view": {k: str(v)[:80] for k, v in (raw_context.get("view") or {}).items()

@@ -269,5 +269,22 @@ check("Not understood: ATLAS asks, and names what it guessed instead of answerin
       _nu["intent"] == "clarify" and "not sure" in _nu["answer"] and "Cargo and freight" in _nu["answer"]
       and "Cargo is" not in _nu["answer"])
 
+section("10. ATLAS KNOWS THE PAGE YOU ARE ON")
+for _page, _q, _want in (("overview", "what am I looking at?", "On the Control Tower now"),
+                         ("exceptions", "summarise this", "8842001173"),
+                         ("human", "what should I do here?", "human action"),
+                         ("systems", "explain this page", "System status"),
+                         ("shipments", "الصفحة دي فيها ايه", "Processed")):
+    _r = _assistant.answer(_q, STATE, {"page": _page})
+    check("On {0}, '{1}' is answered from that page".format(_page, _q),
+          _r.get("intent") == "page_view" and _assistant.PAGES[_page][0] in _r["answer"] and _want in _r["answer"],
+          _r.get("answer", "")[:160])
+_r = _assistant.answer("which shipments failed?", STATE, {"page": "shipments"})
+check("A real question on a page is still answered as itself", _r.get("intent") != "page_view")
+check("Without a page, 'explain this page' is not guessed", _assistant._answer_page("explain this page", STATE, {}) is None)
+check("The dashboard sends the open page; the server accepts known page names only",
+      "page: activePage" in (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+      and '"exceptions", "human"' in (HERE / "dashboard" / "server.py").read_text(encoding="utf-8"))
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

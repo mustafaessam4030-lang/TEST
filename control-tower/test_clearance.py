@@ -579,5 +579,15 @@ check("Sign out on Clearance sends the CSRF token", '"/api/auth/logout"' in _cl 
 check("The Control Tower opens the page named after #, menu pages only",
       "function openFromHash" in _ix and "!x.href && !x.film" in _ix and "can-admin" in _ix)
 
+_know = atlas_skills.answer("clearance", "do you know egypt?", None)["answer"]
+check("'Do you know Egypt?' gets a short yes with the details offered, not every figure",
+      atlas_skills.detect("do you know egypt?", None, {}) == "clearance" and _know.startswith("Yes")
+      and "Egypt (EG)" in _know and "Past due by step" not in _know and "Longest waits" not in _know)
+check("'Tell me about Ghana' anywhere is the export's GH figures",
+      atlas_skills.detect("tell me about Ghana", None, {}) == "clearance")
+_missing = atlas_skills.answer("clearance", "do you know the status of 8842001173", None)["answer"]
+check("A shipment number the export does not hold is said to be missing, not answered with the whole export",
+      "can't find 8842001173" in _missing and "Past due by step" not in _missing)
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
