@@ -1,6 +1,9 @@
 /* ATLAS Control Tower — the 3D map (WebGL, three.js), with the 2D map as fallback.
 
-   Loaded after hub/map3d.js. It keeps the same calls (HubMap3D.mount, setData,
+   Apple Maps visual language in our own code and palette (no Apple assets):
+   near-flat matte clay land, a calm sea gradient fading into the sky, round
+   pins with a white number on a short stem, a thick blue route, frosted
+   controls and a bottom sheet. Loaded after hub/map3d.js. It keeps the same calls (HubMap3D.mount, setData,
    on("select"|"action"), select, flyTo, fit, destroy), so the page that uses
    the map does not change. three.js is the self-hosted copy in
    /static/vendor (r169, see CONTROL_TOWER_PLAN.md); nothing comes from outside.
@@ -43,87 +46,96 @@
     } catch (e) { return null; }
   }
 
+  /* ───────────────────────── look: our own palette in the Apple Maps visual language ───────────────────────── */
+  const PAL = {
+    light: { land: "#F2F1EC", focus: "#E8E6DF", sel: "#E1E4EA", seaNear: "#AAD3F2", seaFar: "#C9E4F7", sky: "#E9F2F9",
+             border: "#D4D2CB", focusBorder: "#C9C6BD", shadow: 0.11, country: "#A19E95" },
+    dark:  { land: "#2B2D31", focus: "#33363B", sel: "#353C48", seaNear: "#1A2433", seaFar: "#1F2B3C", sky: "#141B26",
+             border: "#3A3D42", focusBorder: "#474B52", shadow: 0.34, country: "#7E838B" }
+  };
+  const PIN = {
+    light: { red: "#FF3B30", amber: "#FF9500", green: "#34C759", blue: "#0A84FF", teal: "#30B0C7" },
+    dark:  { red: "#FF453A", amber: "#FF9F0A", green: "#30D158", blue: "#0A84FF", teal: "#40C8E0" }
+  };
+  const ROUTE = "#0A84FF";
+
   /* ───────────────────────── styles (injected once) ───────────────────────── */
   const CSS = `
-.hg-root{position:relative;width:100%;height:100%;min-height:300px;overflow:hidden;background:var(--hub-water,#dfe9f3);
-  color:var(--hub-ink,#1d1d1f);font:14px/1.4 var(--hub-font,system-ui,sans-serif);touch-action:pan-y;
+.hg-root{--hg-font:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;position:relative;width:100%;height:100%;
+  min-height:300px;overflow:hidden;background:#C9E4F7;color:#1d1d1f;font:14px/1.4 var(--hg-font);touch-action:pan-y;
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;outline:none;isolation:isolate}
+.hg-root.hg-dark{background:#1F2B3C;color:#f2f2f7}
 .hg-root *,.hg-root *::before,.hg-root *::after{box-sizing:border-box}
-.hg-root:focus-visible{box-shadow:inset 0 0 0 2px var(--hub-blue,#0071e3)}
-.hg-root:fullscreen{width:100vw;height:100vh}
+.hg-root:focus-visible{box-shadow:inset 0 0 0 2px #0A84FF}
 .hg-cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
 .hg-root.hg-drag .hg-cv{cursor:grabbing}
 .hg-ov{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
-.hg-pin{position:absolute;left:0;top:0;border:0;margin:0;padding:0;border-radius:50%;background:transparent;color:#fff;
-  font:700 12px/1 var(--hub-font,system-ui,sans-serif);font-variant-numeric:tabular-nums;display:flex;align-items:center;
-  justify-content:center;pointer-events:auto;cursor:pointer;text-shadow:0 1px 1px rgba(0,0,0,.25);will-change:transform}
-.hg-pin:focus-visible{outline:none;box-shadow:0 0 0 2.5px var(--hub-surface,#fff),0 0 0 5px var(--hub-blue,#0071e3)}
-.hg-lab{position:absolute;left:0;top:0;padding:2px 7px;border-radius:999px;font:650 11px/16px var(--hub-font,system-ui,sans-serif);
-  letter-spacing:.02em;white-space:nowrap;color:var(--hub-ink,#1d1d1f);background:var(--hub-glass,rgba(255,255,255,.8));
-  border:1px solid var(--hub-glass-edge,rgba(255,255,255,.65));box-shadow:0 1px 3px rgba(0,0,0,.12);will-change:transform}
-.hg-pin[hidden],.hg-lab[hidden]{display:none}
-.hg-glass{background:var(--hub-glass,rgba(255,255,255,.72));border:1px solid var(--hub-glass-edge,rgba(255,255,255,.65));
-  -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+.hg-cty{position:absolute;left:0;top:0;font:500 10px/1.25 var(--hg-font);letter-spacing:.16em;text-transform:uppercase;white-space:pre;text-align:center;
+  color:#A19E95;text-shadow:0 0 3px rgba(255,255,255,.9),0 0 1px rgba(255,255,255,.9);will-change:transform}
+.hg-dark .hg-cty{color:#7E838B;text-shadow:0 0 3px rgba(0,0,0,.6)}
+.hg-pin{position:absolute;left:0;top:0;height:26px;min-width:26px;padding:0 6px;margin:0;border:2px solid #fff;border-radius:13px;
+  color:#fff;font:700 11.5px/22px var(--hg-font);font-variant-numeric:tabular-nums;text-align:center;pointer-events:auto;cursor:pointer;
+  box-shadow:0 2px 6px rgba(0,0,0,.28),0 0 0 .5px rgba(0,0,0,.08);will-change:transform;transition:box-shadow .2s}
+.hg-pin.hg-zero{height:16px;min-width:16px;padding:0;border-width:2.5px;font-size:0;opacity:.9}
+.hg-pin.hg-on{box-shadow:0 0 0 3px rgba(10,132,255,.35),0 3px 10px rgba(0,0,0,.3)}
+.hg-pin:focus-visible{outline:none;box-shadow:0 0 0 3px #0A84FF,0 2px 6px rgba(0,0,0,.28)}
+.hg-lab{position:absolute;left:0;top:0;padding:2px 8px;border-radius:999px;font:700 11px/16px var(--hg-font);letter-spacing:.02em;
+  white-space:nowrap;color:#1d1d1f;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);will-change:transform}
+.hg-dark .hg-lab{background:#2C2C2E;color:#f2f2f7;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.hg-pin[hidden],.hg-lab[hidden],.hg-cty[hidden]{display:none}
+.hg-glass{background:rgba(255,255,255,.7);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
+  box-shadow:0 2px 12px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.06)}
+.hg-dark .hg-glass{background:rgba(44,44,46,.7);box-shadow:0 2px 12px rgba(0,0,0,.4),0 0 0 .5px rgba(255,255,255,.08)}
 .hg-ctrls{position:absolute;top:12px;right:12px;z-index:3;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
-.hg-grp{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;box-shadow:var(--hub-shadow,0 4px 14px rgba(0,0,0,.08))}
-.hg-btn{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border:0;margin:0;padding:0;background:transparent;
-  color:var(--hub-ink-2,#424245);cursor:pointer;font:650 12.5px/1 var(--hub-font,system-ui,sans-serif)}
-.hg-btn:hover{background:rgba(128,128,128,.12)}
-.hg-btn:focus-visible{outline:2px solid var(--hub-blue,#0071e3);outline-offset:-2px}
-.hg-btn svg{width:17px;height:17px}
-.hg-grp .hg-btn+.hg-btn{border-top:1px solid var(--hub-line,rgba(0,0,0,.08))}
-.hg-needle{transition:transform .2s}
-.hg-note{position:absolute;left:12px;top:12px;z-index:2;padding:6px 11px;border-radius:999px;font-size:12px;color:var(--hub-ink-2,#424245)}
+.hg-grp{display:flex;flex-direction:column;border-radius:12px;overflow:hidden}
+.hg-btn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border:0;margin:0;padding:0;background:transparent;
+  color:#3a3a3c;cursor:pointer;font:600 13px/1 var(--hg-font)}
+.hg-dark .hg-btn{color:#e5e5ea}
+.hg-btn:hover{background:rgba(127,127,127,.12)}
+.hg-btn:focus-visible{outline:2px solid #0A84FF;outline-offset:-2px}
+.hg-btn svg{width:18px;height:18px}
+.hg-grp .hg-btn+.hg-btn{border-top:.5px solid rgba(127,127,127,.25)}
+.hg-note{position:absolute;left:12px;top:12px;z-index:2;padding:6px 12px;border-radius:999px;font-size:12px}
 .hg-note[hidden]{display:none}
-.hg-sheet{position:absolute;left:12px;bottom:12px;z-index:4;width:340px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);
-  overflow:auto;border-radius:20px;padding:14px 16px 14px;box-shadow:var(--hub-shadow-lg,0 10px 40px rgba(0,0,0,.14));
-  transform:translateY(calc(100% + 24px));opacity:0;transition:transform .42s cubic-bezier(.2,.8,.2,1),opacity .3s;pointer-events:none}
-.hg-sheet.hg-show{transform:none;opacity:1;pointer-events:auto}
-.hg-root.hg-narrow .hg-sheet{left:8px;right:8px;bottom:8px;width:auto;max-width:none;max-height:72%}
-.hg-grab{width:36px;height:5px;border-radius:3px;background:var(--hub-ink-4,#a1a1a6);opacity:.5;margin:-4px auto 10px;display:none}
-.hg-root.hg-narrow .hg-grab{display:block}
-.hg-head{display:flex;align-items:flex-start;gap:10px}
+.hg-sheet{position:absolute;left:8px;right:8px;bottom:0;margin:0 auto;max-width:560px;z-index:4;max-height:40%;overflow:auto;
+  border-radius:20px 20px 0 0;padding:6px 16px 12px;transform:translateY(calc(100% + 12px));
+  transition:transform .55s cubic-bezier(.2,1.25,.35,1);pointer-events:none;overscroll-behavior:contain;touch-action:pan-y}
+.hg-sheet.hg-show{transform:none;pointer-events:auto}
+.hg-sheet.hg-pull{transition:none}
+.hg-grab{width:36px;height:5px;border-radius:3px;background:rgba(127,127,127,.45);margin:0 auto 8px;cursor:grab}
+.hg-head{display:flex;align-items:center;gap:10px}
 .hg-head>div{flex:1;min-width:0}
-.hg-title{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em;line-height:1.2}
-.hg-sub{margin-top:2px;font-size:12.5px;color:var(--hub-ink-3,#6e6e73)}
-.hg-x{flex:none;width:30px;height:30px;border-radius:50%;border:0;background:var(--hub-surface-2,#f0f0f3);color:var(--hub-ink-2,#424245);
-  cursor:pointer;display:flex;align-items:center;justify-content:center}
-.hg-x svg{width:14px;height:14px}
-.hg-x:focus-visible,.hg-act:focus-visible{outline:2px solid var(--hub-blue,#0071e3);outline-offset:2px}
-.hg-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0 4px}
-.hg-stat{background:var(--hub-surface-2,#f5f5f7);border-radius:12px;padding:7px 8px}
-.hg-k{font-size:9.5px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--hub-ink-3,#6e6e73);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hg-v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1px}
-.hg-t-red{color:var(--hub-red,#e5383b)}.hg-t-green{color:var(--hub-green,#28a745)}.hg-t-amber{color:var(--hub-amber,#e08a00)}
-.hg-t-blue{color:var(--hub-blue,#0071e3)}.hg-t-teal{color:var(--hub-teal,#0a9fb5)}
-.hg-bars{margin-top:12px}
-.hg-bh{font-size:11.5px;font-weight:600;color:var(--hub-ink-3,#6e6e73);margin-bottom:6px}
-.hg-plot{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;align-items:end;height:92px}
-.hg-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;min-width:0}
-.hg-bv{font-size:11.5px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--hub-ink-2,#424245)}
-.hg-bar{width:100%;max-width:44px;border-radius:7px 7px 3px 3px;background:var(--hub-blue,#0071e3);opacity:.35;height:4px;
-  transition:height .55s cubic-bezier(.2,.8,.2,1)}
-.hg-bar.hg-hi{opacity:1}
-.hg-xl{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;margin-top:4px;font-size:10.5px;color:var(--hub-ink-3,#6e6e73);text-align:center}
-.hg-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-.hg-act{height:34px;padding:0 14px;border-radius:999px;border:0;background:var(--hub-surface-2,#f0f0f3);color:var(--hub-ink,#1d1d1f);
-  font:600 13px/1 var(--hub-font,system-ui,sans-serif);cursor:pointer}
-.hg-act.hg-primary{background:var(--hub-blue,#0071e3);color:#fff}
-.hg-rows{list-style:none;margin:12px 0 0;padding:0;font-size:12.5px}
-.hg-rows li{display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--hub-line-2,rgba(0,0,0,.05))}
-.hg-ref{font-family:var(--hub-mono,ui-monospace,monospace);font-size:12px}
-.hg-rt{color:var(--hub-ink-3,#6e6e73);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hg-foot{margin-top:12px;font-size:11.5px;color:var(--hub-ink-3,#6e6e73)}
+.hg-title{margin:0;font:700 18px/1.2 var(--hg-font);letter-spacing:-.01em}
+.hg-sub{font-size:12px;color:#86868b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hg-x{flex:none;width:28px;height:28px;border-radius:50%;border:0;background:rgba(127,127,127,.16);color:inherit;cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.hg-x svg{width:12px;height:12px}
+.hg-x:focus-visible,.hg-act:focus-visible{outline:2px solid #0A84FF;outline-offset:2px}
+.hg-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 2px}
+.hg-chip{display:inline-flex;align-items:baseline;gap:4px;padding:4px 10px;border-radius:999px;background:rgba(127,127,127,.13);
+  font-size:12px;color:#6e6e73;white-space:nowrap}
+.hg-dark .hg-chip{color:#aeaeb2}
+.hg-chip b{font-size:14px;font-weight:700;color:#1d1d1f;font-variant-numeric:tabular-nums}
+.hg-dark .hg-chip b{color:#f2f2f7}
+.hg-chip.hg-t-red b{color:#FF3B30}.hg-dark .hg-chip.hg-t-red b{color:#FF453A}
+.hg-chip.hg-t-green b{color:#34C759}
+.hg-bars{display:grid;grid-template-columns:auto 1fr auto;gap:3px 8px;align-items:center;margin-top:10px;font-size:11px;color:#86868b}
+.hg-track{height:6px;border-radius:3px;background:rgba(127,127,127,.15);overflow:hidden}
+.hg-fill{height:100%;width:0;border-radius:3px;background:#0A84FF;opacity:.45;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.hg-fill.hg-hi{opacity:1}
+.hg-bn{font-weight:650;color:inherit;font-variant-numeric:tabular-nums;text-align:right}
+.hg-acts{display:flex;gap:8px;margin-top:12px}
+.hg-act{height:34px;padding:0 16px;border-radius:999px;border:0;background:rgba(127,127,127,.16);color:inherit;font:600 13px/1 var(--hg-font);cursor:pointer}
+.hg-act.hg-primary{background:#0A84FF;color:#fff}
 .hg-sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-@media (prefers-reduced-motion:reduce){.hg-sheet,.hg-bar,.hg-needle{transition:none!important}}`;
+@media (prefers-reduced-motion:reduce){.hg-sheet,.hg-fill,.hg-needle,.hg-pin{transition:none!important}}`;
 
   const ICON = {
     plus: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>',
     minus: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10h12"/></svg>',
-    compass: '<svg viewBox="0 0 20 20"><g class="hg-needle"><path d="M10 2.5l3 7.5h-6z" fill="#e5383b"/><path d="M10 17.5l-3-7.5h6z" fill="currentColor" opacity=".45"/></g></svg>',
-    home: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="10" r="3.2"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3" stroke-linecap="round"/></svg>',
-    full: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 7.5V3h4.5M17 7.5V3h-4.5M3 12.5V17h4.5M17 12.5V17h-4.5"/></svg>',
-    close: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>'
+    compass: '<svg viewBox="0 0 20 20"><g class="hg-needle"><path d="M10 2.5l3 7.5h-6z" fill="#FF3B30"/><path d="M10 17.5l-3-7.5h6z" fill="currentColor" opacity=".45"/></g></svg>',
+    recenter: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M16.5 3.5L3.5 9l5.5 1.6L10.6 16z"/></svg>',
+    close: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>'
   };
   function injectCss() {
     if (document.getElementById("hubmapgl-css")) return;
@@ -242,83 +254,75 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(FOV, 1, 1, 60000);
-    const hemi = new THREE.HemisphereLight(0xffffff, 0xb9c2cf, 1.15);
-    const sun = new THREE.DirectionalLight(0xffffff, 1.05);
-    sun.position.set(-0.55, 1, -0.75);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xf2f1ec, 1.9);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(-0.8, 1.3, -0.7);                         // a gentle sun from the top left
     scene.add(hemi, sun);
-    scene.fog = new THREE.Fog(0xdfe9f3, 3000, 9000);
+    scene.fog = new THREE.Fog(0xe9f2f9, 3000, 9000);            // the far edge fades into the sky
 
     const W0 = 2000, H0 = 1094.3;
     let proj = makeProj(W0, H0, 78, -56), OX = W0 / 2, OZ = H0 / 2;
     const wx = (lon) => proj.x(lon) - OX, wz = (lat) => proj.y(lat) - OZ;
 
-    // camera state: target on the ground, distance, pitch from vertical, bearing
     const cam = { x: 0, z: 0, dist: 1500, pitch: PITCH_3D, bearing: 0 };
-    let pitch3D = PITCH_3D, overview = null, tween = null, intro = null;
-    let cssW = 300, cssH = 300, destroyed = false, raf = 0, dirty = true, visible = true, t0 = 0;
+    let pitch3D = PITCH_3D, overview = null, tween = null, intro = null, wheel = null;
+    let cssW = 300, cssH = 300, destroyed = false, raf = 0, dirty = true, visible = true, t0 = 0, dark = false;
 
-    /* materials (colours from the hub tokens) */
+    const C = (hex) => new THREE.Color(hex);
+    const S3 = (hex) => { const o = { r: 0, g: 0, b: 0 }; new THREE.Color(hex).getRGB(o, THREE.SRGBColorSpace); return new THREE.Vector3(o.r, o.g, o.b); };
     const mat = {
-      water: new THREE.MeshBasicMaterial({ color: 0xdfe9f3 }),
-      shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthWrite: false, opacity: 0.22 }),
-      landTop: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
-      landSide: new THREE.MeshStandardMaterial({ color: 0xdcdcd6, roughness: 1, metalness: 0 }),
-      border: new THREE.LineBasicMaterial({ color: 0xd6d6d0, transparent: true, opacity: 0.85 }),
-      focusBorder: new THREE.LineBasicMaterial({ color: 0xc0c8d6, transparent: true, opacity: 0.95 }),
-      stem: new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.5 }),
+      // sea: a calm gradient, near to far, then the sky (same fade as the land's fog)
+      water: new THREE.ShaderMaterial({
+        uniforms: { uNear: { value: S3("#AAD3F2") }, uFar: { value: S3("#C9E4F7") }, uSky: { value: S3("#E9F2F9") },
+          uD0: { value: 0 }, uD1: { value: 1 }, uF0: { value: 1 }, uF1: { value: 2 } },
+        vertexShader: `varying float vD; void main(){ vec4 v = viewMatrix * modelMatrix * vec4(position, 1.0); vD = -v.z; gl_Position = projectionMatrix * v; }`,
+        fragmentShader: `uniform vec3 uNear, uFar, uSky; uniform float uD0, uD1, uF0, uF1; varying float vD;
+void main(){ vec3 c = mix(uNear, uFar, smoothstep(uD0, uD1, vD)); gl_FragColor = vec4(mix(c, uSky, smoothstep(uF0, uF1, vD)), 1.0); }`
+      }),
+      shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthWrite: false, opacity: 0.11, fog: false }),
+      // matte clay: one colour for top and sides, no dark walls
+      landTop: new THREE.MeshStandardMaterial({ color: 0xf2f1ec, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+      landSide: new THREE.MeshStandardMaterial({ color: 0xf2f1ec, roughness: 1, metalness: 0 }),
+      border: new THREE.LineBasicMaterial({ color: 0xd4d2cb }),
+      focusBorder: new THREE.LineBasicMaterial({ color: 0xc9c6bd }),
+      stem: new THREE.MeshBasicMaterial({ color: 0xffffff }),
       pinShadow: null
     };
-    const tone = {};
-    const col = new THREE.Color();
-    function cssVar(name, fb) {
-      const v = getComputedStyle(root).getPropertyValue(name).trim();
-      return v || fb;
-    }
-    function rgbOf(css) { const c = new THREE.Color(); try { c.setStyle(css); } catch (e) { c.set(0x888888); } return c; }
-    let dark = false;
+    let pal = PAL.light, pinPal = PIN.light;
     function readTheme() {
-      const water = rgbOf(cssVar("--hub-water", "#dfe9f3"));
-      const land = rgbOf(cssVar("--hub-land", "#fbfbfa"));
-      const side = rgbOf(cssVar("--hub-land-side", "#dcdcd6"));
-      const focus = rgbOf(cssVar("--hub-land-focus", "#eef4ff"));
-      const border = rgbOf(cssVar("--hub-border", "#d6d6d0"));
-      const blue = rgbOf(cssVar("--hub-blue", "#0071e3"));
-      dark = water.getHSL({ h: 0, s: 0, l: 0 }).l < 0.3;
-      scene.background = water; scene.fog.color.copy(water); mat.water.color.copy(water);
-      renderer.setClearColor(water);
-      mat.landTop.color.copy(land).lerp(water, dark ? 0.3 : 0.18);        // muted: countries without shipments
-      mat.landSide.color.copy(side).lerp(water, 0.25);
-      mat.border.color.copy(border); mat.border.opacity = dark ? 0.55 : 0.8;
-      mat.focusBorder.color.copy(border).lerp(blue, 0.35);
-      mat.shadow.opacity = dark ? 0.55 : 0.2;
-      hemi.color.set(0xffffff); hemi.groundColor.copy(side);
-      hemi.intensity = dark ? 1.5 : 1.75; sun.intensity = dark ? 0.9 : 1.45;
-      for (const t of TONES) tone[t] = rgbOf(cssVar("--hub-" + t, "#888"));
-      focusTop = focus.clone().lerp(blue, dark ? 0.08 : 0.04);
-      focusSel = focus.clone().lerp(blue, dark ? 0.32 : 0.22);
-      focusSide = side.clone().lerp(blue, 0.12);
+      const v = getComputedStyle(root).getPropertyValue("--hub-water").trim();
+      const c = new THREE.Color(); try { c.setStyle(v || "#dfe9f3"); } catch (e) { c.set(0xdfe9f3); }
+      dark = c.getHSL({ h: 0, s: 0, l: 0 }).l < 0.3;
+      pal = dark ? PAL.dark : PAL.light; pinPal = dark ? PIN.dark : PIN.light;
+      root.classList.toggle("hg-dark", dark);
+      const sky = C(pal.sky);
+      scene.background = sky; scene.fog.color.copy(sky); renderer.setClearColor(sky);
+      mat.water.uniforms.uNear.value = S3(pal.seaNear); mat.water.uniforms.uFar.value = S3(pal.seaFar); mat.water.uniforms.uSky.value = S3(pal.sky);
+      mat.landTop.color.set(pal.land); mat.landSide.color.set(pal.land);
+      mat.landSide.emissive.set(pal.land).multiplyScalar(dark ? 0.12 : 0.18);   // walls stay as light as the land
+      mat.border.color.set(pal.border); mat.focusBorder.color.set(pal.focusBorder);
+      mat.shadow.opacity = pal.shadow;
+      hemi.groundColor.set(pal.land);
+      hemi.intensity = dark ? 2.0 : 1.95; sun.intensity = dark ? 0.9 : 1.15;
       for (const f of Object.values(focusMeshes)) paintFocus(f);
       for (const p of pins) paintPin(p);
-      for (const r of routes) r.mat.uniforms.uColor.value.copy(srgb(tone[r.tone] || tone.blue));
       dirty = true; schedule();
     }
-    let focusTop = new THREE.Color(0xeef4ff), focusSel = focusTop.clone(), focusSide = new THREE.Color(0xdcdcd6);
-    const srgb = (c) => { const o = { r: 0, g: 0, b: 0 }; c.getRGB(o, THREE.SRGBColorSpace); return new THREE.Vector3(o.r, o.g, o.b); };
 
-    /* world: water, soft shadow / ambient occlusion, land, borders */
+    /* world: sea, soft shadow, land, borders */
     const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), mat.water);
     waterMesh.rotation.x = -Math.PI / 2; waterMesh.position.y = -0.05;
     scene.add(waterMesh);
-    const landGroup = new THREE.Group(); scene.add(landGroup);       // scaled in y so the relief stays a few pixels at every zoom
+    const landGroup = new THREE.Group(); scene.add(landGroup);
     const focusGroup = new THREE.Group(); scene.add(focusGroup);
-    let byCountry = {}, focusMeshes = {}, focusSet = new Set(), worldReady = false, worldFailed = false;
-    const LAND_PX = 6, FOCUS_PX = 11, LAND_H = 1.5;    // relief in screen pixels; geometry height in units
+    let byCountry = {}, focusMeshes = {}, focusSet = new Set(), worldReady = false, countryLabels = [];
+    const LAND_PX = 2.2, FOCUS_PX = 4.2, LAND_H = 1.5;     // almost flat: a few pixels of relief at every zoom
 
     function consolidate(g) {       // caps first, sides second: two draw calls for any number of shapes
       const pos = g.attributes.position.array, nor = g.attributes.normal.array;
       const caps = [], sides = [];
       for (const gr of g.groups) (gr.materialIndex === 0 ? caps : sides).push(gr);
-      const total = pos.length, P = new Float32Array(total), N = new Float32Array(total);
+      const P = new Float32Array(pos.length), N = new Float32Array(pos.length);
       let o = 0;
       const copy = (list) => { for (const gr of list) { const a = gr.start * 3, b = (gr.start + gr.count) * 3; P.set(pos.subarray(a, b), o); N.set(nor.subarray(a, b), o); o += b - a; } };
       copy(caps); const capCount = o / 3; copy(sides);
@@ -330,12 +334,8 @@
       return out;
     }
     function shapesOf(polys) {
-      return polys.map((p) => {
-        const pts = []; for (let i = 0; i < p.ring.length; i += 2) pts.push(new THREE.Vector2(p.ring[i] - OX, OZ - p.ring[i + 1]));
-        const s = new THREE.Shape(pts);
-        for (const h of p.holes) { const hp = []; for (let i = 0; i < h.length; i += 2) hp.push(new THREE.Vector2(h[i] - OX, OZ - h[i + 1])); s.holes.push(new THREE.Path(hp)); }
-        return s;
-      });
+      const v2 = (r) => { const a = []; for (let i = 0; i < r.length; i += 2) a.push(new THREE.Vector2(r[i] - OX, OZ - r[i + 1])); return a; };
+      return polys.map((p) => { const s = new THREE.Shape(v2(p.ring)); for (const h of p.holes) s.holes.push(new THREE.Path(v2(h))); return s; });
     }
     function extrude(polys) {
       const g = new THREE.ExtrudeGeometry(shapesOf(polys), { depth: 1, curveSegments: 1, bevelEnabled: true, bevelThickness: 0.25,
@@ -354,7 +354,7 @@
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
       return g;
     }
-    function shadowTexture(all) {
+    function shadowTexture(all) {        // a soft, blurred shadow cast down-right of the land (sun top-left)
       const S = 1.024, c = document.createElement("canvas");
       c.width = Math.round(W0 * S); c.height = Math.round(H0 * S);
       const x = c.getContext("2d");
@@ -367,35 +367,34 @@
           x.closePath();
         }
       };
-      // drawn far off the canvas, only the blurred shadow lands on it (works in every browser)
-      const OFF = 20000;
-      for (const [blur, dx, dy, a] of [[14, 2.5, 4, 0.55], [4, 0.6, 1, 0.7]]) {
-        x.save(); x.shadowColor = "rgba(0,0,0," + a + ")"; x.shadowBlur = blur; x.shadowOffsetX = OFF * S; x.shadowOffsetY = 0;
+      const OFF = 20000;          // drawn off the canvas; only its blurred shadow lands on it (works in every browser)
+      for (const [blur, dx, dy, a] of [[18, 2.2, 3, 0.55], [5, 0.7, 0.9, 0.55]]) {
+        x.save(); x.shadowColor = "rgba(0,0,0," + a + ")"; x.shadowBlur = blur; x.shadowOffsetX = OFF * S;
         path(dx - OFF, dy); x.fillStyle = "#000"; x.fill("evenodd"); x.restore();
       }
       const t = new THREE.CanvasTexture(c); t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
       return t;
     }
     function paintFocus(f) {
-      f.top.color.copy(f.selected ? focusSel : focusTop);
-      f.side.color.copy(focusSide);
+      f.top.color.set(f.selected ? pal.sel : pal.focus);
+      f.side.color.set(f.selected ? pal.sel : pal.focus);
+      f.side.emissive.copy(f.side.color).multiplyScalar(dark ? 0.12 : 0.18);
     }
     function buildWorld(j) {
       const t = performance.now();
       const pr = (j && j.projection) || {}, vb = (j && j.viewBox) || [0, 0, W0, H0];
       proj = makeProj(+pr.width || +vb[2] || W0, +vb[3] || H0, isFinite(+pr.lat_top) ? +pr.lat_top : 78, isFinite(+pr.lat_bottom) ? +pr.lat_bottom : -56);
       OX = proj.W / 2; OZ = proj.H / 2;
-      const all = [], base = [];
+      const all = [];
       byCountry = {};
       for (const c of (j && j.countries) || []) {
         const polys = countryPolys(c.d, proj.W, 0.6);
         if (!polys.length) continue;
-        byCountry[c.cc] = { polys, name: c.name };
+        const area = polys.reduce((s, p) => s + Math.abs(area2(p.ring)), 0);
+        byCountry[c.cc] = { polys, name: c.name, label: Array.isArray(c.label) ? c.label : null, area };
         for (const p of polys) all.push(p);
       }
-      for (const [cc, c] of Object.entries(byCountry)) if (!focusSet.has(cc)) for (const p of c.polys) base.push(p);
-      const landMesh = new THREE.Mesh(extrude(base), [mat.landTop, mat.landSide]);
-      landGroup.add(landMesh, new THREE.LineSegments(borderGeom(base), mat.border));
+      buildBase();
       const tex = shadowTexture(all);
       if (tex) {
         mat.shadow.map = tex; mat.shadow.needsUpdate = true;
@@ -403,12 +402,29 @@
         sh.rotation.x = -Math.PI / 2; sh.position.set(0, 0.02, 0); sh.renderOrder = -1;
         scene.add(sh);
       }
+      // country names: subtle, small, letter-spaced; the larger countries first
+      countryLabels = Object.entries(byCountry).filter(([, c]) => c.label && c.name && c.area > 250)
+        .sort((a, b) => b[1].area - a[1].area).slice(0, 120)
+        .map(([cc, c]) => { const e = el("div", "hg-cty", twoLines(c.name)); e.hidden = true; e.setAttribute("aria-hidden", "true"); ov.appendChild(e); return { cc, el: e, x: c.label[0] - OX, z: c.label[1] - OZ, size: Math.sqrt(c.area) }; });
       buildFocus();
       worldReady = true;
       log("info", "3D land built in " + Math.round(performance.now() - t) + " ms (" + Object.keys(byCountry).length + " countries)");
     }
+    function twoLines(name) {           // a long name on two lines, split at the space nearest the middle
+      if (name.length <= 14 || name.indexOf(" ") < 0) return name;
+      let best = -1;
+      for (let i = 0; i < name.length; i++) if (name[i] === " " && (best < 0 || Math.abs(i - name.length / 2) < Math.abs(best - name.length / 2))) best = i;
+      return name.slice(0, best) + "\n" + name.slice(best + 1);
+    }
+    const area2 = (p) => { let s = 0; for (let i = 0, n = p.length; i < n; i += 2) { const k = (i + 2) % n; s += p[i] * p[k + 1] - p[k] * p[i + 1]; } return s / 2; };
+    function buildBase() {
+      landGroup.children.slice().forEach((c) => { landGroup.remove(c); c.geometry.dispose(); });
+      const base = [];
+      for (const [cc, c] of Object.entries(byCountry)) if (!focusSet.has(cc)) for (const p of c.polys) base.push(p);
+      landGroup.add(new THREE.Mesh(extrude(base), [mat.landTop, mat.landSide]), new THREE.LineSegments(borderGeom(base), mat.border));
+    }
     function buildFocus() {
-      for (const f of Object.values(focusMeshes)) { focusGroup.remove(f.group); f.mesh.geometry.dispose(); f.line.geometry.dispose(); }
+      for (const f of Object.values(focusMeshes)) { focusGroup.remove(f.group); f.mesh.geometry.dispose(); f.line.geometry.dispose(); f.top.dispose(); f.side.dispose(); }
       focusMeshes = {};
       for (const cc of focusSet) {
         const c = byCountry[cc]; if (!c) continue;
@@ -425,45 +441,37 @@
       }
     }
 
-    /* pins: a 3D marker standing on the land, its number and label in HTML (crisp, clickable, keyboard) */
-    const pinGeo = (() => {
-      const head = new THREE.SphereGeometry(1, 28, 20); head.translate(0, 2.55, 0);
-      const tip = new THREE.ConeGeometry(0.74, 1.55, 28, 1, true); tip.rotateX(Math.PI); tip.translate(0, 1.62, 0);
-      const stem = new THREE.CylinderGeometry(0.11, 0.11, 1.0, 10); stem.translate(0, 0.5, 0);
-      return { head, tip, stem };
-    })();
+    /* pins: a round head with a white number (HTML, crisp, clickable), a short stem and a soft ground shadow (3D) */
+    const STEM_PX = 13, HEAD_PX = 13;
+    const stemGeo = new THREE.CylinderGeometry(0.07, 0.07, 1, 8); stemGeo.translate(0, 0.5, 0);
     const pinShadowTex = (() => {
       const c = document.createElement("canvas"); c.width = c.height = 64;
       const x = c.getContext("2d"); if (!x) return null;
       const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
-      g.addColorStop(0, "rgba(0,0,0,.45)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      g.addColorStop(0, "rgba(0,0,0,.42)"); g.addColorStop(0.5, "rgba(0,0,0,.16)"); g.addColorStop(1, "rgba(0,0,0,0)");
       x.fillStyle = g; x.fillRect(0, 0, 64, 64);
       return new THREE.CanvasTexture(c);
     })();
-    mat.pinShadow = new THREE.MeshBasicMaterial({ map: pinShadowTex, transparent: true, depthWrite: false, opacity: 0.8 });
-    const shadowGeo = new THREE.PlaneGeometry(2.6, 2.6); shadowGeo.rotateX(-Math.PI / 2);
+    mat.pinShadow = new THREE.MeshBasicMaterial({ map: pinShadowTex, transparent: true, depthWrite: false, fog: false });
+    const shadowGeo = new THREE.PlaneGeometry(1, 1); shadowGeo.rotateX(-Math.PI / 2);
     let pins = [], routes = [], selected = null, countLabel = "shipments";
     const pinLayer = new THREE.Group(); scene.add(pinLayer);
-    function paintPin(p) {
-      const c = tone[p.tone] || tone.blue || new THREE.Color(0x0071e3);
-      p.mat.color.copy(c); p.mat.emissive.copy(c).multiplyScalar(dark ? 0.32 : 0.18);
-    }
+    function paintPin(p) { p.btn.style.background = pinPal[p.tone] || pinPal.blue; }
     function makePin(d, i) {
-      const m = new THREE.MeshStandardMaterial({ color: 0x0071e3, roughness: 0.32, metalness: 0.05 });
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(pinGeo.head, m), new THREE.Mesh(pinGeo.tip, m), new THREE.Mesh(pinGeo.stem, mat.stem));
+      const stem = new THREE.Mesh(stemGeo, mat.stem);
       const sh = new THREE.Mesh(shadowGeo, mat.pinShadow); sh.position.y = 0.03;
-      g.add(sh);
+      g.add(stem, sh);
+      const count = isFinite(num(d.count)) ? num(d.count) : null;
       const p = {
-        id: String(d.id), label: d.label != null ? String(d.label) : "", count: isFinite(num(d.count)) ? num(d.count) : null,
+        id: String(d.id), label: d.label != null ? String(d.label) : "", count,
         tone: TONES.indexOf(d.tone) >= 0 ? d.tone : "blue", lat: num(d.lat), lon: num(d.lon), cc: d.cc || null, sheet: d.sheet || null,
-        x: wx(num(d.lon)), z: wz(num(d.lat)), group: g, mat: m, i, drop: 1, sx: 0, sy: 0, r: 13
+        x: wx(num(d.lon)), z: wz(num(d.lat)), group: g, stem, shadow: sh, i, drop: 1
       };
-      const b = el("button", "hg-pin"); b.type = "button";
-      const txt = p.count != null ? p.count.toLocaleString() : "";
-      b.textContent = txt;
-      if (txt.length >= 4) b.style.fontSize = "10px";
-      const aria = p.label + (p.count != null ? ": " + txt + " " + countLabel : "");
+      const b = el("button", "hg-pin" + (count === 0 ? " hg-zero" : "")); b.type = "button";
+      const txt = count != null ? count.toLocaleString() : "";
+      if (count) b.textContent = txt;                 // a zero is a small neutral dot, no number
+      const aria = p.label + (count != null ? ": " + txt + " " + countLabel : "");
       b.setAttribute("aria-label", aria); b.title = aria;
       b.addEventListener("click", (e) => { e.stopPropagation(); selectPin(p, true); });
       const lab = el("div", "hg-lab", p.label); lab.setAttribute("aria-hidden", "true");
@@ -475,11 +483,11 @@
       return p;
     }
     function clearPins() {
-      for (const p of pins) { pinLayer.remove(p.group); p.mat.dispose(); p.btn.remove(); p.lab.remove(); }
+      for (const p of pins) { pinLayer.remove(p.group); p.btn.remove(); p.lab.remove(); }
       pins = [];
     }
 
-    /* routes: a thick ribbon with a soft glow; solid where reported, dashed to the destination, flowing */
+    /* routes: a thick blue line with a lighter outline and a soft glow; solid where reported, dashed ahead, flowing */
     const VS = `attribute float side; attribute float along; attribute vec3 perp;
 uniform float uWidth; varying float vSide; varying float vAlong;
 void main(){ vec3 p = position + perp * side * uWidth; vSide = side; vAlong = along;
@@ -487,15 +495,18 @@ void main(){ vec3 p = position + perp * side * uWidth; vSide = side; vAlong = al
     const FS = `uniform vec3 uColor; uniform float uTime; uniform float uReach; uniform float uPx; uniform float uFlow;
 varying float vSide; varying float vAlong;
 void main(){
-  float a = abs(vSide);
-  float core = 1.0 - smoothstep(0.36, 0.5, a);
-  float glow = exp(-a * a * 5.0) * 0.32;
+  float a = abs(vSide);                                  // 0 at the centre, 1 at the edge of the glow
+  float core = 1.0 - smoothstep(0.36, 0.42, a);
+  float edge = 1.0 - smoothstep(0.52, 0.58, a);
+  float glow = exp(-a * a * 7.0) * 0.28;
   float px = vAlong * uPx;
-  float planned = step(uReach, vAlong);
-  float dash = step(0.42, fract((px - uTime * uFlow * 22.0) / 20.0));
-  float streak = (1.0 - planned) * smoothstep(0.82, 1.0, fract((px - uTime * uFlow * 70.0) / 150.0));
-  vec3 c = mix(uColor, vec3(1.0), streak * 0.55 * core);
-  float alpha = planned > 0.5 ? max(core * dash * 0.9, glow * 0.4) : max(core, glow);
+  float ahead = step(uReach, vAlong);
+  float dash = smoothstep(0.38, 0.46, fract((px - uTime * uFlow * 18.0) / 22.0));
+  float flow = (1.0 - ahead) * smoothstep(0.85, 1.0, fract((px - uTime * uFlow * 60.0) / 160.0));
+  vec3 outline = mix(uColor, vec3(1.0), 0.62);
+  vec3 c = mix(outline, mix(uColor, vec3(1.0), flow * 0.35), core);
+  float body = ahead > 0.5 ? edge * dash : edge;
+  float alpha = max(body, glow * (ahead > 0.5 ? 0.5 : 1.0));
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(c, alpha);
 }`;
@@ -505,8 +516,8 @@ void main(){
       const out = [];
       for (let i = 0; i <= n; i++) {
         const t = i / n;
-        let x, y, z;
-        if (d < 1e-6) { x = A[0]; y = A[1]; z = A[2]; } else {
+        let x = A[0], y = A[1], z = A[2];
+        if (d >= 1e-6) {
           const s1 = Math.sin((1 - t) * d) / Math.sin(d), s2 = Math.sin(t * d) / Math.sin(d);
           x = s1 * A[0] + s2 * B[0]; y = s1 * A[1] + s2 * B[1]; z = s1 * A[2] + s2 * B[2];
         }
@@ -523,7 +534,7 @@ void main(){
       for (let k = 0; k < pts.length - 1; k++) {
         const seg = gc(pts[k], pts[k + 1], 40);
         const legLen = Math.hypot(wx(pts[k + 1].lon) - wx(pts[k].lon), wz(pts[k + 1].lat) - wz(pts[k].lat));
-        const hMax = Math.min(70, legLen * 0.16);
+        const hMax = Math.min(60, legLen * 0.14);
         for (let i = k === 0 ? 0 : 1; i < seg.length; i++) {
           let x = wx(seg[i].lon);
           if (lastX != null) { while (x - lastX > proj.W / 2) x -= proj.W; while (x - lastX < -proj.W / 2) x += proj.W; }
@@ -533,13 +544,12 @@ void main(){
         }
         if (k + 1 === reached) reachAlong = along;
       }
-      if (reached === 0) reachAlong = 0;
       const n = P.length, pos = new Float32Array(n * 6), side = new Float32Array(n * 2), al = new Float32Array(n * 2), perp = new Float32Array(n * 6), idx = [];
       for (let i = 0; i < n; i++) {
         const a = P[Math.max(0, i - 1)], b = P[Math.min(n - 1, i + 1)];
         let tx = b.x - a.x, tz = b.z - a.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
         for (let s = 0; s < 2; s++) {
-          const o = (i * 2 + s);
+          const o = i * 2 + s;
           pos.set([P[i].x, P[i].y, P[i].z], o * 3); perp.set([-tz, 0, tx], o * 3);
           side[o] = s ? 1 : -1; al[o] = P[i].along;
         }
@@ -551,19 +561,18 @@ void main(){
       g.setAttribute("along", new THREE.BufferAttribute(al, 1));
       g.setAttribute("perp", new THREE.BufferAttribute(perp, 3));
       g.setIndex(idx);
-      const t = TONES.indexOf(d.tone) >= 0 ? d.tone : "blue";
       const m = new THREE.ShaderMaterial({
         vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-        uniforms: { uColor: { value: srgb(tone[t] || new THREE.Color(0x0071e3)) }, uTime: { value: 0 }, uReach: { value: reachAlong + 1e-3 },
+        uniforms: { uColor: { value: S3(ROUTE) }, uTime: { value: 0 }, uReach: { value: reachAlong + 1e-3 },
           uPx: { value: 1 }, uWidth: { value: 3 }, uFlow: { value: 1 } }
       });
       const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 2; mesh.frustumCulled = false;
       scene.add(mesh);
-      return { mesh, mat: m, tone: t };
+      return { mesh, mat: m };
     }
     function clearRoutes() { for (const r of routes) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mat.dispose(); } routes = []; }
 
-    /* controls */
+    /* controls: frosted glass, top right — zoom, 2D/3D, compass, recenter */
     const ctrls = el("div", "hg-ctrls");
     function btn(html, label, fn) {
       const b = el("button", "hg-btn"); b.type = "button"; b.innerHTML = html;
@@ -571,33 +580,28 @@ void main(){
       b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
       return b;
     }
-    const zoomGrp = el("div", "hg-grp hg-glass");
-    zoomGrp.append(btn(ICON.plus, "Zoom in", () => zoomBy(1 / 1.6)), btn(ICON.minus, "Zoom out", () => zoomBy(1.6)));
+    const grp = (...bs) => { const g = el("div", "hg-grp hg-glass"); g.append(...bs); return g; };
     const bDim = btn("2D", "Top-down view (2D)", () => toggleDim());
-    const dimGrp = el("div", "hg-grp hg-glass"); dimGrp.appendChild(bDim);
-    const bNorth = btn(ICON.compass, "North up", () => flyCam({ bearing: 0 }, 500));
-    const northGrp = el("div", "hg-grp hg-glass"); northGrp.appendChild(bNorth);
-    const bHome = btn(ICON.home, "Show every place", () => { closeSheet(true); });
-    const bFull = btn(ICON.full, "Full screen", () => {
-      try { if (document.fullscreenElement === root) document.exitFullscreen(); else if (root.requestFullscreen) root.requestFullscreen(); } catch (e) { /* not allowed */ }
-    });
-    const homeGrp = el("div", "hg-grp hg-glass"); homeGrp.append(bHome, bFull);
-    ctrls.append(zoomGrp, dimGrp, northGrp, homeGrp);
+    const bNorth = btn(ICON.compass, "North up", () => flyCam({ bearing: 0 }, 800));
+    ctrls.append(grp(btn(ICON.plus, "Zoom in", () => flyCam({ dist: clamp(cam.dist / 1.7, minDist(), maxDist()) }, 800)),
+                     btn(ICON.minus, "Zoom out", () => flyCam({ dist: clamp(cam.dist * 1.7, minDist(), maxDist()) }, 800))),
+                 grp(bDim), grp(bNorth), grp(btn(ICON.recenter, "Recenter: every place", () => recenter())));
     root.appendChild(ctrls);
     function setDimLabel() {
-      const flat = cam.pitch < 5 && !(tween && tween.to.pitch > 5);
+      const flat = tween ? tween.to.pitch < 5 : cam.pitch < 5;
       bDim.textContent = flat ? "3D" : "2D";
       const l = flat ? "Tilted view (3D)" : "Top-down view (2D)";
       bDim.setAttribute("aria-label", l); bDim.title = l;
     }
     function toggleDim() {
-      const goFlat = !(cam.pitch < 5);
-      if (!goFlat) flyCam({ pitch: pitch3D }, 700); else { pitch3D = Math.max(20, cam.pitch); flyCam({ pitch: PITCH_2D }, 700); }
-      setTimeout(setDimLabel, 0);
+      if (cam.pitch < 5) flyCam({ pitch: pitch3D }, 900); else { pitch3D = Math.max(20, cam.pitch); flyCam({ pitch: PITCH_2D, bearing: 0 }, 900); }
+      setDimLabel();
     }
+    function recenter() { if (selected) closeSheet(true); else flyCam(cam.pitch < 5 ? Object.assign({}, computeOverview(), { pitch: PITCH_2D }) : computeOverview(), FLY_MS); }
 
-    /* camera */
+    /* camera: every move eased */
     const tmpV = new THREE.Vector3(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    const UP = new THREE.Vector3(0, 1, 0);
     function minDist() { return 40; }
     function maxDist() { return 5200; }
     function applyCam() {
@@ -606,13 +610,14 @@ void main(){
       cam.x = clamp(cam.x, -proj.W * 0.75, proj.W * 0.75); cam.z = clamp(cam.z, -proj.H * 0.75, proj.H * 0.75);
       const p = cam.pitch * DEG, b = cam.bearing * DEG, h = cam.dist * Math.sin(p);
       camera.position.set(cam.x + h * Math.sin(b), cam.dist * Math.cos(p), cam.z + h * Math.cos(b));
-      camera.up.set(-Math.sin(b), 0, -Math.cos(b)).lerp(new THREE.Vector3(0, 1, 0), Math.min(1, cam.pitch / 10)).normalize();
+      camera.up.set(-Math.sin(b), 0, -Math.cos(b)).lerp(UP, Math.min(1, cam.pitch / 10)).normalize();
       camera.lookAt(cam.x, 0, cam.z);
       camera.near = Math.max(0.5, cam.dist * 0.02); camera.far = cam.dist * 12 + 2000;
-      scene.fog.near = cam.dist * 1.6; scene.fog.far = cam.dist * 6;
+      scene.fog.near = cam.dist * 1.05; scene.fog.far = cam.dist * 3.4;
+      const u = mat.water.uniforms; u.uD0.value = cam.dist * 0.5; u.uD1.value = cam.dist * 2.2; u.uF0.value = scene.fog.near; u.uF1.value = scene.fog.far;
       camera.updateProjectionMatrix();
-      const nd = bNorth.querySelector(".hg-needle"); if (nd) nd.style.transform = "rotate(" + (-cam.bearing) + "deg)";
-      nd && (nd.style.transformOrigin = "10px 10px");
+      const nd = bNorth.querySelector(".hg-needle");
+      if (nd) { nd.style.transformOrigin = "10px 10px"; nd.style.transform = "rotate(" + (-cam.bearing) + "deg)"; }
     }
     function groundAt(px, py, out) {
       ndc.set(px / cssW * 2 - 1, -(py / cssH) * 2 + 1);
@@ -622,19 +627,12 @@ void main(){
     function flyCam(to, ms) {
       const from = { x: cam.x, z: cam.z, dist: cam.dist, pitch: cam.pitch, bearing: cam.bearing };
       const target = Object.assign({}, from, to);
-      let db = ((target.bearing - from.bearing) % 360 + 540) % 360 - 180; target.bearing = from.bearing + db;
+      target.bearing = from.bearing + ((((target.bearing - from.bearing) % 360) + 540) % 360 - 180);
       return new Promise((res) => {
         if (tween && tween.res) tween.res(false);
         tween = { from, to: target, t0: performance.now(), ms: reduce() ? 0 : (ms == null ? FLY_MS : ms), res };
-        intro = null; schedule();
+        intro = null; wheel = null; schedule();
       });
-    }
-    function zoomBy(f, px, py) {
-      const nd = clamp(cam.dist * f, minDist(), maxDist());
-      if (px == null) { flyCam({ dist: nd }, 300); return; }
-      const hit = groundAt(px, py, new THREE.Vector3());
-      if (hit) { const k = nd / cam.dist; cam.x = hit.x + (cam.x - hit.x) * k; cam.z = hit.z + (cam.z - hit.z) * k; }
-      cam.dist = nd; tween = null; dirty = true; schedule();
     }
     function fitBox(x0, z0, x1, z1, pitch, pad) {
       const vt = Math.tan(FOV * DEG / 2), aspect = cssW / cssH;
@@ -650,29 +648,25 @@ void main(){
       return fitBox(cx - w / 2, cz - h / 2, cx + w / 2, cz + h / 2, pitch3D, 1.35);
     }
 
-    /* selection and the sheet */
+    /* selection and the bottom sheet */
     const pub = (p) => p && { id: p.id, label: p.label, count: p.count, tone: p.tone, lat: p.lat, lon: p.lon, cc: p.cc };
     function selectPin(p, user) {
       if (!p) return false;
       const was = selected;
       selected = p;
+      for (const q of pins) q.btn.classList.toggle("hg-on", q === p);
       for (const f of Object.values(focusMeshes)) { f.selected = !!(p.cc && f.cc === p.cc); paintFocus(f); }
       renderSheet(p);
       sheet.hidden = false;
-      requestAnimationFrame(() => sheet.classList.add("hg-show"));
+      requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.add("hg-show")));
       live.textContent = (p.sheet && p.sheet.title) || p.label;
-      // fly to it: the country (or a region around the pin), tilted, the pin above and beside the card
-      const f = p.cc && focusMeshes[p.cc];
-      const pitch = 56;
-      let v;
-      if (f) { const [a, b, c, d] = f.bbox; const pad = 0.85 * Math.max(c - a, d - b, 70); v = fitBox(p.x - pad, p.z - pad, p.x + pad, p.z + pad, pitch, 1.15); }
-      else v = { dist: 260 };
-      const dist = clamp(v.dist, 150, 900), vt = Math.tan(FOV * DEG / 2), narrow = root.classList.contains("hg-narrow");
-      const side = narrow ? 0 : dist * vt * (cssW / cssH) * 0.3;          // the card sits on the left: the pin goes right
-      const fwd = dist * (narrow ? 0.2 : 0.08);                            // and a little up the screen
-      const b = cam.bearing * DEG;
-      flyCam({ x: p.x - side * Math.cos(b) + fwd * Math.sin(b), z: p.z + side * Math.sin(b) + fwd * Math.cos(b), dist, pitch }, FLY_MS)
-        .then(setDimLabel);
+      // fly to it: tilted, zoomed on its country, the pin in the upper part of the map above the sheet
+      const f = p.cc && focusMeshes[p.cc], pitch = 54;
+      let dist = 300;
+      if (f) { const [a, b, c, d] = f.bbox; const pad = 0.75 * Math.max(c - a, d - b, 70); dist = fitBox(p.x - pad, p.z - pad, p.x + pad, p.z + pad, pitch, 1.1).dist; }
+      dist = clamp(dist, 140, 900);
+      const fwd = dist * Math.tan(FOV * DEG / 2) * 0.62, b = cam.bearing * DEG;
+      flyCam({ x: p.x + fwd * Math.sin(b), z: p.z + fwd * Math.cos(b), dist, pitch }, FLY_MS).then(setDimLabel);
       if (user && was !== p) hooks.emit("select", pub(p));
       dirty = true; schedule();
       return true;
@@ -680,18 +674,20 @@ void main(){
     function closeSheet(user) {
       const was = selected;
       selected = null;
+      for (const q of pins) q.btn.classList.remove("hg-on");
       for (const f of Object.values(focusMeshes)) { f.selected = false; paintFocus(f); }
-      sheet.classList.remove("hg-show");
-      setTimeout(() => { if (!selected) sheet.hidden = true; }, reduce() ? 0 : 420);
+      sheet.classList.remove("hg-show", "hg-pull"); sheet.style.transform = "";
+      setTimeout(() => { if (!selected) sheet.hidden = true; }, reduce() ? 0 : 560);
       overview = computeOverview();
       flyCam(cam.pitch < 5 ? Object.assign({}, overview, { pitch: PITCH_2D }) : overview, FLY_MS);
       if (user && was) hooks.emit("select", null);
-      if (was && was.btn && user) { try { root.focus({ preventScroll: true }); } catch (e) { /* old browser */ } }
+      if (user && was) { try { root.focus({ preventScroll: true }); } catch (e) { /* old browser */ } }
     }
     function renderSheet(p) {
       const sh = p.sheet || {};
       sheet.textContent = "";
-      sheet.appendChild(el("div", "hg-grab"));
+      const grab = el("div", "hg-grab"); grab.setAttribute("aria-hidden", "true");
+      sheet.appendChild(grab);
       const head = el("div", "hg-head"), tx = el("div");
       const h = el("h3", "hg-title", sh.title || p.label || p.id); h.id = "hg-t-" + Math.random().toString(36).slice(2, 8);
       tx.appendChild(h);
@@ -702,35 +698,33 @@ void main(){
       sheet.setAttribute("aria-labelledby", h.id);
       const stats = Array.isArray(sh.stats) ? sh.stats.filter(Boolean).slice(0, 4) : [];
       if (stats.length) {
-        const row = el("div", "hg-stats");
+        const row = el("div", "hg-chips");
         for (const s of stats) {
-          const c = el("div", "hg-stat");
-          c.append(el("div", "hg-k", s.k != null ? s.k : ""), el("div", "hg-v" + (TONES.indexOf(s.tone) >= 0 ? " hg-t-" + s.tone : ""), s.v != null ? s.v : "—"));
+          const c = el("span", "hg-chip" + (TONES.indexOf(s.tone) >= 0 ? " hg-t-" + s.tone : ""));
+          c.append(el("b", "", s.v != null ? s.v : "—"), document.createTextNode(" " + String(s.k != null ? s.k : "").toLowerCase()));
           row.appendChild(c);
         }
         sheet.appendChild(row);
       }
       const bars = sh.bars;
       if (bars && Array.isArray(bars.items) && bars.items.length) {
-        const box = el("div", "hg-bars"), plot = el("div", "hg-plot"), xl = el("div", "hg-xl");
-        box.appendChild(el("div", "hg-bh", bars.title || ""));
-        const its = bars.items.slice(0, 8);
+        const box = el("div", "hg-bars");
+        const its = bars.items.slice(0, 6);
         const max = Math.max(0, ...its.map((b) => num(b.v) || 0));
-        plot.setAttribute("role", "img");
-        plot.setAttribute("aria-label", (bars.title ? bars.title + ": " : "") + its.map((b) => (b.label || "") + " " + (num(b.v) || 0)).join(", "));
+        box.setAttribute("role", "img");
+        box.setAttribute("aria-label", (bars.title ? bars.title + ": " : "") + its.map((b) => (b.label || "") + " " + (num(b.v) || 0)).join(", "));
         const fills = [];
         for (const b of its) {
-          const v = Math.max(0, num(b.v) || 0), colm = el("div", "hg-col");
-          const bar = el("div", "hg-bar" + (b.hi ? " hg-hi" : ""));
-          colm.append(el("div", "hg-bv", v.toLocaleString()), bar);
-          plot.appendChild(colm); xl.appendChild(el("span", "", b.label || ""));
-          fills.push([bar, max > 0 ? Math.max(4, v / max * 64) : 4]);
+          const v = Math.max(0, num(b.v) || 0), track = el("div", "hg-track"), fill = el("div", "hg-fill" + (b.hi ? " hg-hi" : ""));
+          track.appendChild(fill);
+          box.append(el("span", "", b.label || ""), track, el("span", "hg-bn", v.toLocaleString()));
+          fills.push([fill, max > 0 ? Math.max(2, v / max * 100) : 0]);
         }
-        box.append(plot, xl); sheet.appendChild(box);
-        const grow = () => fills.forEach(([b, hpx]) => { b.style.height = hpx + "px"; });
-        if (reduce()) grow(); else requestAnimationFrame(() => requestAnimationFrame(grow));
+        sheet.appendChild(box);
+        const grow = () => fills.forEach(([f, w]) => { f.style.width = w + "%"; });
+        if (reduce()) grow(); else setTimeout(grow, 180);
       }
-      const acts = Array.isArray(sh.actions) ? sh.actions.filter((a) => a && a.label).slice(0, 3) : [];
+      const acts = Array.isArray(sh.actions) ? sh.actions.filter((a) => a && a.label).slice(0, 2) : [];
       if (acts.length) {
         const row = el("div", "hg-acts");
         for (const a of acts) {
@@ -740,20 +734,27 @@ void main(){
         }
         sheet.appendChild(row);
       }
-      const rows = Array.isArray(sh.rows) ? sh.rows.filter(Boolean) : [];
-      if (rows.length) {
-        const ul = el("ul", "hg-rows");
-        for (const r of rows.slice(0, 6)) {
-          const li = el("li");
-          if (r.ref != null && r.ref !== "") li.appendChild(el("span", "hg-ref", r.ref));
-          li.appendChild(el("span", "hg-rt", r.text != null ? r.text : ""));
-          ul.appendChild(li);
-        }
-        sheet.appendChild(ul);
-      }
-      if (sh.note) sheet.appendChild(el("div", "hg-foot", sh.note));
       sheet.scrollTop = 0;
     }
+    // swipe the sheet down to close it
+    let pull = null;
+    sheet.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button") || (sheet.scrollTop > 0 && !e.target.closest(".hg-grab"))) return;
+      pull = { y: e.clientY, id: e.pointerId, dy: 0 };
+      sheet.setPointerCapture && sheet.setPointerCapture(e.pointerId);
+    });
+    sheet.addEventListener("pointermove", (e) => {
+      if (!pull || e.pointerId !== pull.id) return;
+      pull.dy = Math.max(0, e.clientY - pull.y);
+      if (pull.dy > 4) { sheet.classList.add("hg-pull"); sheet.style.transform = "translateY(" + pull.dy + "px)"; }
+    });
+    const endPull = (e) => {
+      if (!pull || e.pointerId !== pull.id) return;
+      const dy = pull.dy; pull = null;
+      sheet.classList.remove("hg-pull");
+      if (dy > Math.min(70, sheet.offsetHeight * 0.3)) closeSheet(true); else sheet.style.transform = "";
+    };
+    sheet.addEventListener("pointerup", endPull); sheet.addEventListener("pointercancel", endPull);
 
     /* pointer, wheel, keys */
     const ptrs = new Map();
@@ -763,14 +764,12 @@ void main(){
       if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 2) return;
       cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
       ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
-      tween = null; intro = null;
+      tween = null; intro = null; wheel = null;
       const rotate = e.button === 2 || e.ctrlKey || e.shiftKey || e.altKey;
-      if (ptrs.size === 1) {
-        const hit = groundAt(e.offsetX, e.offsetY, new THREE.Vector3());
-        drag = { mode: rotate ? "rotate" : "pan", x: e.offsetX, y: e.offsetY, hit, moved: false };
-      } else if (ptrs.size === 2) {
+      if (ptrs.size === 1) drag = { mode: rotate ? "rotate" : "pan", x: e.offsetX, y: e.offsetY, hit: groundAt(e.offsetX, e.offsetY, new THREE.Vector3()) };
+      else if (ptrs.size === 2) {
         const [a, b] = [...ptrs.values()];
-        drag = { mode: "pinch", d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), dist: cam.dist, bearing: cam.bearing, moved: true };
+        drag = { mode: "pinch", d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), dist: cam.dist, bearing: cam.bearing };
       }
       root.classList.add("hg-drag");
     });
@@ -779,9 +778,8 @@ void main(){
       ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
       if (drag.mode === "pinch" && ptrs.size >= 2) {
         const [a, b] = [...ptrs.values()];
-        const d = Math.hypot(a.x - b.x, a.y - b.y), ang = Math.atan2(b.y - a.y, b.x - a.x);
-        cam.dist = clamp(drag.dist * drag.d / Math.max(d, 1), minDist(), maxDist());
-        cam.bearing = drag.bearing - (ang - drag.ang) / DEG;
+        cam.dist = clamp(drag.dist * drag.d / Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1), minDist(), maxDist());
+        cam.bearing = drag.bearing - (Math.atan2(b.y - a.y, b.x - a.x) - drag.ang) / DEG;
       } else if (drag.mode === "rotate") {
         cam.bearing += (e.offsetX - drag.x) * 0.3; cam.pitch = clamp(cam.pitch - (e.offsetY - drag.y) * 0.25, PITCH_2D, MAX_PITCH);
         drag.x = e.offsetX; drag.y = e.offsetY; setDimLabel();
@@ -790,25 +788,24 @@ void main(){
         const now = groundAt(e.offsetX, e.offsetY, new THREE.Vector3());
         if (now) { cam.x += drag.hit.x - now.x; cam.z += drag.hit.z - now.z; }
       }
-      if (Math.abs(e.offsetX - (drag.x || 0)) + Math.abs(e.offsetY - (drag.y || 0)) > 3) drag.moved = true;
       dirty = true; schedule();
     });
-    const up = (e) => {
-      ptrs.delete(e.pointerId);
-      if (!ptrs.size) { drag = null; root.classList.remove("hg-drag"); }
-    };
+    const up = (e) => { ptrs.delete(e.pointerId); if (!ptrs.size) { drag = null; root.classList.remove("hg-drag"); } };
     cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
-    cv.addEventListener("wheel", (e) => {
+    cv.addEventListener("wheel", (e) => {          // eased: the camera glides to the new distance
       e.preventDefault();
-      zoomBy(Math.exp(clamp(e.deltaY * (e.deltaMode === 1 ? 16 : 1), -200, 200) * 0.0018), e.offsetX, e.offsetY);
+      const f = Math.exp(clamp(e.deltaY * (e.deltaMode === 1 ? 16 : 1), -240, 240) * 0.0022);
+      const goal = clamp((wheel ? wheel.goal : cam.dist) * f, minDist(), maxDist());
+      wheel = { goal, px: e.offsetX, py: e.offsetY };
+      tween = null; intro = null; schedule();
     }, { passive: false });
     root.addEventListener("keydown", (e) => {
       if (e.target !== root) return;
-      const step = cam.dist * 0.08, b = cam.bearing * DEG;
-      const mv = (dx, dz) => { cam.x += dx * Math.cos(b) + dz * Math.sin(b); cam.z += -dx * Math.sin(b) + dz * Math.cos(b); tween = null; dirty = true; schedule(); };
+      const step = cam.dist * 0.12, b = cam.bearing * DEG;
+      const mv = (dx, dz) => flyCam({ x: cam.x + dx * Math.cos(b) + dz * Math.sin(b), z: cam.z - dx * Math.sin(b) + dz * Math.cos(b) }, 450);
       if (e.key === "ArrowLeft") mv(-step, 0); else if (e.key === "ArrowRight") mv(step, 0);
       else if (e.key === "ArrowUp") mv(0, -step); else if (e.key === "ArrowDown") mv(0, step);
-      else if (e.key === "+" || e.key === "=") zoomBy(1 / 1.4); else if (e.key === "-") zoomBy(1.4);
+      else if (e.key === "+" || e.key === "=") flyCam({ dist: cam.dist / 1.5 }, 600); else if (e.key === "-") flyCam({ dist: cam.dist * 1.5 }, 600);
       else return;
       e.preventDefault();
     });
@@ -825,6 +822,7 @@ void main(){
     function schedule() { if (!raf && !destroyed) raf = requestAnimationFrame(frame); }
     const routesAnimate = () => routes.length && visible && !document.hidden && !reduce();
     const probe = { last: 0, elapsed: 0, deltas: [], done: false };
+    let camSig = "";
     function frame(now) {
       raf = 0;
       if (destroyed) return;
@@ -840,37 +838,46 @@ void main(){
         for (const key of ["x", "z", "dist", "pitch"]) cam[key] = lerp(intro.from[key], intro.to[key], e);
         if (k >= 1) intro = null; else active = true;
       }
+      if (wheel) {          // glide toward the wheel's goal, keeping the point under the cursor in place
+        applyCam();
+        const hit = groundAt(wheel.px, wheel.py, new THREE.Vector3());
+        const nd = reduce() ? wheel.goal : lerp(cam.dist, wheel.goal, 0.2);
+        if (hit) { const k = nd / cam.dist; cam.x = hit.x + (cam.x - hit.x) * k; cam.z = hit.z + (cam.z - hit.z) * k; }
+        cam.dist = nd;
+        if (Math.abs(nd - wheel.goal) < wheel.goal * 0.002) wheel = null; else active = true;
+      }
       applyCam();
-      // relief and pins keep a constant on-screen size at every zoom
       const vt = Math.tan(FOV * DEG / 2), wpp = 2 * cam.dist * vt / cssH;      // world units per pixel at the target
-      const ls = Math.max(0.02, LAND_PX * wpp / LAND_H), fs = Math.max(0.02, FOCUS_PX * wpp / LAND_H);
-      landGroup.scale.y = ls; focusGroup.scale.y = 1;
+      landGroup.scale.y = Math.max(0.02, LAND_PX * wpp / LAND_H);
+      const fs = Math.max(0.02, FOCUS_PX * wpp / LAND_H);
       for (const f of Object.values(focusMeshes)) {
-        const goal = f.selected ? 1.5 : 1;
-        f.lift += (goal - f.lift) * (reduce() ? 1 : 0.18);
+        const goal = f.selected ? 1.6 : 1;
+        f.lift += (goal - f.lift) * (reduce() ? 1 : 0.16);
         if (Math.abs(goal - f.lift) > 0.01) active = true;
         f.group.scale.y = fs * f.lift;
       }
-      const landTop = LAND_H * fs;
+      const top = LAND_H * fs;
       for (const p of pins) {
         if (!isFinite(p.x) || !isFinite(p.z)) { p.group.visible = false; continue; }
         const dpp = 2 * camera.position.distanceTo(tmpV.set(p.x, 0, p.z)) * vt / cssH;
-        let s = 12.5 * dpp * (p === selected ? 1.22 : 1);
-        if (p.drop < 1) { p.drop = clamp((now - t0 - 120 - p.i * 70) / 520, 0, 1); active = active || p.drop < 1; }
-        const dk = reduce() ? 1 : p.drop, bounce = dk < 1 ? (1 - ease(dk)) * 46 * dpp : 0;
-        p.group.position.set(p.x, landTop * (p.cc && focusMeshes[p.cc] ? focusMeshes[p.cc].lift : 1) + bounce, p.z);
-        p.group.scale.setScalar(s); p.r = s / dpp; p.group.visible = dk > 0 || reduce();
+        if (p.drop < 1) { p.drop = clamp((now - t0 - 150 - p.i * 70) / 560, 0, 1); active = active || p.drop < 1; }
+        const dk = reduce() ? 1 : p.drop;
+        const lift = p.cc && focusMeshes[p.cc] ? focusMeshes[p.cc].lift : 1;
+        p.base = top * lift; p.dpp = dpp; p.rise = dk < 1 ? (1 - ease(dk)) * 40 : 0;
+        p.group.position.set(p.x, p.base, p.z);
+        p.stem.scale.set(dpp * 1.4, (STEM_PX + p.rise) * dpp, dpp * 1.4);
+        p.shadow.scale.set(dpp * 22, 1, dpp * 14);
+          p.group.visible = dk > 0;
       }
-      const pxPerWorld = 1 / wpp;
       for (const r of routes) {
-        r.mat.uniforms.uWidth.value = 6.5 * wpp; r.mat.uniforms.uPx.value = pxPerWorld;
+        r.mat.uniforms.uWidth.value = 9 * wpp; r.mat.uniforms.uPx.value = 1 / wpp;
         r.mat.uniforms.uTime.value = reduce() ? 0 : now / 1000; r.mat.uniforms.uFlow.value = reduce() ? 0 : 1;
-        r.mesh.position.y = landTop;
+        r.mesh.position.y = top;
       }
       renderer.render(scene, camera);
       overlay();
       dirty = false;
-      // speed check: the first 2 s of drawing, the loop kept running
+      // speed check: the first 2 s of drawing, with the loop kept running
       if (!probe.done && !document.hidden) {
         if (probe.last) { const d = now - probe.last; if (d < 1000) { probe.deltas.push(d); probe.elapsed += d; } }
         probe.last = now;
@@ -888,37 +895,52 @@ void main(){
     }
     const tmpP = new THREE.Vector3();
     function project(x, y, z) { tmpP.set(x, y, z).project(camera); return [(tmpP.x + 1) / 2 * cssW, (1 - tmpP.y) / 2 * cssH, tmpP.z]; }
+    const hit = (placed, x, y, w, h) => placed.some((q) => x < q[0] + q[2] && x + w > q[0] && y < q[1] + q[3] && y + h > q[1]);
     function overlay() {
       const placed = [], heads = [];
+      const sr = selected && sheet.classList.contains("hg-show") ? [sheet.offsetLeft, sheet.offsetTop, sheet.offsetWidth, sheet.offsetHeight] : null;
+      if (sr) placed.push(sr);
       const order = pins.slice().sort((a, b) => (b === selected) - (a === selected) || (b.count || 0) - (a.count || 0));
       for (const p of order) {
         if (!p.group.visible) { p.btn.hidden = true; p.lab.hidden = true; continue; }
-        const s = p.group.scale.x, base = p.group.position;
-        const [hx, hy, hz] = project(base.x, base.y + 2.55 * s, base.z);
-        const [bx, by] = project(base.x, base.y, base.z);
-        const off = hz > 1 || hx < -40 || hy < -40 || hx > cssW + 40 || hy > cssH + 40;
+        const [bx, by, bz] = project(p.x, p.base, p.z);
+        const hx = bx, hy = by - (STEM_PX + p.rise) - HEAD_PX * (p.count === 0 ? 0.6 : 1) + 2;
+        const under = sr && p !== selected && bx > sr[0] - 20 && bx < sr[0] + sr[2] + 20 && by > sr[1] - 8;
+        const off = under || bz > 1 || bx < -40 || by < -40 || bx > cssW + 40 || by > cssH + 60;
         p.btn.hidden = off; p.lab.hidden = off || !p.label;
         if (off) continue;
-        const r = Math.max(10, p.r);
-        p.btn.style.width = p.btn.style.height = (2 * r) + "px";
-        p.btn.style.transform = "translate(" + (hx - r).toFixed(1) + "px," + (hy - r).toFixed(1) + "px)";
-        p.btn.style.zIndex = String(1000 + Math.round(hy));
-        p.lab.style.zIndex = String(1000 + Math.round(hy));
-        placed.push([hx - r, hy - r, 2 * r, 2 * r]);
-        heads.push([p, hx, hy, bx, by, r]);
+        const w = p.btn.offsetWidth || 26, h = p.btn.offsetHeight || 26;
+        p.btn.style.transform = "translate(" + (hx - w / 2).toFixed(1) + "px," + (hy - h / 2).toFixed(1) + "px)" + (p === selected ? " scale(1.15)" : "");
+        const z = String(1000 + Math.round(by) + (p === selected ? 5000 : 0));
+        p.btn.style.zIndex = z; p.lab.style.zIndex = z;
+        placed.push([hx - w / 2, hy - h / 2, w, h]);
+        heads.push([p, hx, hy, bx, by, w, h]);
       }
-      // labels after every head is placed, so no label lands on another pin
-      for (const [p, hx, hy, bx, by, r] of heads) {
+      for (const [p, hx, hy, bx, by, w, h] of heads) {     // labels after every head, so none lands on a pin
         if (!p.label) continue;
-        const lw = p.lab.offsetWidth || 30, lh = p.lab.offsetHeight || 18;
-        const cands = [[bx - lw / 2, by + 5], [hx + r + 4, hy - lh / 2], [hx - r - 4 - lw, hy - lh / 2], [hx - lw / 2, hy - r - 4 - lh], [bx - lw / 2, by + 5 + lh + 2]];
-        let pick = cands[0];
-        for (const c of cands) {
-          const hit = placed.some((q) => c[0] < q[0] + q[2] && c[0] + lw > q[0] && c[1] < q[1] + q[3] && c[1] + lh > q[1]);
-          if (!hit) { pick = c; break; }
-        }
+        const lw = p.lab.offsetWidth || 30, lh = p.lab.offsetHeight || 20;
+        const cands = [[bx - lw / 2, by + 4], [hx + w / 2 + 4, hy - lh / 2], [hx - w / 2 - 4 - lw, hy - lh / 2], [hx - lw / 2, hy - h / 2 - 4 - lh], [bx - lw / 2, by + 6 + lh]];
+        const pick = cands.find((c) => !hit(placed, c[0], c[1], lw, lh)) || cands[0];
         placed.push([pick[0], pick[1], lw, lh]);
         p.lab.style.transform = "translate(" + pick[0].toFixed(1) + "px," + pick[1].toFixed(1) + "px)";
+      }
+      // country names: only where they fit, never over a pin or a label
+      const sig = [cam.x, cam.z, cam.dist, cam.pitch, cam.bearing, cssW, cssH].map((v) => Math.round(v * 10)).join(",") + "|" + pins.length;
+      if (sig === camSig && !pins.some((p) => p.drop < 1)) return;
+      camSig = sig;
+      const wpp = 2 * cam.dist * Math.tan(FOV * DEG / 2) / cssH;
+      let shown = 0;
+      for (const c of countryLabels) {
+        const big = c.size / wpp > (Math.max(...c.el.textContent.split("\n").map((t) => t.length)) * 7 + 26);
+        if (!big || shown >= 28) { c.el.hidden = true; continue; }
+        const [x, y, z] = project(c.x, 0, c.z);
+        const lw = c.el.offsetWidth || c.el.textContent.length * 8, lh = c.el.offsetHeight || 12;
+        const ok = z <= 1 && x > 10 && y > 10 && x < cssW - 60 && y < cssH - 10 && !hit(placed, x - lw / 2 - 4, y - lh / 2 - 3, lw + 8, lh + 6);
+        c.el.hidden = !ok;
+        if (!ok) continue;
+        if (c.el.offsetWidth) c.el.style.transform = "translate(" + (x - c.el.offsetWidth / 2).toFixed(1) + "px," + (y - lh / 2).toFixed(1) + "px)";
+        placed.push([x - lw / 2 - 4, y - lh / 2 - 3, lw + 8, lh + 6]);
+        shown++;
       }
     }
 
@@ -928,7 +950,6 @@ void main(){
       if (w === cssW && h === cssH) return;
       cssW = w; cssH = h;
       renderer.setSize(w, h, false); camera.aspect = w / h;
-      root.classList.toggle("hg-narrow", w < 560);
       dirty = true; schedule();
     }
     const ro = window.ResizeObserver ? new ResizeObserver(resize) : null;
@@ -951,33 +972,29 @@ void main(){
       if (!worldReady) { pending = d; return; }
       countLabel = d.countLabel ? String(d.countLabel) : "shipments";
       const nf = new Set((d.focus || []).map(String));
-      const changed = nf.size !== focusSet.size || [...nf].some((c) => !focusSet.has(c));
-      if (changed) {        // rebuild the land: focus countries are their own raised meshes
-        focusSet = nf;
-        landGroup.children.slice().forEach((c) => { landGroup.remove(c); c.geometry.dispose(); });
-        const base = [];
-        for (const [cc, c] of Object.entries(byCountry)) if (!focusSet.has(cc)) for (const p of c.polys) base.push(p);
-        landGroup.add(new THREE.Mesh(extrude(base), [mat.landTop, mat.landSide]), new THREE.LineSegments(borderGeom(base), mat.border));
-        buildFocus();
-      }
+      if (nf.size !== focusSet.size || [...nf].some((c) => !focusSet.has(c))) { focusSet = nf; buildBase(); buildFocus(); }
       const keep = selected && selected.id;
       clearPins(); clearRoutes();
       const first = !overview;
       (d.pins || []).forEach((pd, i) => { if (pd && pd.id != null && isFinite(num(pd.lat)) && isFinite(num(pd.lon))) pins.push(makePin(pd, i)); });
-      if (!first) for (const p of pins) p.drop = 1; else for (const p of pins) p.drop = reduce() ? 1 : 0;
+      for (const p of pins) p.drop = first && !reduce() ? 0 : 1;
       for (const rd of d.routes || []) { const r = makeRoute(rd || {}); if (r) routes.push(r); }
-      note.hidden = true;
-      if (!pins.length) { note.textContent = "No places to show yet"; note.hidden = false; }
+      note.hidden = !!pins.length;
+      if (!pins.length) note.textContent = "No places to show yet";
       if (first) {
         overview = computeOverview();
         if (reduce()) Object.assign(cam, overview);
         else {
-          Object.assign(cam, overview, { dist: overview.dist * 1.45, pitch: 22, z: overview.z + overview.dist * 0.1 });
+          Object.assign(cam, overview, { dist: overview.dist * 1.4, pitch: 24, z: overview.z + overview.dist * 0.1 });
           intro = { from: Object.assign({}, cam), to: Object.assign({}, overview), t0: performance.now(), ms: 1600 };
         }
       }
-      selected = null;
-      if (keep) { const p = pins.find((x) => x.id === keep); if (p) { selected = p; renderSheet(p); for (const f of Object.values(focusMeshes)) { f.selected = !!(p.cc && f.cc === p.cc); paintFocus(f); } } else closeSheet(false); }
+      selected = null; camSig = "";
+      if (keep) {
+        const p = pins.find((x) => x.id === keep);
+        if (p) { selected = p; p.btn.classList.add("hg-on"); renderSheet(p); for (const f of Object.values(focusMeshes)) { f.selected = !!(p.cc && f.cc === p.cc); paintFocus(f); } }
+        else closeSheet(false);
+      }
       setDimLabel();
       dirty = true; schedule();
     }
@@ -996,7 +1013,7 @@ void main(){
       })
       .catch((e) => {
         if (destroyed) return;
-        worldFailed = true; worldReady = true;
+        worldReady = true;
         note.textContent = "Map outline unavailable"; note.hidden = false;
         log("warn", "world outline not loaded: " + (e && e.message ? e.message : e));
         setData(pending || { pins: [] });
