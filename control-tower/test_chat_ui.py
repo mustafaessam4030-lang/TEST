@@ -728,9 +728,9 @@ check("Dark and light are the theme's own: the panel changes with it",
 # ═════════════════════════════════════════════════════════════════════════
 rule("7. NOTHING ELSE CHANGED: CONTRACT, GROUNDING, SAFETY")
 # ═════════════════════════════════════════════════════════════════════════
-check("The request is the same: question + context (reference, action, evidence, conduct)",
+check("The request is the same: question + context (reference, action, evidence, conduct, open page)",
       "context: {reference: lastReference, action_id: lastFocus," in INDEX
-      and "evidence_id: lastEvidence, conduct: conductCount}" in INDEX)
+      and "evidence_id: lastEvidence, conduct: conductCount," in INDEX and "page: activePage}" in INDEX)
 check("Only the allowed UI actions run (filter, open, page) — the whitelist is unchanged",
       "if (a.type === 'filter'){" in INDEX and "UI_PAGES[a.page]" in INDEX)
 check("Feedback is still recorded as material, never as verification",

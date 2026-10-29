@@ -60,7 +60,7 @@ GENERAL = re.compile(
     r"who(?:'s| is)? (?:pays?|paying|bears?|carr(?:y|ies)|responsible|on the hook)|what'?s on us|who arranges|"
     r"what goes into|vs\.?|versus|or .{1,30}\?|difference between|what is|what's a|what are|define|explain|meaning of)\b|"
     r"ايه الفرق|إيه الفرق|الفرق بين|يعني ايه|يعني إيه|ما هو|ما هي|مين (?:المفروض )?(?:يدفع|شايل)|مين بيدفع|ينفع|ولا لازم|ده معناه|"
-    r"الترتيب الطبيعي|ليها أصل|\bcan (?:clearance|customs|we|it) (?:start|begin|be done|happen) before\b|"
+    r"الترتيب الطبيعي|ليها أصل|(?:ا|إ)يه (?:هو|هي|المستندات|الورق|الأوراق)|المستندات المطلوبة|\bcan (?:clearance|customs|we|it) (?:start|begin|be done|happen) before\b|"
     r"\bdo we have to wait\b|\bis (?:it|that) enough\b|\bhow many [\w ]{1,25}\b(?:fit|go|can (?:we|you) (?:load|put))\b|"
     r"\bwhen (?:is|are|should) [\w ]{1,40}\b(?:better|cheaper|faster)\b|\bbetter than\b|"
     r"\bwhich incoterms?\b|\bwhat (?:documents|papers)\b|\bwhen do (?:we|i|you) need\b|"
@@ -228,7 +228,9 @@ def route(question, context=None, intent=None):
         return out(INTENT_ROUTE.get(intent, "operational"), 0.7)
     if platform:
         return out("atlas_rules", 0.6)
-    if not domain and not knows():
+    if not domain:
+        # (A concept's name alone does not make it a knowledge question: "is the
+        # root cause confirmed?" is about this run; the general cues above decide.)
         return out("out_of_scope" if words >= 2 else "ambiguous", 0.6)
     s.append("domain words")
     return out("knowledge", 0.6 if (q.endswith("?") or words >= 5) else 0.5)

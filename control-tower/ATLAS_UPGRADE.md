@@ -246,15 +246,17 @@ Measured (no model, same tool as above):
 |---|---|---|---|
 | dev (worked from) | routing | 66.7% | 74.4% |
 | dev | knowledge correct | 53.3% | 96.7% |
-| held-out (not tuned on) | routing | 42.6% | 49.3% |
-| held-out | knowledge correct | 45.7% | 52.2% |
-| held-out | unsupported (confident, wrong entry) | 8.7% | 13.0% |
-| held-out | scenario unsupported | 13.3% | 23.3% |
+| held-out (not tuned on) | routing | 42.6% | 47.1% |
+| held-out | knowledge correct | 45.7% | 50.0% |
+| held-out | unsupported (confident, wrong entry) | 8.7% | 10.9% |
+| held-out | scenario unsupported | 13.3% | 16.7% |
 
 The dev gain is mostly fitting to the dev set; the held-out gain is the
 honest one, and it is modest. The unsupported rate went **up** on held-out
-(two more of 46 knowledge questions, one more scenario): one traced to a
+(one more of 46 knowledge questions, one more scenario): one traced to a
 ranking threshold shifted by a longer entry, not investigated further to
-avoid tuning on the held-out set. Two probe sets of 120 questions written on
+avoid tuning on the held-out set. A concept's name alone no longer makes a
+question general ("is the root cause confirmed?" is about the run), which
+gave back part of the routing gain. Two probe sets of 120 questions written on
 29 Oct (not in either eval set) were read answer by answer; all but one
 (an unusual Incoterms split with no standard rule) now land on the right entry.
