@@ -1052,6 +1052,10 @@ class Handler(BaseHTTPRequestHandler):
                                        default=str))
             return
 
+        if route == "/api/missions" or route.startswith("/api/missions/"):
+            self._missions("GET", route)
+            return
+
         if route == "/api/state":
             self._send(200, json.dumps(build_payload()))
             return
@@ -1329,6 +1333,10 @@ class Handler(BaseHTTPRequestHandler):
             self._clearance_action(route)
             return
 
+        if route.startswith("/api/missions/"):
+            self._missions("POST", route)
+            return
+
         if route in ("/api/knowledge/propose", "/api/knowledge/review", "/api/knowledge/status",
                      "/api/knowledge/ingest"):
             self._knowledge_action(route)
@@ -1473,6 +1481,7 @@ class Handler(BaseHTTPRequestHandler):
                         reply = None
                 if reply is None:
                     reply = assistant.answer(question, state, context)
+                self._mission_offer(question, reply)
         finally:
             _research.progress_done(context.get("progress_id"))
         _record = _trace.span("server.record")
@@ -1732,6 +1741,143 @@ class Handler(BaseHTTPRequestHandler):
                 type(e).__name__)}))
             return
         self._send(200, json.dumps({"ok": True, "result": out}, default=str))
+
+    def _mission_offer(self, question, reply):
+        """Ask before escalating: when a question needs a multi-step investigation, ATLAS still answers
+        it, and offers a mission plan to review. Nothing starts until someone approves it; a "no" is
+        remembered for that task. ATLAS_MISSIONS=0 turns the offer off."""
+        if str(os.environ.get("ATLAS_MISSIONS") or "1").strip().lower() in ("0", "off", "no", "false"):
+            return
+        if not (self._acc_can("missions.view") and self._acc_can("clearance.view")) or not isinstance(reply, dict):
+            return
+        try:
+            from intelligence.missions import classify as _mc, engine as _me
+            data = _clearance.load()
+            if not data:
+                return
+            rows = _clearance.records(data)
+            a = _mc.assess(question, data, rows, self._acc_bus())
+            if a["level"] not in ("DEEP_MISSION", "CRITICAL_INCIDENT") or _mc.declined(a["fingerprint"]):
+                return
+            _me.configure(state=_assistant_state)
+            m = _me.propose(question, data, rows, self._acc_bus(),
+                            by=(self.user or {}).get("work_email") or "access key", origin="chat")
+            if not m or m["status"] != "proposed":
+                return
+            plan = m.get("plan") or {}
+            reply["answer"] = (reply.get("answer") or "").rstrip() + (
+                "\n\n**This needs a deeper look** ({0}). I can run a {1} mission: {2} specialists, read-only, "
+                "every number rechecked. Nothing starts until you approve it. "
+                "[Review the mission plan](/hub#missions?id={3})").format(
+                    "; ".join(m.get("reasons") or [])[:220], (plan.get("title") or "").lower(),
+                    len(plan.get("specialists") or []), m["id"])
+            reply["mission"] = {"id": m["id"], "level": m["level"], "severity": m.get("severity")}
+        except Exception:
+            logging.getLogger("dashboard.server").exception("mission offer failed")
+
+    def _missions(self, method, route):
+        """ATLAS Missions (intelligence/missions): proposals, approval, Mission Control. Read-only work;
+        approving needs missions.run, a CRITICAL incident or Emergency activation missions.emergency."""
+        try:
+            from intelligence.missions import engine as _me, models as _mm, registry as _mr
+        except Exception as error:
+            self._send(503, json.dumps({"error": "missions unavailable: {0}".format(type(error).__name__)}))
+            return
+        _me.configure(state=_assistant_state)
+        by = (self.user or {}).get("work_email") or "access key"
+        allowed = self._acc_bus()
+        parts = route.split("/")[3:]                       # /api/missions/<id>/<action>
+        if not self._acc_can("clearance.view"):
+            self._send(403, json.dumps({"error": "Missions read the eHub export: clearance.view is needed."}))
+            return
+
+        def rows():
+            data = _clearance.load()
+            return data, (_clearance.records(data) if data else [])
+
+        if method == "GET":
+            if not parts:
+                _me.start()
+                data, rs = rows()
+                suggested = []
+                if self._acc_can("missions.emergency") and data:
+                    try:
+                        suggested = [m["id"] for m in _me.suggest_incidents(data, rs, allowed)]
+                    except Exception:
+                        suggested = []
+                self._send(200, json.dumps({"missions": _me.listing(allowed=allowed), "suggested": suggested,
+                                            "can": {"run": self._acc_can("missions.run"), "emergency": self._acc_can("missions.emergency")},
+                                            "busy": _me.automation_busy()}, default=str))
+                return
+            if parts == ["registry"]:
+                self._send(200, json.dumps({"models": _mm.snapshot(), "profiles": _mm.PROFILES, "specialists": _mr.SPECIALISTS,
+                                            "websites": _mr.WEBSITES, "templates": {k: v["title"] for k, v in _mr.TEMPLATES.items()}}, default=str))
+                return
+            if len(parts) == 1 and re.fullmatch(r"[a-f0-9]{10}", parts[0]):
+                m = _me.get(parts[0])
+                if not m or (allowed is not None and set((m.get("scope") or {}).get("allowed") or ["*"]) - set(allowed)):
+                    self._send(404, json.dumps({"error": "no such mission"}))
+                    return
+                self._send(200, json.dumps(m, default=str))
+                return
+            self._send(404, json.dumps({"error": "unknown"}))
+            return
+        try:
+            body = self._acc_json(16384) or {}
+        except (ValueError, TypeError):
+            body = None
+        if not isinstance(body, dict):
+            self._send(400, json.dumps({"ok": False, "message": "Bad request."}))
+            return
+        profile = body.get("profile") if body.get("profile") in _mm.PROFILES else None
+        if parts in (["propose"], ["emergency"]):
+            question = str(body.get("question") or "").strip()[:500]
+            if not question:
+                self._send(400, json.dumps({"ok": False, "message": "Say what to investigate."}))
+                return
+            emergency = parts == ["emergency"]
+            if emergency and not self._acc_can("missions.emergency"):
+                self._send(403, json.dumps({"ok": False, "message": "Emergency Mode needs an Admin."}))
+                return
+            data, rs = rows()
+            if not data:
+                self._send(200, json.dumps({"ok": False, "message": "No eHub export is loaded: there is nothing to investigate."}))
+                return
+            m = _me.propose(question, data, rs, allowed, by=by, origin="manual",
+                            profile=profile, force_level="CRITICAL_INCIDENT" if emergency else (body.get("level") if body.get("level") in ("ADVANCED", "DEEP_MISSION") else None))
+            if not m:
+                self._send(200, json.dumps({"ok": True, "normal": True,
+                                            "message": "Nothing in the records needs a mission for this: ask ATLAS normally."}))
+                return
+            if emergency:
+                ok, message = _me.approve(m["id"], by, profile or "emergency")
+                self._acc_audit("MISSION_EMERGENCY", "SUCCESS" if ok else "FAILED", "mission", m["id"], {"level": m["level"]})
+                self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
+                return
+            self._send(200, json.dumps({"ok": True, "mission": m}, default=str))
+            return
+        if len(parts) == 2 and re.fullmatch(r"[a-f0-9]{10}", parts[0]) and parts[1] in ("approve", "decline", "cancel", "pause", "resume"):
+            m = _me.get(parts[0])
+            if not m or (allowed is not None and set((m.get("scope") or {}).get("allowed") or ["*"]) - set(allowed)):
+                self._send(404, json.dumps({"ok": False, "message": "No such mission."}))
+                return
+            action = parts[1]
+            if action in ("approve", "cancel", "pause", "resume"):
+                need = "missions.emergency" if m["level"] == "CRITICAL_INCIDENT" and action == "approve" else "missions.run"
+                if not self._acc_can(need):
+                    self._send(403, json.dumps({"ok": False, "message": "Your access level cannot {0} this mission ({1} needed).".format(action, need)}))
+                    return
+            if action == "approve":
+                ok, message = _me.approve(m["id"], by, profile)
+            elif action == "decline":
+                ok, message = _me.decline(m["id"], by)
+            else:
+                ok, message = _me.control(m["id"], action, by)
+            self._acc_audit("MISSION_" + action.upper(), "SUCCESS" if ok else "FAILED", "mission", m["id"],
+                            {"level": m["level"], "plan": m.get("plan_hash")})
+            self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
+            return
+        self._send(404, json.dumps({"ok": False, "message": "Unknown mission request."}))
 
     def _clearance_action(self, route):
         """Contacts (Admin), escalations (Operator, Admin), the call / mail log (everyone)."""

@@ -35,6 +35,9 @@ PERMISSIONS = {
     "knowledge.propose":  "Propose logistics knowledge or a correction for review",
     "knowledge.review":   "Review, approve, supersede or retire ATLAS's logistics knowledge; ingest documents",
     "hub.preview":        "Open the Control Tower hub preview (/hub) while it is being reviewed",
+    "missions.view":      "See ATLAS missions and receive mission proposals",
+    "missions.run":       "Approve, pause, resume or cancel an ATLAS mission (Advanced, Deep Mission)",
+    "missions.emergency": "Approve a Critical incident and activate Emergency Mode",
 }
 
 ROLE_PERMISSIONS = {
@@ -43,10 +46,10 @@ ROLE_PERMISSIONS = {
         "dashboard.view", "runs.view", "runs.start", "runs.stop", "human.act",
         "evidence.view", "evidence.upload", "atlas.chat", "health.view",
         "po.view", "po.process", "po.send", "clearance.view", "clearance.upload",
-        "clearance.escalate", "knowledge.propose")),
+        "clearance.escalate", "knowledge.propose", "missions.view", "missions.run")),
     VIEWER: frozenset((
         "dashboard.view", "runs.view", "atlas.chat", "health.view", "po.view",
-        "clearance.view")),
+        "clearance.view", "missions.view")),
 }
 
 ROLE_LABELS = {ADMIN: "Admin", OPERATOR: "Operator", VIEWER: "Viewer"}

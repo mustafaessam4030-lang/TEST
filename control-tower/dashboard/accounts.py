@@ -64,6 +64,7 @@ GET_PERMISSIONS = (
     ("/api/knowledge/proposals", "knowledge.propose"),
     ("/api/knowledge/lessons", "runs.view"),
     ("/api/atlas/perf", "users.manage"),
+    ("/api/missions", "missions.view"),
 )
 WRITE_PERMISSIONS = (
     ("/api/control", "runs.start"),
@@ -85,6 +86,7 @@ WRITE_PERMISSIONS = (
     ("/api/knowledge/review", "knowledge.review"),
     ("/api/knowledge/status", "knowledge.review"),
     ("/api/knowledge/ingest", "knowledge.review"),
+    ("/api/missions", "missions.view"),     # approving needs missions.run / missions.emergency (checked in the handler)
 )
 
 
