@@ -103,6 +103,8 @@
   const pill = (href, text, primary) => `<a class="hub-pill${primary ? " primary" : ""}" href="${esc(href)}">${esc(text)}</a>`;
   // The same id the run page uses for Human Action requests in this tab.
   function humanClient() {
+    // signed in: the person's id, as the run page sends it; otherwise this tab's id
+    if (window.HubCtx && window.HubCtx.me && window.HubCtx.me.user_id) return window.HubCtx.me.user_id;
     const make = () => Array.from(crypto.getRandomValues(new Uint8Array(8))).map((b) => b.toString(16).padStart(2, "0")).join("");
     try { let id = sessionStorage.getItem("ct_human_client"); if (!id) { id = make(); sessionStorage.setItem("ct_human_client", id); } return id; }
     catch (e) { return make(); }
@@ -148,6 +150,7 @@
         body.innerHTML = empty("Loading…");
         const r = await get("/api/hub/list?stage=" + encodeURIComponent(stage));
         if (r.status === 403) { body.innerHTML = denied("the eHub export"); return; }
+        if (r.status !== 200) { body.innerHTML = empty("The shipments could not be loaded", "Check the connection, then change a filter to try again."); return; }
         if (!r.data || r.data.empty) { body.innerHTML = empty("No eHub export loaded", "Shipments appear once an export is loaded on the Clearance page."); return; }
         CACHE = r.data; rows = r.data.rows || [];
         const modes = [...new Set(rows.map((x) => x.mode).filter(Boolean))].sort();
@@ -231,7 +234,7 @@
       el.innerHTML = head("To Do & Approvals", "What needs a person across the platform: Human Actions, run failures, BOE approvals, clearance follow-ups. Highest priority first.") + `<div id="hvTodo">${empty("Loading…")}</div>`;
       const box = el.querySelector("#hvTodo");
       let r = await get("/api/todo");
-      if (!r.data) { box.innerHTML = empty("The list could not be read"); return; }
+      if (r.status !== 200 || !r.data) { box.innerHTML = empty("To Do could not be loaded", "Check the connection, then open To Do again."); return; }
       let t = r.data;
       const LBL = {overdue: "Overdue", urgent: "Urgent", pending_approval: "Waiting for approval", open: "Open", completed: "Completed (last 7 days)"};
       let filter = "";

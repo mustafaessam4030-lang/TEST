@@ -78,8 +78,7 @@
 /* ── base ── */
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;height:100%}
-body{background:var(--hub-bg);color:var(--hub-ink);font:14px/1.45 var(--hub-font);-webkit-font-smoothing:antialiased;
-  font-feature-settings:"tnum" 0}
+body{background:var(--hub-bg);color:var(--hub-ink);font:14px/1.45 var(--hub-font);-webkit-font-smoothing:antialiased}
 .num,.hub-num{font-variant-numeric:tabular-nums}
 a{color:var(--hub-blue);text-decoration:none}
 button{font:inherit;color:inherit}

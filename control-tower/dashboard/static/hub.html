@@ -15,7 +15,7 @@
 :root{--bg:var(--hub-bg);--surface:var(--hub-surface);--surface-3:var(--hub-surface-2);--ink:var(--hub-ink);--mid:var(--hub-ink-2);
   --faint:var(--hub-ink-3);--line:var(--hub-line);--line-2:var(--hub-line-2);--card-edge:var(--hub-line);--blu:var(--hub-blue);
   --red:var(--hub-red);--y:var(--hub-amber);--y-dot:var(--hub-amber);--mono:var(--hub-mono);--r-lg:var(--hub-r-lg);
-  --e:var(--hub-e);--s:var(--hub-shadow-lg);--barh:var(--hub-top);--t-label:11px}
+  --e:var(--hub-e);--s:var(--hub-font);--barh:var(--hub-top);--t-label:600 11px/1.2 var(--hub-font)}
 
 /* ── shell ── */
 .app{display:grid;grid-template-columns:var(--hub-side) 1fr;min-height:100vh}
@@ -295,6 +295,8 @@
   const EXT = '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>';
 
   let DATA = null, MODS = [], map = null, scene = null;
+  // Rewrite a block only when its content changed: a refresh does not flicker or drop focus.
+  const putHTML = (el, html) => { if (el && el.__h !== html) { el.innerHTML = html; el.__h = html; } };
   window.HubCtx = {openList: (stage, bu) => openList(stage, bu),
     // the live view of a Human Action: the run page's own viewer, shown on the run page
     viewer: (actionId) => {
@@ -318,7 +320,7 @@
         : m.status === "off" ? '<span class="st off" title="Not connected: no data source yet">Soon</span>' : "";
       html += `<a href="${esc(href)}" data-mod="${esc(m.id)}"${view === m.id || (MODS.find((x) => x.id === view) || {}).parent === m.id ? ' aria-current="page"' : ""} title="${esc(m.note || m.title)}">${icon(m.id)}<span>${esc(m.title)}</span>${st}${own ? "" : EXT}</a>`;
     }
-    $("nav").innerHTML = html;
+    putHTML($("nav"), html);
     document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
   }
   let shownHash = null;
@@ -406,6 +408,7 @@
   /* ── who is signed in ── */
   fetch("/api/auth/me", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((me) => {
     const u = me && (me.user || me);
+    if (me && me.user && me.user.user_id) window.HubCtx.me = me.user;
     if (!u || !u.display_name) return;
     $("me").hidden = false; $("meName").textContent = u.display_name;
     $("meRole").textContent = (u.role_label || u.role || "").toString();
@@ -429,11 +432,11 @@
     html += `<button type="button" class="chip" data-list="late" title="The export's own On Time flag · click for the late ones"><div class="k">On time / late</div>
       <div class="v" style="font-size:24px;white-space:nowrap;margin-top:8px"><span style="color:var(--hub-green)">${fmt(c.on_time)}</span><span style="color:var(--hub-ink-4);font-weight:400"> / </span><span style="color:var(--hub-red)">${fmt(c.late)}</span></div>
       <div class="bar"><b style="width:${pct(c.on_time, c.total)}%"></b></div></button>`;
-    $("strip").innerHTML = html;
-    $("defs").innerHTML = c.stages.map((s) => `<dt>${esc(s.label)}</dt><dd>${esc(s.definition)}</dd>`).join("") +
+    putHTML($("strip"), html);
+    putHTML($("defs"), c.stages.map((s) => `<dt>${esc(s.label)}</dt><dd>${esc(s.definition)}</dd>`).join("") +
       `<dt>On time / late</dt><dd>The export's own On Time flag.</dd>` +
       (c.other ? `<dt>Not counted in a stage</dt><dd>${fmt(c.other)} open shipments have no ETA or an unknown step.</dd>` : "") +
-      `<dt>Source</dt><dd>${esc(c.source)}, data as of ${dmy(c.asof)}. Booked shipments are not shown: neither the Hub run nor the export holds bookings.</dd>`;
+      `<dt>Source</dt><dd>${esc(c.source)}, data as of ${dmy(c.asof)}. Booked shipments are not shown: neither the Hub run nor the export holds bookings.</dd>`);
   }
   function headline(d) {
     const c = d.clearance, bus = d.bus || [];
@@ -442,8 +445,8 @@
     // Whole-export counts: a BU that cannot be placed on the map still counts here.
     const late = c.past_due, open = c.open;
     const worst = bus[0];
-    $("headline").innerHTML = `<em>${fmt(late)}</em> of ${fmt(open)} open shipments are past their step's due date` +
-      (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)} past due of ${fmt(worst.open)} open).` : ".");
+    putHTML($("headline"), `<em>${fmt(late)}</em> of ${fmt(open)} open shipments are past their step's due date` +
+      (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)} past due of ${fmt(worst.open)} open).` : "."));
     $("sub").textContent = `${fmt(st.transit)} in transit · ${fmt(st.arrived + st.customs)} arrived and clearing · ${fmt(st.awaiting)} cleared, awaiting delivery — eHub export, data as of ${dmy(c.asof)}`;
   }
   function runCard(r, hidden) {
@@ -462,11 +465,13 @@
     const card = document.querySelector('[aria-labelledby="tdT"]');
     if (DATA && DATA.scope) { card.hidden = true; return; }
     card.hidden = false;
-    fetch("/api/todo", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((t) => {
-      const items = (t && (t.items || t.tasks)) || [];
-      $("tdP").textContent = items.length ? `${items.length} open` : "Nothing needs a person right now";
-      $("todoL").innerHTML = items.slice(0, 6).map((x) => `<li><a href="${esc(window.HubViews && x.href ? window.HubViews._hubHref(x.href) : x.href || x.link || "#")}"><b><i style="background:${x.level === "high" || x.priority === "high" ? "var(--hub-red)" : "var(--hub-amber)"}"></i>${esc(x.title || x.text)}</b><span>${esc(x.detail || x.sub || x.source || "")}</span></a></li>`).join("");
-    }).catch(() => {});
+    fetch("/api/todo", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : Promise.reject(r.status)).then((t) => {
+      // what is still to do (finished tasks are on To Do & Approvals, not here)
+      const items = (t.items || []).filter((x) => x.state !== "completed");
+      $("tdP").textContent = items.length ? `${fmt(t.outstanding != null ? t.outstanding : items.length)} open` : "Nothing needs a person right now";
+      const dot = {red: "var(--hub-red)", amber: "var(--hub-amber)"};
+      putHTML($("todoL"), items.slice(0, 6).map((x) => `<li><a href="${esc(window.HubViews && x.href ? window.HubViews._hubHref(x.href) : x.href || "#")}"><b><i style="background:${dot[x.level] || "var(--hub-ink-4)"}"></i>${esc(x.title)}</b><span>${esc(x.detail || x.source || "")}</span></a></li>`).join(""));
+    }).catch(() => { $("tdP").textContent = "Could not load To Do — it refreshes by itself"; });
   }
 
   /* map pins: BUs from the export, places from the run — never anything else */
@@ -600,16 +605,24 @@
       if (r.status === 403) { document.querySelector("main").innerHTML = '<div class="hub-empty"><b>The Control Tower preview is open to administrators only</b>' +
         'It is being reviewed. The <a href="/">dashboard</a> and <a href="/clearance">Clearance</a> pages work as before.</div>'; return; }
       if (!r.ok) throw new Error("HTTP " + r.status);
-      DATA = await r.json(); last = Date.now();
-      MODS = DATA.modules || [];
-      route(); strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); mountMap(DATA); mountOps(DATA); todo();
+      DATA = await r.json(); last = Date.now(); failed = false;
+      const mods = JSON.stringify(DATA.modules || []);
+      // The menu and the view are drawn when the modules change (first load), not on every refresh:
+      // a refresh only updates the numbers, so the phone menu stays open and focus stays put.
+      if (mods !== modsKey) { modsKey = mods; MODS = DATA.modules || []; route(); }
+      strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); mountMap(DATA); mountOps(DATA); todo();
       fresh();
     } catch (e) {
-      $("fresh").classList.add("stale"); $("freshT").textContent = "Could not refresh — showing the last data";
+      failed = true;
+      $("fresh").classList.add("stale");
+      $("freshT").textContent = last ? "Could not refresh — showing the last data" : "Could not load — retrying";
+      if (!last) putHTML($("strip"), '<div class="hub-card hub-empty" style="grid-column:1/-1"><b>The Control Tower could not be loaded</b>It tries again by itself every 30 seconds.</div>');
     }
   }
+  let modsKey = "", failed = false;
+  window.HubCtx.refresh = () => load();       // the 30 s refresh, on demand (tests)
   function fresh() {
-    if (!last) return;
+    if (!last || failed) return;
     const s = Math.round((Date.now() - last) / 1000);
     $("fresh").classList.toggle("stale", s > 120);
     $("freshT").textContent = s < 10 ? "Updated just now" : s < 60 ? `Updated ${s}s ago` : `Updated ${Math.round(s / 60)} min ago`;
