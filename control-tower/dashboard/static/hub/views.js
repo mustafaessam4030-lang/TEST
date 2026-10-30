@@ -167,7 +167,7 @@
         body.innerHTML = `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>AWB / BOL</th><th>BU</th><th>Mode</th><th>Current step</th><th>ETA</th><th>ATA</th>
           <th class="n">Days past due</th><th>On time</th><th>Forwarder</th><th>Clearing agent</th></tr></thead><tbody>` +
           X.slice(0, shown).map((x) => `<tr class="click" tabindex="0" data-ref="${esc(x.awb)}"><td class="hv-mono">${esc(x.awb)}</td><td>${esc(x.bu)}</td><td>${esc(x.mode)}</td>
-            <td>${esc(x.step)}</td><td>${dmy(x.eta)}</td><td>${dmy(x.ata)}</td><td class="n" style="${x.overdue > 0 ? "color:var(--hub-red);font-weight:600" : ""}">${x.overdue == null ? "—" : fmt(x.overdue)}</td>
+            <td>${esc(x.step)}</td><td>${dmy(x.eta)}</td><td>${dmy(x.ata)}</td><td class="n" style="${x.overdue > 0 ? "color:var(--hub-red-ink);font-weight:600" : ""}">${x.overdue == null ? "—" : fmt(x.overdue)}</td>
             <td>${x.ontime ? "Yes" : "No"}</td><td>${esc(x.ffw || "—")}</td><td>${esc(x.agent || "—")}</td></tr>`).join("") +
           `</tbody></table></div><div class="hv-more"><span class="hv-src">Showing ${fmt(Math.min(shown, X.length))} of ${fmt(X.length)} · ${esc("eHub export, data as of ")}${dmy(CACHE.asof)}</span>
           ${X.length > shown ? '<button class="hub-pill" id="hvMore" type="button">Show more</button>' : ""}</div>`;
@@ -175,7 +175,7 @@
         if (more) more.onclick = () => { shown += 200; draw(); };
       }
       body.addEventListener("click", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr) openShipment(tr.dataset.ref); });
-      body.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr && e.key === "Enter") openShipment(tr.dataset.ref); });
+      body.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr && e.key === "Enter") { e.preventDefault(); openShipment(tr.dataset.ref); } });
       document.getElementById("hvQ").addEventListener("input", () => { shown = 100; draw(); });
       document.getElementById("hvBu").onchange = document.getElementById("hvMode").onchange = () => { shown = 100; draw(); };
       document.getElementById("hvStage").onchange = load;
@@ -186,15 +186,23 @@
   };
 
   let drawer = null;
+  let drawerBack = null;
   function closeDrawer() {
     if (!drawer) return;
     const d = drawer; drawer = null;
     d.classList.remove("on"); setTimeout(() => d.remove(), 360);
     document.removeEventListener("keydown", drawerKey, true);
+    document.removeEventListener("pointerdown", drawerOutside, true);
+    // focus goes back to the row that opened it
+    if (drawerBack && drawerBack.isConnected) { try { drawerBack.focus({preventScroll: true}); } catch (e) { /* gone */ } }
+    drawerBack = null;
   }
+  // a click outside the panel closes it, like Esc
+  function drawerOutside(e) { if (drawer && !drawer.contains(e.target) && !e.target.closest("tr[data-ref]")) closeDrawer(); }
   function drawerKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeDrawer(); } }
   async function openShipment(ref) {
     closeDrawer();
+    drawerBack = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
     const d = document.createElement("aside");
     d.className = "hv-drawer"; d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", "Shipment " + ref);
     d.innerHTML = `<header><div><div class="hv-src">Shipment</div><h3 class="hv-mono">${esc(ref)}</h3></div><span class="sp"></span>
@@ -204,11 +212,12 @@
     d.querySelector(".hv-x").onclick = closeDrawer;
     d.querySelector(".hv-x").focus();
     document.addEventListener("keydown", drawerKey, true);
+    setTimeout(() => document.addEventListener("pointerdown", drawerOutside, true), 0);
     const r = await get("/api/hub/shipment?ref=" + encodeURIComponent(ref));
     const body = d.querySelector(".body");
     if (r.status === 404) { body.innerHTML = empty("No shipment with that AWB/BOL", "Neither the eHub export nor the current run has it."); return; }
     if (r.status === 403) { body.innerHTML = denied("this shipment"); return; }
-    if (!r.data) { body.innerHTML = empty("Could not load the shipment"); return; }
+    if (r.status !== 200 || !r.data) { body.innerHTML = empty("Could not load the shipment"); return; }
     const s = r.data, val = (f) => f.value == null || f.value === "" ? "—" : f.kind === "date" ? dmy(f.value) : f.kind === "bool" ? (f.value ? "Yes" : "No") : fmt(f.value);
     let html = "";
     if (s.export) for (const row of s.export.rows) {

@@ -22,6 +22,7 @@
 .srch-i{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line-2)}
 .srch-i svg{width:16px;height:16px;color:var(--faint);flex:none}
 .srch-i input{flex:1;border:0;outline:0;background:transparent;color:var(--ink);font:400 15px var(--s);min-width:0}
+.srch-i:focus-within{box-shadow:0 0 0 2px var(--blu, #0071e3);border-radius:12px}
 .srch-r{max-height:min(460px,calc(100vh - 160px));overflow:auto;padding:6px}
 .srch-g{font:var(--t-label,600 11px/1.2 var(--s));letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:10px 10px 4px}
 .srch-r a{display:block;padding:8px 10px;border-radius:10px;text-decoration:none;color:inherit}

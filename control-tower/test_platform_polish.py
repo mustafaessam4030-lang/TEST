@@ -42,7 +42,7 @@ def row(bu, step, awb, eta=None, overdue=None, ontime=1):
     return r
 
 
-ROWS = [row("EG", "Submit to BU", "E1", "2026-10-01", 12.0, 0), row("GH", "Completed", "G1", "2026-09-01")]
+ROWS = [row("EG", "Submit to BU", "EG-0001", "2026-10-01", 12.0, 0), row("GH", "Completed", "GH-0001", "2026-09-01")]
 DATA = {"asof": "2026-10-26", "fields": C.FIELDS, "rows": [[r[k] for k in C.FIELDS] for r in ROWS]}
 C.load = lambda: DATA
 
@@ -101,13 +101,49 @@ check("The run page goes back to the live stream after a few reads, and does not
 
 print("\n2. COUNTS THAT MATCH")
 saved = (C.escalations, C.contacts)
-C.escalations = lambda: [{"awb": "E1", "bu": "EG", "status": "open", "due": "2026-09-01", "at": "2026-10-20 10:00"}]
+C.escalations = lambda: [{"awb": "EG-0001", "bu": "EG", "status": "open", "due": "2026-09-01", "at": "2026-10-20 10:00"}]
 C.contacts = lambda: {"agents": {}, "bus": {}, "forwarders": {}, "coe": {}}
 items = TD._clearance_items(__import__("datetime").date(2026, 10, 30), __import__("datetime").datetime(2026, 10, 30, 9))
 C.escalations, C.contacts = saved
 txt = json.dumps(items)
 check("To Do takes the export's own day count even when it is a decimal (12.0 -> 12 days, as on Clearance)",
       "12 day" in txt and "59 day" not in txt, txt[:300])
+
+print("\n2b. TEXT IS READABLE")
+CSS = (HERE / "dashboard" / "static" / "hub" / "hub.css").read_text(encoding="utf-8")
+HUB = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
+
+
+def lum(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def ratio(a, b):
+    la, lb = sorted((lum(a), lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def tokens(block):
+    return dict(re.findall(r"--(hub-[\w-]+):\s*(#[0-9a-fA-F]{6})", block))
+
+
+LIGHT = tokens(CSS.split("@media (prefers-color-scheme:dark)")[0])
+DARK = tokens(CSS.split(':root[data-theme="dark"]')[1])
+low = []
+for name, T in (("light", LIGHT), ("dark", DARK)):
+    for ink in ("hub-ink-3", "hub-green-ink", "hub-amber-ink", "hub-red-ink"):
+        for bg in ("hub-bg", "hub-bg-2", "hub-surface", "hub-surface-2"):
+            r = ratio(T[ink], T[bg])
+            if r < 4.5:
+                low.append((name, ink, bg, round(r, 2)))
+check("Muted and status text is 4.5:1 or better on every hub surface, light and dark (#86868b was 3.4:1)", not low, low)
+check("Status badges use the readable text tokens, not the fill colours",
+      all(re.search(r"\.hub-badge\.{0}\{{[^}}]*color:var\(--hub-{1}-ink\)".format(k, c), CSS)
+          for k, c in (("live", "green"), ("part", "amber"), ("red", "red"))))
+check("The hub's own small grey labels use the readable token", ".grp{" in HUB and "#86868b" not in HUB and
+      "#86868b" not in (HERE / "dashboard" / "static" / "hub" / "map3d_gl.js").read_text(encoding="utf-8"))
 
 print("\n3. IN THE BROWSER")
 try:
@@ -147,13 +183,42 @@ else:
         check("A refresh does not close the phone menu or rebuild it (links and focus kept)",
               pg.evaluate("document.getElementById('side').classList.contains('open')") and first and
               pg.evaluate("window.__a === document.querySelector('#nav a')"))
-        pg.set_viewport_size({"width": 1366, "height": 768})
+        check("The phone menu button says it is open (aria-expanded)", pg.get_attribute("#burger", "aria-expanded") == "true")
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        check("Esc closes the phone menu (it covers its own button) and focus returns to the button",
+              not pg.evaluate("document.getElementById('side').classList.contains('open')") and
+              pg.evaluate("document.activeElement.id") == "burger")
+        pg.locator("#burger").click(); pg.wait_for_timeout(300)
+        pg.mouse.click(370, 600); pg.wait_for_timeout(300)
+        check("...the tap that closes it does not also press what was under it", pg.evaluate("document.getElementById('dl').hidden"))
+        check("...and so does a tap outside it; closed, it says so and its links leave the Tab order",
+              pg.get_attribute("#burger", "aria-expanded") == "false" and pg.evaluate("document.getElementById('side').inert"))
+        pg.set_viewport_size({"width": 1366, "height": 768}); pg.wait_for_timeout(300)
+        check("On a wide screen the menu is always reachable", not pg.evaluate("document.getElementById('side').inert"))
+        pg.evaluate("location.hash = '#tracking'"); pg.wait_for_timeout(1500)
+        pg.locator("tr[data-ref]").first.focus(); pg.keyboard.press("Enter"); pg.wait_for_timeout(600)
+        opened = pg.locator(".hv-drawer.on").count() == 1
+        check("Shipment panel: Enter on a row opens it and it stays open (the same Enter pressed its Close button)", opened)
+        loaded = "from the ehub export" in pg.locator(".hv-drawer .body").inner_text().lower()
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(500)
+        check("Shipment panel: Esc closes it and focus goes back to the row that opened it",
+              opened and loaded and pg.locator(".hv-drawer.on").count() == 0 and
+              pg.evaluate("!!document.activeElement && document.activeElement.matches('tr[data-ref]')"))
+        pg.locator("tr[data-ref]").first.click(); pg.wait_for_timeout(600)
+        pg.locator("#title").click(); pg.wait_for_timeout(500)
+        check("Shipment panel: a click outside closes it", pg.locator(".hv-drawer.on").count() == 0)
+        pg.route("**/api/hub/shipment*", lambda r: r.fulfill(status=400, content_type="application/json", body='{"error":"bad reference"}'))
+        pg.locator("tr[data-ref]").first.click(); pg.wait_for_timeout(600)
+        check("Shipment panel: a refused request says it could not load (it threw an error)",
+              "Could not load the shipment" in pg.locator(".hv-drawer .body").inner_text())
+        pg.keyboard.press("Escape"); pg.unroute("**/api/hub/shipment*")
+        pg.evaluate("location.hash = ''"); pg.wait_for_timeout(800)
         pg.route("**/api/hub/list*", lambda r: r.fulfill(status=500, content_type="application/json", body='{"error":"server error"}'))
         pg.evaluate("location.hash = '#tracking'"); pg.wait_for_timeout(1500)
         check("Tracking: a failed load says it failed (it said 'No eHub export loaded')",
               "could not be loaded" in pg.locator("#modBody").inner_text())
         pg.unroute("**/api/hub/list*")
-        check("No console error on the hub (the /api/auth/me 404 is gone)", not [e for e in errors if "500" not in e], errors)
+        check("No console error on the hub (the /api/auth/me 404 is gone)", not [e for e in errors if "status of 500" not in e and "status of 400" not in e], errors)
         # layout shift: what loads keeps its place
         CLS = """window.__cls=0;try{new PerformanceObserver(l=>{for(const e of l.getEntries()){if(!e.hadRecentInput)window.__cls+=e.value}}).observe({type:'layout-shift',buffered:true});}catch(e){}
 sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light');"""

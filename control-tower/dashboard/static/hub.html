@@ -31,7 +31,7 @@
 .hub-askfab .axf{width:24px;height:24px}
 .brand b{display:block;font-size:15px;letter-spacing:.06em}
 .brand span{display:block;font-size:11.5px;color:var(--hub-ink-3)}
-.grp{margin:10px 0 2px;padding:0 12px;font-size:11px;font-weight:600;color:var(--hub-ink-4);letter-spacing:.02em}
+.grp{margin:10px 0 2px;padding:0 12px;font-size:11px;font-weight:600;color:var(--hub-ink-3);letter-spacing:.02em}
 .nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;white-space:nowrap;border-radius:9px;color:var(--hub-ink-2);font-size:13.5px;font-weight:500;margin:1px 0;position:relative}
 .nav a:hover{background:var(--hub-line-2)}
 .nav a[aria-current="page"]{background:var(--hub-surface);color:var(--hub-ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
@@ -39,7 +39,7 @@
 .nav a>span:not(.st){overflow:hidden;text-overflow:ellipsis;min-width:0}
 .nav a[aria-current="page"] svg{color:var(--hub-blue)}
 .nav a .st{margin-left:auto;flex:none;font-size:10px;font-weight:600;border-radius:999px;padding:0 7px;line-height:17px}
-.nav a .st.part{color:var(--hub-amber);background:var(--hub-amber-wash)}
+.nav a .st.part{color:var(--hub-amber-ink);background:var(--hub-amber-wash)}
 .nav a .st.off{color:var(--hub-ink-3);background:var(--hub-line-2)}
 .nav a .ext{width:12px;height:12px;margin-left:auto;opacity:.45}
 .nav a .st + .ext{margin-left:4px}
@@ -118,12 +118,12 @@
 .run-grid span{display:block;font-size:11.5px;color:var(--hub-ink-3)}
 .run-grid b{font-size:18px;font-variant-numeric:tabular-nums}
 .card-f{display:flex;gap:8px;padding:12px 18px 16px;flex-wrap:wrap}
-.todo-l{list-style:none;margin:0;padding:0 8px 8px}
-.todo-l li a{display:block;padding:9px 10px;border-radius:12px;color:var(--hub-ink)}
-.todo-l li a:hover{background:var(--hub-surface-2)}
-.todo-l b{display:block;font-size:13.5px;font-weight:600;line-height:1.3}
-.todo-l span{font-size:12px;color:var(--hub-ink-3)}
-.todo-l i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.tdc-l{list-style:none;margin:0;padding:0 8px 8px}
+.tdc-l li a{display:block;padding:9px 10px;border-radius:12px;color:var(--hub-ink)}
+.tdc-l li a:hover{background:var(--hub-surface-2)}
+.tdc-l b{display:block;font-size:13.5px;font-weight:600;line-height:1.3}
+.tdc-l span{font-size:12px;color:var(--hub-ink-3)}
+.tdc-l i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
 .defs{margin:16px 0 0;font-size:12px;color:var(--hub-ink-3)}
 .defs summary{cursor:pointer;font-weight:600;color:var(--hub-ink-2)}
 .defs dl{display:grid;grid-template-columns:200px 1fr;gap:6px 14px;margin:10px 0 0}
@@ -194,7 +194,7 @@
   </aside>
   <div class="main">
     <header class="top">
-      <button class="burger" id="burger" type="button" aria-label="Modules"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button class="burger" id="burger" type="button" aria-label="Modules" aria-controls="side" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <h1 id="title">Overview</h1>
       <span class="fresh" id="fresh"><i></i><span id="freshT">Loading…</span></span>
       <span class="sp"></span>
@@ -235,7 +235,7 @@
             </section>
             <section class="card" aria-labelledby="tdT">
               <div class="card-h"><div><h2 id="tdT">To Do</h2><p id="tdP">What needs a person</p></div></div>
-              <ul class="todo-l" id="todoL"></ul>
+              <ul class="tdc-l" id="todoL"></ul>
             </section>
           </div>
         </div>
@@ -399,7 +399,26 @@
     if (same) { if (f.contentWindow.location.hash !== h) f.contentWindow.location.hash = h || "#"; }
     else f.setAttribute("src", src);
   }
-  $("burger").onclick = () => $("side").classList.toggle("open");
+  // The phone menu says whether it is open; closed, it is out of the Tab order.
+  const sideState = () => {
+    const open = $("side").classList.contains("open"), phone = matchMedia("(max-width: 900px)").matches;
+    $("burger").setAttribute("aria-expanded", String(open));
+    $("side").inert = phone && !open;
+  };
+  $("burger").onclick = () => { $("side").classList.toggle("open"); sideState(); };
+  new MutationObserver(sideState).observe($("side"), {attributes: true, attributeFilter: ["class"]});
+  matchMedia("(max-width: 900px)").addEventListener("change", sideState);
+  sideState();
+  // the open phone menu covers its button: Esc or a tap outside closes it
+  const sideClose = () => { $("side").classList.remove("open"); $("burger").focus({preventScroll: true}); };
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && $("side").classList.contains("open")) sideClose(); });
+  let sideSwallow = false;
+  addEventListener("pointerdown", (e) => {
+    sideSwallow = $("side").classList.contains("open") && !$("side").contains(e.target) && !$("burger").contains(e.target);
+    if (sideSwallow) sideClose();
+  }, true);
+  // the tap that closes the menu does not also press what was under it
+  addEventListener("click", (e) => { if (sideSwallow) { sideSwallow = false; e.preventDefault(); e.stopPropagation(); } }, true);
 
   /* ── theme ── */
   function setTheme(t, save) {
@@ -580,7 +599,7 @@
     LIST.view = X;
     $("dlRows").innerHTML = X.slice(0, LIST.shown).map((r) => `<tr><td class="mono">${esc(r.awb || "–")}</td><td>${esc(r.bu)}</td><td>${esc(r.mode)}</td>
       <td>${esc(r.step === "Awaiting Reciept" ? "Awaiting Receipt" : r.step)}</td><td>${r.eta ? dmy(r.eta) : "–"}</td><td>${r.ata ? dmy(r.ata) : "–"}</td>
-      <td class="n" style="${r.overdue > 0 ? "color:var(--hub-red);font-weight:600" : ""}">${r.overdue == null ? "–" : fmt(r.overdue)}</td>
+      <td class="n" style="${r.overdue > 0 ? "color:var(--hub-red-ink);font-weight:600" : ""}">${r.overdue == null ? "–" : fmt(r.overdue)}</td>
       <td>${r.ontime ? '<span class="hub-badge live plain">Yes</span>' : '<span class="hub-badge red plain">No</span>'}</td>
       <td>${esc(r.ffw || "–")}</td><td>${esc(r.agent || "–")}</td></tr>`).join("") ||
       `<tr><td colspan="10" class="hub-empty">${q ? "Nothing in this list matches." : "No shipments."}</td></tr>`;
