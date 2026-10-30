@@ -54,15 +54,25 @@ TAG = '<link rel="stylesheet" href="/static/glass.css">'
 print("\n1. ONE SHARED LOOK, ADDED ON TOP")
 for page in ("hub.html", "clearance.html", "index.html"):
     html = (ST / page).read_text(encoding="utf-8")
-    head = html.split("</head>")[0]
+    head = html.split("</head>")[0].replace('<script src="/static/glass.js" defer></script>', "")
     check("{0} loads the glass once, as its last stylesheet".format(page), html.count(TAG) == 1 and head.rstrip().endswith(TAG))
-check("Styles only: no script, no import, no web font, no image", "<script" not in CSS and "@import" not in CSS and "url(" not in CSS)
+check("Styles only: no script, no import, no web font, no image", "<script" not in CSS and "@import" not in CSS and not re.search(r"url\((?!#lg-)", CSS))
 check("Light, Charcoal, Midnight and the device's dark each have their glass",
       ':root[data-theme="dark"]{' in CSS and ':root[data-theme="dark"][data-dark="midnight"]{' in CSS and ":root:not([data-theme])" in CSS)
 check("Only floating layers blur (in-page cards stay cheap to draw)",
       "backdrop-filter" not in CSS.split("/* ── frosted cards")[1].split("/* ── floating layers")[0])
 check("Reduce transparency: solid, no light behind, no blur", "@media (prefers-reduced-transparency:reduce)" in CSS
       and "html::before{display:none}" in CSS.split("prefers-reduced-transparency")[1])
+JS = (ST / "glass.js").read_text(encoding="utf-8")
+for page in ("hub.html", "clearance.html", "index.html"):
+    html = (ST / page).read_text(encoding="utf-8")
+    check("{0} loads the Liquid Glass lens once, after the glass".format(page), html.count('<script src="/static/glass.js" defer></script>') == 1
+          and html.index("glass.css") < html.index("glass.js"))
+check("The lens: drawn in the page (no image file), Chromium only, off with reduce transparency, fetches and stores nothing",
+      "toDataURL" in JS and "Chrome\\/|Edg\\/" in JS and "prefers-reduced-transparency: reduce" in JS
+      and "fetch(" not in JS and "localStorage" not in JS and "feDisplacementMap" in JS)
+check("Without the lens (another browser) the frosted glass stays: the lens rules all need html.lg",
+      all(l.strip().startswith("html.lg") for l in CSS.splitlines() if "url(#lg-" in l))
 check("A browser that cannot blur gets solid bars and menus", "@supports not ((backdrop-filter:blur(1px))" in CSS)
 
 
@@ -114,8 +124,13 @@ else:
                   ink3: getComputedStyle(document.querySelector('#strip .chip .n')).color}; })()""")
             check("{0}: cards and number tiles are frosted glass (a translucent fill and a rim of light)".format(theme),
                   st["chip"].count("linear-gradient") == 2 and "rgba" in st["chip"] and st["card"].count("linear-gradient") == 2, st["chip"][:120])
-            check("{0}: the top bar and the sidebar blur what passes under them".format(theme),
-                  "blur" in st["top"] and "blur" in st["side"] and rgb(st["sideBg"]) and "rgba" in st["sideBg"], st)
+            check("{0}: the top bar and the sidebar bend and blur what passes under them (Liquid Glass lens)".format(theme),
+                  "url(\"#lg-lens\")" in st["top"] and "url(\"#lg-lens\")" in st["side"] and rgb(st["sideBg"]) and "rgba" in st["sideBg"], st)
+            fl = pg.evaluate("""(() => { const s = getComputedStyle(document.querySelector('.side')), t = getComputedStyle(document.querySelector('.top'));
+                return [document.documentElement.classList.contains('lg'), !!document.querySelector('#lg-defs filter#lg-lens feDisplacementMap'), s.borderTopLeftRadius, t.borderTopLeftRadius,
+                  document.scrollingElement.scrollWidth <= innerWidth]; })()""")
+            check("{0}: Liquid Glass is on: the lens is in the page, the sidebar and the top bar float as rounded glass".format(theme),
+                  fl[0] and fl[1] and fl[2] == "26px" and fl[3] == "22px" and fl[4], fl)
             check("{0}: a soft light sits behind the page".format(theme), "radial-gradient" in st["amb"], st["amb"])
             # muted text on the glass as drawn: sample the tile's own pixels next to its caption
             box = pg.locator('#strip .chip[data-list="all"] .n').bounding_box()
@@ -124,29 +139,36 @@ else:
             r = ratio(rgb(st["ink3"]), bg)
             check("{0}: muted text keeps 4.5:1 on the glass as drawn ({1:.2f}:1)".format(theme, r), r >= 4.5, (st["ink3"], bg))
             pg.locator("[data-todo-slot] .todo-b").click(); pg.wait_for_timeout(600)
-            check("{0}: the To Do menu is floating glass".format(theme),
-                  "blur" in pg.evaluate("getComputedStyle(document.querySelector('.todo-p')).backdropFilter"))
+            check("{0}: the To Do menu is thick floating glass".format(theme),
+                  "lg-frost" in pg.evaluate("getComputedStyle(document.querySelector('.todo-p')).backdropFilter"))
             pg.keyboard.press("Escape"); pg.mouse.click(700, 880); pg.wait_for_timeout(300)
             pg.locator('#strip .chip[data-list="customs"]').click(); pg.wait_for_timeout(900)
             check("{0}: the list's sheet is glass over a softened page".format(theme),
-                  "blur" in pg.evaluate("getComputedStyle(document.querySelector('.dl-b')).backdropFilter")
+                  "lg-frost" in pg.evaluate("getComputedStyle(document.querySelector('.dl-b')).backdropFilter")
                   and "blur" in pg.evaluate("getComputedStyle(document.querySelector('.dl')).backdropFilter"))
             pg.keyboard.press("Escape"); pg.wait_for_timeout(400)
             check("{0}: chart bars are glossy".format(theme), "linear-gradient" in pg.evaluate("getComputedStyle(document.querySelector('.gb-row u')).backgroundImage"))
             check("{0}: no page error".format(theme), not errs, errs)
             pg.close()
+        pg = br.new_page(viewport={"width": 1440, "height": 900})
+        pg.add_init_script("sessionStorage.setItem('ct-intro','1')")
+        for h in ("#ata", "#clearance"):
+            pg.goto(BASE + "/hub" + h); pg.wait_for_timeout(2000)
+            check("A page opened in the hub ({0}) still fits the window: one scroll, not two".format(h),
+                  pg.evaluate("document.scrollingElement.scrollHeight <= innerHeight + 1"))
+        pg.close()
         # Clearance and the run page: the same glass
         pg = br.new_page(viewport={"width": 1440, "height": 900})
         pg.add_init_script("sessionStorage.setItem('ct-intro','1')")
         pg.goto(BASE + "/clearance"); pg.wait_for_timeout(2500)
         check("Clearance: its cards are glass and its sticky filters blur what scrolls under them",
               pg.evaluate("getComputedStyle(document.querySelector('.card')).backgroundImage").count("linear-gradient") == 2
-              and "blur" in pg.evaluate("getComputedStyle(document.querySelector('.filters')).backdropFilter"))
+              and "lg-frost" in pg.evaluate("getComputedStyle(document.querySelector('.filters')).backdropFilter"))
         check("Clearance: chart bars have a light edge", pg.evaluate("(() => { const b = document.querySelector('.chart rect.b'); return !b || getComputedStyle(b).stroke !== 'none'; })()"))
         pg.goto(BASE + "/"); pg.wait_for_timeout(2500)
         check("The run page: cards are glass, the top bar blurs",
               pg.evaluate("getComputedStyle(document.querySelector('.card')).backgroundImage").count("linear-gradient") == 2
-              and "blur" in pg.evaluate("getComputedStyle(document.querySelector('.appbar')).backdropFilter"))
+              and "lg-lens" in pg.evaluate("getComputedStyle(document.querySelector('.appbar')).backdropFilter"))
         pg.close()
         # reduce transparency
         ctx = br.new_context(viewport={"width": 1440, "height": 900})

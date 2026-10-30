@@ -17,65 +17,78 @@
    only floating layers are. "Reduce transparency" turns it back to solid.
 ══════════════════════════════════════════════════════════════ */
 :root{
-  --gl-fill:linear-gradient(180deg,rgba(255,255,255,.82),rgba(255,255,255,.62));
+  --gl-fill:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.50));
   --gl-rim:linear-gradient(140deg,rgba(255,255,255,.98),rgba(255,255,255,.4) 26%,rgba(255,255,255,0) 52%,rgba(255,255,255,.18) 78%,rgba(255,255,255,.75));
   --gl-float:rgba(250,250,252,.78);
   --gl-bar:rgba(248,247,245,.82);
   --gl-side:rgba(242,241,238,.62);
   --gl-hair:rgba(0,0,0,.07);
-  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.9),0 1px 2px rgba(31,38,51,.04),0 8px 26px rgba(31,38,51,.07);
+  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.95),inset -1px -1px 0 -.5px rgba(255,255,255,.6),inset 0 0 18px rgba(255,255,255,.28),0 1px 2px rgba(31,38,51,.04),0 10px 30px rgba(31,38,51,.08);
   --gl-shadow-hi:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.95),0 2px 4px rgba(31,38,51,.05),0 14px 34px rgba(31,38,51,.10);
   --gl-float-shadow:0 0 0 .5px rgba(0,0,0,.08),inset 0 1px 0 rgba(255,255,255,.85),0 18px 48px rgba(31,38,51,.16),0 2px 8px rgba(31,38,51,.06);
   --gl-blur:saturate(190%) blur(28px);
+  --gl-lg-rim:inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.95),inset -1px -1px 0 -.5px rgba(255,255,255,.55),inset 0 0 0 .5px rgba(0,0,0,.05),inset 0 0 14px rgba(255,255,255,.35);
+  --gl-capsule:rgba(255,255,255,.42);
+  --gl-menu:rgba(250,250,251,.93);
+  --gl-drop:rgba(255,255,255,.62);
   --gl-gloss:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,.08) 55%,rgba(255,255,255,0));
   --gl-ambient:
-    radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.20),transparent 70%),
-    radial-gradient(48vw 52vh at 102% 14%,rgba(0,113,227,.10),transparent 70%),
-    radial-gradient(62vw 60vh at 58% 112%,rgba(48,176,199,.11),transparent 70%),
-    radial-gradient(40vw 40vh at 30% 55%,rgba(255,149,0,.05),transparent 70%);
+    radial-gradient(58vw 58vh at 4% -6%,rgba(255,205,17,.34),transparent 68%),
+    radial-gradient(46vw 54vh at 104% 10%,rgba(0,113,227,.17),transparent 70%),
+    radial-gradient(60vw 62vh at 62% 114%,rgba(48,176,199,.20),transparent 70%),
+    radial-gradient(36vw 42vh at 34% 58%,rgba(255,149,0,.10),transparent 70%),
+    radial-gradient(30vw 34vh at 82% 62%,rgba(175,82,222,.07),transparent 70%);
 }
 /* Charcoal (dark) */
 :root[data-theme="dark"]{
-  --gl-fill:linear-gradient(180deg,rgba(48,48,52,.62),rgba(30,30,33,.50));
+  --gl-fill:linear-gradient(180deg,rgba(50,50,56,.56),rgba(28,28,32,.42));
   --gl-rim:linear-gradient(140deg,rgba(255,255,255,.26),rgba(255,255,255,.08) 26%,rgba(255,255,255,0) 52%,rgba(255,255,255,.03) 78%,rgba(255,255,255,.12));
   --gl-float:rgba(36,36,40,.78);
   --gl-bar:rgba(22,22,24,.80);
   --gl-side:rgba(24,24,26,.58);
   --gl-hair:rgba(255,255,255,.06);
-  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.28);
+  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.2),inset -1px -1px 0 -.5px rgba(255,255,255,.08),inset 0 0 18px rgba(255,255,255,.04),0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.3);
   --gl-shadow-hi:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.1),0 2px 4px rgba(0,0,0,.3),0 16px 38px rgba(0,0,0,.36);
   --gl-float-shadow:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09),0 22px 56px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3);
   --gl-gloss:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.05) 55%,rgba(255,255,255,0));
+  --gl-lg-rim:inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.28),inset -1px -1px 0 -.5px rgba(255,255,255,.1),inset 0 0 0 .5px rgba(255,255,255,.06),inset 0 0 14px rgba(255,255,255,.05);
+  --gl-capsule:rgba(255,255,255,.08);
+  --gl-drop:rgba(255,255,255,.16);
+  --gl-menu:rgba(34,34,38,.94);
   --gl-ambient:
-    radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.10),transparent 70%),
-    radial-gradient(48vw 52vh at 102% 14%,rgba(10,132,255,.13),transparent 70%),
-    radial-gradient(62vw 60vh at 58% 112%,rgba(48,176,199,.09),transparent 70%),
-    radial-gradient(40vw 40vh at 30% 55%,rgba(191,90,242,.04),transparent 70%);
+    radial-gradient(58vw 58vh at 4% -6%,rgba(255,205,17,.15),transparent 68%),
+    radial-gradient(46vw 54vh at 104% 10%,rgba(10,132,255,.22),transparent 70%),
+    radial-gradient(60vw 62vh at 62% 114%,rgba(48,176,199,.15),transparent 70%),
+    radial-gradient(34vw 40vh at 30% 58%,rgba(191,90,242,.09),transparent 70%);
 }
 /* Midnight (the navy dark) */
 :root[data-theme="dark"][data-dark="midnight"]{
-  --gl-fill:linear-gradient(180deg,rgba(34,50,80,.60),rgba(18,27,45,.50));
+  --gl-fill:linear-gradient(180deg,rgba(36,54,88,.54),rgba(18,27,45,.42));
   --gl-rim:linear-gradient(140deg,rgba(170,200,255,.30),rgba(170,200,255,.09) 26%,rgba(170,200,255,0) 52%,rgba(170,200,255,.04) 78%,rgba(170,200,255,.14));
   --gl-float:rgba(22,33,54,.78);
   --gl-bar:rgba(12,19,34,.80);
   --gl-side:rgba(14,22,38,.58);
   --gl-hair:rgba(170,200,255,.08);
+  --gl-lg-rim:inset 1.5px 1.5px 0 -.5px rgba(190,215,255,.32),inset -1px -1px 0 -.5px rgba(190,215,255,.12),inset 0 0 0 .5px rgba(170,200,255,.08),inset 0 0 14px rgba(170,200,255,.06);
+  --gl-capsule:rgba(150,185,255,.09); --gl-drop:rgba(170,200,255,.18); --gl-menu:rgba(20,30,50,.94);
   --gl-ambient:
-    radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.07),transparent 70%),
-    radial-gradient(48vw 52vh at 102% 14%,rgba(59,155,255,.20),transparent 70%),
-    radial-gradient(62vw 60vh at 58% 112%,rgba(100,210,255,.11),transparent 70%),
-    radial-gradient(40vw 40vh at 30% 55%,rgba(94,92,230,.07),transparent 70%);
+    radial-gradient(58vw 58vh at 4% -6%,rgba(255,205,17,.11),transparent 68%),
+    radial-gradient(46vw 54vh at 104% 10%,rgba(59,155,255,.30),transparent 70%),
+    radial-gradient(60vw 62vh at 62% 114%,rgba(100,210,255,.17),transparent 70%),
+    radial-gradient(34vw 40vh at 30% 58%,rgba(94,92,230,.13),transparent 70%);
 }
 /* Auto on the hub (no data-theme): the device's dark */
 @media (prefers-color-scheme:dark){ :root:not([data-theme]){
-  --gl-fill:linear-gradient(180deg,rgba(48,48,52,.62),rgba(30,30,33,.50));
+  --gl-fill:linear-gradient(180deg,rgba(50,50,56,.56),rgba(28,28,32,.42));
   --gl-rim:linear-gradient(140deg,rgba(255,255,255,.26),rgba(255,255,255,.08) 26%,rgba(255,255,255,0) 52%,rgba(255,255,255,.03) 78%,rgba(255,255,255,.12));
   --gl-float:rgba(36,36,40,.78); --gl-bar:rgba(22,22,24,.80); --gl-side:rgba(24,24,26,.58); --gl-hair:rgba(255,255,255,.06);
-  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.28);
+  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.2),inset -1px -1px 0 -.5px rgba(255,255,255,.08),inset 0 0 18px rgba(255,255,255,.04),0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.3);
   --gl-shadow-hi:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.1),0 2px 4px rgba(0,0,0,.3),0 16px 38px rgba(0,0,0,.36);
   --gl-float-shadow:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09),0 22px 56px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3);
   --gl-gloss:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.05) 55%,rgba(255,255,255,0));
-  --gl-ambient:radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.10),transparent 70%),radial-gradient(48vw 52vh at 102% 14%,rgba(10,132,255,.13),transparent 70%),radial-gradient(62vw 60vh at 58% 112%,rgba(48,176,199,.09),transparent 70%);
+  --gl-lg-rim:inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.28),inset -1px -1px 0 -.5px rgba(255,255,255,.1),inset 0 0 0 .5px rgba(255,255,255,.06),inset 0 0 14px rgba(255,255,255,.05);
+  --gl-capsule:rgba(255,255,255,.08); --gl-drop:rgba(255,255,255,.16); --gl-menu:rgba(34,34,38,.94);
+  --gl-ambient:radial-gradient(58vw 58vh at 4% -6%,rgba(255,205,17,.15),transparent 68%),radial-gradient(46vw 54vh at 104% 10%,rgba(10,132,255,.22),transparent 70%),radial-gradient(60vw 62vh at 62% 114%,rgba(48,176,199,.15),transparent 70%);
 }}
 
 /* ── the light behind everything ── */
@@ -121,12 +134,56 @@ html::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 :root[data-theme="dark"] .chart rect.b{stroke:rgba(255,255,255,.22);filter:drop-shadow(0 3px 8px rgba(0,0,0,.45))}
 :root svg circle[data-tip]{filter:drop-shadow(0 2px 5px rgba(0,0,0,.14))}
 
+
+/* ══ LIQUID GLASS (iOS 26) ══════════════════════════════════════
+   What sits over the content floats, and its edges bend the light like a
+   lens: the bars and the sidebar float as rounded panels, menus and sheets
+   are thick glass, controls are glass capsules with a lit rim. The lens is
+   an SVG filter (/static/glass.js adds it and sets html.lg); only Chromium
+   (Chrome, Edge) can lens a backdrop, so without .lg the frosted glass
+   above stays as it is. */
+/* the bars and the sidebar float, as in iPadOS 26 */
+@media (min-width:901px){
+  :root .side{top:10px;height:calc(100vh - 20px);height:calc(100dvh - 20px);margin:10px 0 10px 10px;border-radius:26px;border:0!important;
+    box-shadow:var(--gl-lg-rim),0 18px 50px rgba(31,38,51,.12)}
+}
+@media (max-width:900px){ :root .side{inset:8px auto 8px 8px;border-radius:26px;border:0!important;box-shadow:var(--gl-lg-rim),0 18px 50px rgba(0,0,0,.25)} }
+:root .top{top:8px;margin:8px 12px 0 14px;height:calc(var(--hub-top) - 8px);border-radius:22px;border:0!important;box-shadow:var(--gl-lg-rim),0 8px 28px rgba(31,38,51,.10)}
+:root .ata-tabs{margin:8px 12px 0 14px;border-radius:999px;border:0!important;padding:6px 8px!important;box-shadow:var(--gl-lg-rim),0 6px 20px rgba(31,38,51,.08)}
+:root .ata-tabs:not([hidden]) + #embedF{height:calc(100vh - var(--hub-top) - 58px);height:calc(100dvh - var(--hub-top) - 58px)}
+/* glass capsules: buttons, the theme switch, Globe | Map, Ask ATLAS */
+:root :is(.hub-pill:not(.primary),.tb-ic,.dl-x,.hv-x,.gb-ctl button){background:var(--gl-capsule)!important;box-shadow:var(--gl-lg-rim)!important;border-color:transparent!important}
+:root :is(.seg,.tb-th,.pf-th){box-shadow:var(--gl-lg-rim)!important}
+:root .seg-thumb{background:var(--gl-drop)!important;box-shadow:var(--gl-lg-rim),0 2px 8px rgba(0,0,0,.14)!important}
+:root :is(.hub-askfab,.fab){border-radius:999px;box-shadow:var(--gl-lg-rim),0 14px 36px rgba(31,38,51,.18)!important}
+/* tinted glass: CAT yellow you can almost see through, lit on the rim */
+:root :is(.hub-pill.primary,.nav a[aria-current="page"],.nav-ink){background-color:#ffcd11;
+  box-shadow:inset 1.5px 1.5px 0 -.5px rgba(255,255,255,.9),inset -1px -1px 0 -.5px rgba(255,255,255,.5),inset 0 0 12px rgba(255,255,255,.3),0 6px 18px rgba(255,190,0,.32)!important}
+/* the menus and sheets: thick glass with a lit rim */
+:root :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.filters){box-shadow:var(--gl-lg-rim),var(--gl-float-shadow)!important}
+:root :is(.todo-p,.srch-p,.gb-card,.dl-b){border-radius:24px!important}
+/* the lens, where the browser can make one */
+html.lg :is(.top,.appbar,.ata-tabs,.side){backdrop-filter:url(#lg-lens) saturate(175%) brightness(1.03)}
+html.lg :is(.seg,.tb-th,.pf-th,.hub-askfab,.fab,.gb-ctl button){backdrop-filter:url(#lg-lens) saturate(180%) brightness(1.04)}
+html.lg :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.filters){backdrop-filter:url(#lg-frost) saturate(170%) brightness(1.03)}
+/* the menus that open from the top bar (To Do, search) are lists of words: thicker glass, as
+   Apple's menus are, so nothing behind competes with what they say */
+:root :is(.todo-p,.srch-p){background:color-mix(in srgb,var(--gl-float) 100%,transparent)!important;background-color:var(--gl-menu)!important}
+/* on a phone the menu slides over the page: thicker glass, so its words stand clear */
+@media (max-width:900px){
+  :root .side{background:color-mix(in srgb,var(--gl-float) 100%,transparent)!important}
+  html.lg .side{backdrop-filter:url(#lg-frost) saturate(170%) brightness(1.03)}
+}
+
 /* glass is only glass where the browser can blur; elsewhere, and with "reduce transparency", solid */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   :root{--gl-float:var(--hub-surface,var(--surface,#fff));--gl-bar:var(--hub-bg,var(--bg,#f6f5f3));--gl-side:var(--hub-bg-2,var(--surface-2,#efeeeb))}
 }
 @media (prefers-reduced-transparency:reduce){
   html::before{display:none}
+  :root .side,:root .top{margin:0;border-radius:0;top:0}
+  :root .side{height:100vh}
+  :root .top{height:var(--hub-top)}
   :root :is(.card,.chip,.hub-card,.hv-card,.hv-tile,.kpis,.stat,.off-card){background:var(--hub-surface,var(--surface))!important}
   :root :is(.top,.appbar,.side,.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.fab,.hub-askfab,.filters,.ata-tabs,.seg,.tb-th,.pf-th){background:var(--hub-surface,var(--surface))!important;backdrop-filter:none;-webkit-backdrop-filter:none}
 }
