@@ -181,12 +181,21 @@ sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light');
         cl.keyboard.press("/"); cl.wait_for_timeout(500)
         check("Clearance: '/' opens the search (it never did)", cl.locator(".srch-p").is_visible() or cl.locator("#srchPanel").is_visible())
         check("No console error on Clearance", not cerr, cerr)
+        cl2 = br.new_page(viewport={"width": 1366, "height": 768})
+        cl2.route("**/api/clearance", lambda r: r.abort())
+        cl2.goto(BASE + "/clearance"); cl2.wait_for_timeout(1500)
+        check("Clearance: an export that cannot be loaded says so (it stayed blank)", "could not be loaded" in cl2.locator("#src").inner_text())
+        cl2.close()
         idx = br.new_page(viewport={"width": 1366, "height": 768})
         ierr = []
         idx.on("console", lambda m: m.type == "error" and ierr.append(m.text))
         idx.add_init_script("sessionStorage.setItem('ct-intro','1')")
         idx.goto(BASE + "/"); idx.wait_for_timeout(2500)
         check("No console error on the run page", not ierr, ierr)
+        check("Run page: before the first update 'On the way' says Loading, not a false 'Nothing on the way'",
+              'id="fleetN">—</b>' in IDX and "<span>Loading…</span>" in IDX)
+        check("Run page: the Access tables and the BOE list say when they could not be loaded",
+              "catch(loadFailed('acRows', 'the accounts'))" in IDX and "loadFailed('poRows', 'the BOE jobs')" in IDX)
         br.close()
 
 print("\n{0} passed, {1} failed{2}".format(len(PASSED), len(FAILED), ", {0} skipped".format(len(SKIPPED)) if SKIPPED else ""))
