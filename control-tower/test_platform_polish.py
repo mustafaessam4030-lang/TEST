@@ -130,9 +130,10 @@ def tokens(block):
 
 
 LIGHT = tokens(CSS.split("@media (prefers-color-scheme:dark)")[0])
-DARK = tokens(CSS.split(':root[data-theme="dark"]')[1])
+DARK = tokens(CSS.split(':root[data-theme="dark"]{')[1].split("}")[0])           # Charcoal
+MIDNIGHT = tokens(CSS.split(':root[data-theme="dark"][data-dark="midnight"]{')[1].split("}")[0])
 low = []
-for name, T in (("light", LIGHT), ("dark", DARK)):
+for name, T in (("light", LIGHT), ("dark", DARK), ("midnight", dict(DARK, **MIDNIGHT))):
     for ink in ("hub-ink-3", "hub-green-ink", "hub-amber-ink", "hub-red-ink", "hub-teal-ink"):
         for bg in ("hub-bg", "hub-bg-2", "hub-surface", "hub-surface-2"):
             r = ratio(T[ink], T[bg])
@@ -148,8 +149,13 @@ check("The hub's own small grey labels use the readable token", ".grp{" in HUB a
 print("\n2c. ONE APPLE LOOK")
 IDX_ALL = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
 PCSS = (HERE / "dashboard" / "static" / "platform.css").read_text(encoding="utf-8")
-check("Action is Apple's system blue on every page (the console's indigo is gone)",
-      "--brand:#0071E3" in IDX_ALL and "--solid:#0071E3" in PCSS and LIGHT["hub-blue"] == "#0071e3")
+check("Action is CAT Yellow with black on it on every page (Caterpillar's colours, Apple's design)",
+      "--solid:#FFCD11; --on-solid:#1D1D1F;" in IDX_ALL and "--solid:#FFCD11; --on-solid:#1D1D1F;" in PCSS
+      and LIGHT["hub-accent"] == "#ffcd11" and LIGHT["hub-on-accent"] == "#1d1d1f")
+check("Where the brand colour is text it is a deep gold, 4.5:1 or better (yellow text on white would not be read)",
+      ratio(LIGHT["hub-accent-ink"], "#ffffff") >= 4.5 and ratio(LIGHT["hub-accent-ink"], LIGHT["hub-bg"]) >= 4.5
+      and "--brand:#7A5C00" in IDX_ALL)
+check("The focus ring stands out: 3:1 or better against the page", ratio(LIGHT["hub-focus"], LIGHT["hub-bg"]) >= 3)
 check("Dark mode is a deep charcoal (Apple's graphite), the same on the hub and the pages inside it",
       DARK["hub-bg"] == "#111113" and DARK["hub-surface"] == "#1c1c1e" and "--bg:#111113; --surface:#1C1C1E" in IDX_ALL)
 check("Status text on the hub uses the readable -ink colours (the headline, on time / late, badges)",

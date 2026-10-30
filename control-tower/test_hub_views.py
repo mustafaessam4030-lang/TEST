@@ -112,8 +112,8 @@ NAV = [m["id"] for m in H.MODULES if m.get("nav", True)]
 check("Removed from the menu: Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History, Human Action, Master Data, Settings",
       not set(NAV) & {"documents", "carriers", "analytics", "reports", "optimization", "history", "human", "masterdata", "settings"}, NAV)
 check("...and their hub views are gone", not any("V.{0} = {{".format(i) in js for i in ("carriers", "analytics", "reports", "documents", "ata", "masterdata")))
-check("Settings and the theme are small icons in the top bar", 'id="setTop" aria-label="Settings"' in html and 'class="tb-th" role="group" aria-label="Theme"' in html
-      and 'aria-label="Light theme"' in html and 'aria-label="Dark theme"' in html)
+check("Settings and the theme are small icons in the top bar (Light, two darks, Auto)", 'id="setTop" aria-label="Settings"' in html and 'class="tb-th" role="group" aria-label="Theme"' in html
+      and 'aria-label="Light theme"' in html and 'aria-label="Dark theme: Charcoal"' in html and 'aria-label="Dark theme: Midnight"' in html)
 check("No Human Action page in the hub: its tasks are on To Do", not any(m["id"] == "human" for m in H.MODULES)
       and 'PAGE_OF = {overview: "ata", shipments: "runs", po: "po", human: "todo"' in js)
 from dashboard import todo as TD  # noqa: E402

@@ -175,6 +175,55 @@ else:
         check("Other pages have no ATA tabs", pg.evaluate("document.getElementById('ataTabs').hidden"))
         check("No console error anywhere above", not [e for e in errs if "favicon" not in e], errs)
         pg.close()
+        # Two darks side by side (Charcoal, Midnight), a button each; CAT yellow for the chosen page
+        tp = br.new_page(viewport={"width": 1440, "height": 950})
+        terr = []
+        tp.on("pageerror", lambda e: terr.append(str(e)))
+        tp.add_init_script("sessionStorage.setItem('ct-intro','1');if(!localStorage.getItem('ct-theme'))localStorage.setItem('ct-theme','light')")
+        tp.goto(BASE + "/hub"); tp.wait_for_timeout(2500)
+        names = tp.eval_on_selector_all("#theme button", "els => els.map(e => e.getAttribute('aria-label'))")
+        check("A theme button each: Light, Dark Charcoal, Dark Midnight, Auto",
+              names == ["Light theme", "Dark theme: Charcoal", "Dark theme: Midnight", "Follow the device"], names)
+        sel = tp.evaluate("getComputedStyle(document.querySelector('.nav a[aria-current=\"page\"]')).backgroundColor")
+        check("The chosen page in the sidebar is CAT Yellow with black on it", sel == "rgb(255, 205, 17)", sel)
+        tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(600)
+        bg = tp.evaluate("getComputedStyle(document.body).backgroundColor")
+        check("Midnight: the navy dark", bg == "rgb(11, 18, 32)" and tp.evaluate("document.documentElement.dataset.dark") == "midnight", bg)
+        tp.locator('#theme button[data-t="dark"]').click(); tp.wait_for_timeout(600)
+        check("Charcoal: the charcoal dark", tp.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(17, 17, 19)"
+              and not tp.evaluate("document.documentElement.dataset.dark"))
+        tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(300)
+        tp.reload(); tp.wait_for_timeout(2500)
+        check("The choice is remembered (Midnight after a reload)", tp.evaluate("document.documentElement.dataset.dark") == "midnight"
+              and tp.get_attribute('#theme button[data-t="midnight"]', "aria-pressed") == "true")
+        tp.evaluate("location.hash = '#clearance'"); tp.wait_for_timeout(2500)
+        inner = tp.evaluate("(() => { const d = document.getElementById('embedF').contentDocument; return [d.documentElement.dataset.theme, d.documentElement.dataset.dark, getComputedStyle(d.body).backgroundColor]; })()")
+        check("A page inside the hub follows it (Clearance in Midnight)", inner[0] == "dark" and inner[1] == "midnight", inner)
+        tp.evaluate("location.hash = ''"); tp.wait_for_timeout(1200)
+        # the sidebar: minimise and maximise
+        tp.locator('#theme button[data-t="light"]').click(); tp.wait_for_timeout(300)
+        w0 = tp.locator("#side").bounding_box()["width"]
+        tp.locator("#sideT").click(); tp.wait_for_timeout(600)
+        w1 = tp.locator("#side").bounding_box()["width"]
+        check("The sidebar minimises to its icons", w1 < 90 < w0 and tp.get_attribute("#sideT", "aria-expanded") == "false", (w0, w1))
+        check("...every link keeps its name (screen readers, tooltips)",
+              tp.evaluate("[...document.querySelectorAll('#nav a')].every(a => a.textContent.trim().length > 1 && a.title)"))
+        check("...ATLAS keeps its icon", tp.locator('#nav a[data-mod="atlas"] .axf').is_visible())
+        tp.reload(); tp.wait_for_timeout(2000)
+        check("...and stays minimised after a reload", tp.locator("#side").bounding_box()["width"] < 90)
+        tp.locator("#sideT").click(); tp.wait_for_timeout(600)
+        check("...and maximises again", tp.locator("#side").bounding_box()["width"] > 200 and tp.get_attribute("#sideT", "aria-expanded") == "true")
+        # ATLAS's chat in the Messages style
+        tp.locator("#askTop").click(); tp.wait_for_timeout(2500)
+        ch = tp.frame_locator("#chatF")
+        ch.locator("#chatIn").fill("How many shipments are past due?"); ch.locator("#chatIn").press("Enter"); tp.wait_for_timeout(2500)
+        me = ch.locator(".msg.me .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color, getComputedStyle(e).borderBottomRightRadius]")
+        bot = ch.locator(".msg.bot:not(.think) .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e).borderBottomLeftRadius]")
+        check("Chat: what you write is a CAT-yellow bubble with black text and its tail corner",
+              me[0] == "rgb(255, 205, 17)" and me[1] == "rgb(29, 29, 31)" and me[2] == "6px", me)
+        check("Chat: ATLAS answers in a grey bubble with its tail corner", bot[0] == "rgb(233, 233, 235)" and bot[1] == "6px", bot)
+        check("No error with the themes, the sidebar or the chat", not terr, terr)
+        tp.close()
         dk = br.new_page(viewport={"width": 1440, "height": 950})
         derr = []
         dk.on("pageerror", lambda e: derr.append(str(e)))
