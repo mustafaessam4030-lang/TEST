@@ -286,3 +286,21 @@ press and focus style, less glass (top bar only, small overlays).
 - Kept removed, as asked earlier: Performance Dashboards (KPI catalogue and
   reports), Optimization, Master Data, Documents, Carrier Analysis.
 - Tests: `test_hub_experience.py`.
+
+## 14. Caterpillar colours, two darks, the sidebar, the chat (30 Oct 2026)
+
+- **CAT in Apple's design**: CAT Yellow `#FFCD11` with black on it for action
+  and selection (primary buttons, the chosen page in the sidebar, the send
+  button, what you write in the chat); a deep gold `#7A5C00` where the brand
+  colour is text (4.5:1 on white); the focus ring 3:1 or better. Blue stays for
+  information (in transit, carrier routes); green, amber, red for status only.
+- **Two darks until the team decides**: Charcoal (`#111113`) and Midnight (the
+  earlier navy, `#0b1220`), a button each beside Light and Auto in the top bar;
+  remembered (`ct-theme`, `ct-dark`), carried to every page inside the hub
+  (`&dark=` and the `hub-theme` message) and to standalone pages.
+- **Sidebar**: Apple's sidebar toggle minimises it to its icons and maximises it
+  again (HIG: let people hide the sidebar; never hidden by default);
+  remembered (`hub-side`); names kept for screen readers and as tooltips.
+- **ATLAS's chat, Messages style**: your words in a CAT-yellow bubble on the
+  right, ATLAS's in a grey bubble on the left with its face at the foot, the
+  tail corner, a typing bubble while it answers. Styles only.
