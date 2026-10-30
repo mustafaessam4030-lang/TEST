@@ -2523,6 +2523,9 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 @media(prefers-reduced-motion:reduce){.ax-poke,.ax-poke.out,.atlas[class*=" r-"] .atlas-fig,
   .atlas[class*=" r-"] .ax-arm-l,.atlas[class*=" r-"] .ax-arm-r,.atlas[class*=" r-"] .ax-head,
   .atlas[class*=" r-"] .ax-steam{animation:none}}
+/* no layout shift: the KPI row keeps its loaded height until the first state arrives */
+#kpis:empty{min-height:123px}
+@media (max-width:1000px){#kpis:empty{min-height:142px}}
 </style>
 </head>
 <body>
@@ -6805,8 +6808,12 @@ function connect(){
     s.onerror = () => { try { s.close(); } catch (e) {} setTimeout(poll, 1500); };
   } catch (err) { poll(); }
 }
+// The live stream dropped (a proxy restart, a network blip): read the state every 2 s while the
+// tab is visible, and go back to the stream after a few reads instead of polling for good.
+let polls = 0;
 function poll(){
-  fetch('/api/state').then((r) => r.json()).then(schedule).catch(() => {});
+  if (!document.hidden) fetch('/api/state').then((r) => r.json()).then(schedule).catch(() => {});
+  if (++polls >= 5){ polls = 0; connect(); return; }
   setTimeout(poll, 2000);
 }
 platformReady.then(connect);
