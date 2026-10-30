@@ -1417,13 +1417,16 @@ class Handler(BaseHTTPRequestHandler):
                        # The page the question was asked from (a known page name only).
                        "page": str(raw_context.get("page") or "") if str(raw_context.get("page") or "") in (
                            "clearance", "overview", "live", "shipments", "analysis", "exceptions", "human",
-                           "logs", "systems", "atlas", "settings", "access", "po") else "",
+                           "logs", "systems", "atlas", "settings", "access", "po",
+                           "hub", "tracking", "todo") else "",
                        # The filters on that page, so ATLAS answers about what is on
                        # screen. Short strings only; checked against the export later.
+                       # On the hub: the stage list and BU open on screen, if any.
                        "view": {k: str(v)[:80] for k, v in (raw_context.get("view") or {}).items()
-                                if k in ("bu", "mode", "div", "ffw", "agent", "status", "group", "month", "flag", "more")
+                                if k in ("bu", "mode", "div", "ffw", "agent", "status", "group", "month", "flag", "more",
+                                         "stage")
                                 and isinstance(v, str)}
-                       if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)
+                       if raw_context.get("page") in ("clearance", "hub", "tracking") and isinstance(raw_context.get("view"), dict)
                        else {},
                        "po_id": re.sub(r"[^0-9a-z-]", "", str(
                            raw_context.get("po_id") or ""))[:40],
@@ -1456,7 +1459,20 @@ class Handler(BaseHTTPRequestHandler):
             with _trace.span("server.state"):
                 state = _assistant_state()
             with _trace.span("answer"):
-                reply = assistant.answer(question, state, context)
+                # Platform numbers (stages, past due, on time, To Do) come from
+                # ATLAS's read-only tools, counted with the hub's own rules and
+                # only this person's BUs; anything else is the rules' answer.
+                reply = None
+                if not assistant.conduct_of(question):
+                    try:
+                        from dashboard import atlas_tools
+                        reply = atlas_tools.answer(question, state, dict(
+                            context, _can=self._acc_can, _bus=self._acc_bus()))
+                    except Exception:
+                        logging.getLogger("dashboard.server").exception("ATLAS tools failed")
+                        reply = None
+                if reply is None:
+                    reply = assistant.answer(question, state, context)
         finally:
             _research.progress_done(context.get("progress_id"))
         _record = _trace.span("server.record")

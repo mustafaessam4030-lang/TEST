@@ -541,8 +541,8 @@ check("a role without clearance.view never gets clearance figures from ATLAS",
       atlas_skills.detect("which BU is the worst?", _run0, {"clearance": "0"}) is None
       and atlas_skills.detect("summarise this view", _run0, {"clearance": "0", "page": "clearance"}) is None)
 _srv = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "server.py"), encoding="utf-8").read()
-check("the server takes the view only from the Clearance page, short strings, known keys",
-      'if raw_context.get("page") == "clearance" and isinstance(raw_context.get("view"), dict)' in _srv
+check("the server takes the view only from the Clearance page (or the hub's own pages), short strings, known keys",
+      'if raw_context.get("page") in ("clearance", "hub", "tracking") and isinstance(raw_context.get("view"), dict)' in _srv
       and 'str(v)[:80]' in _srv)
 
 print("\nWhere shipments clear: the map, the headline, forwarder and agent filters")
