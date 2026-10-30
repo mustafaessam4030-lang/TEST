@@ -127,10 +127,12 @@ else:
         pg.on("console", lambda m: m.type == "error" and errs.append(m.text)); pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light')")
         pg.goto(BASE + "/hub"); pg.wait_for_timeout(3000)
-        heads = pg.eval_on_selector_all(".sec-h h2", "els => els.map(e => e.textContent)")
-        check("The Overview has a Now and a Recent activity section, in that order", heads == ["Now", "Recent activity"], heads)
+        heads = pg.eval_on_selector_all("[data-view='overview'] .card-h h2", "els => els.map(e => e.textContent)")
+        check("The Overview is clean: numbers and cards with short titles, no paragraph of text above them",
+              pg.locator("#headline").count() == 0 and pg.locator("#sub").count() == 0 and pg.locator(".sec-h").count() == 0
+              and "Exceptions" in heads and "Recent activity" in heads, heads)
         exc = pg.eval_on_selector_all("#exL b", "els => els.map(e => e.textContent)")
-        check("Operational exceptions are listed with their numbers", "Open and past due" in exc and pg.locator("#exL em").first.inner_text() == "5", exc)
+        check("Exceptions are listed with their numbers", "Open and past due" in exc and pg.locator("#exL em").first.inner_text() == "5", exc)
         pg.locator("#exL a").first.click(); pg.wait_for_timeout(1200)
         check("An exception opens the rows behind it", not pg.evaluate("document.getElementById('dl').hidden")
               and "past due" in pg.locator("#dlT").inner_text().lower(), pg.locator("#dlT").inner_text())
@@ -145,16 +147,16 @@ else:
         check("The To Do card is compact: three tasks at most", pg.locator("#todoL li").count() <= 3)
         # Shipment Tracking around the globe
         pg.evaluate("location.hash = '#tracking'"); pg.wait_for_timeout(3000)
-        check("Shipment Tracking opens on its globe", pg.locator("#hvGlobe .hg").count() == 1 and
-              "Shown by business unit" in pg.locator("#hvGlobe .hg-card").inner_text())
+        check("Shipment Tracking opens on its globe", pg.locator("#hvGlobe .gb").count() == 1 and
+              "Shown by business unit" in pg.locator("#hvGlobe .gb-card").inner_text())
         check("Every row says its status (dot and word)", pg.locator("#hvBody .hv-st").count() == pg.locator("#hvBody tr[data-ref]").count() > 0)
-        pg.locator('#hvGlobe .hg-row[data-id="bu:EG"]').click(); pg.wait_for_timeout(900)
-        pg.locator("#hvGlobe .hg-acts button", has_text="Show only EG").click(); pg.wait_for_timeout(600)
+        pg.locator('#hvGlobe .gb-row[data-id="bu:EG"]').click(); pg.wait_for_timeout(900)
+        pg.locator("#hvGlobe .gb-acts button", has_text="Show only EG").click(); pg.wait_for_timeout(600)
         bus = set(pg.eval_on_selector_all("#hvBody tr[data-ref]", "els => els.map(e => e.dataset.bu)"))
         check("Choosing a BU on the globe filters the list to it", bus == {"EG"} and pg.evaluate("document.getElementById('hvBu').value") == "EG", bus)
         pg.locator("#hvBody tr[data-ref]").first.click(); pg.wait_for_timeout(900)
         check("Choosing a shipment opens its panel and turns the globe to its BU",
-              pg.locator(".hv-drawer.on").count() == 1 and (pg.get_attribute('#hvGlobe .hg-pin[aria-pressed="true"]', "aria-label") or "").startswith("EG"))
+              pg.locator(".hv-drawer.on").count() == 1 and (pg.get_attribute('#hvGlobe .gb-pin[aria-pressed="true"]', "aria-label") or "").startswith("EG"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(400)
         pg.evaluate("location.hash = '#tracking?q=GH-0001'"); pg.wait_for_timeout(2500)
         check("A link can carry a search (?q=)", pg.evaluate("document.getElementById('hvQ').value") == "GH-0001"
@@ -258,6 +260,9 @@ else:
         mp.goto(BASE + "/hub"); mp.wait_for_timeout(2500)
         css_all = (HERE / "dashboard" / "static" / "hub" / "hub.css").read_text(encoding="utf-8")
         check("A press is felt: buttons and links scale down a touch while pressed", ":active:not(:disabled){scale:.96}" in css_all)
+        press = css_all[css_all.index("/* ── motion, as Apple does it"):css_all.index("@keyframes hubIn")]
+        check("...but never a map pin (scaling a pin placed by a transform moved it from under the pointer)",
+              "pin" not in press.split("*/", 1)[1] and ":where(button" not in press)
         mp.evaluate("location.hash = '#tracking'"); mp.wait_for_timeout(300)
         check("A page arrives with a short rise and fade when you navigate", mp.evaluate("document.getElementById('content').classList.contains('nav-in')"))
         mp.wait_for_timeout(2500)

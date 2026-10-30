@@ -20,55 +20,55 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
   const CSS = `
-.hg{position:absolute;inset:0;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
-.hg.drag{cursor:grabbing}
-.hg canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-.hg-pins{position:absolute;inset:0;pointer-events:none}
-.hg-pin{position:absolute;left:0;top:0;pointer-events:auto;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:999px;
+.gb{position:absolute;inset:0;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+.gb.drag{cursor:grabbing}
+.gb canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.gb-pins{position:absolute;inset:0;pointer-events:none}
+.gb-pin{position:absolute;left:0;top:0;pointer-events:auto;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:999px;
   border:0;font:600 11.5px/1 var(--hub-font,-apple-system,system-ui,sans-serif);letter-spacing:.01em;color:var(--hub-ink);cursor:pointer;
   background:var(--hub-glass);-webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);
   box-shadow:0 0 0 .5px var(--hub-line),0 4px 14px rgba(0,0,0,.12);transform-origin:0 50%;white-space:nowrap;transition:opacity .2s}
-.hg-pin b{font-variant-numeric:tabular-nums;font-weight:600}
-.hg-pin.t-red b{color:var(--hub-red-ink)} .hg-pin.t-amber b{color:var(--hub-amber-ink)} .hg-pin.t-green b{color:var(--hub-green-ink)} .hg-pin.t-blue b{color:var(--hub-blue)}
-.hg-pin.tight{opacity:0!important;pointer-events:none}
-.hg-pin.tight:focus-visible{opacity:1!important}
-.hg-pin:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
-.hg-pin[aria-pressed="true"]{box-shadow:0 0 0 2px var(--hub-accent),0 6px 18px rgba(0,0,0,.18)}
-.hg-card{position:absolute;left:14px;top:14px;width:min(280px,calc(100% - 28px));padding:14px 14px 12px;border-radius:18px;
+.gb-pin b{font-variant-numeric:tabular-nums;font-weight:600}
+.gb-pin.t-red b{color:var(--hub-red-ink)} .gb-pin.t-amber b{color:var(--hub-amber-ink)} .gb-pin.t-green b{color:var(--hub-green-ink)} .gb-pin.t-blue b{color:var(--hub-blue)}
+.gb-pin.tight{opacity:0!important;pointer-events:none}
+.gb-pin.tight:focus-visible{opacity:1!important}
+.gb-pin:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
+.gb-pin[aria-pressed="true"]{box-shadow:0 0 0 2px var(--hub-accent),0 6px 18px rgba(0,0,0,.18)}
+.gb-card{position:absolute;left:14px;top:14px;width:min(280px,calc(100% - 28px));padding:14px 14px 12px;border-radius:18px;
   background:var(--hub-glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
   box-shadow:0 0 0 .5px var(--hub-line),0 10px 30px rgba(0,0,0,.12);color:var(--hub-ink);cursor:default}
-.hg-card h3{margin:0;font-size:13.5px;letter-spacing:-.01em}
-.hg-card p{margin:2px 0 10px;font-size:11.5px;color:var(--hub-ink-3)}
-.hg-row{display:grid;grid-template-columns:34px 1fr 44px;align-items:center;gap:8px;width:100%;padding:5px 4px;border:0;background:none;border-radius:8px;
+.gb-card h3{margin:0;font-size:13.5px;letter-spacing:-.01em}
+.gb-card p{margin:2px 0 10px;font-size:11.5px;color:var(--hub-ink-3)}
+.gb-row{display:grid;grid-template-columns:34px 1fr 44px;align-items:center;gap:8px;width:100%;padding:5px 4px;border:0;background:none;border-radius:8px;
   font:inherit;font-size:12.5px;color:var(--hub-ink);cursor:pointer;text-align:left}
-.hg-row:hover{background:var(--hub-line-2)}
-.hg-row:focus-visible{outline:3px solid var(--hub-focus)}
-.hg-row s{display:block;height:5px;border-radius:3px;background:var(--hub-line);text-decoration:none;overflow:hidden}
-.hg-row s u{display:block;height:100%;border-radius:3px;background:var(--hub-red)}
-.hg-row em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-.hg-x{position:absolute;right:10px;top:10px;width:24px;height:24px;border-radius:50%;border:0;background:var(--hub-line-2);color:var(--hub-ink-2);cursor:pointer;font-size:14px;line-height:1}
-.hg-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 10px}
-.hg-stats div{background:var(--hub-line-2);border-radius:10px;padding:7px 9px}
-.hg-stats span{display:block;font-size:10px;letter-spacing:.05em;color:var(--hub-ink-3);font-weight:600}
-.hg-stats b{font-size:16px;font-variant-numeric:tabular-nums}
-.hg-stats b.red{color:var(--hub-red-ink)} .hg-stats b.green{color:var(--hub-green-ink)}
-.hg-acts{display:flex;flex-wrap:wrap;gap:6px}
-.hg-acts button{height:28px;padding:0 12px;border-radius:999px;border:0;background:var(--hub-line-2);color:var(--hub-ink);font:600 12px/1 var(--hub-font,system-ui);cursor:pointer}
-.hg-acts button.primary{background:var(--hub-accent);color:var(--hub-on-accent)}
-.hg-acts button:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
-.hg-rows{margin:0 0 10px;padding:0;list-style:none;font-size:11.5px;color:var(--hub-ink-2)}
-.hg-rows li{padding:3px 0;border-top:1px solid var(--hub-line-2)}
-.hg-note{margin:8px 0 0;font-size:10.5px;color:var(--hub-ink-3)}
-.hg-ctl{position:absolute;right:12px;bottom:12px;display:flex;gap:6px}
-.hg-ctl button{width:32px;height:32px;border-radius:50%;border:0;display:grid;place-items:center;color:var(--hub-ink);cursor:pointer;
+.gb-row:hover{background:var(--hub-line-2)}
+.gb-row:focus-visible{outline:3px solid var(--hub-focus)}
+.gb-row s{display:block;height:5px;border-radius:3px;background:var(--hub-line);text-decoration:none;overflow:hidden}
+.gb-row s u{display:block;height:100%;border-radius:3px;background:var(--hub-red)}
+.gb-row em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.gb-x{position:absolute;right:10px;top:10px;width:24px;height:24px;border-radius:50%;border:0;background:var(--hub-line-2);color:var(--hub-ink-2);cursor:pointer;font-size:14px;line-height:1}
+.gb-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 10px}
+.gb-stats div{background:var(--hub-line-2);border-radius:10px;padding:7px 9px}
+.gb-stats span{display:block;font-size:10px;letter-spacing:.05em;color:var(--hub-ink-3);font-weight:600}
+.gb-stats b{font-size:16px;font-variant-numeric:tabular-nums}
+.gb-stats b.red{color:var(--hub-red-ink)} .gb-stats b.green{color:var(--hub-green-ink)}
+.gb-acts{display:flex;flex-wrap:wrap;gap:6px}
+.gb-acts button{height:28px;padding:0 12px;border-radius:999px;border:0;background:var(--hub-line-2);color:var(--hub-ink);font:600 12px/1 var(--hub-font,system-ui);cursor:pointer}
+.gb-acts button.primary{background:var(--hub-accent);color:var(--hub-on-accent)}
+.gb-acts button:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
+.gb-rows{margin:0 0 10px;padding:0;list-style:none;font-size:11.5px;color:var(--hub-ink-2)}
+.gb-rows li{padding:3px 0;border-top:1px solid var(--hub-line-2)}
+.gb-note{margin:8px 0 0;font-size:10.5px;color:var(--hub-ink-3)}
+.gb-ctl{position:absolute;right:12px;bottom:12px;display:flex;gap:6px}
+.gb-ctl button{width:32px;height:32px;border-radius:50%;border:0;display:grid;place-items:center;color:var(--hub-ink);cursor:pointer;
   background:var(--hub-glass);-webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);box-shadow:0 0 0 .5px var(--hub-line),0 4px 12px rgba(0,0,0,.1)}
-.hg-ctl button:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
-.hg-empty{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:12px;color:var(--hub-ink-3)}
-@media (max-width:640px){.hg-card{top:auto;bottom:56px;width:calc(100% - 28px)}.hg-card.list{display:none}}
+.gb-ctl button:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
+.gb-empty{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:12px;color:var(--hub-ink-3)}
+@media (max-width:640px){.gb-card{top:auto;bottom:56px;width:calc(100% - 28px)}.gb-card.list{display:none}}
 `;
   function injectCss() {
-    if (document.getElementById("hubglobe-css")) return;
-    const s = document.createElement("style"); s.id = "hubglobe-css"; s.textContent = CSS;
+    if (document.getElementById("hubglobe-css2")) return;
+    const s = document.createElement("style"); s.id = "hubglobe-css2"; s.textContent = CSS;
     document.head.appendChild(s);
   }
 
@@ -118,14 +118,14 @@
     injectCss();
     const L = {select: [], action: []};
     const emit = (n, ...a) => (L[n] || []).slice().forEach((f) => { try { f(...a); } catch (e) { console.error(e); } });
-    const root = document.createElement("div"); root.className = "hg";
+    const root = document.createElement("div"); root.className = "gb";
     root.setAttribute("role", "region"); root.setAttribute("aria-label", "Globe: business units and carrier-reported places");
     const cv = document.createElement("canvas"); cv.setAttribute("aria-hidden", "true");
-    const pinsBox = document.createElement("div"); pinsBox.className = "hg-pins";
-    const card = document.createElement("div"); card.className = "hg-card";
+    const pinsBox = document.createElement("div"); pinsBox.className = "gb-pins";
+    const card = document.createElement("div"); card.className = "gb-card";
     card.hidden = true;                    // shown once there is something to say
-    const ctl = document.createElement("div"); ctl.className = "hg-ctl";
-    const empty = document.createElement("div"); empty.className = "hg-empty"; empty.hidden = true;
+    const ctl = document.createElement("div"); ctl.className = "gb-ctl";
+    const empty = document.createElement("div"); empty.className = "gb-empty"; empty.hidden = true;
     root.append(cv, pinsBox, card, ctl, empty);
     host.textContent = ""; host.appendChild(root); host.dataset.mapMode = "globe";
     const g = cv.getContext("2d");
@@ -188,7 +188,7 @@
       focusCC = new Set(data.focus || []);
       for (const pd of data.pins || []) {
         if (!isFinite(pd.lat) || !isFinite(pd.lon)) continue;
-        const btn = document.createElement("button"); btn.type = "button"; btn.className = "hg-pin t-" + (pd.tone || "blue");
+        const btn = document.createElement("button"); btn.type = "button"; btn.className = "gb-pin t-" + (pd.tone || "blue");
         btn.setAttribute("aria-pressed", "false");
         const label = document.createElement("span"); label.textContent = pd.label || "";
         btn.append(label);
@@ -241,13 +241,13 @@
       if (selected) {
         card.hidden = false;
         const s = selected.d.sheet || {};
-        card.innerHTML = `<button class="hg-x" type="button" aria-label="Close">×</button><h3>${esc(s.title || selected.d.label)}</h3><p>${esc(s.subtitle || "")}</p>` +
-          (s.stats && s.stats.length ? `<div class="hg-stats">${s.stats.slice(0, 4).map((x) => `<div><span>${esc(x.k)}</span><b class="${esc(x.tone || "")}">${esc(x.v)}</b></div>`).join("")}</div>` : "") +
-          (s.rows && s.rows.length ? `<ul class="hg-rows">${s.rows.slice(0, 4).map((r) => `<li><b>${esc(r.ref)}</b> ${esc(r.text)}</li>`).join("")}</ul>` : "") +
-          `<div class="hg-acts">${(s.actions || []).map((a, i) => `<button type="button" data-i="${i}" class="${a.primary ? "primary" : ""}">${esc(a.label)}</button>`).join("")}</div>` +
-          (s.note ? `<p class="hg-note">${esc(s.note)}</p>` : "");
-        card.querySelector(".hg-x").onclick = () => clear(true);
-        card.querySelectorAll(".hg-acts button").forEach((b) => b.onclick = () => emit("action", selected && selected.d, (s.actions[+b.dataset.i] || {}).event));
+        card.innerHTML = `<button class="gb-x" type="button" aria-label="Close">×</button><h3>${esc(s.title || selected.d.label)}</h3><p>${esc(s.subtitle || "")}</p>` +
+          (s.stats && s.stats.length ? `<div class="gb-stats">${s.stats.slice(0, 4).map((x) => `<div><span>${esc(x.k)}</span><b class="${esc(x.tone || "")}">${esc(x.v)}</b></div>`).join("")}</div>` : "") +
+          (s.rows && s.rows.length ? `<ul class="gb-rows">${s.rows.slice(0, 4).map((r) => `<li><b>${esc(r.ref)}</b> ${esc(r.text)}</li>`).join("")}</ul>` : "") +
+          `<div class="gb-acts">${(s.actions || []).map((a, i) => `<button type="button" data-i="${i}" class="${a.primary ? "primary" : ""}">${esc(a.label)}</button>`).join("")}</div>` +
+          (s.note ? `<p class="gb-note">${esc(s.note)}</p>` : "");
+        card.querySelector(".gb-x").onclick = () => clear(true);
+        card.querySelectorAll(".gb-acts button").forEach((b) => b.onclick = () => emit("action", selected && selected.d, (s.actions[+b.dataset.i] || {}).event));
         card.setAttribute("role", "dialog"); card.setAttribute("aria-label", s.title || "Place");
         card.classList.remove("list");
         return;
@@ -258,10 +258,11 @@
       card.hidden = false;
       const total = bus.reduce((s, p) => s + (p.d.count || 0), 0), top = Math.max(1, bus[0].d.count || 0);
       const head = (data && data.card) || {};
-      card.innerHTML = `<h3>${esc(head.title || "Past due by business unit")}</h3><p>${esc(head.sub || total.toLocaleString("en-US") + " open shipments past their step's due date")}</p>` +
-        bus.slice(0, 6).map((p) => `<button class="hg-row" type="button" data-id="${esc(p.id)}"><span>${esc(p.d.label)}</span>` +
+      // title only; the total is a tooltip unless the caller asks for a line
+      card.innerHTML = `<h3 title="${esc(total.toLocaleString("en-US") + " open shipments past their step's due date")}">${esc(head.title || "Past due by business unit")}</h3>${head.sub ? `<p>${esc(head.sub)}</p>` : ""}` +
+        bus.slice(0, 6).map((p) => `<button class="gb-row" type="button" data-id="${esc(p.id)}"><span>${esc(p.d.label)}</span>` +
           `<s><u style="width:${Math.round(100 * (p.d.count || 0) / top)}%${/^[a-z]+$/.test(head.bar || "") ? ";background:var(--hub-" + head.bar + ")" : ""}"></u></s><em>${(p.d.count || 0).toLocaleString("en-US")}</em></button>`).join("");
-      card.querySelectorAll(".hg-row").forEach((b) => b.onclick = () => select(b.dataset.id, true));
+      card.querySelectorAll(".gb-row").forEach((b) => b.onclick = () => select(b.dataset.id, true));
     }
     function select(id, user) {
       const p = pins.find((x) => x.id === id);
@@ -271,7 +272,7 @@
       aimAt({lat: p.d.lat, lon: p.d.lon}, true);
       cam.zoomTo = Math.max(cam.zoom, 1.7);
       drawCard();
-      if (user) { const f = card.querySelector(".hg-acts button"); f && f.focus({preventScroll: true}); }
+      if (user) { const f = card.querySelector(".gb-acts button"); f && f.focus({preventScroll: true}); }
       emit("select", p.d);
       return true;
     }
@@ -307,7 +308,7 @@
     /* ── drag to turn, with a little glide; a tap on empty space closes the card ── */
     let drag = null, vel = 0;
     root.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".hg-pin,.hg-card,.hg-ctl")) return;
+      if (e.target.closest(".gb-pin,.gb-card,.gb-ctl")) return;
       drag = {x: e.clientX, y: e.clientY, lon: cam.lon, lat: cam.lat, t: performance.now(), moved: false};
       root.setPointerCapture(e.pointerId); root.classList.add("drag"); cam.focus = null; cam.spin = 0; vel = 0;
     });

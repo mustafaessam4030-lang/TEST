@@ -158,8 +158,7 @@ check("Where the brand colour is text it is a deep gold, 4.5:1 or better (yellow
 check("The focus ring stands out: 3:1 or better against the page", ratio(LIGHT["hub-focus"], LIGHT["hub-bg"]) >= 3)
 check("Dark mode is a deep charcoal (Apple's graphite), the same on the hub and the pages inside it",
       DARK["hub-bg"] == "#111113" and DARK["hub-surface"] == "#1c1c1e" and "--bg:#111113; --surface:#1C1C1E" in IDX_ALL)
-check("Status text on the hub uses the readable -ink colours (the headline, on time / late, badges)",
-      ".headline em{font-style:normal;color:var(--hub-red-ink)}" in HUB and "color:var(--hub-green-ink)\">${fmt(c.on_time)}" in HUB
+check("Status text on the hub uses the readable -ink colours (on time / late, badges)", "color:var(--hub-green-ink)\">${fmt(c.on_time)}" in HUB
       and "color:var(--hub-teal-ink)" in CSS)
 check("Access without the right to it (or with sign-in off) opens Settings, not the last page",
       "if (p.id === 'access') setTimeout(() => go('settings'), 0)" in IDX_ALL)

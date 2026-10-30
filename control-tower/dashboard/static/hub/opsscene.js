@@ -1110,12 +1110,9 @@
     const note = this.data.note;
     const scale = !zones.length ? "" : step === 1 ? "each vehicle or load = 1 shipment"
       : `each vehicle or load ≈ ${fmt(step)} shipments; every stage with shipments shows at least one`;
-    this.noteEl.textContent = "";
-    if (note) this.noteEl.appendChild(document.createTextNode(note));
-    if (scale) {
-      if (note) this.noteEl.appendChild(document.createTextNode(" · "));
-      const b = document.createElement("b"); b.textContent = scale; this.noteEl.appendChild(b);
-    }
+    // short footnote; the scale is a tooltip (it is still true, just not shouted)
+    this.noteEl.textContent = note || "";
+    if (scale) this.noteEl.title = scale; else this.noteEl.removeAttribute("title");
     this._applyClasses();
   };
 

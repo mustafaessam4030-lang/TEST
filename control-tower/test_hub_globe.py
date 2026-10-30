@@ -93,43 +93,44 @@ else:
         check("The Overview opens on the globe; Map is one click away",
               pg.get_attribute("#globe", "data-map-mode") == "globe" and pg.evaluate("document.getElementById('map').hidden")
               and pg.get_attribute('#mapSeg button[data-mv="globe"]', "aria-pressed") == "true")
-        dots = int(pg.get_attribute(".hg", "data-dots") or 0)
+        dots = int(pg.get_attribute(".gb", "data-dots") or 0)
         check("Land is dots from the world outline (thousands of them)", dots > 3000, dots)
-        labels = pg.eval_on_selector_all(".hg-pin", "els => els.map(e => e.textContent)")
+        labels = pg.eval_on_selector_all(".gb-pin", "els => els.map(e => e.textContent)")
         check("A pin for each BU with a known country, its number = open past due (EG 7, GH 3, NG 1)",
               {"EG7", "GH3", "NG1"} <= set(labels) and not any(l.startswith("JR") for l in labels), labels)
-        rects = pg.eval_on_selector_all(".hg-pin:not(.tight)", """els => els.filter(e => getComputedStyle(e).visibility === 'visible')
+        rects = pg.eval_on_selector_all(".gb-pin:not(.tight)", """els => els.filter(e => getComputedStyle(e).visibility === 'visible')
             .map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })""")
         overlap = [(a, b) for i, a in enumerate(rects) for b in rects[i + 1:] if a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]]
         check("No label sits on another", rects and not overlap, overlap)
-        card = pg.locator(".hg-card").inner_text()
+        card = pg.locator(".gb-card").inner_text()
         check("The glass card lists past due by business unit, from the same numbers", "Past due by business unit" in card
-              and "11 open shipments past" in card, card)
+              and "open shipments past" not in card
+              and "11 open shipments past" in (pg.get_attribute(".gb-card h3", "title") or ""), card)
         three = pg.evaluate("performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))")
         check("No three.js is loaded for the globe", not three)
-        empty_card = pg.evaluate("(() => { const d = document.createElement('div'); d.style.cssText = 'position:relative;width:400px;height:300px'; document.body.appendChild(d); const g = HubGlobe.mount(d, {}); const h = d.querySelector('.hg-card').hidden; g.destroy(); d.remove(); return h; })()")
+        empty_card = pg.evaluate("(() => { const d = document.createElement('div'); d.style.cssText = 'position:relative;width:400px;height:300px'; document.body.appendChild(d); const g = HubGlobe.mount(d, {}); const h = d.querySelector('.gb-card').hidden; g.destroy(); d.remove(); return h; })()")
         check("A globe with nothing to show has no empty card", empty_card)
-        a = pg.evaluate("document.querySelector('.hg canvas').toDataURL()")
+        a = pg.evaluate("document.querySelector('.gb canvas').toDataURL()")
         pg.wait_for_timeout(700)
-        check("It turns slowly by itself", pg.evaluate("document.querySelector('.hg canvas').toDataURL()") != a)
+        check("It turns slowly by itself", pg.evaluate("document.querySelector('.gb canvas').toDataURL()") != a)
         # select from the card: zooms in, shows the BU, its actions open the real list
-        pg.locator('.hg-row[data-id="bu:EG"]').click(); pg.wait_for_timeout(1500)
-        sheet = pg.locator(".hg-card").inner_text()
+        pg.locator('.gb-row[data-id="bu:EG"]').click(); pg.wait_for_timeout(1500)
+        sheet = pg.locator(".gb-card").inner_text()
         check("Choosing a BU shows its own numbers (open, past due) and marks its pin", "EG" in sheet and "PAST DUE" in sheet
-              and pg.get_attribute('.hg-pin[aria-pressed="true"]', "aria-label").startswith("EG"), sheet)
+              and pg.get_attribute('.gb-pin[aria-pressed="true"]', "aria-label").startswith("EG"), sheet)
         check("...and the focus is on its first action", pg.evaluate("document.activeElement.textContent") == "Open shipments")
-        pg.locator(".hg-acts button", has_text="Past due").click(); pg.wait_for_timeout(1200)
+        pg.locator(".gb-acts button", has_text="Past due").click(); pg.wait_for_timeout(1200)
         check("'Past due' opens the real list for that BU", not pg.evaluate("document.getElementById('dl').hidden")
               and pg.locator("#dlT").inner_text() == "EG · Open and past due", pg.locator("#dlT").inner_text())
         pg.keyboard.press("Escape"); pg.wait_for_timeout(400)
-        pg.locator(".hg-x").click(); pg.wait_for_timeout(400)
+        pg.locator(".gb-x").click(); pg.wait_for_timeout(400)
         check("Closing the card goes back to the list and the focus to the pin",
-              "Past due by business unit" in pg.locator(".hg-card").inner_text()
-              and (pg.evaluate("document.activeElement.className") or "").startswith("hg-pin"))
+              "Past due by business unit" in pg.locator(".gb-card").inner_text()
+              and (pg.evaluate("document.activeElement.className") or "").startswith("gb-pin"))
         pg.keyboard.press("Enter"); pg.wait_for_timeout(800)
-        check("A pin is a real button: Enter opens it", "PAST DUE" in pg.locator(".hg-card").inner_text())
+        check("A pin is a real button: Enter opens it", "PAST DUE" in pg.locator(".gb-card").inner_text())
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
-        check("Esc closes it", "Past due by business unit" in pg.locator(".hg-card").inner_text())
+        check("Esc closes it", "Past due by business unit" in pg.locator(".gb-card").inner_text())
         # Map: one click, remembered
         pg.locator('#mapSeg button[data-mv="map"]').click(); pg.wait_for_timeout(2500)
         check("Map shows the existing map (unchanged) and hides the globe",
@@ -143,19 +144,19 @@ else:
         pg.close()
 
         pg = page(theme="dark")
-        bg = pg.evaluate("(() => { const c = document.querySelector('.hg canvas'), g = c.getContext('2d'); return Array.from(g.getImageData(4, 4, 1, 1).data); })()")
+        bg = pg.evaluate("(() => { const c = document.querySelector('.gb canvas'), g = c.getContext('2d'); return Array.from(g.getImageData(4, 4, 1, 1).data); })()")
         check("Dark mode: a midnight globe (the page's dark tokens)", sum(bg[:3]) < 120, bg)
         pg.close()
 
         pg = page(motion="reduce")
-        v1 = pg.evaluate("document.querySelector('.hg canvas').toDataURL()"); pg.wait_for_timeout(900)
-        v2 = pg.evaluate("document.querySelector('.hg canvas').toDataURL()")
+        v1 = pg.evaluate("document.querySelector('.gb canvas').toDataURL()"); pg.wait_for_timeout(900)
+        v2 = pg.evaluate("document.querySelector('.gb canvas').toDataURL()")
         check("Reduced motion: the globe stands still", v1 == v2)
         pg.close()
 
         pg = page(w=390, h=844)
         check("Phone: the globe fits, the list card steps aside until a place is chosen",
-              pg.locator(".hg").bounding_box()["width"] <= 390 and not pg.locator(".hg-card").is_visible())
+              pg.locator(".gb").bounding_box()["width"] <= 390 and not pg.locator(".gb-card").is_visible())
         pg.close()
         br.close()
 

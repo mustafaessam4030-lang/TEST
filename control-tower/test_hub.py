@@ -223,11 +223,10 @@ check("/hub, /api/hub/overview and /api/hub/list are served, read-only (GET only
 check("The list needs clearance.view and refuses an unknown stage or BU",
       'self._acc_can("clearance.view")' in src.split('route == "/api/hub/list"')[1][:1500] and "unknown stage or BU" in src)
 html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
-check("Headline and BU pins use one metric (past due), and both say so",
-      "count: b.late," in html and "past due of ${fmt(worst.open)} open" in html
-      and "Number on a BU pin = open shipments past due" in html and 'countLabel: "past due"' in html)
+check("BU pins show one metric (past due), and the legend says so",
+      "count: b.late," in html and "Pin number = open past due" in html and 'countLabel: "past due"' in html)
 check("The hub draws only what the server sends: no hard-coded counts",
-      "/api/hub/overview" in html and "/api/hub/list" in html and "Illustration — the counts are real" in html)
+      "/api/hub/overview" in html and "/api/hub/list" in html and "Illustration · real counts" in html)
 
 print("\n5b. THE MAP AND THE SCENE: NOTHING FROM OUTSIDE, DATA AS TEXT ONLY")
 import re as _re0

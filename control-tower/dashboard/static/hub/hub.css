@@ -130,6 +130,7 @@ button{font:inherit;color:inherit}
 :focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px;border-radius:6px}
 .mono{font-family:var(--hub-mono)}
 [hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ── components ── */
 .hub-card{background:var(--hub-surface);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);border:1px solid var(--hub-line-2)}
@@ -159,9 +160,11 @@ button{font:inherit;color:inherit}
 .hub-empty{padding:28px 18px;text-align:center;color:var(--hub-ink-3)}
 .hub-empty b{display:block;color:var(--hub-ink);font-size:15px;margin-bottom:4px}
 .hub-src{font-size:11.5px;color:var(--hub-ink-3)}
-/* ── motion, as Apple does it: a press you feel, pages that arrive, a status island, errors with a way out ── */
-:where(button,.hub-pill,.nav a,.chip,.exc a,.act a,.hg-row,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hv-tbl tr.click td){transition:scale .24s var(--hub-spring)}
-:where(button,.hub-pill,.nav a,.chip,.exc a,.act a,.hg-row,.tb-ic,.ata-tabs a,.seg button,.tb-th button):active:not(:disabled){scale:.96}
+/* ── motion, as Apple does it: a press you feel, pages that arrive, a status island, errors with a way out ──
+   The press is for buttons and links that sit in the page's flow; never for a pin placed on a map by a
+   transform (scaling it would move it from under the pointer). */
+:where(.hub-pill,.nav a,.chip,.exc a,.act a,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hub-askfab,.side-t,.dl-x,.hv-x,.gb-row,.gb-acts button,.gb-ctl button,.hub-err button){transition:scale .24s var(--hub-spring)}
+:where(.hub-pill,.nav a,.chip,.exc a,.act a,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hub-askfab,.side-t,.dl-x,.hv-x,.gb-row,.gb-acts button,.gb-ctl button,.hub-err button):active:not(:disabled){scale:.96}
 @keyframes hubIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .content.nav-in{animation:hubIn .36s var(--hub-e) both}
 .hub-island{position:fixed;top:10px;left:50%;z-index:300;display:inline-flex;align-items:center;gap:9px;max-width:calc(100vw - 32px);height:38px;padding:0 18px 0 12px;
