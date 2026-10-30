@@ -165,8 +165,8 @@ button{font:inherit;color:inherit}
    transform (scaling it would move it from under the pointer). */
 :where(.hub-pill,.nav a,.chip,.exc a,.act a,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hub-askfab,.side-t,.dl-x,.hv-x,.gb-row,.gb-acts button,.gb-ctl button,.hub-err button){transition:scale .24s var(--hub-spring)}
 :where(.hub-pill,.nav a,.chip,.exc a,.act a,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hub-askfab,.side-t,.dl-x,.hv-x,.gb-row,.gb-acts button,.gb-ctl button,.hub-err button):active:not(:disabled){scale:.96}
-@keyframes hubIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.content.nav-in{animation:hubIn .36s var(--hub-e) both}
+@keyframes hubIn{from{opacity:0;transform:translateY(var(--nav-dy,10px)) scale(.992);filter:blur(3px)}to{opacity:1;transform:none;filter:none}}
+.content.nav-in{animation:hubIn .46s var(--hub-e) both}
 .hub-island{position:fixed;top:10px;left:50%;z-index:300;display:inline-flex;align-items:center;gap:9px;max-width:calc(100vw - 32px);height:38px;padding:0 18px 0 12px;
   border-radius:999px;background:#1d1d1f;color:#f5f5f7;font:600 13px/1 var(--hub-font);box-shadow:0 12px 32px rgba(0,0,0,.28),0 0 0 .5px rgba(255,255,255,.08);
   transform:translate(-50%,-72px) scale(.86);opacity:0;pointer-events:none;transition:transform .55s var(--hub-spring),opacity .25s var(--hub-e)}
@@ -181,4 +181,51 @@ button{font:inherit;color:inherit}
 .hub-err p{margin:0;max-width:440px;color:var(--hub-ink-3);font-size:13px}
 .hub-err .hub-pill{margin-top:10px}
 @keyframes hubErr{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+/* ── every action its own movement (hub/motion.js moves it; these are the looks it moves) ── */
+/* the menu: the yellow selection glides from the old item to the new one */
+.nav{position:relative;z-index:1}
+.nav a{transition:color .2s var(--hub-e),background-color .15s var(--hub-e),scale .24s var(--hub-spring)}
+.nav-ink{position:absolute;z-index:0;border-radius:9px;background:var(--hub-accent);pointer-events:none;
+  box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 16px color-mix(in srgb,var(--hub-accent) 30%,transparent)}
+.nav a.ink-wait{background:transparent!important;box-shadow:none!important;color:var(--hub-ink-2)!important}
+.nav a.ink-wait svg{color:var(--hub-ink-3)!important}
+/* segmented controls (Globe | Map, the theme): a thumb slides under the chosen option */
+.has-thumb{position:relative}
+.has-thumb>button{position:relative;z-index:1;background:transparent!important;box-shadow:none!important}
+.seg-thumb{position:absolute;z-index:0;left:0;top:0;border-radius:7px;background:var(--hub-surface);pointer-events:none;
+  box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px var(--hub-line)}
+.tb-th .seg-thumb{border-radius:999px}
+.seg-thumb.live{transition:left .46s cubic-bezier(.34,1.36,.64,1),width .46s cubic-bezier(.34,1.36,.64,1),top .3s var(--hub-e),opacity .2s var(--hub-e)}
+/* the theme spreads out in a circle from the button pressed */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){z-index:2}
+#theme button svg{transition:color .2s var(--hub-e)}
+#theme button[aria-pressed="true"] svg{animation:moIcon .6s cubic-bezier(.34,1.36,.64,1)}
+@keyframes moIcon{from{transform:rotate(-80deg) scale(.5);opacity:.3}to{transform:none;opacity:1}}
+/* small things that answer the pointer */
+.chip:hover{transform:translateY(-2px)}
+.exc svg{transition:transform .28s cubic-bezier(.34,1.36,.64,1)}
+.exc a:hover svg{transform:translateX(3px)}
+.tdc-l i{transition:transform .28s cubic-bezier(.34,1.36,.64,1)}
+.tdc-l a:hover i{transform:scale(1.6)}
+.tdc-l a{transition:background-color .15s var(--hub-e),scale .24s var(--hub-spring)}
+.tdc-l a:active{scale:.97}
+#setTop svg{transition:transform .6s var(--hub-e)}
+#setTop:hover svg{transform:rotate(60deg)}
+/* ATLAS waves when you reach for it */
+.ax-arm-r{transform-box:view-box;transform-origin:78px 77px}
+.hub-askfab:hover .ax-arm-r,#askTop:hover .ax-arm-r{animation:moWave .9s ease-in-out}
+@keyframes moWave{0%,100%{transform:none}25%{transform:rotate(-20deg)}50%{transform:rotate(10deg)}75%{transform:rotate(-14deg)}}
+/* Download CSV: a check is drawn; Try Again spins while it retries */
+.hub-pill.mo-done{background:var(--hub-green-wash)!important;color:var(--hub-green-ink)!important}
+.mo-ok{width:15px;height:15px;stroke-dasharray:24;stroke-dashoffset:24;animation:moDraw .45s .05s var(--hub-e) forwards}
+@keyframes moDraw{to{stroke-dashoffset:0}}
+.mo-busy::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:moSpin .7s linear infinite}
+@keyframes moSpin{to{transform:rotate(1turn)}}
+/* an error: a short shake, as a wrong password does on a Mac */
+.hub-err{animation:moShake .5s .12s both}
+@keyframes moShake{0%,100%{transform:none}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+/* new activity glows once */
+.act li a{transition:background-color 1.2s var(--hub-e),scale .24s var(--hub-spring)}
+.act li.mo-new a{background:var(--hub-accent-wash);transition:none}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
