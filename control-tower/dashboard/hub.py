@@ -272,6 +272,87 @@ def run_places(state):
     return out
 
 
+# ── what needs looking at, and what happened: the Overview's two lists ─────
+def exceptions(data, rows, state=None, run_too=True):
+    """Operational exceptions, each counted from the records with a link to
+    the rows behind it. Only the ones with a count; nothing estimated."""
+    out = []
+    if data:
+        opn = [r for r in rows if _clearance.is_open(r)]
+        late = [r for r in opn if _clearance.past_due(r)]
+        # the same rules as To Do (dashboard/todo.py), so the two never disagree
+        from dashboard.todo import LONG_PAST_DUE
+        escalated = {(e.get("awb"), e.get("bu")) for e in _clearance.escalations() if e.get("status") == "open"}
+        long_late = [r for r in late if r["overdue"] >= LONG_PAST_DUE and (r["awb"], r["bu"]) not in escalated]
+        corr = [r for r in rows if r.get("status") == "RequiredCorrection"]
+        asof = (data.get("asof") or date.today().isoformat())[:10]
+        other = [r for r in rows if _stage_of(r, asof) == "other"]
+        for key, label, n, tone, href, note in (
+                ("pastdue", "Open and past due", len(late), "red", "/hub#overview?list=pastdue",
+                 "Open, with the export's Performance above 0"),
+                ("over30", "30 days or more past due, not escalated", len(long_late), "red", "/hub#overview?list=pastdue",
+                 "The longest first; escalate them on Clearance"),
+                ("correction", "Marked Correction required in eHub", len(corr), "amber",
+                 "/hub#clearance?status=RequiredCorrection", "Fix them in eHub; the next export shows the change"),
+                ("nostage", "No stage (no ETA or an unknown step)", len(other), "amber", "/hub#tracking",
+                 "Open shipments the stage strip cannot place")):
+            if n:
+                out.append({"id": key, "label": label, "count": n, "tone": tone, "href": href, "note": note})
+    if run_too and state:
+        by = {}
+        for r in (state or {}).get("shipments") or []:
+            by[r.get("state") or "unknown"] = by.get(r.get("state") or "unknown", 0) + 1
+        for key, label, n, tone, href, note in (
+                ("human", "Waiting for a person (Human Actions)", by.get("waiting_for_human", 0), "amber", "/hub#todo",
+                 "Open and resume them from To Do"),
+                ("failed", "Failed in the ATA run", by.get("failed", 0), "red", "/hub#runs", "Each with its reason")):
+            if n:
+                out.append({"id": key, "label": label, "count": n, "tone": tone, "href": href, "note": note})
+    return out
+
+
+def activity(state=None, can=lambda p: True, allowed=None, limit=10):
+    """Recent operational events, newest first: the export loaded, escalations
+    raised and resolved, calls and mails logged, the ATA run started and
+    finished. From the records only; no person's name or address is shown."""
+    ev = []
+    if can("clearance.view"):
+        m = _clearance.meta() or {}
+        if m.get("loaded_at"):
+            ev.append({"at": m["loaded_at"], "kind": "export", "tone": "blue", "href": "/hub#clearance",
+                       "title": "eHub export loaded",
+                       "detail": "{0} shipments{1}".format("{:,}".format(m["count"]) if isinstance(m.get("count"), int) else "",
+                                                           (" · " + str(m["file"])) if m.get("file") else "")})
+        for e in _clearance.escalations():
+            if allowed is not None and e.get("bu") not in allowed:
+                continue
+            ev.append({"at": e.get("at"), "kind": "escalation", "tone": "red", "href": "/hub#tracking?ref=" + str(e.get("awb") or ""),
+                       "title": "Escalated " + str(e.get("awb") or ""), "detail": "{0} · {1}".format(e.get("bu") or "—", e.get("step") or "—")})
+            if e.get("status") == "resolved" and e.get("resolved_at"):
+                ev.append({"at": e["resolved_at"], "kind": "resolved", "tone": "green", "href": "/hub#tracking?ref=" + str(e.get("awb") or ""),
+                           "title": "Escalation resolved · " + str(e.get("awb") or ""), "detail": e.get("bu") or "—"})
+        for c in _clearance.contact_log(limit=40):
+            if allowed is not None and c.get("bu") not in allowed:
+                continue
+            ev.append({"at": c.get("at"), "kind": "contact", "tone": "blue", "href": "/hub#tracking?ref=" + str(c.get("awb") or ""),
+                       "title": ("Mail drafted" if c.get("kind") == "mail" else "Call started") + " · " + str(c.get("awb") or ""),
+                       "detail": c.get("bu") or "—"})
+    if allowed is None and (can("runs.view") or can("dashboard.view")):
+        run = (state or {}).get("run") or {}
+        rows = (state or {}).get("shipments") or []
+        if run.get("started_at"):
+            ev.append({"at": run["started_at"], "kind": "run", "tone": "blue", "href": "/hub#ata",
+                       "title": "ATA run started" + (" (dry run)" if run.get("dry_run") else ""),
+                       "detail": "Run " + str(run.get("run_id") or "")})
+        if run.get("finished_at"):
+            bad = sum(1 for r in rows if r.get("state") == "failed")
+            ev.append({"at": run["finished_at"], "kind": "run", "tone": "red" if bad else "green", "href": "/hub#runs",
+                       "title": "ATA run finished", "detail": "{0} shipments · {1} failed".format(len(rows), bad) if rows else "No shipments"})
+    ev = [e for e in ev if e.get("at")]
+    ev.sort(key=lambda e: str(e["at"]).replace(" ", "T")[:19], reverse=True)
+    return ev[:limit]
+
+
 def overview(state, can, allowed=None):
     """Everything the Overview draws, each part only for who may see it.
     `allowed`: the BU codes this person may see (None = all). The run's own
@@ -281,10 +362,16 @@ def overview(state, can, allowed=None):
     if allowed is not None:         # views whose records carry no BU are not for a BU-limited person
         mods = [m for m in mods if m["id"] not in UNSCOPED]
     out = {"modules": mods, "scope": sorted(allowed) if allowed is not None else None}
+    out["exceptions"] = []
     if can("clearance.view"):
         data = _clearance.load()
         out["clearance"] = stages(data, allowed=allowed) if data else None
         out["bus"], out["unplaced"] = bu_places(data, allowed, want_unplaced=True) if data else ([], [])
+        if data:
+            out["exceptions"] = exceptions(data, scoped_rows(data, allowed))
+    if allowed is None and (can("runs.view") or can("dashboard.view")):
+        out["exceptions"] += exceptions(None, [], state)
+    out["activity"] = activity(state, can, allowed)
     if allowed is not None:
         out["run_hidden"] = "The run's records carry no business unit, so they are not shown to a BU-restricted account."
         return out

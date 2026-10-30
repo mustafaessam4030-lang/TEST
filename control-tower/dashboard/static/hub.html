@@ -19,7 +19,7 @@
 
 /* ── shell ── */
 .app{display:grid;grid-template-columns:var(--hub-side) 1fr;min-height:100vh}
-.side{position:sticky;top:0;height:100vh;background:color-mix(in srgb,var(--hub-bg-2) 86%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-right:1px solid var(--hub-line);display:flex;flex-direction:column;padding:14px 10px 12px;overflow:auto}
+.side{position:sticky;top:0;height:100vh;background:var(--hub-bg-2);border-right:1px solid var(--hub-line);display:flex;flex-direction:column;padding:14px 10px 12px;overflow:auto}
 .corp{padding:4px 10px 10px}
 .corp img{display:block;height:30px;width:auto;border-radius:5px;box-shadow:0 0 0 1px var(--hub-line)}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 16px;color:var(--hub-ink)}
@@ -82,27 +82,59 @@
 .hub-askfab{position:fixed;right:22px;bottom:22px;z-index:50;display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 17px 0 12px;
   border-radius:999px;border:0;cursor:pointer;font:600 14px/1 var(--hub-font);color:var(--hub-ink)}
 #chatF{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:200;background:transparent;color-scheme:normal}
+.ata-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 24px;border-bottom:1px solid var(--hub-line-2);background:var(--hub-bg)}
+.ata-tabs a{height:30px;display:inline-flex;align-items:center;padding:0 14px;border-radius:999px;font-size:13px;font-weight:500;color:var(--hub-ink-2);transition:background-color .15s var(--hub-e)}
+.ata-tabs a:hover{background:var(--hub-surface-2)}
+.ata-tabs a[aria-current="page"]{background:var(--hub-ink);color:var(--hub-surface);font-weight:600}
+.ata-tabs .sp{flex:1}
+.ata-tabs .hum{gap:7px;font-size:12.5px;color:var(--hub-ink-3)}
+.ata-tabs .hum i{width:8px;height:8px;border-radius:50%;background:var(--hub-ink-4)}
+.ata-tabs .hum.on{color:var(--hub-amber-ink);background:var(--hub-amber-wash);font-weight:600}
+.ata-tabs .hum.on i{background:var(--hub-amber)}
+.ata-tabs:not([hidden]) + #embedF{height:calc(100vh - var(--hub-top) - 51px);height:calc(100dvh - var(--hub-top) - 51px)}
 #embedF{display:block;width:100%;height:calc(100vh - var(--hub-top));height:calc(100dvh - var(--hub-top));border:0;background:var(--hub-bg)}
 
 /* ── overview ── */
-.headline{font-size:24px;font-weight:700;letter-spacing:-.022em;margin:2px 0 4px;max-width:1000px}
+.ov-day{margin:0 0 6px;font:var(--hub-t-caption);color:var(--hub-ink-3)}
+.headline{font:var(--hub-t-title);letter-spacing:-.024em;margin:0 0 6px;max-width:1040px}
+.sec-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:32px 0 14px}
+.sub + .sec-h{margin-top:24px}
+.sec-h h2{margin:0;font:var(--hub-t-section);letter-spacing:-.02em}
+.sec-h span{font:var(--hub-t-caption);color:var(--hub-ink-3)}
+/* exceptions and activity: quiet rows, the number on the right */
+.exc,.act{list-style:none;margin:0;padding:0 8px 8px}
+.exc a{display:grid;grid-template-columns:8px minmax(0,1fr) auto 12px;gap:1px 12px;align-items:center;padding:10px;border-radius:var(--hub-r);color:var(--hub-ink);transition:background-color .15s var(--hub-e)}
+.exc a:hover,.act a:hover{background:var(--hub-surface-2)}
+.exc i{width:8px;height:8px;border-radius:50%;grid-row:1/3}
+.exc b{font:var(--hub-t-headline);font-size:13.5px}
+.exc small{grid-column:2;font:var(--hub-t-caption);color:var(--hub-ink-3)}
+.exc em{grid-row:1/3;grid-column:3;font-style:normal;font-weight:600;font-size:18px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.exc svg{grid-row:1/3;grid-column:4;width:12px;height:12px;color:var(--hub-ink-4)}
+.exc .hub-empty,.act .hub-empty{padding:18px 10px}
+.act{padding:6px 8px}
+.act a{display:grid;grid-template-columns:96px 8px minmax(0,1fr);gap:0 14px;align-items:center;padding:11px 12px;border-radius:var(--hub-r);color:var(--hub-ink);transition:background-color .15s var(--hub-e)}
+.act li + li a{box-shadow:0 -1px 0 var(--hub-line-2)}
+.act time{font:var(--hub-t-caption);color:var(--hub-ink-3);font-variant-numeric:tabular-nums}
+.act i{width:8px;height:8px;border-radius:50%}
+.act b{font-weight:600;font-size:13.5px}
+.act span{color:var(--hub-ink-3);font-size:12.5px;margin-left:8px}
+@media (max-width:640px){.act a{grid-template-columns:8px minmax(0,1fr)}.act time{grid-column:2;order:2}.act span{display:block;margin:0}}
 .headline em{font-style:normal;color:var(--hub-red-ink)}
 .sub{color:var(--hub-ink-3);font-size:13px;margin-bottom:16px}
 .strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
-.chip{width:100%;font:inherit;color:inherit;background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);padding:14px 16px 13px;cursor:pointer;text-align:left;transition:transform .2s var(--hub-e),box-shadow .2s var(--hub-e)}
-.chip:hover{transform:translateY(-1px);box-shadow:var(--hub-shadow-lg)}
+.chip{width:100%;font:inherit;color:inherit;background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);padding:16px 18px 15px;cursor:pointer;text-align:left;transition:transform .2s var(--hub-e),box-shadow .2s var(--hub-e)}
+.chip:hover{border-color:var(--hub-line);box-shadow:var(--hub-shadow),0 4px 16px rgba(0,0,0,.05)}
 .chip .k{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--hub-ink-3);font-weight:500}
 .chip .k i{width:8px;height:8px;border-radius:50%;flex:none}
-.chip .v{font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
+.chip .v{font:var(--hub-t-kpi);letter-spacing:-.03em;margin-top:10px;font-variant-numeric:tabular-nums}
 .chip .n{font-size:11.5px;color:var(--hub-ink-3);margin-top:2px;min-height:16px}
-.chip.total{background:var(--hub-ink);color:var(--hub-surface)}
-.chip.total .k,.chip.total .n{color:color-mix(in srgb,var(--hub-surface) 70%,transparent)}
+.chip.total .v{color:var(--hub-ink)}
 .chip .bar{height:5px;border-radius:5px;background:var(--hub-red);margin-top:9px;overflow:hidden}
 .chip .bar b{display:block;height:100%;background:var(--hub-green)}
 .grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
 .card{background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-xl);box-shadow:var(--hub-shadow);overflow:hidden}
 .card-h{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 10px}
-.card-h h2{margin:0;font-size:16px;letter-spacing:-.01em}
+.card-h h2{margin:0;font-size:16px;font-weight:600;letter-spacing:-.015em}
 .card-h p{margin:2px 0 0;font-size:12.5px;color:var(--hub-ink-3)}
 .card-h .sp{flex:1}
 .seg{display:inline-flex;flex:none;padding:2px;border-radius:9px;background:var(--hub-line-2);box-shadow:inset 0 0 0 .5px var(--hub-line)}
@@ -216,8 +248,10 @@
     </header>
     <main class="content" id="content">
       <section data-view="overview">
+        <p class="ov-day" id="ovDay">&nbsp;</p>
         <h2 class="headline" id="headline">&nbsp;</h2>
         <div class="sub" id="sub">&nbsp;</div>
+        <div class="sec-h"><h2>Now</h2><span>Live from the eHub export and the ATA run</span></div>
         <div class="strip" id="strip" role="group" aria-label="Shipments by stage"></div>
         <div class="grid">
           <div class="stack">
@@ -239,6 +273,10 @@
             </section>
           </div>
           <div class="stack">
+            <section class="card" aria-labelledby="exT">
+              <div class="card-h"><div><h2 id="exT">Operational exceptions</h2><p id="exP">Loading…</p></div></div>
+              <ul class="exc" id="exL"></ul>
+            </section>
             <section class="card" aria-labelledby="runT">
               <div class="card-h"><div><h2 id="runT">ATA automation</h2><p id="runP">The Hub ETA / ATA run</p></div><span class="sp"></span><span id="runBadge"></span></div>
               <div class="run-st"><span class="dot" id="runDot"></span><b id="runState">Loading…</b></div>
@@ -246,15 +284,22 @@
               <div class="card-f"><a class="hub-pill primary" href="/hub#ata">Open the run</a><a class="hub-pill" href="/hub#todo">Human Actions in To Do</a></div>
             </section>
             <section class="card" aria-labelledby="tdT">
-              <div class="card-h"><div><h2 id="tdT">To Do</h2><p id="tdP">What needs a person</p></div></div>
+              <div class="card-h"><div><h2 id="tdT">To Do</h2><p id="tdP">What needs a person</p></div><span class="sp"></span>
+                <button class="hub-pill" id="tdOpen" type="button" aria-controls="todoPanel">Open To Do</button></div>
               <ul class="tdc-l" id="todoL"></ul>
+              <div class="card-f"><a class="hub-pill" href="/hub#todo">All tasks and approvals</a></div>
             </section>
           </div>
         </div>
+        <div class="sec-h"><h2>Recent activity</h2><span>What happened, newest first: exports, escalations, calls and mails, ATA runs</span></div>
+        <section class="card" aria-label="Recent activity"><ol class="act" id="actL"></ol></section>
         <details class="defs"><summary>How these numbers are counted</summary><dl id="defs"></dl></details>
       </section>
       <section data-view="mod" hidden><div id="modBody" class="hv"></div></section>
-      <section data-view="embed" hidden><iframe id="embedF" title="Page"></iframe></section>
+      <section data-view="embed" hidden>
+        <!-- ATA Automation's own pages as one place: the live run, its shipments (verified, read back), history and the log -->
+        <nav class="ata-tabs" id="ataTabs" aria-label="ATA Automation" hidden></nav>
+        <iframe id="embedF" title="Page"></iframe></section>
       <section data-view="off" hidden>
         <div class="card off-card"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6M12 9v6"/><rect x="3" y="3" width="18" height="18" rx="5"/></svg></div>
           <h2 id="offT"></h2><p id="offP"></p><p class="hub-src">Shown so the platform's full shape is visible. Nothing here is simulated.</p></div>
@@ -424,9 +469,24 @@
   /* ── an existing page inside the hub: /hub#po?po=… opens /#po?po=… with ?embed=1 ── */
   const isDark = () => document.documentElement.dataset.theme === "dark" ||
     (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  const ATA_TABS = [["ata", "Live run"], ["runs", "Shipments & read-back"], ["history", "History"], ["history?v=logs", "Activity log"]];
+  function ataTabs(m) {
+    const nav = $("ataTabs"), on = ["ata", "runs", "history"].includes(m.id);
+    nav.hidden = !on;
+    if (!on) return;
+    const cur = (location.hash.slice(1) || "").replace(/&.*$/, "");
+    const tabs = ATA_TABS.filter(([id]) => MODS.some((x) => x.id === id.split("?")[0]));
+    const b = (DATA && DATA.run && DATA.run.by_state) || {}, wait = b.waiting_for_human || 0;
+    putHTML(nav, tabs.map(([id, label]) => `<a href="/hub#${id}"${(cur === id || (id === "history" && cur.startsWith("history") && !cur.includes("v=logs"))) ? ' aria-current="page"' : ""}>${label}</a>`).join("") +
+      `<span class="sp"></span><a class="hum${wait ? " on" : ""}" href="/hub#todo"><i></i>${wait ? `${fmt(wait)} Human Action${wait === 1 ? "" : "s"} waiting · To Do` : "No Human Action waiting"}</a>`);
+  }
   function openPage(m) {
-    const rest = (location.hash.split("?")[1] || "");
-    const [path, hash] = m.embed.split("#");
+    ataTabs(m);
+    let rest = (location.hash.split("?")[1] || "");
+    let [path, hash] = m.embed.split("#");
+    // History's views by address: /hub#history?v=logs opens the run page's activity log
+    const v = new URLSearchParams(rest).get("v");
+    if (m.id === "history" && ["analysis", "exceptions", "logs"].includes(v)) { hash = v; rest = ""; }
     const h = hash ? "#" + hash + (rest ? "?" + rest : "") : (rest ? "#" + rest : "");
     const src = path + "?embed=1&theme=" + (isDark() ? "dark" : "light") + h;
     const f = $("embedF");
@@ -515,6 +575,39 @@
       (worst && worst.late ? `; ${esc(worst.bu)} has the most (${fmt(worst.late)} past due of ${fmt(worst.open)} open).` : "."));
     $("sub").textContent = `${fmt(st.transit)} in transit · ${fmt(st.arrived + st.customs)} arrived and clearing · ${fmt(st.awaiting)} cleared, awaiting delivery — eHub export, data as of ${dmy(c.asof)}`;
   }
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+  function exceptionsCard(d) {
+    const x = d.exceptions || [];
+    $("exP").textContent = x.length ? "What is off track right now, counted from the records" : "Nothing is off track right now";
+    putHTML($("exL"), x.length ? x.map((e) => `<li><a href="${esc(e.href)}"><i style="background:${TONE[e.tone] || TONE.blue}"></i><b>${esc(e.label)}</b>` +
+      `<em>${fmt(e.count)}</em>${CHEV}<small>${esc(e.note || "")}</small></a></li>`).join("")
+      : `<li class="hub-empty">No exceptions in the export or the run.</li>`);
+  }
+  // a list behind a number opens here, even when its address is already the page's
+  $("exL").addEventListener("click", (e) => {
+    const a = e.target.closest("a[href*='?list=']"); if (!a) return;
+    e.preventDefault();
+    const q = new URLSearchParams(a.getAttribute("href").split("?")[1]);
+    openList(q.get("list"), q.get("bu"));
+  });
+  function ago(at) {
+    const t = Date.parse(String(at || "").replace(" ", "T"));
+    if (!t) return "";
+    const s = (Date.now() - t) / 1000;
+    return s < 60 ? "Just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : dmy(String(at).slice(0, 10));
+  }
+  function activityCard(d) {
+    const a = d.activity || [];
+    putHTML($("actL"), a.length ? a.map((e) => `<li><a href="${esc(e.href || "#")}"><time datetime="${esc(e.at)}">${esc(ago(e.at))}</time>` +
+      `<i style="background:${TONE[e.tone] || TONE.blue}"></i><div><b>${esc(e.title)}</b><span>${esc(e.detail || "")}</span></div></a></li>`).join("")
+      : `<li class="hub-empty"><b>Nothing recorded yet</b>Exports loaded, escalations, calls and mails, and ATA runs appear here.</li>`);
+  }
+  $("ovDay").textContent = new Date().toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long", year: "numeric"});
+  // the compact To Do card opens the same slide-out as the top bar's button
+  $("tdOpen").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const b = document.querySelector("[data-todo-slot] .todo-b"); if (b) b.click();
+  });
   function runCard(r, hidden) {
     if (hidden) { $("runState").textContent = "Not shown"; $("runP").textContent = hidden; $("runGrid").innerHTML = ""; return; }
     if (!r) return;
@@ -536,7 +629,7 @@
       const items = (t.items || []).filter((x) => x.state !== "completed");
       $("tdP").textContent = items.length ? `${fmt(t.outstanding != null ? t.outstanding : items.length)} open` : "Nothing needs a person right now";
       const dot = {red: "var(--hub-red)", amber: "var(--hub-amber)"};
-      putHTML($("todoL"), items.slice(0, 6).map((x) => `<li><a href="${esc(window.HubViews && x.href ? window.HubViews._hubHref(x.href) : x.href || "#")}"><b><i style="background:${dot[x.level] || "var(--hub-ink-4)"}"></i>${esc(x.title)}</b><span>${esc(x.detail || x.source || "")}</span></a></li>`).join(""));
+      putHTML($("todoL"), items.slice(0, 3).map((x) => `<li><a href="${esc(window.HubViews && x.href ? window.HubViews._hubHref(x.href) : x.href || "#")}"><b><i style="background:${dot[x.level] || "var(--hub-ink-4)"}"></i>${esc(x.title)}</b><span>${esc(x.detail || x.source || "")}</span></a></li>`).join(""));
     }).catch(() => { $("tdP").textContent = "Could not load To Do — it refreshes by itself"; });
   }
 
@@ -706,7 +799,7 @@
       // The menu and the view are drawn when the modules change (first load), not on every refresh:
       // a refresh only updates the numbers, so the phone menu stays open and focus stays put.
       if (mods !== modsKey) { modsKey = mods; MODS = DATA.modules || []; route(); }
-      strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); visuals(); todo();
+      strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); exceptionsCard(DATA); activityCard(DATA); visuals(); todo();
       fresh();
     } catch (e) {
       failed = true;
