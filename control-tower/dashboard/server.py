@@ -18,6 +18,7 @@ import hashlib
 import io
 import hmac
 import json
+import logging
 import mimetypes
 import socket
 import os
@@ -954,11 +955,42 @@ class Handler(BaseHTTPRequestHandler):
         self._send(302, b"", "text/plain", extra={"Location": "/launch"})
         return True
 
+    # Every request gets an answer: an unexpected error is logged and answered
+    # with a 500, never a dropped connection ("Failed to fetch" in the browser).
+    def send_response(self, *args, **kwargs):
+        self._responded = True
+        return super().send_response(*args, **kwargs)
+
+    def _guarded(self, handler):
+        self._responded = False
+        try:
+            handler()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass                                    # the browser went away; nothing to answer
+        except Exception:
+            logging.getLogger("dashboard.server").exception("%s %s failed", self.command, self.path.split("?")[0])
+            if not self._responded:
+                try:
+                    self._send(500, json.dumps({"error": "server error"}))
+                except Exception:
+                    pass
+
     def do_GET(self):
+        self._guarded(self._do_get)
+
+    def do_POST(self):
+        self._guarded(self._do_post)
+
+    def _do_get(self):
         route = self.path.split("?")[0].rstrip("/") or "/"
         if self._launch_public(route):
             return
         if not self._gate("GET", route):
+            return
+
+        if route == "/api/auth/me":
+            # Personal sign-in off (the access key): no person, the pages' local mode, not a 404.
+            self._send(200, json.dumps({"mode": "local", "user": None, "permissions": []}))
             return
 
         if route == "/":
@@ -1215,7 +1247,7 @@ class Handler(BaseHTTPRequestHandler):
         if self._gate("PATCH", route):
             self._send(404, json.dumps({"error": "not found"}))
 
-    def do_POST(self):
+    def _do_post(self):
         route = self.path.split("?")[0].rstrip("/") or "/"
         if not self._gate("POST", route):
             return
@@ -1326,6 +1358,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(413, json.dumps({"error": "feedback too long"}))
                     return
                 payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("not an object")
             except Exception:
                 self._send(400, json.dumps({"error": "bad request"}))
                 return
