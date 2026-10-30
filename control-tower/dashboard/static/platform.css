@@ -131,9 +131,9 @@ html:active-view-transition-type(nav)::view-transition-group(appbar){animation:n
   --bg:#F6F5F3; --surface:#FFFFFF; --surface-2:#FAF9F7; --surface-3:#EFEEEB;
   --ink:#1D1D1F; --mid:#424245; --faint:#6E6E73;
   --line:rgba(0,0,0,.08); --line-2:rgba(0,0,0,.05); --line-hi:rgba(0,0,0,.12);
-  --brand:#0071E3; --brand-hi:#0062C4; --brand-wash:rgba(0,113,227,.08);
-  --solid:#0071E3; --on-solid:#FFFFFF;
-  --vio:#0071E3; --vio-wash:rgba(0,113,227,.08); --vio-line:rgba(0,113,227,.24);
+  --brand:#7A5C00; --brand-hi:#F2C200; --brand-wash:rgba(255,205,17,.20);
+  --solid:#FFCD11; --on-solid:#1D1D1F;
+  --vio:#7A5C00; --vio-wash:rgba(255,205,17,.18); --vio-line:rgba(201,154,0,.42);
   --nav-on:#FFFFFF; --on-nav:#1D1D1F;
   --card-edge:rgba(0,0,0,.05);
   --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.05);
@@ -154,9 +154,9 @@ html:active-view-transition-type(nav)::view-transition-group(appbar){animation:n
   --bg:#111113; --surface:#1C1C1E; --surface-2:#232325; --surface-3:#2C2C2E;
   --ink:#F5F5F7; --mid:#D1D1D6; --faint:#98989D;
   --line:rgba(255,255,255,.10); --line-2:rgba(255,255,255,.06); --line-hi:rgba(255,255,255,.16);
-  --brand:#0A84FF; --brand-hi:#409CFF; --brand-wash:rgba(10,132,255,.16);
-  --solid:#0A84FF; --on-solid:#FFFFFF;
-  --vio:#409CFF; --vio-wash:rgba(10,132,255,.14); --vio-line:rgba(10,132,255,.36);
+  --brand:#FFCD11; --brand-hi:#FFD84A; --brand-wash:rgba(255,205,17,.16);
+  --solid:#FFCD11; --on-solid:#1D1D1F;
+  --vio:#FFCD11; --vio-wash:rgba(255,205,17,.14); --vio-line:rgba(255,205,17,.40);
   --nav-on:rgba(255,255,255,.12); --on-nav:#FFFFFF;
   --card-edge:rgba(255,255,255,.07);
   --shadow:0 1px 2px rgba(0,0,0,.5);
@@ -167,4 +167,12 @@ html:active-view-transition-type(nav)::view-transition-group(appbar){animation:n
   --blu:#409CFF; --blu-wash:rgba(10,132,255,.16); --blu-line:rgba(10,132,255,.38);
   --teal:#64D2FF; --teal-dot:#64D2FF; --teal-wash:rgba(100,210,255,.14);
   --air:#409CFF; --ocean:#64D2FF; --road:#FF9F0A; --rail:#BF5AF2; --nomode:#8E8E93;
+}
+/* Midnight: the navy dark, a second dark beside Charcoal (the hub's theme buttons) */
+:root[data-theme="dark"][data-dark="midnight"]{
+  --bg:#0B1220; --surface:#121B2D; --surface-2:#0E1626; --surface-3:#172238;
+  --ink:#F2F4F8; --mid:#C9D1DE; --faint:#93A0B5;
+  --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.05); --line-hi:rgba(255,255,255,.14);
+  --nav-on:rgba(255,255,255,.11); --card-edge:rgba(255,255,255,.07);
+  --blu:#6EA8FF; --blu-wash:rgba(96,165,250,.13); --blu-line:rgba(96,165,250,.34);
 }

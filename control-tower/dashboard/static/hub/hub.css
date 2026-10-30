@@ -21,7 +21,11 @@
   --hub-line:rgba(0,0,0,.08);
   --hub-line-2:rgba(0,0,0,.05);
 
-  --hub-blue:#0071e3;  --hub-blue-wash:rgba(0,113,227,.10);
+  --hub-blue:#0071e3;  --hub-blue-wash:rgba(0,113,227,.10);   /* information: in transit, carrier routes */
+  /* Caterpillar: CAT Yellow for action and selection, with black on it; a deep gold
+     where it is text (yellow text on white would not be read); the focus ring the same. */
+  --hub-accent:#ffcd11; --hub-on-accent:#1d1d1f; --hub-accent-ink:#7a5c00; --hub-accent-wash:rgba(255,205,17,.22);
+  --hub-accent-hover:#f2c200; --hub-focus:#8a6a00;
   --hub-green:#34c759; --hub-green-wash:rgba(52,199,89,.13);
   --hub-amber:#ff9500; --hub-amber-wash:rgba(255,149,0,.13);
   --hub-red:#ff3b30;   --hub-red-wash:rgba(255,59,48,.10);
@@ -65,6 +69,8 @@
   --hub-red:#ff453a; --hub-red-wash:rgba(255,69,58,.16);
   --hub-teal:#64d2ff; --hub-teal-wash:rgba(100,210,255,.14);
   --hub-green-ink:#30d158; --hub-amber-ink:#ff9f0a; --hub-red-ink:#ff6961; --hub-teal-ink:#64d2ff;
+  --hub-accent:#ffcd11; --hub-on-accent:#1d1d1f; --hub-accent-ink:#ffcd11; --hub-accent-wash:rgba(255,205,17,.16);
+  --hub-accent-hover:#ffd84a; --hub-focus:#ffcd11;
   --hub-water:#101a2b; --hub-water-2:#0b1320;
   --hub-land:#26282c; --hub-land-side:#1a1b1e; --hub-land-edge:#3a3c41; --hub-land-focus:#1e3354; --hub-border:#45474d;
   --hub-tree:#30a14e; --hub-road:#2f3136;
@@ -83,6 +89,8 @@
   --hub-red:#ff453a; --hub-red-wash:rgba(255,69,58,.16);
   --hub-teal:#64d2ff; --hub-teal-wash:rgba(100,210,255,.14);
   --hub-green-ink:#30d158; --hub-amber-ink:#ff9f0a; --hub-red-ink:#ff6961; --hub-teal-ink:#64d2ff;
+  --hub-accent:#ffcd11; --hub-on-accent:#1d1d1f; --hub-accent-ink:#ffcd11; --hub-accent-wash:rgba(255,205,17,.16);
+  --hub-accent-hover:#ffd84a; --hub-focus:#ffcd11;
   --hub-water:#101a2b; --hub-water-2:#0b1320;
   --hub-land:#26282c; --hub-land-side:#1a1b1e; --hub-land-edge:#3a3c41; --hub-land-focus:#1e3354; --hub-border:#45474d;
   --hub-tree:#30a14e; --hub-road:#2f3136;
@@ -90,14 +98,36 @@
   --hub-shadow-lg:0 14px 44px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
 }
 
+/* Midnight: the navy dark, a second dark theme (Settings: Light · Charcoal · Midnight · Auto) */
+@media (prefers-color-scheme:dark){ :root[data-dark="midnight"]:not([data-theme="light"]){
+  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
+  --hub-glass:rgba(18,27,45,.88); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
+  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
+  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
+  --hub-water:#0d1b30; --hub-water-2:#0a1628;
+  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
+  --hub-road:#24334d;
+}}
+:root[data-theme="dark"][data-dark="midnight"]{
+  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
+  --hub-glass:rgba(18,27,45,.88); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
+  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
+  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
+  --hub-water:#0d1b30; --hub-water-2:#0a1628;
+  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
+  --hub-road:#24334d;
+}
+
 /* ── base ── */
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--hub-bg);color:var(--hub-ink);font:var(--hub-t-body);-webkit-font-smoothing:antialiased;letter-spacing:-.006em}
 .num,.hub-num{font-variant-numeric:tabular-nums}
-a{color:var(--hub-blue);text-decoration:none}
+a{color:var(--hub-accent-ink);text-decoration:none}
 button{font:inherit;color:inherit}
-:focus-visible{outline:3px solid color-mix(in srgb,var(--hub-blue) 60%,transparent);outline-offset:2px;border-radius:6px}
+:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px;border-radius:6px}
 .mono{font-family:var(--hub-mono)}
 [hidden]{display:none!important}
 
@@ -110,8 +140,8 @@ button{font:inherit;color:inherit}
 .hub-pill{transition:background-color .15s var(--hub-e),transform .15s var(--hub-e)}
 .hub-pill:hover{background:color-mix(in srgb,var(--hub-surface-2) 82%,var(--hub-ink) 6%)}
 .hub-pill:active{transform:scale(.98)}
-.hub-pill.primary{background:var(--hub-blue);color:#fff}
-.hub-pill.primary:hover{background:color-mix(in srgb,var(--hub-blue) 90%,#000)}
+.hub-pill.primary{background:var(--hub-accent);color:var(--hub-on-accent);font-weight:600}
+.hub-pill.primary:hover{background:var(--hub-accent-hover)}
 .hub-pill svg{width:15px;height:15px}
 .hub-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600;line-height:18px;white-space:nowrap}
 .hub-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}

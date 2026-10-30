@@ -32,8 +32,8 @@
 .hg-pin.t-red b{color:var(--hub-red-ink)} .hg-pin.t-amber b{color:var(--hub-amber-ink)} .hg-pin.t-green b{color:var(--hub-green-ink)} .hg-pin.t-blue b{color:var(--hub-blue)}
 .hg-pin.tight{opacity:0!important;pointer-events:none}
 .hg-pin.tight:focus-visible{opacity:1!important}
-.hg-pin:focus-visible{outline:2px solid var(--hub-blue);outline-offset:2px}
-.hg-pin[aria-pressed="true"]{box-shadow:0 0 0 2px var(--hub-blue),0 6px 18px rgba(0,0,0,.18)}
+.hg-pin:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
+.hg-pin[aria-pressed="true"]{box-shadow:0 0 0 2px var(--hub-accent),0 6px 18px rgba(0,0,0,.18)}
 .hg-card{position:absolute;left:14px;top:14px;width:min(280px,calc(100% - 28px));padding:14px 14px 12px;border-radius:18px;
   background:var(--hub-glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
   box-shadow:0 0 0 .5px var(--hub-line),0 10px 30px rgba(0,0,0,.12);color:var(--hub-ink);cursor:default}
@@ -42,7 +42,7 @@
 .hg-row{display:grid;grid-template-columns:34px 1fr 44px;align-items:center;gap:8px;width:100%;padding:5px 4px;border:0;background:none;border-radius:8px;
   font:inherit;font-size:12.5px;color:var(--hub-ink);cursor:pointer;text-align:left}
 .hg-row:hover{background:var(--hub-line-2)}
-.hg-row:focus-visible{outline:2px solid var(--hub-blue)}
+.hg-row:focus-visible{outline:3px solid var(--hub-focus)}
 .hg-row s{display:block;height:5px;border-radius:3px;background:var(--hub-line);text-decoration:none;overflow:hidden}
 .hg-row s u{display:block;height:100%;border-radius:3px;background:var(--hub-red)}
 .hg-row em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
@@ -54,15 +54,15 @@
 .hg-stats b.red{color:var(--hub-red-ink)} .hg-stats b.green{color:var(--hub-green-ink)}
 .hg-acts{display:flex;flex-wrap:wrap;gap:6px}
 .hg-acts button{height:28px;padding:0 12px;border-radius:999px;border:0;background:var(--hub-line-2);color:var(--hub-ink);font:600 12px/1 var(--hub-font,system-ui);cursor:pointer}
-.hg-acts button.primary{background:var(--hub-blue);color:#fff}
-.hg-acts button:focus-visible{outline:2px solid var(--hub-blue);outline-offset:2px}
+.hg-acts button.primary{background:var(--hub-accent);color:var(--hub-on-accent)}
+.hg-acts button:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
 .hg-rows{margin:0 0 10px;padding:0;list-style:none;font-size:11.5px;color:var(--hub-ink-2)}
 .hg-rows li{padding:3px 0;border-top:1px solid var(--hub-line-2)}
 .hg-note{margin:8px 0 0;font-size:10.5px;color:var(--hub-ink-3)}
 .hg-ctl{position:absolute;right:12px;bottom:12px;display:flex;gap:6px}
 .hg-ctl button{width:32px;height:32px;border-radius:50%;border:0;display:grid;place-items:center;color:var(--hub-ink);cursor:pointer;
   background:var(--hub-glass);-webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);box-shadow:0 0 0 .5px var(--hub-line),0 4px 12px rgba(0,0,0,.1)}
-.hg-ctl button:focus-visible{outline:2px solid var(--hub-blue);outline-offset:2px}
+.hg-ctl button:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px}
 .hg-empty{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:12px;color:var(--hub-ink-3)}
 @media (max-width:640px){.hg-card{top:auto;bottom:56px;width:calc(100% - 28px)}.hg-card.list{display:none}}
 `;
@@ -138,13 +138,16 @@
     function readTheme() {
       const cs = getComputedStyle(document.documentElement), v = (k, d) => (cs.getPropertyValue(k) || "").trim() || d;
       const bg = v("--hub-bg", "#f5f5f7"), dark = lum(bg) < 0.3;
+      const navy = dark && document.documentElement.dataset.dark === "midnight";
       pal = dark ? {
-        bg0: "#1c1c1e", bg1: "#0c0c0d", sea0: "#1d2b44", sea1: "#0d1422", rim: "rgba(120,170,255,.22)", halo: "rgba(10,132,255,.22)",
+        bg0: navy ? "#13203a" : "#1c1c1e", bg1: navy ? "#0b1220" : "#0c0c0d", sea0: "#1d2b44", sea1: "#0d1422", rim: "rgba(120,170,255,.22)", halo: "rgba(10,132,255,.22)",
         dot: [152, 168, 196], focus: [64, 156, 255], arc: v("--hub-blue", "#0a84ff"), line: "rgba(255,255,255,.06)"
       } : {
         bg0: "#ffffff", bg1: "#eef1f6", sea0: "#ffffff", sea1: "#e8edf4", rim: "rgba(0,0,0,.07)", halo: "rgba(0,113,227,.10)",
         dot: [120, 128, 140], focus: [0, 113, 227], arc: v("--hub-blue", "#0071e3"), line: "rgba(0,0,0,.05)"
       };
+      const acc = /^#([0-9a-f]{6})$/i.exec(v(dark ? "--hub-accent" : "--hub-accent-ink", dark ? "#ffcd11" : "#7a5c00"));
+      if (acc) { const n = parseInt(acc[1], 16); pal.focus = [n >> 16, (n >> 8) & 255, n & 255]; }
       pal.tone = {red: v("--hub-red", "#e5383b"), amber: v("--hub-amber", "#e08a00"), green: v("--hub-green", "#28a745"), blue: v("--hub-blue", "#0071e3")};
       pal.dark = dark;
       dirty();
@@ -472,7 +475,7 @@
     /* ── life cycle: theme, size, visibility ── */
     readTheme(); resize();
     const mo = new MutationObserver(readTheme);
-    mo.observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme", "class"]});
+    mo.observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme", "data-dark", "class"]});
     const mq = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
     mq && mq.addEventListener && mq.addEventListener("change", readTheme);
     const ro = window.ResizeObserver ? new ResizeObserver(resize) : null;

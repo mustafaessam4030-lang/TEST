@@ -151,7 +151,7 @@
   color:var(--hub-ink);font:inherit;text-align:left;cursor:pointer;pointer-events:auto;
   transition:border-color .25s,opacity .35s var(--hub-e,ease)}
 .hop-label:hover,.hop-label.is-hov{z-index:3}
-.hop-label:focus-visible{outline:2px solid var(--hub-blue);outline-offset:3px;border-radius:var(--hub-r,14px);z-index:3}
+.hop-label:focus-visible{outline:3px solid var(--hub-focus);outline-offset:3px;border-radius:var(--hub-r,14px);z-index:3}
 .hop-label.is-on{border-color:color-mix(in srgb,var(--tone) 55%,transparent)}
 .hop.has-active .hop-label:not(.is-on){opacity:.72}
 .hop-top{display:flex;align-items:center;gap:7px;line-height:1}

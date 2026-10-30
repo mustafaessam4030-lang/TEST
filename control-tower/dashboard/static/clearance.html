@@ -8,6 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23FFCD11%27/%3E%3Cpath d=%27M7 24V8h4l5 8 5-8h4v16h-4V15l-5 7-5-7v9z%27 fill=%27%23111%27/%3E%3C/svg%3E">
 <!-- The platform's theme (Light, Dark or System), before the first paint, from
      the same saved choice the console uses; the account's choice follows. -->
+<script>try{if(localStorage.getItem('ct-dark')==='midnight')document.documentElement.dataset.dark='midnight';}catch(e){}</script>
 <script>(function(){var c='system';try{c=localStorage.getItem('ata-theme')||'system';}catch(e){}
 var d=c==='dark'||(c!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
 document.documentElement.dataset.theme=d?'dark':'light';document.documentElement.dataset.themeChoice=c;})();</script>
@@ -20,7 +21,8 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
 var h=document.documentElement;h.classList.add('in-hub');
 try{sessionStorage.setItem('ct-intro','1');}catch(e){}
 var th=function(t){if(t==='dark'||t==='light')h.dataset.theme=t;};th(q.get('theme'));
-addEventListener('message',function(e){if(e.origin!==location.origin||!e.data)return;if(e.data.type==='hub-theme')th(e.data.theme);
+var dk=function(d){if(d==='midnight')h.dataset.dark='midnight';else if(d==='charcoal')delete h.dataset.dark;};dk(q.get('dark'));
+addEventListener('message',function(e){if(e.origin!==location.origin||!e.data)return;if(e.data.type==='hub-theme'){th(e.data.theme);dk(e.data.dark);}
 else if(e.data.type==='hub-chat-open'){var f=document.getElementById('askFab');if(f)f.click();}});
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a||a.target||e.defaultPrevented)return;
 var u=new URL(a.href,location.href);if(u.origin!==location.origin||u.pathname===location.pathname||/^\/(api|static)\//.test(u.pathname))return;
@@ -323,8 +325,8 @@ select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:va
 .ask.show{display:flex}
 .ask .ah{padding:12px 14px;border-bottom:1px solid var(--line);font-weight:700;display:flex;justify-content:space-between;align-items:center}
 .ask .am{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;font-size:13px}
-.ask .me{align-self:flex-end;background:var(--ink);color:var(--surface);border-radius:12px 12px 2px 12px;padding:8px 11px;max-width:85%}
-.ask .bot{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line-2);border-radius:12px 12px 12px 2px;padding:9px 12px;max-width:95%;white-space:pre-wrap}
+.ask .me{align-self:flex-end;background:var(--solid);color:var(--on-solid);border-radius:18px 18px 5px 18px;padding:8px 13px;max-width:85%}
+.ask .bot{align-self:flex-start;background:var(--surface-3);border:0;border-radius:18px 18px 18px 5px;padding:9px 13px;max-width:95%;white-space:pre-wrap}
 .ask .bot a{color:var(--vio);font-weight:600}
 .ask form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
 .ask input{flex:1;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;background:var(--surface-2);color:var(--ink)}
