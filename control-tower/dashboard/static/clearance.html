@@ -356,7 +356,7 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
   <nav class="tnav" aria-label="Pages">
     <a href="/#overview">Overview</a>
     <a href="/#shipments">Shipments</a>
-    <a href="/#po">PO Automation</a>
+    <a href="/#po">BOE Automation</a>
     <a href="/clearance" aria-current="page">Clearance</a>
     <a href="/#atlas">ATLAS</a>
     <a href="/#human">Human Action</a>
@@ -1275,7 +1275,7 @@ async function loadContacts() { try { const c = await (await api("/api/clearance
 
 /* ── Ask ATLAS (the same ATLAS, answering from this export) ─────────────── */
 const askFmt = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>")
-  .replace(/\[([^\]<>]+)\]\((\/(?!\/)[\w\-\/#=&;.%+]*)\)/g, '<a href="$2">$1</a>');
+  .replace(/\[([^\]<>]+)\]\((\/(?!\/)[\w\-\/#=&;.%+?]*)\)/g, '<a href="$2">$1</a>');
 const atlasIcon = () => $("axTpl").content.firstElementChild.cloneNode(true);
 document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
 function askAdd(cls, html) {
