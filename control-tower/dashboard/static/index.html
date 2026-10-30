@@ -47,7 +47,7 @@ var n=0,t=setInterval(function(){var f=document.getElementById('fab');if((f&&!f.
 }catch(e){}})();</script>
 <style id="in-hub-css">html.in-hub .appbar{display:none!important}html.in-hub #app{grid-template-rows:0 1fr}
 html.in-hub #hbox,html.in-hub #hq{display:none!important}
-html.hub-chat body>:not(#app){display:none!important}html.hub-chat #app>:not(#chat):not(#chScrim){display:none!important}
+html.hub-chat body>:not(#app):not(svg){display:none!important}html.hub-chat #app>:not(#chat):not(#chScrim){display:none!important}
 html.hub-chat #app{opacity:1!important;animation:none!important;background:transparent}html.hub-chat,html.hub-chat body{background:transparent!important}</style>
 <!-- No webfont. The interface uses the face the operating system already
      has: Segoe UI Variable on Windows, SF on macOS, Roboto on Android. That
@@ -2595,29 +2595,101 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 </style>
 <style>
 /* ══════════════════════════════════════════════════════════════
-   MESSAGES — ATLAS's chat in the language of Apple's Messages, in
-   Caterpillar's colours: what you write in a CAT-yellow bubble on the
-   right, ATLAS's answer in a grey bubble on the left with its face at the
-   foot, the corner nearest the speaker drawn in (the "tail"), a typing
-   bubble while ATLAS answers, and a rounded composer with a round send.
-   Styles only: the chat's markup, script and behaviour are unchanged.
+   MESSAGES — ATLAS's chat as Apple's Messages, in Caterpillar's colours.
+   Learned from Messages: the other person's face and name centred at the
+   top (not on every message); your words in a coloured bubble on the right,
+   theirs grey on the left; a run of messages grouped, the tail only on the
+   last; "Delivered" under your latest message, a red "!" and "Not
+   Delivered" when the answer did not come; a typing bubble with three dots;
+   reactions in a small capsule over the bubble; a rounded field whose send
+   button pops in only when there is something to send; messages rising
+   from the field when sent. Styles only: markup, script and behaviour are
+   unchanged.
 ══════════════════════════════════════════════════════════════ */
-:root{--ch-them:#E9E9EB;--ch-them-ink:#1D1D1F}
+:root{--ch-them:#E9E9EB;--ch-them-ink:#1D1D1F;--ch-pop:cubic-bezier(.2,.9,.25,1.15)}
 :root[data-theme="dark"]{--ch-them:#2C2C2E;--ch-them-ink:#F5F5F7}
 :root[data-theme="dark"][data-dark="midnight"]{--ch-them:#1C2A42}
-#chat .ch-b{gap:14px}
-#chat .msg.me .bub{background:var(--solid);color:var(--on-solid);border-radius:20px 20px 6px 20px;padding:9px 15px;font-weight:450}
+
+/* the header: ATLAS's face and name in the middle, frosted */
+#chat[data-size] .ch-h{position:relative;justify-content:flex-end;gap:8px;min-height:86px;padding:10px 12px;
+  background:color-mix(in srgb,var(--card) 84%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+#chat[data-size] .ch-h .ch-av{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:42px;height:42px;margin:0}
+#chat[data-size] .ch-h .ch-id{position:absolute;left:50%;top:54px;transform:translateX(-50%);flex:none;min-width:0;max-width:46%;text-align:center}
+#chat .ch-nm{font-size:12.5px;font-weight:600;letter-spacing:.01em}
+#chat .ch-nm .ch-sub{display:none}
+#chat[data-size] .ch-rl{justify-content:center;margin-top:1px;font-size:11px;white-space:nowrap}
+#chat[data-size] .ch-h .ch-ctx{margin:0 auto 0 0}
+
+/* the conversation: runs grouped, one bubble per message, no repeated avatar */
+#chat .ch-b{gap:0;padding-top:20px}
+#chat .ch-b > * + *{margin-top:14px}
+#chat .ch-b > .msg.me + .msg.me,#chat .ch-b > .msg.bot:not(.think) + .msg.bot{margin-top:3px}
+#chat .msg.bot .m-av.ax-av{display:none}
+#chat .msg .bub{position:relative}
+#chat .msg.me{max-width:min(75%,560px);flex-wrap:wrap}
+#chat .msg.me .bub{background:var(--solid);color:var(--on-solid);border-radius:19px;padding:8px 14px;font-size:15px;line-height:1.38;font-weight:450}
 #chat .msg.me .bub a{color:inherit;text-decoration:underline}
+#chat .msg.bot:not(.think){max-width:min(86%,720px);align-items:flex-end}
+#chat .msg.bot .bub{flex:0 1 auto;min-width:0;background:var(--ch-them);color:var(--ch-them-ink);border-radius:19px;padding:10px 15px}
 #chat .msg.bot .bub a{color:var(--brand);font-weight:600}
-#chat .msg.bot:not(.think){align-items:flex-end;max-width:min(90%,740px)}
-#chat .msg.bot .bub{flex:0 1 auto;min-width:0;background:var(--ch-them);color:var(--ch-them-ink);border-radius:20px 20px 20px 6px;padding:11px 16px}
+/* the tail, on the last bubble of a run */
+#chat .msg.me:not(:has(+ .msg.me)) .bub::before,#chat .msg.bot:not(.think):not(:has(+ .msg.bot)) .bub:not(.err)::before{content:"";position:absolute;bottom:0;width:20px;height:20px}
+#chat .msg.me:not(:has(+ .msg.me)) .bub::after,#chat .msg.bot:not(.think):not(:has(+ .msg.bot)) .bub:not(.err)::after{content:"";position:absolute;bottom:0;width:10px;height:20px;background:var(--card)}
+#chat .msg.me:not(:has(+ .msg.me)) .bub::before{right:-7px;background:var(--solid);border-bottom-left-radius:16px 14px}
+#chat .msg.me:not(:has(+ .msg.me)) .bub::after{right:-10px;border-bottom-left-radius:10px}
+#chat .msg.bot:not(.think):not(:has(+ .msg.bot)) .bub:not(.err)::before{left:-7px;background:var(--ch-them);border-bottom-right-radius:16px 14px}
+#chat .msg.bot:not(.think):not(:has(+ .msg.bot)) .bub:not(.err)::after{left:-10px;border-bottom-right-radius:10px}
 #chat .msg.bot .bub.stern{background:var(--y-wash)}
-#chat .msg.bot .m-av.ax-av{margin:0 0 2px}
-#chat .msg.think{align-items:flex-end}
-#chat .msg.think .th{background:var(--ch-them);border-radius:20px 20px 20px 6px;padding:10px 15px}
-#chat .th-dots span{background:var(--faint);opacity:.55}
-#chat .send{background:var(--solid);color:var(--on-solid)}
+#chat .msg.bot .bub.stern::before{background:var(--y-wash)}
+
+/* "Delivered" under your latest message once ATLAS has answered; "Not Delivered" with a red "!" when it could not */
+#chat .msg.me:not(:has(~ .msg.me)):has(+ .msg.bot:not(.think) .bub:not(.err))::after{content:"Delivered";flex-basis:100%;text-align:right;
+  margin-top:3px;font-size:11px;font-weight:500;color:var(--faint)}
+#chat .msg.me:has(+ .msg.bot .bub.err)::after{content:"Not Delivered";flex-basis:100%;text-align:right;margin-top:3px;font-size:11px;font-weight:600;color:var(--red)}
+#chat .msg.me:has(+ .msg.bot .bub.err)::before{content:"!";align-self:center;flex:none;width:20px;height:20px;border-radius:50%;
+  background:var(--red);color:#fff;font:700 13px/20px var(--s);text-align:center}
+#chat .msg.bot .bub.err{background:transparent;padding:2px 4px;color:var(--mid)}
+
+/* the typing bubble: three dots, the step ATLAS is on written small beneath */
+#chat .msg.think{align-items:flex-start}
+#chat .msg.think .m-av{display:none}
+#chat .msg.think .th{flex-direction:column;align-items:flex-start;gap:5px;background:none;padding:0;border-radius:0}
+#chat .msg.think .th-dots{order:-1;display:inline-flex;gap:5px;background:var(--ch-them);border-radius:19px;padding:13px 15px}
+#chat .msg.think .th-dots span{width:8px;height:8px;border-radius:50%;background:var(--faint);opacity:.35;animation:imsgDot 1.3s ease-in-out infinite}
+#chat .msg.think .th-dots span:nth-child(2){animation-delay:.18s} #chat .msg.think .th-dots span:nth-child(3){animation-delay:.36s}
+@keyframes imsgDot{0%,60%,100%{opacity:.35;transform:none}30%{opacity:.95;transform:translateY(-2px)}}
+#chat .msg.think .th-txt{padding-left:6px}
+#chat .msg.think .th-label{font-size:12px;color:var(--faint);background:none;-webkit-text-fill-color:currentColor;animation:none}
+
+/* reactions: a small capsule over the bubble (as Messages' tapbacks), quiet until wanted */
+#chat .msg.bot .bub .fb{position:absolute;top:-36px;right:6px;z-index:2;margin:0;padding:3px 6px;gap:2px;flex-wrap:nowrap;white-space:nowrap;
+  background:var(--card);border-radius:999px;box-shadow:0 0 0 .5px var(--line-hi),0 6px 18px rgba(0,0,0,.14);transform:translateY(4px) scale(.96);
+  transition:opacity .18s var(--e),transform .25s var(--ch-pop)}
+#chat .msg.bot:hover .bub .fb,#chat .msg.bot:focus-within .bub .fb,#chat .msg.bot .bub .fb:has(.picked),#chat .msg.bot .bub .fb:has(.fb-done){transform:none}
+#chat .msg.bot .bub .fb button{border:0;padding:4px 7px;font-size:13px}
+#chat .msg.bot .bub .fb button.picked{background:var(--brand-wash)}
+#chat .msg.bot .bub .fb time{font-family:var(--s);font-size:10.5px;margin:0 2px 0 4px}
+#chat .msg.bot .bub .fb .fb-t{display:none}
+@media(hover:none){#chat .msg.bot .bub .fb{position:static;box-shadow:none;background:transparent;transform:none;margin-top:6px}}
+
+/* the composer: a rounded field, the send button popping in when there is something to send */
+#chat .ch-box{border-radius:21px;border:1px solid var(--line-hi);background:var(--card);padding:3px 4px;box-shadow:none;align-items:center}
 #chat .ch-box:focus-within{border-color:var(--vio-line);box-shadow:0 0 0 4px var(--brand-wash)}
+#chat .attach{width:30px;height:30px;background:var(--surface-3);color:var(--mid)}
+#chat .ch-ta{font-size:15px;padding:6px 8px}
+#chat .send{width:30px;height:30px;background:var(--solid);color:var(--on-solid);transition:opacity .16s var(--e),transform .3s var(--ch-pop)}
+#chat .send svg{width:16px;height:16px}
+#chat .send:disabled{opacity:0;transform:scale(.4);pointer-events:none}
+#chat .ch-hint{opacity:0;transition:opacity .2s var(--e)}
+#chat .ch-f:focus-within .ch-hint{opacity:1}
+#chat .ch-s > *{border-radius:999px}
+
+/* motion: what you send rises from the field; ATLAS's answer eases in from its side */
+@keyframes imsgSend{from{opacity:0;transform:translateY(22px) scale(.86)}55%{opacity:1}to{opacity:1;transform:none}}
+@keyframes imsgRecv{from{opacity:0;transform:translateY(6px) scale(.94)}to{opacity:1;transform:none}}
+#chat .msg.me{animation:imsgSend .44s var(--ch-pop) both;transform-origin:100% 100%}
+#chat .msg.bot{animation:imsgRecv .34s var(--ch-pop) both;transform-origin:0 100%}
+@media (prefers-reduced-motion:reduce){#chat .msg.me,#chat .msg.bot,#chat .send{animation:none;transition:none}}
 .cl-k.k-rec{color:var(--brand)}
 </style>
 </head>
