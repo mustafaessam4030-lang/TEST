@@ -106,7 +106,9 @@ else:
         pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.on("request", lambda r: None if r.url.startswith(BASE) or r.url.startswith("data:") or r.url.startswith("blob:")
               else outside.append(r.url))
-        pg.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light');" + (init or ""))
+        # the Map view (the Overview opens on the globe; these checks are the map's)
+        pg.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light');"
+                           "localStorage.setItem('hub-map-view','map');" + (init or ""))
         pg.goto(BASE + "/hub" + query)
         return pg, logs, errors, outside
 

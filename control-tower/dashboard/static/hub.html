@@ -105,6 +105,11 @@
 .card-h h2{margin:0;font-size:16px;letter-spacing:-.01em}
 .card-h p{margin:2px 0 0;font-size:12.5px;color:var(--hub-ink-3)}
 .card-h .sp{flex:1}
+.seg{display:inline-flex;flex:none;padding:2px;border-radius:9px;background:var(--hub-line-2);box-shadow:inset 0 0 0 .5px var(--hub-line)}
+.seg button{height:26px;padding:0 14px;border:0;border-radius:7px;background:transparent;color:var(--hub-ink-2);font:500 12.5px/1 var(--hub-font);cursor:pointer;transition:background .2s var(--hub-e),box-shadow .2s var(--hub-e)}
+.seg button[aria-pressed="true"]{background:var(--hub-surface);color:var(--hub-ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px var(--hub-line)}
+.seg button:focus-visible{outline:2px solid var(--hub-blue);outline-offset:1px}
+.mapbox[hidden]{display:none}
 .mapbox{position:relative;height:560px;margin:0 10px 10px;border-radius:18px;overflow:hidden;background:var(--hub-water)}
 .opsbox{position:relative;min-height:380px;margin:0 10px 10px;border-radius:18px;overflow:hidden}
 .legend{display:flex;flex-wrap:wrap;gap:14px;padding:0 18px 14px;font-size:12px;color:var(--hub-ink-3)}
@@ -218,8 +223,11 @@
           <div class="stack">
             <section class="card" aria-labelledby="mapT">
               <div class="card-h"><div><h2 id="mapT">Where shipments are</h2>
-                <p>Business units where shipments clear, and the places carriers last reported. Not live GPS.</p></div></div>
-              <div class="mapbox" id="map"></div>
+                <p>Business units where shipments clear, and the places carriers last reported. Not live GPS.</p></div>
+                <span class="sp"></span>
+                <div class="seg" id="mapSeg" role="group" aria-label="Map style"><button type="button" data-mv="globe" aria-pressed="true">Globe</button><button type="button" data-mv="map" aria-pressed="false">Map</button></div></div>
+              <div class="mapbox globebox" id="globe"></div>
+              <div class="mapbox" id="map" hidden></div>
               <div class="legend"><span><b>Number on a BU pin = open shipments past due</b></span><span><i style="background:var(--hub-red)"></i>Some past due</span><span><i style="background:var(--hub-amber)"></i>Open, none past due</span>
                 <span><i style="background:var(--hub-green)"></i>On track / written</span><span><i style="background:var(--hub-blue)"></i>Carrier-reported place (number = shipments in this run)</span>
                 <span>Solid line: reported · dashed: to destination</span></div>
@@ -269,6 +277,7 @@
 <script src="/static/todo.js" defer></script>
 <script src="/static/hub/map3d.js" defer></script>
 <script src="/static/hub/map3d_gl.js" defer></script>
+<script src="/static/hub/globe.js" defer></script>
 <script src="/static/hub/opsscene.js" defer></script>
 <script src="/static/hub/views.js" defer></script>
 <script>
@@ -568,21 +577,51 @@
     }
     return {focus: (d.bus || []).map((b) => b.cc), pins, routes, countLabel: "past due"};
   }
+  // Globe or map: the same pins and routes, two ways to look at them. ?map=2d / ?map=3d open the map, ?map=globe the globe.
+  let globe = null, mapView = (() => {
+    let q = ""; try { q = (new URLSearchParams(location.search).get("map") || "").toLowerCase(); } catch (e) { /* old browser */ }
+    if (q === "2d" || q === "3d") return "map";
+    if (q === "globe") return "globe";
+    try { return localStorage.getItem("hub-map-view") === "map" ? "map" : "globe"; } catch (e) { return "globe"; }
+  })();
+  function onMapAction(pin, ev) {
+    if (!pin) return;
+    const bu = pin.id.startsWith("bu:") ? pin.id.slice(3) : null;
+    if (ev === "list" && bu) openList("all", bu);
+    else if (ev === "pastdue" && bu) openList("pastdue", bu);
+    else if (ev === "clearance" && bu) location.hash = "#clearance?bu=" + encodeURIComponent(bu);
+    else if (ev === "run") location.hash = "#ata";
+    else if (ev === "ask") location.hash = "#atlas";
+  }
+  function segState() {
+    for (const b of $("mapSeg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.mv === mapView));
+    $("globe").hidden = mapView !== "globe"; $("map").hidden = mapView !== "map";
+  }
+  $("mapSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-mv]"); if (!b || b.dataset.mv === mapView) return;
+    mapView = b.dataset.mv;
+    try { localStorage.setItem("hub-map-view", mapView); } catch (err) { /* private window */ }
+    segState(); if (DATA) mountMap(DATA);
+  });
+  segState();
   function mountMap(d) {
+    segState();
+    if (mapView === "globe") {
+      if (!window.HubGlobe) { $("globe").innerHTML = '<div class="hub-empty"><b>Globe unavailable</b>The globe component did not load.</div>'; return; }
+      if (!globe) { globe = HubGlobe.mount($("globe"), {worldUrl: "/static/maps/world.json"}); globe.on("action", onMapAction); }
+      globe.setData(mapData(d));
+      unplacedNote(d);
+      return;
+    }
     if (!window.HubMap3D) { $("map").innerHTML = '<div class="hub-empty"><b>Map unavailable</b>The map component did not load.</div>'; return; }
     if (!map) {
       map = HubMap3D.mount($("map"), {worldUrl: "/static/maps/world.json"});
-      map.on("action", (pin, ev) => {
-        if (!pin) return;
-        const bu = pin.id.startsWith("bu:") ? pin.id.slice(3) : null;
-        if (ev === "list" && bu) openList("all", bu);
-        else if (ev === "pastdue" && bu) openList("pastdue", bu);
-        else if (ev === "clearance" && bu) location.hash = "#clearance?bu=" + encodeURIComponent(bu);
-        else if (ev === "run") location.hash = "#ata";
-        else if (ev === "ask") location.hash = "#atlas";
-      });
+      map.on("action", onMapAction);
     }
     map.setData(mapData(d));
+    unplacedNote(d);
+  }
+  function unplacedNote(d) {
     const un = d.unplaced || [];
     $("unplaced").hidden = !un.length;
     $("unplaced").textContent = un.length ? "Not on the map (no country known for the business unit): " +

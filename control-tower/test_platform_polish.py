@@ -236,11 +236,14 @@ sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light');
         lz = br.new_page(viewport={"width": 1366, "height": 768})
         lz.add_init_script("sessionStorage.setItem('ct-intro','1')")
         lz.goto(BASE + "/hub#tracking"); lz.wait_for_timeout(3000)
-        got = lz.evaluate("performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))")
+        three = "performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))"
+        got = lz.evaluate(three)
         lz.evaluate("location.hash = ''"); lz.wait_for_timeout(3000)
-        later = lz.evaluate("performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))") or \
-            lz.locator("#map").get_attribute("data-map-mode") in ("2d", "3d", "loading")
-        check("three.js loads when the Overview (with its map) is shown, not on other views", not got and later, (got, later))
+        on_globe = lz.evaluate(three)
+        lz.locator('#mapSeg button[data-mv="map"]').click(); lz.wait_for_timeout(3000)
+        later = lz.evaluate(three) or lz.locator("#map").get_attribute("data-map-mode") in ("2d", "3d", "loading")
+        check("three.js loads only when the Map is shown: not on other views, not with the globe",
+              not got and not on_globe and later, (got, on_globe, later))
         lz.close()
         cl = br.new_page(viewport={"width": 1366, "height": 768})
         cerr = []
