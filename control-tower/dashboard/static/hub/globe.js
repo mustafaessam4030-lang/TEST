@@ -139,8 +139,8 @@
       const cs = getComputedStyle(document.documentElement), v = (k, d) => (cs.getPropertyValue(k) || "").trim() || d;
       const bg = v("--hub-bg", "#f5f5f7"), dark = lum(bg) < 0.3;
       pal = dark ? {
-        bg0: "#13203a", bg1: "#0b1220", sea0: "#182a48", sea1: "#0e1a2e", rim: "rgba(120,170,255,.22)", halo: "rgba(59,155,255,.20)",
-        dot: [150, 172, 205], focus: [96, 170, 255], arc: v("--hub-blue", "#3b9bff"), line: "rgba(255,255,255,.07)"
+        bg0: "#1c1c1e", bg1: "#0c0c0d", sea0: "#1d2b44", sea1: "#0d1422", rim: "rgba(120,170,255,.22)", halo: "rgba(10,132,255,.22)",
+        dot: [152, 168, 196], focus: [64, 156, 255], arc: v("--hub-blue", "#0a84ff"), line: "rgba(255,255,255,.06)"
       } : {
         bg0: "#ffffff", bg1: "#eef1f6", sea0: "#ffffff", sea1: "#e8edf4", rim: "rgba(0,0,0,.07)", halo: "rgba(0,113,227,.10)",
         dot: [120, 128, 140], focus: [0, 113, 227], arc: v("--hub-blue", "#0071e3"), line: "rgba(0,0,0,.05)"

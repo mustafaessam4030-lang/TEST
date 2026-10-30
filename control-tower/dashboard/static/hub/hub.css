@@ -1,6 +1,6 @@
-/* ATLAS Control Tower — design system (CONTROL_TOWER_PLAN.md §5).
+/* ATLAS Control Tower — design system (CONTROL_TOWER_PLAN.md §5, §12).
    One set of tokens for every hub page and component. Light by default, as in
-   the reference; a midnight-navy dark mode for control-room screens. Status
+   the reference; Apple's neutral graphite dark mode (as on every page). Status
    colours are for status only; one system blue is for action and selection. */
 
 :root{
@@ -22,13 +22,13 @@
   --hub-line-2:rgba(0,0,0,.05);
 
   --hub-blue:#0071e3;  --hub-blue-wash:rgba(0,113,227,.10);
-  --hub-green:#28a745; --hub-green-wash:rgba(40,167,69,.12);
-  --hub-amber:#e08a00; --hub-amber-wash:rgba(224,138,0,.13);
-  --hub-red:#e5383b;   --hub-red-wash:rgba(229,56,59,.11);
-  --hub-teal:#0a9fb5;  --hub-teal-wash:rgba(10,159,181,.12);
+  --hub-green:#34c759; --hub-green-wash:rgba(52,199,89,.13);
+  --hub-amber:#ff9500; --hub-amber-wash:rgba(255,149,0,.13);
+  --hub-red:#ff3b30;   --hub-red-wash:rgba(255,59,48,.10);
+  --hub-teal:#30b0c7;  --hub-teal-wash:rgba(48,176,199,.13);
   /* status colours as TEXT (dots, bars and fills keep the bright ones): 4.5:1 or better */
-  --hub-green-ink:#1d7a33; --hub-amber-ink:#8a5000; --hub-red-ink:#c62828;
-  --hub-purple:#7d5bd6;
+  --hub-green-ink:#1d7a33; --hub-amber-ink:#8a5000; --hub-red-ink:#d70015; --hub-teal-ink:#0e7490;
+  --hub-purple:#af52de;
 
   /* map and scene "clay" */
   --hub-water:#dfe9f3; --hub-water-2:#cfdeec;
@@ -44,37 +44,37 @@
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
   color-scheme:dark;
-  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
-  --hub-glass:rgba(18,27,45,.70); --hub-glass-edge:rgba(255,255,255,.08);
-  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
-  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
-  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
-  --hub-green:#3fcf6f; --hub-green-wash:rgba(63,207,111,.15);
-  --hub-amber:#ffb340; --hub-amber-wash:rgba(255,179,64,.15);
-  --hub-red:#ff5c61; --hub-red-wash:rgba(255,92,97,.15);
-  --hub-teal:#4fd1e4; --hub-teal-wash:rgba(79,209,228,.14);
-  --hub-green-ink:#3fcf6f; --hub-amber-ink:#ffb340; --hub-red-ink:#ff5c61;
-  --hub-water:#0d1b30; --hub-water-2:#0a1628;
-  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
-  --hub-tree:#3f8f52; --hub-road:#24334d;
+  --hub-bg:#000000; --hub-bg-2:#161618; --hub-surface:#1c1c1e; --hub-surface-2:#2c2c2e;
+  --hub-glass:rgba(30,30,32,.72); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f5f5f7; --hub-ink-2:#d1d1d6; --hub-ink-3:#98989d; --hub-ink-4:#636366;
+  --hub-line:rgba(255,255,255,.10); --hub-line-2:rgba(255,255,255,.06);
+  --hub-blue:#0a84ff; --hub-blue-wash:rgba(10,132,255,.18);
+  --hub-green:#30d158; --hub-green-wash:rgba(48,209,88,.15);
+  --hub-amber:#ff9f0a; --hub-amber-wash:rgba(255,159,10,.15);
+  --hub-red:#ff453a; --hub-red-wash:rgba(255,69,58,.16);
+  --hub-teal:#64d2ff; --hub-teal-wash:rgba(100,210,255,.14);
+  --hub-green-ink:#30d158; --hub-amber-ink:#ff9f0a; --hub-red-ink:#ff6961; --hub-teal-ink:#64d2ff;
+  --hub-water:#101a2b; --hub-water-2:#0b1320;
+  --hub-land:#26282c; --hub-land-side:#1a1b1e; --hub-land-edge:#3a3c41; --hub-land-focus:#1e3354; --hub-border:#45474d;
+  --hub-tree:#30a14e; --hub-road:#2f3136;
   --hub-shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
   --hub-shadow-lg:0 14px 50px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
 }}
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
-  --hub-glass:rgba(18,27,45,.70); --hub-glass-edge:rgba(255,255,255,.08);
-  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
-  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
-  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
-  --hub-green:#3fcf6f; --hub-green-wash:rgba(63,207,111,.15);
-  --hub-amber:#ffb340; --hub-amber-wash:rgba(255,179,64,.15);
-  --hub-red:#ff5c61; --hub-red-wash:rgba(255,92,97,.15);
-  --hub-teal:#4fd1e4; --hub-teal-wash:rgba(79,209,228,.14);
-  --hub-green-ink:#3fcf6f; --hub-amber-ink:#ffb340; --hub-red-ink:#ff5c61;
-  --hub-water:#0d1b30; --hub-water-2:#0a1628;
-  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
-  --hub-tree:#3f8f52; --hub-road:#24334d;
+  --hub-bg:#000000; --hub-bg-2:#161618; --hub-surface:#1c1c1e; --hub-surface-2:#2c2c2e;
+  --hub-glass:rgba(30,30,32,.72); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f5f5f7; --hub-ink-2:#d1d1d6; --hub-ink-3:#98989d; --hub-ink-4:#636366;
+  --hub-line:rgba(255,255,255,.10); --hub-line-2:rgba(255,255,255,.06);
+  --hub-blue:#0a84ff; --hub-blue-wash:rgba(10,132,255,.18);
+  --hub-green:#30d158; --hub-green-wash:rgba(48,209,88,.15);
+  --hub-amber:#ff9f0a; --hub-amber-wash:rgba(255,159,10,.15);
+  --hub-red:#ff453a; --hub-red-wash:rgba(255,69,58,.16);
+  --hub-teal:#64d2ff; --hub-teal-wash:rgba(100,210,255,.14);
+  --hub-green-ink:#30d158; --hub-amber-ink:#ff9f0a; --hub-red-ink:#ff6961; --hub-teal-ink:#64d2ff;
+  --hub-water:#101a2b; --hub-water-2:#0b1320;
+  --hub-land:#26282c; --hub-land-side:#1a1b1e; --hub-land-edge:#3a3c41; --hub-land-focus:#1e3354; --hub-border:#45474d;
+  --hub-tree:#30a14e; --hub-road:#2f3136;
   --hub-shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
   --hub-shadow-lg:0 14px 50px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
 }
@@ -108,7 +108,7 @@ button{font:inherit;color:inherit}
 .hub-badge.off{background:var(--hub-surface-2);color:var(--hub-ink-3)}
 .hub-badge.red{background:var(--hub-red-wash);color:var(--hub-red-ink)}
 .hub-badge.blue{background:var(--hub-blue-wash);color:var(--hub-blue)}
-.hub-badge.teal{background:var(--hub-teal-wash);color:var(--hub-teal)}
+.hub-badge.teal{background:var(--hub-teal-wash);color:var(--hub-teal-ink)}
 .hub-seg{display:inline-flex;background:var(--hub-surface-2);border-radius:10px;padding:2px;gap:2px}
 .hub-seg button{border:0;background:transparent;border-radius:8px;padding:5px 12px;font-size:12.5px;font-weight:500;cursor:pointer;color:var(--hub-ink-2)}
 .hub-seg button[aria-pressed="true"]{background:var(--hub-surface);color:var(--hub-ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}

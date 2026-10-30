@@ -19,7 +19,7 @@
 
 /* ── shell ── */
 .app{display:grid;grid-template-columns:var(--hub-side) 1fr;min-height:100vh}
-.side{position:sticky;top:0;height:100vh;background:var(--hub-bg-2);border-right:1px solid var(--hub-line);display:flex;flex-direction:column;padding:14px 10px 12px;overflow:auto}
+.side{position:sticky;top:0;height:100vh;background:color-mix(in srgb,var(--hub-bg-2) 86%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-right:1px solid var(--hub-line);display:flex;flex-direction:column;padding:14px 10px 12px;overflow:auto}
 .corp{padding:4px 10px 10px}
 .corp img{display:block;height:30px;width:auto;border-radius:5px;box-shadow:0 0 0 1px var(--hub-line)}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 16px;color:var(--hub-ink)}
@@ -51,7 +51,7 @@
 .main{min-width:0}
 .top{position:sticky;top:0;z-index:30;height:var(--hub-top);display:flex;align-items:center;gap:12px;padding:0 24px;
   background:color-mix(in srgb,var(--hub-bg) 78%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);border-bottom:1px solid var(--hub-line-2)}
-.top h1{font-size:19px;margin:0;letter-spacing:-.01em}
+.top h1{font-size:20px;font-weight:700;margin:0;letter-spacing:-.02em}
 .top .fresh{font-size:12px;color:var(--hub-ink-3);display:flex;align-items:center;gap:6px}
 .top .fresh i{width:7px;height:7px;border-radius:50%;background:var(--hub-green);box-shadow:0 0 0 3px var(--hub-green-wash)}
 .top .fresh.stale i{background:var(--hub-amber);box-shadow:0 0 0 3px var(--hub-amber-wash)}
@@ -85,8 +85,8 @@
 #embedF{display:block;width:100%;height:calc(100vh - var(--hub-top));height:calc(100dvh - var(--hub-top));border:0;background:var(--hub-bg)}
 
 /* ── overview ── */
-.headline{font-size:22px;font-weight:600;letter-spacing:-.015em;margin:2px 0 4px;max-width:1000px}
-.headline em{font-style:normal;color:var(--hub-red)}
+.headline{font-size:24px;font-weight:700;letter-spacing:-.022em;margin:2px 0 4px;max-width:1000px}
+.headline em{font-style:normal;color:var(--hub-red-ink)}
 .sub{color:var(--hub-ink-3);font-size:13px;margin-bottom:16px}
 .strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .chip{width:100%;font:inherit;color:inherit;background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);padding:14px 16px 13px;cursor:pointer;text-align:left;transition:transform .2s var(--hub-e),box-shadow .2s var(--hub-e)}
@@ -496,7 +496,7 @@
         <div class="k">${s ? `<i style="background:${TONE[s.tone]}"></i>` : ""}${esc(k)}</div><div class="v">${fmt(v)}</div><div class="n">${esc(n)}</div></button>`;
     }).join("");
     html += `<button type="button" class="chip" data-list="late" title="The export's own On Time flag · click for the late ones"><div class="k">On time / late</div>
-      <div class="v" style="font-size:24px;white-space:nowrap;margin-top:8px"><span style="color:var(--hub-green)">${fmt(c.on_time)}</span><span style="color:var(--hub-ink-4);font-weight:400"> / </span><span style="color:var(--hub-red)">${fmt(c.late)}</span></div>
+      <div class="v" style="font-size:24px;white-space:nowrap;margin-top:8px"><span style="color:var(--hub-green-ink)">${fmt(c.on_time)}</span><span style="color:var(--hub-ink-4);font-weight:400"> / </span><span style="color:var(--hub-red-ink)">${fmt(c.late)}</span></div>
       <div class="bar"><b style="width:${pct(c.on_time, c.total)}%"></b></div></button>`;
     putHTML($("strip"), html);
     putHTML($("defs"), c.stages.map((s) => `<dt>${esc(s.label)}</dt><dd>${esc(s.definition)}</dd>`).join("") +
