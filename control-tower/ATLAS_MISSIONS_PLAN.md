@@ -7,6 +7,31 @@ not be checked from here is marked **TO VERIFY**.
 
 ---
 
+## Build status (30 Oct 2026, commit 06c57c9 and after)
+
+Built, tested (test_missions.py, 53 checks), **not yet verified on the Windows server**:
+
+| Phase | Status |
+|---|---|
+| P1 Ledger + registries | Done for missions: `intelligence/missions/models.py` (registry with live health, router, `model_invocations.jsonl`). The existing chat's own Cortex chain is unchanged; the router is not yet applied to it. |
+| P2 Missions core | Done: `missions.db` store, task graph runner, workload manager (workers, priority with ageing, backpressure, pause/resume/cancel, retry once, restart recovery), evidence vault with classes and provenance, classifier and the ask-before-escalating proposal (chat offer + Missions page), declines remembered 24 h. |
+| P3 Commander + specialists | Done: six templates sharing one 10-task graph; specialists for records, pattern, step owner + knowledge, carrier, risk, hypotheses decided by evidence, independent verification (recompute, freshness, contradictions, grade), independent review by a different model family, next steps (never executed), report checked by factguard. |
+| P4 Mission Control | Done: **Missions** in the hub sidebar (Insight): list, proposal card, live task graph, evidence, hypotheses, conflicts, usage, report, timeline. |
+| P5 Emergency Mode | Done: CRITICAL from record impact only; automatic incidents are **proposed, never started**; manual activation by an Admin; resource profiles (normal, deep, emergency, drill); duplicate incidents merged; escalation suggested from a running mission. |
+| P6 Approved actions | Partly: next steps are classed (READ ONLY / PREPARATION / APPROVAL REQUIRED) and link to the page that owns them; nothing is executed by a mission. Handing an approved step into the Human Action queue automatically is not built. |
+| P7 Advanced | Not started (comparison, what-if, replay, handoff, collaboration, scheduled analysis, analytics). |
+
+**Safe defaults standing in for the seven decisions (change any of them):**
+1. Data residency: Cortex only for T0/T1 (shipment refs, statuses, dates), as already approved for ATLAS's wording on 27 Oct; never T2/T3.
+2. PUBLIC's Cortex grant: unchanged (an admin decision in Snowflake).
+3. Opus: not registered, so never used.
+4. Budgets: 80,000 tokens per mission, 150,000 per critical incident, within ATLAS's existing 500,000 a day.
+5. Approvers: Operator/Admin for Advanced and Deep (`missions.run`), Admin for Critical (`missions.emergency`).
+6. Automatic Emergency activation: propose only.
+7. Cortex on the server: whatever `python -m intelligence.cortex status` says; without it, missions run on ATLAS's own code and the local model.
+
+---
+
 ## 0. In one page
 
 - **Build on what exists.** ATLAS already has a Cortex-first / Ollama-fallback provider chain
