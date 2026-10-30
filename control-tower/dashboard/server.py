@@ -456,7 +456,11 @@ class Handler(BaseHTTPRequestHandler):
         if partial:
             self.send_header("Content-Range",
                              "bytes {0}-{1}/{2}".format(start, end, total))
-        for name, value in (extra or {}).items():
+        extra = dict(extra or {})
+        if guessed.startswith(("image/", "audio/", "video/", "font/")) and "Cache-Control" not in extra:
+            # images, sound and fonts: kept by the browser for a day instead of read again on every page
+            extra["Cache-Control"] = "private, max-age=86400"
+        for name, value in extra.items():
             self.send_header(name, value)
         self._maybe_set_cookie()
         self.end_headers()
@@ -1219,7 +1223,8 @@ class Handler(BaseHTTPRequestHandler):
             _clearance.check_inbox()
             path = _clearance.data_path()
             if path.exists():
-                self._send(200, path.read_bytes())
+                # compressed once per export (not on every request), with an ETag: a reload gets a 304
+                self._send_text_file(path, "application/json; charset=utf-8")
             else:
                 # The server folder is named only to those who may load an export.
                 self._send(200, json.dumps({"empty": True, "status": _clearance.status(),
