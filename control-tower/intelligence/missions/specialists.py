@@ -4,7 +4,7 @@ The specialists: one function each, ctx in, findings out.
     fn(ctx) -> {"evidence": [claim...], "out": {...}, "summary": str, "model": id | None}
 
 A claim: {claim, class, source, record, freshness, identifiers, data, verification, basis}
-Classes: VERIFIED_LIVE · HISTORICAL · GENERAL_KNOWLEDGE · PLATFORM_RULE · HYPOTHESIS · EXTERNAL_UNVERIFIED
+Classes: VERIFIED_LIVE · HISTORICAL · CALCULATED · GENERAL_KNOWLEDGE · PLATFORM_RULE · HYPOTHESIS · EXTERNAL_UNVERIFIED
 
 Facts come from the records (the loaded eHub export, the ATA run, the
 escalations, carrier health); knowledge from ATLAS's reviewed knowledge base.
@@ -216,7 +216,7 @@ def hypotheses(ctx):
         h["why"].append(why)
         (h["against"] if against else h["support"]).extend(ids)
 
-    for r in rows[:8]:
+    for r in rows[:25 if ctx.fanout() else 8]:
         awb, step, od = r["awb"], r.get("step"), r.get("overdue") or 0
         ids = ev_ids(awb)
         if step in AT_CUSTOMS:
@@ -255,7 +255,7 @@ def hypotheses(ctx):
         p = peers.get(awb) or {}
         if (p.get("same_step") or 0) >= 10 or (p.get("same_agent") or 0) >= 10:
             mark("pattern", "supported", "{0:,} others at the same step in {1}, {2:,} with the same agent".format(p.get("same_step", 0), r.get("bu"), p.get("same_agent", 0)), ids)
-    if ctx.mission["template"] == "backlog":
+    if ctx.mission["template"] in ("backlog", "multi_delay"):
         by_step = (ctx.dep("pattern").get("out") or {}).get("by_step") or {}
         total = sum(by_step.values()) or 1
         for step, n in by_step.items():
@@ -309,6 +309,11 @@ def verify(ctx):
             n = sum(1 for r in openpd if (not f.get("bus") or r.get("bu") in f["bus"]) and (not f.get("step") or r.get("step") == f["step"])
                     and (not f.get("agent") or r.get("agent") == f["agent"]) and r.get("awb") != f.get("exclude"))
             ok = n == d["count"]
+        elif "awbs" in d and "field" in d and "count" in d:
+            n = sum(1 for a in d["awbs"] if a in by_awb and by_awb[a].get(d["field"]) == d["value"])
+            ok = n == d["count"]
+        elif d.get("recount") == "carrier":
+            ok = _carrier_recount(d)
         elif d.get("awb") and d["awb"] in by_awb:
             r = by_awb[d["awb"]]
             keys = [k for k in ("step", "overdue", "eta", "ata", "agent", "status") if k in d]
@@ -335,6 +340,29 @@ def verify(ctx):
     supported = [h for h in hyp if h["status"] == "supported" and h["id"] != "unknown"]
     live = any(e["class"] == "VERIFIED_LIVE" for e in ctx.all_evidence())
     reasons = []
+    main = ctx.template().get("main")
+    kind = ctx.mission["template"]
+    if kind == "carrier_research":
+        ext = [e for e in ctx.all_evidence() if e["class"] == "EXTERNAL_UNVERIFIED"]
+        grade = "Weak" if ext else "Insufficient"
+        reasons.append("{0} public source(s), unverified: never stronger than Weak".format(len(ext)) if ext else "no public source was found or search is not set up")
+        return {"evidence": [], "summary": "{0} public source(s) found".format(len(ext)),
+                "out": {"checked": 0, "matched": 0, "mismatches": [], "contradictions": [], "stale": False, "age_days": None,
+                        "grade": grade, "reasons": reasons}}
+    if kind == "carrier_compare":
+        sufficient = (ctx.dep("carriers").get("out") or {}).get("sufficient") or []
+        if checked == 0 or not sufficient:
+            grade = "Insufficient"
+            reasons.append("no carrier has enough finished shipments to compare" if checked else "nothing could be recounted")
+        elif mismatches:
+            grade = "Weak"
+            reasons.append("{0} count(s) changed when recounted".format(len(mismatches)))
+        else:
+            grade = "Moderate"
+            reasons.append("every count was recounted from the run's records ({0} carrier(s) with enough data)".format(len(sufficient)))
+        return {"evidence": [], "summary": "{0} of {1} counts recounted and matched".format(matched, checked),
+                "out": {"checked": checked, "matched": matched, "mismatches": mismatches, "contradictions": [], "stale": False,
+                        "age_days": None, "grade": grade, "reasons": reasons}}
     if checked == 0 or not ctx.focus_rows():
         grade = "Insufficient"
         reasons.append("nothing in scope could be checked against the source")
@@ -344,6 +372,9 @@ def verify(ctx):
     elif contradictions:
         grade = "Weak"
         reasons.append("sources contradict each other")
+    elif main and not ctx.has_task("hyp"):
+        grade = "Strong" if live and not stale else "Moderate"
+        reasons.append("every fact was recomputed from the source{0}".format(" and live carrier data agrees" if live and not stale else ""))
     elif supported and live and not stale:
         grade = "Strong"
         reasons.append("live carrier data agrees and every number was recomputed")
@@ -362,6 +393,9 @@ def verify(ctx):
 
 # ── Independent Review ────────────────────────────────────────────────────
 def draft_conclusion(ctx):
+    main = ctx.template().get("main")
+    if main and not ctx.has_task("hyp"):
+        return (ctx.dep(main).get("out") or {}).get("conclusion") or "Nothing was established."
     hyp = (ctx.dep("hyp").get("out") or {}).get("hypotheses") or []
     sup = [h["label"] for h in hyp if h["status"] == "supported" and h["id"] != "unknown"]
     return ("Supported by the records: " + "; ".join(sup) + ".") if sup else "No cause is established by the records."
@@ -396,22 +430,34 @@ def actions(ctx):
     grades = (ctx.dep("risk").get("out") or {}).get("grades") or {}
     esc = ctx.escalations()
     acts = []
-    for r in ctx.focus_rows()[:6]:
+    for r in ctx.focus_rows()[:25 if ctx.fanout() else 6]:
         awb = r["awb"]
         acts.append({"class": "READ_ONLY", "title": "Open {0} with both sources".format(awb), "href": "/hub#tracking?q=" + awb,
                      "why": "the export row and the run's record side by side"})
         if grades.get(awb) == "High" and not any(e.get("awb") == awb and e.get("status") == "open" for e in esc):
             acts.append({"class": "APPROVAL_REQUIRED", "title": "Escalate {0} on the Clearance page".format(awb), "href": "/hub#clearance?bu=" + str(r.get("bu")),
-                         "why": "High exposure and no open escalation", "approver": "clearance.escalate"})
+                         "why": "High exposure and no open escalation", "approver": "clearance.escalate", "kind": "escalate",
+                         "args": {"awb": awb, "reason": "ATLAS mission {0}: {1:,.0f} days past due at {2}; exposure High".format(
+                             ctx.mission["id"], r.get("overdue") or 0, step_name(r.get("step")))}})
         if hyp.get("agent", {}).get("status") == "supported" and r.get("step") == "Assign Clearing Agent":
-            acts.append({"class": "PREPARATION", "title": "Draft the clearing-agent request to {0}".format(r.get("bu")), "href": "/hub#clearance?bu=" + str(r.get("bu")),
-                         "why": "waiting for a clearing agent"})
+            acts.append({"class": "PREPARATION", "title": "Ask {0} to assign a clearing agent for {1}".format(r.get("bu"), awb), "href": "/hub#clearance?bu=" + str(r.get("bu")),
+                         "why": "waiting for a clearing agent (a To Do task for a person; nothing is sent)", "kind": "queue_human",
+                         "args": {"awb": awb, "bu": r.get("bu")}})
         if hyp.get("tracking", {}).get("status") == "supported" or hyp.get("extract", {}).get("status") == "supported":
-            acts.append({"class": "APPROVAL_REQUIRED", "title": "Include {0} in the next ATA run (dry run first)".format(awb), "href": "/hub#ata",
-                         "why": "the carrier's milestones need a fresh, read-back lookup", "approver": "runs.start"})
+            if ctx.run_record(awb) or ctx.mission["template"] in ("eta_discrepancy", "ata_failure"):
+                acts.append({"class": "APPROVAL_REQUIRED", "title": "Re-run {0} in the ATA run".format(awb), "href": "/hub#ata",
+                             "why": "the carrier's milestones need a fresh lookup the run writes and reads back", "approver": "runs.start",
+                             "kind": "reprocess", "args": {"reference": awb}})
     if ctx.mission["template"] == "backlog":
         for bu in ctx.scope.get("bus") or []:
             acts.append({"class": "READ_ONLY", "title": "Open {0}'s past-due list".format(bu), "href": "/hub#overview?list=pastdue&bu=" + bu, "why": "the full list behind the count"})
+    seen, uniq = set(), []
+    for a in acts:
+        key = (a["title"], a.get("kind"))
+        if key not in seen:
+            seen.add(key)
+            uniq.append(a)
+    acts = uniq
     for a in acts:
         a["status"] = "not executed"
     return {"evidence": [], "out": {"actions": acts}, "summary": "{0} next step(s) proposed, none executed".format(len(acts))}
@@ -431,15 +477,26 @@ def report(ctx):
     rep = {"title": ctx.mission["title"], "objective": ctx.mission["objective"], "level": ctx.mission["level"],
            "severity": ctx.mission.get("severity"), "scope": ctx.scope, "sources": sorted({e["source"] for e in ev}),
            "summary": draft, "grade": v.get("grade") or "Insufficient", "grade_reasons": v.get("reasons") or [],
-           "facts": (by_class.get("VERIFIED_LIVE") or []) + (by_class.get("HISTORICAL") or []),
+           "facts": (by_class.get("VERIFIED_LIVE") or []) + (by_class.get("HISTORICAL") or []) + (by_class.get("CALCULATED") or []),
            "knowledge": (by_class.get("PLATFORM_RULE") or []) + (by_class.get("GENERAL_KNOWLEDGE") or []),
-           "hypotheses": [{"label": h["label"], "status": h["status"], "why": h["why"][:3], "needed": h.get("needed", [])[:2], "origin": h.get("origin")} for h in hyp],
+           "hypotheses": [{"id": h["id"], "label": h["label"], "status": h["status"], "why": h["why"][:3], "needed": h.get("needed", [])[:2], "origin": h.get("origin")} for h in hyp],
            "contradictions": v.get("contradictions") or [], "mismatches": v.get("mismatches") or [],
            "review": rv, "actions": acts,
            "approvals": [a for a in acts if a["class"] == "APPROVAL_REQUIRED"],
            "verification": "{0} of {1} claims recomputed from the source and matched.".format(v.get("matched", 0), v.get("checked", 0)),
            "limits": ["Read from the eHub export (as of {0}) and the ATA run's records; no carrier website was opened.".format(ctx.asof or "unknown"),
-                      "Nothing was changed: every next step is a proposal."]}
+                      "Nothing was changed by the investigation: a step that changes something is an action card a person approves."]}
+    if ctx.fanout():
+        items = ctx.dep("merge").get("out") or {}
+        rep["fanout"] = {"examined": items.get("items"), "failed": items.get("failed_items"), "by_step": items.get("by_step"),
+                         "by_agent": items.get("by_agent"), "grades": items.get("grades")}
+    main = ctx.template().get("main")
+    if main:
+        rep["main"] = (ctx.dep(main).get("out") or {})
+    if ctx.mission["template"] == "carrier_research":
+        rep["external"] = by_class.get("EXTERNAL_UNVERIFIED") or []
+        rep["limits"] = ["Public web sources, unverified; addresses are given with each one. No tracking page, login or carrier system was opened.",
+                         "A real integration is a tested deployment; this is a brief for engineering."]
     if ctx.mission["level"] == "CRITICAL_INCIDENT":
         rep["incident"] = {"impact": [e for e in rep["facts"] if "past due" in e or "exposure" in e][:6],
                            "options": [a["title"] for a in acts],
@@ -469,5 +526,213 @@ def report(ctx):
     return {"evidence": [], "out": {"report": rep}, "model": model_used, "summary": "Report ready: confidence {0}".format(rep["grade"])}
 
 
+# ── Fan-out: one shipment of many ─────────────────────────────────────────
+def item(ctx):
+    awb = (ctx.task.get("params") or {}).get("awb")
+    r = next((x for x in ctx.rows if x.get("awb") == awb), None)
+    if not r:
+        return {"evidence": [claim("{0} is no longer in the loaded export.".format(awb), "HISTORICAL", _src(ctx), awb, identifiers=[awb],
+                                   basis="searched the export")], "out": {"awb": awb, "missing": True}, "summary": "{0}: not in the export".format(awb)}
+    od = r.get("overdue") or 0
+    cust = r.get("step") in AT_CUSTOMS
+    grade = "High" if od >= 30 or (cust and od >= 14) else "Medium" if od > 0 else "Low"
+    ids = [awb]
+    ev = [claim("{0} ({1}) is at step {2}, {3:,.0f} days past its step's due date.".format(awb, r.get("bu"), step_name(r.get("step")), od),
+                "HISTORICAL", _src(ctx), awb, {"awb": awb, "step": r.get("step"), "overdue": r.get("overdue")}, ids, ctx.asof),
+          claim("{0}: clearing agent {1}.".format(awb, r.get("agent") or "not assigned"), "HISTORICAL", _src(ctx), awb,
+                {"awb": awb, "agent": r.get("agent")}, ids, ctx.asof)]
+    rec = ctx.run_record(awb)
+    if rec:
+        ev.append(claim("ATA run: {0} reported ATA {1} (outcome {2}).".format(rec.get("carrier") or "the carrier", rec.get("provider_ata") or "none",
+                                                                            rec.get("outcome") or "not finished"),
+                        "HISTORICAL", ctx.run_source(), awb, {"awb": awb, "provider_ata": rec.get("provider_ata"), "outcome": rec.get("outcome")},
+                        ids, ctx.run_when(), "recorded by the run"))
+    return {"evidence": ev, "out": {"awb": awb, "bu": r.get("bu"), "step": r.get("step"), "agent": r.get("agent"), "ffw": r.get("ffw"),
+                                    "overdue": od, "grade": grade, "carrier": (rec or {}).get("carrier")},
+            "summary": "{0}: {1}, exposure {2}".format(awb, step_name(r.get("step")), grade)}
+
+
+def merge(ctx):
+    outs, failed = [], 0
+    for t in ctx.tasks_of("item"):
+        if t["status"] != "done":
+            failed += 1
+            continue
+        o = (t.get("output") or {}).get("out") or {}
+        if not o.get("missing"):
+            outs.append(o)
+    awbs = [o["awb"] for o in outs]
+    by_step, by_agent, grades = {}, {}, {}
+    for o in outs:
+        by_step[o.get("step")] = by_step.get(o.get("step"), 0) + 1
+        if o.get("agent"):
+            by_agent[o["agent"]] = by_agent.get(o["agent"], 0) + 1
+        grades[o["grade"]] = grades.get(o["grade"], 0) + 1
+    ev = []
+    for step, n in sorted(by_step.items(), key=lambda x: -x[1])[:4]:
+        ev.append(claim("{0:,} of the {1:,} shipments examined are at {2}.".format(n, len(outs), step_name(step)), "CALCULATED",
+                        _src(ctx), data={"awbs": awbs, "field": "step", "value": step, "count": n}, identifiers=awbs, freshness=ctx.asof,
+                        basis="counted over the shipments examined"))
+    for agent, n in sorted(by_agent.items(), key=lambda x: -x[1])[:3]:
+        if n > 1:
+            ev.append(claim("{0:,} of them are with clearing agent {1}.".format(n, agent), "CALCULATED", _src(ctx),
+                            data={"awbs": awbs, "field": "agent", "value": agent, "count": n}, identifiers=awbs, freshness=ctx.asof,
+                            basis="counted over the shipments examined"))
+    return {"evidence": ev, "out": {"items": len(outs), "failed_items": failed, "awbs": awbs, "by_step": by_step, "by_agent": by_agent, "grades": grades},
+            "summary": "{0:,} shipment(s) merged{1}".format(len(outs), ", {0} failed".format(failed) if failed else "")}
+
+
+# ── Carrier performance comparison ────────────────────────────────────────
+WINDOW_DAYS = 30
+
+
+def _carrier_recount(d):
+    from . import tools
+    from .. import carrier_health
+    h = carrier_health.health(tools.run_events(), window_days=d.get("window") or WINDOW_DAYS)
+    c = next((x for x in h.get("carriers") or [] if x.get("carrier") == d.get("carrier")), None)
+    return bool(c) and c["counts"]["shipments"] == d.get("shipments") and c["counts"]["verified_updates"] == d.get("verified")
+
+
+def carriers(ctx):
+    from . import tools
+    from .. import carrier_health
+    h = carrier_health.health(tools.read("run_events"), window_days=WINDOW_DAYS)
+    ev, sufficient = [], []
+    for c in h.get("carriers") or []:
+        n, v = c["counts"]["shipments"], c["counts"]["verified_updates"]
+        if c.get("sufficient"):
+            sufficient.append({"carrier": c["carrier"], "label": c.get("label"), "shipments": n, "verified": v,
+                               "rate": c["rates"]["verified_updates"], "failed": c["counts"]["failed"]})
+            text = "{0}: {1:,} of {2:,} finished shipments were verified Hub updates ({3:.0%}); {4:,} failed.".format(
+                c.get("label"), v, n, c["rates"]["verified_updates"] or 0, c["counts"]["failed"])
+        else:
+            text = "{0}: {1:,} finished shipment(s), below the minimum of {2} for a rate: insufficient data.".format(c.get("label"), n, h.get("minimum"))
+        ev.append(claim(text, "CALCULATED", "ATA run outcomes (last {0} days)".format(WINDOW_DAYS),
+                        data={"recount": "carrier", "carrier": c["carrier"], "shipments": n, "verified": v, "window": WINDOW_DAYS},
+                        basis="counted from the run's recorded outcomes"))
+    ranked = sorted(sufficient, key=lambda x: -(x["rate"] or 0))
+    if len(ranked) >= 2:
+        conclusion = "Over the last {0} days, {1} had the highest share of verified updates ({2:.0%}) and {3} the lowest ({4:.0%}), among carriers with enough data.".format(
+            WINDOW_DAYS, ranked[0]["label"], ranked[0]["rate"] or 0, ranked[-1]["label"], ranked[-1]["rate"] or 0)
+    elif ranked:
+        conclusion = "Only {0} has enough finished shipments for a rate ({1:.0%} verified updates); the others have too few to compare.".format(ranked[0]["label"], ranked[0]["rate"] or 0)
+    else:
+        conclusion = "No carrier has enough finished shipments in the last {0} days to compare.".format(WINDOW_DAYS)
+    return {"evidence": ev, "out": {"carriers": ranked, "sufficient": [x["carrier"] for x in ranked], "records": h.get("records"),
+                                    "minimum": h.get("minimum"), "conclusion": conclusion},
+            "summary": "{0} carrier(s) compared, {1} with enough data".format(len(h.get("carriers") or []), len(ranked))}
+
+
+# ── ETA / ATA reconciliation ──────────────────────────────────────────────
+def eta(ctx):
+    ev, found = [], []
+    for r in ctx.focus_rows()[:12]:
+        awb, rec = r["awb"], ctx.run_record(r["awb"])
+        if not rec:
+            ev.append(claim("{0}: the ATA run has no record, so the carrier's dates are not known.".format(awb), "HISTORICAL", ctx.run_source(), awb,
+                            identifiers=[awb], basis="searched the run's records"))
+            continue
+        for label, mine, theirs in (("ETA", r.get("eta"), rec.get("provider_eta")), ("ATA", r.get("ata"), rec.get("provider_ata"))):
+            if mine and theirs:
+                gap = _days(theirs, mine)
+                if gap is not None and abs(gap) > 1:
+                    found.append({"awb": awb, "field": label, "hub": mine, "carrier": theirs, "days": gap})
+                    ev.append(claim("{0}: the carrier's {1} ({2}) differs from eHub's ({3}) by {4} day(s).".format(awb, label, theirs, mine, abs(gap)),
+                                    "HISTORICAL", ctx.run_source(), awb, {"awb": awb, label.lower(): mine}, [awb], ctx.run_when(), "compared"))
+                else:
+                    ev.append(claim("{0}: the carrier's {1} and eHub's agree ({2}).".format(awb, label, mine), "HISTORICAL", _src(ctx), awb,
+                                    {"awb": awb, label.lower(): mine}, [awb], ctx.asof, "compared"))
+            elif theirs and not mine:
+                found.append({"awb": awb, "field": label, "hub": None, "carrier": theirs, "days": None})
+                ev.append(claim("{0}: the carrier reports {1} {2}; eHub has none.".format(awb, label, theirs), "HISTORICAL", ctx.run_source(), awb,
+                                {"awb": awb, label.lower(): mine}, [awb], ctx.run_when(), "compared"))
+    return {"evidence": ev, "out": {"discrepancies": found,
+                                    "conclusion": "{0} date discrepanc{1} between the carrier and eHub.".format(len(found), "y" if len(found) == 1 else "ies")},
+            "summary": "{0} discrepanc{1}".format(len(found), "y" if len(found) == 1 else "ies")}
+
+
+# ── Automation failure analysis ──────────────────────────────────────────
+def failure(ctx):
+    from . import tools
+    ev, out = [], []
+    for r in ctx.focus_rows()[:12]:
+        awb, rec = r["awb"], ctx.run_record(r["awb"])
+        if not rec:
+            continue
+        try:
+            f = tools.failure_class(rec)
+        except Exception:
+            f = None
+        if f:
+            cat = f.get("classification_label") or f.get("classification") or "unknown"
+            basis = f.get("root_cause_status") or "UNKNOWN"
+            out.append({"awb": awb, "category": f.get("classification"), "label": cat, "basis": basis, "root_cause": f.get("root_cause")})
+            ev.append(claim("{0}: the run's lookup failed; cause {1} ({2}).".format(awb, cat, basis), "HISTORICAL", ctx.run_source(), awb,
+                            {"awb": awb, "category": cat}, [awb], ctx.run_when(), "classified by the failure analysis ({0})".format(basis)))
+        history = tools.run_events(awb)
+        if history:
+            ok = sum(1 for e in history if e.get("verified") is True)
+            ev.append(claim("{0}: {1} earlier run result(s) on record, {2} verified.".format(awb, len(history), ok), "HISTORICAL",
+                            "ATA run outcomes", awb, {"awb": awb}, [awb], None, "read from the run's events"))
+    return {"evidence": ev, "out": {"failures": out,
+                                    "conclusion": "{0} failed lookup(s) classified.".format(len(out)) if out else "The run's records show no failed lookup in scope."},
+            "summary": "{0} failure(s) classified".format(len(out))}
+
+
+# ── Validation (the automation's own date rules) ─────────────────────────
+def validate(ctx):
+    from . import tools
+    ev, fails = [], 0
+    checked = 0
+    for r in ctx.focus_rows()[:12]:
+        awb, rec = r["awb"], ctx.run_record(r["awb"])
+        if not rec:
+            ev.append(claim("{0}: no run record to validate.".format(awb), "HISTORICAL", ctx.run_source(), awb, identifiers=[awb],
+                            basis="searched the run's records"))
+            continue
+        checked += 1
+        for status, text in tools.validate_record(rec):
+            if status == "FAIL":
+                fails += 1
+            ev.append(claim("{0}: {1} — {2}".format(awb, status, text), "PLATFORM_RULE", "The automation's date rules", awb,
+                            {"check": status}, [awb], ctx.run_when(), "the same rules the automation uses before a write"))
+    return {"evidence": ev, "out": {"checked": checked, "fails": fails,
+                                    "conclusion": ("{0} check(s) failed across {1} shipment(s).".format(fails, checked) if checked
+                                                   else "No shipment in scope has a run record to validate.")},
+            "summary": "{0} check(s) failed".format(fails)}
+
+
+# ── Web Investigation ────────────────────────────────────────────────────
+_TRACKING = re.compile(r"(track|trace|tracking|shipment-status|cargo-status)\W*(\?|/)?.*\d{5,}", re.I)
+
+
+def web(ctx):
+    from . import tools
+    q = re.sub(r"\b[A-Z0-9]{4,}\d{4,}\b|\S+@\S+", " ", ctx.mission.get("question") or "")
+    q = " ".join((q + " cargo tracking milestones official").split())[:200]
+    try:
+        hits = tools.read("web_search", q)
+    except LookupError as error:
+        return {"evidence": [claim("Web search is not set up on this server ({0}); nothing was looked up.".format(error), "PLATFORM_RULE",
+                                   "ATLAS configuration", basis="configuration")],
+                "out": {"sources": [], "conclusion": "No public sources were searched: web search is not set up here."},
+                "summary": "Web search not set up"}
+    except Exception as error:
+        return {"evidence": [], "out": {"sources": [], "conclusion": "The web search failed ({0}).".format(type(error).__name__)},
+                "summary": "Web search failed"}
+    ev, src = [], []
+    for h in hits[:6]:
+        if _TRACKING.search(h["url"]):
+            continue                                   # never a tracking page
+        src.append({"url": h["url"], "title": h["title"]})
+        ev.append(claim("{0}: {1}".format(h["title"] or h["url"], h["snippet"][:240]), "EXTERNAL_UNVERIFIED", h["url"],
+                        data={"url": h["url"]}, freshness=time.strftime("%Y-%m-%d"), basis="public web page, not verified"))
+    return {"evidence": ev, "out": {"sources": src, "conclusion": "{0} public source(s) describe the carrier's tracking; none is verified.".format(len(src))
+                                    if src else "No usable public source was found."},
+            "summary": "{0} public source(s)".format(len(src))}
+
+
 FUNCS = {"shipment": shipment, "analyst": analyst, "logistics": logistics, "carrier": carrier, "risk": risk,
-         "hypotheses": hypotheses, "verify": verify, "review": review, "actions": actions, "report": report}
+         "hypotheses": hypotheses, "verify": verify, "review": review, "actions": actions, "report": report,
+         "item": item, "merge": merge, "carriers": carriers, "eta": eta, "failure": failure, "validate": validate, "web": web}

@@ -307,7 +307,7 @@ else:
                 break
         body = pg.locator("#modBody").inner_text()
         check("It runs live: task graph, evidence, hypotheses, then the report with its confidence",
-              "Confidence" in body and "Evidence" in body and "Hypotheses" in body and pg.locator(".ms-node").count() == 10, body[:300])
+              "Confidence" in body and "Evidence" in body and "Hypotheses" in body and pg.locator(".ms-node").count() >= 10, body[:300])
         check("Next steps are marked not executed", "none executed" in body.lower() or "not executed" in body)
         pg.goto(BASE + "/hub#missions"); pg.wait_for_timeout(2000)
         lt = pg.locator("#modBody").inner_text().lower()

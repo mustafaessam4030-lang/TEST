@@ -26,11 +26,13 @@ import threading
 import time
 import uuid
 
-from . import classify, db, models, specialists
+from . import actions, classify, db, memory, models, plan, specialists
 from .registry import SPECIALISTS, TEMPLATES
 
 MAX_ACTIVE = int(os.environ.get("ATLAS_MISSIONS_ACTIVE") or 3)
 MAX_QUEUED = int(os.environ.get("ATLAS_MISSIONS_QUEUED") or 20)
+TASK_TIMEOUT_S = float(os.environ.get("ATLAS_MISSION_TASK_TIMEOUT_S") or 120)
+MAX_REPLANS = 2
 WORKERS = int(os.environ.get("ATLAS_MISSIONS_WORKERS") or 3)
 LEVEL_WEIGHT = {"ADVANCED": 1.0, "DEEP_MISSION": 2.0, "CRITICAL_INCIDENT": 4.0}
 LIVE = ("queued", "running", "paused")
@@ -87,10 +89,25 @@ class Ctx(object):
         allowed = self.scope.get("allowed")
         return [r for r in rows if allowed is None or r.get("bu") in allowed]
 
+    def template(self):
+        return TEMPLATES.get(self.mission.get("template")) or {}
+
+    def fanout(self):
+        return bool(self.template().get("fanout"))
+
+    def has_task(self, tid):
+        return db.one("SELECT 1 AS x FROM tasks WHERE mission_id=? AND id=?", self.mission["id"], tid) is not None
+
+    def tasks_of(self, specialist):
+        return db.many("SELECT * FROM tasks WHERE mission_id=? AND specialist=?", self.mission["id"], specialist)
+
     def focus_rows(self):
         refs, bus = self.scope.get("refs") or [], self.scope.get("bus") or []
         if refs:
             return [r for r in self.rows if r.get("awb") in refs]
+        if self.fanout():
+            items = self.scope.get("items") or []
+            return [r for r in self.rows if r.get("awb") in items]
         rows = [r for r in self.rows if r.get("bu") in bus and r.get("step") != "Completed" and (r.get("overdue") or 0) > 0]
         return sorted(rows, key=lambda r: -(r.get("overdue") or 0))[:8]
 
@@ -159,8 +176,14 @@ def propose(question, data=None, rows=None, allowed=None, by=None, origin="chat"
                   a["fingerprint"])
     if same:
         return same
-    p = classify.proposal(a, profile)
     mid = uuid.uuid4().hex[:10]
+    d = plan.draft(a, profile or ("emergency" if a["level"] == "CRITICAL_INCIDENT" else "deep"), mission_id=mid)
+    a["template"] = d["template"]
+    p = classify.proposal(a, profile)
+    p["planner"] = {"note": d["note"], "model": d["model"], "skip": d["skip"]}
+    if a["template"] in ("multi_delay",):
+        p["items"] = _fan_items(a["scope"], rows)
+        a["scope"] = dict(a["scope"], items=p["items"])
     scope = a["scope"]
     title = "{0}: {1}".format(p["title"], ", ".join(scope.get("refs") or scope.get("bus") or []) or "scope")
     max_over = a["signals"].get("max_overdue_days") or 0
@@ -168,12 +191,25 @@ def propose(question, data=None, rows=None, allowed=None, by=None, origin="chat"
               level=a["level"], severity=a["severity"], template=a["template"], scope=scope, profile=p["profile"],
               status="proposed", phase="awaiting approval", priority=LEVEL_WEIGHT.get(a["level"], 1) + min(max_over / 30.0, 3),
               created_at=time.time(), created_by=str(by or "")[:80], plan=p, plan_hash=_plan_hash(p["plan"]),
-              budget_tokens=p["estimate"]["budget"], reasons=a["reasons"], drill=1 if p["profile"] == "drill" else 0, origin=origin)
+              budget_tokens=p["estimate"]["budget"], reasons=a["reasons"], drill=1 if p["profile"] == "drill" else 0, origin=origin,
+              autonomy_level=3 if actions.enabled() else 2, perms=None, max_calls_per_task=models.call_cap())
     db.event(mid, "proposed", "Proposed from {0}: {1}".format(origin, "; ".join(a["reasons"]) or "no reasons"))
+    db.event(mid, "plan", "Plan: {0} ({1})".format(p["title"], d["note"]))
     return get(mid)
 
 
-def approve(mid, by, profile=None):
+def _fan_items(scope, rows):
+    """The shipments a fan-out examines: the BU's open past-due shipments, longest past due first, at most 25.
+    The rest are covered by the Data Analyst's counts over the whole BU."""
+    bus = scope.get("bus") or []
+    pick = [r for r in rows or [] if r.get("bu") in bus and r.get("step") != "Completed" and (r.get("overdue") or 0) > 0]
+    pick.sort(key=lambda r: -(r.get("overdue") or 0))
+    return [r["awb"] for r in pick[:plan.FANOUT_MAX]]
+
+
+def approve(mid, by, profile=None, remove=None, deadline_min=None):
+    """Approve the plan as shown, or as the person edited it: tasks removed (never the required ones),
+    a profile, a deadline in minutes. The edited graph is validated before anything runs."""
     m = db.one("SELECT * FROM missions WHERE id=?", mid)
     if not m:
         return False, "No such mission."
@@ -184,13 +220,29 @@ def approve(mid, by, profile=None):
         return False, "{0} missions are already waiting; try again when one finishes.".format(queued)
     if profile and profile in models.PROFILES:
         m["profile"] = profile
-    tpl = TEMPLATES[m["template"]]
-    for i, (tid, spec, objective, deps) in enumerate(tpl["tasks"]):
-        db.insert("tasks", mission_id=mid, id=tid, objective=objective, specialist=spec, needs=[SPECIALISTS[spec]["needs"]],
-                  depends_on=deps, priority=len(tpl["tasks"]) - i, status="queued", timeout_s=120, idempotent=1, attempts=0)
+    p = m.get("plan") or {}
+    skip = list(remove or []) + list((p.get("planner") or {}).get("skip") or [])
+    tasks = plan.build(m["template"], (m.get("scope") or {}).get("items"), skip)
+    problems = plan.validate(tasks)
+    if problems:
+        db.event(mid, "challenged", "The plan was refused: " + "; ".join(problems))
+        return False, "The plan cannot run: " + "; ".join(problems)
+    for i, t in enumerate(tasks):
+        db.insert("tasks", mission_id=mid, id=t["id"], objective=t["objective"], specialist=t["specialist"],
+                  needs=[SPECIALISTS[t["specialist"]]["needs"]], depends_on=t["depends_on"], priority=len(tasks) - i,
+                  status="queued", timeout_s=TASK_TIMEOUT_S, idempotent=1, attempts=0, params=t["params"],
+                  dedupe_key=t["id"] if not t["params"] else "{0}:{1}".format(t["specialist"], t["params"].get("awb")))
+    try:
+        minutes = float(deadline_min) if deadline_min else plan.DEADLINE_MIN.get(m["level"], 15)
+    except (TypeError, ValueError):
+        minutes = plan.DEADLINE_MIN.get(m["level"], 15)
+    minutes = max(2.0, min(minutes, 240.0))
     db.update("missions", {"id": mid}, status="queued", phase="waiting for capacity", approved_by=str(by or "")[:80],
-              approved_at=time.time(), profile=m["profile"], drill=1 if m["profile"] == "drill" else 0)
-    db.event(mid, "approved", "Approved by {0} (plan {1}, profile {2})".format(by or "someone", m["plan_hash"], m["profile"]))
+              approved_at=time.time(), profile=m["profile"], drill=1 if m["profile"] == "drill" else 0,
+              deadline_at=time.time() + minutes * 60)
+    removed = sorted(set(remove or []) & set(plan.removable(m["template"])))
+    db.event(mid, "approved", "Approved by {0} (plan {1}, profile {2}, deadline {3:.0f} min{4})".format(
+        by or "someone", m["plan_hash"], m["profile"], minutes, "; removed: " + ", ".join(removed) if removed else ""))
     start()
     with _cond:
         _cond.notify_all()
@@ -237,9 +289,30 @@ def _promote():
         db.event(m["id"], "running", "Started")
 
 
+def _watchdog(now):
+    """Deadlines: a task running past its timeout fails (its late result is discarded); a mission past its
+    deadline stops starting new work, and its report is written from what is done, said plainly."""
+    for t in db.many("SELECT mission_id, id, started_at, timeout_s, specialist FROM tasks WHERE status='running'"):
+        if t.get("started_at") and now - t["started_at"] > (t.get("timeout_s") or TASK_TIMEOUT_S):
+            db.update("tasks", {"mission_id": t["mission_id"], "id": t["id"]}, status="failed", ended_at=now,
+                      error="timed out after {0:.0f} s".format(t.get("timeout_s") or TASK_TIMEOUT_S))
+            db.event(t["mission_id"], "task_failed", "{0}: timed out; the mission continues without it".format(
+                SPECIALISTS.get(t["specialist"], {}).get("title", t["id"])))
+            _finish_if_done(t["mission_id"])
+    for m in db.many("SELECT id, deadline_at FROM missions WHERE status='running' AND deadline_at IS NOT NULL AND deadline_at < ?", now):
+        left = db.many("SELECT id FROM tasks WHERE mission_id=? AND status='queued' AND specialist != 'report'", m["id"])
+        if left:
+            with db._lock:
+                db.db().execute("UPDATE tasks SET status='cancelled', error='mission deadline' WHERE mission_id=? AND status='queued' "
+                                "AND specialist != 'report'", (m["id"],))
+            db.event(m["id"], "deadline", "Deadline reached: {0} step(s) not started; the report is written from what is done".format(len(left)))
+            _finish_if_done(m["id"])
+
+
 def _next(worker):
     """The highest-priority ready task, marked running; None when there is none."""
     with db._lock:
+        _watchdog(time.time())
         _promote()
         if automation_busy() and worker > 0:
             return None                                    # the ATA run keeps the machine: one worker only
@@ -285,7 +358,13 @@ def _run(m, t):
     try:
         ctx = Ctx(m, t)
         res = fn(ctx) or {}
+        cur = db.one("SELECT status FROM tasks WHERE mission_id=? AND id=?", m["id"], t["id"])
+        if not cur or cur["status"] != "running":
+            db.event(m["id"], "challenged", "{0} finished after its deadline; its result was discarded".format(SPECIALISTS[t["specialist"]]["title"]))
+            return
         n = _store_evidence(m, t, res.get("evidence"), res.get("model"))
+        if t["specialist"] == "hypotheses":
+            _replan(m, res.get("out") or {})      # before "done": verification cannot start until the plan is settled
         db.update("tasks", {"mission_id": m["id"], "id": t["id"]}, status="done", ended_at=time.time(),
                   summary=res.get("summary") or "", output={"out": res.get("out") or {}, "model": res.get("model")},
                   model=res.get("model"))
@@ -294,6 +373,9 @@ def _run(m, t):
         if t["specialist"] == "risk":
             _maybe_escalate(m, res.get("out") or {})
     except Exception as error:
+        cur = db.one("SELECT status FROM tasks WHERE mission_id=? AND id=?", m["id"], t["id"])
+        if not cur or cur["status"] != "running":
+            return
         retry = (t.get("attempts") or 1) < 2 and t.get("idempotent")
         db.update("tasks", {"mission_id": m["id"], "id": t["id"]}, status="queued" if retry else "failed",
                   ended_at=time.time(), error=type(error).__name__ + ": " + str(error)[:200])
@@ -311,6 +393,26 @@ def _maybe_escalate(m, out):
         db.event(m["id"], "escalation", "Escalation to Emergency Mode suggested: " + esc["why"])
 
 
+def _replan(m, out):
+    """One replanning rule: when the records support a tracking or extraction cause and the plan has no
+    date reconciliation, the Commander adds one before verification (at most MAX_REPLANS times)."""
+    hyp = {h["id"]: h for h in out.get("hypotheses") or []}
+    if not any(hyp.get(k, {}).get("status") == "supported" for k in ("tracking", "extract")):
+        return
+    tasks = {t["id"]: t for t in db.many("SELECT id, status, depends_on FROM tasks WHERE mission_id=?", m["id"])}
+    if "eta" in tasks or "verify" not in tasks or tasks["verify"]["status"] != "queued":
+        return
+    n = db.one("SELECT COUNT(*) AS n FROM events WHERE mission_id=? AND kind='replan'", m["id"])["n"]
+    if n >= MAX_REPLANS:
+        return
+    deps = ["facts"] if "facts" in tasks else []
+    db.insert("tasks", mission_id=m["id"], id="eta", objective="Compare the export's dates with the carrier's (added by replanning)",
+              specialist="eta", needs=["records"], depends_on=deps, priority=50, status="queued", timeout_s=TASK_TIMEOUT_S,
+              idempotent=1, attempts=0, params={}, dedupe_key="eta")
+    db.update("tasks", {"mission_id": m["id"], "id": "verify"}, depends_on=list(tasks["verify"].get("depends_on") or []) + ["eta"])
+    db.event(m["id"], "replan", "Replanned: a tracking or extraction cause is supported, so the carrier's and eHub's dates are compared before verification")
+
+
 def _finish_if_done(mid):
     tasks = db.many("SELECT status, id, output FROM tasks WHERE mission_id=?", mid)
     if any(t["status"] in ("queued", "running") for t in tasks):
@@ -318,21 +420,53 @@ def _finish_if_done(mid):
     m = db.one("SELECT status FROM missions WHERE id=?", mid)
     if not m or m["status"] in ("cancelled",):
         return
-    rep = next(((t.get("output") or {}).get("out") or {}).get("report") for t in tasks if t["id"] == "report") if any(t["id"] == "report" and t["status"] == "done" for t in tasks) else None
+    cancelled = [t["id"] for t in tasks if t["status"] == "cancelled"]
+    rep = next((((t.get("output") or {}).get("out") or {}).get("report") for t in tasks if t["id"] == "report"), None) \
+        if any(t["id"] == "report" and t["status"] == "done" for t in tasks) else None
+    if m["status"] not in LIVE:
+        return
     failed = [t["id"] for t in tasks if t["status"] == "failed"]
     if rep:
         if failed:
             rep["limits"] = rep.get("limits", []) + ["These steps failed and are missing from the report: {0}.".format(", ".join(failed))]
+        if cancelled:
+            rep["limits"] = rep.get("limits", []) + ["The deadline stopped these steps before they ran: {0}.".format(", ".join(cancelled))]
         status = "done" if rep.get("grade") in ("Strong", "Moderate") else "insufficient"
         db.update("missions", {"id": mid}, status=status, phase="report ready", ended_at=time.time(), report=rep, grade=rep.get("grade"))
         db.event(mid, "done", "Report ready: confidence {0}".format(rep.get("grade")))
+        full = db.one("SELECT * FROM missions WHERE id=?", mid)
+        try:
+            acts = rep.get("actions") or []
+            if rep.get("grade") in ("Strong", "Moderate"):     # actions only from a checked finding
+                actions.from_report(full, acts)
+            elif rep.get("contradictions") and not rep.get("mismatches") and any(a.get("kind") == "reprocess" for a in acts):
+                # the carrier and eHub disagree: a fresh, read-back lookup is how that is settled, nothing else
+                actions.from_report(full, [a for a in acts if a.get("kind") == "reprocess"])
+                db.event(mid, "challenged", "The sources disagree: only a re-run (which reads the Hub back) is proposed")
+            elif any(a.get("kind") for a in acts):
+                db.event(mid, "challenged", "No action cards: the finding is {0}, not strong enough to act on".format(rep.get("grade")))
+        except Exception as error:
+            db.event(mid, "challenged", "Action cards could not be prepared ({0})".format(type(error).__name__))
+        try:
+            memory.record(full, rep)
+        except Exception:
+            pass
     else:
         db.update("missions", {"id": mid}, status="failed", phase="failed", ended_at=time.time())
         db.event(mid, "failed", "The mission could not produce a report ({0} failed)".format(", ".join(failed) or "no report step"))
 
 
+_tick = {"at": 0.0}
+
+
 def _worker(i):
     while True:
+        if i == 0 and time.time() - _tick["at"] > 20:
+            _tick["at"] = time.time()
+            try:
+                actions.verify_pending()           # the Action Verifier reads outcomes back
+            except Exception:
+                pass
         try:
             job = _next(i)
         except Exception:
@@ -355,6 +489,7 @@ def recover():
         for m in db.many("SELECT id FROM missions WHERE status='running'"):
             db.update("missions", {"id": m["id"]}, status="queued", phase="resuming after a restart")
             db.event(m["id"], "recovered", "Resumed after a restart; finished work and evidence kept")
+        actions.recover()
     return len(rows)
 
 
@@ -388,7 +523,17 @@ def get(mid):
         return None
     tasks = db.many("SELECT * FROM tasks WHERE mission_id=?", mid)
     order = [x[0] for x in TEMPLATES.get(m["template"], {}).get("tasks", [])]
-    tasks.sort(key=lambda t: order.index(t["id"]) if t["id"] in order else 99)
+    fan = (TEMPLATES.get(m["template"], {}).get("fanout") or {}).get("task")
+
+    def pos(t):
+        if t["id"] in order:
+            return (order.index(t["id"]), "")
+        if fan and t["specialist"] == "item":
+            return (order.index(fan), t["id"])
+        if t["id"] == "eta" and "verify" in order:
+            return (order.index("verify") - 0.5, "")
+        return (99, t["id"])
+    tasks.sort(key=pos)
     for t in tasks:
         t["title"] = SPECIALISTS.get(t["specialist"], {}).get("title")
         out = t.pop("output", None) or {}
@@ -398,6 +543,24 @@ def get(mid):
     ev = db.many("SELECT id, task_id, claim, class, source, record, freshness, agent, model, verification, basis, identifiers, captured_at "
                  "FROM evidence WHERE mission_id=? AND status='kept' ORDER BY captured_at", mid)
     led = models.ledger(mid, 200)
+    by_agent = {}
+    titles = {t["id"]: t["title"] for t in tasks}
+    for r in led:
+        who = titles.get(r.get("task_id")) or r.get("purpose") or "mission"
+        a = by_agent.setdefault(who, {"calls": 0, "failed": 0, "usage": 0, "cost_estimate": 0.0, "models": []})
+        a["calls" if r.get("status") == "ok" else "failed"] += 1
+        a["usage"] += (r.get("usage_in") or 0) + (r.get("usage_out") or 0)
+        a["cost_estimate"] = round(a["cost_estimate"] + (r.get("cost_estimate") or 0), 6)
+        if r.get("model_id") not in a["models"]:
+            a["models"].append(r.get("model_id"))
+    v = ((db.one("SELECT output FROM tasks WHERE mission_id=? AND id='verify'", mid) or {}).get("output") or {}).get("out") or {}
+    m.update(actions=actions.listing(mid), memory=memory.listing(mid),
+             notes=db.many("SELECT at, by, text FROM notes WHERE mission_id=? ORDER BY at", mid),
+             conflicts=[{"kind": "contradiction", "text": c} for c in v.get("contradictions") or []] +
+                       [{"kind": "mismatch", "text": c} for c in v.get("mismatches") or []],
+             usage_by_agent=by_agent, deadline_left=(m["deadline_at"] - time.time()) if m.get("deadline_at") and m["status"] in LIVE else None,
+             removable=plan.removable(m["template"]) if m["template"] in TEMPLATES else [],
+             similar=memory.similar(m["template"], m.get("scope") or {}, exclude=mid) if m["status"] == "proposed" else [])
     m.update(tasks=tasks, hypotheses=hyp, evidence=ev,
              events=db.many("SELECT at, kind, text FROM events WHERE mission_id=? ORDER BY at", mid)[-80:],
              usage={"model_calls": sum(1 for r in led if r.get("status") == "ok"), "failed_calls": sum(1 for r in led if r.get("status") != "ok"),
@@ -408,7 +571,8 @@ def get(mid):
 
 
 def listing(limit=60, allowed=None):
-    rows = db.many("SELECT id, title, level, severity, status, phase, created_at, started_at, ended_at, grade, origin, scope, drill, escalation "
+    rows = db.many("SELECT id, title, level, severity, status, phase, created_at, started_at, ended_at, grade, origin, scope, drill, escalation, "
+                   "template, deadline_at, verification_status, assigned_to, parent_id, version "
                    "FROM missions ORDER BY created_at DESC LIMIT ?", limit)
     if allowed is not None:                  # a BU-limited person sees missions made inside their BUs only
         rows = [r for r in rows if (r.get("scope") or {}).get("allowed") is not None and set(r["scope"]["allowed"]) <= set(allowed)]
@@ -429,3 +593,82 @@ def suggest_incidents(data, rows, allowed=None):
             if m:
                 out.append(m)
     return out
+
+
+# ── S9: replay, comparison, handoff, notes, analytics ─────────────────────
+def replay(mid, by):
+    """A new PROPOSED mission with the same question, scope and template, run against today's records;
+    compare() then shows what changed. Nothing runs until it is approved."""
+    m = db.one("SELECT * FROM missions WHERE id=?", mid)
+    if not m or m["status"] in LIVE + ("proposed",):
+        return None, "Only a finished mission can be replayed."
+    nid = uuid.uuid4().hex[:10]
+    n = db.one("SELECT COUNT(*) AS n FROM missions WHERE parent_id=?", mid)["n"]
+    keep = {k: m.get(k) for k in ("title", "objective", "question", "level", "severity", "template", "scope", "profile", "plan",
+                                  "plan_hash", "budget_tokens", "reasons", "drill", "autonomy_level", "max_calls_per_task")}
+    db.insert("missions", id=nid, fingerprint="{0}:replay:{1}".format(m["fingerprint"], n + 1), status="proposed",
+              phase="awaiting approval", priority=m.get("priority") or 1, created_at=time.time(), created_by=str(by or "")[:80],
+              origin="replay", parent_id=mid, **keep)
+    db.event(nid, "proposed", "Replay of mission {0} against today's records, proposed by {1}".format(mid, by))
+    db.event(mid, "replay", "Replayed as {0} by {1}".format(nid, by))
+    return get(nid), "Replay proposed: approve it to run."
+
+
+def compare(a_id, b_id):
+    out = {}
+    for key, mid in (("a", a_id), ("b", b_id)):
+        m = get(mid)
+        if not m:
+            return None
+        rep = m.get("report") or {}
+        out[key] = {"id": mid, "status": m["status"], "grade": m.get("grade"), "created_at": m["created_at"],
+                    "supported": sorted(h["label"] for h in rep.get("hypotheses") or [] if h.get("status") == "supported"),
+                    "facts": len(rep.get("facts") or []), "evidence": len(m.get("evidence") or [])}
+    out["changed"] = {"grade": out["a"]["grade"] != out["b"]["grade"],
+                      "new_causes": sorted(set(out["b"]["supported"]) - set(out["a"]["supported"])),
+                      "gone_causes": sorted(set(out["a"]["supported"]) - set(out["b"]["supported"]))}
+    return out
+
+
+def assign(mid, to, by):
+    m = db.one("SELECT id FROM missions WHERE id=?", mid)
+    to = " ".join(str(to or "").split())[:80]
+    if not m or not to:
+        return False, "Say who takes it over."
+    db.update("missions", {"id": mid}, assigned_to=to)
+    db.event(mid, "handoff", "Handed over to {0} by {1}".format(to, by))
+    return True, "Handed over to {0}.".format(to)
+
+
+def note(mid, by, text):
+    text = " ".join(str(text or "").split())[:1000]
+    if not text or not db.one("SELECT id FROM missions WHERE id=?", mid):
+        return False, "Write a note."
+    db.insert("notes", mission_id=mid, at=time.time(), by=str(by or "")[:80], text=text)
+    db.bump(mid)
+    return True, "Note added."
+
+
+def analytics(allowed=None):
+    """Counts from the mission store and the ledger only."""
+    ms = listing(1000, allowed)
+    ids = {m["id"] for m in ms}
+    by = lambda key: dict(sorted(((k, sum(1 for m in ms if m.get(key) == k)) for k in {m.get(key) for m in ms}), key=lambda kv: -kv[1]))
+    durations = sorted(m["ended_at"] - m["started_at"] for m in ms if m.get("ended_at") and m.get("started_at"))
+    acts = [a for a in actions.listing() if a["mission_id"] in ids]
+    executed = [a for a in acts if a.get("executed_at")]
+    led = [r for r in models.ledger(None, 20000) if r.get("mission_id") in ids]
+    return {"missions": len(ms), "by_status": by("status"), "by_template": by("template"), "by_grade": by("grade"),
+            "median_minutes_to_report": round(durations[len(durations) // 2] / 60.0, 1) if durations else None,
+            "actions": {"total": len(acts), "by_status": dict((s, sum(1 for a in acts if a["status"] == s)) for s in sorted({a["status"] for a in acts})),
+                        "executed": len(executed),
+                        "approval_compliance": (round(sum(1 for a in executed if a.get("decided_by")) / float(len(executed)), 3) if executed else None),
+                        "verified_rate": (round(sum(1 for a in executed if a["status"] in ("verified", "completed")) / float(len(executed)), 3) if executed else None)},
+            "model_calls": sum(1 for r in led if r.get("status") == "ok"), "failed_calls": sum(1 for r in led if r.get("status") != "ok"),
+            "usage": sum((r.get("usage_in") or 0) + (r.get("usage_out") or 0) for r in led),
+            "shared_reads": dict(tools_stats())}
+
+
+def tools_stats():
+    from . import tools
+    return tools.STATS

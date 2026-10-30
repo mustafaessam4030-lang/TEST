@@ -145,6 +145,7 @@ class OllamaProvider(object):
             # automation; with every core taken, a CPU-only model stalls.
             body["options"]["num_thread"] = int(threads)
         last = None
+        t0 = time.time()
         for attempt in range(self.retries + 1):
             try:
                 started = time.perf_counter()
@@ -156,6 +157,7 @@ class OllamaProvider(object):
                 if not images:
                     _report(True, body["model"], None)
                     _cache_put(key, text)
+                    _ledger("local", "ollama", True, t0, system, prompt, text)
                 return text
             except LLMError as error:
                 last = error
@@ -163,6 +165,7 @@ class OllamaProvider(object):
                     time.sleep(0.5 * (2 ** attempt))
         if not images:
             _report(False, body["model"], str(last))
+            _ledger("local", "ollama", False, t0, system, prompt, error=type(last).__name__)
         raise last
 
 
@@ -276,14 +279,26 @@ class ChainProvider(object):
 
     def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700, images=None):
         if not images and self._first_ok():
+            started = time.time()
             try:
                 text = self.first.generate(system, prompt, timeout, json_mode, max_tokens)
                 self.answered_by = self.first.model
+                _ledger(self.first.model, "cortex", True, started, system, prompt, text)
                 return text
-            except Exception:
-                pass                                   # the local model answers instead
+            except Exception as error:
+                _ledger(self.first.model, "cortex", False, started, system, prompt, error=type(error).__name__)
+                # the local model answers instead
         self.answered_by = self.then.model
         return self.then.generate(system, prompt, timeout, json_mode, max_tokens, images)
+
+
+def _ledger(model, provider_name, ok, started, system, prompt, text=None, error=None):
+    """The one model ledger (intelligence/missions/models.py) gets a row per chat call. Never raises."""
+    try:
+        from .missions import models as _mm
+        _mm.record_chat(model, provider_name, ok, started, system, prompt, text, error)
+    except Exception:
+        pass
 
 
 _provider = {"key": None, "obj": None}

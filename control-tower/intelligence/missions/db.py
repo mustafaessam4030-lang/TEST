@@ -48,13 +48,42 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS declines (
   fingerprint TEXT PRIMARY KEY, at REAL, by TEXT
 );
+CREATE TABLE IF NOT EXISTS actions (
+  id TEXT PRIMARY KEY, mission_id TEXT, kind TEXT, class TEXT, title TEXT, why TEXT, args TEXT, permission TEXT,
+  idempotency_key TEXT UNIQUE, status TEXT, proposed_at REAL, decided_by TEXT, decided_at REAL, policy TEXT,
+  executed_at REAL, engine_ref TEXT, outcome TEXT, outcome_detail TEXT, verified_at REAL, criterion TEXT, href TEXT
+);
+CREATE TABLE IF NOT EXISTS memory (
+  id TEXT PRIMARY KEY, mission_id TEXT, kind TEXT, text TEXT, keys TEXT, evidence_ids TEXT, status TEXT,
+  created_at REAL, promoted_by TEXT, proposal_id TEXT
+);
+CREATE TABLE IF NOT EXISTS notes (
+  mission_id TEXT, at REAL, by TEXT, text TEXT
+);
+CREATE INDEX IF NOT EXISTS a_m ON actions (mission_id);
+CREATE INDEX IF NOT EXISTS mem_m ON memory (mission_id);
 CREATE INDEX IF NOT EXISTS ev_m ON evidence (mission_id);
 CREATE INDEX IF NOT EXISTS t_m ON tasks (mission_id);
 CREATE INDEX IF NOT EXISTS e_m ON events (mission_id);
 """
 
 JSON_COLS = {"scope", "plan", "reasons", "report", "depends_on", "needs", "evidence_required",
-             "identifiers", "data", "support", "against", "needed", "escalation", "output"}
+             "identifiers", "data", "support", "against", "needed", "escalation", "output", "params",
+             "args", "keys", "evidence_ids", "perms", "outcome_detail"}
+
+# Columns added after the first release: added in place on an existing missions.db.
+MIGRATIONS = {"missions": [("deadline_at", "REAL"), ("autonomy_level", "INTEGER DEFAULT 1"), ("verification_status", "TEXT"),
+                           ("assigned_to", "TEXT"), ("perms", "TEXT"), ("parent_id", "TEXT"), ("max_calls_per_task", "INTEGER DEFAULT 2"),
+                           ("version", "INTEGER DEFAULT 0")],
+              "tasks": [("params", "TEXT"), ("deadline_at", "REAL"), ("dedupe_key", "TEXT")]}
+
+
+def _migrate(c):
+    for table, cols in MIGRATIONS.items():
+        have = {r[1] for r in c.execute("PRAGMA table_info({0})".format(table)).fetchall()}
+        for name, kind in cols:
+            if name not in have:
+                c.execute("ALTER TABLE {0} ADD COLUMN {1} {2}".format(table, name, kind))
 
 
 def path():
@@ -73,6 +102,7 @@ def db():
             c.execute("PRAGMA journal_mode=WAL")
             c.execute("PRAGMA synchronous=NORMAL")
             c.executescript(SCHEMA)
+            _migrate(c)
             _conn.update(path=p, db=c)
         return _conn["db"]
 
@@ -151,3 +181,10 @@ def many(sql, *args):
 
 def event(mission_id, kind, text):
     insert("events", mission_id=mission_id, at=time.time(), kind=kind, text=str(text)[:600])
+    bump(mission_id)
+
+
+def bump(mission_id):
+    """A change Mission Control should show: its live stream watches this number."""
+    with _lock:
+        db().execute("UPDATE missions SET version=COALESCE(version,0)+1 WHERE id=?", (mission_id,))

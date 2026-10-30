@@ -46,6 +46,7 @@ DEFAULT = [
 ]
 
 _lock = threading.Lock()
+QUIET = threading.local()  # set while a mission calls a provider: chat's own ledger row is not written twice
 PROVIDERS = {}            # tests put their stand-ins here: {"cortex": fn(model) -> provider, "ollama": provider}
 LOCAL_BLOCKED = lambda: False      # the engine sets it: no local model while the ATA run is busy
 
@@ -201,13 +202,31 @@ class ModelUnavailable(Exception):
     pass
 
 
+def calls_made(mission_id, task_id):
+    return sum(1 for r in ledger(mission_id, 5000) if r.get("task_id") == task_id)
+
+
+def call_cap():
+    """Model calls one mission task may make: the first choice and one fallback, unless configured."""
+    try:
+        return max(1, int(os.environ.get("ATLAS_MISSION_CALLS_PER_TASK") or 2))
+    except ValueError:
+        return 2
+
+
 def call(need, system, prompt, mission_id=None, task_id=None, purpose=None, tier="T1", profile="deep",
-         budget=80000, avoid_family=None, max_tokens=600, timeout=40, json_mode=False):
-    """-> {"text", "model", "family", "why"}; raises ModelUnavailable when no model fits or every fit failed."""
+         budget=80000, avoid_family=None, max_tokens=600, timeout=40, json_mode=False, max_calls=None):
+    """-> {"text", "model", "family", "why"}; raises ModelUnavailable when no model fits or every fit failed.
+    A mission task makes at most max_calls calls (call_cap()): beyond that it continues without a model."""
     used = tokens_used(mission_id) if mission_id else 0
     tried = set()
     why_all = []
-    for _ in range(3):
+    left = 3
+    if mission_id and task_id:
+        left = (max_calls or call_cap()) - calls_made(mission_id, task_id)
+        if left <= 0:
+            raise ModelUnavailable("this task has used its {0} model call(s)".format(max_calls or call_cap()))
+    for _ in range(min(3, left)):
         m, why = route(need, tier, profile, used, budget, avoid_family, exclude=tried)
         if m is None:
             why_all.append(why)
@@ -220,7 +239,11 @@ def call(need, system, prompt, mission_id=None, task_id=None, purpose=None, tier
                "model_id": m["id"], "where": m.get("where"), "data_tier": tier, "started_at": _store.stamp(started),
                "prompt_sha256": hashlib.sha256((system + "\n" + prompt).encode("utf-8")).hexdigest()}
         try:
-            text = p.generate(system, prompt, timeout=timeout, json_mode=json_mode, max_tokens=max_tokens)
+            QUIET.on = True
+            try:
+                text = p.generate(system, prompt, timeout=timeout, json_mode=json_mode, max_tokens=max_tokens)
+            finally:
+                QUIET.on = False
             ms = (time.time() - started) * 1000
             inp, out = (len(system) + len(prompt)) // 4, len(text or "") // 4      # estimated when the provider gives none
             row.update(status="ok", latency_ms=int(ms), usage_in=inp, usage_out=out,
@@ -237,3 +260,27 @@ def call(need, system, prompt, mission_id=None, task_id=None, purpose=None, tier
             _record(row)
             why_all.append("{0}: {1}".format(m["id"], type(error).__name__))      # the next best is tried, never the same twice
     raise ModelUnavailable("; ".join(why_all) or "no model available")
+
+
+def record_chat(model, provider, ok, started, system, prompt, text=None, error=None):
+    """One ledger for every model call (plan S1): ATLAS's chat calls are recorded here too, with the
+    same fields as a mission's (purpose "chat", no mission). Chat's routing is unchanged; the prompt is
+    kept only as a hash. ATLAS_ROUTER=legacy stops these rows. Never raises."""
+    if getattr(QUIET, "on", False) or str(os.environ.get("ATLAS_ROUTER") or "").strip().lower() == "legacy":
+        return
+    try:
+        inp, out = (len(system or "") + len(prompt or "")) // 4, len(text or "") // 4
+        row = {"invocation_id": hashlib.sha1("{0}{1}".format(time.time(), model).encode()).hexdigest()[:16],
+               "mission_id": None, "task_id": None, "purpose": "chat", "provider": provider, "model_id": str(model or "")[:80],
+               "started_at": _store.stamp(started), "latency_ms": int((time.time() - started) * 1000),
+               "prompt_sha256": hashlib.sha256(((system or "") + "\n" + (prompt or "")).encode("utf-8")).hexdigest()}
+        if ok:
+            m = next((x for x in registry() if x["id"] == model), {})
+            row.update(status="ok", usage_in=inp, usage_out=out, usage_estimated=True,
+                       cost_estimate=round((inp + out) / 1e6 * (m.get("cost") or 0), 6),
+                       output_sha256=hashlib.sha256((text or "").encode("utf-8")).hexdigest())
+        else:
+            row.update(status="error", error_class=str(error or "error")[:60], usage_in=0, usage_out=0, cost_estimate=0)
+        _record(row)
+    except Exception:
+        pass

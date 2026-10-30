@@ -20,7 +20,8 @@ import re
 import time
 
 from . import db, models
-from .registry import SPECIALISTS, TEMPLATES
+from .plan import DEADLINE_MIN
+from .registry import REQUIRED, SPECIALISTS, TEMPLATES
 
 RULES = {
     "deep_overdue_days": 14,        # one shipment this far past its step's due date: worth a deep look
@@ -51,6 +52,12 @@ CROSS = re.compile(r"\b(carrier|ehub|hub|export|run|website|portal|source|source
 LOOKUP = re.compile(r"^\s*(what(?:'s| is) the (?:status|eta|ata)|status of|eta of|ata of|where is)\b", re.I)
 
 TEMPLATE_WORDS = [
+    ("carrier_research", re.compile(r"\b(unfamiliar|new|unknown|unsupported) (?:carrier|shipping line|airline)\b|\bintegrat\w* (?:a |the )?(?:new )?carrier\b", re.I)),
+    ("carrier_compare", re.compile(r"\bcompare (?:the |our )?carriers\b|\bcarrier (?:performance|comparison|ranking)\b|\bwhich carriers? (?:is|are|perform)", re.I)),
+    ("exception_report", re.compile(r"\bexception reports?\b|\bexceptions? for\b", re.I)),
+    ("ata_failure", re.compile(r"\b(?:automation|ata run|the run|lookup|update)\b.{0,30}\b(?:fail\w*|error\w*|broke\w*)|\bfailed (?:ata|automation|lookup|update)\b", re.I)),
+    ("eta_discrepancy", re.compile(r"\beta\b.{0,40}\b(?:differ\w*|discrepan\w*|mismatch\w*|wrong|vs\.?|versus|contradict\w*|disagree\w*)", re.I)),
+    ("multi_delay", re.compile(r"\b(?:all|every|each)\b[^.?!]{0,30}\b(?:delayed|late|past[- ]due|overdue|stuck)\s+(?:shipments?|awbs?|bols?|cargo)", re.I)),
     ("missing_ata", re.compile(r"\b(no ata|missing ata|ata (?:is )?missing|ata (?:differ|mismatch|wrong|contradict)\w*|contradict\w* ata)\b", re.I)),
     ("clearance_blockage", re.compile(r"\b(customs?|clearance|declaration|duty|release|held|blocked)\b", re.I)),
     ("carrier_failure", re.compile(r"\b(carrier|tracking (?:fail|broke|down)|airline|shipping line|website down|portal)\b", re.I)),
@@ -115,10 +122,21 @@ def assess(question, data=None, rows=None, allowed=None):
         score += 1; reasons.append("it is marked urgent")
     if LOOKUP.search(q) and not inv:
         score = min(score, 1)
+    template = "shipment_delay"
+    for name, rx in TEMPLATE_WORDS:
+        if rx.search(q):
+            template = name
+            break
+    if template == "multi_delay" and (refs or not bus):
+        template = "shipment_delay" if refs else "backlog"
+    free = bool(TEMPLATES[template].get("scope_free"))
+    if free:
+        score += 2
+        reasons.append("it needs records from many runs or public sources, not one shipment")
     level = "NORMAL"
-    if score >= 2 and (refs or bus):
+    if score >= 2 and (refs or bus or free):
         level = "ADVANCED"
-    if score >= 4 and (refs or bus):
+    if score >= 4 and (refs or bus or free):
         level = "DEEP_MISSION"
     # impact, from the records only
     severity = "NORMAL"
@@ -134,14 +152,9 @@ def assess(question, data=None, rows=None, allowed=None):
             level = "CRITICAL_INCIDENT"
             reasons.append("the records show critical business impact ({0})".format(
                 "{0:,} open past-due shipments".format(bu_pd) if bu_pd else "{0:,.0f} days past due at customs".format(max_over)))
-    template = "shipment_delay"
-    for name, rx in TEMPLATE_WORDS:
-        if rx.search(q):
-            template = name
-            break
     if bus and not refs and template in ("shipment_delay",):
         template = "backlog"
-    if not refs and not bus and level != "NORMAL":
+    if not refs and not bus and level != "NORMAL" and not free:
         level = "NORMAL"                     # nothing in the records to investigate: ATLAS answers as today
     fp = hashlib.sha1(json.dumps([template, sorted(refs), sorted(bus), bool(inv)]).encode()).hexdigest()[:16]
     return {"level": level, "severity": severity, "reasons": reasons, "template": template,
@@ -160,6 +173,7 @@ def proposal(a, profile=None):
     profile = profile or ("emergency" if level == "CRITICAL_INCIDENT" else "deep")
     t = TEMPLATES[a["template"]]
     plan, models_used = [], {}
+    fan = t.get("fanout")
     for tid, spec, objective, deps in t["tasks"]:
         need = SPECIALISTS[spec]["needs"]
         if need in ("records", "knowledge", "checks"):
@@ -168,12 +182,18 @@ def proposal(a, profile=None):
             m, why = models.route(need, "T1", profile)
             who = m["id"] if m else "no model available: ATLAS's own code instead"
             models_used[who] = models_used.get(who, 0) + 1
-        plan.append({"id": tid, "specialist": SPECIALISTS[spec]["title"], "objective": objective, "depends_on": deps, "by": who})
+        plan.append({"id": tid, "specialist": SPECIALISTS[spec]["title"], "objective": objective, "depends_on": deps, "by": who,
+                     "required": tid in REQUIRED, "fanout": bool(fan and fan["task"] == tid)})
     lo_c, hi_c, lo_t, hi_t = ESTIMATE.get(level, (0, 0, 0, 0))
     billed = [k for k in models_used if not k.startswith(("local", "no model", "ATLAS"))]
-    limits = ["Missions read records; they do not open carrier websites or change anything.",
+    from . import actions as _actions
+    limits = ["Missions read records; they do not open carrier websites, sign in or send anything.",
               "Every number is recomputed from the source before the report.",
-              "A proposed action still goes through the existing approval and the Human Action queue."]
+              ("A step that changes something (a re-run, an escalation) is a card you approve one by one; "
+               "it counts as done only when the engine's read-back confirms it.") if _actions.enabled() else
+              "Steps that would change something are proposals only on this server: nothing is executed."]
+    if a["template"] == "carrier_research":
+        limits.append("Web results are public, unverified and quoted with their address; tracking pages are never opened.")
     if not billed:
         limits.append("No Cortex model is available now: the report is worded by ATLAS's own code.")
     else:
@@ -185,7 +205,17 @@ def proposal(a, profile=None):
             # (keys never contain "token": the store drops such fields as possible secrets)
             "estimate": {"model_calls": [lo_c, hi_c] if billed else [0, 0], "usage": [lo_t, hi_t] if billed else [0, 0],
                          "budget": 80000 if level != "CRITICAL_INCIDENT" else 150000},
-            "limits": limits, "approver": APPROVER.get(level, "missions.run")}
+            "limits": limits, "approver": APPROVER.get(level, "missions.run"),
+            "deadline_min": DEADLINE_MIN.get(level, 15), "removable": [p["id"] for p in plan if not p["required"]],
+            "fanout": {"max": fan["max"]} if fan else None, "similar": _similar(a)}
+
+
+def _similar(a):
+    try:
+        from . import memory
+        return memory.similar(a["template"], a["scope"])
+    except Exception:
+        return []
 
 
 def decline(fingerprint, by=None):

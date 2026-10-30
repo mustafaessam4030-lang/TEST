@@ -29,6 +29,7 @@ Each person sees only what their access level lets them open.
 """
 
 import datetime as _dt
+import os
 import time
 from urllib.parse import quote
 
@@ -255,6 +256,33 @@ def _clearance_items(today, now):
     return out
 
 
+def _mission_items():
+    """ATLAS mission actions waiting for a person: an approval (seen by whoever holds that action's own
+    permission) or a task a mission put in To Do. Read from the missions store; never raises."""
+    if str(os.environ.get("ATLAS_MISSIONS") or "1").strip().lower() in ("0", "off", "no", "false"):
+        return []
+    try:
+        from intelligence.missions import actions as MA, db as MDB
+        rows = MA.todo_items()
+        titles = {m["id"]: m for m in MDB.many("SELECT id, title, level FROM missions")}
+    except Exception:
+        return []
+    out = []
+    for a in rows:
+        m = titles.get(a["mission_id"]) or {}
+        href = "/hub#missions?id={0}".format(a["mission_id"])
+        if a["status"] == "proposed":
+            critical = m.get("level") == "CRITICAL_INCIDENT"
+            out.append(_task("mact:" + a["id"], "Missions", "mission_approval", "urgent" if critical else "pending_approval",
+                             80 if critical else 55, "red" if critical else "amber", "Approve? " + a["title"],
+                             "{0} · {1}".format(m.get("title") or "ATLAS mission", a.get("why") or ""), href, a["permission"],
+                             at=_dt.datetime.fromtimestamp(a["proposed_at"]).strftime("%Y-%m-%dT%H:%M:%S") if a.get("proposed_at") else None))
+        else:
+            out.append(_task("mact:" + a["id"], "Missions", "mission_task", "open", 40, "amber", a["title"],
+                             "From {0}: {1}".format(m.get("title") or "an ATLAS mission", a.get("why") or ""), href, "missions.run"))
+    return out
+
+
 def build(can, state=None, today=None, now=None):
     now = now or _dt.datetime.now()
     today = today or now.date()
@@ -266,6 +294,8 @@ def build(can, state=None, today=None, now=None):
         items += _po_items()
     if can("clearance.view"):
         items += _clearance_items(today, now)
+    if can("missions.view"):
+        items += _mission_items()
     items = [dict((k, v) for k, v in i.items() if k != "permission") for i in items if can(i["permission"])]
     # Outstanding: highest priority first, then the earliest due date. Completed last, newest first.
     todo = sorted((i for i in items if i["state"] != "completed"),

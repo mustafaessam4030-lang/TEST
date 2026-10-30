@@ -548,3 +548,25 @@ switching it off (`ATLAS_MISSIONS*` env flags) or reverting its commit.
 8. Automatic incident activation: propose only (current) or read-only auto-start?
 9. Self-hosted web search for the Web Investigation agent (`ATLAS_SEARCH_URL`)?
 10. Where missions run in the remote setup: on the tower (current) or via the control plane?
+
+---
+
+## 21. Implementation status (30 Oct 2026)
+
+Built and tested with stand-ins only (`test_missions_agentic.py`, 82 checks; `test_missions.py`, 53).
+Nothing live was touched: no Snowflake setting, no model enabled, no paid call, no Hub write, no email.
+
+| Stage | Status | Where | Switch |
+|---|---|---|---|
+| S1 one ledger | Done: chat calls (Cortex and local) write the same ledger rows as missions (purpose `chat`, prompt hash only). Chat **routing is unchanged on purpose** (answers identical). | `llm.py`, `missions/models.py` (`record_chat`, `QUIET`) | `ATLAS_ROUTER=legacy` stops the rows |
+| S2 tool catalogue | Done: 9 read tools wrapping existing functions, 3 action tools (reprocess, escalate, queue_human); permission, level, idempotency; reads shared for 15 min across missions | `missions/tools.py` | — |
+| S3 planner | Done: template first; a planning model may only pick a catalogued template or skip optional steps (validated; off unless `ATLAS_MISSION_PLANNER=1`); graph validation (agents, dependencies, cycles, size); fan-out ≤ 25 with merge; plan editor (remove optional steps, profile, deadline); mission deadlines and task timeouts (late results discarded); per-task call cap (default 2); one replanning rule (tracking/extraction supported → date reconciliation before verification). New templates: multi_delay, eta_discrepancy, ata_failure, exception_report, carrier_compare, carrier_research | `missions/plan.py`, `registry.py`, `engine.py`, `classify.py` | `ATLAS_MISSION_PLANNER`, `ATLAS_MISSION_CALLS_PER_TASK`, `ATLAS_MISSION_TASK_TIMEOUT_S` |
+| S4 actions | Done: action cards only from a Strong/Moderate finding (a carrier-vs-eHub contradiction allows only a re-run); approval per action with the action's **own** permission; execution only through `control.request("reprocess")`, `clearance.escalate`, a To Do task; Action Verifier: re-run = the run's `verified_success` for that reference after the request; escalation = present in the Clearance store; To Do = listed. Never re-executed after a restart. Audit `MISSION_ACTION_APPROVED / REJECTED / FAILED` + the engine's own audit name. Pending approvals in To Do | `missions/actions.py`, `server.py`, `todo.py` | **`ATLAS_MISSION_ACTIONS=1` to execute; OFF by default** |
+| S5 Mission Control | Done: plan editor, approvals and outcomes, conflicts, model use by agent, lessons, notes, handoff, replay, analytics strip, Commander timeline, live stream (`/api/missions/<id>/stream`, SSE) with polling fallback | `static/hub/missions.js` | — |
+| S6 memory | Done: outcome + lesson drafts; similar missions shown on a proposal; a person sends a lesson to knowledge review (`kb_govern`, observation); never automatic | `missions/memory.py` | — |
+| S7 web | Done: Web Investigation over the self-hosted search; external claims unverified, never above Weak; tracking pages skipped; says plainly when search is not set up | `specialists.web` | `ATLAS_SEARCH_URL` |
+| S8 Level 4 | Done: policy file (none by default); only valid, ≤ 30-day, unexpired policies; matching kind, grade, hypothesis and count; recorded as `policy:<id>` | `actions.policies()` | `ATLAS_MISSION_POLICIES` (file) |
+| S9 advanced | Done: replay (a new proposal against today's records) and comparison, handoff, notes, analytics. **Not built**: scheduled analysis and what-if simulation | `engine.py` | — |
+
+Not claimed: production readiness and Windows end-to-end verification; both need an authorised run on the tower.
+The ten owner decisions in §20 remain open; the safe defaults stand (actions off, no planning model, no Level 4 policy).

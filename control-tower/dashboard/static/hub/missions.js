@@ -4,9 +4,11 @@
    /hub#missions?id=<id>    one mission: the proposal (approve / review / continue normally),
                             then its task graph, evidence, hypotheses, conflicts and report
 
-   Read-only: approving starts a read-only investigation; next steps are links to the pages
-   that own them, marked "not executed". Live missions refresh every 1.5 s, redrawing only
-   what changed. */
+   Approving starts a read-only investigation (the plan can be edited first: steps removed,
+   profile, deadline). A step that changes something becomes an action card: each is approved
+   on its own, by someone holding that action's own permission, and counts as done only when
+   the engine's read-back confirms it. Live missions follow /api/missions/<id>/stream (SSE),
+   falling back to polling every 1.5 s, and redraw only what changed. */
 (function () {
   "use strict";
   const V = window.HubViews = window.HubViews || {};
@@ -88,12 +90,45 @@
 .ms-banner{padding:14px 18px;border-radius:14px;background:var(--hub-red-wash);color:var(--hub-red-ink);font-weight:600;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .ms-tl{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:12.5px;max-height:260px;overflow:auto}
 .ms-tl time{color:var(--hub-ink-3);font-variant-numeric:tabular-nums;margin-right:8px}
+.ms-tl li[data-k]::before{content:attr(data-k);font:600 10px var(--hub-font);letter-spacing:.04em;text-transform:uppercase;margin-right:6px;padding:2px 6px;border-radius:5px;background:var(--hub-surface-2);color:var(--hub-ink-3)}
+.ms-tl li[data-k="replan"]::before,.ms-tl li[data-k="plan"]::before{background:var(--hub-blue-wash);color:var(--hub-blue)}
+.ms-tl li[data-k^="action"]::before{background:var(--hub-amber-wash);color:var(--hub-amber-ink)}
+.ms-tl li[data-k="challenged"]::before,.ms-tl li[data-k="deadline"]::before{background:var(--hub-red-wash);color:var(--hub-red-ink)}
+.ms-plan li label{display:contents;cursor:pointer}
+.ms-plan li input{margin:0;accent-color:var(--hub-accent)}
+.ms-plan li.off{opacity:.45}
+.ms-plan li.off b{text-decoration:line-through}
+.ms-edit{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:13px}
+.ms-edit select,.ms-edit input{font:inherit;border:0;border-radius:9px;padding:6px 10px;background:var(--hub-surface-2);color:var(--hub-ink);box-shadow:inset 0 0 0 .5px var(--hub-line)}
+.ms-edit input{width:72px}
+.ms-ac{display:grid;gap:10px}
+.ms-ac article{padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--hub-surface-2) 55%,transparent);box-shadow:inset 0 0 0 .5px var(--hub-line);display:grid;gap:6px;transition:box-shadow .4s var(--hub-e)}
+.ms-ac article.st-proposed{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--hub-amber) 60%,transparent)}
+.ms-ac article.st-verified,.ms-ac article.st-completed{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--hub-green) 55%,transparent)}
+.ms-ac article.st-not_verified,.ms-ac article.st-failed{box-shadow:inset 0 0 0 1px var(--hub-red)}
+.ms-ac h4{margin:0;font:600 14px/1.35 var(--hub-font)}
+.ms-ac dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px;margin:0;font-size:12.5px}
+.ms-ac dt{color:var(--hub-ink-3)} .ms-ac dd{margin:0}
+.ms-out{font-weight:600}
+.ms-out.verified,.ms-out.completed{color:var(--hub-green-ink)} .ms-out.not_verified,.ms-out.failed{color:var(--hub-red-ink)} .ms-out.awaiting_outcome{color:var(--hub-accent-ink)}
+.ms-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.ms-tbl th{text-align:left;font-weight:600;color:var(--hub-ink-3);padding:4px 6px;border-bottom:.5px solid var(--hub-line)}
+.ms-tbl td{padding:5px 6px;border-bottom:.5px solid var(--hub-line);font-variant-numeric:tabular-nums}
+.ms-notes textarea{width:100%;min-height:44px;resize:vertical;border:0;border-radius:10px;padding:8px 10px;font:inherit;color:var(--hub-ink);background:var(--hub-surface-2);box-shadow:inset 0 0 0 .5px var(--hub-line)}
+.ms-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 16px}
+.ms-stats div span{display:block;font-size:11.5px;color:var(--hub-ink-3)} .ms-stats div b{font-size:18px;font-variant-numeric:tabular-nums}
+.ms-live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--hub-ink-3)}
+.ms-live i{width:7px;height:7px;border-radius:50%;background:var(--hub-green);box-shadow:0 0 0 3px var(--hub-green-wash)}
 `;
-  let timer = null, current = null;
+  let timer = null, current = null, source = null;
   const LEVEL = {ADVANCED: "Advanced", DEEP_MISSION: "Deep Mission", CRITICAL_INCIDENT: "Critical incident"};
   const STATUS = {proposed: "Waiting for approval", queued: "Queued", running: "Running", paused: "Paused", done: "Done",
     insufficient: "Insufficient evidence", failed: "Failed", cancelled: "Cancelled", declined: "Continued normally"};
-  const CLASS = {VERIFIED_LIVE: "Verified live", HISTORICAL: "From the records", PLATFORM_RULE: "Platform rule",
+  const VSTATUS = {awaiting_approval: "Actions waiting for approval", awaiting_outcome: "Waiting for the read-back",
+    done_verified: "Actions confirmed by read-back", done_unverified: "An action was NOT confirmed", no_action_taken: "No action taken"};
+  const ASTATUS = {proposed: "Waiting for approval", executing: "Executing", awaiting_outcome: "Waiting for the read-back", verified: "Confirmed by read-back",
+    not_verified: "Not confirmed", failed: "Refused by the engine", rejected: "Rejected", completed: "Done"};
+  const CLASS = {VERIFIED_LIVE: "Verified live", HISTORICAL: "From the records", CALCULATED: "Calculated", PLATFORM_RULE: "Platform rule",
     GENERAL_KNOWLEDGE: "Logistics knowledge", HYPOTHESIS: "Hypothesis", EXTERNAL_UNVERIFIED: "External, unverified"};
 
   function css() {
@@ -118,7 +153,8 @@
   const pill = (cls, text) => `<span class="ms-pill ${cls}">${esc(text)}</span>`;
   const param = (k) => new URLSearchParams((location.hash.split("?")[1] || "")).get(k);
 
-  function stop() { if (timer) { clearTimeout(timer); timer = null; } current = null; }
+  function stop() { if (timer) { clearTimeout(timer); timer = null; } if (source) { source.close(); source = null; } current = null; }
+  const mins = (s) => s == null ? "" : s <= 0 ? "deadline reached" : s < 60 ? Math.round(s) + " s left" : Math.round(s / 60) + " min left";
 
   /* ── the list ── */
   async function list(el) {
@@ -130,7 +166,15 @@
           <button class="hub-pill" id="msDrill" type="button" title="Same plan, no billed model, nothing changed">Drill</button>
           <span class="sp"></span><button class="hub-pill" id="msEmer" type="button" hidden>Emergency Mode…</button></div>
         <div class="ms-msg" id="msMsg" role="status"></div></section>
-      <div id="msLists"></div></div>`);
+      <div id="msStats"></div><div id="msLists"></div></div>`);
+    fetch("/api/missions/analytics", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((a) => {
+      if (!a || !a.missions) return;
+      const pct = (x) => x == null ? "—" : Math.round(x * 100) + "%";
+      put(el.querySelector("#msStats"), `<section class="hv-card ms-stats" aria-label="Mission analytics">
+        <div><span>Missions</span><b>${fmt(a.missions)}</b></div><div><span>Median time to report</span><b>${a.median_minutes_to_report == null ? "—" : esc(a.median_minutes_to_report) + " min"}</b></div>
+        <div><span>Actions executed</span><b>${fmt(a.actions.executed)}</b></div><div><span>Approved by a person or policy</span><b>${pct(a.actions.approval_compliance)}</b></div>
+        <div><span>Confirmed by read-back</span><b>${pct(a.actions.verified_rate)}</b></div><div><span>Model calls</span><b>${fmt(a.model_calls)}</b></div></section>`);
+    }).catch(() => {});
     const ask = async (extra) => {
       const q = el.querySelector("#msQ").value.trim(); const msg = el.querySelector("#msMsg");
       if (!q) { msg.textContent = "Say what to investigate."; return; }
@@ -155,7 +199,7 @@
       const ms = d.missions || [];
       const group = (title, rows) => rows.length ? `<div class="ms-sec">${esc(title)}</div><section class="hv-card"><ul class="ms-list">${rows.map((m) =>
         `<li><a href="/hub#missions?id=${esc(m.id)}">${pill("lv-" + m.level, LEVEL[m.level] || m.level)}<b>${esc(m.title)}</b>
-          <small>${esc(STATUS[m.status] || m.status)}${m.phase && m.status === "running" ? " · " + esc(m.phase) : ""}${m.grade ? " · confidence " + esc(m.grade) : ""}${m.origin === "auto" ? " · suggested by ATLAS" : ""}${m.drill ? " · drill" : ""}</small>
+          <small>${esc(STATUS[m.status] || m.status)}${m.phase && m.status === "running" ? " · " + esc(m.phase) : ""}${m.grade ? " · confidence " + esc(m.grade) : ""}${m.verification_status ? " · " + esc(VSTATUS[m.verification_status] || m.verification_status) : ""}${m.assigned_to ? " · with " + esc(m.assigned_to) : ""}${m.origin === "auto" ? " · suggested by ATLAS" : ""}${m.origin === "replay" ? " · replay" : ""}${m.drill ? " · drill" : ""}</small>
           <time>${esc(when(m.created_at))}</time></a></li>`).join("")}</ul></section>` : "";
       put(el.querySelector("#msLists"),
         group("Waiting for approval", ms.filter((m) => m.status === "proposed" && m.origin !== "auto")) +
@@ -190,8 +234,14 @@
         <div><span>Estimated use</span><b>${est.usage && est.usage[1] ? fmt(est.usage[0]) + "–" + fmt(est.usage[1]) + " tokens" : "no billed model"}</b></div>
         <div><span>Profile</span><b>${esc(p.profile_label || m.profile)}</b></div></div>
       <details id="msPlan" ${param("review") ? "open" : ""}><summary class="ms-note" style="cursor:pointer;margin-top:12px">The plan, step by step</summary>
-        <ol class="ms-plan">${(p.plan || []).map((t, i) => `<li><i>${i + 1}</i><span><b>${esc(t.specialist)}</b> — ${esc(t.objective)}${t.depends_on && t.depends_on.length ? `<small> · after ${esc(t.depends_on.join(", "))}</small>` : ""}</span><small>${esc(t.by)}</small></li>`).join("")}</ol>
+        <ol class="ms-plan">${(p.plan || []).map((t, i) => `<li data-step="${esc(t.id)}"><label>${t.required === false && allowed ? `<input type="checkbox" checked data-step="${esc(t.id)}" aria-label="Include ${esc(t.specialist)}">` : `<i>${i + 1}</i>`}<span><b>${esc(t.specialist)}</b> — ${esc(t.objective)}${t.depends_on && t.depends_on.length ? `<small> · after ${esc(t.depends_on.join(", "))}</small>` : ""}${t.required ? `<small> · required</small>` : ""}</span><small>${esc(t.by)}</small></label></li>`).join("")}</ol>
+        ${allowed ? `<div class="ms-edit"><label>Profile <select id="msProf" aria-label="Resource profile">${["normal", "deep", "emergency"].filter((k) => k !== "emergency" || critical).map((k) => `<option value="${k}" ${k === m.profile ? "selected" : ""}>${esc({normal: "Normal", deep: "Deep", emergency: "Emergency"}[k])}</option>`).join("")}</select></label>
+          <label>Deadline <input id="msDl" type="number" min="2" max="240" value="${esc(p.deadline_min || 15)}" aria-label="Deadline in minutes"> min</label>
+          <span class="ms-note">Untick a step to leave it out; required steps stay.</span></div>` : ""}
+        ${p.items && p.items.length ? `<p class="ms-note" style="margin-top:10px">One task per shipment for ${fmt(p.items.length)} shipment(s), longest past due first (at most ${fmt((p.fanout || {}).max || 25)}); the rest are counted by the Data Analyst.</p>` : ""}
+        ${p.planner ? `<p class="ms-note">Plan: ${esc(p.planner.note)}</p>` : ""}
         <ul class="ms-note" style="margin-top:10px">${(p.limits || []).map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>
+      ${(m.similar || p.similar || []).length ? `<p class="ms-note" style="margin-top:10px"><b>Seen before:</b> ${(m.similar || p.similar).map((x) => `<a href="/hub#missions?id=${esc(x.mission_id)}">${esc(x.text.slice(0, 120))}</a>`).join(" · ")}</p>` : ""}
       <div class="ms-cta">${allowed ? `<button class="hub-pill primary${critical ? " danger" : ""}" type="button" data-act="approve">${critical ? "Activate Emergency Mode" : "Enter Deep Mission"}</button>
         <button class="hub-pill" type="button" data-act="drill">Run as a drill</button>` : `<span class="ms-note">${critical ? "An Admin" : "An Operator or Admin"} can start it.</span>`}
         <button class="hub-pill" type="button" data-act="review">Review the plan</button>
@@ -243,6 +293,50 @@
       <ul class="ms-acts">${acts.map((a) => `<li><a href="${esc(a.href)}"><span class="ms-cls ${esc(a.class)}">${esc(a.class.replace("_", " "))}</span><span>${esc(a.title)}<br><small>${esc(a.why)}</small></span><small>${esc(a.status)}</small></a></li>`).join("") || "<li class='ms-note'>None.</li>"}</ul>
       <ul class="ms-note" style="margin-top:12px">${(r.limits || []).map((l) => `<li>${esc(l)}</li>`).join("")}</ul></section>`;
   }
+  function actionsCard(m) {
+    const acts = m.actions || [];
+    if (!acts.length) return "";
+    const off = !m.actions_enabled;
+    return `<section class="hv-card ms-card" aria-labelledby="msAT"><h3 id="msAT">Approvals and outcomes</h3>
+      ${off ? `<p class="ms-note">Actions are proposals only on this server (ATLAS_MISSION_ACTIONS is off): approve is refused and nothing is executed. You can do a step yourself from its page.</p>` : `<p class="ms-note">Each action is approved on its own, by someone with its permission. It counts as done only when the engine's own record confirms it.</p>`}
+      <div class="ms-ac">${acts.map((a) => `<article class="st-${esc(a.status)}" data-aid="${esc(a.id)}">
+        <div class="ms-row"><span class="ms-cls ${esc(a.class)}">${esc(String(a.class).replace("_", " "))}</span><span class="sp"></span><span class="ms-out ${esc(a.status)}">${esc(ASTATUS[a.status] || a.status)}</span></div>
+        <h4>${a.href ? `<a href="${esc(a.href)}">${esc(a.title)}</a>` : esc(a.title)}</h4>
+        <dl><dt>Why</dt><dd>${esc(a.why)}</dd><dt>Permission</dt><dd>${esc(a.permission)}</dd><dt>Done when</dt><dd>${esc(a.criterion)}</dd>
+          ${a.decided_by ? `<dt>Decided</dt><dd>${esc(a.decided_by)} · ${esc(when(a.decided_at))}${a.policy ? " · policy " + esc(a.policy) : ""}</dd>` : ""}
+          ${a.engine_ref ? `<dt>Engine</dt><dd>${esc(a.engine_ref)}</dd>` : ""}
+          ${a.outcome_detail ? `<dt>Outcome</dt><dd>${esc(Object.entries(a.outcome_detail).filter(([k, v]) => v != null && typeof v !== "object").map(([k, v]) => k.replace(/_/g, " ") + ": " + v).join(" · "))}</dd>` : ""}</dl>
+        ${a.status === "proposed" && a.can_decide ? `<div class="ms-row"><button class="hub-pill primary" type="button" data-aact="approve" data-aid="${esc(a.id)}"${off ? " disabled" : ""}>Approve</button><button class="hub-pill" type="button" data-aact="reject" data-aid="${esc(a.id)}">Reject</button></div>` :
+          a.status === "proposed" ? `<p class="ms-note">Someone with ${esc(a.permission)} can approve this.</p>` : ""}
+        ${a.kind === "queue_human" && a.status === "verified" && m.can && m.can.run ? `<div class="ms-row"><button class="hub-pill" type="button" data-aact="done" data-aid="${esc(a.id)}">Mark done</button></div>` : ""}
+      </article>`).join("")}</div><div class="ms-msg" id="msAAct" role="status"></div></section>`;
+  }
+  function conflictsCard(m) {
+    const c = m.conflicts || [];
+    if (!c.length) return "";
+    return `<section class="hv-card ms-card"><h3>Findings in conflict</h3><p class="ms-note">Kept side by side; ATLAS does not pick one silently.</p>
+      <ul>${c.map((x) => `<li><b>${esc(x.kind === "mismatch" ? "No longer matches the source" : "Sources disagree")}:</b> ${esc(x.text)}</li>`).join("")}</ul></section>`;
+  }
+  function usageCard(m) {
+    const rows = Object.entries(m.usage_by_agent || {});
+    if (!rows.length) return "";
+    return `<section class="hv-card ms-card"><h3>Model use by agent <span class="ms-note">from the ledger; usage estimated</span></h3>
+      <table class="ms-tbl"><thead><tr><th>Agent</th><th>Calls</th><th>Failed</th><th>Usage</th><th>Models</th></tr></thead><tbody>${rows.map(([k, v]) =>
+        `<tr><td>${esc(k)}</td><td>${fmt(v.calls)}</td><td>${fmt(v.failed)}</td><td>${fmt(v.usage)}</td><td>${esc((v.models || []).join(", "))}</td></tr>`).join("")}</tbody></table></section>`;
+  }
+  function memoryCard(m) {
+    const mem = (m.memory || []).filter((x) => x.kind === "lesson");
+    if (!mem.length) return "";
+    const can = m.can && m.can.propose_knowledge;
+    const ST = {draft: "Draft", proposed_to_kb: "Sent to knowledge review", rejected: "Dropped"};
+    return `<section class="hv-card ms-card"><h3>Lessons <span class="ms-note">drafts: knowledge only after a reviewer approves</span></h3>
+      <div class="ms-ac">${mem.map((x) => `<article><p style="margin:0;font-size:13px">${esc(x.text)}</p><div class="ms-row"><span class="ms-note">${esc(ST[x.status] || x.status)}${x.proposal_id ? " · " + esc(x.proposal_id) : ""}</span><span class="sp"></span>
+        ${x.status === "draft" && can ? `<button class="hub-pill" type="button" data-mact="promote" data-mid="${esc(x.id)}">Propose as knowledge</button><button class="hub-pill" type="button" data-mact="reject" data-mid="${esc(x.id)}">Drop</button>` : ""}</div></article>`).join("")}</div></section>`;
+  }
+  function notesList(m) {
+    return (m.notes || []).map((n) => `<li><time>${esc(when(n.at))}</time><b>${esc(n.by)}</b>: ${esc(n.text)}</li>`).join("") || `<li class="ms-note">No notes yet.</li>`;
+  }
+
   async function detail(el, id) {
     let first = true;
     const draw = async () => {
@@ -256,35 +350,89 @@
       }
       if (first) {
         put(el, `<div class="ms"><div class="ms-h"><div><a href="/hub#missions" class="ms-note">‹ Missions</a><h2 id="msTitle"></h2><p id="msSub"></p></div></div>
-          <div id="msBanner"></div><div id="msTop"></div><div class="ms-grid"><div id="msLeft" class="ms"></div><div id="msRight" class="ms"></div></div></div>`);
+          <div id="msBanner"></div><div id="msTop"></div><div id="msActs"></div><div class="ms-grid"><div id="msLeft" class="ms"></div><div id="msRight" class="ms"></div></div>
+          <div class="ms-grid" id="msTeam" hidden><section class="hv-card ms-card ms-notes"><h3>Notes</h3><ol class="ms-tl" id="msNotes"></ol>
+            <textarea id="msNote" placeholder="Add a note for the team" aria-label="Add a note"></textarea><div class="ms-row" style="margin-top:8px"><button class="hub-pill" type="button" id="msNoteGo">Add note</button></div></section>
+            <section class="hv-card ms-card"><h3>Hand over or replay</h3><div class="ms-row"><input id="msTo" placeholder="Work email" aria-label="Hand over to" style="flex:1;min-width:160px;border:0;border-radius:9px;padding:8px 10px;background:var(--hub-surface-2);color:var(--hub-ink);font:inherit">
+              <button class="hub-pill" type="button" id="msAssign">Hand over</button></div>
+              <div class="ms-row" style="margin-top:10px"><button class="hub-pill" type="button" id="msReplay">Replay against today's records</button></div><div class="ms-msg" id="msTeamMsg" role="status"></div></section></div></div>`);
         first = false;
+        const team = el.querySelector("#msTeam"), tmsg = () => el.querySelector("#msTeamMsg");
+        el.querySelector("#msNoteGo").onclick = async () => {
+          const t = el.querySelector("#msNote"); if (!t.value.trim()) return;
+          const d = await post(`/api/missions/${encodeURIComponent(id)}/note`, {text: t.value}); if (d.ok) t.value = ""; tmsg().textContent = d.message || ""; refresh();
+        };
+        el.querySelector("#msAssign").onclick = async () => {
+          const d = await post(`/api/missions/${encodeURIComponent(id)}/assign`, {to: el.querySelector("#msTo").value}); tmsg().textContent = d.message || ""; refresh();
+        };
+        el.querySelector("#msReplay").onclick = async () => {
+          const d = await post(`/api/missions/${encodeURIComponent(id)}/replay`, {}); if (d.mission) { location.hash = "#missions?id=" + d.mission.id; return; } tmsg().textContent = d.message || "";
+        };
+        team.hidden = false;
       }
       el.querySelector("#msTitle").textContent = m.title;
       put(el.querySelector("#msSub"), `${pill("lv-" + m.level, LEVEL[m.level] || m.level)} ${pill("sv-" + m.severity, "Severity " + (m.severity || "").toLowerCase())} ${pill("st st-" + m.status, STATUS[m.status] || m.status)}
-        <span class="ms-note"> ${esc(m.phase || "")}${m.approved_by ? " · approved by " + esc(m.approved_by) + " " + esc(when(m.approved_at)) : ""}${m.drill ? " · drill: no billed model" : ""}</span>`);
+        ${m.verification_status ? pill("st", VSTATUS[m.verification_status] || m.verification_status) : ""}
+        <span class="ms-note"> ${esc(m.phase || "")}${m.approved_by ? " · approved by " + esc(m.approved_by) + " " + esc(when(m.approved_at)) : ""}${m.deadline_left != null ? " · " + esc(mins(m.deadline_left)) : ""}${m.assigned_to ? " · with " + esc(m.assigned_to) : ""}${m.parent_id ? ` · replay of <a href="/hub#missions?id=${esc(m.parent_id)}">${esc(m.parent_id)}</a>` : ""}${m.drill ? " · drill: no billed model" : ""}</span>
+        ${source ? `<span class="ms-live"><i></i>live</span>` : ""}`);
+      put(el.querySelector("#msNotes"), notesList(m));
       put(el.querySelector("#msBanner"), m.escalation && m.escalation.suggested && m.status !== "proposed" ? `<div class="ms-banner">Escalation to Emergency Mode suggested: ${esc(m.escalation.why)}.
         ${can.emergency ? `<button class="hub-pill" type="button" data-act="escalate">Open as a critical incident</button>` : ""}</div>` : "");
       if (m.status === "proposed") {
         put(el.querySelector("#msTop"), proposalCard(m, can));
-        put(el.querySelector("#msLeft"), ""); put(el.querySelector("#msRight"), "");
+        put(el.querySelector("#msLeft"), ""); put(el.querySelector("#msRight"), ""); put(el.querySelector("#msActs"), actionsCard(m));
       } else if (m.status === "declined") {
         put(el.querySelector("#msTop"), `<section class="hv-card ms-card"><h3>Continued normally</h3><p class="ms-note">ATLAS will not propose this again for 24 hours. You can still ask for a mission on the Missions page.</p></section>`);
       } else {
         put(el.querySelector("#msTop"), reportCard(m) + liveCards(m, can));
-        put(el.querySelector("#msLeft"), evidenceCard(m));
-        put(el.querySelector("#msRight"), hypCard(m) + `<section class="hv-card ms-card"><h3>Timeline</h3><ol class="ms-tl">${(m.events || []).slice().reverse().map((e) => `<li><time>${esc(new Date(e.at * 1000).toLocaleTimeString("en-GB"))}</time>${esc(e.text)}</li>`).join("")}</ol></section>`);
+        put(el.querySelector("#msActs"), actionsCard(m) + conflictsCard(m));
+        put(el.querySelector("#msLeft"), evidenceCard(m) + usageCard(m));
+        put(el.querySelector("#msRight"), hypCard(m) + memoryCard(m) + `<section class="hv-card ms-card"><h3>Timeline <span class="ms-note">the Commander's activity</span></h3><ol class="ms-tl">${(m.events || []).slice().reverse().map((e) => `<li data-k="${esc(e.kind)}"><time>${esc(new Date(e.at * 1000).toLocaleTimeString("en-GB"))}</time>${esc(e.text)}</li>`).join("")}</ol></section>`);
       }
       el.querySelectorAll("[data-act]").forEach((b) => b.onclick = async () => {
         const act = b.dataset.act, msg = el.querySelector("#msAct");
         if (act === "review") { const d = el.querySelector("#msPlan"); if (d) { d.open = true; d.scrollIntoView({behavior: "smooth", block: "center"}); } return; }
         if (act === "escalate") { const d = await post("/api/missions/emergency", {question: m.question}); if (d.mission) location.hash = "#missions?id=" + d.mission.id; return; }
         b.disabled = true;
-        const d = await post(`/api/missions/${encodeURIComponent(id)}/${act === "drill" ? "approve" : act}`, act === "drill" ? {profile: "drill"} : {});
+        let body = {};
+        if (act === "approve" || act === "drill") {
+          const remove = [...el.querySelectorAll('.ms-plan input[type=checkbox][data-step]')].filter((c) => !c.checked).map((c) => c.dataset.step);
+          const prof = el.querySelector("#msProf"), dl = el.querySelector("#msDl");
+          body = {remove, deadline_min: dl ? Number(dl.value) || undefined : undefined, profile: act === "drill" ? "drill" : (prof ? prof.value : undefined)};
+        }
+        const d = await post(`/api/missions/${encodeURIComponent(id)}/${act === "drill" ? "approve" : act}`, body);
         if (msg) msg.textContent = d.message || "";
         b.disabled = false;
-        clearTimeout(timer); draw();
+        refresh();
       });
-      if (["queued", "running", "paused"].includes(m.status) && current === id) timer = setTimeout(draw, 1500);
+      el.querySelectorAll('.ms-plan input[type=checkbox][data-step]').forEach((c) => c.onchange = () => c.closest("li").classList.toggle("off", !c.checked));
+      el.querySelectorAll("[data-aact]").forEach((b) => b.onclick = async () => {
+        b.disabled = true;
+        const d = await post(`/api/missions/${encodeURIComponent(id)}/actions/${encodeURIComponent(b.dataset.aid)}/${b.dataset.aact}`, {});
+        const msg = el.querySelector("#msAAct"); if (msg) msg.textContent = d.message || "";
+        b.disabled = false; refresh();
+      });
+      el.querySelectorAll("[data-mact]").forEach((b) => b.onclick = async () => {
+        b.disabled = true;
+        const d = await post(`/api/missions/${encodeURIComponent(id)}/memory/${encodeURIComponent(b.dataset.mid)}/${b.dataset.mact}`, {});
+        const msg = el.querySelector("#msAAct") || el.querySelector("#msAct"); if (msg) msg.textContent = d.message || "";
+        b.disabled = false; refresh();
+      });
+      const watching = ["queued", "running", "paused"].includes(m.status) || ["awaiting_approval", "awaiting_outcome"].includes(m.verification_status);
+      if (watching && current === id) follow(m);
+    };
+    const refresh = () => { clearTimeout(timer); timer = null; draw(); };
+    // Live: the mission's stream says when it changed; without it (or if it drops), poll every 1.5 s.
+    const follow = () => {
+      if (source || timer) return;
+      if (window.EventSource && !follow.failed) {
+        source = new EventSource("/api/missions/" + encodeURIComponent(id) + "/stream");
+        let seen = null;
+        source.addEventListener("mission", (ev) => { let v = null; try { v = JSON.parse(ev.data).version; } catch (e) { /* ignore */ } if (v !== seen) { seen = v; draw(); } });
+        source.onerror = () => { if (source) { source.close(); source = null; } follow.failed = true; if (current === id) timer = setTimeout(draw, 1500); };
+        return;
+      }
+      timer = setTimeout(() => { timer = null; draw(); }, 1500);
     };
     current = id;
     draw();

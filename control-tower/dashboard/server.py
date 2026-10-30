@@ -1780,10 +1780,13 @@ class Handler(BaseHTTPRequestHandler):
         approving needs missions.run, a CRITICAL incident or Emergency activation missions.emergency."""
         try:
             from intelligence.missions import engine as _me, models as _mm, registry as _mr
+            from intelligence.missions import actions as _ma, memory as _mmem, tools as _mt
         except Exception as error:
             self._send(503, json.dumps({"error": "missions unavailable: {0}".format(type(error).__name__)}))
             return
         _me.configure(state=_assistant_state)
+        # The three action engines are the platform's own: the run's control channel, the Clearance escalation.
+        _mt.configure(control=control.request, escalate=_clearance.escalate, load=_clearance.load)
         by = (self.user or {}).get("work_email") or "access key"
         allowed = self._acc_bus()
         parts = route.split("/")[3:]                       # /api/missions/<id>/<action>
@@ -1811,13 +1814,45 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parts == ["registry"]:
                 self._send(200, json.dumps({"models": _mm.snapshot(), "profiles": _mm.PROFILES, "specialists": _mr.SPECIALISTS,
-                                            "websites": _mr.WEBSITES, "templates": {k: v["title"] for k, v in _mr.TEMPLATES.items()}}, default=str))
+                                            "websites": _mr.WEBSITES, "templates": {k: v["title"] for k, v in _mr.TEMPLATES.items()},
+                                            "tools": _mt.catalogue(), "actions_enabled": _ma.enabled(),
+                                            "action_kinds": _ma.KINDS}, default=str))
                 return
-            if len(parts) == 1 and re.fullmatch(r"[a-f0-9]{10}", parts[0]):
-                m = _me.get(parts[0])
-                if not m or (allowed is not None and set((m.get("scope") or {}).get("allowed") or ["*"]) - set(allowed)):
+            if parts == ["analytics"]:
+                self._send(200, json.dumps(_me.analytics(allowed), default=str))
+                return
+            if parts == ["policies"]:
+                good, bad = _ma.policies()
+                self._send(200, json.dumps({"enabled": _ma.enabled(), "policies": good, "ignored": bad}, default=str))
+                return
+            if parts == ["compare"]:
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                a, b = (q.get("a") or [""])[0], (q.get("b") or [""])[0]
+                ok = all(re.fullmatch(r"[a-f0-9]{10}", x or "") and self._mission_visible(_me.get(x), allowed) for x in (a, b))
+                out = _me.compare(a, b) if ok else None
+                self._send(200 if out else 404, json.dumps(out or {"error": "no such missions"}, default=str))
+                return
+            if len(parts) == 2 and parts[1] == "stream" and re.fullmatch(r"[a-f0-9]{10}", parts[0]):
+                if not self._mission_visible(_me.get(parts[0]), allowed):
                     self._send(404, json.dumps({"error": "no such mission"}))
                     return
+                self._mission_stream(parts[0], _me)
+                return
+            if len(parts) == 1 and re.fullmatch(r"[a-f0-9]{10}", parts[0]):
+                try:
+                    _ma.verify_pending()
+                except Exception:
+                    pass
+                m = _me.get(parts[0])
+                if not self._mission_visible(m, allowed):
+                    self._send(404, json.dumps({"error": "no such mission"}))
+                    return
+                for a in m.get("actions") or []:
+                    a["can_decide"] = bool(self._acc_can(a["permission"]))
+                m["can"] = {"run": self._acc_can("missions.run"), "emergency": self._acc_can("missions.emergency"),
+                            "propose_knowledge": self._acc_can("knowledge.propose")}
+                m["actions_enabled"] = _ma.enabled()
                 self._send(200, json.dumps(m, default=str))
                 return
             self._send(404, json.dumps({"error": "unknown"}))
@@ -1868,7 +1903,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(403, json.dumps({"ok": False, "message": "Your access level cannot {0} this mission ({1} needed).".format(action, need)}))
                     return
             if action == "approve":
-                ok, message = _me.approve(m["id"], by, profile)
+                remove = [str(x)[:20] for x in (body.get("remove") or []) if isinstance(x, str)][:20]
+                ok, message = _me.approve(m["id"], by, profile, remove=remove, deadline_min=body.get("deadline_min"))
             elif action == "decline":
                 ok, message = _me.decline(m["id"], by)
             else:
@@ -1877,7 +1913,101 @@ class Handler(BaseHTTPRequestHandler):
                             {"level": m["level"], "plan": m.get("plan_hash")})
             self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
             return
+        if len(parts) >= 2 and re.fullmatch(r"[a-f0-9]{10}", parts[0]):
+            m = _me.get(parts[0])
+            if not self._mission_visible(m, allowed):
+                self._send(404, json.dumps({"ok": False, "message": "No such mission."}))
+                return
+            if parts[1:] == ["replay"] or parts[1:] == ["assign"]:
+                if not self._acc_can("missions.run"):
+                    self._send(403, json.dumps({"ok": False, "message": "This needs missions.run."}))
+                    return
+                if parts[1] == "replay":
+                    new, message = _me.replay(m["id"], by)
+                    self._acc_audit("MISSION_REPLAY", "SUCCESS" if new else "FAILED", "mission", m["id"])
+                    self._send(200, json.dumps({"ok": bool(new), "message": message, "mission": new}, default=str))
+                else:
+                    ok, message = _me.assign(m["id"], body.get("to"), by)
+                    self._acc_audit("MISSION_HANDOFF", "SUCCESS" if ok else "FAILED", "mission", m["id"])
+                    self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
+                return
+            if parts[1:] == ["note"]:
+                ok, message = _me.note(m["id"], by, body.get("text"))
+                self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
+                return
+            if len(parts) == 4 and parts[1] == "actions" and re.fullmatch(r"[a-f0-9]{12}", parts[2]) and parts[3] in ("approve", "reject", "done"):
+                a = next((x for x in m.get("actions") or [] if x["id"] == parts[2]), None)
+                if not a:
+                    self._send(404, json.dumps({"ok": False, "message": "No such action."}))
+                    return
+                if parts[3] == "done":
+                    if not self._acc_can("missions.run"):
+                        self._send(403, json.dumps({"ok": False, "message": "This needs missions.run."}))
+                        return
+                    ok, message = _ma.complete(a["id"], by)
+                else:
+                    # the action's OWN permission: runs.start for a re-run, clearance.escalate for an escalation
+                    if not self._acc_can(a["permission"]):
+                        self._send(403, json.dumps({"ok": False, "message": "Approving this needs {0}.".format(a["permission"])}))
+                        return
+                    ok, message, after = _ma.decide(a["id"], parts[3] == "approve", by, self._acc_can)
+                    verdict = "REJECTED" if parts[3] == "reject" else ("APPROVED" if ok else "FAILED")
+                    self._acc_audit("MISSION_ACTION_" + verdict, "SUCCESS" if ok else "FAILED", "mission_action", a["id"],
+                                    {"mission": m["id"], "kind": a["kind"], "status": (after or {}).get("status")})
+                    if parts[3] == "approve" and (after or {}).get("executed_at"):
+                        target = (a.get("args") or {}).get("reference") or (a.get("args") or {}).get("awb")
+                        self._acc_audit({"reprocess": "REPROCESS", "escalate": "ESCALATE_SHIPMENT"}.get(a["kind"], "MISSION_TODO"),
+                                        "SUCCESS" if ok else "REFUSED", "shipment", str(target or "")[:64], {"mission": m["id"]})
+                self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
+                return
+            if len(parts) == 4 and parts[1] == "memory" and re.fullmatch(r"[a-f0-9]{12}", parts[2]) and parts[3] in ("promote", "reject"):
+                if not self._acc_can("knowledge.propose"):
+                    self._send(403, json.dumps({"ok": False, "message": "Proposing knowledge needs knowledge.propose."}))
+                    return
+                if not any(x["id"] == parts[2] for x in m.get("memory") or []):
+                    self._send(404, json.dumps({"ok": False, "message": "No such lesson."}))
+                    return
+                ok, message = (_mmem.promote if parts[3] == "promote" else _mmem.reject)(parts[2], by)
+                if ok and parts[3] == "promote":
+                    self._acc_audit("KNOWLEDGE_PROPOSED", "SUCCESS", "knowledge", parts[2], {"mission": m["id"]})
+                self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
+                return
         self._send(404, json.dumps({"ok": False, "message": "Unknown mission request."}))
+
+    @staticmethod
+    def _mission_visible(m, allowed):
+        return bool(m) and not (allowed is not None and set((m.get("scope") or {}).get("allowed") or ["*"]) - set(allowed))
+
+    def _mission_stream(self, mid, engine):
+        """Mission Control's live view: an event whenever the mission's version moves (heartbeat every 15 s).
+        Ends when the mission is finished and has no action waiting, or after 10 minutes (the page reconnects
+        or falls back to polling)."""
+        from intelligence.missions import db as _mdb
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        last, beat, end = None, time.time(), time.time() + 600
+        try:
+            while time.time() < end:
+                row = _mdb.one("SELECT version, status, verification_status FROM missions WHERE id=?", mid) or {}
+                if row.get("version") != last:
+                    last = row.get("version")
+                    self.wfile.write("event: mission\ndata: {0}\n\n".format(json.dumps(
+                        {"id": mid, "version": last, "status": row.get("status")})).encode("utf-8"))
+                    self.wfile.flush()
+                    beat = time.time()
+                elif time.time() - beat > 15:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    beat = time.time()
+                if row.get("status") not in ("proposed", "queued", "running", "paused") and \
+                        row.get("verification_status") not in ("awaiting_approval", "awaiting_outcome"):
+                    break
+                time.sleep(0.5)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _clearance_action(self, route):
         """Contacts (Admin), escalations (Operator, Admin), the call / mail log (everyone)."""
