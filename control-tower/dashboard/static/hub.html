@@ -106,7 +106,8 @@
 .tb-ic[aria-current="page"]{color:var(--hub-on-accent);background:var(--hub-accent);border-color:var(--hub-accent)}
 .hub-askfab{position:fixed;right:22px;bottom:22px;z-index:50;display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 17px 0 12px;
   border-radius:999px;border:0;cursor:pointer;font:600 14px/1 var(--hub-font);color:var(--hub-ink)}
-#chatF{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:200;background:transparent;color-scheme:normal}
+/* the chat layer takes the page's colour scheme: a frame whose scheme differs from the page's is drawn opaque (dark mode hid the hub) */
+#chatF{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:200;background:transparent}
 .ata-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 24px;border-bottom:1px solid var(--hub-line-2);background:var(--hub-bg)}
 .ata-tabs a{height:30px;display:inline-flex;align-items:center;padding:0 14px;border-radius:999px;font-size:13px;font-weight:500;color:var(--hub-ink-2);transition:background-color .15s var(--hub-e)}
 .ata-tabs a:hover{background:var(--hub-surface-2)}

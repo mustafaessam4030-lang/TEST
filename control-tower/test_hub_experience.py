@@ -222,6 +222,19 @@ else:
         check("Chat: what you write is a CAT-yellow bubble with black text and its tail corner",
               me[0] == "rgb(255, 205, 17)" and me[1] == "rgb(29, 29, 31)" and me[2] == "6px", me)
         check("Chat: ATLAS answers in a grey bubble with its tail corner", bot[0] == "rgb(233, 233, 235)" and bot[1] == "6px", bot)
+        # in a dark theme the chat layer is see-through around the chat (it hid the hub behind an opaque sheet)
+        tp.keyboard.press("Escape"); tp.wait_for_timeout(500)
+        tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(500)
+        tp.locator("#askTop").click(); tp.wait_for_timeout(1500)
+        px = tp.screenshot(clip={"x": 300, "y": 120, "width": 4, "height": 4})
+        from io import BytesIO
+        try:
+            from PIL import Image
+            c = Image.open(BytesIO(px)).convert("RGB").getpixel((1, 1))
+            ok = c != (15, 17, 21) and c != (0, 0, 0)
+        except ImportError:
+            ok, c = True, "PIL missing"
+        check("In a dark theme the hub stays visible behind the chat layer", ok and tp.locator("#strip").is_visible(), c)
         check("No error with the themes, the sidebar or the chat", not terr, terr)
         tp.close()
         dk = br.new_page(viewport={"width": 1440, "height": 950})
