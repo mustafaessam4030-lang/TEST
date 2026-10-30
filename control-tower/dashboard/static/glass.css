@@ -163,9 +163,9 @@ html::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 :root :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.filters){box-shadow:var(--gl-lg-rim),var(--gl-float-shadow)!important}
 :root :is(.todo-p,.srch-p,.gb-card,.dl-b){border-radius:24px!important}
 /* the lens, where the browser can make one */
-html.lg :is(.top,.appbar,.ata-tabs,.side){backdrop-filter:url(#lg-lens) saturate(175%) brightness(1.03)}
+html.lg .side{backdrop-filter:url(#lg-lens) saturate(175%) brightness(1.03)}
 html.lg :is(.seg,.tb-th,.pf-th,.hub-askfab,.fab,.gb-ctl button){backdrop-filter:url(#lg-lens) saturate(180%) brightness(1.04)}
-html.lg :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.filters){backdrop-filter:url(#lg-frost) saturate(170%) brightness(1.03)}
+html.lg :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b){backdrop-filter:url(#lg-frost) saturate(170%) brightness(1.03)}
 /* the menus that open from the top bar (To Do, search) are lists of words: thicker glass, as
    Apple's menus are, so nothing behind competes with what they say */
 :root :is(.todo-p,.srch-p){background:color-mix(in srgb,var(--gl-float) 100%,transparent)!important;background-color:var(--gl-menu)!important}
@@ -175,12 +175,25 @@ html.lg :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.filters){backdrop-filt
   html.lg .side{backdrop-filter:url(#lg-frost) saturate(170%) brightness(1.03)}
 }
 
+
+/* ── bars that content scrolls under (the top bars, ATA's tabs, Clearance's filters) ──
+   A browser blurs only what is directly under an element and mirrors it at the edges, so on a
+   bar ~50px tall every point is near an edge and the words under it stay readable. The blur
+   sits on a layer twice the bar's height (it reads the real page below) and is masked back to
+   the bar's own shape. */
+:root :is(.top,.appbar,.filters,.ata-tabs){-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+:root .ata-tabs{position:relative;z-index:5}
+:root :is(.top,.appbar,.filters,.ata-tabs)::before{content:"";position:absolute;left:0;right:0;top:0;height:200%;z-index:-1;pointer-events:none;
+  border-radius:inherit;-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);
+  -webkit-mask-image:linear-gradient(to bottom,#000 0 50%,transparent 50%);mask-image:linear-gradient(to bottom,#000 0 50%,transparent 50%)}
+
 /* glass is only glass where the browser can blur; elsewhere, and with "reduce transparency", solid */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   :root{--gl-float:var(--hub-surface,var(--surface,#fff));--gl-bar:var(--hub-bg,var(--bg,#f6f5f3));--gl-side:var(--hub-bg-2,var(--surface-2,#efeeeb))}
 }
 @media (prefers-reduced-transparency:reduce){
   html::before{display:none}
+  :root :is(.top,.appbar,.filters,.ata-tabs)::before{display:none}
   :root .side,:root .top{margin:0;border-radius:0;top:0}
   :root .side{height:100vh}
   :root .top{height:var(--hub-top)}

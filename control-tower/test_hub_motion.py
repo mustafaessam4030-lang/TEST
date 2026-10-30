@@ -123,14 +123,20 @@ else:
               and pg.evaluate("document.activeElement.dataset.list") == "customs")
         # Globe | Map
         x0 = pg.evaluate("parseFloat(getComputedStyle(document.querySelector('#mapSeg .seg-thumb')).left)")
+        # watch the thumb through its slide (the map's first WebGL load can hold the first frames back)
+        pg.evaluate("""(() => { const t = document.querySelector('#mapSeg .seg-thumb'); window.__xs = [];
+            const tick = () => { window.__xs.push(parseFloat(getComputedStyle(t).left)); if (window.__xs.length < 400) requestAnimationFrame(tick); };
+            requestAnimationFrame(tick); })()""")
         pg.locator('#mapSeg button[data-mv="map"]').click(); pg.wait_for_timeout(100)
-        x1 = pg.evaluate("parseFloat(getComputedStyle(document.querySelector('#mapSeg .seg-thumb')).left)")
         bx = pg.evaluate("document.querySelector('#mapSeg button[data-mv=map]').offsetLeft")
         for _ in range(40):          # the map's first WebGL load can slow the frames: wait for it to settle
             pg.wait_for_timeout(100)
             x2 = pg.evaluate("parseFloat(getComputedStyle(document.querySelector('#mapSeg .seg-thumb')).left)")
             if abs(x2 - bx) < 1: break
-        check("Globe | Map: a thumb slides under the choice", x0 < x1 < x2 + 3 and abs(x2 - bx) < 1, (x0, x1, x2, bx))
+        xs = pg.evaluate("window.__xs")
+        between = [x for x in xs if x0 + 1 < x < bx - 1]
+        check("Globe | Map: a thumb slides under the choice (seen on its way, then at rest under it)",
+              between and abs(x2 - bx) < 1, (x0, between[:5], x2, bx))
         pg.locator('#mapSeg button[data-mv="globe"]').click(); pg.wait_for_timeout(1500)
         # theme
         pg.locator('#theme button[data-t="dark"]').click(); pg.wait_for_timeout(200)

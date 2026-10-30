@@ -119,13 +119,13 @@ else:
             pg.goto(BASE + "/hub"); pg.wait_for_timeout(2800)
             st = pg.evaluate("""(() => { const c = getComputedStyle(document.querySelector('#strip .chip')), t = getComputedStyle(document.querySelector('.top')),
                 s = getComputedStyle(document.querySelector('.side')), card = getComputedStyle(document.querySelector('.card'));
-                return {chip: c.backgroundImage, card: card.backgroundImage, top: t.backdropFilter, side: s.backdropFilter, sideBg: s.backgroundColor,
+                return {chip: c.backgroundImage, card: card.backgroundImage, top: getComputedStyle(document.querySelector('.top'), '::before').backdropFilter, side: s.backdropFilter, sideBg: s.backgroundColor,
                   amb: getComputedStyle(document.documentElement, '::before').backgroundImage.slice(0, 40),
                   ink3: getComputedStyle(document.querySelector('#strip .chip .n')).color}; })()""")
             check("{0}: cards and number tiles are frosted glass (a translucent fill and a rim of light)".format(theme),
                   st["chip"].count("linear-gradient") == 2 and "rgba" in st["chip"] and st["card"].count("linear-gradient") == 2, st["chip"][:120])
-            check("{0}: the top bar and the sidebar bend and blur what passes under them (Liquid Glass lens)".format(theme),
-                  "url(\"#lg-lens\")" in st["top"] and "url(\"#lg-lens\")" in st["side"] and rgb(st["sideBg"]) and "rgba" in st["sideBg"], st)
+            check("{0}: the sidebar bends what is under it (Liquid Glass lens), the top bar frosts it".format(theme),
+                  "blur" in st["top"] and "url(\"#lg-lens\")" in st["side"] and rgb(st["sideBg"]) and "rgba" in st["sideBg"], st)
             fl = pg.evaluate("""(() => { const s = getComputedStyle(document.querySelector('.side')), t = getComputedStyle(document.querySelector('.top'));
                 return [document.documentElement.classList.contains('lg'), !!document.querySelector('#lg-defs filter#lg-lens feDisplacementMap'), s.borderTopLeftRadius, t.borderTopLeftRadius,
                   document.scrollingElement.scrollWidth <= innerWidth]; })()""")
@@ -157,18 +157,42 @@ else:
             check("A page opened in the hub ({0}) still fits the window: one scroll, not two".format(h),
                   pg.evaluate("document.scrollingElement.scrollHeight <= innerHeight + 1"))
         pg.close()
+        def sharp(pg, box):
+            img = Image.open(io.BytesIO(pg.screenshot(clip=box))).convert("L")
+            w, h = img.size
+            px = img.load()
+            return sum(abs(px[x + 1, y] - px[x, y]) for y in range(h) for x in range(w - 1)) / (w * h)
+        # words are scrolled under each bar; with the bar's own buttons hidden, what shows through is
+        # measured with the glass and without it
+        for url, bar, target in (("/hub", ".top", ".gb-row"), ("/clearance", ".filters", ".chart text")):
+            pg = br.new_page(viewport={"width": 1440, "height": 900})
+            pg.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','dark');localStorage.setItem('ata-theme','dark')")
+            pg.goto(BASE + url); pg.wait_for_timeout(2500)
+            pg.evaluate("""([bar, target]) => { const b = document.querySelector(bar).getBoundingClientRect(), r = document.querySelector(target).getBoundingClientRect();
+                window.scrollBy(0, r.top + r.height / 2 - (b.top + b.height / 2)); }""", [bar, target])
+            pg.wait_for_timeout(800)
+            pg.add_style_tag(content=bar + " > *{visibility:hidden!important}")
+            pg.wait_for_timeout(300)
+            bb = pg.locator(bar).bounding_box()
+            box = {"x": bb["x"] + 16, "y": bb["y"] + 4, "width": bb["width"] - 32, "height": bb["height"] - 8}
+            frosted = sharp(pg, box)
+            pg.add_style_tag(content=bar + "::before{display:none!important}"); pg.wait_for_timeout(300)
+            bare = sharp(pg, box)
+            check("{0}: words that scroll under {1} are frosted, not readable (sharpness {2:.2f}, {3:.2f} without the glass)".format(url, bar, frosted, bare),
+                  bare > .2 and frosted < bare * .6, (frosted, bare, box))
+            pg.close()
         # Clearance and the run page: the same glass
         pg = br.new_page(viewport={"width": 1440, "height": 900})
         pg.add_init_script("sessionStorage.setItem('ct-intro','1')")
         pg.goto(BASE + "/clearance"); pg.wait_for_timeout(2500)
         check("Clearance: its cards are glass and its sticky filters blur what scrolls under them",
               pg.evaluate("getComputedStyle(document.querySelector('.card')).backgroundImage").count("linear-gradient") == 2
-              and "lg-frost" in pg.evaluate("getComputedStyle(document.querySelector('.filters')).backdropFilter"))
+              and "blur" in pg.evaluate("getComputedStyle(document.querySelector('.filters'), '::before').backdropFilter"))
         check("Clearance: chart bars have a light edge", pg.evaluate("(() => { const b = document.querySelector('.chart rect.b'); return !b || getComputedStyle(b).stroke !== 'none'; })()"))
         pg.goto(BASE + "/"); pg.wait_for_timeout(2500)
         check("The run page: cards are glass, the top bar blurs",
               pg.evaluate("getComputedStyle(document.querySelector('.card')).backgroundImage").count("linear-gradient") == 2
-              and "lg-lens" in pg.evaluate("getComputedStyle(document.querySelector('.appbar')).backdropFilter"))
+              and "blur" in pg.evaluate("getComputedStyle(document.querySelector('.appbar'), '::before').backdropFilter"))
         pg.close()
         # reduce transparency
         ctx = br.new_context(viewport={"width": 1440, "height": 900})
