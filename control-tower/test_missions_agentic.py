@@ -371,6 +371,14 @@ used = set(re.findall(r'_acc_audit\("((?:MISSION|KNOWLEDGE)_[A-Z_]*[A-Z])"', Pat
 check("Every mission and knowledge audit name is one the audit log accepts (unknown names were dropped silently)",
       used <= set(AUD.ACTIONS), sorted(used - set(AUD.ACTIONS)))
 
+waiting = engine.propose("Why is EG-0009 stuck at customs? investigate the delay", DATA, RECS, None, by="op", origin="manual")
+raised = engine.propose("Why is EG-0009 stuck at customs? investigate the delay", DATA, RECS, None, by="admin", origin="manual",
+                        force_level="CRITICAL_INCIDENT")
+check("Emergency Mode on a task already waiting as a Deep Mission raises that proposal to a critical incident",
+      raised["id"] == waiting["id"] and raised["level"] == "CRITICAL_INCIDENT" and raised["severity"] in ("CRITICAL", "SEVERE")
+      and any("Raised to a critical incident" in e["text"] for e in raised["events"]), (raised["level"], raised["severity"]))
+engine.control(raised["id"], "cancel", "op")
+
 print("\n7. S8: LEVEL 4 POLICIES (NONE BY DEFAULT)")
 check("No policy file: no Level 4", actions.policies() == ([], []))
 pol = os.path.join(TMP, "pol.json")

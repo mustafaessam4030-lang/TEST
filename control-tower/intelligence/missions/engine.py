@@ -175,6 +175,14 @@ def propose(question, data=None, rows=None, allowed=None, by=None, origin="chat"
     same = db.one("SELECT * FROM missions WHERE fingerprint=? AND status IN ('proposed','queued','running','paused') ORDER BY created_at DESC",
                   a["fingerprint"])
     if same:
+        if force_level == "CRITICAL_INCIDENT" and same["status"] == "proposed" and same["level"] != "CRITICAL_INCIDENT":
+            # Emergency Mode on a task already waiting as a deeper look: the proposal is raised, said in its timeline
+            plan_ = dict(same.get("plan") or {}, level="CRITICAL_INCIDENT", approver="missions.emergency")
+            db.update("missions", {"id": same["id"]}, level="CRITICAL_INCIDENT", plan=plan_,
+                      severity=same["severity"] if same.get("severity") in ("CRITICAL", "SEVERE") else "CRITICAL",
+                      priority=(same.get("priority") or 0) + LEVEL_WEIGHT["CRITICAL_INCIDENT"])
+            db.event(same["id"], "escalation", "Raised to a critical incident (Emergency Mode) by {0}".format(by or "someone"))
+            return get(same["id"])
         return same
     mid = uuid.uuid4().hex[:10]
     d = plan.draft(a, profile or ("emergency" if a["level"] == "CRITICAL_INCIDENT" else "deep"), mission_id=mid)
