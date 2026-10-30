@@ -150,8 +150,8 @@ IDX_ALL = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf
 PCSS = (HERE / "dashboard" / "static" / "platform.css").read_text(encoding="utf-8")
 check("Action is Apple's system blue on every page (the console's indigo is gone)",
       "--brand:#0071E3" in IDX_ALL and "--solid:#0071E3" in PCSS and LIGHT["hub-blue"] == "#0071e3")
-check("Dark mode is Apple's neutral graphite, the same on the hub and the pages inside it",
-      DARK["hub-bg"] == "#000000" and DARK["hub-surface"] == "#1c1c1e" and "--bg:#000000; --surface:#1C1C1E" in IDX_ALL)
+check("Dark mode is a deep charcoal (Apple's graphite), the same on the hub and the pages inside it",
+      DARK["hub-bg"] == "#111113" and DARK["hub-surface"] == "#1c1c1e" and "--bg:#111113; --surface:#1C1C1E" in IDX_ALL)
 check("Status text on the hub uses the readable -ink colours (the headline, on time / late, badges)",
       ".headline em{font-style:normal;color:var(--hub-red-ink)}" in HUB and "color:var(--hub-green-ink)\">${fmt(c.on_time)}" in HUB
       and "color:var(--hub-teal-ink)" in CSS)
