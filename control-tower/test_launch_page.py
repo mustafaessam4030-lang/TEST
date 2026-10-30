@@ -334,7 +334,9 @@ try:
         os.environ["ATA_LAUNCH_AT"] = (datetime.now(UTC) + timedelta(days=12, hours=5, minutes=30, seconds=20)) \
             .astimezone(timezone(timedelta(hours=2))).isoformat(timespec="seconds")
         os.environ["ATA_LAUNCH_TZ"] = "Africa/Cairo"
-        pg = open_page()
+        # A browser that blocks autoplay (the page starts by itself only where
+        # one allows it; headless Chromium sometimes does, which made this flaky).
+        pg = open_page(strict_autoplay=True)
         pg.wait_for_timeout(2600)
         vals = [pg.text_content(i) for i in ("#cdD", "#cdH", "#cdM")]
         check("the countdown shows 12 d 05 h 30 m from the server's moment", vals == ["12", "05", "30"], vals)
