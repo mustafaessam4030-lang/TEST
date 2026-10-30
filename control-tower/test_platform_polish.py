@@ -133,7 +133,7 @@ LIGHT = tokens(CSS.split("@media (prefers-color-scheme:dark)")[0])
 DARK = tokens(CSS.split(':root[data-theme="dark"]')[1])
 low = []
 for name, T in (("light", LIGHT), ("dark", DARK)):
-    for ink in ("hub-ink-3", "hub-green-ink", "hub-amber-ink", "hub-red-ink"):
+    for ink in ("hub-ink-3", "hub-green-ink", "hub-amber-ink", "hub-red-ink", "hub-teal-ink"):
         for bg in ("hub-bg", "hub-bg-2", "hub-surface", "hub-surface-2"):
             r = ratio(T[ink], T[bg])
             if r < 4.5:
@@ -144,6 +144,19 @@ check("Status badges use the readable text tokens, not the fill colours",
           for k, c in (("live", "green"), ("part", "amber"), ("red", "red"))))
 check("The hub's own small grey labels use the readable token", ".grp{" in HUB and "#86868b" not in HUB and
       "#86868b" not in (HERE / "dashboard" / "static" / "hub" / "map3d_gl.js").read_text(encoding="utf-8"))
+
+print("\n2c. ONE APPLE LOOK")
+IDX_ALL = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+PCSS = (HERE / "dashboard" / "static" / "platform.css").read_text(encoding="utf-8")
+check("Action is Apple's system blue on every page (the console's indigo is gone)",
+      "--brand:#0071E3" in IDX_ALL and "--solid:#0071E3" in PCSS and LIGHT["hub-blue"] == "#0071e3")
+check("Dark mode is Apple's neutral graphite, the same on the hub and the pages inside it",
+      DARK["hub-bg"] == "#000000" and DARK["hub-surface"] == "#1c1c1e" and "--bg:#000000; --surface:#1C1C1E" in IDX_ALL)
+check("Status text on the hub uses the readable -ink colours (the headline, on time / late, badges)",
+      ".headline em{font-style:normal;color:var(--hub-red-ink)}" in HUB and "color:var(--hub-green-ink)\">${fmt(c.on_time)}" in HUB
+      and "color:var(--hub-teal-ink)" in CSS)
+check("Access without the right to it (or with sign-in off) opens Settings, not the last page",
+      "if (p.id === 'access') setTimeout(() => go('settings'), 0)" in IDX_ALL)
 
 print("\n3. IN THE BROWSER")
 try:

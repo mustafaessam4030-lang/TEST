@@ -241,3 +241,19 @@ the local model and Cortex answer everything else as before).
 - **Eval.** `python atlas_platform_eval.py <dir> <export.xlsx> <out>`:
   44 questions (EN/AR) plus 12 held-out paraphrases, expected values counted
   by the eval's own code. Tests: `test_atlas_tools.py`.
+
+## 12. Globe and the Apple look (30 Oct 2026)
+
+- **Globe** (`dashboard/static/hub/globe.js`): the Overview's "Where shipments
+  are" opens on a dotted globe (Canvas 2D, no library): land as dots from the
+  same `world.json`, the map's own pins and routes (`mapData`), labels that
+  never overlap, a glass card (past due by BU, or the chosen BU with its
+  actions), drag to turn, zoom, pause, reduced motion respected. The map is
+  unchanged behind "Globe | Map" (remembered; `?map=2d|3d` opens the map,
+  `?map=globe` the globe). three.js loads only when the Map is shown.
+- **Apple look**: one "APPLE LAYER" of tokens at the end of the console's
+  styles (index.html), mirrored in `platform.css` (test_platform_look.py) and
+  matched in `hub/hub.css`: system blue for action (was indigo), Apple's
+  status colours for dots and fills (text keeps 4.5:1 via the `-ink` tokens),
+  neutral graphite dark mode everywhere, Apple's type stack, bolder large
+  titles, rounder cards. Tokens only: no markup, script or layout change.
