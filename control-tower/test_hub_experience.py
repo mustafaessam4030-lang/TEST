@@ -221,13 +221,14 @@ else:
         bot = ch.locator(".msg.bot:not(.think) .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e, '::before').backgroundColor]")
         check("Chat: what you write is a CAT-yellow bubble with black text and a Messages tail",
               me[0] == "rgb(255, 205, 17)" and me[1] == "rgb(29, 29, 31)" and me[2] == "rgb(255, 205, 17)", me)
-        check("Chat: ATLAS answers in a grey bubble with its tail, no avatar repeated on each message",
-              bot[0] == "rgb(233, 233, 235)" and bot[1] == "rgb(233, 233, 235)" and not ch.locator(".msg.bot:not(.think) .m-av").last.is_visible(), bot)
+        check("Chat: ATLAS answers in a grey bubble with its tail, its face on the left at the foot of the answer",
+              bot[0] == "rgb(233, 233, 235)" and bot[1] == "rgb(233, 233, 235)" and ch.locator(".msg.bot:not(.think) .m-av").last.is_visible()
+              and ch.locator(".msg.bot:not(.think) .m-av").last.bounding_box()["x"] < ch.locator(".msg.bot:not(.think) .bub").last.bounding_box()["x"], bot)
         recv = ch.locator(".msg.me").last.evaluate("e => getComputedStyle(e, '::after').content")
         check("Chat: 'Delivered' under your latest message once ATLAS has answered", recv == '"Delivered"', recv)
-        check("Chat: ATLAS's face and name sit in the middle of the header", abs(
-              ch.locator("#chAtlas").bounding_box()["x"] + ch.locator("#chAtlas").bounding_box()["width"] / 2 -
-              (ch.locator("#chat").bounding_box()["x"] + ch.locator("#chat").bounding_box()["width"] / 2)) < 3)
+        hb = ch.locator(".ch-h").bounding_box(); ab = ch.locator("#chAtlas").bounding_box()
+        check("Chat: ATLAS's face is on the left of the header, its name beside it",
+              ab["x"] - hb["x"] < 30 and ch.locator(".ch-nm").bounding_box()["x"] > ab["x"] + ab["width"] - 2, (hb, ab))
         check("Chat: the send button appears only when there is something to send",
               ch.locator("#chatSend").evaluate("e => getComputedStyle(e).opacity") == "0")
         icon = ch.locator("body").evaluate("() => { const d = document.querySelector('body > svg'); const sh = document.querySelector('#chAtlas ellipse'); return [d ? getComputedStyle(d).display : 'missing', sh ? sh.getAttribute('fill') : 'none']; }")

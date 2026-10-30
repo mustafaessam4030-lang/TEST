@@ -2610,21 +2610,23 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 :root[data-theme="dark"]{--ch-them:#2C2C2E;--ch-them-ink:#F5F5F7}
 :root[data-theme="dark"][data-dark="midnight"]{--ch-them:#1C2A42}
 
-/* the header: ATLAS's face and name in the middle, frosted */
-#chat[data-size] .ch-h{position:relative;justify-content:flex-end;gap:8px;min-height:86px;padding:10px 12px;
+/* the header: ATLAS's face and name on the left, frosted */
+#chat[data-size] .ch-h{position:relative;justify-content:flex-start;gap:10px;min-height:64px;padding:10px 12px 10px 14px;
   background:color-mix(in srgb,var(--card) 84%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
-#chat[data-size] .ch-h .ch-av{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:42px;height:42px;margin:0}
-#chat[data-size] .ch-h .ch-id{position:absolute;left:50%;top:54px;transform:translateX(-50%);flex:none;min-width:0;max-width:46%;text-align:center}
-#chat .ch-nm{font-size:12.5px;font-weight:600;letter-spacing:.01em}
+#chat[data-size] .ch-h .ch-av{width:40px;height:40px;margin:0;flex:none}
+#chat[data-size] .ch-h .ch-id{flex:1 1 auto;min-width:0;text-align:left}
+#chat .ch-nm{font-size:14px;font-weight:600;letter-spacing:.01em}
 #chat .ch-nm .ch-sub{display:none}
-#chat[data-size] .ch-rl{justify-content:center;margin-top:1px;font-size:11px;white-space:nowrap}
-#chat[data-size] .ch-h .ch-ctx{margin:0 auto 0 0}
+#chat[data-size] .ch-rl{justify-content:flex-start;margin-top:1px;font-size:11.5px;white-space:nowrap}
+#chat[data-size] .ch-h .ch-ctx{margin:0}
 
 /* the conversation: runs grouped, one bubble per message, no repeated avatar */
 #chat .ch-b{gap:0;padding-top:20px}
 #chat .ch-b > * + *{margin-top:14px}
 #chat .ch-b > .msg.me + .msg.me,#chat .ch-b > .msg.bot:not(.think) + .msg.bot{margin-top:3px}
-#chat .msg.bot .m-av.ax-av{display:none}
+/* ATLAS's face on the left, at the foot of its latest answer in a run (as Messages shows a face in a group) */
+#chat .msg.bot .m-av.ax-av{display:block;visibility:hidden;width:28px;height:28px;flex:none;margin:0 0 1px}
+#chat .msg.bot:not(:has(+ .msg.bot)) .m-av.ax-av{visibility:visible}
 #chat .msg .bub{position:relative}
 #chat .msg.me{max-width:min(75%,560px);flex-wrap:wrap}
 #chat .msg.me .bub{background:var(--solid);color:var(--on-solid);border-radius:19px;padding:8px 14px;font-size:15px;line-height:1.38;font-weight:450}
@@ -2651,8 +2653,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
 #chat .msg.bot .bub.err{background:transparent;padding:2px 4px;color:var(--mid)}
 
 /* the typing bubble: three dots, the step ATLAS is on written small beneath */
-#chat .msg.think{align-items:flex-start}
-#chat .msg.think .m-av{display:none}
+#chat .msg.think{align-items:flex-end}
 #chat .msg.think .th{flex-direction:column;align-items:flex-start;gap:5px;background:none;padding:0;border-radius:0}
 #chat .msg.think .th-dots{order:-1;display:inline-flex;gap:5px;background:var(--ch-them);border-radius:19px;padding:13px 15px}
 #chat .msg.think .th-dots span{width:8px;height:8px;border-radius:50%;background:var(--faint);opacity:.35;animation:imsgDot 1.3s ease-in-out infinite}
