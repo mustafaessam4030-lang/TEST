@@ -191,8 +191,8 @@ def _clearance_items(today, now):
     current = {(r["awb"], r["bu"]): r for r in clearance.records(data)} if data else {}
     for e in escalations:
         row = current.get((e.get("awb"), e.get("bu")))
-        if row is not None and isinstance(row.get("overdue"), int):
-            days = row["overdue"]
+        if row is not None and isinstance(row.get("overdue"), (int, float)) and not isinstance(row.get("overdue"), bool):
+            days = int(round(row["overdue"]))
         else:
             # Not in the current export: from the step's due date as of today
             # (the count stored when it was escalated would be stale).
