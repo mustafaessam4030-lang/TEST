@@ -16,7 +16,7 @@
   --hub-glass-edge:rgba(255,255,255,.65);
   --hub-ink:#1d1d1f;
   --hub-ink-2:#424245;
-  --hub-ink-3:#6e6e73;
+  --hub-ink-3:#636368;          /* muted text: 4.5:1 or better on every hub surface */
   --hub-ink-4:#a1a1a6;
   --hub-line:rgba(0,0,0,.08);
   --hub-line-2:rgba(0,0,0,.05);
@@ -26,6 +26,8 @@
   --hub-amber:#e08a00; --hub-amber-wash:rgba(224,138,0,.13);
   --hub-red:#e5383b;   --hub-red-wash:rgba(229,56,59,.11);
   --hub-teal:#0a9fb5;  --hub-teal-wash:rgba(10,159,181,.12);
+  /* status colours as TEXT (dots, bars and fills keep the bright ones): 4.5:1 or better */
+  --hub-green-ink:#1d7a33; --hub-amber-ink:#8a5000; --hub-red-ink:#c62828;
   --hub-purple:#7d5bd6;
 
   /* map and scene "clay" */
@@ -51,6 +53,7 @@
   --hub-amber:#ffb340; --hub-amber-wash:rgba(255,179,64,.15);
   --hub-red:#ff5c61; --hub-red-wash:rgba(255,92,97,.15);
   --hub-teal:#4fd1e4; --hub-teal-wash:rgba(79,209,228,.14);
+  --hub-green-ink:#3fcf6f; --hub-amber-ink:#ffb340; --hub-red-ink:#ff5c61;
   --hub-water:#0d1b30; --hub-water-2:#0a1628;
   --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
   --hub-tree:#3f8f52; --hub-road:#24334d;
@@ -68,6 +71,7 @@
   --hub-amber:#ffb340; --hub-amber-wash:rgba(255,179,64,.15);
   --hub-red:#ff5c61; --hub-red-wash:rgba(255,92,97,.15);
   --hub-teal:#4fd1e4; --hub-teal-wash:rgba(79,209,228,.14);
+  --hub-green-ink:#3fcf6f; --hub-amber-ink:#ffb340; --hub-red-ink:#ff5c61;
   --hub-water:#0d1b30; --hub-water-2:#0a1628;
   --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
   --hub-tree:#3f8f52; --hub-road:#24334d;
@@ -99,10 +103,10 @@ button{font:inherit;color:inherit}
 .hub-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600;line-height:18px;white-space:nowrap}
 .hub-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .hub-badge.plain::before{display:none}
-.hub-badge.live{background:var(--hub-green-wash);color:var(--hub-green)}
-.hub-badge.part{background:var(--hub-amber-wash);color:var(--hub-amber)}
+.hub-badge.live{background:var(--hub-green-wash);color:var(--hub-green-ink)}
+.hub-badge.part{background:var(--hub-amber-wash);color:var(--hub-amber-ink)}
 .hub-badge.off{background:var(--hub-surface-2);color:var(--hub-ink-3)}
-.hub-badge.red{background:var(--hub-red-wash);color:var(--hub-red)}
+.hub-badge.red{background:var(--hub-red-wash);color:var(--hub-red-ink)}
 .hub-badge.blue{background:var(--hub-blue-wash);color:var(--hub-blue)}
 .hub-badge.teal{background:var(--hub-teal-wash);color:var(--hub-teal)}
 .hub-seg{display:inline-flex;background:var(--hub-surface-2);border-radius:10px;padding:2px;gap:2px}
