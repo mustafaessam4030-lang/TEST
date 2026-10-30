@@ -154,16 +154,20 @@ def grounded(text, facts):
     for f in _fixed():
         plain = plain.replace(f, " ")
     plain = re.sub(r"\]\([^)]*\)", "]", plain)                     # link targets
-    plain = re.sub(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2} [A-Z][a-z]{2} \d{4}\b", " ", plain)   # dates
+    plain = re.sub(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2} [A-Z][a-z]{2} \d{4}\b|\b\d{1,2} (?:" + "|".join(_AR_MONTHS) +
+                   r") \d{4}\b", " ", plain)   # dates
     allowed = {str(f).replace(",", "") for f in facts}
     bad = [m for m in _NUM.findall(plain) if m.replace(",", "").rstrip("%") not in allowed]
     return not bad, bad
 
 
-def _dmy(iso):
+_AR_MONTHS = ("يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر")
+
+
+def _dmy(iso, ar=False):
     try:
         d = date.fromisoformat(str(iso)[:10])
-        return "{0} {1} {2}".format(d.day, d.strftime("%b"), d.year)
+        return "{0} {1} {2}".format(d.day, _AR_MONTHS[d.month - 1] if ar else d.strftime("%b"), d.year)
     except Exception:
         return str(iso or "")
 
@@ -200,7 +204,7 @@ def _reply(text, intent, facts, tools, links=()):
 
 
 def _src_line(asof, ar):
-    return ("المصدر: تصدير eHub، بيانات يوم {0}." if ar else "Source: eHub export, data as of {0}.").format(_dmy(asof))
+    return ("المصدر: تصدير eHub، بيانات يوم {0}." if ar else "Source: eHub export, data as of {0}.").format(_dmy(asof, ar))
 
 
 def _scope_note(allowed, ar):
@@ -327,13 +331,14 @@ def _ans_total(bu, rows, data, allowed, ar):
     return _reply(text, "platform_total", [len(rows), len(open_), len(late)], ["stages"], links=[{"label": "list", "href": href}])
 
 
-def _ans_how(subject, rows, data, allowed, ar, page):
-    """What a number means, with the number as it is now."""
+def _ans_how(subject, rows, data, allowed, ar, page, bu=None):
+    """What a number means, with the number as it is now (for the BU on
+    screen when the question is about the list that is open)."""
     one = None
     if subject in ("pastdue", "ontime"):
-        one = (_ans_pastdue if subject == "pastdue" else _ans_ontime)(None, rows, data, allowed, ar)
+        one = (_ans_pastdue if subject == "pastdue" else _ans_ontime)(bu, rows, data, allowed, ar)
     elif subject in dict(_STAGE_WORDS):
-        one = _ans_stage(subject, None, rows, data, allowed, ar, how=True)
+        one = _ans_stage(subject, bu, rows, data, allowed, ar, how=True)
     if one is not None:
         if one["intent"] != "platform_no_data":
             one["answer"], one["intent"] = _how_first(one["answer"], ar), "platform_how"
@@ -459,8 +464,10 @@ def answer(question, state, context=None):
                 known = {r["bu"] for r in _C.records(data) if r.get("bu")}
                 asked = _bus_in(question, known)
                 bu = asked[0] if asked else None
-                if bu is None and view.get("bu") in known and kind != "how" and not (kind == "pastdue" and detail == "most"):
-                    bu = view.get("bu")              # the BU on screen, when none is named
+                this_list = kind == "how" and THIS_NUMBER.search(question or "") and view.get("stage")
+                if bu is None and view.get("bu") in known and (kind != "how" or this_list) and \
+                        not (kind == "pastdue" and detail == "most"):
+                    bu = view.get("bu")              # the BU on screen (or the open list's), when none is named
                 if bu is not None and allowed is not None and bu not in allowed:
                     reply = _reply(("لا تملك صلاحية الاطلاع على {0}." if ar else
                                     "You don't have access to {0}.").format(bu), "platform_denied", [], [])
@@ -473,7 +480,7 @@ def answer(question, state, context=None):
                 elif kind == "total":
                     reply = _ans_total(bu, rows, data, allowed, ar)
                 else:
-                    reply = _ans_how(detail, rows, data, allowed, ar, ctx.get("page"))
+                    reply = _ans_how(detail, rows, data, allowed, ar, ctx.get("page"), bu)
     reply["lang"] = "ar" if ar else "en"
     reply["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
     _log(reply)

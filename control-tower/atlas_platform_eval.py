@@ -207,7 +207,8 @@ NUM = re.compile(r"(?<![\w/#=.:-])\d[\d,]*(?:\.\d+)?(?![\w-])")
 
 def unsupported(ans, q, extra):
     plain = re.sub(r"\]\([^)]*\)", "]", ans)
-    plain = re.sub(r"\b\d{4}-\d{2}-\d{2}(T[\d:]+)?\b|\b\d{1,2} [A-Z][a-z]{2} \d{4}\b|\b\d{1,2}:\d{2}\b", " ", plain)
+    plain = re.sub(r"\b\d{4}-\d{2}-\d{2}(T[\d:]+)?\b|\b\d{1,2} [A-Z][a-z]{2} \d{4}\b|\b\d{1,2}:\d{2}\b|"
+                   r"\b\d{1,2} [\u0600-\u06FF]+ \d{4}\b", " ", plain)
     for a in C.awbs_in(q + " " + ans, DATA):          # references are names, not figures
         plain = plain.replace(a, " ")
     allowed = {str(x) for x in SUPPORTED | extra} | set(NUM.findall(q)) | REF_PARTS | \

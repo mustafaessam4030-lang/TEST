@@ -98,6 +98,9 @@ check("'Explain this number' on the hub's Overview: the stage strip, each with i
       all("**{0}** — {1}".format(STAGES[i], l) in a["answer"] for i, l, _t, _d in H.STAGES), a["answer"])
 a = ask("Explain this number", page="hub", view={"stage": "pastdue"})
 check("...with the past-due list open: what past due means", a["answer"].startswith("**How it's counted:** Open (not"), a["answer"])
+a = ask("Explain this number", page="hub", view={"stage": "customs", "bu": "GH"})
+check("...with one BU's list open: that BU's number (GH at customs: 0), not everyone's",
+      "Now: **0** shipments are at customs in GH" in a["answer"], a["answer"])
 check("'Explain this number' with no page to go on is left to the rules", ask("Explain this number") is None)
 
 print("\n3. NO DATA, SAID PLAINLY")
@@ -115,7 +118,7 @@ LOADED["on"] = True
 print("\n4. ENGLISH AND ARABIC")
 a = ask("كم شحنة متأخرة في مصر؟")
 check("Arabic question, Arabic answer, with the country's name and code", a["lang"] == "ar" and "متأخرة في مصر (EG)" in a["answer"]
-      and "**2**" in a["answer"], a["answer"])
+      and "**2**" in a["answer"] and "26 أكتوبر 2026" in a["answer"], a["answer"])
 a = ask("كيف يتم حساب الشحنات المتأخرة؟")
 check("Arabic: how past due is counted, definition first", a["answer"].startswith("**طريقة العد:**"), a["answer"])
 check("Arabic: no data said plainly", ask("ما هي أسعار الشحن إلى لاغوس؟")["answer"].startswith("لا توجد بيانات"))
@@ -219,7 +222,8 @@ else:
         check("The hub's chat tells ATLAS the hub page and the list on screen", ctx.get("page") == "hub" and
               ctx.get("view") == {"stage": "pastdue", "bu": "EG"}, ctx)
         bot = ch.locator(".msg.bot").last.inner_text() if ch.locator(".msg.bot").count() else ""
-        check("...and the answer explains that list's number", "How it's counted" in bot and "Open (not Completed)" in bot, bot[:300])
+        check("...and the answer explains that list's number (EG's)", "How it's counted" in bot and "Open (not Completed)" in bot
+              and "past due in EG" in bot, bot[:300])
         link = ch.locator(".msg.bot a[href^='/hub#overview?list=']").last
         check("A link in ATLAS's answer is a real link (with its ?list=)", ch.locator(".msg.bot a[href^='/hub#overview?list=']").count() >= 1)
         check("The list sheet has its own Ask ATLAS (the top bar is behind it)", pg.locator("#dlAsk").count() == 1)
