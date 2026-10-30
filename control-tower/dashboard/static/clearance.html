@@ -468,7 +468,7 @@ footer{margin-top:14px;font-size:11.5px;color:var(--muted);display:flex;justify-
     <div class="ddfoot"><span id="dd-info"></span><span class="sp"></span><button class="btn" id="dd-more" type="button">Show more</button></div>
   </div>
 </div>
-<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="m-title" hidden>
   <div class="mbox"><h3 id="m-title"></h3><div class="mbody" id="m-body"></div><div class="mact" id="m-act"></div></div>
 </div>
 <template id="axTpl"><span class="axf" aria-hidden="true"><svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true"><defs><radialGradient id="axShell" cx="38%" cy="28%" r="80%">
@@ -1078,7 +1078,9 @@ let watching = null;
 function watch() {
   clearInterval(watching);
   watching = setInterval(async () => {
-    const st = await (await api("/api/clearance/status")).json();
+    let st;
+    try { st = await (await api("/api/clearance/status")).json(); }
+    catch (e) { return; }                 // offline for a moment: the next tick asks again
     if (st.state === "reading") { toast(st.message); return; }
     clearInterval(watching); watching = null;
     if (st.state === "error") toast(st.message, 10000);
@@ -1134,9 +1136,16 @@ function modal(title, body, buttons) {
     const b = document.createElement("button"); b.type = "button"; b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.onclick = fn;
     $("m-act").appendChild(b);
   });
-  $("modal").classList.add("show"); setTimeout(() => ($("m-body").querySelector("textarea,input,a") || $("m-act").firstChild).focus(), 30);
+  MODAL_BACK = document.activeElement;
+  $("modal").hidden = false; $("modal").classList.add("show"); setTimeout(() => ($("m-body").querySelector("textarea,input,a") || $("m-act").firstChild).focus(), 30);
 }
-function closeModal() { $("modal").classList.remove("show"); }
+// Closed, the dialog is hidden (so the page's "/" and Ctrl+K search work), and focus goes back where it was.
+let MODAL_BACK = null;
+function closeModal() {
+  $("modal").classList.remove("show"); $("modal").hidden = true;
+  if (MODAL_BACK && MODAL_BACK.focus) { try { MODAL_BACK.focus({preventScroll: true}); } catch (e) { /* gone */ } }
+  MODAL_BACK = null;
+}
 $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) closeModal(); });
 function people(r) {
   const out = [];
