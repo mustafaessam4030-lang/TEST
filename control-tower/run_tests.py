@@ -60,6 +60,7 @@ SUITES = [
     ("test_platform_polish.py", "Polish: every request answered, no platform console errors, counts that match, refresh keeps state"),
     ("test_atlas_tools.py",    "ATLAS platform tools: numbers only from the hub's rules, no data said plainly, EN/AR, scoped, read-only"),
     ("test_hub_views.py",      "Hub views: one shipment from two sources, ATA workspace, To Do, KPIs, read-only and scoped"),
+    ("test_hub_experience.py", "Hub experience: Now / Recent activity, exceptions with To Do's rules, Tracking around the globe, ATA tabs, one look"),
     ("test_hub_globe.py",      "Hub globe: the map's own pins and routes on a dotted globe, beside the map, readable, keyboard, light/dark"),
     ("test_hub_map3d.py",      "Hub 3D map: three.js self-hosted, 2D fallback (no WebGL / too slow) once, sheet opens the real list"),
     ("test_hub_signin.py",     "Hub sign-in page (WinLogin.aspx), 401 refusals, no EOFError without a console"),
