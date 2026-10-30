@@ -58,7 +58,9 @@
 .content{padding:22px 24px 40px;max-width:1500px}
 /* an existing page, opened inside the hub as it is */
 /* no layout shift: the space a block takes once loaded is kept while it loads */
-#strip:empty{min-height:131px}
+#strip:empty{min-height:131px;border-radius:var(--hub-r-lg);
+  background:linear-gradient(90deg,var(--hub-surface) 25%,var(--hub-surface-2) 50%,var(--hub-surface) 75%) 0 0/200% 100%;animation:skel 1.4s ease-in-out infinite}
+@keyframes skel{to{background-position:-200% 0}}
 @media (min-width:1600px){#strip:empty{min-height:113px}}
 @media (max-width:1000px){#strip:empty{min-height:364px}}
 @media (min-width:1001px){#headline{min-height:64px}}
@@ -227,7 +229,7 @@
           <div class="stack">
             <section class="card" aria-labelledby="runT">
               <div class="card-h"><div><h2 id="runT">ATA automation</h2><p id="runP">The Hub ETA / ATA run</p></div><span class="sp"></span><span id="runBadge"></span></div>
-              <div class="run-st"><span class="dot" id="runDot"></span><b id="runState">—</b></div>
+              <div class="run-st"><span class="dot" id="runDot"></span><b id="runState">Loading…</b></div>
               <div class="run-grid" id="runGrid"></div>
               <div class="card-f"><a class="hub-pill primary" href="/hub#ata">Open the run</a><a class="hub-pill" href="/hub#todo">Human Actions in To Do</a></div>
             </section>
