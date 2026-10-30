@@ -54,7 +54,7 @@
   --hub-t-kpi:600 34px/1 var(--hub-font);
   /* space: 4-point steps */
   --hub-sp-1:4px; --hub-sp-2:8px; --hub-sp-3:12px; --hub-sp-4:16px; --hub-sp-5:20px; --hub-sp-6:24px; --hub-sp-8:32px; --hub-sp-10:40px;
-  --hub-e:cubic-bezier(.2,.8,.2,1);
+  --hub-e:cubic-bezier(.2,.8,.2,1); --hub-spring:cubic-bezier(.3,.7,.4,1.25);
   --hub-side:256px; --hub-top:60px;
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
@@ -159,4 +159,23 @@ button{font:inherit;color:inherit}
 .hub-empty{padding:28px 18px;text-align:center;color:var(--hub-ink-3)}
 .hub-empty b{display:block;color:var(--hub-ink);font-size:15px;margin-bottom:4px}
 .hub-src{font-size:11.5px;color:var(--hub-ink-3)}
+/* ── motion, as Apple does it: a press you feel, pages that arrive, a status island, errors with a way out ── */
+:where(button,.hub-pill,.nav a,.chip,.exc a,.act a,.hg-row,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hv-tbl tr.click td){transition:scale .24s var(--hub-spring)}
+:where(button,.hub-pill,.nav a,.chip,.exc a,.act a,.hg-row,.tb-ic,.ata-tabs a,.seg button,.tb-th button):active:not(:disabled){scale:.96}
+@keyframes hubIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.content.nav-in{animation:hubIn .36s var(--hub-e) both}
+.hub-island{position:fixed;top:10px;left:50%;z-index:300;display:inline-flex;align-items:center;gap:9px;max-width:calc(100vw - 32px);height:38px;padding:0 18px 0 12px;
+  border-radius:999px;background:#1d1d1f;color:#f5f5f7;font:600 13px/1 var(--hub-font);box-shadow:0 12px 32px rgba(0,0,0,.28),0 0 0 .5px rgba(255,255,255,.08);
+  transform:translate(-50%,-72px) scale(.86);opacity:0;pointer-events:none;transition:transform .55s var(--hub-spring),opacity .25s var(--hub-e)}
+.hub-island.on{transform:translate(-50%,0) scale(1);opacity:1}
+.hub-island svg{width:18px;height:18px;flex:none}
+.hub-island.off svg{color:#ff9f0a} .hub-island.down svg{color:#ff453a} .hub-island.back svg{color:#30d158}
+.hub-island span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hub-err{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:34px 20px}
+.hub-err .ic{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;margin-bottom:6px;background:var(--hub-amber-wash);color:var(--hub-amber-ink);animation:hubErr .45s var(--hub-spring) both}
+.hub-err .ic svg{width:22px;height:22px}
+.hub-err b{font-size:16px;letter-spacing:-.01em}
+.hub-err p{margin:0;max-width:440px;color:var(--hub-ink-3);font-size:13px}
+.hub-err .hub-pill{margin-top:10px}
+@keyframes hubErr{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}

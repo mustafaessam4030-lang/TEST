@@ -123,6 +123,7 @@
     const cv = document.createElement("canvas"); cv.setAttribute("aria-hidden", "true");
     const pinsBox = document.createElement("div"); pinsBox.className = "hg-pins";
     const card = document.createElement("div"); card.className = "hg-card";
+    card.hidden = true;                    // shown once there is something to say
     const ctl = document.createElement("div"); ctl.className = "hg-ctl";
     const empty = document.createElement("div"); empty.className = "hg-empty"; empty.hidden = true;
     root.append(cv, pinsBox, card, ctl, empty);
@@ -238,6 +239,7 @@
     /* ── the glass card: past due by business unit, or the selected pin ── */
     function drawCard() {
       if (selected) {
+        card.hidden = false;
         const s = selected.d.sheet || {};
         card.innerHTML = `<button class="hg-x" type="button" aria-label="Close">×</button><h3>${esc(s.title || selected.d.label)}</h3><p>${esc(s.subtitle || "")}</p>` +
           (s.stats && s.stats.length ? `<div class="hg-stats">${s.stats.slice(0, 4).map((x) => `<div><span>${esc(x.k)}</span><b class="${esc(x.tone || "")}">${esc(x.v)}</b></div>`).join("")}</div>` : "") +

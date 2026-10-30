@@ -118,6 +118,7 @@
 .ata-tabs .hum.on{color:var(--hub-amber-ink);background:var(--hub-amber-wash);font-weight:600}
 .ata-tabs .hum.on i{background:var(--hub-amber)}
 .ata-tabs:not([hidden]) + #embedF{height:calc(100vh - var(--hub-top) - 51px);height:calc(100dvh - var(--hub-top) - 51px)}
+#embedF{transition:opacity .25s var(--hub-e)}
 #embedF{display:block;width:100%;height:calc(100vh - var(--hub-top));height:calc(100dvh - var(--hub-top));border:0;background:var(--hub-bg)}
 
 /* ── overview ── */
@@ -338,6 +339,8 @@
 </div>
 <button class="hub-askfab hub-glass" id="askFab" type="button" aria-haspopup="dialog" hidden><span class="axf-slot"></span>Ask ATLAS</button>
 <iframe id="chatF" title="ATLAS" hidden></iframe>
+<!-- the status island: no internet, ATLAS out of reach, connected again (as Apple shows a status at the top) -->
+<div class="hub-island" id="island" role="status" aria-live="polite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg><span></span></div>
 <div class="dl" id="dl" role="dialog" aria-modal="true" aria-labelledby="dlT" hidden>
   <div class="dl-b hub-glass">
     <div class="dl-h"><div><h3 id="dlT"></h3><p id="dlS"></p></div><button class="dl-x" id="dlX" type="button" aria-label="Close">×</button></div>
@@ -420,8 +423,13 @@
     document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
   }
   let shownHash = null, listShown = null;
+  let lastView = null;
   function route() {
     const view = (location.hash.slice(1) || "overview").split("?")[0];
+    if (lastView !== null && lastView !== view) {
+      const c = $("content"); c.classList.remove("nav-in"); void c.offsetWidth; c.classList.add("nav-in");
+    }
+    lastView = view;
     const m = MODS.find((x) => x.id === view);
     const off = m && m.status === "off";
     const emb = !off && m && m.embed ? m : null;
@@ -523,7 +531,7 @@
     let same = false;
     try { same = f.contentWindow && f.contentWindow.location.pathname === path && f.getAttribute("src"); } catch (e) { same = false; }
     if (same) { if (f.contentWindow.location.hash !== h) f.contentWindow.location.hash = h || "#"; }
-    else f.setAttribute("src", src);
+    else { f.style.opacity = "0"; f.onload = () => { f.style.opacity = "1"; }; f.setAttribute("src", src); }
   }
   // Minimise / maximise the sidebar (remembered); each icon keeps its name for screen readers and as a tooltip.
   function sideMini(on, save) {
@@ -803,7 +811,11 @@
       const def = (DATA && DATA.clearance && DATA.clearance.stages.find((x) => x.id === stage)) || null;
       $("dlS").textContent = `${fmt(d.total || 0)} shipments · eHub export, data as of ${dmy(d.asof)}` + (def ? ` · ${def.definition}` : "");
       drawList();
-    } catch (e) { $("dlS").textContent = "Could not load the list."; }
+    } catch (e) {
+      $("dlS").textContent = "Could not load the list.";
+      $("dlRows").innerHTML = `<tr><td colspan="10">${errorBox("This list could not be loaded", "Check the connection, then try again.", true)}</td></tr>`;
+      const b = $("dlRows").querySelector("[data-retry]"); if (b) b.onclick = () => openList(stage, bu);
+    }
   }
   function drawList() {
     const q = $("dlQ").value.trim().toLowerCase();
@@ -839,6 +851,31 @@
   };
 
   let last = 0;
+  /* the status island: what the connection is doing, said once, gone when it is fine again */
+  const ISLAND = {
+    off: ["Not connected to the internet · showing what was last loaded", '<path d="M2 8.8a15 15 0 0 1 4.2-2.4M22 8.8A15 15 0 0 0 10.7 5M5 12.5a10 10 0 0 1 5.2-2.6M19 12.5a10 10 0 0 0-2.2-1.4M8.5 16a5 5 0 0 1 7 0M12 20h.01M3 3l18 18"/>'],
+    down: ["Can't reach ATLAS Control Tower · trying again", '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16.5h.01"/>'],
+    back: ["Connected", '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/>']};
+  let islandT = 0, islandKind = "";
+  function island(kind) {
+    const el = $("island");
+    clearTimeout(islandT);
+    if (!kind) { el.classList.remove("on"); islandKind = ""; return; }
+    if (kind === islandKind) return;
+    islandKind = kind;
+    el.className = "hub-island on " + kind;
+    el.querySelector("svg").innerHTML = ISLAND[kind][1];
+    el.querySelector("span").textContent = ISLAND[kind][0];
+    if (kind === "back") islandT = setTimeout(() => island(null), 2600);
+  }
+  addEventListener("offline", () => island("off"));
+  addEventListener("online", () => { island("back"); load(); });
+  if (navigator.onLine === false) island("off");
+  function errorBox(title, text, again) {
+    return `<div class="hub-err" role="alert"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17h.01"/></svg></span>` +
+      `<b>${esc(title)}</b><p>${esc(text)}</p>${again ? '<button class="hub-pill primary" type="button" data-retry>Try Again</button>' : ""}</div>`;
+  }
+  window.HubCtx.errorBox = errorBox;
   async function load() {
     try {
       const r = await fetch("/api/hub/overview", {credentials: "same-origin"});
@@ -846,7 +883,9 @@
       if (r.status === 403) { document.querySelector("main").innerHTML = '<div class="hub-empty"><b>The Control Tower preview is open to administrators only</b>' +
         'It is being reviewed. The <a href="/">dashboard</a> and <a href="/clearance">Clearance</a> pages work as before.</div>'; return; }
       if (!r.ok) throw new Error("HTTP " + r.status);
-      DATA = await r.json(); last = Date.now(); failed = false;
+      DATA = await r.json(); last = Date.now();
+      if (failed && islandKind !== "off") island("back");
+      failed = false;
       const mods = JSON.stringify(DATA.modules || []);
       // The menu and the view are drawn when the modules change (first load), not on every refresh:
       // a refresh only updates the numbers, so the phone menu stays open and focus stays put.
@@ -857,7 +896,12 @@
       failed = true;
       $("fresh").classList.add("stale");
       $("freshT").textContent = last ? "Could not refresh — showing the last data" : "Could not load — retrying";
-      if (!last) putHTML($("strip"), '<div class="hub-card hub-empty" style="grid-column:1/-1"><b>The Control Tower could not be loaded</b>It tries again by itself every 30 seconds.</div>');
+      island(navigator.onLine === false ? "off" : "down");
+      if (!last) {
+        putHTML($("strip"), '<div class="hub-card" style="grid-column:1/-1">' + errorBox("The Control Tower could not be loaded",
+          "Check the connection. It also tries again by itself every 30 seconds.", true) + "</div>");
+        const b = $("strip").querySelector("[data-retry]"); if (b) b.onclick = () => load();
+      }
     }
   }
   let modsKey = "", failed = false;

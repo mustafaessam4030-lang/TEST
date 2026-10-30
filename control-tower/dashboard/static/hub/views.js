@@ -206,7 +206,10 @@
         body.innerHTML = empty("Loading…");
         const r = await get("/api/hub/list?stage=" + encodeURIComponent(stage));
         if (r.status === 403) { body.innerHTML = denied("the eHub export"); return; }
-        if (r.status !== 200) { body.innerHTML = empty("The shipments could not be loaded", "Check the connection, then change a filter to try again."); return; }
+        if (r.status !== 200) {
+          body.innerHTML = window.HubCtx.errorBox("The shipments could not be loaded", "Check the connection, then try again.", true);
+          body.querySelector("[data-retry]").onclick = load; return;
+        }
         if (!r.data || r.data.empty) { body.innerHTML = empty("No eHub export loaded", "Shipments appear once an export is loaded on the Clearance page."); return; }
         CACHE = r.data; rows = r.data.rows || [];
         const modes = [...new Set(rows.map((x) => x.mode).filter(Boolean))].sort();
@@ -278,7 +281,10 @@
     const body = d.querySelector(".body");
     if (r.status === 404) { body.innerHTML = empty("No shipment with that AWB/BOL", "Neither the eHub export nor the current run has it."); return; }
     if (r.status === 403) { body.innerHTML = denied("this shipment"); return; }
-    if (r.status !== 200 || !r.data) { body.innerHTML = empty("Could not load the shipment"); return; }
+    if (r.status !== 200 || !r.data) {
+      body.innerHTML = window.HubCtx.errorBox("This shipment could not be loaded", "Check the connection, then try again.", true);
+      body.querySelector("[data-retry]").onclick = () => openShipment(ref); return;
+    }
     const s = r.data, val = (f) => f.value == null || f.value === "" ? "—" : f.kind === "date" ? dmy(f.value) : f.kind === "bool" ? (f.value ? "Yes" : "No") : fmt(f.value);
     let html = "";
     if (s.export) for (const row of s.export.rows) {
@@ -304,7 +310,10 @@
       el.innerHTML = head("To Do & Approvals", "What needs a person across the platform: Human Actions, run failures, BOE approvals, clearance follow-ups. Highest priority first.") + `<div id="hvTodo">${empty("Loading…")}</div>`;
       const box = el.querySelector("#hvTodo");
       let r = await get("/api/todo");
-      if (r.status !== 200 || !r.data) { box.innerHTML = empty("To Do could not be loaded", "Check the connection, then open To Do again."); return; }
+      if (r.status !== 200 || !r.data) {
+        box.innerHTML = window.HubCtx.errorBox("To Do could not be loaded", "Check the connection, then try again.", true);
+        box.querySelector("[data-retry]").onclick = () => V.todo.render(el); return;
+      }
       let t = r.data;
       const LBL = {overdue: "Overdue", urgent: "Urgent", pending_approval: "Waiting for approval", open: "Open", completed: "Completed (last 7 days)"};
       let filter = "";
