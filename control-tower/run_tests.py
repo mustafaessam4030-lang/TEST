@@ -58,6 +58,7 @@ SUITES = [
     ("test_atlas_upgrade.py",  "ATLAS upgrade: router, timing, early answers, scenarios, calculators, semantic"),
     ("test_hub.py",            "Control Tower hub: stage definitions, lists behind each number, places, permissions"),
     ("test_platform_polish.py", "Polish: every request answered, no platform console errors, counts that match, refresh keeps state"),
+    ("test_atlas_tools.py",    "ATLAS platform tools: numbers only from the hub's rules, no data said plainly, EN/AR, scoped, read-only"),
     ("test_hub_views.py",      "Hub views: one shipment from two sources, ATA workspace, To Do, KPIs, read-only and scoped"),
     ("test_hub_map3d.py",      "Hub 3D map: three.js self-hosted, 2D fallback (no WebGL / too slow) once, sheet opens the real list"),
     ("test_hub_signin.py",     "Hub sign-in page (WinLogin.aspx), 401 refusals, no EOFError without a console"),

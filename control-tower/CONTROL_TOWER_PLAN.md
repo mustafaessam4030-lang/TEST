@@ -204,3 +204,40 @@ Access while in review: `/hub` and `/api/hub/*` need the admin-only
 business units the person may see; no account carries a BU limit yet (adding
 one would change the existing Clearance page, To Do, search and ATLAS too —
 a decision for the owner).
+
+## 11. ATLAS on the platform: read-only tools (30 Oct 2026)
+
+`dashboard/atlas_tools.py` answers the platform's own numbers before the
+rules do. Nothing else about ATLAS changed (the rules, the knowledge base,
+the local model and Cortex answer everything else as before).
+
+- **One source of each rule.** Stages come from `hub.STAGES` and
+  `hub.stages()`, past due from `clearance.past_due()`, pages and links from
+  `hub.MODULES`. ATLAS's number and the hub's number are the same count.
+- **Numbers only from a tool.** Every reply is checked (`grounded()`): a
+  figure no tool returned turns the reply into "I don't have data for that".
+- **No data, said plainly.** Freight rates and tenders (not connected) and
+  missing documents (the export has no document list) get "No data: …" and
+  no figure.
+- **Short first, with a link and how it's counted.** The number, then
+  "Open the list" (`/hub#overview?list=<stage>&bu=<BU>` opens that exact
+  list), then the definition and the export's date. "How is X counted /
+  what does X mean" leads with the definition.
+- **English and Arabic.** An Arabic question gets an Arabic answer (country
+  names with their BU codes).
+- **Page awareness.** The hub's chat is told the hub page and the list on
+  screen; "Explain this number" explains that list, or the Overview's stage
+  strip. The list sheet has its own Ask ATLAS.
+- **Scope and role.** The server passes the person's role and BUs (never the
+  browser): a BU-limited person is counted only their BUs and refused
+  another's; a role without Clearance gets no export figures. The tools never
+  request an action; actions stay behind the existing buttons, confirmation
+  and the Operator/Admin check.
+- **Left to the rules.** Anything cut by agent, forwarder, mode, step,
+  division, carrier or month, a single shipment, the run, the BOE page, and
+  Clearance with filters on screen.
+- **Logging.** `<runtime>/clearance/atlas_tools.jsonl`: time, intent, tools,
+  language and milliseconds only — no question, BU, reference or person.
+- **Eval.** `python atlas_platform_eval.py <dir> <export.xlsx> <out>`:
+  44 questions (EN/AR) plus 12 held-out paraphrases, expected values counted
+  by the eval's own code. Tests: `test_atlas_tools.py`.
