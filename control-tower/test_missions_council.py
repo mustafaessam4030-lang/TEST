@@ -82,8 +82,8 @@ check("The configured model is not registered twice; embedding models are not ch
       "local:qwen3:4b" not in ids and not any("embed" in i for i in ids))
 vl = next(m for m in models.registry() if m["id"] == "local:qwen2.5vl:7b")
 check("A vision model is for pictures, not wording", vl["caps"].get("vision") == 3 and not vl["caps"].get("word"))
-check("Snowflake's allowlisted models are registered (Claude Sonnet 5, Llama 3.1 70B, Mixtral); Opus is not",
-      {"claude-sonnet-5", "llama3.1-70b", "mixtral-8x7b"} <= set(ids) and not any("opus" in i for i in ids))
+check("Snowflake models that answer on the account are registered (Claude Sonnet 5, Llama 3.1 70B, Mistral 7B); retired ones and Opus are not",
+      {"claude-sonnet-5", "llama3.1-70b", "mistral-7b"} <= set(ids) and not any(x in i for i in ids for x in ("opus", "mixtral", "gemma-7b", "arctic", "reka", "jamba")))
 check("Local models may see T2 data; Cortex models may not", all("T2" in m["tiers"] for m in models.registry() if m["provider"] == "ollama")
       and all("T2" not in m["tiers"] for m in models.registry() if m["provider"] == "cortex"))
 os.environ["ATLAS_MISSION_LOCAL_MODELS"] = "configured"
@@ -138,6 +138,44 @@ rows = [x for x in models.ledger("m1", 500)]
 check("Every member's call is in the ledger with its purpose", rows and all("(council)" in x["purpose"] for x in rows) and
       len({x["model_id"] for x in rows}) >= 3, [(x["model_id"], x["purpose"]) for x in rows][:6])
 check("Drill: no council, no call", council.hypotheses(facts, [], "m3", "hyp", "drill", 80000)["members"] == [] and not models.ledger("m3", 10))
+
+print("\n4. REAL ANSWERS (recorded from Snowflake Cortex on 30 Oct, made-up test facts)")
+REAL = {"claude-sonnet-5": '{"causes": ["Carrier/agent documentation errors or missing paperwork", "Agent Q resource capacity overload causing processing backlog", "Duty/tax calculation dispute or discrepancy requiring resolution"]}',
+        "llama3.3-70b": '{"causes": ["Insufficient duty payment processing capacity", "Inadequate communication between logistics team and clearing agent", "Inefficient customs documentation process"]}',
+        "mistral-7b": ' {\n"causes": ["Agent backlog (AGENT Q having 19 other past-due shipments)", "System issue or delay in processing duty payments for BU XX", "Possible discrepancy or issue with the documentation of TEST-00001"]\n}'}
+
+
+class Rec(object):
+    def __init__(self, m):
+        self.model = m
+
+    def health(self):
+        return {"ok": self.model in REAL, "detail": "recorded"}
+
+    def generate(self, *a, **k):
+        return REAL[self.model]
+
+
+models.PROVIDERS["cortex"] = lambda m: Rec(m)
+models.PROVIDERS["ollama"] = Rec("none")
+models.PROVIDERS["ollama_model"] = lambda n: Rec("none")
+os.environ["ATLAS_COUNCIL_SIZE"] = "3"
+hr = council.hypotheses(["facts"], ["Customs clearance delay"], "real", "hyp", "emergency", 80000)
+by = {c["theme"]: c["proposed_by"] for c in hr["causes"]}
+check("Three real models worded the same causes differently; ATLAS still sees the agreement (documents: 3, agent capacity: 3)",
+      sorted(hr["members"]) == ["claude-sonnet-5", "llama3.3-70b", "mistral-7b"] and len(by.get("documents", [])) == 3
+      and len(by.get("agent capacity", [])) == 3, hr["causes"])
+check("Each model's own wording is kept next to the merged cause", all(len(c["wordings"]) == len(c["proposed_by"]) for c in hr["causes"]))
+os.environ.pop("ATLAS_COUNCIL_SIZE")
+from intelligence import factguard  # noqa: E402
+FACTS = ["TEST-00001 (BU XX, Air) is at step Duty Payment; eHub status InProgress.", "TEST-00001 is 38 days past its step's due date.",
+         "21 other open shipments in XX are past due at Duty Payment.", "Clearing agent AGENT Q has 19 other open past-due shipments."]
+real_claude = ("Shipment TEST-00001 (BU XX, Air) remains stuck at the Duty Payment step, now 38 days overdue, with its eHub status still "
+               "showing InProgress. This is not an isolated case: 21 other open shipments in XX are similarly past due at the same step, "
+               "and clearing agent AGENT Q has 19 additional open past-due shipments.")
+ok, bad = factguard.check(real_claude, FACTS)
+check("Claude Sonnet 5's real summary passes the fact check (every number is in the evidence)", ok and not council._measures(real_claude, FACTS), bad)
+check("The same summary with one number changed would be rejected", council._measures(real_claude.replace("38 days", "83 days"), FACTS))
 
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

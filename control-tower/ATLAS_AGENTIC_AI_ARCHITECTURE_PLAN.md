@@ -576,7 +576,10 @@ The ten owner decisions in §20 remain open; the safe defaults stand (actions of
 Several models now work on the same step (`intelligence/missions/council.py`, `test_missions_council.py`, 20 checks):
 - **Every model, found**: every chat model installed in the tower's Ollama is registered as `local:<name>`
   (capabilities by model family; embedding models skipped; vision models only for pictures), plus the
-  allowlisted Cortex models that were missing (claude-sonnet-5, llama3.1-70b, mixtral-8x7b). Opus stays out.
+  Cortex models that answer on the account (checked 30 Oct with one short prompt each): claude-sonnet-5,
+  claude-sonnet-4-6, claude-sonnet-4-5, llama3.3-70b, llama3.1-70b, llama3.1-8b, mistral-7b. On the allowlist
+  but retired ("legacy") or not answering, never registered: mixtral-8x7b, gemma-7b, snowflake-arctic,
+  reka-flash, jamba-1.5-mini, llama3.2-*. Opus stays out (not allowlisted).
   `ATLAS_MISSION_LOCAL_MODELS=configured` limits it to the configured model.
 - **Council**: up to N members from different families (drill 0, normal 1, deep 2, emergency 3;
   `ATLAS_COUNCIL_SIZE`). Hypotheses: each member suggests causes in parallel; similar ones merge with

@@ -77,7 +77,30 @@ def _words(text):
     return {w for w in re.findall(r"[a-z]{3,}", str(text).lower()) if w not in ("the", "and", "for", "with", "not", "was")}
 
 
+# Models word the same cause differently ("missing paperwork", "documentation discrepancy"): a cause is
+# grouped by its theme first, by shared words otherwise. Themes are logistics vocabulary, not a model's.
+THEMES = [
+    ("documents", r"document|paperwork|invoice|packing list|certificate|\bdocs?\b|bill of lading|airway bill"),
+    ("agent capacity", r"capacity|backlog|overload|workload|understaff|resourc|bandwidth"),
+    ("duty and tax", r"\bduty|duties|\btax|tariff|valuation|assessment|payment"),
+    ("communication", r"communicat|coordinat|hand-?off|follow-?up|respons"),
+    ("systems", r"system|portal|\bit\b|software|integration|outage|sync"),
+    ("inspection", r"inspect|examination|physical check|hold\b|held\b"),
+    ("congestion", r"congest|port|terminal|airport|warehouse|space"),
+    ("carrier", r"carrier|airline|shipping line|vessel|flight|transshipment"),
+    ("regulatory", r"regulat|permit|licen[cs]e|compliance|restricted|approval"),
+]
+
+
+def theme(text):
+    t = str(text).lower()
+    return next((name for name, rx in THEMES if re.search(rx, t)), None)
+
+
 def _same(a, b):
+    ta, tb = theme(a), theme(b)
+    if ta and tb:
+        return ta == tb
     wa, wb = _words(a), _words(b)
     return bool(wa and wb) and len(wa & wb) / float(len(wa | wb)) >= 0.5
 
@@ -100,14 +123,15 @@ def hypotheses(facts, known, mission_id, task_id, profile, budget):
             continue
         for c in (r["value"].get("causes") or [])[:3]:
             c = " ".join(str(c).split())[:120]
-            if not c or any(_same(c, k_) for k_ in known):
+            if not c or any(_words(c) and _words(c) == _words(k_) for k_ in known):
                 continue
             hit = next((x for x in merged if _same(x["label"], c)), None)
             if hit:
                 if r["model"] not in hit["proposed_by"]:
                     hit["proposed_by"].append(r["model"])
+                    hit["wordings"].append({"model": r["model"], "text": c})
             else:
-                merged.append({"label": c, "proposed_by": [r["model"]]})
+                merged.append({"label": c, "theme": theme(c), "proposed_by": [r["model"]], "wordings": [{"model": r["model"], "text": c}]})
     merged.sort(key=lambda x: -len(x["proposed_by"]))
     return {"causes": merged[:5], "members": [r["model"] for r in res if r["ok"]], "failed": [r["model"] for r in res if not r["ok"]]}
 
@@ -157,6 +181,9 @@ def word(system, prompt, inputs, mission_id, task_id, profile, budget, max_token
                                                  purpose="report wording (council)", profile=profile, budget=budget,
                                                  max_tokens=max_tokens, only=m, max_calls=len(group) + 1)["text"])
     rejected = []
+    for r in res:
+        if r["ok"]:                                 # "Here is the executive summary:" is not part of it
+            r["value"] = re.sub(r"^\s*(?:here is|here's|below is)[^\n:]{0,60}:\s*", "", r["value"] or "", flags=re.I)
     for r in res:                                   # in the router's order: the best-ranked passing draft wins
         if not r["ok"]:
             rejected.append({"model": r["model"], "why": "no answer ({0})".format(r["error"])})

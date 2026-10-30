@@ -35,7 +35,7 @@ DEFAULT = [
     {"id": "local", "provider": "ollama", "where": "tower", "caps": {"classify": 2, "extract": 2, "explain": 1, "word": 1, "plan": 0, "reason": 1, "review": 0},
      "tiers": ["T0", "T1", "T2"], "cost": 0.0, "note": "The tower's own model (Ollama); private, free, one answer at a time"},
     {"id": "claude-sonnet-5", "provider": "cortex", "where": "snowflake (cross-region: AWS US)", "caps": {"plan": 3, "reason": 3, "explain": 3, "word": 3, "review": 3, "classify": 2, "extract": 2},
-     "tiers": ["T0", "T1"], "cost": 1.0, "fallbacks": ["claude-sonnet-4-6", "local"], "note": "On the account's allowlist (30 Oct)"},
+     "tiers": ["T0", "T1"], "cost": 1.0, "fallbacks": ["claude-sonnet-4-6", "local"], "note": "On the allowlist and answering (30 Oct)"},
     {"id": "claude-sonnet-4-5", "provider": "cortex", "where": "snowflake (cross-region: AWS US)", "caps": {"plan": 3, "reason": 3, "explain": 3, "word": 3, "review": 2, "classify": 2, "extract": 2},
      "tiers": ["T0", "T1"], "cost": 1.0, "fallbacks": ["claude-sonnet-4-6", "local"]},
     {"id": "claude-sonnet-4-6", "provider": "cortex", "where": "snowflake (cross-region: AWS US)", "caps": {"plan": 3, "reason": 3, "explain": 3, "word": 3, "review": 2, "classify": 2, "extract": 2},
@@ -45,9 +45,9 @@ DEFAULT = [
      "note": "A different model family from Claude: the independent reviewer"},
     {"id": "llama3.1-70b", "provider": "cortex", "where": "snowflake", "caps": {"review": 2, "reason": 2, "explain": 2, "word": 2, "classify": 2, "extract": 2},
      "tiers": ["T0", "T1"], "cost": 0.4, "family": "llama", "fallbacks": ["local"]},
-    {"id": "mixtral-8x7b", "provider": "cortex", "where": "snowflake", "caps": {"review": 2, "reason": 1, "word": 1, "classify": 2, "extract": 2},
-     "tiers": ["T0", "T1"], "cost": 0.2, "family": "mistral", "fallbacks": ["local"],
-     "note": "A third model family: a second independent reviewer"},
+    {"id": "mistral-7b", "provider": "cortex", "where": "snowflake", "caps": {"review": 1, "reason": 1, "classify": 2, "extract": 2, "word": 1},
+     "tiers": ["T0", "T1"], "cost": 0.1, "family": "mistral", "fallbacks": ["local"],
+     "note": "A third model family (small): a further independent reviewer"},
     {"id": "llama3.1-8b", "provider": "cortex", "where": "snowflake", "caps": {"classify": 2, "extract": 2, "word": 1, "explain": 1},
      "tiers": ["T0", "T1"], "cost": 0.1, "family": "llama", "fallbacks": ["local"]},
 ]
@@ -57,6 +57,11 @@ QUIET = threading.local()  # set while a mission calls a provider: chat's own le
 PROVIDERS = {}            # tests put their stand-ins here: {"cortex": fn(model) -> provider, "ollama": provider}
 LOCAL_BLOCKED = lambda: False      # the engine sets it: no local model while the ATA run is busy
 
+
+# Checked on the account on 30 Oct with one short prompt each: these answered. On the allowlist but
+# retired by Snowflake ("legacy") or not answering, so never registered: mixtral-8x7b, gemma-7b,
+# snowflake-arctic, reka-flash, jamba-1.5-mini, llama3.2-*. Claude Opus is not on the allowlist.
+VERIFIED_ON = "2026-10-30"
 
 # What an installed Ollama model is good for, by its name (the first match wins). Sizes from Ollama's
 # own list; a model is used only when it is installed and answering. Embedding models are not chat models.
