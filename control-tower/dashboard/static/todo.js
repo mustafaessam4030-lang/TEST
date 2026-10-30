@@ -20,10 +20,10 @@
 .todo-n[hidden]{display:none}
 .todo-p{position:fixed;top:calc(var(--barh,64px) + 8px);right:16px;width:min(340px,calc(100vw - 16px));
   max-height:min(480px,calc(100vh - var(--barh,64px) - 24px));display:flex;flex-direction:column;
-  background:var(--surface);color:var(--ink);border:1px solid var(--card-edge);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.14);z-index:85;
-  opacity:0;transform:translateX(24px);visibility:hidden;transition:transform .2s var(--e),opacity .2s var(--e),visibility 0s linear .2s}
-.todo-p.show{opacity:1;transform:none;visibility:visible;transition:transform .2s var(--e),opacity .2s var(--e),visibility 0s}
-.todo-x{margin-left:auto;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
+  background:var(--surface);color:var(--ink);border:1px solid var(--card-edge);border-radius:16px;box-shadow:0 12px 34px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.04);z-index:85;
+  opacity:0;transform:translateX(24px);visibility:hidden;transition:transform .26s var(--e),opacity .26s var(--e),visibility 0s linear .26s}
+.todo-p.show{opacity:1;transform:none;visibility:visible;transition:transform .26s var(--e),opacity .26s var(--e),visibility 0s}
+.todo-x{margin-left:auto;width:28px;height:28px;border-radius:50%;border:0;background:var(--surface-3);color:var(--mid);cursor:pointer;font-size:16px;line-height:1}
 .todo-x:hover{background:var(--surface-3);color:var(--ink)}
 .todo-l{flex:1;overflow:auto}
 .todo-h{display:flex;align-items:center;gap:10px;padding:10px 10px 9px 14px;border-bottom:1px solid var(--line-2)}

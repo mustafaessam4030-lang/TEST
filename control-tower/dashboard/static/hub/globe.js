@@ -252,9 +252,10 @@
       if (!bus.length) { card.hidden = true; return; }
       card.hidden = false;
       const total = bus.reduce((s, p) => s + (p.d.count || 0), 0), top = Math.max(1, bus[0].d.count || 0);
-      card.innerHTML = `<h3>Past due by business unit</h3><p>${total.toLocaleString("en-US")} open shipments past their step's due date</p>` +
+      const head = (data && data.card) || {};
+      card.innerHTML = `<h3>${esc(head.title || "Past due by business unit")}</h3><p>${esc(head.sub || total.toLocaleString("en-US") + " open shipments past their step's due date")}</p>` +
         bus.slice(0, 6).map((p) => `<button class="hg-row" type="button" data-id="${esc(p.id)}"><span>${esc(p.d.label)}</span>` +
-          `<s><u style="width:${Math.round(100 * (p.d.count || 0) / top)}%"></u></s><em>${(p.d.count || 0).toLocaleString("en-US")}</em></button>`).join("");
+          `<s><u style="width:${Math.round(100 * (p.d.count || 0) / top)}%${/^[a-z]+$/.test(head.bar || "") ? ";background:var(--hub-" + head.bar + ")" : ""}"></u></s><em>${(p.d.count || 0).toLocaleString("en-US")}</em></button>`).join("");
       card.querySelectorAll(".hg-row").forEach((b) => b.onclick = () => select(b.dataset.id, true));
     }
     function select(id, user) {

@@ -14,7 +14,15 @@
   const CSS = `
 .hv{display:flex;flex-direction:column;gap:16px}
 .hv-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
-.hv-head h2{margin:0;font-size:24px;letter-spacing:-.02em}
+.hv-head h2{margin:0;font:var(--hub-t-title);letter-spacing:-.024em}
+.hv-globe{position:relative;height:460px;margin:0 10px 10px;border-radius:var(--hub-r-lg);overflow:hidden}
+#hvBody .hv-tbl td{white-space:nowrap}
+.hv-st{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-weight:500}
+.hv-st i{width:8px;height:8px;border-radius:50%;flex:none}
+.hv-st.red i{background:var(--hub-red)} .hv-st.red{color:var(--hub-red-ink)}
+.hv-st.green i{background:var(--hub-green)} .hv-st.green{color:var(--hub-green-ink)}
+.hv-st.blue i{background:var(--hub-blue)}
+@media (max-width:900px){.hv-globe{height:360px}}
 .hv-head p{margin:2px 0 0;color:var(--hub-ink-3);font-size:13px}
 .hv-head .sp{flex:1}
 .hv-card{background:var(--hub-surface);border:1px solid var(--hub-line-2);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);overflow:hidden}
@@ -59,7 +67,7 @@
 .hv-bar{height:6px;border-radius:3px;background:var(--hub-line);overflow:hidden;min-width:60px}
 .hv-bar i{display:block;height:100%;background:var(--hub-blue);border-radius:3px}
 .hv-drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);z-index:60;background:var(--hub-surface);box-shadow:var(--hub-shadow-lg);
-  transform:translateX(102%);transition:transform .35s var(--hub-e);display:flex;flex-direction:column}
+  transform:translateX(102%);transition:transform .26s var(--hub-e);display:flex;flex-direction:column;border-left:1px solid var(--hub-line-2)}
 .hv-drawer.on{transform:none}
 .hv-drawer header{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 10px;border-bottom:1px solid var(--hub-line-2)}
 .hv-drawer header h3{margin:0;font-size:19px}
@@ -131,6 +139,8 @@
     async render(el, ctx) {
       stop();
       el.innerHTML = head("Shipment Tracking", "Every shipment in the eHub export; open one to see its fields, where each came from, and the ATA run's record for it.") +
+        `<div class="hv-card"><h3>Where they are</h3><p class="hv-src">The business units of the shipments shown below (where they clear), and the places carriers last reported. Not live GPS.</p>
+          <div class="hv-globe" id="hvGlobe"></div></div>` +
         `<div class="hv-card"><div class="hv-pad" style="padding-top:14px"><div class="hv-tools">
           <input id="hvQ" type="search" placeholder="Search AWB/BOL, BU, step, forwarder, agent" aria-label="Search shipments">
           <select id="hvStage" aria-label="Stage"><option value="all">Every stage</option></select>
@@ -145,6 +155,52 @@
         .map((b) => `<option>${esc(b)}</option>`).join(""));
       const body = document.getElementById("hvBody");
       let rows = [], shown = 100;
+      // the link may carry a search or a BU: /hub#tracking?q=…&bu=…
+      const hp = new URLSearchParams(location.hash.split("?")[1] || "");
+      if (hp.get("q")) document.getElementById("hvQ").value = hp.get("q").slice(0, 80);
+      if (hp.get("bu")) document.getElementById("hvBu").value = hp.get("bu").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+      // the globe: the shown shipments' BUs (where they clear) and the run's carrier-reported places, nothing else
+      const placed = Object.fromEntries((d.bus || []).map((b) => [b.bu, b]));
+      let globe = null;
+      if (window.HubGlobe) {
+        globe = window.HubGlobe.mount(document.getElementById("hvGlobe"), {worldUrl: "/static/maps/world.json"});
+        globe.on("action", (pin, ev) => {
+          const bu = pin && String(pin.id).startsWith("bu:") ? pin.id.slice(3) : null;
+          if (ev === "only" && bu) { document.getElementById("hvBu").value = bu; shown = 100; draw(); }
+          else if (ev === "all") { document.getElementById("hvBu").value = ""; shown = 100; draw(); }
+          else if (ev === "pastdue" && bu) ctx.openList("pastdue", bu);
+        });
+        V._globe = globe;
+      } else document.getElementById("hvGlobe").innerHTML = empty("Globe unavailable", "The globe component did not load; the list below is complete.");
+      function globeData(X) {
+        const per = {};
+        for (const x of X) {
+          const p = per[x.bu] = per[x.bu] || {n: 0, late: 0};
+          p.n++; if (x.overdue > 0 && x.step !== "Completed") p.late++;
+        }
+        const buF = document.getElementById("hvBu").value;
+        const pins = Object.entries(per).filter(([bu]) => placed[bu]).map(([bu, p]) => ({
+          id: "bu:" + bu, lat: placed[bu].lat, lon: placed[bu].lon, label: bu, count: p.n, tone: p.late ? "red" : "green",
+          sheet: {title: `${bu} · ${placed[bu].country}`, subtitle: `${fmt(p.n)} of the shipments shown clear here`,
+            stats: [{k: "SHOWN", v: fmt(p.n)}, {k: "PAST DUE", v: fmt(p.late), tone: p.late ? "red" : "green"}],
+            actions: buF === bu ? [{label: "Show every BU", primary: true, event: "all"}, {label: "Past due list", event: "pastdue"}]
+              : [{label: "Show only " + bu, primary: true, event: "only"}, {label: "Past due list", event: "pastdue"}],
+            note: "Where shipments clear: the BU's country, not a position."}}));
+        const routes = [];
+        for (const pl of d.places || []) {
+          const pts = (pl.path || []).map((x) => ({lat: x.lat, lon: x.lon}));
+          if (!pts.length) pts.push({lat: pl.at.lat, lon: pl.at.lon});
+          const reached = pts.length - 1;
+          if (pl.destination) pts.push({lat: pl.destination.lat, lon: pl.destination.lon});
+          if (pts.length > 1) routes.push({id: "r:" + pl.ref, points: pts, reached, tone: pl.state === "failed" ? "red" : "blue"});
+          pins.push({id: "pl:" + pl.ref, lat: pl.at.lat, lon: pl.at.lon, label: pl.at.name || pl.ref, tone: pl.state === "failed" ? "red" : "blue",
+            sheet: {title: pl.at.name || "Reported place", subtitle: `${pl.ref} · ${pl.carrier || "carrier"} · ${pl.event || pl.status || ""}`,
+              stats: [{k: "REPORTED", v: pl.when || "—"}, {k: "ETA", v: pl.eta || "—"}], actions: [],
+              note: `The place the carrier named (${pl.source || "carrier timeline"}), not live GPS.`}});
+        }
+        return {pins, routes, focus: Object.keys(per).map((bu) => placed[bu] && placed[bu].cc).filter(Boolean), countLabel: "shown",
+          card: {title: "Shown by business unit", bar: "blue", sub: `${fmt(X.length)} shipment${X.length === 1 ? "" : "s"} match the filters`}};
+      }
       async function load() {
         const stage = document.getElementById("hvStage").value;
         body.innerHTML = empty("Loading…");
@@ -163,10 +219,13 @@
         const bu = document.getElementById("hvBu").value, mode = document.getElementById("hvMode").value;
         const X = rows.filter((x) => (!bu || x.bu === bu) && (!mode || x.mode === mode) &&
           (!q || ["awb", "bu", "step", "ffw", "agent", "mode", "status"].some((k) => String(x[k] || "").toLowerCase().replace(/[\s\-./]/g, "").includes(q))));
+        if (globe) globe.setData(globeData(X));
         if (!X.length) { body.innerHTML = empty("No shipment matches", "Change the search or the filters."); return; }
-        body.innerHTML = `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>AWB / BOL</th><th>BU</th><th>Mode</th><th>Current step</th><th>ETA</th><th>ATA</th>
+        const status = (x) => x.step === "Completed" ? ["green", "Completed"] : x.overdue > 0 ? ["red", "Past due"] : ["blue", "Open"];
+        body.innerHTML = `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>AWB / BOL</th><th>Status</th><th>BU</th><th>Mode</th><th>Current step</th><th>ETA</th><th>ATA</th>
           <th class="n">Days past due</th><th>On time</th><th>Forwarder</th><th>Clearing agent</th></tr></thead><tbody>` +
-          X.slice(0, shown).map((x) => `<tr class="click" tabindex="0" data-ref="${esc(x.awb)}"><td class="hv-mono">${esc(x.awb)}</td><td>${esc(x.bu)}</td><td>${esc(x.mode)}</td>
+          X.slice(0, shown).map((x) => `<tr class="click" tabindex="0" data-ref="${esc(x.awb)}" data-bu="${esc(x.bu)}"><td class="hv-mono">${esc(x.awb)}</td>
+            <td><span class="hv-st ${status(x)[0]}"><i></i>${status(x)[1]}</span></td><td>${esc(x.bu)}</td><td>${esc(x.mode)}</td>
             <td>${esc(x.step)}</td><td>${dmy(x.eta)}</td><td>${dmy(x.ata)}</td><td class="n" style="${x.overdue > 0 ? "color:var(--hub-red-ink);font-weight:600" : ""}">${x.overdue == null ? "—" : fmt(x.overdue)}</td>
             <td>${x.ontime ? "Yes" : "No"}</td><td>${esc(x.ffw || "—")}</td><td>${esc(x.agent || "—")}</td></tr>`).join("") +
           `</tbody></table></div><div class="hv-more"><span class="hv-src">Showing ${fmt(Math.min(shown, X.length))} of ${fmt(X.length)} · ${esc("eHub export, data as of ")}${dmy(CACHE.asof)}</span>
@@ -174,8 +233,10 @@
         const more = document.getElementById("hvMore");
         if (more) more.onclick = () => { shown += 200; draw(); };
       }
-      body.addEventListener("click", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr) openShipment(tr.dataset.ref); });
-      body.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr && e.key === "Enter") { e.preventDefault(); openShipment(tr.dataset.ref); } });
+      // a shipment chosen: its panel opens, and the globe turns to where it clears
+      const pick = (tr) => { openShipment(tr.dataset.ref); if (globe && tr.dataset.bu) globe.select("bu:" + tr.dataset.bu); };
+      body.addEventListener("click", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr) pick(tr); });
+      body.addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-ref]"); if (tr && e.key === "Enter") { e.preventDefault(); pick(tr); } });
       document.getElementById("hvQ").addEventListener("input", () => { shown = 100; draw(); });
       document.getElementById("hvBu").onchange = document.getElementById("hvMode").onchange = () => { shown = 100; draw(); };
       document.getElementById("hvStage").onchange = load;
@@ -293,7 +354,7 @@
       return render.call(this, el, ctx);
     };
   }
-  V._leave = () => { stop(); closeDrawer(); };
+  V._leave = () => { stop(); closeDrawer(); if (V._globe) { V._globe.destroy(); V._globe = null; } };
   V._css = css;
   V._openShipment = openShipment;
   V._hubHref = hubHref;
