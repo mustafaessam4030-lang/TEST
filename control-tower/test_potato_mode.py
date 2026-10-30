@@ -11,6 +11,7 @@ Action, authentication — exactly the same with or without it. TEST DATA only:
 temporary store folders, nothing real is read or written.
 """
 
+import re
 import json
 import os
 import socket
@@ -194,6 +195,9 @@ def no_time(value):
                              "last_success", "runtime_seconds", "potato", "failure_id")}
     if isinstance(value, list):
         return [no_time(v) for v in value]
+    if isinstance(value, str):
+        # a message stamped with the clock ("17:31:55 — no button"): two runs a second apart differ only there
+        return re.sub(r"^\d{2}:\d{2}:\d{2} — ", "", value)
     return value
 
 
