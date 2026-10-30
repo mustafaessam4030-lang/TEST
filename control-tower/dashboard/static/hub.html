@@ -57,6 +57,13 @@
 .burger{display:none;border:0;background:transparent;width:34px;height:34px;border-radius:9px;cursor:pointer}
 .content{padding:22px 24px 40px;max-width:1500px}
 /* an existing page, opened inside the hub as it is */
+/* no layout shift: the space a block takes once loaded is kept while it loads */
+#strip:empty{min-height:131px}
+@media (min-width:1600px){#strip:empty{min-height:113px}}
+@media (max-width:1000px){#strip:empty{min-height:364px}}
+@media (min-width:1001px){#headline{min-height:64px}}
+[data-search-slot],[data-todo-slot]{display:inline-flex;min-width:34px;min-height:34px}
+@media (min-width:1601px){[data-search-slot]{min-width:115px}}
 .content.embedded{padding:0;max-width:none}
 /* ATLAS's chat, the same one as on every page: a floating button, and the chat in a layer over the hub */
 /* top bar: the theme and Settings as small icons */
@@ -353,6 +360,7 @@
     } else if (emb) $("title").textContent = emb.title;
     else if (!mod) $("title").textContent = "Overview";
     drawNav();
+    if (!off && !mod && !emb) visuals();
     $("setTop").toggleAttribute("aria-current", view === "settings");
     if (view === "settings") $("setTop").setAttribute("aria-current", "page");
     $("side").classList.remove("open");
@@ -610,7 +618,7 @@
       // The menu and the view are drawn when the modules change (first load), not on every refresh:
       // a refresh only updates the numbers, so the phone menu stays open and focus stays put.
       if (mods !== modsKey) { modsKey = mods; MODS = DATA.modules || []; route(); }
-      strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); mountMap(DATA); mountOps(DATA); todo();
+      strip(DATA.clearance); headline(DATA); runCard(DATA.run, DATA.run_hidden); visuals(); todo();
       fresh();
     } catch (e) {
       failed = true;
@@ -620,6 +628,11 @@
     }
   }
   let modsKey = "", failed = false;
+  // The map (three.js) and the flow scene load when the Overview is on screen, not on other views.
+  function visuals() {
+    if (!DATA || document.querySelector('[data-view="overview"]').hidden) return;
+    mountMap(DATA); mountOps(DATA);
+  }
   window.HubCtx.refresh = () => load();       // the 30 s refresh, on demand (tests)
   function fresh() {
     if (!last || failed) return;
