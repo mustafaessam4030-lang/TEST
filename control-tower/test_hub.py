@@ -102,7 +102,7 @@ ov_all = H.overview(state, lambda p: True)
 check("With every permission: the export, the BUs, the run", ov_all["clearance"]["total"] == len(ROWS) and ov_all["bus"] and ov_all["run"]["shipments"] == 3)
 off = [m for m in H.MODULES if m["status"] == "off"]
 check("Modules with no data source are marked not connected, never live",
-      {m["id"] for m in off} >= {"rates", "tender", "optimization"} and all("Not connected" in m.get("note", "") for m in off))
+      {m["id"] for m in off} >= {"rates", "tender"} and all("Not connected" in m.get("note", "") for m in off))
 
 print("\n4b. A BU-RESTRICTED PERSON NEVER SEES ANOTHER BU'S NUMBERS")
 GH = {"GH"}

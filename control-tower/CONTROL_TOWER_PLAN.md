@@ -193,12 +193,11 @@ or external services.
 | A | Done | This document | Agreed |
 | B | Done | Tokens (`hub/hub.css`), `/hub` shell, modules with live / partial / not connected, the ATLAS character as ATLAS's icon (byte-identical template) | `test_hub.py` §6: `/` and `/clearance` unchanged, nothing redirects |
 | C | Done | Stage strip, 3D map (three.js r169 self-hosted, Apple Maps visual language, 2D fallback once), daily-flow scene, lists behind every number, Shipment Tracking with one shipment joined from the export and the run (each field with its source) | `test_hub.py`, `test_hub_map3d.py`, `test_hub_views.py`; counts equal the Clearance page's (same `clearance.records`) |
-| D | Done | The existing pages inside the hub, as they are: ATA Automation (the run page with its controls), Run Shipments, BOE / PO Automation, Clearance, Human Action, Run History, ATLAS, Access, Settings. Opened with `?embed=1` they hide only their brand bar, take the hub's theme and open links to other pages in the hub; opened directly they are unchanged | `test_hub_views.py` §4; the existing pages' own suites unchanged |
-| E | Done | To Do & Approvals, Carriers, Master Data (read). The hub's own read-only run view and document list were removed: the existing run page and BOE page do that | `test_hub_views.py` |
-| F | Done | KPI catalogue (definition, numerator, denominator; unmeasurable KPIs listed as not available), Reports (existing exports), security review, full suite, smoke | See the final report |
+| D | Done | The existing pages inside the hub, as they are: ATA Automation (the run page with its controls, plus a Human Action button that opens the Human Action page and leads back), Run Shipments, BOE / PO Automation, Clearance, ATLAS, Access, Settings. Opened with `?embed=1` they hide only their brand bar, take the hub's theme and open links to other pages in the hub; opened directly they are unchanged. ATLAS's chat is on every page: an existing page shows its own; the hub's own pages open the same chat (`/?embed=chat`) in a layer | `test_hub_views.py`; the existing pages' own suites unchanged |
+| E | Done | To Do & Approvals, Master Data (read). Removed at the owner's request (30 Oct): Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History and Human Action as menu pages | `test_hub_views.py` |
+| F | Done | Security review (findings fixed), full suite, release ZIP and smoke test | See the final report |
 
-Still not connected (no data source): Rate Management, Spot Tender,
-Optimization, scheduled reports, a clearance-document list, bookings.
+Still not connected (no data source), shown as Soon: Rate Management, Spot Tender.
 
 Access while in review: `/hub` and `/api/hub/*` need the admin-only
 `hub.preview` permission. Every hub number is counted from the rows of the

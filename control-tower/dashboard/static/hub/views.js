@@ -240,76 +240,6 @@
     }
   };
 
-  /* ── Carriers (stage E) ───────────────────────────────────────────────── */
-  const pc = (v) => v == null ? "—" : Math.round(v * 100) + "%";
-  V.carriers = {
-    title: "Carriers",
-    async render(el) {
-      stop();
-      el.innerHTML = head("Carriers", "How each carrier did in the run records: dates read, verified Hub updates, failures, and when a person was needed.") + `<div id="hvCa">${empty("Loading…")}</div>`;
-      const box = el.querySelector("#hvCa"), r = await get("/api/hub/carriers");
-      if (r.status === 403) { box.innerHTML = denied("carrier results"); return; }
-      if (!r.data) { box.innerHTML = empty("Carrier results could not be read"); return; }
-      const h = r.data, cs = h.carriers || [];
-      box.innerHTML = `<div class="hv-card"><h3>Last ${fmt(h.window_days)} days</h3><p class="hv-src" style="padding:0 18px 10px">${fmt(h.records)} finished shipments in the window · rates shown once a carrier has ${fmt(h.minimum)} or more · run records (telemetry)</p>
-        ${cs.length ? `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>Carrier</th><th class="n">Shipments</th><th class="n">Dates read</th><th class="n">Verified updates</th><th class="n">Failed</th><th class="n">Needed a person</th><th class="n">Median time</th><th>Top causes</th></tr></thead><tbody>
-        ${cs.map((c) => `<tr><td><b>${esc(c.label || c.carrier)}</b>${c.sufficient ? "" : '<div class="hv-src">too few to rate</div>'}</td><td class="n">${fmt(c.counts.shipments)}</td>
-          <td class="n">${c.sufficient ? pc(c.rates.dates_read) : fmt(c.counts.dates_read)}</td><td class="n">${c.sufficient ? pc(c.rates.verified_updates) : fmt(c.counts.verified_updates)}</td>
-          <td class="n">${fmt(c.counts.failed)}</td><td class="n">${c.sufficient ? pc(c.rates.needed_person) : fmt(c.counts.needed_person)}</td>
-          <td class="n">${c.median_seconds == null ? "—" : fmt(c.median_seconds) + " s"}</td><td>${esc((c.top_causes || []).map((x) => x[0] + " (" + x[1] + ")").join(", ") || "—")}</td></tr>`).join("")}</tbody></table></div>`
-          : empty("No finished shipments in the window", "Carrier results appear after runs.")}</div>
-        <div class="hv-card"><h3>This run</h3>${(h.this_run || []).length ? `<div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>Carrier</th><th class="n">Shipments</th><th>By state</th></tr></thead><tbody>
-          ${h.this_run.map((c) => `<tr><td><b>${esc(c.carrier)}</b></td><td class="n">${fmt(c.shipments)}</td><td>${esc(Object.entries(c.by_state).map(([k, v]) => k.replace(/_/g, " ") + " " + v).join(" · "))}</td></tr>`).join("")}</tbody></table></div>`
-          : empty("No run in progress")}</div>`;
-    }
-  };
-
-  /* ── Analytics & KPIs (stage F): the catalogue ────────────────────────── */
-  V.analytics = {
-    title: "Analytics & KPIs",
-    async render(el) {
-      stop();
-      el.innerHTML = head("Analytics & KPIs", "Each KPI with its definition, numerator and denominator, counted from the loaded eHub export.") + `<div id="hvK">${empty("Loading…")}</div>`;
-      const box = el.querySelector("#hvK"), r = await get("/api/hub/kpis");
-      if (r.status === 403) { box.innerHTML = denied("the eHub export"); return; }
-      if (!r.data || r.data.empty) { box.innerHTML = empty("No eHub export loaded"); return; }
-      const k = r.data, unit = (x) => x.value == null ? "—" : x.unit === "%" ? fmt(x.value) + "%" : fmt(x.value) + (x.unit === "days" ? " days" : "");
-      box.innerHTML = `<div class="hv-tiles">${k.kpis.map((x) => tile(x.name, unit(x), esc(x.definition) + (x.num != null ? `<br><b>${fmt(x.num)}</b> of ${fmt(x.den)}` : x.den != null ? `<br>from ${fmt(x.den)}` : ""))).join("")}</div>
-        <p class="hv-src">${esc(k.source)} · ${esc(k.period)}</p>
-        <div class="hv-card"><h3>By business unit</h3><div class="hv-scroll"><table class="hv-tbl"><thead><tr><th>BU</th><th class="n">Shipments</th><th class="n">On time</th><th class="n">Open</th><th class="n">Past due</th><th class="n">Past due % of open</th><th></th></tr></thead><tbody>
-          ${k.bus.map((b) => `<tr class="click" data-bu="${esc(b.bu)}"><td><b>${esc(b.bu)}</b></td><td class="n">${fmt(b.n)}</td><td class="n">${b.ontime_pct == null ? "—" : fmt(b.ontime_pct) + "%"}</td><td class="n">${fmt(b.open)}</td>
-          <td class="n">${fmt(b.late)}</td><td class="n">${b.late_pct == null ? "—" : fmt(b.late_pct) + "%"}</td><td style="width:22%"><div class="hv-bar"><i style="width:${b.late_pct || 0}%;background:var(--hub-red)"></i></div></td></tr>`).join("")}
-        </tbody></table></div></div>
-        <div class="hv-card"><h3>Not available yet</h3><ul class="hv-list">${k.not_available.map((x) => `<li><span class="hv-dot"></span><div class="hv-li-b"><b>${esc(x.name)}</b><span>${esc(x.why)}</span></div></li>`).join("")}</ul></div>
-        <div class="hv-links"><button class="hub-pill" type="button" id="hvKcsv">Download the catalogue (CSV)</button></div>`;
-      box.querySelectorAll("tr[data-bu]").forEach((tr) => { tr.onclick = () => window.HubCtx && window.HubCtx.openList("all", tr.dataset.bu); });
-      box.querySelector("#hvKcsv").onclick = () => {
-        const q = (v) => /[",\n]/.test(String(v ?? "")) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v ?? "");
-        const lines = [["KPI", "Value", "Unit", "Numerator", "Denominator", "Definition", "Source"].join(",")].concat(k.kpis.map((x) => [x.name, x.value, x.unit, x.num, x.den, x.definition, k.source].map(q).join(",")));
-        const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
-        a.download = "kpi_catalogue.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      };
-    }
-  };
-
-  /* ── Reports (stage F) ────────────────────────────────────────────────── */
-  V.reports = {
-    title: "Reports",
-    render(el) {
-      stop();
-      const R = [
-        ["Run report (PDF)", "The current run: shipments, results, verification, evidence summary.", "/api/report.pdf", "runs.view"],
-        ["Run shipments (CSV)", "Every shipment in the current run with its result.", "/api/export.csv", "runs.view"],
-        ["Shipment lists (CSV)", "Any stage, BU or past-due list: open it from Overview or Shipment Tracking and choose Download CSV.", "/hub#tracking", "clearance.view"],
-        ["KPI catalogue (CSV)", "Every KPI with its definition, numerator and denominator.", "/hub#analytics", "clearance.view"],
-        ["Clearance follow-up", "Escalations, contacts and draft mails by agent and BU.", "/hub#clearance", "clearance.view"],
-      ];
-      el.innerHTML = head("Reports", "The exports the platform already produces. Each opens with the same permissions as its page.") +
-        `<div class="hv-card"><ul class="hv-list">${R.map(([t, d, h]) => `<li><span class="hv-dot blue"></span><div class="hv-li-b"><b>${esc(t)}</b><span>${esc(d)}</span></div>${pill(h, "Open")}</li>`).join("")}</ul></div>
-        <div class="hv-card"><h3>Scheduled reports</h3><div class="hv-pad hv-src">Not connected: the platform does not send reports on a schedule yet, and nothing here pretends to.</div></div>`;
-    }
-  };
-
   /* ── Master Data (stage E) ────────────────────────────────────────────── */
   V.masterdata = {
     title: "Master Data",
@@ -331,7 +261,7 @@
   };
 
   // Views whose records carry no business unit refuse a BU-limited account (the server hides them too).
-  for (const id of ["todo", "carriers", "reports", "masterdata"]) {
+  for (const id of ["todo", "masterdata"]) {
     const render = V[id].render;
     V[id].render = function (el, ctx) {
       if (ctx && ctx.data && ctx.data() && ctx.data().scope) { stop(); el.innerHTML = empty("Not available for your account", "Its records are not limited by business unit."); return; }

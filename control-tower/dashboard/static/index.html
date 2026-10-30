@@ -18,17 +18,37 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
      applies, and a link to another page opens in the hub. Nothing else
      changes: every control, list and permission on this page works as it does
      on its own. Opened directly, the page is exactly as before. -->
-<script>(function(){try{var q=new URLSearchParams(location.search);if(q.get('embed')!=='1'||window.top===window)return;
-var h=document.documentElement;h.classList.add('in-hub');
+<script>(function(){try{var q=new URLSearchParams(location.search),mode=q.get('embed');if((mode!=='1'&&mode!=='chat')||window.top===window)return;
+var h=document.documentElement;h.classList.add('in-hub');if(mode==='chat')h.classList.add('hub-chat');
 try{sessionStorage.setItem('ct-intro','1');}catch(e){}
 var th=function(t){if(t==='dark'||t==='light')h.dataset.theme=t;};th(q.get('theme'));
-addEventListener('message',function(e){if(e.origin===location.origin&&e.data&&e.data.type==='hub-theme')th(e.data.theme);});
+var openChat=function(){var f=document.getElementById('fab');if(f)f.click();};
+addEventListener('message',function(e){if(e.origin!==location.origin||!e.data)return;
+if(e.data.type==='hub-theme')th(e.data.theme);else if(e.data.type==='hub-chat-open')openChat();});
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a||a.target||e.defaultPrevented)return;
 var u=new URL(a.href,location.href);if(u.origin!==location.origin||u.pathname===location.pathname||/^\/(api|static)\//.test(u.pathname))return;
 var M={overview:'ata',shipments:'runs',analysis:'history',exceptions:'history',logs:'history'},hs=u.hash.slice(1),id=hs.split(/[?&]/)[0],r=hs.slice(id.length);
 e.preventDefault();window.top.location.href=u.pathname==='/clearance'?'/hub#clearance'+(hs?'?'+hs:''):u.pathname==='/'?'/hub#'+(M[id]||id||'ata')+r:u.href;},true);
+document.addEventListener('DOMContentLoaded',function(){
+if(mode==='chat'){
+/* The hub's chat layer: only ATLAS's chat, the same one, opened at once; closing it hides the layer. */
+var c=document.getElementById('chat'),was=false;if(!c)return;
+new MutationObserver(function(){var on=c.classList.contains('on');if(was&&!on)window.parent.postMessage({type:'hub-chat-closed'},location.origin);was=on;})
+.observe(c,{attributes:true,attributeFilter:['class']});
+var n=0,t=setInterval(function(){var f=document.getElementById('fab');if((f&&!f.disabled)||++n>40){clearInterval(t);openChat();}},100);return;}
+/* The run page inside the hub: Human Action is a button here, not a menu page. */
+var top=document.querySelector('.top');if(!top)return;
+var b=document.createElement('button');b.type='button';b.className='cbtn';b.id='hubHuman';
+top.insertBefore(b,top.querySelector('a.cbtn'));
+var show=function(id){b.hidden=!(id==='overview'||id==='human');b.dataset.to=id==='human'?'overview':'human';
+b.textContent=id==='human'?'← Back to the run':'Human Action';};
+b.addEventListener('click',function(){window.go(b.dataset.to);});
+var g=window.go;if(typeof g==='function')window.go=function(id){g(id);show(id);};
+show(decodeURIComponent(location.hash.slice(1).split(/[?&]/)[0])||'overview');});
 }catch(e){}})();</script>
-<style id="in-hub-css">html.in-hub .appbar{display:none!important}html.in-hub #app{grid-template-rows:0 1fr}</style>
+<style id="in-hub-css">html.in-hub .appbar{display:none!important}html.in-hub #app{grid-template-rows:0 1fr}
+html.hub-chat body>:not(#app){display:none!important}html.hub-chat #app>:not(#chat):not(#chScrim){display:none!important}
+html.hub-chat #app{opacity:1!important;animation:none!important;background:transparent}html.hub-chat,html.hub-chat body{background:transparent!important}</style>
 <!-- No webfont. The interface uses the face the operating system already
      has: Segoe UI Variable on Windows, SF on macOS, Roboto on Android. That
      removes the last third-party request from the page, and with it the

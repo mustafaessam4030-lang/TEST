@@ -57,6 +57,10 @@
 .content{padding:22px 24px 40px;max-width:1500px}
 /* an existing page, opened inside the hub as it is */
 .content.embedded{padding:0;max-width:none}
+/* ATLAS's chat, the same one as on every page: a floating button, and the chat in a layer over the hub */
+.hub-askfab{position:fixed;right:22px;bottom:22px;z-index:50;display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 17px 0 12px;
+  border-radius:999px;border:0;cursor:pointer;font:600 14px/1 var(--hub-font);color:var(--hub-ink)}
+#chatF{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:200;background:transparent;color-scheme:normal}
 #embedF{display:block;width:100%;height:calc(100vh - var(--hub-top));height:calc(100dvh - var(--hub-top));border:0;background:var(--hub-bg)}
 
 /* ── overview ── */
@@ -178,7 +182,7 @@
       <span class="sp"></span>
       <span data-search-slot></span>
       <span data-todo-slot></span>
-      <a class="hub-pill" href="/hub#atlas"><span class="axf-slot"></span>Ask ATLAS</a>
+      <a class="hub-pill" href="/hub#atlas" id="askTop"><span class="axf-slot"></span>Ask ATLAS</a>
     </header>
     <main class="content" id="content">
       <section data-view="overview">
@@ -225,6 +229,8 @@
     </main>
   </div>
 </div>
+<button class="hub-askfab hub-glass" id="askFab" type="button" aria-haspopup="dialog" hidden><span class="axf-slot"></span>Ask ATLAS</button>
+<iframe id="chatF" title="ATLAS" hidden></iframe>
 <div class="dl" id="dl" role="dialog" aria-modal="true" aria-labelledby="dlT" hidden>
   <div class="dl-b hub-glass">
     <div class="dl-h"><div><h3 id="dlT"></h3><p id="dlS"></p></div><button class="dl-x" id="dlX" type="button" aria-label="Close">×</button></div>
@@ -285,12 +291,13 @@
     const view = (location.hash.slice(1) || "overview").split("?")[0];
     let html = "", group = "";
     for (const m of MODS) {
+      if (m.nav === false) continue;            // reached from a page's own button or a link, not the menu
       if (m.group !== group) { group = m.group; html += `<div class="grp">${esc(group)}</div>`; }
       const own = m.id === "overview" || m.status === "off" || !!m.embed || !!(window.HubViews && window.HubViews[m.id]);
       const href = own ? `/hub#${m.id}` : m.href || `/hub#${m.id}`;
       const st = m.status === "partial" ? `<span class="st part" title="${esc(m.note || "Real data; part of it has no source yet")}">Partial</span>`
         : m.status === "off" ? '<span class="st off" title="Not connected: no data source yet">Soon</span>' : "";
-      html += `<a href="${esc(href)}" data-mod="${esc(m.id)}"${view === m.id ? ' aria-current="page"' : ""} title="${esc(m.note || m.title)}">${icon(m.id)}<span>${esc(m.title)}</span>${st}${own ? "" : EXT}</a>`;
+      html += `<a href="${esc(href)}" data-mod="${esc(m.id)}"${view === m.id || (MODS.find((x) => x.id === view) || {}).parent === m.id ? ' aria-current="page"' : ""} title="${esc(m.note || m.title)}">${icon(m.id)}<span>${esc(m.title)}</span>${st}${own ? "" : EXT}</a>`;
     }
     $("nav").innerHTML = html;
     document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
@@ -303,6 +310,7 @@
     const emb = !off && m && m.embed ? m : null;
     const mod = !off && !emb && m && window.HubViews && window.HubViews[view];
     document.querySelector('[data-view="embed"]').hidden = !emb;
+    $("askFab").hidden = !!emb;                  // an existing page shows its own Ask ATLAS
     $("content").classList.toggle("embedded", !!emb);
     if (emb) openPage(emb);
     document.querySelector('[data-view="overview"]').hidden = off || !!mod || !!emb;
@@ -328,6 +336,21 @@
   }
   addEventListener("hashchange", route);
 
+  /* ── ATLAS's chat on every page: an existing page opens its own; the hub's pages open the same chat in a layer ── */
+  function askAtlas(e) {
+    if (e) e.preventDefault();
+    const emb = !document.querySelector('[data-view="embed"]').hidden, f = $("embedF"), c = $("chatF");
+    if (emb && f.contentWindow) { f.contentWindow.postMessage({type: "hub-chat-open"}, location.origin); return; }
+    c.hidden = false;
+    if (!c.getAttribute("src")) c.setAttribute("src", "/?embed=chat&theme=" + (isDark() ? "dark" : "light"));
+    else c.contentWindow.postMessage({type: "hub-chat-open"}, location.origin);
+  }
+  addEventListener("message", (e) => {
+    if (e.origin === location.origin && e.data && e.data.type === "hub-chat-closed") { $("chatF").hidden = true; $("askFab").focus(); }
+  });
+  $("askFab").addEventListener("click", askAtlas);
+  $("askTop").addEventListener("click", askAtlas);
+
   /* ── an existing page inside the hub: /hub#po?po=… opens /#po?po=… with ?embed=1 ── */
   const isDark = () => document.documentElement.dataset.theme === "dark" ||
     (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -349,8 +372,10 @@
   function setTheme(t, save) {
     if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
     if (save) { try { localStorage.setItem("ct-theme", t); localStorage.setItem("ata-theme", t === "light" || t === "dark" ? t : "system"); } catch (e) {} }
-    const f = document.getElementById("embedF");
-    try { if (f && f.contentWindow) f.contentWindow.postMessage({type: "hub-theme", theme: isDark() ? "dark" : "light"}, location.origin); } catch (e) {}
+    for (const id of ["embedF", "chatF"]) {
+      const f = document.getElementById(id);
+      try { if (f && f.contentWindow) f.contentWindow.postMessage({type: "hub-theme", theme: isDark() ? "dark" : "light"}, location.origin); } catch (e) {}
+    }
     document.querySelectorAll("#theme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.t === t)));
   }
   let cur = "system"; try { cur = localStorage.getItem("ct-theme") || "system"; } catch (e) {}

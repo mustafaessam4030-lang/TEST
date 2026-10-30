@@ -20,7 +20,8 @@ document.documentElement.dataset.theme=d?'dark':'light';document.documentElement
 var h=document.documentElement;h.classList.add('in-hub');
 try{sessionStorage.setItem('ct-intro','1');}catch(e){}
 var th=function(t){if(t==='dark'||t==='light')h.dataset.theme=t;};th(q.get('theme'));
-addEventListener('message',function(e){if(e.origin===location.origin&&e.data&&e.data.type==='hub-theme')th(e.data.theme);});
+addEventListener('message',function(e){if(e.origin!==location.origin||!e.data)return;if(e.data.type==='hub-theme')th(e.data.theme);
+else if(e.data.type==='hub-chat-open'){var f=document.getElementById('askFab');if(f)f.click();}});
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a||a.target||e.defaultPrevented)return;
 var u=new URL(a.href,location.href);if(u.origin!==location.origin||u.pathname===location.pathname||/^\/(api|static)\//.test(u.pathname))return;
 var M={overview:'ata',shipments:'runs',analysis:'history',exceptions:'history',logs:'history'},hs=u.hash.slice(1),id=hs.split(/[?&]/)[0],r=hs.slice(id.length);

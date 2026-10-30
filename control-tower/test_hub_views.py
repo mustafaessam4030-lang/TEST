@@ -1,8 +1,9 @@
 """
-The hub's module views (stages C–F): Shipment Tracking with one shipment's
-fields and their sources, the ATA workspace, To Do & Approvals, Documents,
-Carriers, the KPI catalogue, Reports, Master Data. Read-only, real numbers,
-only for who may see them, and safe with hostile text in the records.
+The hub's own views (Shipment Tracking with one shipment's fields and their
+sources, To Do & Approvals, Master Data), the existing pages inside it as they
+are (the run page with its Human Action button, BOE / PO, Clearance, ATLAS…)
+and ATLAS's chat on every page. Read-only, real numbers, only for who may see
+them, and safe with hostile text in the records.
 
     python test_hub_views.py
 """
@@ -82,30 +83,15 @@ sg = H.shipment("157 1111-2222", STATE, allowed={"GH"})
 check("A BU-limited person: not another BU's shipment, and never the run's record", sg is None)
 check("Without clearance.view: the run's record only", H.shipment("15711112222", STATE, can=lambda p: p == "runs.view")["export"] is None)
 
-print("\n2. THE KPI CATALOGUE: DEFINITION, NUMERATOR, DENOMINATOR")
-k = H.kpis(DATA)
-K = {x["id"]: x for x in k["kpis"]}
-check("Every KPI carries a definition", all(x["definition"] for x in k["kpis"]))
-check("On time = flagged Yes / all", K["ontime"]["num"] == 3 and K["ontime"]["den"] == 5 and K["ontime"]["value"] == 60.0)
-check("Past due = open past due / open", K["pastdue"]["num"] == 2 and K["pastdue"]["den"] == 3)
-check("Median days past due over the past-due shipments", K["pastdue_days"]["value"] == 26.0)
-check("Within the expected cycle = cycle <= target / completed with both", K["cycle_target"]["num"] == 1 and K["cycle_target"]["den"] == 2)
-check("Stage counts match the stage strip", K["stage_done"]["value"] == H.stages(DATA)["stages"][-1]["count"] == 2)
-check("What cannot be measured is listed as not available, not estimated",
-      {x["name"].split(" (")[0] for x in k["not_available"]} >= {"OTIF", "Freight cost per shipment"})
-kg = H.kpis(DATA, allowed={"GH"})
-check("A BU-limited person's catalogue counts only their BU", {b["bu"] for b in kg["bus"]} == {"GH"}
-      and next(x for x in kg["kpis"] if x["id"] == "open")["value"] == 1)
-
 print("\n3. THE NAVIGATION: EVERY CONNECTED MODULE HAS ITS VIEW IN THE HUB")
 js = (HERE / "dashboard" / "static" / "hub" / "views.js").read_text(encoding="utf-8")
 html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
-for mid in ("tracking", "todo", "carriers", "analytics", "reports", "masterdata"):
+for mid in ("tracking", "todo", "masterdata"):
     if "V.{0} = {{".format(mid) not in js:
         check("A view for " + mid, False)
         break
 else:
-    check("A hub view for Tracking, To Do, Carriers, KPIs, Reports and Master Data", True)
+    check("A hub view for Tracking, To Do and Master Data", True)
 check("Not-connected modules stay 'not connected' (no view, no numbers)",
       all(m["status"] == "off" for m in H.MODULES if m["id"] in ("rates", "tender", "optimization"))
       and not any("V.{0} = {{".format(i) in js for i in ("rates", "tender", "optimization")))
@@ -117,6 +103,12 @@ check("Every existing page is in the hub, as it is: run, run shipments, BOE / PO
 check("The hub's own copies of those pages are gone (no second run page, no second document list)",
       "V.ata = {" not in js and "V.documents = {" not in js and "/api/control" not in js)
 check("The BOE page is named so it can be found", any(m["title"] == "BOE / PO Automation" for m in H.MODULES))
+NAV = [m["id"] for m in H.MODULES if m.get("nav", True)]
+check("Removed from the menu: Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History, Human Action",
+      not set(NAV) & {"documents", "carriers", "analytics", "reports", "optimization", "history", "human"}, NAV)
+check("...and their hub views are gone", not any("V.{0} = {{".format(i) in js for i in ("carriers", "analytics", "reports", "documents", "ata")))
+check("Human Action is reached from the run page (its parent), not the menu",
+      next(m for m in H.MODULES if m["id"] == "human").get("parent") == "ata")
 check("The page adds one script for them", html.count('<script src="/static/hub/views.js" defer></script>') == 1)
 check("Nothing from outside", not re.findall(r"https?://", js))
 
@@ -170,13 +162,10 @@ check("/api/hub/shipment: the joined shipment for an admin", code == 200 and jso
 check("...404 for an unknown AWB/BOL, 400 for something that is not one",
       call(ADM, "/api/hub/shipment?ref=ZZZZ9999")[0] == 404 and call(ADM, "/api/hub/shipment?ref=%3Cscript%3E")[0] == 400)
 check("...a BU-limited account gets nothing of another BU", call(GHA, "/api/hub/shipment?ref=157-1111-2222")[0] == 404)
-check("/api/hub/carriers: refused to a BU-limited account (run records carry no BU)", call(GHA, "/api/hub/carriers")[0] == 403
-      and call(ADM, "/api/hub/carriers")[0] == 200)
-kk = json.loads(call(GHA, "/api/hub/kpis")[1])
-check("/api/hub/kpis: a BU-limited account's catalogue is its BU's only", {x["bu"] for x in kk["bus"]} == {"GH"})
+check("The removed views' endpoints are gone", call(ADM, "/api/hub/carriers")[0] == 404 and call(ADM, "/api/hub/kpis")[0] == 404)
 check("Every new hub endpoint is closed to non-admins while the hub is in review",
-      all(call(OPR, p)[0] in (401, 403) for p in ("/api/hub/shipment?ref=EGX2", "/api/hub/carriers", "/api/hub/kpis")))
-check("...and answers GET only", call(ADM, "/api/hub/kpis", "POST", {})[0] in (403, 404, 405))
+      all(call(OPR, p)[0] in (401, 403) for p in ("/api/hub/shipment?ref=EGX2", "/api/hub/overview", "/api/hub/list?stage=all")))
+check("...and answers GET only", call(ADM, "/api/hub/shipment?ref=EGX2", "POST", {})[0] in (403, 404, 405))
 
 print("\n5. FROM THE SECURITY REVIEW")
 
@@ -202,7 +191,6 @@ srt = H.stage_list("all", data={"asof": "2026-10-26", "fields": C.FIELDS, "rows"
 check("Lists sort a shipment due today (0) above one not yet due (-3)", [r["awb"] for r in srt["rows"]] == ["B", "A", "C"], [r["awb"] for r in srt["rows"]])
 check("The overview's dates are reformatted only when ISO, otherwise shown escaped",
       ': esc(s);' in html.split("const dmy")[1].split("\n")[0])
-check("A carrier-results failure does not send internal error text", "str(error)" not in (HERE / "dashboard" / "hub.py").read_text(encoding="utf-8").split("def carriers")[1].split("def ")[0])
 
 try:
     from playwright.sync_api import sync_playwright
@@ -227,7 +215,7 @@ else:
         pg.goto(BASE + "/hub?map=2d")
         pg.wait_for_timeout(2500)
         seen = {}
-        for v in ("tracking", "todo", "carriers", "analytics", "reports", "masterdata"):
+        for v in ("tracking", "todo", "masterdata"):
             pg.evaluate("location.hash = %r" % ("#" + v))
             pg.wait_for_timeout(1300)
             seen[v] = (pg.locator('[data-view="mod"]').is_visible(), pg.locator("#modBody h2").first.inner_text() if pg.locator("#modBody h2").count() else "")
@@ -249,13 +237,20 @@ else:
               pg.evaluate("window.__pwned === undefined") and pg.locator(".hv-drawer img").count() == 0
               and EVIL in pg.locator("#modBody").inner_text())
         pg.keyboard.press("Escape")
-        pg.evaluate("location.hash = '#analytics'"); pg.wait_for_timeout(1300)
-        check("The KPI view shows the catalogue's values and their numerator / denominator",
-              "60%" in pg.locator("#modBody").inner_text() and "3 of 5" in pg.locator("#modBody").inner_text())
         pg.evaluate("location.hash = '#rates'"); pg.wait_for_timeout(600)
         check("A not-connected module still says so", pg.locator('[data-view="off"]').is_visible() and "not connected" in pg.locator("#offT").inner_text())
         pg.evaluate("location.hash = '#overview'"); pg.wait_for_timeout(800)
         check("Back to the Overview, unchanged", pg.locator('[data-view="overview"]').is_visible() and not pg.locator('[data-view="mod"]').is_visible())
+        # ATLAS's chat on the hub's own pages: the same chat, in a layer
+        pg.evaluate("location.hash = '#tracking'"); pg.wait_for_timeout(1200)
+        check("The hub's own pages show Ask ATLAS", pg.locator("#askFab").is_visible())
+        pg.locator("#askFab").click(); pg.wait_for_timeout(3500)
+        cf = pg.frame(url=re.compile(r".*embed=chat.*"))
+        check("...it opens ATLAS's own chat (the same one as on every page), and nothing else of that page",
+              pg.locator("#chatF").is_visible() and cf is not None and cf.evaluate("document.getElementById('chat').classList.contains('on')")
+              and cf.evaluate("getComputedStyle(document.querySelector('.main')).display") == "none")
+        cf.locator("#chat .ch-x:visible").first.click(); pg.wait_for_timeout(1200)
+        check("...closing the chat closes the layer", pg.locator("#chatF").is_hidden())
         # the existing pages, inside the hub
         pg.evaluate("location.hash = '#po'"); pg.wait_for_timeout(3500)
         fr = pg.frame_locator("#embedF")
@@ -267,6 +262,17 @@ else:
         pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(1500)
         check("Moving between existing pages switches the page, not the frame", fr.locator('.page[data-p="overview"].on').count() == 1
               and (pg.locator("#embedF").get_attribute("src") or "").endswith("#po"))
+        hb = fr.locator("#hubHuman")
+        check("The run page has a Human Action button (inside the hub)", hb.is_visible() and hb.inner_text() == "Human Action")
+        hb.click(); pg.wait_for_timeout(1000)
+        check("...it opens the Human Action page, with a way back to the run",
+              fr.locator('.page[data-p="human"].on').count() == 1 and hb.inner_text().endswith("Back to the run"))
+        hb.click(); pg.wait_for_timeout(800)
+        check("...and back", fr.locator('.page[data-p="overview"].on').count() == 1)
+        check("On an existing page the hub's own Ask ATLAS button steps aside (the page has its own)", pg.locator("#askFab").is_hidden())
+        pg.locator("#askTop").click(); pg.wait_for_timeout(1500)
+        check("...and the top bar's Ask ATLAS opens that page's chat", fr.locator("#chat.on").count() == 1)
+        fr.locator("#chat .ch-x:visible").first.click(); pg.wait_for_timeout(800)
         pg.evaluate("location.hash = '#history'"); pg.wait_for_timeout(1500)
         check("Run History opens the History · Analysis page", fr.locator('.page[data-p="analysis"].on').count() == 1)
         pg.locator('#theme button[data-t="dark"]').click(); pg.wait_for_timeout(500)
@@ -280,8 +286,9 @@ else:
               (pg.locator("#embedF").get_attribute("src") or "").startswith("/clearance?embed=1") and
               pg.frame(url=re.compile(r".*/clearance\?embed=1.*")).evaluate("getComputedStyle(document.querySelector('.appbar')).display") == "none")
         alone = ctx.new_page(); alone.goto(BASE + "/#po"); alone.wait_for_timeout(2500)
-        check("Opened directly, the existing page is exactly as before (brand bar, its own menu)",
-              alone.locator(".appbar").is_visible() and not alone.evaluate("document.documentElement.classList.contains('in-hub')"))
+        check("Opened directly, the existing page is exactly as before (brand bar, its own menu, no added button)",
+              alone.locator(".appbar").is_visible() and not alone.evaluate("document.documentElement.classList.contains('in-hub')")
+              and alone.locator("#hubHuman").count() == 0)
         alone.close()
         check("No page errors, nothing from outside, no write requests", not errors and not outside and not posts, (errors, outside, posts))
         br.close()

@@ -1008,25 +1008,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if out else 404, json.dumps(out or {"error": "no shipment with that AWB/BOL"}, default=str))
             return
 
-        if route == "/api/hub/carriers":
-            # Carrier results from the run records; the run carries no BU, so not for a BU-limited account.
-            from dashboard import hub as _hub
-            if not self._acc_can("runs.view") or self._acc_bus() is not None:
-                self._send(403, json.dumps({"error": "runs.view needed"}))
-                return
-            self._send(200, json.dumps(_hub.carriers(_assistant_state()), default=str))
-            return
-
-        if route == "/api/hub/kpis":
-            # The KPI catalogue, counted from the export rows this person may see.
-            from dashboard import hub as _hub
-            if not self._acc_can("clearance.view"):
-                self._send(403, json.dumps({"error": "clearance.view needed"}))
-                return
-            out = _hub.kpis(allowed=self._acc_bus())
-            self._send(200, json.dumps(out or {"empty": True}, default=str))
-            return
-
         if route == "/api/hub/overview":
             # Read-only: the run's snapshot and the loaded eHub export, counted
             # once (dashboard/hub.py); each part only for who may see it.

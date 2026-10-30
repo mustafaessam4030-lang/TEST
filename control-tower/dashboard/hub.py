@@ -37,24 +37,17 @@ MODULES = [
      "embed": "/#po", "note": "Bill of Entry PDF to duty template, validated, sent"},
     {"id": "clearance", "title": "Clearance", "status": "live", "perm": "clearance.view", "group": "Operations",
      "embed": "/clearance", "note": "The eHub shipment export: escalations, contacts, mails"},
+    # Reached from the ATA Automation page's Human Action button (and from links), not the menu.
     {"id": "human", "title": "Human Action", "status": "live", "perm": "dashboard.view", "group": "Operations",
-     "embed": "/#human", "note": "Shipments waiting for a person, open and resume"},
+     "embed": "/#human", "nav": False, "parent": "ata", "note": "Shipments waiting for a person, open and resume"},
     {"id": "todo", "title": "To Do & Approvals", "status": "live", "perm": "dashboard.view", "group": "Operations"},
     {"id": "rates", "title": "Rate Management", "status": "off", "perm": "dashboard.view", "group": "Commercial",
      "note": "Not connected: no freight-rate source yet"},
     {"id": "tender", "title": "Spot Tender", "status": "off", "perm": "dashboard.view", "group": "Commercial",
      "note": "Not connected: no tender data yet"},
-    {"id": "carriers", "title": "Carriers", "status": "live", "perm": "runs.view", "group": "Commercial",
-     "note": "Dates read, verified updates, failures and Human Actions by carrier"},
-    {"id": "analytics", "title": "Analytics & KPIs", "status": "live", "perm": "clearance.view", "group": "Insight",
-     "note": "The KPI catalogue: definition, numerator, denominator"},
     {"id": "history", "title": "Run History", "status": "live", "perm": "runs.view", "group": "Insight",
-     "embed": "/#analysis", "note": "Analysis, exceptions and the activity log"},
+     "embed": "/#analysis", "nav": False, "parent": "ata", "note": "Analysis, exceptions and the activity log (links only)"},
     {"id": "atlas", "title": "ATLAS", "status": "live", "perm": "atlas.chat", "group": "Insight", "embed": "/#atlas"},
-    {"id": "reports", "title": "Reports", "status": "partial", "perm": "runs.view", "group": "Insight",
-     "note": "Run PDF, CSV exports; no scheduled reports yet"},
-    {"id": "optimization", "title": "Optimization", "status": "off", "perm": "dashboard.view", "group": "Insight",
-     "note": "Not connected: needs rates, lanes and volumes"},
     {"id": "masterdata", "title": "Master Data", "status": "live", "perm": "clearance.contacts", "group": "Admin",
      "note": "Clearance contacts (read here, edited on Clearance)"},
     {"id": "access", "title": "Access", "status": "live", "perm": "users.manage", "group": "Admin", "embed": "/#access",
@@ -65,7 +58,7 @@ MODULES = [
 
 # Modules whose records (the run, the existing pages, To Do, PO documents,
 # contacts) are not limited by business unit: hidden from a BU-limited person.
-UNSCOPED = ("ata", "runs", "po", "clearance", "human", "todo", "carriers", "history", "atlas", "reports", "masterdata")
+UNSCOPED = ("ata", "runs", "po", "clearance", "human", "todo", "history", "atlas", "masterdata")
 
 
 def modules(can):
@@ -375,84 +368,3 @@ def shipment(ref, state=None, can=lambda p: True, allowed=None, data=None):
     iso = re.compile(r"^\d{4}-\d\d-\d\d")
     out["timeline"].sort(key=lambda t: (0, str(t["date"])) if iso.match(str(t["date"])) else (1, ""))
     return out
-
-
-# ── carriers: how each did, from the run records (intelligence/carrier_health.py) ─
-def carriers(state=None):
-    from intelligence import carrier_health
-    try:
-        h = carrier_health.health()
-    except Exception as error:          # no telemetry yet on a fresh install
-        h = {"carriers": [], "window_days": 7, "minimum": None, "records": 0, "error": "Carrier results could not be read."}
-    now = {}
-    for rec in (state or {}).get("shipments") or []:
-        c = rec.get("carrier") or "Unknown"
-        e = now.setdefault(c, {"carrier": c, "shipments": 0, "by_state": {}})
-        e["shipments"] += 1
-        s = rec.get("state") or "unknown"
-        e["by_state"][s] = e["by_state"].get(s, 0) + 1
-    h["this_run"] = sorted(now.values(), key=lambda e: -e["shipments"])
-    return h
-
-
-# ── the KPI catalogue: each KPI with its definition, numerator and denominator ─
-def _median(vals):
-    vals = sorted(vals)
-    if not vals:
-        return None
-    m = len(vals) // 2
-    return vals[m] if len(vals) % 2 else (vals[m - 1] + vals[m]) / 2.0
-
-
-def kpis(data=None, allowed=None):
-    data = data or _clearance.load()
-    if not data:
-        return None
-    rows = scoped_rows(data, allowed)
-    opn = [r for r in rows if _clearance.is_open(r)]
-    late = [r for r in opn if _clearance.past_due(r)]
-    done = [r for r in rows if not _clearance.is_open(r)]
-    pct = lambda a, b: round(100.0 * a / b, 1) if b else None
-    cyc = [r["cycle"] for r in done if isinstance(r.get("cycle"), (int, float))]
-    tgt = [r for r in done if isinstance(r.get("cycle"), (int, float)) and isinstance(r.get("target"), (int, float))]
-    within = sum(1 for r in tgt if r["cycle"] <= r["target"])
-    over = [r["overdue"] for r in late]
-    src = "eHub export, data as of {0}".format(data.get("asof"))
-    cat = [
-        {"id": "ontime", "name": "On time", "value": pct(sum(1 for r in rows if r.get("ontime")), len(rows)), "unit": "%",
-         "num": sum(1 for r in rows if r.get("ontime")), "den": len(rows),
-         "definition": "Shipments the export flags On Time = Yes, of every shipment in the export."},
-        {"id": "pastdue", "name": "Open and past due", "value": pct(len(late), len(opn)), "unit": "%", "num": len(late), "den": len(opn),
-         "definition": "Open shipments (step not Completed) whose eHub Performance is above 0 days, i.e. beyond the current step's Expected Completion Date, of all open shipments."},
-        {"id": "pastdue_days", "name": "Median days past due", "value": _median(over), "unit": "days", "num": None, "den": len(over),
-         "definition": "The median eHub Performance (days past the current step's due date) of the open, past-due shipments."},
-        {"id": "longpast", "name": "Over 30 days past due", "value": sum(1 for d in over if d > 30), "unit": "shipments", "num": None, "den": len(late),
-         "definition": "Open shipments more than 30 days past their current step's due date."},
-        {"id": "cycle", "name": "Median cycle (completed)", "value": _median(cyc), "unit": "days", "num": None, "den": len(cyc),
-         "definition": "The median Actual Days of completed shipments that carry it."},
-        {"id": "cycle_target", "name": "Completed within the expected cycle", "value": pct(within, len(tgt)), "unit": "%", "num": within, "den": len(tgt),
-         "definition": "Completed shipments whose Actual Days are at or under their Expected Cycle Days, of completed shipments that carry both."},
-        {"id": "open", "name": "Open shipments", "value": len(opn), "unit": "shipments", "num": None, "den": len(rows),
-         "definition": "Shipments whose current step is not Completed."},
-    ]
-    st = stages(data, rows=rows)
-    for s in st["stages"]:
-        cat.append({"id": "stage_" + s["id"], "name": s["label"], "value": s["count"], "unit": "shipments", "num": None,
-                    "den": st["total"], "definition": s["definition"]})
-    by = {}
-    for r in rows:
-        b = by.setdefault(r.get("bu") or "?", {"bu": r.get("bu") or "?", "n": 0, "open": 0, "late": 0, "ontime": 0})
-        b["n"] += 1
-        b["ontime"] += 1 if r.get("ontime") else 0
-        if _clearance.is_open(r):
-            b["open"] += 1
-            b["late"] += 1 if _clearance.past_due(r) else 0
-    bus = sorted(by.values(), key=lambda b: -b["late"])
-    for b in bus:
-        b["ontime_pct"] = pct(b["ontime"], b["n"])
-        b["late_pct"] = pct(b["late"], b["open"])
-    return {"asof": data.get("asof"), "source": src, "period": "Every shipment in the loaded export", "kpis": cat, "bus": bus,
-            "not_available": [
-                {"name": "OTIF (on time in full)", "why": "The export has no quantity or in-full field."},
-                {"name": "Freight cost per shipment", "why": "No rate or cost source is connected."},
-                {"name": "Dwell time at port", "why": "The export has no gate-in / gate-out times."}]}
