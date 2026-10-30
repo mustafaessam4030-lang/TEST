@@ -254,7 +254,8 @@ else:
         check("Back to the Overview, unchanged", pg.locator('[data-view="overview"]').is_visible() and not pg.locator('[data-view="mod"]').is_visible())
         # ATLAS's chat on the hub's own pages: the same chat, in a layer
         pg.evaluate("location.hash = '#tracking'"); pg.wait_for_timeout(1200)
-        check("The hub's own pages show Ask ATLAS", pg.locator("#askFab").is_visible())
+        check("The hub's own pages show Ask ATLAS, its icon at icon size", pg.locator("#askFab").is_visible()
+              and pg.locator("#askFab").bounding_box()["height"] <= 48 and pg.locator("#askFab .axf").bounding_box()["width"] <= 26)
         pg.locator("#askFab").click(); pg.wait_for_timeout(3500)
         cf = pg.frame(url=re.compile(r".*embed=chat.*"))
         check("...it opens ATLAS's own chat (the same one as on every page), and nothing else of that page",
