@@ -858,8 +858,9 @@ from dashboard import server as tower_server
 local = tower_server.start(port=0 or 18911, open_browser=False, host="127.0.0.1")
 lc = Client("http://127.0.0.1:18911")
 s, _d, _ = lc.get("/api/auth/me")
-check("Without the control plane there is no sign-in: /api/auth/me is 404, so the "
-      "page stays in local mode", s == 404)
+check("Without the control plane there is no sign-in: /api/auth/me answers 'local' (no person), so the "
+      "page stays in local mode (it was a 404, logged in every page's console)",
+      s == 200 and isinstance(_d, dict) and _d.get("mode") == "local" and _d.get("user") is None, (s, _d))
 check("...and the local dashboard still serves state with no session", lc.get("/api/state")[0] == 200)
 page = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
 check("The page waits for the platform check before connecting, in both modes",

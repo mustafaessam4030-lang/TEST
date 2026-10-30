@@ -80,6 +80,25 @@ check("...and the server keeps serving", call("/api/hub/overview")[0] == 200)
 st, _ = call("/api/feedback", "POST", raw=b"[1, 2]")
 check("Feedback that is not an object is a 400, not a crash", st == 400, st)
 
+print("\n1b. LESS WORK PER REQUEST")
+dp = C.data_path(); dp.parent.mkdir(parents=True, exist_ok=True); dp.write_text(json.dumps(DATA), encoding="utf-8")
+req = urllib.request.Request(BASE + "/api/clearance", headers={"Accept-Encoding": "gzip"})
+with urllib.request.urlopen(req) as r:
+    etag, enc = r.headers.get("ETag"), r.headers.get("Content-Encoding")
+req2 = urllib.request.Request(BASE + "/api/clearance", headers={"Accept-Encoding": "gzip", "If-None-Match": etag or "x"})
+try:
+    st2 = urllib.request.urlopen(req2).status
+except urllib.error.HTTPError as e:
+    st2 = e.code
+check("The export is served with an ETag and revalidated: a reload of an unchanged export is a 304 (compressed once when large)",
+      etag and st2 == 304, (etag, enc, st2))
+with urllib.request.urlopen(BASE + "/static/brand/mantrac-logo.png") as r:
+    cc = r.headers.get("Cache-Control")
+check("Images are kept by the browser for a day (they were read again on every page)", cc == "private, max-age=86400", cc)
+IDX = (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+check("The run page goes back to the live stream after a few reads, and does not read while hidden",
+      "if (++polls >= 5){ polls = 0; connect(); return; }" in IDX and "if (!document.hidden) fetch('/api/state')" in IDX)
+
 print("\n2. COUNTS THAT MATCH")
 saved = (C.escalations, C.contacts)
 C.escalations = lambda: [{"awb": "E1", "bu": "EG", "status": "open", "due": "2026-09-01", "at": "2026-10-20 10:00"}]
@@ -135,6 +154,25 @@ else:
               "could not be loaded" in pg.locator("#modBody").inner_text())
         pg.unroute("**/api/hub/list*")
         check("No console error on the hub (the /api/auth/me 404 is gone)", not [e for e in errors if "500" not in e], errors)
+        # layout shift: what loads keeps its place
+        CLS = """window.__cls=0;try{new PerformanceObserver(l=>{for(const e of l.getEntries()){if(!e.hadRecentInput)window.__cls+=e.value}}).observe({type:'layout-shift',buffered:true});}catch(e){}
+sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light');"""
+        for path in ("/", "/clearance", "/hub?map=2d"):
+            q = br.new_page(viewport={"width": 1366, "height": 768})
+            q.add_init_script(CLS)
+            q.goto(BASE + path); q.wait_for_timeout(3500)
+            v = q.evaluate("window.__cls")
+            check("No layout shift worth noticing on {0} (CLS {1:.3f} < 0.1)".format(path, v), v < 0.1, v)
+            q.close()
+        lz = br.new_page(viewport={"width": 1366, "height": 768})
+        lz.add_init_script("sessionStorage.setItem('ct-intro','1')")
+        lz.goto(BASE + "/hub#tracking"); lz.wait_for_timeout(3000)
+        got = lz.evaluate("performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))")
+        lz.evaluate("location.hash = ''"); lz.wait_for_timeout(3000)
+        later = lz.evaluate("performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))") or \
+            lz.locator("#map").get_attribute("data-map-mode") in ("2d", "3d", "loading")
+        check("three.js loads when the Overview (with its map) is shown, not on other views", not got and later, (got, later))
+        lz.close()
         cl = br.new_page(viewport={"width": 1366, "height": 768})
         cerr = []
         cl.on("console", lambda m: m.type == "error" and cerr.append(m.text))
