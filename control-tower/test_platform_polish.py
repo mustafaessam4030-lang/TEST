@@ -171,6 +171,10 @@ else:
         dots = pg.eval_on_selector_all("#todoL i", "els => els.map(e => e.getAttribute('style'))")
         check("...a red task has a red dot, an amber one amber, and the finished one is not listed",
               len(dots) == 2 and "hub-red" in dots[0] and "hub-amber" in dots[1], dots)
+        logo = pg.evaluate("(() => { const i = document.querySelector('.side .corp img'); return i && [i.naturalWidth, i.getBoundingClientRect().height, i.alt]; })()")
+        check("Hub: the Mantrac | CAT logo is in the sidebar, above ATLAS (official file, 30 px tall)",
+              logo and logo[0] > 0 and logo[1] == 30 and logo[2] == "Mantrac | CAT" and
+              pg.locator(".side .brand .axf").count() == 1, logo)
         fs = pg.evaluate("getComputedStyle(document.querySelector('.srch-b')).fontSize")
         check("Hub: the Search button keeps its own type (the token mapping was broken)", fs == "12.5px", fs)
         check("Hub: numbers keep a fixed width (tabular figures are no longer cancelled)",
