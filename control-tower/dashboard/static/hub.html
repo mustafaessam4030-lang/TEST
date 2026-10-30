@@ -221,7 +221,7 @@
               <div class="card-h"><div><h2 id="runT">ATA automation</h2><p id="runP">The Hub ETA / ATA run</p></div><span class="sp"></span><span id="runBadge"></span></div>
               <div class="run-st"><span class="dot" id="runDot"></span><b id="runState">—</b></div>
               <div class="run-grid" id="runGrid"></div>
-              <div class="card-f"><a class="hub-pill primary" href="/hub#ata">Open the run</a><a class="hub-pill" href="/hub#human">Human Actions</a></div>
+              <div class="card-f"><a class="hub-pill primary" href="/hub#ata">Open the run</a><a class="hub-pill" href="/hub#todo">Human Actions in To Do</a></div>
             </section>
             <section class="card" aria-labelledby="tdT">
               <div class="card-h"><div><h2 id="tdT">To Do</h2><p id="tdP">What needs a person</p></div></div>
@@ -294,7 +294,15 @@
   const EXT = '<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>';
 
   let DATA = null, MODS = [], map = null, scene = null;
-  window.HubCtx = {openList: (stage, bu) => openList(stage, bu)};
+  window.HubCtx = {openList: (stage, bu) => openList(stage, bu),
+    // the live view of a Human Action: the run page's own viewer, shown on the run page
+    viewer: (actionId) => {
+      location.hash = "#ata";
+      const f = document.getElementById("embedF"), send = () => f.contentWindow && f.contentWindow.postMessage({type: "hub-viewer", action_id: actionId}, location.origin);
+      setTimeout(() => { if (f.contentDocument && f.contentDocument.readyState === "complete") send(); else f.addEventListener("load", () => setTimeout(send, 400), {once: true}); }, 300);
+    }};
+  // The top bar's To Do opens tasks inside the hub (Human Actions on To Do, pages in the hub).
+  window.TodoHref = (h) => (window.HubViews && window.HubViews._hubHref ? window.HubViews._hubHref(h) : h);
 
   /* ── navigation ── */
   function drawNav() {

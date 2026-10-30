@@ -33,13 +33,10 @@ MODULES = [
      "embed": "/#overview", "note": "The run page: start, dry run, stop, live progress"},
     {"id": "runs", "title": "Run Shipments", "status": "live", "perm": "dashboard.view", "group": "Operations",
      "embed": "/#shipments", "note": "Every shipment in the run, with its carrier result and evidence"},
-    {"id": "po", "title": "BOE / PO Automation", "status": "live", "perm": "po.view", "group": "Operations",
+    {"id": "po", "title": "BOE Automation", "status": "live", "perm": "po.view", "group": "Operations",
      "embed": "/#po", "note": "Bill of Entry PDF to duty template, validated, sent"},
     {"id": "clearance", "title": "Clearance", "status": "live", "perm": "clearance.view", "group": "Operations",
      "embed": "/clearance", "note": "The eHub shipment export: escalations, contacts, mails"},
-    # Reached from the ATA Automation page's Human Action button (and from links), not the menu.
-    {"id": "human", "title": "Human Action", "status": "live", "perm": "dashboard.view", "group": "Operations",
-     "embed": "/#human", "nav": False, "parent": "ata", "note": "Shipments waiting for a person, open and resume"},
     {"id": "todo", "title": "To Do & Approvals", "status": "live", "perm": "dashboard.view", "group": "Operations"},
     {"id": "rates", "title": "Rate Management", "status": "off", "perm": "dashboard.view", "group": "Commercial",
      "note": "Not connected: no freight-rate source yet"},
@@ -58,7 +55,7 @@ MODULES = [
 
 # Modules whose records (the run, the existing pages, To Do, PO documents,
 # contacts) are not limited by business unit: hidden from a BU-limited person.
-UNSCOPED = ("ata", "runs", "po", "clearance", "human", "todo", "history", "atlas")
+UNSCOPED = ("ata", "runs", "po", "clearance", "todo", "history", "atlas")
 
 
 def modules(can):

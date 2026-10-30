@@ -88,7 +88,7 @@
     btn.setAttribute("aria-label", "To Do" + (d && d.count ? ": " + d.count + " need action" : ""));
     const sum = items.length ? `${d.count} need action · ${items.length} in all` : "";
     const html = items.length ? items.map((i) =>
-      `<li><a href="${esc(safe(i.href))}"><i class="${esc(i.level)}"></i><span class="t">${esc(i.title)}</span>` +
+      `<li><a href="${esc(safe(window.TodoHref ? window.TodoHref(i.href) : i.href))}"><i class="${esc(i.level)}"></i><span class="t">${esc(i.title)}</span>` +
       `${i.detail ? `<span class="d">${esc(i.detail)}</span>` : ""}<span class="s">${STATE[i.state] ? `<span class="st ${esc(i.state)}">${esc(STATE[i.state])}</span> · ` : ""}` +
       `${esc(i.source)}${i.due ? ` · due ${esc(day(i.due))}` : ""}</span></a></li>`).join("")
       : `<li class="todo-e">${d ? "Nothing needs a person right now." : "Could not load the list."}</li>`;

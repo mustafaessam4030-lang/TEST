@@ -75,6 +75,13 @@ HUMAN_WITH_PERSON = {"OPERATOR_OPENED", "VERIFICATION_PENDING"}       # a person
 # HUMAN_COMPLETED, POST_VERIFICATION_CHECK, RESUMING: the run continues by itself, no task.
 
 
+def _human_act(t):
+    """What the To Do list's Open / Resume buttons send to /api/human: the same
+    run and action ids the run page sends; the server and the run check them."""
+    return {"run_id": t.get("run_id"), "action_id": t.get("action_id"), "status": t.get("status"),
+            "reference": t.get("reference"), "carrier": t.get("carrier")}
+
+
 def _human_items(state, now_epoch, now):
     queue = (state or {}).get("human_queue") or []
     out, queued = [], set()
@@ -98,11 +105,13 @@ def _human_items(state, now_epoch, now):
                              "{0} needs a person: {1}".format(t.get("carrier") or "The carrier page", ref),
                              t.get("label") or t.get("reason") or "Open Human Action to continue.",
                              "/#human", "human.act", due=t.get("timeout_at"), at=t.get("created_at")))
+            out[-1]["act"] = _human_act(t)
         elif status in HUMAN_WITH_PERSON:
             out.append(_task("human:" + str(t.get("action_id")), "Human Action", "human_action", "urgent", 90, "red",
                              "In progress with a person: {0}".format(ref),
                              t.get("label") or "Finish it in Human Action.", "/#human", "human.act",
                              at=t.get("created_at")))
+            out[-1]["act"] = _human_act(t)
     # A shipment waiting for a person with no task in the queue (the queue off,
     # or the in-place wait before a task is made) still needs a person.
     waiting = [s for s in (state or {}).get("shipments") or []

@@ -24,7 +24,9 @@ try{sessionStorage.setItem('ct-intro','1');}catch(e){}
 var th=function(t){if(t==='dark'||t==='light')h.dataset.theme=t;};th(q.get('theme'));
 var openChat=function(){var f=document.getElementById('fab');if(f)f.click();};
 addEventListener('message',function(e){if(e.origin!==location.origin||!e.data)return;
-if(e.data.type==='hub-theme')th(e.data.theme);else if(e.data.type==='hub-chat-open')openChat();});
+if(e.data.type==='hub-theme')th(e.data.theme);else if(e.data.type==='hub-chat-open')openChat();
+/* the hub's To Do opened a Human Action that needs the live view: the run page's own viewer shows it */
+else if(e.data.type==='hub-viewer'&&/^[A-Za-z0-9_.:-]{1,64}$/.test(String(e.data.action_id||''))&&typeof window.openViewer==='function')window.openViewer(String(e.data.action_id));});
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a||a.target||e.defaultPrevented)return;
 var u=new URL(a.href,location.href);if(u.origin!==location.origin||u.pathname===location.pathname||/^\/(api|static)\//.test(u.pathname))return;
 var M={overview:'ata',shipments:'runs',analysis:'history',exceptions:'history',logs:'history'},hs=u.hash.slice(1),id=hs.split(/[?&]/)[0],r=hs.slice(id.length);
@@ -36,17 +38,10 @@ var c=document.getElementById('chat'),was=false;if(!c)return;
 new MutationObserver(function(){var on=c.classList.contains('on');if(was&&!on)window.parent.postMessage({type:'hub-chat-closed'},location.origin);was=on;})
 .observe(c,{attributes:true,attributeFilter:['class']});
 var n=0,t=setInterval(function(){var f=document.getElementById('fab');if((f&&!f.disabled)||++n>40){clearInterval(t);openChat();}},100);return;}
-/* The run page inside the hub: Human Action is a button here, not a menu page. */
-var top=document.querySelector('.top');if(!top)return;
-var b=document.createElement('button');b.type='button';b.className='cbtn';b.id='hubHuman';
-top.insertBefore(b,top.querySelector('a.cbtn'));
-var show=function(id){b.style.display=(id==='overview'||id==='human')?'':'none';b.dataset.to=id==='human'?'overview':'human';
-b.textContent=id==='human'?'← Back to the run':'Human Action';};
-b.addEventListener('click',function(){window.go(b.dataset.to);});
-var g=window.go;if(typeof g==='function')window.go=function(id){g(id);show(id);};
-show(decodeURIComponent(location.hash.slice(1).split(/[?&]/)[0])||'overview');});
+});
 }catch(e){}})();</script>
 <style id="in-hub-css">html.in-hub .appbar{display:none!important}html.in-hub #app{grid-template-rows:0 1fr}
+html.in-hub #hbox,html.in-hub #hq{display:none!important}
 html.hub-chat body>:not(#app){display:none!important}html.hub-chat #app>:not(#chat):not(#chScrim){display:none!important}
 html.hub-chat #app{opacity:1!important;animation:none!important;background:transparent}html.hub-chat,html.hub-chat body{background:transparent!important}</style>
 <!-- No webfont. The interface uses the face the operating system already
@@ -3102,12 +3097,12 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
         </div>
         <div class="sp"></div>
         <span class="po-msg" id="poRunMsg" aria-live="polite"></span>
-        <button class="btn" id="poRun" type="button" title="Opens eHub, reads the Shipments list and processes every Under Clearance record. Nothing to enter."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 5l12 7-12 7z"/></svg>Start PO Automation</button>
+        <button class="btn" id="poRun" type="button" title="Opens eHub, reads the Shipments list and processes every Under Clearance record. Nothing to enter."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 5l12 7-12 7z"/></svg>Start BOE Automation</button>
         <button class="btn ghost" id="poNew" type="button" title="Fallback: process one named eHub record">Manual: one record</button>
       </div>
       <form class="card po-form" id="poForm" hidden autocomplete="off">
         <div class="card-h"><div><div class="card-t">Manual fallback — one named record</div>
-          <div class="card-s" id="poFormS">Not the normal workflow: Start PO Automation finds the records itself. Use this only to re-run one record you name. ATA finds it in eHub, checks it is Under Clearance, opens Manage, takes the “Bill Entry” document, validates it and fills the approved template. The supplier invoice No. (G4) is read from the Bill of Entry only.</div></div></div>
+          <div class="card-s" id="poFormS">Not the normal workflow: Start BOE Automation finds the records itself. Use this only to re-run one record you name. ATA finds it in eHub, checks it is Under Clearance, opens Manage, takes the “Bill Entry” document, validates it and fills the approved template. The supplier invoice No. (G4) is read from the Bill of Entry only.</div></div></div>
         <div class="po-fg">
           <label><span>BOL / AWB in eHub <b>*</b></span><input class="in" name="reference" maxlength="60" placeholder="e.g. 176-88452310" required></label>
           <label><span>Supplier</span><input class="in" name="supplier" maxlength="60" id="poSupplier"></label>
@@ -3124,7 +3119,7 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
            The bar is the job's real step (from its state), not a timer. -->
       <div class="po-live" id="poLive" role="status" aria-live="polite" hidden>
         <div class="po-live-h"><span class="po-live-dot" aria-hidden="true"></span>
-          <b id="poLiveT">PO Automation is working</b><span class="po-live-e" id="poLiveE"></span></div>
+          <b id="poLiveT">BOE Automation is working</b><span class="po-live-e" id="poLiveE"></span></div>
         <div class="po-live-s" id="poLiveS"></div>
         <div class="po-bar" aria-hidden="true"><i id="poLiveBar"></i></div>
       </div>
@@ -4207,7 +4202,7 @@ const PAGES = [
   {g:'Operations'},
   {id:'overview',  t:'Overview',      i:'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 4v3h6V4z'},
   {id:'shipments', t:'Shipments',     i:'M3 7l9-4 9 4v10l-9 4-9-4V7zm9-4v18M3 7l9 4 9-4'},
-  {id:'po',        t:'PO Automation', i:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4'},
+  {id:'po',        t:'BOE Automation', i:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4'},
   /* Clearance is its own page (/clearance): the eHub shipment export. */
   {id:'clearance', t:'Clearance',     i:'M4 20V10M10 20V4M16 20v-7M22 20H2', href:'/clearance'},
   {g:'Intelligence'},
@@ -5802,8 +5797,8 @@ function paintPOLive(jobs){
   if (!live.length){ box.hidden = true; return; }
   const j = live[0], at = poAt(j.state);
   box.hidden = false;
-  put($('poLiveT'), live.length > 1 ? 'PO Automation is working · ' + live.length + ' jobs'
-                                    : 'PO Automation is working');
+  put($('poLiveT'), live.length > 1 ? 'BOE Automation is working · ' + live.length + ' jobs'
+                                    : 'BOE Automation is working');
   put($('poLiveS'), (j.reference || j.po_id) + ' · ' + (j.progress || (at ? at.label : j.label || j.state)) +
     (at ? ' · step ' + (at.i + 1) + ' of ' + (at.of + 1) : ''));
   $('poLiveBar').style.width = at ? Math.max(6, Math.round((at.i + 0.5) / (at.of + 1) * 100)) + '%' : '12%';
@@ -5827,7 +5822,7 @@ function paintPO(){
   $('poRun').disabled = !PF.can('po.process');
   $('poRun').title = PF.can('po.process')
     ? 'Opens eHub, reads the Shipments list and processes every Under Clearance record. Nothing to enter.'
-    : 'Your role (' + ((PF.user || {}).role || 'viewer') + ') cannot start PO Automation — an Admin or Operator can.';
+    : 'Your role (' + ((PF.user || {}).role || 'viewer') + ') cannot start BOE Automation — an Admin or Operator can.';
   if (c.defaults && c.defaults.supplier && !$('poSupplier').value) $('poSupplier').placeholder = c.defaults.supplier;
   const k = d.kpis || {};
   putHTML($('poKpis'), PO_KPIS.map((x) => '<div class="kpi" style="--c:' + (k[x[0]] ? x[2] : 'var(--line-hi)') +
@@ -5860,9 +5855,9 @@ function paintPO(){
     '<td><button class="po-open" type="button" data-po-open="' + esc(j.po_id) + '" aria-label="Open job ' + esc(j.reference) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></td></tr>').join(''));
   putHTML($('poEmpty'), jobs.length ? '' : (PF.can('po.process')
-    ? '<div class="empty"><h3>No PO job yet</h3><p>Press Start PO Automation. ATA opens eHub, finds every Under Clearance ' +
+    ? '<div class="empty"><h3>No PO job yet</h3><p>Press Start BOE Automation. ATA opens eHub, finds every Under Clearance ' +
       'record, takes its Bill of Entry and fills the Duty Payment Request — nothing to enter.</p>' +
-      '<button class="btn po-run-big" type="button" data-po-run>' + PO_RUN_ICON + 'Start PO Automation</button></div>'
+      '<button class="btn po-run-big" type="button" data-po-run>' + PO_RUN_ICON + 'Start BOE Automation</button></div>'
     : empty('No PO job yet', 'Jobs started by an operator appear here.')));
   paintPOAtlas();
   if (PO.open) loadPODetail(false);
@@ -6137,7 +6132,7 @@ function loadPORun(){
     const last = d.last ? 'Last run ' + (d.last.at || '').replace('T', ' ').slice(0, 16) + ': ' + d.last.rows + ' eHub row(s) read, ' +
       (c.ELIGIBLE || 0) + ' Under Clearance processed' : '';
     // Nothing newer to say: the message from the click stays.
-    if (d.running) put(m, 'PO Automation is running — reading eHub…');
+    if (d.running) put(m, 'BOE Automation is running — reading eHub…');
     else if (last) put(m, last);
   }).catch(() => {});
 }
@@ -6146,7 +6141,7 @@ $('poForm').addEventListener('submit', (e) => {
   const f = $('poForm'), body = {};
   ['reference','supplier','branch','charge_to','priority','reference_note'].forEach((k) => {
     const v = (f[k].value || '').trim(); if (v) body[k] = v; });
-  if (!body.reference){ const m0 = $('poMsg'); m0.className = 'po-msg bad'; put(m0, 'Name the BOL / AWB — or use Start PO Automation, which finds the records itself.'); return; }
+  if (!body.reference){ const m0 = $('poMsg'); m0.className = 'po-msg bad'; put(m0, 'Name the BOL / AWB — or use Start BOE Automation, which finds the records itself.'); return; }
   const m = $('poMsg'); m.className = 'po-msg'; put(m, 'Starting…');
   fetch('/api/po', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
     .then((r) => r.json().then((x) => [r.status, x])).then(([st, x]) => {
@@ -7728,7 +7723,7 @@ document.addEventListener('click', (e) => {
     const btn = $('chCtx');
     let k = '', v = '', open = null;
     const cur = S && S.current && S.current.shipment;
-    if (activePage === 'po'){ k = 'PO'; v = PO.open || 'PO Automation'; open = () => go('po'); }
+    if (activePage === 'po'){ k = 'PO'; v = PO.open || 'BOE Automation'; open = () => go('po'); }
     else if (lastReference && (S && S.shipments || []).some((r) => r.reference === lastReference)){
       k = 'Shipment'; v = lastReference; open = () => runUi({type:'open', reference:lastReference});
     } else if (cur && cur.reference){

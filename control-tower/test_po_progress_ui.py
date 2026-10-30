@@ -80,7 +80,7 @@ try:
     page.wait_for_timeout(600)
     text = page.inner_text("#poLiveS")
     check("A running job shows the banner: the job and its real step",
-          page.inner_text("#poLiveT") == "PO Automation is working" and "TEST-K1" in text and
+          page.inner_text("#poLiveT") == "BOE Automation is working" and "TEST-K1" in text and
           "Reading the Bill of Entry" in text and "step 4 of 10" in text, text)
     w1 = page.evaluate("document.getElementById('poLiveBar').style.width")
     e1 = page.inner_text("#poLiveE")

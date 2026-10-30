@@ -1,7 +1,7 @@
 """
 The hub's own views (Shipment Tracking with one shipment's fields and their
 sources, To Do & Approvals), the existing pages inside it as they
-are (the run page with its Human Action button, BOE / PO, Clearance, ATLAS…)
+are (the run page, BOE, Clearance, ATLAS…), Human Actions on To Do with Open / Resume,
 and ATLAS's chat on every page. Read-only, real numbers, only for who may see
 them, and safe with hostile text in the records.
 
@@ -61,7 +61,9 @@ C.load = lambda: DATA
 STATE = {"run": {"run_id": "R-77", "status": "running", "dry_run": True},
          "shipments": [{"reference": "15711112222", "carrier": "DHL", "state": "updated", "provider_eta": "2026-10-01",
                         "provider_ata": "2026-10-03", "step": "Written and read back",
-                        "where": {"source": "DHL timeline", "last": {"date": "03/10/2026", "time": "09:10", "text": "Arrived at Cairo"}}}]}
+                        "where": {"source": "DHL timeline", "last": {"date": "03/10/2026", "time": "09:10", "text": "Arrived at Cairo"}}}],
+         "human_queue": [{"action_id": "HA-1", "run_id": "R-77", "reference": "15711112222", "carrier": "DHL",
+                          "status": "WAITING_FOR_HUMAN", "label": "Verification on the DHL page", "timeout_epoch": time.time() + 3600}]}
 
 print("\n1. ONE SHIPMENT: THE EXPORT'S ROW AND THE RUN'S RECORD, EACH FIELD WITH ITS SOURCE")
 s = H.shipment("157 1111-2222", STATE)
@@ -95,22 +97,29 @@ else:
 check("Not-connected modules stay 'not connected' (no view, no numbers)",
       all(m["status"] == "off" for m in H.MODULES if m["id"] in ("rates", "tender", "optimization"))
       and not any("V.{0} = {{".format(i) in js for i in ("rates", "tender", "optimization")))
-check("The views only read: no POST/PUT/DELETE anywhere in them", not re.search(r"method\s*:\s*['\"](POST|PUT|DELETE)", js) and "XMLHttpRequest" not in js)
+posts_js = re.findall(r'fetch\("([^"]+)", \{method: "(?:POST|PUT|DELETE)"', js)
+check("The views write nothing except the Human Action request the run page already sends (/api/human)",
+      posts_js == ["/api/human"] and len(re.findall(r"method\s*:\s*['\"](POST|PUT|DELETE)", js)) == 1 and "XMLHttpRequest" not in js, posts_js)
 EMB = {m["id"]: m.get("embed") for m in H.MODULES if m.get("embed")}
-check("Every existing page is in the hub, as it is: run, run shipments, BOE / PO, Clearance, Human Action, history, ATLAS, Access, Settings",
-      EMB == {"ata": "/#overview", "runs": "/#shipments", "po": "/#po", "clearance": "/clearance", "human": "/#human",
+check("Every existing page is in the hub, as it is: run, run shipments, BOE, Clearance, history, ATLAS, Access, Settings",
+      EMB == {"ata": "/#overview", "runs": "/#shipments", "po": "/#po", "clearance": "/clearance",
               "history": "/#analysis", "atlas": "/#atlas", "access": "/#access", "settings": "/#settings"}, EMB)
 check("The hub's own copies of those pages are gone (no second run page, no second document list)",
       "V.ata = {" not in js and "V.documents = {" not in js and "/api/control" not in js)
-check("The BOE page is named so it can be found", any(m["title"] == "BOE / PO Automation" for m in H.MODULES))
+check("The BOE page is called BOE Automation", any(m["id"] == "po" and m["title"] == "BOE Automation" for m in H.MODULES)
+      and "PO Automation" not in (HERE / "dashboard" / "static" / "index.html").read_text(encoding="utf-8"))
 NAV = [m["id"] for m in H.MODULES if m.get("nav", True)]
 check("Removed from the menu: Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History, Human Action, Master Data, Settings",
       not set(NAV) & {"documents", "carriers", "analytics", "reports", "optimization", "history", "human", "masterdata", "settings"}, NAV)
 check("...and their hub views are gone", not any("V.{0} = {{".format(i) in js for i in ("carriers", "analytics", "reports", "documents", "ata", "masterdata")))
 check("Settings and the theme are small icons in the top bar", 'id="setTop" aria-label="Settings"' in html and 'class="tb-th" role="group" aria-label="Theme"' in html
       and 'aria-label="Light theme"' in html and 'aria-label="Dark theme"' in html)
-check("Human Action is reached from the run page (its parent), not the menu",
-      next(m for m in H.MODULES if m["id"] == "human").get("parent") == "ata")
+check("No Human Action page in the hub: its tasks are on To Do", not any(m["id"] == "human" for m in H.MODULES)
+      and 'PAGE_OF = {overview: "ata", shipments: "runs", po: "po", human: "todo"' in js)
+from dashboard import todo as TD  # noqa: E402
+hum = [i for i in TD.build(lambda p_: True, STATE)["items"] if i["kind"] == "human_action"]
+check("A Human Action task carries what Open / Resume send (the run's own ids)",
+      hum and hum[0]["act"] == {"run_id": "R-77", "action_id": "HA-1", "status": "WAITING_FOR_HUMAN", "reference": "15711112222", "carrier": "DHL"}, hum)
 check("The page adds one script for them", html.count('<script src="/static/hub/views.js" defer></script>') == 1)
 check("Nothing from outside", not re.findall(r"https?://", js))
 
@@ -257,23 +266,30 @@ else:
         pg.evaluate("location.hash = '#po'"); pg.wait_for_timeout(3500)
         fr = pg.frame_locator("#embedF")
         src = pg.locator("#embedF").get_attribute("src") or ""
-        check("BOE / PO Automation opens the existing PO page inside the hub", pg.locator('[data-view="embed"]').is_visible()
+        check("BOE Automation opens the existing BOE page inside the hub", pg.locator('[data-view="embed"]').is_visible()
               and src.startswith("/?embed=1") and src.endswith("#po") and fr.locator('.page[data-p="po"].on').count() == 1, src)
         check("...only its brand bar is hidden; its own title and controls are there",
-              not fr.locator(".appbar").is_visible() and fr.locator("#pageTitle").inner_text().strip() == "PO Automation")
+              not fr.locator(".appbar").is_visible() and fr.locator("#pageTitle").inner_text().strip() == "BOE Automation")
         pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(1500)
         check("Moving between existing pages switches the page, not the frame", fr.locator('.page[data-p="overview"].on').count() == 1
               and (pg.locator("#embedF").get_attribute("src") or "").endswith("#po"))
-        hb = fr.locator("#hubHuman")
-        check("The run page has a Human Action button (inside the hub)", hb.is_visible() and hb.inner_text() == "Human Action")
-        hb.click(); pg.wait_for_timeout(1000)
-        check("...it opens the Human Action page, with a way back to the run",
-              fr.locator('.page[data-p="human"].on').count() == 1 and hb.inner_text().endswith("Back to the run"))
-        hb.click(); pg.wait_for_timeout(800)
-        check("...and back", fr.locator('.page[data-p="overview"].on').count() == 1)
-        pg.evaluate("location.hash = '#settings'"); pg.wait_for_timeout(1200)
-        check("The Human Action button is only on the run page (not on Settings, BOE…)", not fr.locator("#hubHuman").is_visible())
-        pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(1200)
+        check("No Human Action button is added to the run page, and its Human Action pop-up and queue are not shown in the hub",
+              fr.locator("#hubHuman").count() == 0 and "html.in-hub #hbox,html.in-hub #hq{display:none!important}" in
+              pg.frame(url=re.compile(r".*embed=1.*")).evaluate("document.getElementById('in-hub-css').textContent"))
+        # Human Actions on To Do: Open / Resume send the run page's own request
+        sent = []
+        pg.route("**/api/human", lambda route: (sent.append(route.request.post_data_json),
+                 route.fulfill(status=200, content_type="application/json", body=json.dumps({"accepted": True, "message": "Resume sent to the run."}))))
+        pg.evaluate("location.hash = '#todo'"); pg.wait_for_timeout(1500)
+        tb = pg.locator('#modBody [data-hop="resume"]')
+        check("To Do lists the Human Action with Open and Resume", tb.count() == 1 and pg.locator('#modBody [data-hop="open"]').count() == 1
+              and "DHL needs a person: 15711112222" in pg.locator("#modBody").inner_text())
+        tb.click(); pg.wait_for_timeout(1200)
+        check("...Resume sends the run page's own request (same run and action ids), and says what happened",
+              sent and sent[0]["op"] == "resume" and sent[0]["run_id"] == "R-77" and sent[0]["action_id"] == "HA-1" and sent[0]["client_id"]
+              and "Resume sent to the run." in pg.locator("#modBody").inner_text(), sent)
+        pg.unroute("**/api/human")
+        pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(1500)
         check("On an existing page the hub's own Ask ATLAS button steps aside (the page has its own)", pg.locator("#askFab").is_hidden())
         pg.locator("#askTop").click(); pg.wait_for_timeout(1500)
         check("...and the top bar's Ask ATLAS opens that page's chat", fr.locator("#chat.on").count() == 1)
@@ -293,7 +309,7 @@ else:
         alone = ctx.new_page(); alone.goto(BASE + "/#po"); alone.wait_for_timeout(2500)
         check("Opened directly, the existing page is exactly as before (brand bar, its own menu, no added button)",
               alone.locator(".appbar").is_visible() and not alone.evaluate("document.documentElement.classList.contains('in-hub')")
-              and alone.locator("#hubHuman").count() == 0)
+              and alone.locator("#hubHuman").count() == 0 and alone.locator("#pageTitle").count() == 1)
         alone.close()
         check("No page errors, nothing from outside, no write requests", not errors and not outside and not posts, (errors, outside, posts))
         br.close()

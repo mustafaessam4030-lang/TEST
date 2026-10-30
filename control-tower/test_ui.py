@@ -697,7 +697,7 @@ check("The brand folder says where the official logo goes",
       (HERE / "dashboard" / "static" / "brand" / "README.txt").exists())
 check("The sidebar has the destinations kept",
       all("t:'{0}'".format(t) in INDEX for t in (
-          "Overview", "Shipments", "PO Automation", "ATLAS", "Human Action", "Settings")))
+          "Overview", "Shipments", "BOE Automation", "ATLAS", "Human Action", "Settings")))
 check("Live Runs, Carriers and History are out of the navigation",
       not any("t:'{0}'".format(t) in INDEX for t in ("Live Runs", "Carriers", "History"))
       and "data-go=\"exceptions\"" not in INDEX.split('data-p="analysis"')[0])

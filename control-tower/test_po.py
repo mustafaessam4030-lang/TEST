@@ -1582,7 +1582,7 @@ ui.goto(DASH + "/")
 ui.wait_for_timeout(800)
 ui.evaluate("go('po')")
 ui.wait_for_selector("#poRows tr[data-po]", timeout=10000)
-check("PO Automation is in the navigation", ui.locator("[data-nav='po']").count() >= 1)
+check("BOE Automation is in the navigation", ui.locator("[data-nav='po']").count() >= 1)
 kpis = ui.inner_text("#poKpis")
 check("The KPI strip shows the six counts", all(k in kpis for k in (
     "Pending", "Processing", "Validation required", "Generated", "Sent", "Failed")), kpis)
@@ -2266,11 +2266,11 @@ decided = json.loads(sweeps[0].read_text(encoding="utf-8")) if sweeps else {}
 check("...every row of the list is decided and kept as evidence (sweeps/)",
       decided.get("counts", {}).get("ELIGIBLE") == 2 and
       decided.get("counts", {}).get("SKIPPED_NOT_UNDER_CLEARANCE"), decided.get("counts"))
-check("The PO page's primary action is Start PO Automation; the one-record form is a labelled "
+check("The PO page's primary action is Start BOE Automation; the one-record form is a labelled "
       "fallback with no invoice field",
-      'id="poRun"' in UIH2 and "Start PO Automation" in UIH2 and "Manual fallback" in UIH2
+      'id="poRun"' in UIH2 and "Start BOE Automation" in UIH2 and "Manual fallback" in UIH2
       and 'name="invoice_no"' not in UIH2 and 'id="poNext"' not in UIH2)
-check("The empty queue carries its own Start PO Automation button, and a role that may not "
+check("The empty queue carries its own Start BOE Automation button, and a role that may not "
       "start it sees the button disabled with why — never no button",
       "data-po-run" in UIH2 and "$('poRun').disabled = !PF.can('po.process')" in UIH2
       and "$('poRun').hidden" not in UIH2 and "Press Process PO" not in UIH2)

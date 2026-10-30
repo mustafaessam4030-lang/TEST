@@ -75,6 +75,7 @@
 .hv-steps i{width:16px;height:6px;border-radius:2px;background:var(--hub-line)}
 .hv-steps i.y{background:var(--hub-green)}.hv-steps i.n{background:var(--hub-red)}
 .hv-links{display:flex;gap:8px;flex-wrap:wrap}
+.hv-list li.hv-note{padding:0 18px 12px 39px;border-top:0}
 .hv .hub-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}
 .hv .hub-seg button{white-space:nowrap;flex:none}
 @media (prefers-reduced-motion:reduce){.hv-drawer{transition:none}}`;
@@ -100,8 +101,15 @@
   const head = (title, sub, right) => `<div class="hv-head"><div><h2>${esc(title)}</h2>${sub ? `<p>${sub}</p>` : ""}</div><span class="sp"></span>${right || ""}</div>`;
   const tile = (k, v, d) => `<div class="hv-tile"><div class="k">${esc(k)}</div><div class="v">${v}</div>${d ? `<div class="d">${d}</div>` : ""}</div>`;
   const pill = (href, text, primary) => `<a class="hub-pill${primary ? " primary" : ""}" href="${esc(href)}">${esc(text)}</a>`;
+  // The same id the run page uses for Human Action requests in this tab.
+  function humanClient() {
+    const make = () => Array.from(crypto.getRandomValues(new Uint8Array(8))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    try { let id = sessionStorage.getItem("ct_human_client"); if (!id) { id = make(); sessionStorage.setItem("ct_human_client", id); } return id; }
+    catch (e) { return make(); }
+  }
   // A link to an existing page ("/#po?po=…", "/clearance#bu=EG") opens that page inside the hub.
-  const PAGE_OF = {overview: "ata", shipments: "runs", po: "po", human: "human", atlas: "atlas", settings: "settings",
+  // Human Action has no page in the hub: its tasks, with Open and Resume, are on To Do.
+  const PAGE_OF = {overview: "ata", shipments: "runs", po: "po", human: "todo", atlas: "atlas", settings: "settings",
                    access: "access", analysis: "history", exceptions: "history", logs: "history"};
   function hubHref(h) {
     const u = String(h || "");
@@ -220,11 +228,12 @@
     title: "To Do & Approvals",
     async render(el) {
       stop();
-      el.innerHTML = head("To Do & Approvals", "What needs a person across the platform: Human Actions, run failures, PO approvals, clearance follow-ups. Highest priority first.") + `<div id="hvTodo">${empty("Loading…")}</div>`;
+      el.innerHTML = head("To Do & Approvals", "What needs a person across the platform: Human Actions, run failures, BOE approvals, clearance follow-ups. Highest priority first.") + `<div id="hvTodo">${empty("Loading…")}</div>`;
       const box = el.querySelector("#hvTodo");
-      const r = await get("/api/todo");
+      let r = await get("/api/todo");
       if (!r.data) { box.innerHTML = empty("The list could not be read"); return; }
-      const t = r.data, LBL = {overdue: "Overdue", urgent: "Urgent", pending_approval: "Waiting for approval", open: "Open", completed: "Completed (last 7 days)"};
+      let t = r.data;
+      const LBL = {overdue: "Overdue", urgent: "Urgent", pending_approval: "Waiting for approval", open: "Open", completed: "Completed (last 7 days)"};
       let filter = "";
       function draw() {
         const X = (t.items || []).filter((i) => !filter || i.state === filter);
@@ -233,8 +242,32 @@
             ${[["", "All"]].concat(Object.entries(LBL)).map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${esc(l.split(" (")[0])}</button>`).join("")}</div></div>
           ${X.length ? `<ul class="hv-list">${X.map((i) => `<li><span class="hv-dot ${i.state === "completed" ? "green" : esc(i.level)}"></span><div class="hv-li-b"><b>${esc(i.title)}</b>
             <span>${esc(i.detail || "")}</span><span>${esc(LBL[i.state] || i.state)} · ${esc(i.source || "")}${i.due ? " · due " + dmy(i.due) : ""}</span></div>
-            ${i.href ? `<a class="hub-pill" href="${esc(hubHref(i.href))}">Open</a>` : ""}</li>`).join("")}</ul>` : empty("Nothing here", filter ? "No task in this state." : "Nothing needs a person right now.")}</div>`;
+            ${i.act && i.act.action_id ? `<span class="hv-links"><button class="hub-pill primary" type="button" data-hop="open" data-i="${esc(i.id)}">Open</button>
+              <button class="hub-pill" type="button" data-hop="resume" data-i="${esc(i.id)}">Resume</button></span>`
+              : i.href ? `<a class="hub-pill" href="${esc(hubHref(i.href))}">Open</a>` : ""}</li>
+            ${i.act && NOTE[i.id] ? `<li class="hv-note" role="status"><span class="hv-src">${esc(NOTE[i.id])}</span></li>` : ""}`).join("")}</ul>` : empty("Nothing here", filter ? "No task in this state." : "Nothing needs a person right now.")}</div>`;
         box.querySelectorAll("[data-f]").forEach((b) => { b.onclick = () => { filter = b.dataset.f; draw(); }; });
+        box.querySelectorAll("[data-hop]").forEach((b) => { b.onclick = () => human(b.dataset.hop, (t.items || []).find((x) => x.id === b.dataset.i)); });
+      }
+      // A Human Action, from the list: the same scoped request the run page sends (/api/human, open or
+      // resume); the server and the run check it. Nothing is typed into the carrier page.
+      const NOTE = {};
+      async function human(op, item) {
+        if (!item || !item.act) return;
+        NOTE[item.id] = op === "open" ? "Asking the run to bring the carrier page to the front…" : "Sending Resume…"; draw();
+        let res = null;
+        try {
+          const x = await fetch("/api/human", {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({op, run_id: item.act.run_id, action_id: item.act.action_id, client_id: humanClient()})});
+          res = await x.json().catch(() => null);
+          if (x.status === 403) res = {message: "Your access level cannot act on Human Actions."};
+        } catch (e) { res = {message: "Could not reach the server."}; }
+        NOTE[item.id] = (res && res.message) || "";
+        // A person not at the tower PC sees the carrier page in the run page's own live viewer.
+        if (res && res.accepted && op === "open" && (res.live || !/^(localhost|127\.)/.test(location.hostname)) && window.HubCtx && window.HubCtx.viewer)
+          window.HubCtx.viewer(item.act.action_id);
+        r = await get("/api/todo"); if (r.data) t = r.data;
+        draw();
       }
       draw();
     }
