@@ -11,6 +11,7 @@ person proposes it, and a proposal is knowledge only after a reviewer
 approves it in the knowledge governance flow (kb_govern.py). Lessons come
 only from hypotheses the records supported, with their evidence ids.
 """
+import json
 import time
 import uuid
 
@@ -44,11 +45,22 @@ def record(m, rep):
 
 
 def similar(template, scope, exclude=None, limit=3):
+    """Earlier outcomes about the same shipments / BUs. A BU-limited scope sees only missions made
+    inside its own BUs (the same rule as the mission list)."""
     refs, bus = set((scope or {}).get("refs") or []), set((scope or {}).get("bus") or [])
+    allowed = (scope or {}).get("allowed")
     out = []
-    for r in db.many("SELECT * FROM memory WHERE kind='outcome' ORDER BY created_at DESC LIMIT 400"):
+    for r in db.many("SELECT memory.*, missions.scope AS mscope FROM memory JOIN missions ON missions.id = memory.mission_id "
+                     "WHERE memory.kind='outcome' ORDER BY memory.created_at DESC LIMIT 400"):
         if r["mission_id"] == exclude:
             continue
+        if allowed is not None:
+            try:
+                theirs = (json.loads(r.get("mscope") or "{}") or {}).get("allowed")
+            except ValueError:
+                theirs = None
+            if theirs is None or not set(theirs) <= set(allowed):
+                continue
         k = r.get("keys") or {}
         overlap = (refs & set(k.get("refs") or [])) or (not refs and bus & set(k.get("bus") or []))
         if overlap or (k.get("template") == template and (bus & set(k.get("bus") or []) or refs & set(k.get("refs") or []))):

@@ -256,20 +256,25 @@ def _clearance_items(today, now):
     return out
 
 
-def _mission_items():
+def _mission_items(allowed=None):
     """ATLAS mission actions waiting for a person: an approval (seen by whoever holds that action's own
-    permission) or a task a mission put in To Do. Read from the missions store; never raises."""
+    permission) or a task a mission put in To Do. A BU-limited person sees only missions made inside their
+    BUs (the mission list's rule). Read from the missions store; never raises."""
     if str(os.environ.get("ATLAS_MISSIONS") or "1").strip().lower() in ("0", "off", "no", "false"):
         return []
     try:
         from intelligence.missions import actions as MA, db as MDB
         rows = MA.todo_items()
-        titles = {m["id"]: m for m in MDB.many("SELECT id, title, level FROM missions")}
+        titles = {m["id"]: m for m in MDB.many("SELECT id, title, level, scope FROM missions")}
     except Exception:
         return []
     out = []
     for a in rows:
         m = titles.get(a["mission_id"]) or {}
+        if allowed is not None:
+            theirs = (m.get("scope") or {}).get("allowed")
+            if theirs is None or not set(theirs) <= set(allowed):
+                continue
         href = "/hub#missions?id={0}".format(a["mission_id"])
         if a["status"] == "proposed":
             critical = m.get("level") == "CRITICAL_INCIDENT"
@@ -283,7 +288,7 @@ def _mission_items():
     return out
 
 
-def build(can, state=None, today=None, now=None):
+def build(can, state=None, today=None, now=None, allowed=None):
     now = now or _dt.datetime.now()
     today = today or now.date()
     now_epoch = time.mktime(now.timetuple())
@@ -295,7 +300,7 @@ def build(can, state=None, today=None, now=None):
     if can("clearance.view"):
         items += _clearance_items(today, now)
     if can("missions.view"):
-        items += _mission_items()
+        items += _mission_items(allowed)
     items = [dict((k, v) for k, v in i.items() if k != "permission") for i in items if can(i["permission"])]
     # Outstanding: highest priority first, then the earliest due date. Completed last, newest first.
     todo = sorted((i for i in items if i["state"] != "completed"),

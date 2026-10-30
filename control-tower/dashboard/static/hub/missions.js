@@ -282,6 +282,8 @@
     if (!r) return "";
     const acts = r.actions || [];
     const inc = r.incident;
+    const byTitle = Object.fromEntries((m.actions || []).map((x) => [x.title, x]));
+    const ran = (m.actions || []).some((x) => x.executed_at);
     return `<section class="hv-card ms-card" aria-labelledby="msRT"><h3 id="msRT">Report</h3>
       <div class="ms-grade"><span class="ms-note">Confidence</span><b class="${esc(r.grade)}">${esc(r.grade)}</b><span class="ms-note">${esc((r.grade_reasons || []).join("; "))}</span></div>
       <p style="font-size:15px;line-height:1.55;margin:12px 0">${esc(r.narrative)}</p>
@@ -289,8 +291,9 @@
       ${r.review && (r.review.reviewed_by || r.review.note) ? `<p class="ms-note">Independent review: ${esc(r.review.reviewed_by ? r.review.reviewed_by + (r.review.agree ? " agrees." : " raised concerns: " + (r.review.concerns || []).join("; ")) : r.review.note)}</p>` : ""}
       ${(r.contradictions || []).length || (r.mismatches || []).length ? `<h3 style="margin-top:16px">Conflicts</h3><ul>${(r.contradictions || []).concat(r.mismatches || []).map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
       ${inc ? `<h3 style="margin-top:16px">Incident plan</h3><ul><li><b>Recommended:</b> ${esc(inc.recommended)}</li>${(inc.verification_criteria || []).map((c) => `<li>Verify: ${esc(c)}</li>`).join("")}<li>Rollback: ${esc(inc.rollback)}</li></ul>` : ""}
-      <h3 style="margin-top:16px">Next steps <span class="ms-note">none executed</span></h3>
-      <ul class="ms-acts">${acts.map((a) => `<li><a href="${esc(a.href)}"><span class="ms-cls ${esc(a.class)}">${esc(a.class.replace("_", " "))}</span><span>${esc(a.title)}<br><small>${esc(a.why)}</small></span><small>${esc(a.status)}</small></a></li>`).join("") || "<li class='ms-note'>None.</li>"}</ul>
+      <h3 style="margin-top:16px">Next steps <span class="ms-note">${ran ? "approved steps ran through their own engines; see Approvals and outcomes" : "none executed"}</span></h3>
+      <ul class="ms-acts">${acts.map((a) => { const card = byTitle[a.title]; const st = card ? (ASTATUS[card.status] || card.status) : a.status;
+        return `<li><a href="${esc(a.href)}"><span class="ms-cls ${esc(a.class)}">${esc(a.class.replace("_", " "))}</span><span>${esc(a.title)}<br><small>${esc(a.why)}</small></span><small class="ms-out ${esc(card ? card.status : "")}">${esc(st)}</small></a></li>`; }).join("") || "<li class='ms-note'>None.</li>"}</ul>
       <ul class="ms-note" style="margin-top:12px">${(r.limits || []).map((l) => `<li>${esc(l)}</li>`).join("")}</ul></section>`;
   }
   function actionsCard(m) {
@@ -429,7 +432,12 @@
         source = new EventSource("/api/missions/" + encodeURIComponent(id) + "/stream");
         let seen = null;
         source.addEventListener("mission", (ev) => { let v = null; try { v = JSON.parse(ev.data).version; } catch (e) { /* ignore */ } if (v !== seen) { seen = v; draw(); } });
-        source.onerror = () => { if (source) { source.close(); source = null; } follow.failed = true; if (current === id) timer = setTimeout(draw, 1500); };
+        source.onerror = () => {
+          if (source) { source.close(); source = null; }
+          // a stream that ended (mission finished, or its 10-minute cap) or failed: poll from here on
+          follow.failed = true;
+          if (current === id && !timer) timer = setTimeout(() => { timer = null; draw(); }, 1500);
+        };
         return;
       }
       timer = setTimeout(() => { timer = null; draw(); }, 1500);

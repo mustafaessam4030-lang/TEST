@@ -553,7 +553,7 @@ switching it off (`ATLAS_MISSIONS*` env flags) or reverting its commit.
 
 ## 21. Implementation status (30 Oct 2026)
 
-Built and tested with stand-ins only (`test_missions_agentic.py`, 82 checks; `test_missions.py`, 53).
+Built and tested with stand-ins only (`test_missions_agentic.py`, 90 checks; `test_missions.py`, 53). An independent review found 5 blockers (a double-execution race, a BU leak in To Do, an escalation on another BU's row when an AWB repeats, the live stream never closing, the polling fallback stopping) and several warnings; all are fixed and each has a test.
 Nothing live was touched: no Snowflake setting, no model enabled, no paid call, no Hub write, no email.
 
 | Stage | Status | Where | Switch |

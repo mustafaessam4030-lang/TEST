@@ -358,27 +358,28 @@ def _run(m, t):
     try:
         ctx = Ctx(m, t)
         res = fn(ctx) or {}
-        cur = db.one("SELECT status FROM tasks WHERE mission_id=? AND id=?", m["id"], t["id"])
-        if not cur or cur["status"] != "running":
-            db.event(m["id"], "challenged", "{0} finished after its deadline; its result was discarded".format(SPECIALISTS[t["specialist"]]["title"]))
-            return
-        n = _store_evidence(m, t, res.get("evidence"), res.get("model"))
-        if t["specialist"] == "hypotheses":
-            _replan(m, res.get("out") or {})      # before "done": verification cannot start until the plan is settled
-        db.update("tasks", {"mission_id": m["id"], "id": t["id"]}, status="done", ended_at=time.time(),
-                  summary=res.get("summary") or "", output={"out": res.get("out") or {}, "model": res.get("model")},
-                  model=res.get("model"))
+        # One step under the store's lock: still running (the watchdog may have failed it), its evidence,
+        # replanning (before "done": verification cannot start until the plan is settled), then done.
+        with db._lock:
+            cur = db.one("SELECT status FROM tasks WHERE mission_id=? AND id=?", m["id"], t["id"])
+            if not cur or cur["status"] != "running":
+                db.event(m["id"], "challenged", "{0} finished after its deadline; its result was discarded".format(SPECIALISTS[t["specialist"]]["title"]))
+                return
+            n = _store_evidence(m, t, res.get("evidence"), res.get("model"))
+            if t["specialist"] == "hypotheses":
+                _replan(m, res.get("out") or {})
+            db.update("tasks", {"mission_id": m["id"], "id": t["id"]}, status="done", ended_at=time.time(),
+                      summary=res.get("summary") or "", output={"out": res.get("out") or {}, "model": res.get("model")},
+                      model=res.get("model"))
         db.event(m["id"], "task", "{0}: {1}{2}".format(SPECIALISTS[t["specialist"]]["title"], res.get("summary") or "done",
                                                       " · {0} finding(s)".format(n) if n else ""))
         if t["specialist"] == "risk":
             _maybe_escalate(m, res.get("out") or {})
     except Exception as error:
-        cur = db.one("SELECT status FROM tasks WHERE mission_id=? AND id=?", m["id"], t["id"])
-        if not cur or cur["status"] != "running":
-            return
         retry = (t.get("attempts") or 1) < 2 and t.get("idempotent")
-        db.update("tasks", {"mission_id": m["id"], "id": t["id"]}, status="queued" if retry else "failed",
-                  ended_at=time.time(), error=type(error).__name__ + ": " + str(error)[:200])
+        if not db.transition("tasks", {"mission_id": m["id"], "id": t["id"]}, "running", status="queued" if retry else "failed",
+                             ended_at=time.time(), error=type(error).__name__ + ": " + str(error)[:200]):
+            return
         db.event(m["id"], "task_failed", "{0}: {1}{2}".format(SPECIALISTS[t["specialist"]]["title"], type(error).__name__,
                                                               " — retrying once" if retry else " — the mission continues without it"))
     _finish_if_done(m["id"])
@@ -606,6 +607,14 @@ def replay(mid, by):
     n = db.one("SELECT COUNT(*) AS n FROM missions WHERE parent_id=?", mid)["n"]
     keep = {k: m.get(k) for k in ("title", "objective", "question", "level", "severity", "template", "scope", "profile", "plan",
                                   "plan_hash", "budget_tokens", "reasons", "drill", "autonomy_level", "max_calls_per_task")}
+    if (TEMPLATES.get(m["template"]) or {}).get("fanout"):       # today's shipments, not the original list
+        from dashboard import clearance as C
+        data = _export() or {}
+        scope = dict(m.get("scope") or {})
+        rows = [r for r in (C.records(data) if data else []) if scope.get("allowed") is None or r.get("bu") in scope["allowed"]]
+        scope["items"] = _fan_items(scope, rows)
+        keep["scope"] = scope
+        keep["plan"] = dict(m.get("plan") or {}, items=scope["items"])
     db.insert("missions", id=nid, fingerprint="{0}:replay:{1}".format(m["fingerprint"], n + 1), status="proposed",
               phase="awaiting approval", priority=m.get("priority") or 1, created_at=time.time(), created_by=str(by or "")[:80],
               origin="replay", parent_id=mid, **keep)

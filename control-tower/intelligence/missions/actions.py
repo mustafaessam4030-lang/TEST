@@ -18,8 +18,8 @@ Lifecycle of an action:
 Success is never reported from the engine's "accepted": a re-run counts only
 when the run's bridge event for that reference, recorded after the request,
 is a verified success (events.verified_success: result SUCCESS and every Hub
-write read back and matched). An escalation counts when the escalation is in
-the Clearance store. A To Do task counts when To Do lists it. A non-idempotent
+write read back and matched). An escalation counts when the escalation (same shipment
+and BU) is in the Clearance store. A To Do task counts when a person marks it done. A non-idempotent
 action is never retried: its idempotency key is unique, and after a restart
 its outcome is read, not re-run.
 
@@ -29,6 +29,7 @@ cards that say what would happen and who may approve them, as before.
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 
@@ -40,10 +41,25 @@ KINDS = {
     "escalate":    {"tool": "escalate", "permission": "clearance.escalate", "class": "APPROVAL_REQUIRED", "level": 3,
                     "criterion": "an open escalation for this shipment is on the Clearance page"},
     "queue_human": {"tool": "queue_human", "permission": "missions.run", "class": "PREPARATION", "level": 2,
-                    "criterion": "the task is listed in To Do"},
+                    "criterion": "a person marks the To Do task done"},
 }
 OUTCOME_WAIT_S = float(os.environ.get("ATLAS_MISSION_OUTCOME_WAIT_S") or 6 * 3600)
 LIVE = ("proposed", "executing", "awaiting_outcome")
+AUDIT = {"fn": None}       # the server hands in its audit log: fn(action, result, target_id, metadata)
+
+
+def _audit(action, result, a, **meta):
+    fn = AUDIT["fn"]
+    if fn:
+        try:
+            fn(action, result, a["id"], dict(meta, mission=a["mission_id"], kind=a["kind"]))
+        except Exception:
+            pass
+
+
+def _target(kind, args):
+    """What the action acts on: the same shipment (and BU) is never acted on by two missions at once."""
+    return "{0}:{1}:{2}".format(kind, tools._norm(args.get("reference") or args.get("awb")), args.get("bu") or "")
 
 
 def enabled():
@@ -57,12 +73,11 @@ def _key(mission_id, kind, args):
 def _add(mission, kind, title, why, args, href=None, origin="records"):
     k = KINDS[kind]
     key = _key(mission["id"], kind, args)
-    if db.one("SELECT id FROM actions WHERE idempotency_key=?", key):
-        return None
     aid = uuid.uuid4().hex[:12]
-    db.insert("actions", id=aid, mission_id=mission["id"], kind=kind, **{"class": k["class"]}, title=title[:200], why=why[:400],
-              args=dict(args, origin=origin), permission=k["permission"], idempotency_key=key, status="proposed",
-              proposed_at=time.time(), criterion=k["criterion"], href=href, outcome="pending")
+    if not db.insert_new("actions", id=aid, mission_id=mission["id"], kind=kind, **{"class": k["class"]}, title=title[:200], why=why[:400],
+                         args=dict(args, origin=origin), permission=k["permission"], idempotency_key=key, status="proposed",
+                         proposed_at=time.time(), criterion=k["criterion"], href=href, outcome="pending"):
+        return None                                    # the same card exists already: never replaced
     db.event(mission["id"], "action_proposed", "Action proposed ({0}): {1}".format(k["permission"], title))
     return aid
 
@@ -108,34 +123,49 @@ def decide(action_id, approve, by, can, policy=None):
     if not can(a["permission"]):
         return False, "Approving this needs {0}.".format(a["permission"]), a
     if not approve:
-        db.update("actions", {"id": action_id}, status="rejected", decided_by=str(by)[:80], decided_at=time.time(), outcome="rejected")
+        if not db.transition("actions", {"id": action_id}, "proposed", status="rejected", decided_by=str(by)[:80],
+                             decided_at=time.time(), outcome="rejected"):
+            return False, "Someone else decided this action first.", db.one("SELECT * FROM actions WHERE id=?", action_id)
         db.event(a["mission_id"], "action_rejected", "Rejected by {0}: {1}".format(by, a["title"]))
         _roll_up(a["mission_id"])
         return True, "Rejected. Nothing was done.", db.one("SELECT * FROM actions WHERE id=?", action_id)
     if not enabled():
         return False, ("Mission actions are switched off on this server (ATLAS_MISSION_ACTIONS=1 allows them). "
                        "You can do this step yourself: {0}".format(a["title"])), a
-    db.update("actions", {"id": action_id}, status="executing", decided_by=str(by)[:80], decided_at=time.time(),
-              policy=policy, executed_at=time.time())
+    target = _target(a["kind"], a.get("args") or {})
+    with db._lock:
+        busy = [x for x in listing(status=("executing", "awaiting_outcome")) if x["id"] != action_id and x["kind"] != "queue_human"
+                and _target(x["kind"], x.get("args") or {}) == target]
+        if busy:
+            return False, "The same step is already running from mission {0}; its outcome is awaited.".format(busy[0]["mission_id"]), a
+        # Compare-and-set: of two approvals at the same moment, exactly one executes.
+        if not db.transition("actions", {"id": action_id}, "proposed", status="executing", decided_by=str(by)[:80],
+                             decided_at=time.time(), policy=policy, executed_at=time.time()):
+            return False, "Someone else decided this action first.", db.one("SELECT * FROM actions WHERE id=?", action_id)
+    if policy:
+        _audit("MISSION_ACTION_APPROVED", "SUCCESS", a, policy=policy, by=str(by)[:80])
     db.event(a["mission_id"], "action_approved", "Approved by {0}{1}: {2}".format(by, " (policy {0})".format(policy) if policy else "", a["title"]))
     args = a.get("args") or {}
     try:
         if a["kind"] == "reprocess":
             ok, message, ref = tools.reprocess(args.get("reference"), by)
         elif a["kind"] == "escalate":
-            ok, message, ref = tools.escalate(args.get("awb"), args.get("reason") or a["why"], by)
+            ok, message, ref = tools.escalate(args.get("awb"), args.get("reason") or a["why"], by, bu=args.get("bu"))
         else:
             ok, message, ref = tools.queue_human(a["title"], by)
     except Exception as error:
         ok, message, ref = False, "{0}: {1}".format(type(error).__name__, str(error)[:160]), None
     if not ok:
         db.update("actions", {"id": action_id}, status="failed", outcome="failed", outcome_detail={"message": message}, verified_at=time.time())
+        if policy:
+            _audit("MISSION_ACTION_FAILED", "FAILED", a, policy=policy)
         db.event(a["mission_id"], "action_failed", "The engine refused it: {0}".format(message))
         _roll_up(a["mission_id"])
         return False, message, db.one("SELECT * FROM actions WHERE id=?", action_id)
     db.update("actions", {"id": action_id}, status="awaiting_outcome", engine_ref=ref, outcome_detail={"message": message})
-    db.event(a["mission_id"], "action_executed", "{0} accepted it; waiting for the read-back".format(
-        {"reprocess": "The ATA run", "escalate": "The Clearance page", "queue_human": "To Do"}[a["kind"]]))
+    db.event(a["mission_id"], "action_executed", "{0}".format(
+        {"reprocess": "The ATA run accepted it; waiting for the read-back", "escalate": "The Clearance page accepted it; reading it back",
+         "queue_human": "Added to To Do; done when a person marks it done"}[a["kind"]]))
     verify_one(db.one("SELECT * FROM actions WHERE id=?", action_id))
     _roll_up(a["mission_id"])
     return True, message, db.one("SELECT * FROM actions WHERE id=?", action_id)
@@ -160,17 +190,21 @@ def verify_one(a, now=None):
         elif now - (a.get("executed_at") or now) > OUTCOME_WAIT_S:
             outcome, detail = "not_verified", {"message": "no result from the run within {0:.0f} hours".format(OUTCOME_WAIT_S / 3600)}
     elif a["kind"] == "escalate":
-        esc = [e for e in tools.escalation_list() if e.get("id") == a.get("engine_ref") or
-               (tools._norm(e.get("awb")) == tools._norm(args.get("awb")) and e.get("status") == "open")]
+        # the escalation this action opened (its id), or an open one for the same shipment AND BU
+        esc = [e for e in tools.escalation_list() if (a.get("engine_ref") and e.get("id") == a.get("engine_ref")) or
+               (tools._norm(e.get("awb")) == tools._norm(args.get("awb")) and e.get("status") == "open"
+                and (not args.get("bu") or e.get("bu") == args.get("bu")))]
         outcome = "verified" if esc else "not_verified"
         detail = {"escalation": (esc[0].get("id") if esc else None)}
     else:
-        outcome = "verified" if any(x["id"] == a["id"] for x in todo_items()) else "not_verified"
-        detail = {"todo": outcome == "verified"}
+        return None                     # a To Do task is done only when a person marks it done (complete())
     if outcome is None:
         return None
-    db.update("actions", {"id": a["id"]}, status=outcome, outcome=outcome, outcome_detail=dict(a.get("outcome_detail") or {}, **detail),
-              verified_at=now)
+    # Compare-and-set: of two verifiers (a request and the worker), one records the outcome.
+    if not db.transition("actions", {"id": a["id"]}, "awaiting_outcome", status=outcome, outcome=outcome,
+                         outcome_detail=dict(a.get("outcome_detail") or {}, **detail), verified_at=now):
+        return None
+    _audit("MISSION_ACTION_VERIFIED" if outcome == "verified" else "MISSION_ACTION_NOT_VERIFIED", "SUCCESS" if outcome == "verified" else "FAILED", a)
     db.event(a["mission_id"], "action_" + outcome, "{0}: {1}".format(a["title"], "confirmed by read-back" if outcome == "verified"
                                                                       else "NOT confirmed ({0})".format(detail.get("message") or detail.get("result") or "no record")))
     _roll_up(a["mission_id"])
@@ -222,17 +256,20 @@ def recover():
 
 def todo_items():
     """To Do source: actions waiting for a person's approval, and tasks a mission put in To Do."""
-    return [a for a in listing(status=("proposed", "awaiting_outcome", "verified"))
+    return [a for a in listing(status=("proposed", "awaiting_outcome"))
             if a["status"] == "proposed" or a["kind"] == "queue_human"]
 
 
 def complete(action_id, by):
     """A person marks a To Do task from a mission as done."""
     a = db.one("SELECT * FROM actions WHERE id=?", action_id)
-    if not a or a["kind"] != "queue_human" or a["status"] != "verified":
+    if not a or a["kind"] != "queue_human" or a["status"] != "awaiting_outcome":
         return False, "Nothing to mark done."
-    db.update("actions", {"id": action_id}, status="completed", outcome_detail=dict(a.get("outcome_detail") or {}, done_by=str(by)[:80], done_at=time.time()))
+    if not db.transition("actions", {"id": action_id}, "awaiting_outcome", status="completed", outcome="completed", verified_at=time.time(),
+                         outcome_detail=dict(a.get("outcome_detail") or {}, done_by=str(by)[:80], done_at=time.time())):
+        return False, "Already marked done."
     db.event(a["mission_id"], "action_done", "Marked done by {0}: {1}".format(by, a["title"]))
+    _audit("MISSION_ACTION_DONE", "SUCCESS", a, by=str(by)[:80])
     _roll_up(a["mission_id"])
     return True, "Marked done."
 
@@ -254,23 +291,33 @@ def policies():
             raw = json.load(fh)
     except (OSError, ValueError):
         return [], []
+    from datetime import date
     good, bad = [], []
-    today = time.strftime("%Y-%m-%d")
+    today = date.today()
+    iso = re.compile(r"^\d{4}-\d{2}-\d{2}$")
     for p in raw if isinstance(raw, list) else []:
         why = None
         if not isinstance(p, dict) or p.get("kind") not in KINDS:
             why = "unknown kind"
         elif not p.get("approved_by") or not p.get("approved_on") or not p.get("expires"):
             why = "needs approved_by, approved_on and expires"
-        elif str(p["expires"]) < today:
-            why = "expired"
+        elif not iso.match(str(p["expires"])) or not iso.match(str(p["approved_on"])):
+            why = "bad dates (YYYY-MM-DD)"
         else:
             try:
-                from datetime import date
-                if (date.fromisoformat(str(p["expires"])) - date.fromisoformat(str(p["approved_on"]))).days > 30:
-                    why = "longer than 30 days"
+                on, until = date.fromisoformat(str(p["approved_on"])), date.fromisoformat(str(p["expires"]))
             except ValueError:
-                why = "bad dates"
+                on = until = None
+            if on is None:
+                why = "bad dates (YYYY-MM-DD)"
+            elif until < today:
+                why = "expired"
+            elif on > today:
+                why = "approved_on is in the future"
+            elif until < on:
+                why = "expires before it was approved"
+            elif (until - on).days > 30:
+                why = "longer than 30 days"
         (bad if why else good).append(dict(p, reason=why) if why else p)
     return good, bad
 

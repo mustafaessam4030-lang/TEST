@@ -1207,7 +1207,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/todo":
             # What needs a person, from the records; only what this person may open.
             from dashboard import todo as _todo
-            self._send(200, json.dumps(_todo.build(self._acc_can, _assistant_state()), default=str))
+            self._send(200, json.dumps(_todo.build(self._acc_can, _assistant_state(), allowed=self._acc_bus()), default=str))
             return
 
         if route == "/api/clearance/map":
@@ -1787,6 +1787,7 @@ class Handler(BaseHTTPRequestHandler):
         _me.configure(state=_assistant_state)
         # The three action engines are the platform's own: the run's control channel, the Clearance escalation.
         _mt.configure(control=control.request, escalate=_clearance.escalate, load=_clearance.load)
+        _ma.AUDIT["fn"] = self._mission_system_audit
         by = (self.user or {}).get("work_email") or "access key"
         allowed = self._acc_bus()
         parts = route.split("/")[3:]                       # /api/missions/<id>/<action>
@@ -1822,6 +1823,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps(_me.analytics(allowed), default=str))
                 return
             if parts == ["policies"]:
+                if not self._acc_can("missions.emergency"):
+                    self._send(403, json.dumps({"error": "Level 4 policies are shown to Admins."}))
+                    return
                 good, bad = _ma.policies()
                 self._send(200, json.dumps({"enabled": _ma.enabled(), "policies": good, "ignored": bad}, default=str))
                 return
@@ -1932,7 +1936,11 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
                 return
             if parts[1:] == ["note"]:
+                if not self._acc_can("missions.run"):
+                    self._send(403, json.dumps({"ok": False, "message": "Adding a note needs missions.run."}))
+                    return
                 ok, message = _me.note(m["id"], by, body.get("text"))
+                self._acc_audit("MISSION_NOTE", "SUCCESS" if ok else "FAILED", "mission", m["id"])
                 self._send(200, json.dumps({"ok": ok, "message": message, "mission": _me.get(m["id"])}, default=str))
                 return
             if len(parts) == 4 and parts[1] == "actions" and re.fullmatch(r"[a-f0-9]{12}", parts[2]) and parts[3] in ("approve", "reject", "done"):
@@ -1975,6 +1983,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, json.dumps({"ok": False, "message": "Unknown mission request."}))
 
     @staticmethod
+    def _mission_system_audit(action, result, target_id, metadata):
+        """Audit rows ATLAS writes itself (a Level 4 policy's approval, an action's read-back outcome): no user."""
+        try:
+            _accounts.store().audit.record(action, result=result, user=None, target_type="mission_action",
+                                           target_id=target_id, metadata=metadata)
+        except Exception:
+            pass
+
+    @staticmethod
     def _mission_visible(m, allowed):
         return bool(m) and not (allowed is not None and set((m.get("scope") or {}).get("allowed") or ["*"]) - set(allowed))
 
@@ -1987,7 +2004,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True             # the browser sees the end, reconnects or falls back to polling
         last, beat, end = None, time.time(), time.time() + 600
         try:
             while time.time() < end:

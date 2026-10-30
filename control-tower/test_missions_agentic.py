@@ -50,7 +50,8 @@ def row(bu, step, awb, overdue=None, agent="AGENT X", eta="2026-09-01", ata=None
 
 
 ROWS = [row("EG", "Customs Declaration", "157-11111111", 45.0, ata="2026-09-06"),
-        row("EG", "Customs Declaration", "157-22222222", 45.0, ata=None)] + \
+        row("EG", "Customs Declaration", "157-22222222", 45.0, ata=None),
+        row("KE", "Customs Declaration", "157-33333333", 5.0), row("UG", "Customs Declaration", "157-33333333", 5.0)] + \
        [row("EG", "Customs Declaration", "EG-%04d" % i, 20.0) for i in range(14)] + \
        [row("GH", "Assign Clearing Agent", "GH-0001", 9.0, agent=None)] + \
        [row("TZ", "Duty Payment" if i % 3 else "Customs Release", "TZ-%04d" % i, 35.0 + i, agent="AG%d" % (i % 2)) for i in range(40)]
@@ -335,11 +336,40 @@ rid = actions._add(bm, "escalate", "Escalate EG-0008", "test", {"awb": "EG-0008"
 actions.decide(rid, False, "op", lambda p: True)
 check("Rejected: nothing is done", db.one("SELECT status FROM actions WHERE id=?", rid)["status"] == "rejected" and not any(e["awb"] == "EG-0008" for e in ESC))
 
+import threading  # noqa: E402
+race = actions._add(bm, "reprocess", "Re-run EG-0011", "test", {"reference": "EG-0011"})
+slow = lambda p: (time.sleep(0.05), True)[1]
+n_ctl = len(CTL)
+ths = [threading.Thread(target=actions.decide, args=(race, True, "op%d" % i, slow)) for i in range(4)]
+[t.start() for t in ths]
+[t.join() for t in ths]
+check("Four people approving the same action at the same moment: it runs exactly once", len(CTL) - n_ctl == 1, CTL[n_ctl:])
+done_row = db.one("SELECT * FROM actions WHERE id=?", race)
+check("Proposing the same card again never replaces an executed one", actions._add(bm, "reprocess", "Re-run EG-0011", "test", {"reference": "EG-0011"}) is None
+      and db.one("SELECT status FROM actions WHERE id=?", race)["status"] == done_row["status"] != "proposed")
+other = engine.propose("Why is EG-0011 stuck at customs? investigate the delay", DATA, RECS, None, by="op", origin="manual")
+dup = actions._add(other, "reprocess", "Re-run EG-0011", "test", {"reference": "EG-0011"})
+ok, msg, _ = actions.decide(dup, True, "op", lambda p: True)
+check("A second mission cannot re-run a shipment whose re-run is still awaiting its outcome", not ok and "already running" in msg and len(CTL) - n_ctl == 1, msg)
+ok, msg, _ = tools.escalate("157-33333333", "x", "op")
+check("An AWB in two BUs is never escalated without the BU", not ok and "more than one BU" in msg, msg)
+ok, msg, ref = tools.escalate("157-33333333", "x", "op", bu="UG")
+check("...and with it, the escalation opens on that BU's row", ok and ESC[-1]["bu"] == "UG", ESC[-1])
+
 from dashboard import todo  # noqa: E402
 pend = actions._add(bm, "escalate", "Escalate EG-0010", "High exposure", {"awb": "EG-0010", "reason": "x"})
 items = todo.build(lambda p: p in ("missions.view", "clearance.escalate"))["items"]
 check("A pending approval is in To Do for whoever can approve it", any(i["id"] == "mact:" + pend and i["state"] == "pending_approval" for i in items))
 check("...and not for someone who cannot", not any(i["id"] == "mact:" + pend for i in todo.build(lambda p: p == "missions.view")["items"]))
+check("...and not for a BU-limited person outside the mission's BUs", not any(i["id"] == "mact:" + pend for i in
+      todo.build(lambda p: p in ("missions.view", "clearance.escalate"), allowed={"GH"})["items"]))
+from controlplane import audit as AUD  # noqa: E402
+import dashboard.server as _srv_src  # noqa: E402
+used = set(re.findall(r'_acc_audit\("((?:MISSION|KNOWLEDGE)_[A-Z_]*[A-Z])"', Path(_srv_src.__file__).read_text())) | {
+    "MISSION_" + a.upper() for a in ("approve", "decline", "cancel", "pause", "resume")} | {
+    "MISSION_ACTION_" + v for v in ("APPROVED", "REJECTED", "FAILED", "VERIFIED", "NOT_VERIFIED", "DONE")}
+check("Every mission and knowledge audit name is one the audit log accepts (unknown names were dropped silently)",
+      used <= set(AUD.ACTIONS), sorted(used - set(AUD.ACTIONS)))
 
 print("\n7. S8: LEVEL 4 POLICIES (NONE BY DEFAULT)")
 check("No policy file: no Level 4", actions.policies() == ([], []))
@@ -349,23 +379,28 @@ today = time.strftime("%Y-%m-%d")
 from datetime import date, timedelta  # noqa: E402
 Path(pol).write_text(json.dumps([
     {"id": "old", "kind": "queue_human", "approved_by": "admin", "approved_on": "2026-01-01", "expires": "2026-01-20", "max_per_mission": 5},
+    {"id": "compact", "kind": "queue_human", "approved_by": "admin", "approved_on": "20261001", "expires": "20261020"},
+    {"id": "future", "kind": "queue_human", "approved_by": "admin", "approved_on": (date.today() + timedelta(days=3)).isoformat(),
+     "expires": (date.today() + timedelta(days=9)).isoformat()},
     {"id": "long", "kind": "queue_human", "approved_by": "admin", "approved_on": today, "expires": (date.today() + timedelta(days=60)).isoformat()},
     {"id": "agent-tasks", "kind": "queue_human", "approved_by": "admin", "approved_on": today, "min_grade": "Moderate",
      "expires": (date.today() + timedelta(days=7)).isoformat(), "max_per_mission": 3, "hypotheses": ["agent"]}]))
 good, badp = actions.policies()
 check("Expired or longer-than-30-day policies are ignored, with the reason",
-      [p["id"] for p in good] == ["agent-tasks"] and {p["id"]: p["reason"] for p in badp} == {"old": "expired", "long": "longer than 30 days"}, (good, badp))
+      [p["id"] for p in good] == ["agent-tasks"] and {p["id"]: p["reason"] for p in badp} ==
+      {"old": "expired", "long": "longer than 30 days", "compact": "bad dates (YYYY-MM-DD)", "future": "approved_on is in the future"}, (good, badp))
 pm = engine.propose("Why is GH-0001 waiting for a clearing agent? investigate the delay", DATA, RECS, None, by="op", origin="manual")
 engine.approve(pm["id"], "op", "drill")
 engine.wait(pm["id"], 90)
 gp = engine.get(pm["id"])
 qh = [a for a in gp["actions"] if a["kind"] == "queue_human"]
 check("A matching policy approves only what it names, recorded as the policy and audited in the timeline",
-      qh and all(a["decided_by"].startswith("policy:agent-tasks") and a["status"] == "verified" for a in qh)
+      qh and all(a["decided_by"].startswith("policy:agent-tasks") and a["status"] == "awaiting_outcome" for a in qh)
       and any(e["kind"] == "policy" for e in gp["events"]), (gp["grade"], gp["actions"]))
 check("A To Do task from a mission is listed until a person marks it done", any(i["id"] == "mact:" + qh[0]["id"] for i in todo.build(lambda p: True)["items"]))
 actions.complete(qh[0]["id"], "op")
-check("...then it is done", not any(i["id"] == "mact:" + qh[0]["id"] for i in todo.build(lambda p: True)["items"]))
+check("...then it is done", not any(i["id"] == "mact:" + qh[0]["id"] for i in todo.build(lambda p: True)["items"])
+      and db.one("SELECT status FROM actions WHERE id=?", qh[0]["id"])["status"] == "completed")
 os.environ.pop("ATLAS_MISSION_POLICIES")
 
 print("\n8. S6: MEMORY AND LESSONS")
@@ -455,6 +490,11 @@ check("Approving through the API applies the edit: optional step removed, requir
 with urllib.request.urlopen(BASE + "/api/missions/{0}/stream".format(pa["id"]), timeout=10) as r:
     first = r.readline().decode() + r.readline().decode()
 check("The live stream sends the mission's version", first.startswith("event: mission") and pa["id"] in first, first)
+done_id = am["id"]
+t0 = time.time()
+with urllib.request.urlopen(BASE + "/api/missions/{0}/stream".format(done_id), timeout=20) as r:
+    whole = r.read().decode()
+check("For a finished mission the stream sends once and closes, so the page knows to poll", whole.startswith("event: mission") and time.time() - t0 < 10)
 an2 = api("/api/missions/analytics")
 check("GET /api/missions/analytics", an2["missions"] >= 6)
 pq = next(a for a in api("/api/missions/" + bm["id"])["actions"] if a["id"] == pend)

@@ -169,6 +169,28 @@ def update(table, where, **fields):
                      [_enc(c, fields[c]) for c in fields] + [where[k] for k in keys])
 
 
+def insert_new(table, **fields):
+    """Insert unless a row with the same key exists (never replaces one). -> True when inserted."""
+    cols = list(fields)
+    with _lock:
+        cur = db().execute("INSERT OR IGNORE INTO {0} ({1}) VALUES ({2})".format(
+            table, ",".join(cols), ",".join("?" * len(cols))), [_enc(c, fields[c]) for c in cols])
+        return cur.rowcount == 1
+
+
+def transition(table, where, expect, **fields):
+    """Compare-and-set: update only while status is still `expect` (a string or tuple). -> True when this
+    caller made the change; another thread that got there first makes it False."""
+    expect = (expect,) if isinstance(expect, str) else tuple(expect)
+    sets = ",".join("{0}=?".format(c) for c in fields)
+    keys = list(where)
+    with _lock:
+        cur = db().execute("UPDATE {0} SET {1} WHERE {2} AND status IN ({3})".format(
+            table, sets, " AND ".join("{0}=?".format(k) for k in keys), ",".join("?" * len(expect))),
+            [_enc(c, fields[c]) for c in fields] + [where[k] for k in keys] + list(expect))
+        return cur.rowcount == 1
+
+
 def one(sql, *args):
     with _lock:
         return _dec(db().execute(sql, args).fetchone())

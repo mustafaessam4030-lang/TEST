@@ -156,7 +156,9 @@ def assess(question, data=None, rows=None, allowed=None):
         template = "backlog"
     if not refs and not bus and level != "NORMAL" and not free:
         level = "NORMAL"                     # nothing in the records to investigate: ATLAS answers as today
-    fp = hashlib.sha1(json.dumps([template, sorted(refs), sorted(bus), bool(inv)]).encode()).hexdigest()[:16]
+    # the person's BU scope is part of the task: a BU-limited person never gets another scope's mission back
+    fp = hashlib.sha1(json.dumps([template, sorted(refs), sorted(bus), bool(inv),
+                                  sorted(allowed) if allowed is not None else None]).encode()).hexdigest()[:16]
     return {"level": level, "severity": severity, "reasons": reasons, "template": template,
             "scope": {"refs": refs, "bus": bus, "allowed": sorted(allowed) if allowed is not None else None},
             "signals": signals, "fingerprint": fp, "question": q[:500]}

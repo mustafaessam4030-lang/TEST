@@ -137,11 +137,15 @@ def reprocess(reference, by=None):
     return bool(accepted), message, ("control:reprocess:" + str(reference)) if accepted else None
 
 
-def escalate(awb, reason, by):
-    """Open an escalation through the Clearance page's own function (one open escalation per shipment)."""
+def escalate(awb, reason, by, bu=None):
+    """Open an escalation through the Clearance page's own function (one open escalation per shipment and BU).
+    The row is the shipment in that BU: an AWB can appear in more than one BU."""
     C = _C()
     key = _norm(awb)
-    row = next((r for r in export_rows() if _norm(r.get("awb")) == key), None)
+    rows = [r for r in export_rows() if _norm(r.get("awb")) == key and (bu is None or r.get("bu") == bu)]
+    if bu is None and len({r.get("bu") for r in rows}) > 1:
+        return False, "{0} is in more than one BU; the action must name the BU.".format(awb), None
+    row = rows[0] if rows else None
     fn = _cfg["escalate"] or C.escalate
     ok, message, entry = fn(row, reason, by)
     return bool(ok), message, (entry or {}).get("id")
