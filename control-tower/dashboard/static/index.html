@@ -2524,7 +2524,9 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
   .atlas[class*=" r-"] .ax-arm-l,.atlas[class*=" r-"] .ax-arm-r,.atlas[class*=" r-"] .ax-head,
   .atlas[class*=" r-"] .ax-steam{animation:none}}
 /* no layout shift: the KPI row keeps its loaded height until the first state arrives */
-#kpis:empty{min-height:123px}
+#kpis:empty{min-height:123px;border-radius:var(--r-lg);
+  background:linear-gradient(90deg,var(--card) 25%,var(--surface-3,rgba(127,127,127,.08)) 50%,var(--card) 75%) 0 0/200% 100%;animation:skel 1.4s ease-in-out infinite}
+@keyframes skel{to{background-position:-200% 0}}
 @media (max-width:1000px){#kpis:empty{min-height:142px}}
 </style>
 </head>
@@ -2711,8 +2713,8 @@ body.first-load main .card:nth-of-type(3){animation-delay:.2s}
             <div class="card-h"><div><div class="card-t">On the way</div>
               <div class="card-s">ETA known, not yet arrived</div></div></div>
             <div class="fleet-b">
-              <div class="fleet-n"><b id="fleetN">0</b><span id="fleetSub">shipments this run</span>
-                <div class="fleet-st" id="fleetSt"><i></i><span>Nothing on the way</span></div>
+              <div class="fleet-n"><b id="fleetN">—</b><span id="fleetSub">shipments this run</span>
+                <div class="fleet-st" id="fleetSt"><i></i><span>Loading…</span></div>
                 <div class="fleet-lead" id="fleetLead"></div></div>
               <div class="fleet-art" id="fleetArt"></div>
             </div>
@@ -3553,9 +3555,11 @@ document.addEventListener('click', (e) => {
   (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(
     () => put(b, 'Copied'), () => { try { document.execCommand('copy'); put(b, 'Copied'); } catch (x) {} });
 });
+// A list that could not be loaded says so (it stayed blank).
+const loadFailed = (id, what) => () => { const el = $(id); if (el) putHTML(el, '<tr><td colspan="9">' + empty('Could not load ' + what, 'Check the connection, then open this page again.') + '</td></tr>'); };
 function loadAccess(){
   if (!PF.on || (activePage !== 'access' && activePage !== 'settings')) return;
-  if (PF.can('users.manage')) fetch('/api/admin/users').then((r) => r.json()).then(paintUsers).catch(() => {});
+  if (PF.can('users.manage')) fetch('/api/admin/users').then((r) => r.json()).then(paintUsers).catch(loadFailed('acRows', 'the accounts'));
   $('acUsers').hidden = !PF.can('users.manage');
   $('acAuditCard').hidden = !PF.can('audit.view');
   $('acWorkersCard').hidden = !PF.remote || !PF.can('settings.manage');
@@ -3563,8 +3567,8 @@ function loadAccess(){
   if (activePage !== 'access') return;
   if (PF.can('users.manage')) loadConversations();
   if (PF.can('audit.view')) fetch('/api/admin/audit?limit=150' + ($('acAuditAct').value ? '&action=' + $('acAuditAct').value : ''))
-    .then((r) => r.json()).then((d) => { acAudit = d.events || []; paintAudit(); }).catch(() => {});
-  if (PF.remote && PF.can('settings.manage')) fetch('/api/admin/workers').then((r) => r.json()).then(paintWorkers).catch(() => {});
+    .then((r) => r.json()).then((d) => { acAudit = d.events || []; paintAudit(); }).catch(loadFailed('acAudit', 'the audit log'));
+  if (PF.remote && PF.can('settings.manage')) fetch('/api/admin/workers').then((r) => r.json()).then(paintWorkers).catch(loadFailed('acWorkers', 'the workers'));
 }
 /* Settings → Access levels: what each level allows, the person's own level,
    and (for an Admin) the users table, moved here from the Access page. */
@@ -5764,10 +5768,9 @@ function loadPO(force){
   const moving = PO.list && (PO.list.jobs || []).some((j) => j.kpi === 'processing' || j.kpi === 'pending');
   if (!force && Date.now() - PO.at < (moving ? 1400 : 10000)) return;
   PO.busy = true;
-  fetch('/api/po').then((r) => r.ok ? r.json() : null).then((d) => {
-    if (!d) return;
+  fetch('/api/po').then((r) => r.ok ? r.json() : Promise.reject(r.status)).then((d) => {
     PO.list = d; PO.at = Date.now(); paintPO();
-  }).catch(() => {}).finally(() => { PO.busy = false; });
+  }).catch(() => { if (!PO.list) loadFailed('poRows', 'the BOE jobs')(); }).finally(() => { PO.busy = false; });
 }
 /* Where the job's document came from — decided by the server from what the
    browser observed. TEST is never shown as REAL. */
