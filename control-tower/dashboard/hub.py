@@ -48,17 +48,17 @@ MODULES = [
     {"id": "history", "title": "Run History", "status": "live", "perm": "runs.view", "group": "Insight",
      "embed": "/#analysis", "nav": False, "parent": "ata", "note": "Analysis, exceptions and the activity log (links only)"},
     {"id": "atlas", "title": "ATLAS", "status": "live", "perm": "atlas.chat", "group": "Insight", "embed": "/#atlas"},
-    {"id": "masterdata", "title": "Master Data", "status": "live", "perm": "clearance.contacts", "group": "Admin",
-     "note": "Clearance contacts (read here, edited on Clearance)"},
     {"id": "access", "title": "Access", "status": "live", "perm": "users.manage", "group": "Admin", "embed": "/#access",
      "note": "Accounts and access levels"},
-    {"id": "settings", "title": "Settings", "status": "live", "perm": "dashboard.view", "group": "Admin", "embed": "/#settings"},
+    # Opened from the top bar's gear icon, not the menu.
+    {"id": "settings", "title": "Settings", "status": "live", "perm": "dashboard.view", "group": "Admin", "embed": "/#settings",
+     "nav": False},
 ]
 
 
 # Modules whose records (the run, the existing pages, To Do, PO documents,
 # contacts) are not limited by business unit: hidden from a BU-limited person.
-UNSCOPED = ("ata", "runs", "po", "clearance", "human", "todo", "history", "atlas", "masterdata")
+UNSCOPED = ("ata", "runs", "po", "clearance", "human", "todo", "history", "atlas")
 
 
 def modules(can):

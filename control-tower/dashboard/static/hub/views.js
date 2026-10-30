@@ -240,28 +240,8 @@
     }
   };
 
-  /* ── Master Data (stage E) ────────────────────────────────────────────── */
-  V.masterdata = {
-    title: "Master Data",
-    async render(el) {
-      stop();
-      el.innerHTML = head("Master Data", "Clearance contacts used for escalations and mails. Edit them on the Clearance page; this view only reads them.",
-        pill("/hub#clearance", "Edit on Clearance")) + `<div id="hvMd">${empty("Loading…")}</div>`;
-      const box = el.querySelector("#hvMd"), r = await get("/api/clearance/contacts");
-      if (r.status === 403) { box.innerHTML = denied("clearance contacts"); return; }
-      if (!r.data) { box.innerHTML = empty("Contacts could not be read"); return; }
-      const NAMES = {agents: "Clearing agents", bus: "Business units", forwarders: "Forwarders", coe: "Centre of excellence"};
-      box.innerHTML = `<div class="hv-grid2">${Object.entries(r.data).map(([kind, list]) => {
-        const rows = Object.entries(list || {});
-        const keys = [...new Set(rows.flatMap(([, c]) => Object.keys(c || {})))].slice(0, 4);
-        return `<div class="hv-card"><h3>${esc(NAMES[kind] || kind)} <span class="hv-src">${fmt(rows.length)}</span></h3>${rows.length ? `<div class="hv-scroll" style="max-height:360px"><table class="hv-tbl"><thead><tr><th>Name</th>${keys.map((k) => `<th>${esc(k)}</th>`).join("")}</tr></thead><tbody>
-          ${rows.map(([n, c]) => `<tr><td><b>${esc(n)}</b></td>${keys.map((k) => `<td>${esc(Array.isArray(c[k]) ? c[k].join(", ") : c[k] ?? "—")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : empty("None on file yet")}</div>`;
-      }).join("")}</div>`;
-    }
-  };
-
   // Views whose records carry no business unit refuse a BU-limited account (the server hides them too).
-  for (const id of ["todo", "masterdata"]) {
+  for (const id of ["todo"]) {
     const render = V[id].render;
     V[id].render = function (el, ctx) {
       if (ctx && ctx.data && ctx.data() && ctx.data().scope) { stop(); el.innerHTML = empty("Not available for your account", "Its records are not limited by business unit."); return; }

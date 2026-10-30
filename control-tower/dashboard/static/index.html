@@ -40,7 +40,7 @@ var n=0,t=setInterval(function(){var f=document.getElementById('fab');if((f&&!f.
 var top=document.querySelector('.top');if(!top)return;
 var b=document.createElement('button');b.type='button';b.className='cbtn';b.id='hubHuman';
 top.insertBefore(b,top.querySelector('a.cbtn'));
-var show=function(id){b.hidden=!(id==='overview'||id==='human');b.dataset.to=id==='human'?'overview':'human';
+var show=function(id){b.style.display=(id==='overview'||id==='human')?'':'none';b.dataset.to=id==='human'?'overview':'human';
 b.textContent=id==='human'?'← Back to the run':'Human Action';};
 b.addEventListener('click',function(){window.go(b.dataset.to);});
 var g=window.go;if(typeof g==='function')window.go=function(id){g(id);show(id);};

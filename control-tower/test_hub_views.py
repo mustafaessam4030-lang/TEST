@@ -1,6 +1,6 @@
 """
 The hub's own views (Shipment Tracking with one shipment's fields and their
-sources, To Do & Approvals, Master Data), the existing pages inside it as they
+sources, To Do & Approvals), the existing pages inside it as they
 are (the run page with its Human Action button, BOE / PO, Clearance, ATLAS…)
 and ATLAS's chat on every page. Read-only, real numbers, only for who may see
 them, and safe with hostile text in the records.
@@ -86,12 +86,12 @@ check("Without clearance.view: the run's record only", H.shipment("15711112222",
 print("\n3. THE NAVIGATION: EVERY CONNECTED MODULE HAS ITS VIEW IN THE HUB")
 js = (HERE / "dashboard" / "static" / "hub" / "views.js").read_text(encoding="utf-8")
 html = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
-for mid in ("tracking", "todo", "masterdata"):
+for mid in ("tracking", "todo"):
     if "V.{0} = {{".format(mid) not in js:
         check("A view for " + mid, False)
         break
 else:
-    check("A hub view for Tracking, To Do and Master Data", True)
+    check("A hub view for Tracking and To Do", True)
 check("Not-connected modules stay 'not connected' (no view, no numbers)",
       all(m["status"] == "off" for m in H.MODULES if m["id"] in ("rates", "tender", "optimization"))
       and not any("V.{0} = {{".format(i) in js for i in ("rates", "tender", "optimization")))
@@ -104,9 +104,11 @@ check("The hub's own copies of those pages are gone (no second run page, no seco
       "V.ata = {" not in js and "V.documents = {" not in js and "/api/control" not in js)
 check("The BOE page is named so it can be found", any(m["title"] == "BOE / PO Automation" for m in H.MODULES))
 NAV = [m["id"] for m in H.MODULES if m.get("nav", True)]
-check("Removed from the menu: Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History, Human Action",
-      not set(NAV) & {"documents", "carriers", "analytics", "reports", "optimization", "history", "human"}, NAV)
-check("...and their hub views are gone", not any("V.{0} = {{".format(i) in js for i in ("carriers", "analytics", "reports", "documents", "ata")))
+check("Removed from the menu: Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History, Human Action, Master Data, Settings",
+      not set(NAV) & {"documents", "carriers", "analytics", "reports", "optimization", "history", "human", "masterdata", "settings"}, NAV)
+check("...and their hub views are gone", not any("V.{0} = {{".format(i) in js for i in ("carriers", "analytics", "reports", "documents", "ata", "masterdata")))
+check("Settings and the theme are small icons in the top bar", 'id="setTop" aria-label="Settings"' in html and 'class="tb-th" role="group" aria-label="Theme"' in html
+      and 'aria-label="Light theme"' in html and 'aria-label="Dark theme"' in html)
 check("Human Action is reached from the run page (its parent), not the menu",
       next(m for m in H.MODULES if m["id"] == "human").get("parent") == "ata")
 check("The page adds one script for them", html.count('<script src="/static/hub/views.js" defer></script>') == 1)
@@ -215,7 +217,7 @@ else:
         pg.goto(BASE + "/hub?map=2d")
         pg.wait_for_timeout(2500)
         seen = {}
-        for v in ("tracking", "todo", "masterdata"):
+        for v in ("tracking", "todo"):
             pg.evaluate("location.hash = %r" % ("#" + v))
             pg.wait_for_timeout(1300)
             seen[v] = (pg.locator('[data-view="mod"]').is_visible(), pg.locator("#modBody h2").first.inner_text() if pg.locator("#modBody h2").count() else "")
@@ -269,6 +271,9 @@ else:
               fr.locator('.page[data-p="human"].on').count() == 1 and hb.inner_text().endswith("Back to the run"))
         hb.click(); pg.wait_for_timeout(800)
         check("...and back", fr.locator('.page[data-p="overview"].on').count() == 1)
+        pg.evaluate("location.hash = '#settings'"); pg.wait_for_timeout(1200)
+        check("The Human Action button is only on the run page (not on Settings, BOE…)", not fr.locator("#hubHuman").is_visible())
+        pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(1200)
         check("On an existing page the hub's own Ask ATLAS button steps aside (the page has its own)", pg.locator("#askFab").is_hidden())
         pg.locator("#askTop").click(); pg.wait_for_timeout(1500)
         check("...and the top bar's Ask ATLAS opens that page's chat", fr.locator("#chat.on").count() == 1)
