@@ -177,5 +177,49 @@ ok, bad = factguard.check(real_claude, FACTS)
 check("Claude Sonnet 5's real summary passes the fact check (every number is in the evidence)", ok and not council._measures(real_claude, FACTS), bad)
 check("The same summary with one number changed would be rejected", council._measures(real_claude.replace("38 days", "83 days"), FACTS))
 
+print("\n5. ONE CONNECTION, MANY MODELS")
+import io  # noqa: E402
+import json as _json  # noqa: E402
+import urllib.error  # noqa: E402
+from intelligence import cortex as CX  # noqa: E402
+
+
+def opener(request, timeout=None):
+    body = _json.loads(request.data.decode())
+    if body["model"] == "mixtral-8x7b":
+        raise urllib.error.HTTPError(request.full_url, 400, "legacy", {}, io.BytesIO(b"{}"))
+    if body["model"] == "deny":
+        raise urllib.error.HTTPError(request.full_url, 401, "expired", {}, io.BytesIO(b"{}"))
+    out = io.BytesIO(_json.dumps({"choices": [{"message": {"content": "OK"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}).encode())
+    out.__enter__ = lambda *a: out
+    out.__exit__ = lambda *a: False
+    return out
+
+
+class At(CX.CortexProvider):
+    def __init__(self, name):
+        CX.CortexProvider.__init__(self, conf=("https://acct.snowflakecomputing.com", "secret"), opener=opener)
+        self._m = name
+
+    @property
+    def model(self):
+        return self._m
+
+
+CX._state.update(failed_at=0.0, last_error=None, models={})
+try:
+    At("mixtral-8x7b").generate("s", "p")
+except CX.CortexError:
+    pass
+check("A retired model's failure (HTTP 400) pauses only that model", not At("mixtral-8x7b").health()["ok"]
+      and At("claude-sonnet-5").health()["ok"] and At("llama3.1-8b").health()["ok"])
+check("...and the other models still answer through the same connection", At("claude-sonnet-5").generate("s", "p") == "OK")
+try:
+    At("deny").generate("s", "p")
+except CX.CortexError:
+    pass
+check("An account failure (HTTP 401) still pauses Cortex as a whole, as before", not At("claude-sonnet-5").health()["ok"])
+CX._state.update(failed_at=0.0, last_error=None, models={})
+
 print("\n{0} passed, {1} failed".format(len(PASSED), len(FAILED)))
 sys.exit(1 if FAILED else 0)

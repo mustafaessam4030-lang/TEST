@@ -55,7 +55,10 @@ DEFAULT_MODEL = "claude-sonnet-4-5"
 COOL_DOWN_S = 300
 
 _lock = threading.Lock()
-_state = {"failed_at": 0.0, "last_error": None}
+_state = {"failed_at": 0.0, "last_error": None, "models": {}}
+# A failure that belongs to one model (400 "legacy", 404 not in this account, no text) pauses that model
+# only; anything about the account or the network (401, 403, 429, unreachable) pauses Cortex as a whole.
+MODEL_ONLY = (400, 404)
 _cache = {}                        # sha256(request) -> (time, text); paid answers only
 CACHE_MAX = 300
 
@@ -242,6 +245,10 @@ class CortexProvider(object):
         if time.time() - _state["failed_at"] < COOL_DOWN_S:
             return {"ok": False, "provider": "cortex", "model": self.model,
                     "detail": "Cortex failed a moment ago ({0}); trying again shortly".format(_state["last_error"])}
+        mine = _state.setdefault("models", {}).get(self.model)
+        if mine and time.time() - mine[0] < COOL_DOWN_S:
+            return {"ok": False, "provider": "cortex", "model": self.model,
+                    "detail": "{0} failed a moment ago ({1}); trying again shortly".format(self.model, mine[1])}
         return {"ok": True, "provider": "cortex", "model": self.model, "detail": "ready"}
 
     def generate(self, system, prompt, timeout=None, json_mode=False, max_tokens=700, images=None):
@@ -287,8 +294,10 @@ class CortexProvider(object):
                 pass
         except urllib.error.HTTPError as error:
             self._fail("Snowflake answered HTTP {0}{1}".format(error.code, {
+                400: " (the request or this model was refused, e.g. a retired model)",
                 401: " (token expired or wrong)", 403: " (the user's role lacks Cortex, or a network policy refused this server)",
-                404: " (model or endpoint not available in this account)", 429: " (rate limited)"}.get(error.code, "")))
+                404: " (model or endpoint not available in this account)", 429: " (rate limited)"}.get(error.code, "")),
+                model_only=error.code in MODEL_ONLY)
         except (urllib.error.URLError, OSError, ValueError) as error:
             self._fail("Snowflake is not reachable ({0})".format(str(getattr(error, "reason", error))[:100]))
         try:
@@ -296,7 +305,7 @@ class CortexProvider(object):
         except (KeyError, IndexError, TypeError):
             text = ""
         if not text:
-            self._fail("Cortex returned no text")
+            self._fail("Cortex returned no text", model_only=True)
         used = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
         try:
             # No usage block: count what was allowed, so the budget still holds.
@@ -312,8 +321,11 @@ class CortexProvider(object):
                 _cache[key] = (time.time(), text)
         return text
 
-    def _fail(self, why):
-        _state.update(failed_at=time.time(), last_error=why)
+    def _fail(self, why, model_only=False):
+        if model_only:
+            _state.setdefault("models", {})[self.model] = (time.time(), why)
+        else:
+            _state.update(failed_at=time.time(), last_error=why)
         try:
             _count(False)
         except OSError:
