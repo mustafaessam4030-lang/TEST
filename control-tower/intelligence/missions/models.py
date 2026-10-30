@@ -34,6 +34,8 @@ DEFAULT = [
      "tiers": ["T0", "T1", "T2"], "cost": 0.0, "note": "ATLAS's own code: the authority for numbers, statuses and checks"},
     {"id": "local", "provider": "ollama", "where": "tower", "caps": {"classify": 2, "extract": 2, "explain": 1, "word": 1, "plan": 0, "reason": 1, "review": 0},
      "tiers": ["T0", "T1", "T2"], "cost": 0.0, "note": "The tower's own model (Ollama); private, free, one answer at a time"},
+    {"id": "claude-sonnet-5", "provider": "cortex", "where": "snowflake (cross-region: AWS US)", "caps": {"plan": 3, "reason": 3, "explain": 3, "word": 3, "review": 3, "classify": 2, "extract": 2},
+     "tiers": ["T0", "T1"], "cost": 1.0, "fallbacks": ["claude-sonnet-4-6", "local"], "note": "On the account's allowlist (30 Oct)"},
     {"id": "claude-sonnet-4-5", "provider": "cortex", "where": "snowflake (cross-region: AWS US)", "caps": {"plan": 3, "reason": 3, "explain": 3, "word": 3, "review": 2, "classify": 2, "extract": 2},
      "tiers": ["T0", "T1"], "cost": 1.0, "fallbacks": ["claude-sonnet-4-6", "local"]},
     {"id": "claude-sonnet-4-6", "provider": "cortex", "where": "snowflake (cross-region: AWS US)", "caps": {"plan": 3, "reason": 3, "explain": 3, "word": 3, "review": 2, "classify": 2, "extract": 2},
@@ -41,6 +43,11 @@ DEFAULT = [
     {"id": "llama3.3-70b", "provider": "cortex", "where": "snowflake", "caps": {"review": 3, "reason": 2, "explain": 2, "word": 2, "classify": 2, "extract": 2, "plan": 1},
      "tiers": ["T0", "T1"], "cost": 0.4, "family": "llama", "fallbacks": ["llama3.1-70b", "local"],
      "note": "A different model family from Claude: the independent reviewer"},
+    {"id": "llama3.1-70b", "provider": "cortex", "where": "snowflake", "caps": {"review": 2, "reason": 2, "explain": 2, "word": 2, "classify": 2, "extract": 2},
+     "tiers": ["T0", "T1"], "cost": 0.4, "family": "llama", "fallbacks": ["local"]},
+    {"id": "mixtral-8x7b", "provider": "cortex", "where": "snowflake", "caps": {"review": 2, "reason": 1, "word": 1, "classify": 2, "extract": 2},
+     "tiers": ["T0", "T1"], "cost": 0.2, "family": "mistral", "fallbacks": ["local"],
+     "note": "A third model family: a second independent reviewer"},
     {"id": "llama3.1-8b", "provider": "cortex", "where": "snowflake", "caps": {"classify": 2, "extract": 2, "word": 1, "explain": 1},
      "tiers": ["T0", "T1"], "cost": 0.1, "family": "llama", "fallbacks": ["local"]},
 ]
@@ -49,6 +56,66 @@ _lock = threading.Lock()
 QUIET = threading.local()  # set while a mission calls a provider: chat's own ledger row is not written twice
 PROVIDERS = {}            # tests put their stand-ins here: {"cortex": fn(model) -> provider, "ollama": provider}
 LOCAL_BLOCKED = lambda: False      # the engine sets it: no local model while the ATA run is busy
+
+
+# What an installed Ollama model is good for, by its name (the first match wins). Sizes from Ollama's
+# own list; a model is used only when it is installed and answering. Embedding models are not chat models.
+LOCAL_KINDS = [
+    (r"embed|bge|minilm", None),
+    (r"llava|vision|vl\b|moondream|minicpm-v", {"vision": 3, "explain": 1}),
+    (r"deepseek-r1|qwq", {"reason": 3, "review": 2, "explain": 2, "word": 1, "plan": 1}),
+    (r"qwen3|qwen2\.5", {"classify": 3, "extract": 3, "reason": 2, "review": 2, "explain": 2, "word": 2, "plan": 1}),
+    (r"gpt-oss", {"reason": 2, "review": 2, "explain": 2, "word": 2, "classify": 2, "extract": 2, "plan": 1}),
+    (r"llama3|llama-3", {"word": 2, "review": 2, "explain": 2, "classify": 2, "extract": 2, "reason": 1}),
+    (r"gemma", {"word": 2, "classify": 2, "extract": 2, "explain": 2, "review": 1, "reason": 1}),
+    (r"mistral|mixtral|ministral", {"review": 2, "word": 2, "classify": 2, "extract": 2, "explain": 1, "reason": 1}),
+    (r"phi", {"classify": 2, "extract": 2, "word": 1, "explain": 1}),
+    (r".", {"classify": 1, "extract": 1, "word": 1, "explain": 1}),
+]
+_found = {"at": 0.0, "rows": []}
+
+
+def _local_family(name):
+    n = name.lower()
+    for fam in ("qwen", "llama", "gemma", "mistral", "mixtral", "phi", "deepseek", "gpt-oss", "granite"):
+        if fam in n:
+            return "mistral" if fam == "mixtral" else fam
+    return n.split(":")[0].split("-")[0]
+
+
+def local_models():
+    """Every chat model installed in the tower's Ollama (GET /api/tags), each as a registry row "local:<name>".
+    Cached 60 s; nothing when Ollama is not set up or ATLAS_MISSION_LOCAL_MODELS=configured (only the configured one)."""
+    import re as _re
+    if (os.environ.get("ATLAS_MISSION_LOCAL_MODELS") or "auto").strip().lower() == "configured":
+        return []
+    if "ollama_tags" not in PROVIDERS and (os.environ.get("ATLAS_LLM_PROVIDER") or "").strip().lower() != "ollama":
+        return []
+    if time.time() - _found["at"] < 60:
+        return _found["rows"]
+    rows = []
+    try:
+        if "ollama_tags" in PROVIDERS:
+            tags = PROVIDERS["ollama_tags"]()
+        else:
+            from .. import llm
+            tags = llm.OllamaProvider()._call("GET", "/api/tags", timeout=4)
+        configured = (os.environ.get("ATLAS_LLM_MODEL") or "").strip()
+        for t in tags.get("models") or []:
+            name = t.get("name") or t.get("model")
+            if not name or name in (configured, configured + ":latest"):
+                continue                                   # the configured model is "local"
+            caps = next((c for rx, c in LOCAL_KINDS if _re.search(rx, name.lower())), None)
+            if caps is None:
+                continue
+            gb = round((t.get("size") or 0) / 1e9, 1)
+            rows.append({"id": "local:" + name, "provider": "ollama", "model": name, "where": "tower",
+                         "caps": dict(caps), "tiers": ["T0", "T1", "T2"], "cost": 0.0, "family": _local_family(name),
+                         "size_gb": gb, "note": "Installed in the tower's Ollama ({0} GB); private, free".format(gb)})
+    except Exception:
+        rows = []
+    _found.update(at=time.time(), rows=rows)
+    return rows
 
 
 def registry():
@@ -60,17 +127,26 @@ def registry():
                 return rows
         except ValueError:
             pass
-    return DEFAULT
+    return DEFAULT + local_models()
 
 
 def family(m):
-    return m.get("family") or ("claude" if m["id"].startswith("claude") else m["id"].split("-")[0])
+    if m.get("family"):
+        return m["family"]
+    if m["id"] == "local":
+        return _local_family(os.environ.get("ATLAS_LLM_MODEL") or "local")
+    return "claude" if m["id"].startswith("claude") else m["id"].split("-")[0]
 
 
 def _provider(m):
     if m["provider"] == "code":
         return None
     if m["provider"] == "ollama":
+        if m.get("model"):                                  # an installed model other than the configured one
+            if "ollama_model" in PROVIDERS:
+                return PROVIDERS["ollama_model"](m["model"])
+            from .. import llm
+            return _local_named(llm, m["model"])
         if "ollama" in PROVIDERS:
             return PROVIDERS["ollama"]
         from .. import llm
@@ -87,6 +163,16 @@ def _provider(m):
                 return m["id"]
         return _At()
     return None
+
+
+_named = {}
+
+
+def _local_named(llm, name):
+    with _lock:
+        if name not in _named:
+            _named[name] = llm.OllamaProvider(model=name)
+        return _named[name]
 
 
 def health(m):
@@ -109,6 +195,7 @@ def snapshot():
     out = []
     for m in registry():
         row = dict(m)
+        row["family"] = family(m)
         row["health"] = health(m)
         row["p50_ms"] = lat.get(m["id"])
         out.append(row)
@@ -214,20 +301,31 @@ def call_cap():
         return 2
 
 
+# How many calls run at once per provider: the tower runs one local model at a time (memory), Cortex several.
+SLOTS = {"ollama": threading.BoundedSemaphore(max(1, int(os.environ.get("ATLAS_LOCAL_PARALLEL") or 1))),
+         "cortex": threading.BoundedSemaphore(max(1, int(os.environ.get("ATLAS_CORTEX_PARALLEL") or 4)))}
+
+
 def call(need, system, prompt, mission_id=None, task_id=None, purpose=None, tier="T1", profile="deep",
-         budget=80000, avoid_family=None, max_tokens=600, timeout=40, json_mode=False, max_calls=None):
+         budget=80000, avoid_family=None, max_tokens=600, timeout=40, json_mode=False, max_calls=None, only=None,
+         exclude=()):
     """-> {"text", "model", "family", "why"}; raises ModelUnavailable when no model fits or every fit failed.
     A mission task makes at most max_calls calls (call_cap()): beyond that it continues without a model."""
     used = tokens_used(mission_id) if mission_id else 0
-    tried = set()
     why_all = []
     left = 3
     if mission_id and task_id:
         left = (max_calls or call_cap()) - calls_made(mission_id, task_id)
         if left <= 0:
             raise ModelUnavailable("this task has used its {0} model call(s)".format(max_calls or call_cap()))
+    tried = set(exclude or ())
     for _ in range(min(3, left)):
-        m, why = route(need, tier, profile, used, budget, avoid_family, exclude=tried)
+        if only is not None:                                 # a council member: this model, no fallback
+            if only["id"] in tried:
+                break
+            m, why = only, "{0} for {1} (council member)".format(only["id"], need)
+        else:
+            m, why = route(need, tier, profile, used, budget, avoid_family, exclude=tried)
         if m is None:
             why_all.append(why)
             break
@@ -239,11 +337,16 @@ def call(need, system, prompt, mission_id=None, task_id=None, purpose=None, tier
                "model_id": m["id"], "where": m.get("where"), "data_tier": tier, "started_at": _store.stamp(started),
                "prompt_sha256": hashlib.sha256((system + "\n" + prompt).encode("utf-8")).hexdigest()}
         try:
+            slot = SLOTS.get(m["provider"])
+            if slot is not None and not slot.acquire(timeout=timeout):
+                raise TimeoutError("no free {0} slot".format(m["provider"]))
             QUIET.on = True
             try:
                 text = p.generate(system, prompt, timeout=timeout, json_mode=json_mode, max_tokens=max_tokens)
             finally:
                 QUIET.on = False
+                if slot is not None:
+                    slot.release()
             ms = (time.time() - started) * 1000
             inp, out = (len(system) + len(prompt)) // 4, len(text or "") // 4      # estimated when the provider gives none
             row.update(status="ok", latency_ms=int(ms), usage_in=inp, usage_out=out,

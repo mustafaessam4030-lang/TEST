@@ -1,0 +1,170 @@
+"""
+The model council: several models, from different families and providers (the tower's Ollama models
+and Snowflake Cortex), working on the same step together.
+
+    members(need, profile, k)        up to k healthy models for the step, distinct families first
+    hypotheses(facts, known, ...)    each member suggests causes in parallel; similar suggestions merge,
+                                     each says which models proposed it; all stay "open - not tested"
+    review(facts, draft, drafter...) reviewers from families other than the drafter's; every concern kept
+                                     with who raised it; the verdict is the majority, a split said plainly
+    word(system, prompt, inputs...)  members draft in parallel; each draft is fact-checked (factguard);
+                                     the best-ranked draft that passes is used, the rejected ones recorded
+
+How many members: the mission's profile (drill 0, normal 1, deep 2, emergency 3), or ATLAS_COUNCIL_SIZE.
+Every call goes through models.call (ledger, budget, slots: one local model at a time on the tower).
+A model never supplies a number, a date or a status: those come from the records, and what a model
+says is checked against them. More models agreeing raises attention, never a grade: grades come from
+the evidence (specialists.verify).
+"""
+import json
+import os
+import re
+import threading
+
+from . import models
+
+SIZE = {"drill": 0, "normal": 1, "deep": 2, "emergency": 3}
+
+
+def size(profile):
+    raw = (os.environ.get("ATLAS_COUNCIL_SIZE") or "").strip()
+    if raw.isdigit():
+        return max(0, min(int(raw), 5))
+    return SIZE.get(profile, 1)
+
+
+def members(need, profile, k, tier="T1", used=0, budget=80000, avoid_family=None):
+    """Up to k models for `need`: the router's best, then the best of each other family, then any other."""
+    chosen, families, exclude = [], set(), set()
+    for strict in (True, False):
+        while len(chosen) < k:
+            m, _ = models.route(need, tier, profile, used, budget, avoid_family, exclude=exclude)
+            if m is None:
+                break
+            exclude.add(m["id"])
+            if strict and models.family(m) in families:
+                continue
+            chosen.append(m)
+            families.add(models.family(m))
+        exclude = {m["id"] for m in chosen}
+    return chosen
+
+
+def _parallel(group, fn):
+    """Run fn(member) for each member at once (the providers' slots keep the tower's model to one call)."""
+    out = [None] * len(group)
+
+    def run(i, m):
+        try:
+            out[i] = {"model": m["id"], "family": models.family(m), "ok": True, "value": fn(m)}
+        except Exception as error:
+            out[i] = {"model": m["id"], "family": models.family(m), "ok": False, "error": type(error).__name__}
+    threads = [threading.Thread(target=run, args=(i, m), daemon=True) for i, m in enumerate(group)]
+    [t.start() for t in threads]
+    [t.join(90) for t in threads]
+    return [o for o in out if o]
+
+
+def _json(text):
+    m = re.search(r"\{.*\}", text or "", re.S)
+    try:
+        return json.loads(m.group(0)) if m else {}
+    except ValueError:
+        return {}
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z]{3,}", str(text).lower()) if w not in ("the", "and", "for", "with", "not", "was")}
+
+
+def _same(a, b):
+    wa, wb = _words(a), _words(b)
+    return bool(wa and wb) and len(wa & wb) / float(len(wa | wb)) >= 0.5
+
+
+def hypotheses(facts, known, mission_id, task_id, profile, budget):
+    """-> {"causes": [{"label", "proposed_by": [model...]}], "members": [...], "failed": [...]}"""
+    k = size(profile)
+    group = members("reason", profile, k, budget=budget, used=models.tokens_used(mission_id))
+    if not group:
+        return {"causes": [], "members": [], "failed": []}
+    system = ("You help a logistics control tower investigate. List other plausible causes worth testing, "
+              "as JSON: {\"causes\": [\"short cause\", ...]} (at most 3). Do not repeat these: " + "; ".join(known))
+    prompt = "FACTS:\n- " + "\n- ".join(facts)
+    res = _parallel(group, lambda m: _json(models.call("reason", system, prompt, mission_id=mission_id, task_id=task_id,
+                                                       purpose="hypotheses (council)", profile=profile, budget=budget,
+                                                       max_tokens=200, json_mode=True, only=m, max_calls=len(group) + 1)["text"]))
+    merged = []
+    for r in res:
+        if not r["ok"]:
+            continue
+        for c in (r["value"].get("causes") or [])[:3]:
+            c = " ".join(str(c).split())[:120]
+            if not c or any(_same(c, k_) for k_ in known):
+                continue
+            hit = next((x for x in merged if _same(x["label"], c)), None)
+            if hit:
+                if r["model"] not in hit["proposed_by"]:
+                    hit["proposed_by"].append(r["model"])
+            else:
+                merged.append({"label": c, "proposed_by": [r["model"]]})
+    merged.sort(key=lambda x: -len(x["proposed_by"]))
+    return {"causes": merged[:5], "members": [r["model"] for r in res if r["ok"]], "failed": [r["model"] for r in res if not r["ok"]]}
+
+
+def review(facts, draft, drafter_family, mission_id, task_id, profile, budget):
+    """-> {"agree": True | False | None, "split": bool, "reviewers": [{model, agree, concerns}], "failed": [...]}"""
+    k = max(1, size(profile)) if size(profile) else 0
+    group = members("review", profile, k, budget=budget, used=models.tokens_used(mission_id), avoid_family=drafter_family)
+    if not group:
+        return {"agree": None, "split": False, "reviewers": [], "failed": []}
+    system = ("You are an independent reviewer. Check whether the DRAFT follows from the FACTS. "
+              "Reply JSON only: {\"agree\": true|false, \"concerns\": [\"...\"]}. Do not add facts.")
+    prompt = "FACTS:\n- " + "\n- ".join(facts) + "\n\nDRAFT:\n" + draft
+    res = _parallel(group, lambda m: _json(models.call("review", system, prompt, mission_id=mission_id, task_id=task_id,
+                                                       purpose="independent review (council)", profile=profile, budget=budget,
+                                                       max_tokens=250, json_mode=True, only=m, max_calls=len(group) + 1)["text"]))
+    reviewers = [{"model": r["model"], "family": r["family"], "agree": bool(r["value"].get("agree")),
+                  "concerns": [str(c)[:200] for c in (r["value"].get("concerns") or [])][:4]} for r in res if r["ok"]]
+    if not reviewers:
+        return {"agree": None, "split": False, "reviewers": [], "failed": [r["model"] for r in res]}
+    yes = sum(1 for r in reviewers if r["agree"])
+    return {"agree": yes * 2 > len(reviewers), "split": 0 < yes < len(reviewers), "reviewers": reviewers,
+            "failed": [r["model"] for r in res if not r["ok"]]}
+
+
+MEASURE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(%|percent|days?|hours?|weeks?|shipments?|awbs?|bols?|escalations?)\b", re.I)
+
+
+def _measures(text, inputs):
+    """Stricter than the chat's fact check for mission reports: a small number with a unit ("99 days",
+    "12 shipments", "40%") must be in the evidence too. -> the violations."""
+    source = " ".join(str(x) for x in inputs if x)
+    have = {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)?", source)}
+    have |= {n.split(".")[0] for n in have}
+    return ["number {0} {1}".format(n, u) for n, u in MEASURE.findall(text or "")
+            if n.replace(",", "") not in have and n.replace(",", "").split(".")[0] not in have]
+
+
+def word(system, prompt, inputs, mission_id, task_id, profile, budget, max_tokens=220):
+    """-> {"text" | None, "model", "rejected": [{model, why}], "members": [...]}: the best draft that passes the fact check."""
+    from .. import factguard
+    k = size(profile)
+    group = members("word", profile, k, budget=budget, used=models.tokens_used(mission_id))
+    if not group:
+        return {"text": None, "model": None, "rejected": [], "members": []}
+    res = _parallel(group, lambda m: models.call("word", system, prompt, mission_id=mission_id, task_id=task_id,
+                                                 purpose="report wording (council)", profile=profile, budget=budget,
+                                                 max_tokens=max_tokens, only=m, max_calls=len(group) + 1)["text"])
+    rejected = []
+    for r in res:                                   # in the router's order: the best-ranked passing draft wins
+        if not r["ok"]:
+            rejected.append({"model": r["model"], "why": "no answer ({0})".format(r["error"])})
+            continue
+        ok, bad = factguard.check(r["value"], inputs)
+        bad = list(bad) + _measures(r["value"], inputs)
+        ok = ok and not bad
+        if ok:
+            return {"text": r["value"].strip(), "model": r["model"], "rejected": rejected, "members": [x["model"] for x in res]}
+        rejected.append({"model": r["model"], "why": "added facts not in the evidence ({0})".format(", ".join(bad[:3]))})
+    return {"text": None, "model": None, "rejected": rejected, "members": [x["model"] for x in res]}

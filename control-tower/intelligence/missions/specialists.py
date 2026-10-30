@@ -270,25 +270,23 @@ def hypotheses(ctx):
         hyp["unknown"]["why"].append("no hypothesis is supported by the records")
     else:
         hyp["unknown"]["status"] = "rejected"
-    model_used = None
-    facts = [e["claim"] for e in ctx.all_evidence() if e["class"] in ("HISTORICAL", "VERIFIED_LIVE")][:30]
+    model_used, council_out = None, None
+    facts = [e["claim"] for e in ctx.all_evidence() if e["class"] in ("HISTORICAL", "VERIFIED_LIVE", "CALCULATED")][:30]
     if facts and ctx.allow_models():
         try:
-            r = models.call("reason", "You help a logistics control tower investigate. List other plausible causes worth testing, "
-                            "as JSON: {\"causes\": [\"short cause\", ...]} (at most 3). Do not repeat these: " +
-                            "; ".join(h["label"] for h in hyp.values()), "FACTS:\n- " + "\n- ".join(facts),
-                            mission_id=ctx.mission["id"], task_id=ctx.task["id"], purpose="hypotheses", profile=ctx.profile,
-                            budget=ctx.budget, max_tokens=200, json_mode=True)
-            model_used = r["model"]
-            m = re.search(r"\{.*\}", r["text"], re.S)
-            for i, c in enumerate((json.loads(m.group(0)).get("causes") if m else [])[:3]):
-                c = str(c).strip()[:120]
-                if c:
-                    hyp["m%d" % i] = {"id": "m%d" % i, "label": c, "status": "open", "why": ["suggested by {0}; not tested against the records".format(r["model"])],
-                                      "support": [], "against": [], "needed": ["evidence that would confirm or reject it"], "origin": "model:" + r["model"]}
+            from . import council
+            council_out = council.hypotheses(facts, [h["label"] for h in hyp.values()], ctx.mission["id"], ctx.task["id"],
+                                             ctx.profile, ctx.budget)
+            model_used = (council_out["members"] or [None])[0]
+            for i, c in enumerate(council_out["causes"]):
+                by = c["proposed_by"]
+                hyp["m%d" % i] = {"id": "m%d" % i, "label": c["label"], "status": "open", "proposed_by": by,
+                                  "why": ["suggested by {0}{1}; not tested against the records".format(
+                                      ", ".join(by), " ({0} models agree)".format(len(by)) if len(by) > 1 else "")],
+                                  "support": [], "against": [], "needed": ["evidence that would confirm or reject it"], "origin": "model:" + by[0]}
         except Exception:
             pass
-    return {"evidence": [], "out": {"hypotheses": list(hyp.values())}, "model": model_used,
+    return {"evidence": [], "out": {"hypotheses": list(hyp.values()), "council": council_out}, "model": model_used,
             "summary": "{0} supported, {1} rejected, {2} open".format(*[sum(1 for h in hyp.values() if h["status"] == s) for s in ("supported", "rejected", "open")])}
 
 
@@ -408,17 +406,22 @@ def review(ctx):
         return {"evidence": [], "out": {"reviewed_by": None, "agree": None, "concerns": [], "note": "Drill: deterministic checks only"},
                 "summary": "Deterministic checks only (drill)"}
     try:
+        from . import council
         hyp_model = (ctx.dep("hyp") or {}).get("model")
-        avoid = models.family({"id": hyp_model}) if hyp_model else "claude"
-        r = models.call("review", "You are an independent reviewer. Check whether the DRAFT follows from the FACTS. "
-                        "Reply JSON only: {\"agree\": true|false, \"concerns\": [\"...\"]}. Do not add facts.",
-                        "FACTS:\n- " + "\n- ".join(facts) + "\n\nDRAFT:\n" + draft, mission_id=ctx.mission["id"], task_id=ctx.task["id"],
-                        purpose="independent review", profile=ctx.profile, budget=ctx.budget, avoid_family=avoid, max_tokens=250, json_mode=True)
-        m = re.search(r"\{.*\}", r["text"], re.S)
-        v = json.loads(m.group(0)) if m else {}
-        concerns = [str(c)[:200] for c in (v.get("concerns") or [])][:4]
-        return {"evidence": [], "model": r["model"], "out": {"reviewed_by": r["model"], "agree": bool(v.get("agree")), "concerns": concerns},
-                "summary": "{0} {1}".format(r["model"], "agrees" if v.get("agree") else "raised {0} concern(s)".format(len(concerns)))}
+        reg = {m["id"]: m for m in models.registry()}
+        avoid = models.family(reg.get(hyp_model) or {"id": hyp_model}) if hyp_model else "claude"
+        v = council.review(facts, draft, avoid, ctx.mission["id"], ctx.task["id"], ctx.profile, ctx.budget)
+        if not v["reviewers"]:
+            raise models.ModelUnavailable("no reviewer answered")
+        names = [r["model"] for r in v["reviewers"]]
+        concerns = ["{0}: {1}".format(r["model"], c) for r in v["reviewers"] for c in r["concerns"]][:8]
+        yes = sum(1 for r in v["reviewers"] if r["agree"])
+        summary = ("{0} agree".format(" and ".join(names)) if yes == len(names) else
+                   "Reviewers split: {0} of {1} agree".format(yes, len(names)) if v["split"] else
+                   "{0} raised {1} concern(s)".format(" and ".join(names), len(concerns)))
+        return {"evidence": [], "model": names[0], "out": {"reviewed_by": ", ".join(names), "agree": v["agree"], "split": v["split"],
+                                                          "concerns": concerns, "reviewers": v["reviewers"], "failed": v["failed"]},
+                "summary": summary}
     except Exception as error:
         return {"evidence": [], "out": {"reviewed_by": None, "agree": None, "concerns": [], "note": "No independent model available ({0}); deterministic checks only".format(type(error).__name__)},
                 "summary": "No independent model available: deterministic checks only"}
@@ -507,18 +510,18 @@ def report(ctx):
     if ctx.allow_models() and rep["facts"]:
         inputs = rep["facts"] + rep["knowledge"] + [draft] + [h["label"] for h in hyp]
         try:
-            r = models.call("word", "You are ATLAS, writing the executive summary of a logistics investigation for operations staff. "
-                            "Use ONLY the facts given; no new numbers, dates or references; keep uncertainty; 3 short sentences.",
-                            "CONCLUSION:\n" + draft + "\n\nFACTS:\n- " + "\n- ".join(inputs[:40]),
-                            mission_id=ctx.mission["id"], task_id=ctx.task["id"], purpose="report wording", profile=ctx.profile,
-                            budget=ctx.budget, max_tokens=220)
-            from .. import factguard
-            ok, bad = factguard.check(r["text"], inputs + [json.dumps(ctx.scope)])
-            model_used = r["model"]
-            if ok:
-                narrative = r["text"].strip()
-            else:
-                rep["narrative_rejected"] = "{0}'s wording added facts that are not in the evidence ({1}); ATLAS's own wording is used.".format(r["model"], ", ".join(bad[:3]))
+            from . import council
+            w = council.word("You are ATLAS, writing the executive summary of a logistics investigation for operations staff. "
+                             "Use ONLY the facts given; no new numbers, dates or references; keep uncertainty; 3 short sentences.",
+                             "CONCLUSION:\n" + draft + "\n\nFACTS:\n- " + "\n- ".join(inputs[:40]),
+                             inputs + [json.dumps(ctx.scope)], ctx.mission["id"], ctx.task["id"], ctx.profile, ctx.budget)
+            rep["wording"] = {"members": w["members"], "chosen": w["model"], "rejected": w["rejected"]}
+            if w["text"]:
+                narrative, model_used = w["text"], w["model"]
+            elif w["rejected"]:
+                model_used = w["rejected"][0]["model"]
+                rep["narrative_rejected"] = "{0}; ATLAS's own wording is used.".format(
+                    "; ".join("{0}'s wording {1}".format(x["model"], x["why"]) for x in w["rejected"]))
         except Exception:
             pass
     rep["narrative"] = narrative or "{0} Confidence: {1} ({2}).".format(draft, rep["grade"], "; ".join(rep["grade_reasons"]) or "no reasons recorded")

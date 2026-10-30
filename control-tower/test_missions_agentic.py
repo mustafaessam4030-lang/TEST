@@ -247,7 +247,7 @@ engine.control(wm["id"], "cancel", "op")
 
 # call cap: one call per task, the primary fails -> no second call
 os.environ["ATLAS_MISSION_CALLS_PER_TASK"] = "1"
-FAILING.update({"claude-sonnet-4-5", "claude-sonnet-4-6"})
+FAILING.update({"claude-sonnet-5", "claude-sonnet-4-5", "claude-sonnet-4-6"})
 n0 = len(CALLS)
 try:
     models.call("reason", "s", "p", mission_id="capm", task_id="t1", profile="deep")

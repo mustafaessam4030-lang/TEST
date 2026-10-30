@@ -570,3 +570,19 @@ Nothing live was touched: no Snowflake setting, no model enabled, no paid call, 
 
 Not claimed: production readiness and Windows end-to-end verification; both need an authorised run on the tower.
 The ten owner decisions in §20 remain open; the safe defaults stand (actions off, no planning model, no Level 4 policy).
+
+### Model council (added 30 Oct)
+
+Several models now work on the same step (`intelligence/missions/council.py`, `test_missions_council.py`, 20 checks):
+- **Every model, found**: every chat model installed in the tower's Ollama is registered as `local:<name>`
+  (capabilities by model family; embedding models skipped; vision models only for pictures), plus the
+  allowlisted Cortex models that were missing (claude-sonnet-5, llama3.1-70b, mixtral-8x7b). Opus stays out.
+  `ATLAS_MISSION_LOCAL_MODELS=configured` limits it to the configured model.
+- **Council**: up to N members from different families (drill 0, normal 1, deep 2, emergency 3;
+  `ATLAS_COUNCIL_SIZE`). Hypotheses: each member suggests causes in parallel; similar ones merge with
+  "N models agree"; all stay open until the records decide. Review: a panel with no member from the
+  drafter's family; every verdict and concern kept with its author; a split is shown. Wording: drafts in
+  parallel, each fact-checked (plus a stricter check for numbers with units), the best that passes is used.
+- **The tower stays free for the ATA run**: one local model call at a time (`ATLAS_LOCAL_PARALLEL`), Cortex
+  calls up to `ATLAS_CORTEX_PARALLEL` (4); no local model while the run is busy (unchanged).
+- Agreement raises attention, never the grade: the grade comes from the recomputed evidence.

@@ -118,6 +118,12 @@
 .ms-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 16px}
 .ms-stats div span{display:block;font-size:11.5px;color:var(--hub-ink-3)} .ms-stats div b{font-size:18px;font-variant-numeric:tabular-nums}
 .ms-live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--hub-ink-3)}
+.ms-models{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.ms-models article{padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--hub-surface-2) 55%,transparent);box-shadow:inset 0 0 0 .5px var(--hub-line);font-size:12.5px;display:grid;gap:3px}
+.ms-models b{font:600 13px var(--hub-mono)} .ms-models small{color:var(--hub-ink-3)}
+.ms-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--hub-ink-4)}
+.ms-dot.ok{background:var(--hub-green);box-shadow:0 0 0 3px var(--hub-green-wash)}
+.ms-agree{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font:600 10.5px var(--hub-font);padding:2px 7px;border-radius:999px;background:var(--hub-blue-wash);color:var(--hub-blue)}
 .ms-live i{width:7px;height:7px;border-radius:50%;background:var(--hub-green);box-shadow:0 0 0 3px var(--hub-green-wash)}
 `;
   let timer = null, current = null, source = null;
@@ -166,7 +172,19 @@
           <button class="hub-pill" id="msDrill" type="button" title="Same plan, no billed model, nothing changed">Drill</button>
           <span class="sp"></span><button class="hub-pill" id="msEmer" type="button" hidden>Emergency Mode…</button></div>
         <div class="ms-msg" id="msMsg" role="status"></div></section>
-      <div id="msStats"></div><div id="msLists"></div></div>`);
+      <div id="msStats"></div><div id="msLists"></div><div id="msModels"></div></div>`);
+    fetch("/api/missions/registry", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((reg) => {
+      if (!reg || !reg.models) return;
+      const rows = reg.models.filter((m) => m.provider !== "code");
+      const where = (m) => m.provider === "ollama" ? "On the tower (Ollama)" : "Snowflake Cortex";
+      const best = (m) => Object.entries(m.caps || {}).filter(([k, v]) => v >= 2).sort((a, b) => b[1] - a[1]).map(([k]) => k).slice(0, 4).join(", ");
+      const up = rows.filter((m) => m.health && m.health.ok).length;
+      put(el.querySelector("#msModels"), `<div class="ms-sec">Models working together · ${fmt(up)} of ${fmt(rows.length)} answering now</div>
+        <section class="hv-card ms-card"><p class="ms-note" style="margin:0 0 10px">Several models work on the same step: different families suggest causes and review each other, drafts are fact-checked against the records, and numbers always come from ATLAS's own code. The tower runs one local model at a time.</p>
+        <div class="ms-models">${rows.map((m) => `<article><b><span class="ms-dot ${m.health && m.health.ok ? "ok" : ""}"></span>${esc(m.id)}</b>
+          <small>${esc(where(m))} · family ${esc(m.family || (m.id.startsWith("claude") ? "claude" : m.id.split(/[-:]/)[0]))}${m.size_gb ? " · " + esc(m.size_gb) + " GB" : ""}</small>
+          <span>Good for: ${esc(best(m) || "light tasks")}</span><small>${esc(m.health ? m.health.detail : "")}</small></article>`).join("")}</div></section>`);
+    }).catch(() => {});
     fetch("/api/missions/analytics", {credentials: "same-origin"}).then((r) => r.ok ? r.json() : null).then((a) => {
       if (!a || !a.missions) return;
       const pct = (x) => x == null ? "—" : Math.round(x * 100) + "%";
@@ -275,7 +293,7 @@
     const hs = (m.hypotheses || []).slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
     const LBL = {supported: "Supported", open: "Open, not tested", inconclusive: "Not enough evidence", rejected: "Rejected"};
     return `<section class="hv-card ms-card"><h3>Hypotheses</h3><div class="ms-hyp">${hs.map((h) =>
-      `<div class="${esc(h.status)}"><b>${esc(h.label)}</b> · ${esc(LBL[h.status] || h.status)}<small>${esc((h.why || []).slice(0, 2).join("; ") || (h.needed || []).slice(0, 1).join("") || "")}</small></div>`).join("") || `<div>Built once the facts are in.</div>`}</div></section>`;
+      `<div class="${esc(h.status)}"><b>${esc(h.label)}</b> · ${esc(LBL[h.status] || h.status)}${h.proposed_by && h.proposed_by.length > 1 ? `<span class="ms-agree">${fmt(h.proposed_by.length)} models agree</span>` : ""}<small>${esc((h.why || []).slice(0, 2).join("; ") || (h.needed || []).slice(0, 1).join("") || "")}</small></div>`).join("") || `<div>Built once the facts are in.</div>`}</div></section>`;
   }
   function reportCard(m) {
     const r = m.report;
@@ -288,7 +306,9 @@
       <div class="ms-grade"><span class="ms-note">Confidence</span><b class="${esc(r.grade)}">${esc(r.grade)}</b><span class="ms-note">${esc((r.grade_reasons || []).join("; "))}</span></div>
       <p style="font-size:15px;line-height:1.55;margin:12px 0">${esc(r.narrative)}</p>
       <p class="ms-note">Worded by ${esc(r.narrative_by)}. ${esc(r.verification)}${r.narrative_rejected ? " " + esc(r.narrative_rejected) : ""}</p>
-      ${r.review && (r.review.reviewed_by || r.review.note) ? `<p class="ms-note">Independent review: ${esc(r.review.reviewed_by ? r.review.reviewed_by + (r.review.agree ? " agrees." : " raised concerns: " + (r.review.concerns || []).join("; ")) : r.review.note)}</p>` : ""}
+      ${r.review && (r.review.reviewers || []).length ? `<p class="ms-note">Independent review by ${fmt(r.review.reviewers.length)} model${r.review.reviewers.length > 1 ? "s" : ""}${r.review.split ? " (split)" : ""}: ${r.review.reviewers.map((x) => esc(x.model) + (x.agree ? " agrees" : " disagrees")).join(" · ")}${(r.review.concerns || []).length ? ". Concerns: " + esc(r.review.concerns.join("; ")) : "."}</p>` :
+        r.review && (r.review.reviewed_by || r.review.note) ? `<p class="ms-note">Independent review: ${esc(r.review.reviewed_by ? r.review.reviewed_by + (r.review.agree ? " agrees." : " raised concerns: " + (r.review.concerns || []).join("; ")) : r.review.note)}</p>` : ""}
+      ${r.wording && (r.wording.members || []).length > 1 ? `<p class="ms-note">Drafted by ${fmt(r.wording.members.length)} models in parallel (${esc(r.wording.members.join(", "))}); ${r.wording.chosen ? esc(r.wording.chosen) + "'s draft passed the fact check" : "none passed the fact check"}${(r.wording.rejected || []).length ? "; rejected: " + esc(r.wording.rejected.map((x) => x.model + " (" + x.why + ")").join("; ")) : ""}.</p>` : ""}
       ${(r.contradictions || []).length || (r.mismatches || []).length ? `<h3 style="margin-top:16px">Conflicts</h3><ul>${(r.contradictions || []).concat(r.mismatches || []).map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
       ${inc ? `<h3 style="margin-top:16px">Incident plan</h3><ul><li><b>Recommended:</b> ${esc(inc.recommended)}</li>${(inc.verification_criteria || []).map((c) => `<li>Verify: ${esc(c)}</li>`).join("")}<li>Rollback: ${esc(inc.rollback)}</li></ul>` : ""}
       <h3 style="margin-top:16px">Next steps <span class="ms-note">${ran ? "approved steps ran through their own engines; see Approvals and outcomes" : "none executed"}</span></h3>
