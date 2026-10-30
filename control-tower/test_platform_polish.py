@@ -232,8 +232,8 @@ else:
         check("Shipment panel: a click outside closes it", pg.locator(".hv-drawer.on").count() == 0)
         pg.route("**/api/hub/shipment*", lambda r: r.fulfill(status=400, content_type="application/json", body='{"error":"bad reference"}'))
         pg.locator("tr[data-ref]").first.click(); pg.wait_for_timeout(600)
-        check("Shipment panel: a refused request says it could not load (it threw an error)",
-              "Could not load the shipment" in pg.locator(".hv-drawer .body").inner_text())
+        check("Shipment panel: a refused request says it could not load, with Try Again (it threw an error)",
+              "could not be loaded" in pg.locator(".hv-drawer .body").inner_text() and pg.locator(".hv-drawer [data-retry]").count() == 1)
         pg.keyboard.press("Escape"); pg.unroute("**/api/hub/shipment*")
         pg.evaluate("location.hash = ''"); pg.wait_for_timeout(800)
         pg.route("**/api/hub/list*", lambda r: r.fulfill(status=500, content_type="application/json", body='{"error":"server error"}'))

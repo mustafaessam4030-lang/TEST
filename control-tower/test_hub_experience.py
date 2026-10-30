@@ -217,11 +217,22 @@ else:
         tp.locator("#askTop").click(); tp.wait_for_timeout(2500)
         ch = tp.frame_locator("#chatF")
         ch.locator("#chatIn").fill("How many shipments are past due?"); ch.locator("#chatIn").press("Enter"); tp.wait_for_timeout(2500)
-        me = ch.locator(".msg.me .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color, getComputedStyle(e).borderBottomRightRadius]")
-        bot = ch.locator(".msg.bot:not(.think) .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e).borderBottomLeftRadius]")
-        check("Chat: what you write is a CAT-yellow bubble with black text and its tail corner",
-              me[0] == "rgb(255, 205, 17)" and me[1] == "rgb(29, 29, 31)" and me[2] == "6px", me)
-        check("Chat: ATLAS answers in a grey bubble with its tail corner", bot[0] == "rgb(233, 233, 235)" and bot[1] == "6px", bot)
+        me = ch.locator(".msg.me .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color, getComputedStyle(e, '::before').backgroundColor]")
+        bot = ch.locator(".msg.bot:not(.think) .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e, '::before').backgroundColor]")
+        check("Chat: what you write is a CAT-yellow bubble with black text and a Messages tail",
+              me[0] == "rgb(255, 205, 17)" and me[1] == "rgb(29, 29, 31)" and me[2] == "rgb(255, 205, 17)", me)
+        check("Chat: ATLAS answers in a grey bubble with its tail, no avatar repeated on each message",
+              bot[0] == "rgb(233, 233, 235)" and bot[1] == "rgb(233, 233, 235)" and not ch.locator(".msg.bot:not(.think) .m-av").last.is_visible(), bot)
+        recv = ch.locator(".msg.me").last.evaluate("e => getComputedStyle(e, '::after').content")
+        check("Chat: 'Delivered' under your latest message once ATLAS has answered", recv == '"Delivered"', recv)
+        check("Chat: ATLAS's face and name sit in the middle of the header", abs(
+              ch.locator("#chAtlas").bounding_box()["x"] + ch.locator("#chAtlas").bounding_box()["width"] / 2 -
+              (ch.locator("#chat").bounding_box()["x"] + ch.locator("#chat").bounding_box()["width"] / 2)) < 3)
+        check("Chat: the send button appears only when there is something to send",
+              ch.locator("#chatSend").evaluate("e => getComputedStyle(e).opacity") == "0")
+        icon = ch.locator("body").evaluate("() => { const d = document.querySelector('body > svg'); const sh = document.querySelector('#chAtlas ellipse'); return [d ? getComputedStyle(d).display : 'missing', sh ? sh.getAttribute('fill') : 'none']; }")
+        check("Chat: the ATLAS character is whole (its colours were hidden with the page in the hub's chat layer)",
+              icon[0] != "none" and icon[0] != "missing" and icon[1] == "url(#axShell)", icon)
         # in a dark theme the chat layer is see-through around the chat (it hid the hub behind an opaque sheet)
         tp.keyboard.press("Escape"); tp.wait_for_timeout(500)
         tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(500)
@@ -237,6 +248,35 @@ else:
         check("In a dark theme the hub stays visible behind the chat layer", ok and tp.locator("#strip").is_visible(), c)
         check("No error with the themes, the sidebar or the chat", not terr, terr)
         tp.close()
+        # Apple motion and states: a press, pages that arrive, the status island, errors with Try Again
+        ctxo = br.new_context(viewport={"width": 1440, "height": 950})
+        mp = ctxo.new_page()
+        merr = []
+        mp.on("pageerror", lambda e: merr.append(str(e)))
+        mp.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light')")
+        mp.goto(BASE + "/hub"); mp.wait_for_timeout(2500)
+        css_all = (HERE / "dashboard" / "static" / "hub" / "hub.css").read_text(encoding="utf-8")
+        check("A press is felt: buttons and links scale down a touch while pressed", ":active:not(:disabled){scale:.96}" in css_all)
+        mp.evaluate("location.hash = '#tracking'"); mp.wait_for_timeout(300)
+        check("A page arrives with a short rise and fade when you navigate", mp.evaluate("document.getElementById('content').classList.contains('nav-in')"))
+        mp.wait_for_timeout(2500)
+        ctxo.set_offline(True); mp.wait_for_timeout(900)
+        txt = mp.locator("#island").inner_text()
+        check("No internet: the status island says so at the top", "Not connected to the internet" in txt
+              and mp.evaluate("document.getElementById('island').classList.contains('on')"), txt)
+        ctxo.set_offline(False); mp.wait_for_timeout(1200)
+        check("...and says Connected when it is back", "Connected" in mp.locator("#island").inner_text())
+        mp.wait_for_timeout(3000)
+        check("...then steps aside", not mp.evaluate("document.getElementById('island').classList.contains('on')"))
+        mp.route("**/api/hub/list*", lambda r: r.fulfill(status=500, content_type="application/json", body='{"error":"server error"}'))
+        mp.evaluate("location.hash = '#tracking?x=1'"); mp.wait_for_timeout(2000)
+        check("An error says what happened, with Try Again", mp.locator("#hvBody .hub-err").count() == 1
+              and mp.locator("#hvBody [data-retry]").inner_text() == "Try Again")
+        mp.unroute("**/api/hub/list*")
+        mp.locator("#hvBody [data-retry]").click(); mp.wait_for_timeout(2000)
+        check("...and Try Again does try again", mp.locator("#hvBody tr[data-ref]").count() > 0)
+        check("No error from the motion, the island or the error states", not merr, merr)
+        ctxo.close()
         dk = br.new_page(viewport={"width": 1440, "height": 950})
         derr = []
         dk.on("pageerror", lambda e: derr.append(str(e)))

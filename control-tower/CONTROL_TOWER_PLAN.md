@@ -304,3 +304,22 @@ press and focus style, less glass (top bar only, small overlays).
 - **ATLAS's chat, Messages style**: your words in a CAT-yellow bubble on the
   right, ATLAS's in a grey bubble on the left with its face at the foot, the
   tail corner, a typing bubble while it answers. Styles only.
+
+## 15. Apple motion, the status island, errors, and the whole Messages chat (30 Oct 2026)
+
+- **ATLAS's icon**: in the hub's chat layer the page's hidden SVG with the
+  character's gradients was hidden with the rest of the page, so only its eyes
+  and antenna showed; that SVG is kept (`body>:not(#app):not(svg)`).
+- **Messages**: ATLAS's face and name centred in a frosted header; no avatar on
+  every answer; runs grouped with the tail on the last bubble; "Delivered" under
+  your latest message, a red "!" and "Not Delivered" (with Retry) when it fails;
+  a three-dot typing bubble with the step beneath; 👍/👎 as a reaction capsule
+  over the bubble; a rounded field whose send button pops in only with text;
+  sent messages rise from the field. Styles only.
+- **Motion**: a press scales buttons and links to .96 with a spring; a page
+  rises and fades in when you navigate; an embedded page fades in when loaded.
+  Reduced motion turns all of it off.
+- **Status island**: a black capsule at the top says "Not connected to the
+  internet", "Can't reach ATLAS Control Tower" or "Connected" (then leaves).
+- **Errors**: an icon, what happened, and Try Again (Overview, list sheet,
+  Shipment Tracking, the shipment panel, To Do).

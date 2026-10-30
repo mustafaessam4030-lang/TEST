@@ -107,6 +107,8 @@ else:
               and "11 open shipments past" in card, card)
         three = pg.evaluate("performance.getEntriesByType('resource').some(e => e.name.includes('three.module'))")
         check("No three.js is loaded for the globe", not three)
+        empty_card = pg.evaluate("(() => { const d = document.createElement('div'); d.style.cssText = 'position:relative;width:400px;height:300px'; document.body.appendChild(d); const g = HubGlobe.mount(d, {}); const h = d.querySelector('.hg-card').hidden; g.destroy(); d.remove(); return h; })()")
+        check("A globe with nothing to show has no empty card", empty_card)
         a = pg.evaluate("document.querySelector('.hg canvas').toDataURL()")
         pg.wait_for_timeout(700)
         check("It turns slowly by itself", pg.evaluate("document.querySelector('.hg canvas').toDataURL()") != a)
