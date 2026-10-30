@@ -1,0 +1,132 @@
+/* ══════════════════════════════════════════════════════════════
+   GLASS — Apple's glass material for the whole platform (hub, Clearance,
+   the run page), in Light, Charcoal and Midnight.
+
+   As Apple does it:
+   · a soft light behind everything (CAT yellow, system blue, teal) so the
+     glass has something to catch;
+   · cards and tiles of frosted glass: a translucent fill, a rim of light
+     brightest at the top-left, a sheen across, a hairline and a soft shadow;
+   · floating layers (top bars, the sidebar, menus, sheets, the globe's card)
+     really blur what is under them;
+   · chart bars and arcs with a glossy edge.
+
+   Styles only, added on top of each page's own (loaded last): no markup,
+   script, data or behaviour changes. In-page cards are not blurred (what is
+   under them is the soft light, so a blur would cost and show nothing);
+   only floating layers are. "Reduce transparency" turns it back to solid.
+══════════════════════════════════════════════════════════════ */
+:root{
+  --gl-fill:linear-gradient(180deg,rgba(255,255,255,.82),rgba(255,255,255,.62));
+  --gl-rim:linear-gradient(140deg,rgba(255,255,255,.98),rgba(255,255,255,.4) 26%,rgba(255,255,255,0) 52%,rgba(255,255,255,.18) 78%,rgba(255,255,255,.75));
+  --gl-float:rgba(250,250,252,.78);
+  --gl-bar:rgba(248,247,245,.82);
+  --gl-side:rgba(242,241,238,.62);
+  --gl-hair:rgba(0,0,0,.07);
+  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.9),0 1px 2px rgba(31,38,51,.04),0 8px 26px rgba(31,38,51,.07);
+  --gl-shadow-hi:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.95),0 2px 4px rgba(31,38,51,.05),0 14px 34px rgba(31,38,51,.10);
+  --gl-float-shadow:0 0 0 .5px rgba(0,0,0,.08),inset 0 1px 0 rgba(255,255,255,.85),0 18px 48px rgba(31,38,51,.16),0 2px 8px rgba(31,38,51,.06);
+  --gl-blur:saturate(190%) blur(28px);
+  --gl-gloss:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,.08) 55%,rgba(255,255,255,0));
+  --gl-ambient:
+    radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.20),transparent 70%),
+    radial-gradient(48vw 52vh at 102% 14%,rgba(0,113,227,.10),transparent 70%),
+    radial-gradient(62vw 60vh at 58% 112%,rgba(48,176,199,.11),transparent 70%),
+    radial-gradient(40vw 40vh at 30% 55%,rgba(255,149,0,.05),transparent 70%);
+}
+/* Charcoal (dark) */
+:root[data-theme="dark"]{
+  --gl-fill:linear-gradient(180deg,rgba(48,48,52,.62),rgba(30,30,33,.50));
+  --gl-rim:linear-gradient(140deg,rgba(255,255,255,.26),rgba(255,255,255,.08) 26%,rgba(255,255,255,0) 52%,rgba(255,255,255,.03) 78%,rgba(255,255,255,.12));
+  --gl-float:rgba(36,36,40,.78);
+  --gl-bar:rgba(22,22,24,.80);
+  --gl-side:rgba(24,24,26,.58);
+  --gl-hair:rgba(255,255,255,.06);
+  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.28);
+  --gl-shadow-hi:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.1),0 2px 4px rgba(0,0,0,.3),0 16px 38px rgba(0,0,0,.36);
+  --gl-float-shadow:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09),0 22px 56px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3);
+  --gl-gloss:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.05) 55%,rgba(255,255,255,0));
+  --gl-ambient:
+    radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.10),transparent 70%),
+    radial-gradient(48vw 52vh at 102% 14%,rgba(10,132,255,.13),transparent 70%),
+    radial-gradient(62vw 60vh at 58% 112%,rgba(48,176,199,.09),transparent 70%),
+    radial-gradient(40vw 40vh at 30% 55%,rgba(191,90,242,.04),transparent 70%);
+}
+/* Midnight (the navy dark) */
+:root[data-theme="dark"][data-dark="midnight"]{
+  --gl-fill:linear-gradient(180deg,rgba(34,50,80,.60),rgba(18,27,45,.50));
+  --gl-rim:linear-gradient(140deg,rgba(170,200,255,.30),rgba(170,200,255,.09) 26%,rgba(170,200,255,0) 52%,rgba(170,200,255,.04) 78%,rgba(170,200,255,.14));
+  --gl-float:rgba(22,33,54,.78);
+  --gl-bar:rgba(12,19,34,.80);
+  --gl-side:rgba(14,22,38,.58);
+  --gl-hair:rgba(170,200,255,.08);
+  --gl-ambient:
+    radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.07),transparent 70%),
+    radial-gradient(48vw 52vh at 102% 14%,rgba(59,155,255,.20),transparent 70%),
+    radial-gradient(62vw 60vh at 58% 112%,rgba(100,210,255,.11),transparent 70%),
+    radial-gradient(40vw 40vh at 30% 55%,rgba(94,92,230,.07),transparent 70%);
+}
+/* Auto on the hub (no data-theme): the device's dark */
+@media (prefers-color-scheme:dark){ :root:not([data-theme]){
+  --gl-fill:linear-gradient(180deg,rgba(48,48,52,.62),rgba(30,30,33,.50));
+  --gl-rim:linear-gradient(140deg,rgba(255,255,255,.26),rgba(255,255,255,.08) 26%,rgba(255,255,255,0) 52%,rgba(255,255,255,.03) 78%,rgba(255,255,255,.12));
+  --gl-float:rgba(36,36,40,.78); --gl-bar:rgba(22,22,24,.80); --gl-side:rgba(24,24,26,.58); --gl-hair:rgba(255,255,255,.06);
+  --gl-shadow:0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.28);
+  --gl-shadow-hi:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.1),0 2px 4px rgba(0,0,0,.3),0 16px 38px rgba(0,0,0,.36);
+  --gl-float-shadow:0 0 0 .5px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09),0 22px 56px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3);
+  --gl-gloss:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.05) 55%,rgba(255,255,255,0));
+  --gl-ambient:radial-gradient(60vw 55vh at 6% -8%,rgba(255,205,17,.10),transparent 70%),radial-gradient(48vw 52vh at 102% 14%,rgba(10,132,255,.13),transparent 70%),radial-gradient(62vw 60vh at 58% 112%,rgba(48,176,199,.09),transparent 70%);
+}}
+
+/* ── the light behind everything ── */
+html::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--gl-ambient)}
+
+/* ── frosted cards and tiles (hub, Tracking and the other hub views, Clearance, the run page) ── */
+:root :is(.card,.chip,.hub-card,.hv-card,.hv-tile,.kpis,.stat,.off-card){
+  background:var(--gl-fill) padding-box,var(--gl-rim) border-box!important;
+  border:1px solid transparent!important;
+  box-shadow:var(--gl-shadow)!important;
+}
+:root :is(.chip,.hv-tile):hover{box-shadow:var(--gl-shadow-hi)!important}
+/* what sat on a card in the card's own white now lets the glass through */
+:root :is(.kpis .kpi,.run-grid div){background:transparent}
+:root .kpis .kpi:hover{background:rgba(255,255,255,.18)}
+:root .run-grid{background:transparent;gap:0}
+:root .run-grid div{box-shadow:inset -1px 0 0 var(--gl-hair),inset 0 1px 0 var(--gl-hair)}
+
+/* ── floating layers: they blur what passes under them ── */
+:root :is(.top,.appbar){background:var(--gl-bar)!important;-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur);
+  box-shadow:inset 0 -.5px 0 var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.25)}
+:root .side{background:var(--gl-side)!important;-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur);border-right-color:var(--gl-hair)!important}
+:root :is(.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.fab,.hub-askfab,.filters){
+  background:var(--gl-float)!important;-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur);
+  border:1px solid transparent!important;box-shadow:var(--gl-float-shadow)!important}
+/* the sheet behind a number: frosted, with the page dimmed and softened behind it */
+:root .dl{-webkit-backdrop-filter:blur(6px) saturate(120%);backdrop-filter:blur(6px) saturate(120%)}
+:root .dl th{background:var(--gl-float)}
+/* segmented controls and tabs: a glass track */
+:root :is(.seg,.tb-th,.pf-th){background:color-mix(in srgb,var(--gl-float) 70%,transparent)!important;
+  -webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur);box-shadow:inset 0 0 0 .5px var(--gl-hair),inset 0 1px 1px rgba(0,0,0,.04)!important}
+:root .seg-thumb{background:var(--gl-fill) padding-box,var(--gl-rim) border-box;border:.5px solid transparent;box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.6)}
+:root .ata-tabs{background:var(--gl-bar)!important;-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur);border-bottom-color:var(--gl-hair)!important}
+/* the menu's selection: CAT yellow, lit from above */
+:root .nav a[aria-current="page"],:root .nav-ink{background-image:var(--gl-gloss);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 0 0 .5px rgba(0,0,0,.06),0 4px 14px rgba(255,205,17,.28)}
+:root .hub-pill.primary{background-image:var(--gl-gloss);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 0 0 .5px rgba(0,0,0,.06),0 2px 8px rgba(255,205,17,.25)}
+:root .hub-pill:not(.primary){background:color-mix(in srgb,var(--gl-float) 85%,transparent);box-shadow:inset 0 0 0 .5px var(--gl-hair),inset 0 1px 0 rgba(255,255,255,.35)}
+
+/* ── charts: glossy bars and arcs ── */
+:root :is(.chip .bar,.chip .bar b,.gb-row u,.hv-bar>*,.bar>i,.bar>b,.bar>span){background-image:var(--gl-gloss);box-shadow:inset 0 .5px 0 rgba(255,255,255,.5)}
+:root .gb-row u{box-shadow:inset 0 .5px 0 rgba(255,255,255,.5),0 0 8px color-mix(in srgb,var(--hub-red,#ff3b30) 30%,transparent)}
+:root .chart rect.b{stroke:rgba(255,255,255,.6);stroke-width:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,.14))}
+:root[data-theme="dark"] .chart rect.b{stroke:rgba(255,255,255,.22);filter:drop-shadow(0 3px 8px rgba(0,0,0,.45))}
+:root svg circle[data-tip]{filter:drop-shadow(0 2px 5px rgba(0,0,0,.14))}
+
+/* glass is only glass where the browser can blur; elsewhere, and with "reduce transparency", solid */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root{--gl-float:var(--hub-surface,var(--surface,#fff));--gl-bar:var(--hub-bg,var(--bg,#f6f5f3));--gl-side:var(--hub-bg-2,var(--surface-2,#efeeeb))}
+}
+@media (prefers-reduced-transparency:reduce){
+  html::before{display:none}
+  :root :is(.card,.chip,.hub-card,.hv-card,.hv-tile,.kpis,.stat,.off-card){background:var(--hub-surface,var(--surface))!important}
+  :root :is(.top,.appbar,.side,.hub-glass,.todo-p,.srch-p,.gb-card,.drill-b,.fab,.hub-askfab,.filters,.ata-tabs,.seg,.tb-th,.pf-th){background:var(--hub-surface,var(--surface))!important;backdrop-filter:none;-webkit-backdrop-filter:none}
+}

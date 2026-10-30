@@ -63,6 +63,7 @@ SUITES = [
     ("test_hub_experience.py", "Hub experience: Now / Recent activity, exceptions with To Do's rules, Tracking around the globe, ATA tabs, one look"),
     ("test_hub_globe.py",      "Hub globe: the map's own pins and routes on a dotted globe, beside the map, readable, keyboard, light/dark"),
     ("test_hub_motion.py",     "Hub motion: every action its own movement (menu glide, sheet from its tile, theme circle, counts, thumbs), presentation only, still under reduced motion"),
+    ("test_glass.py",          "Apple glass: frosted cards and charts, floating bars and menus that blur, muted text still 4.5:1 on the glass in Light, Charcoal and Midnight, solid with reduce transparency"),
     ("test_hub_map3d.py",      "Hub 3D map: three.js self-hosted, 2D fallback (no WebGL / too slow) once, sheet opens the real list"),
     ("test_hub_signin.py",     "Hub sign-in page (WinLogin.aspx), 401 refusals, no EOFError without a console"),
     ("test_cortex.py",         "ATLAS on Snowflake Cortex first, local model as fallback, budget, token kept safe"),
