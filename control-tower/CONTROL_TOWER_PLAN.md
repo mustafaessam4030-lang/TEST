@@ -257,3 +257,32 @@ the local model and Cortex answer everything else as before).
   status colours for dots and fills (text keeps 4.5:1 via the `-ink` tokens),
   neutral graphite dark mode everywhere, Apple's type stack, bolder large
   titles, rounder cards. Tokens only: no markup, script or layout change.
+
+## 13. Apple design language: the hub as one calm product (30 Oct 2026)
+
+Design system (`hub/hub.css`, mirrored in the console's APPLE LAYER and
+`platform.css`): warm whites (`#f6f5f3`) and deep charcoal (`#111113`); a type
+scale (`--hub-t-large … --hub-t-caption`, `--hub-t-kpi`), 4-point spacing
+(`--hub-sp-*`), cards at 16–18 px corners, edge-light shadows, one hover,
+press and focus style, less glass (top bar only, small overlays).
+
+- **Overview**: a date line and a large headline, then **Now** (KPIs in the
+  KPI type, the globe, Operational exceptions, ATA automation, a compact To Do
+  whose button opens the existing slide-out) and **Recent activity**.
+  Exceptions come from `hub.exceptions()` with To Do's own rules
+  (`todo.LONG_PAST_DUE`, eHub status `RequiredCorrection`), BU-scoped; the run's
+  failed / waiting-for-a-person only for unrestricted accounts. Activity comes
+  from `hub.activity()`: export loads, escalations and resolutions, calls and
+  mails logged, ATA run start/finish — no names or addresses.
+- **Shipment Tracking**: the globe first — the business units of the shown
+  shipments (where they clear) and the run's carrier-reported places and
+  routes; choose a BU to filter, a shipment to focus; status on every row;
+  `?q=` / `?bu=` links. Not live GPS, said on the card.
+- **ATA Automation**: tabs over the existing pages — Live run, Shipments &
+  read-back, History, Activity log (`#history?v=logs`) — and whether a Human
+  Action waits (to To Do). The automation itself is unchanged.
+- **Slide-outs**: To Do panel and shipment panel share one motion (.26 s),
+  corners and a round close button; Esc and a click outside close them.
+- Kept removed, as asked earlier: Performance Dashboards (KPI catalogue and
+  reports), Optimization, Master Data, Documents, Carrier Analysis.
+- Tests: `test_hub_experience.py`.
