@@ -256,7 +256,7 @@
   <div class="dl-b hub-glass">
     <div class="dl-h"><div><h3 id="dlT"></h3><p id="dlS"></p></div><button class="dl-x" id="dlX" type="button" aria-label="Close">×</button></div>
     <div class="dl-tools"><input id="dlQ" type="search" placeholder="Search AWB/BOL, BU, step, forwarder, agent" aria-label="Search in this list">
-      <button class="hub-pill" id="dlCsv" type="button">Download CSV</button><a class="hub-pill primary" id="dlOpen" href="/hub#clearance">Open in Clearance</a></div>
+      <button class="hub-pill" id="dlCsv" type="button">Download CSV</button><button class="hub-pill" id="dlAsk" type="button">Ask ATLAS</button><a class="hub-pill primary" id="dlOpen" href="/hub#clearance">Open in Clearance</a></div>
     <div class="dl-body"><table><thead><tr><th>AWB / BOL</th><th>BU</th><th>Mode</th><th>Current step</th><th>ETA</th><th>ATA</th><th style="text-align:right">Days past due</th><th>On time</th><th>Forwarder</th><th>Clearing agent</th></tr></thead><tbody id="dlRows"></tbody></table></div>
     <div class="dl-f"><span id="dlInfo"></span><span class="sp"></span><button class="hub-pill" id="dlMore" type="button">Show more</button></div>
   </div>
@@ -332,7 +332,7 @@
     putHTML($("nav"), html);
     document.querySelectorAll(".axf-slot").forEach((el) => el.replaceWith(atlasIcon()));
   }
-  let shownHash = null;
+  let shownHash = null, listShown = null;
   function route() {
     const view = (location.hash.slice(1) || "overview").split("?")[0];
     const m = MODS.find((x) => x.id === view);
@@ -363,26 +363,50 @@
     else if (!mod) $("title").textContent = "Overview";
     drawNav();
     if (!off && !mod && !emb) visuals();
+    // a link to one list (ATLAS's "Open the list"): /hub#overview?list=pastdue&bu=EG opens it, once per address
+    if (!off && !mod && !emb && listShown !== location.hash) {
+      listShown = location.hash;
+      const p = new URLSearchParams(location.hash.split("?")[1] || ""), ls = p.get("list");
+      if (ls && TITLES[ls]) openList(ls, (p.get("bu") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || null);
+    }
     $("setTop").toggleAttribute("aria-current", view === "settings");
     if (view === "settings") $("setTop").setAttribute("aria-current", "page");
     $("side").classList.remove("open");
   }
   addEventListener("hashchange", route);
+  // a link in ATLAS's answer moved the hub: the chat layer steps aside to show it
+  addEventListener("hashchange", () => { $("chatF").hidden = true; });
 
   /* ── ATLAS's chat on every page: an existing page opens its own; the hub's pages open the same chat in a layer ── */
+  let chatBack = null;
   function askAtlas(e) {
     if (e) e.preventDefault();
+    chatBack = document.activeElement;
     const emb = !document.querySelector('[data-view="embed"]').hidden, f = $("embedF"), c = $("chatF");
     if (emb && f.contentWindow) { f.contentWindow.postMessage({type: "hub-chat-open"}, location.origin); return; }
     c.hidden = false;
-    if (!c.getAttribute("src")) c.setAttribute("src", "/?embed=chat&theme=" + (isDark() ? "dark" : "light"));
-    else c.contentWindow.postMessage({type: "hub-chat-open"}, location.origin);
+    if (!c.getAttribute("src")) {
+      c.addEventListener("load", () => tellChat(c), {once: true});
+      c.setAttribute("src", "/?embed=chat&theme=" + (isDark() ? "dark" : "light"));
+    } else { tellChat(c); c.contentWindow.postMessage({type: "hub-chat-open"}, location.origin); }
+  }
+  // ATLAS is told the hub page it was opened from and the list on screen, so
+  // "explain this number" is about what the person is looking at.
+  function tellChat(c) {
+    const view = (location.hash.slice(1) || "overview").split("?")[0];
+    const page = view === "overview" ? "hub" : (view === "tracking" || view === "todo") ? view : "hub";
+    const sel = !$("dl").hidden && LIST.stage ? {stage: LIST.stage, bu: LIST.bu || ""} : {};
+    try { c.contentWindow.postMessage({type: "hub-page", page, view: sel}, location.origin); } catch (e) { /* not loaded */ }
   }
   addEventListener("message", (e) => {
-    if (e.origin === location.origin && e.data && e.data.type === "hub-chat-closed") { $("chatF").hidden = true; $("askFab").focus(); }
+    if (e.origin === location.origin && e.data && e.data.type === "hub-chat-closed") {
+      $("chatF").hidden = true;
+      (chatBack && document.contains(chatBack) && chatBack.offsetParent ? chatBack : $("askFab")).focus();
+    }
   });
   $("askFab").addEventListener("click", askAtlas);
   $("askTop").addEventListener("click", askAtlas);
+  $("dlAsk").addEventListener("click", askAtlas);          // about the list that is open
 
   /* ── an existing page inside the hub: /hub#po?po=… opens /#po?po=… with ?embed=1 ── */
   const isDark = () => document.documentElement.dataset.theme === "dark" ||

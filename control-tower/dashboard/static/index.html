@@ -26,6 +26,9 @@ var openChat=function(){var f=document.getElementById('fab');if(f)f.click();};
 addEventListener('message',function(e){if(e.origin!==location.origin||!e.data)return;
 if(e.data.type==='hub-theme')th(e.data.theme);else if(e.data.type==='hub-chat-open')openChat();
 /* the hub's To Do opened a Human Action that needs the live view: the run page's own viewer shows it */
+/* the hub page the chat was opened from, and the list on screen: what ATLAS's answer is about */
+else if(e.data.type==='hub-page'&&/^(hub|tracking|todo)$/.test(String(e.data.page))){var v={},sv=e.data.view||{};
+['stage','bu'].forEach(function(k){if(typeof sv[k]==='string'&&/^[A-Za-z0-9]{0,12}$/.test(sv[k])&&sv[k])v[k]=sv[k];});window.__hubCtx={page:String(e.data.page),view:v};}
 else if(e.data.type==='hub-viewer'&&/^[A-Za-z0-9_.:-]{1,64}$/.test(String(e.data.action_id||''))&&typeof window.openViewer==='function')window.openViewer(String(e.data.action_id));});
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a||a.target||e.defaultPrevented)return;
 var u=new URL(a.href,location.href);if(u.origin!==location.origin||u.pathname===location.pathname||/^\/(api|static)\//.test(u.pathname))return;
@@ -7394,7 +7397,7 @@ document.addEventListener('click', (e) => {
   // [text](/page) links to the Control Tower's own pages only (never another site).
   const fmt = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                            .replace(/`(.+?)`/g, '<code>$1</code>')
-                           .replace(/\[([^\]<>]+)\]\((\/(?!\/)[\w\-\/#=&;.]*)\)/g, '<a href="$2">$1</a>');
+                           .replace(/\[([^\]<>]+)\]\((\/(?!\/)[\w\-\/#=&;.?]*)\)/g, '<a href="$2">$1</a>');
 
   /* An answer's own structure, drawn from its text: the grounding labels
      ATLAS writes (**Fact** — …, **Inference** — …) become labelled rows,
@@ -7881,6 +7884,10 @@ document.addEventListener('click', (e) => {
     const ask = withPoContext({question: q, context: {reference: lastReference, action_id: lastFocus,
                                                    evidence_id: lastEvidence, conduct: conductCount,
                                                    page: activePage}});
+    // In the hub's chat layer: the hub page it was opened from (and its open list).
+    if (window.__hubCtx && document.documentElement.classList.contains('hub-chat')){
+      ask.context.page = window.__hubCtx.page; ask.context.view = window.__hubCtx.view;
+    }
     ask.context.progress_id = pid;
 
     fetch('/api/ask', {
