@@ -4,11 +4,11 @@
   Run once, on the tower server, in an ADMINISTRATOR PowerShell:
 
       cd C:\MantracTower\control-tower\deploy\iis
-      powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -CertThumbprint <thumbprint>
+      powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantracgroup.com -CertThumbprint <thumbprint>
 
   To test before there is a certificate (plain http, company network only):
 
-      powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -HttpOnly
+      powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantracgroup.com -HttpOnly
 
   Later, the first command (with the certificate) switches the same site to https.
 

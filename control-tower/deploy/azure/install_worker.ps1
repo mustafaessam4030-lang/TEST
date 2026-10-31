@@ -4,7 +4,7 @@
   Run in an elevated PowerShell on the worker VM, from the folder that holds
   the control-tower code (the same code the local Control Tower runs):
 
-      .\deploy\azure\install_worker.ps1 -ControlPlaneUrl https://ata.mantrac.com `
+      .\deploy\azure\install_worker.ps1 -ControlPlaneUrl https://ata.mantracgroup.com `
           -WorkerToken "w_xxxxxxxx.yyyyyyyy"
 
   What it does:

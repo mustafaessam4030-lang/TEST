@@ -22,7 +22,7 @@ run (`CT_DRY_RUN`), opens a loopback-only session endpoint
  Operator's browser (laptop, desktop, tablet, phone)
         │  HTTPS, session cookie, CSRF token
         ▼
- https://ata.mantrac.com  ── Azure App Service (Linux, Python 3.11) ─────────┐
+ https://ata.mantracgroup.com  ── Azure App Service (Linux, Python 3.11) ─────────┐
  │  controlplane/app.py                                                      │
  │   ├─ authentication (local accounts / Microsoft Entra ID)                 │
  │   ├─ authorisation (rbac.py, every route, server-side)                    │
@@ -381,7 +381,7 @@ Control plane:
 |---|---|---|
 | `PORT` / `ATA_PORT` | 8800 | App Service sets `PORT` |
 | `ATA_HOST` | 127.0.0.1 | `0.0.0.0` on App Service |
-| `ATA_PUBLIC_URL` | — | `https://ata.mantrac.com`; Origin check, SSO redirect, links |
+| `ATA_PUBLIC_URL` | — | `https://ata.mantracgroup.com`; Origin check, SSO redirect, links |
 | `DATABASE_URL` | `sqlite:///controlplane/data/ata.db` | `postgresql://…?sslmode=require` in Azure (Key Vault) |
 | `ATA_TRUST_PROXY` | 0 | 1 behind App Service (X-Forwarded-Proto/For) |
 | `ATA_INSECURE_COOKIES` | 0 | 1 only for http://127.0.0.1 development; ignored for an https public URL |
@@ -443,7 +443,7 @@ inbound) and optional Azure Bastion for administrators.
 2. `cp deploy/azure/main.parameters.example.json main.parameters.json`; set `publicUrl`.
 3. `az deployment group create -g rg-ata -f deploy/azure/main.bicep -p @main.parameters.json -p pgAdminPassword=… vmAdminPassword=…`
 4. Entra ID (recommended): App registrations → New → name "ATA Control Tower",
-   single tenant, redirect URI (Web) `https://ata.mantrac.com/auth/sso/callback`;
+   single tenant, redirect URI (Web) `https://ata.mantracgroup.com/auth/sso/callback`;
    Certificates & secrets → new client secret → store it:
    `az keyvault secret set --vault-name <kv> -n entra-client-secret --value …`;
    optionally App roles `ATA.Admin`, `ATA.Operator`, `ATA.Viewer`, assign people.
@@ -456,18 +456,18 @@ inbound) and optional Azure Bastion for administrators.
    `python -m controlplane add-worker --name ATA-WORKER-01` — copy the token.
 7. Worker VM (via Bastion): install Python 3.11+, copy the control-tower
    folder (with `C:\Automation\credentials.txt` as today), run
-   `.\deploy\azure\install_worker.ps1 -ControlPlaneUrl https://ata.mantrac.com -WorkerToken w_…`,
+   `.\deploy\azure\install_worker.ps1 -ControlPlaneUrl https://ata.mantracgroup.com -WorkerToken w_…`,
    enable auto-logon for the worker account, restart. Access → Workers shows it ONLINE.
 8. Custom domain (section 15). 9. Sign in, Start automation with **dry run**
    first, confirm, then a live run.
 
 ## 15. Stable URL
 
-1. App Service → Custom domains → Add `ata.mantrac.com`; create the CNAME
+1. App Service → Custom domains → Add `ata.mantracgroup.com`; create the CNAME
    (`ata` → `<app>.azurewebsites.net`) and the `asuid.ata` TXT record it shows.
 2. Add an App Service managed certificate (or a Mantrac certificate from Key
    Vault) and bind it (SNI SSL).
-3. Set `ATA_PUBLIC_URL=https://ata.mantrac.com` (Bicep parameter) — it drives
+3. Set `ATA_PUBLIC_URL=https://ata.mantracgroup.com` (Bicep parameter) — it drives
    the Origin check, the SSO redirect and the links in invitations.
 4. The worker's `ATA_CONTROL_PLANE_URL` uses the same address.
 
@@ -543,7 +543,7 @@ typed through the live view found nowhere afterwards.
 ## 20. Manual steps required from you
 
 1. An Azure subscription and a resource group; run steps 1–5 of §14.
-2. DNS for `ata.mantrac.com` (CNAME + TXT) and the certificate (§15).
+2. DNS for `ata.mantracgroup.com` (CNAME + TXT) and the certificate (§15).
 3. Decide sign-in: Entra ID app registration (recommended; IT admin consent),
    or local accounts only (`ATA_LOCAL_LOGIN=1`).
 4. Create the first admin (§14 step 6) and then invite people from Access.

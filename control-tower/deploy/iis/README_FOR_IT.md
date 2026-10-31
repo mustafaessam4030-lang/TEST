@@ -1,6 +1,6 @@
 # ATA Control Tower on IIS — one page for IT
 
-**Goal:** colleagues open `https://ata.mantrac.com` (your choice of name)
+**Goal:** colleagues open `https://ata.mantracgroup.com` (your choice of name)
 instead of `http://<server>:8787`. IIS on the tower server handles HTTPS and
 forwards everything to the tower on `http://127.0.0.1:8787`. The tower stays
 where it is; nothing is uploaded anywhere; the name is for the company network
@@ -8,7 +8,7 @@ or VPN only.
 
 ## What IT provides
 
-1. **DNS:** an internal A record, e.g. `ata.mantrac.com` → the tower server's IP.
+1. **DNS:** an internal A record, e.g. `ata.mantracgroup.com` → the tower server's IP.
 2. **Certificate** for that name (company CA or public), installed in the
    server's **Local Computer → Personal** store. Note its thumbprint.
 3. **Firewall:** inbound TCP 443 (and 80, which only redirects) from the
@@ -20,29 +20,29 @@ or VPN only.
 
 ```powershell
 cd C:\MantracTower\control-tower\deploy\iis
-powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -CertThumbprint <thumbprint>
+powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantracgroup.com -CertThumbprint <thumbprint>
 ```
 
 **Testing before the certificate?** Use plain http first (company network,
 test accounts only — passwords are not encrypted on the wire):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantrac.com -HttpOnly
+powershell -ExecutionPolicy Bypass -File .\setup_iis.ps1 -HostName ata.mantracgroup.com -HttpOnly
 # sign out and in, then
-powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantrac.com -HttpOnly
+powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantracgroup.com -HttpOnly
 ```
 
-Open `http://ata.mantrac.com`. When the certificate is ready, run the first
+Open `http://ata.mantracgroup.com`. When the certificate is ready, run the first
 command above (with `-CertThumbprint`, without `-HttpOnly`); it switches the
 same site to https in place. Then sign out and in, and check without `-HttpOnly`.
 
 Sign out of Windows and in again, then:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantrac.com
+powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantracgroup.com
 ```
 
-Every line should be PASS. Then sign in at `https://ata.mantrac.com`, start a
+Every line should be PASS. Then sign in at `https://ata.mantracgroup.com`, start a
 dry run, and watch the counters move.
 
 ## The settings that matter (setup_iis.ps1 sets them)

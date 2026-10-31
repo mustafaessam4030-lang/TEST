@@ -88,7 +88,7 @@ the sheet are known by their AWB prefix.
   while there is at least one.
 
 **New · The remote Control Tower (PLATFORM.md).** The dashboard can now run
-as a multi-user web app at a stable address (e.g. https://ata.mantrac.com):
+as a multi-user web app at a stable address (e.g. https://ata.mantracgroup.com):
 each person signs in with their own account (or Microsoft), sees only the
 controls their role allows (Admin, Operator, Viewer — enforced on the server),
 and every sign-in, run, Human Action, approval and access change is in the

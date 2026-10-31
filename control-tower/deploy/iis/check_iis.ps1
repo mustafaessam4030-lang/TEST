@@ -1,7 +1,7 @@
 <#
   ATA Control Tower: check the IIS front door. Changes nothing.
 
-      powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantrac.com
+      powershell -ExecutionPolicy Bypass -File .\check_iis.ps1 -HostName ata.mantracgroup.com
       (before the certificate, after setup_iis.ps1 -HttpOnly: add -HttpOnly)
 
   Each line is PASS, WARN or FAIL. Run it on the server, then once from

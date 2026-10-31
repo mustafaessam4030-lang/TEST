@@ -1,5 +1,5 @@
 """
-Missions on the domain: the tower as it runs behind IIS (ATA_PUBLIC_URL=https://..., ATA_TRUST_PROXY=1),
+Missions on the domain: the tower as it runs behind IIS at https://ata.mantracgroup.com (ATA_PUBLIC_URL, ATA_TRUST_PROXY=1),
 with personal sign-in. Admin, Operator and Viewer sign in; every POST carries the session's CSRF token;
 the cookie is Secure (IIS terminates https, so it is sent by hand here). Missions are proposed, approved,
 followed on the live stream, and their action cards are approved through the real Clearance escalation
@@ -23,7 +23,7 @@ os.environ.update(DASHBOARD_ACCOUNTS_DB=os.path.join(TMP, "accounts.db"), DASHBO
                   ATLAS_INTEL_DIR=os.path.join(TMP, "intel"), PO_DATA_DIR=os.path.join(TMP, "po"), PO_AUTO="0",
                   DASHBOARD_ACCESS_KEY_FILE=os.path.join(TMP, "access_key"), ATA_RUNTIME_DIR=os.path.join(TMP, "rt"),
                   ATA_CLEARANCE_INBOX=os.path.join(TMP, "inbox"), ATA_CONVERSATIONS_FILE=os.path.join(TMP, "conv.jsonl"),
-                  ATA_PUBLIC_URL="https://ata.example.com", ATA_TRUST_PROXY="1", ATLAS_AI="0", ATLAS_MISSION_ACTIONS="1")
+                  ATA_PUBLIC_URL="https://ata.mantracgroup.com", ATA_TRUST_PROXY="1", ATLAS_AI="0", ATLAS_MISSION_ACTIONS="1")
 for k in ("ATLAS_MISSION_POLICIES", "ATLAS_MISSION_PLANNER", "ATLAS_COUNCIL_SIZE"):
     os.environ.pop(k, None)
 os.makedirs(os.environ["ATA_CLEARANCE_INBOX"], exist_ok=True)
@@ -62,7 +62,7 @@ acc.users.create("view@mantrac.example", "Nourine Viewer", "VIEWER", password=PW
 s = socket.socket(); s.bind(("127.0.0.1", 0)); PORT = s.getsockname()[1]; s.close()
 tower.start(port=PORT, open_browser=False, host="127.0.0.1", access_key="domain-key-123456")
 BASE = "http://127.0.0.1:{0}".format(PORT)
-ORIGIN = "https://ata.example.com"
+ORIGIN = "https://ata.mantracgroup.com"
 time.sleep(0.5)
 
 
@@ -75,7 +75,7 @@ class Session(object):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(BASE + path, data=data, method=method)
         req.add_header("Origin", ORIGIN)
-        req.add_header("Host", "ata.example.com")
+        req.add_header("Host", "ata.mantracgroup.com")      # IIS keeps the Host (preserveHostHeader)
         req.add_header("X-Forwarded-For", "10.20.30.40")
         req.add_header("X-Forwarded-Proto", "https")
         if self.cookies:
@@ -183,6 +183,20 @@ st, an = admin.call("GET", "/api/missions/analytics")
 check("Analytics for the Admin", st == 200 and an.get("missions") >= 1)
 st, pol = oper.call("GET", "/api/missions/policies")
 check("Level 4 policies are shown to Admins only", st == 403)
+
+print("\n5. THE LAUNCH PAGE AND THE PROXY'S ORIGIN RULE")
+st, _ = anon.call("GET", "/launch")
+check("/launch loads for a signed-out visitor", st == 200, st)
+bad = Session(); bad.cookies, bad.csrf = dict(oper.cookies), oper.csrf
+req = urllib.request.Request(BASE + "/api/missions/propose", data=json.dumps({"question": "x"}).encode(), method="POST")
+for k, v in (("Origin", "https://evil.example"), ("Host", "ata.mantracgroup.com"), ("Content-Type", "application/json"),
+             ("X-CSRF-Token", oper.csrf), ("Cookie", "; ".join("{0}={1}".format(k2, v2) for k2, v2 in oper.cookies.items()))):
+    req.add_header(k, v)
+try:
+    code = urllib.request.urlopen(req, timeout=20).status
+except urllib.error.HTTPError as e:
+    code = e.code
+check("A POST from another site (wrong Origin) is refused, even with the cookie and token", code == 403, code)
 
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

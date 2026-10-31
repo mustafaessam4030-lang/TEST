@@ -98,10 +98,10 @@ Restart the task. From then on the access key no longer opens the dashboard.
   check): the shipment parks in **Human Action**, and **Open & Continue** lets you do it from your browser.
 - CMA CGM is on hold in this build (carrier restricts access).
 
-## 8. Publish at a company domain (e.g. https://ata.mantrac.com)
+## 8. Publish at a company domain (e.g. https://ata.mantracgroup.com)
 
 The dashboard stays on this server. IIS on the same server answers
-`https://ata.mantrac.com` and forwards to the tower at `http://127.0.0.1:8787`.
+`https://ata.mantracgroup.com` and forwards to the tower at `http://127.0.0.1:8787`.
 Nothing is uploaded anywhere. **The IIS settings below are what the code needs;
 they were written from the code and not tried on an IIS server. IT should check them.**
 
@@ -116,9 +116,9 @@ the reference.
 
 ### What IT does (once)
 
-1. **DNS:** an internal A record `ata.mantrac.com` → this server's internal IP.
+1. **DNS:** an internal A record `ata.mantracgroup.com` → this server's internal IP.
    Company network / VPN only; don't publish it to the internet.
-2. **Certificate:** a certificate for `ata.mantrac.com` (company CA or public),
+2. **Certificate:** a certificate for `ata.mantracgroup.com` (company CA or public),
    installed on this server.
 3. **IIS** with the **URL Rewrite** and **Application Request Routing (ARR)**
    modules. A site bound to **https / 443** with that certificate (and http/80
@@ -157,7 +157,7 @@ the reference.
 In an Administrator Command Prompt, then sign out and in (the scheduled task
 restarts the tower with them):
 ```bat
-setx ATA_PUBLIC_URL https://ata.mantrac.com /M
+setx ATA_PUBLIC_URL https://ata.mantracgroup.com /M
 setx ATA_TRUST_PROXY 1 /M
 ```
 - `ATA_PUBLIC_URL` makes the sign-in cookie **Secure** and makes the links
@@ -171,7 +171,7 @@ setx ATA_TRUST_PROXY 1 /M
 
 ### Check it
 
-1. `https://ata.mantrac.com` → the sign-in page, with a valid certificate (padlock).
+1. `https://ata.mantracgroup.com` → the sign-in page, with a valid certificate (padlock).
 2. Sign in → the Overview, and its counters update live during a dry run.
 3. Press **Start dry run** → accepted. A refusal mentioning "did not come from
    the Control Tower page" means preserveHostHeader is off.
@@ -191,7 +191,7 @@ if the company has a licensed soundtrack, music. It shows no
 data and opens nothing. Sign-in, the three access levels and every protected
 page and API are exactly as before, **before and after** the launch moment.
 The only change while a launch moment is still ahead: a signed-out visitor to
-`https://ata.mantrac.com/` is sent to `/launch` instead of `/login` (with
+`https://ata.mantracgroup.com/` is sent to `/launch` instead of `/login` (with
 personal sign-in on; in access-key mode nothing changes). The
 sign-in page itself always works (there is a small "Administrator sign-in"
 link on the launch page). When the countdown reaches zero the page shows
@@ -219,10 +219,10 @@ setx ATA_LAUNCH_TZ Africa/Cairo /M
   folder. Nothing about the music shows on screen: the
   music starts by itself where the browser allows it, otherwise on the
   first click or key press. For no click at all, add the site to the Edge /
-  Chrome Group Policy **AutoplayAllowlist** (e.g. `[*.]mantrac.com`). With
+  Chrome Group Policy **AutoplayAllowlist** (e.g. `[*.]mantracgroup.com`). With
   no file, or a file that will not play, the page is simply silent.
 
-Check: `https://ata.mantrac.com/launch` shows the countdown in the right zone;
+Check: `https://ata.mantracgroup.com/launch` shows the countdown in the right zone;
 `check_iis.ps1` includes it. IIS needs no change: it forwards every path.
 
 ## Rollback (2 min)
