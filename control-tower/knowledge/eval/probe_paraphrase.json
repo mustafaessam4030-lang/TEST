@@ -1,0 +1,189 @@
+{
+ "schema": "atlas-kb-eval/1",
+ "version": "probe-1",
+ "created": "2026-10-28",
+ "about": "A paraphrase probe: everyday wording far from the items' own words, written after the engine and NOT used to tune it. It measures the limit of keyword retrieval. Scored on retrieval only: the expected item must be the one the answer used. Expect a low score; it is the evidence for or against adding semantic retrieval.",
+ "cases": [
+  {
+   "id": "para-01",
+   "type": "paraphrase",
+   "question": "Who is on the hook if the goods get wrecked while on the ship under FOB?",
+   "expect_items": [
+    "C.incoterm-fob"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-02",
+   "type": "paraphrase",
+   "question": "the port keeps charging us every day because we haven't picked up the box",
+   "expect_items": [
+    "C.demurrage"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-03",
+   "type": "paraphrase",
+   "question": "we kept the carrier's container at our yard too long, what's that fee called",
+   "expect_items": [
+    "C.detention"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-04",
+   "type": "paraphrase",
+   "question": "what's the paper that proves who owns cargo at sea",
+   "expect_items": [
+    "C.bill-of-lading"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-05",
+   "type": "paraphrase",
+   "question": "why does the airline bill us for more kilos than the box weighs",
+   "expect_items": [
+    "B.chargeable-weight"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-06",
+   "type": "paraphrase",
+   "question": "the ship skipped its sailing this week, what is that",
+   "expect_items": [
+    "B.blank-sailing"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-07",
+   "type": "paraphrase",
+   "question": "cargo moved from one vessel to another midway",
+   "expect_items": [
+    "B.transshipment"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-08",
+   "type": "paraphrase",
+   "question": "share of orders that arrived complete and on the promised day",
+   "expect_items": [
+    "E.otif"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-09",
+   "type": "paraphrase",
+   "question": "the customs code number for a product",
+   "expect_items": [
+    "C.hs-classification"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-10",
+   "type": "paraphrase",
+   "question": "how do I find the real reason a problem keeps happening",
+   "expect_items": [
+    "F.root-cause-analysis"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-11",
+   "type": "paraphrase",
+   "question": "our container weight has to be certified before loading — what rule",
+   "expect_items": [
+    "B.vgm"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-12",
+   "type": "paraphrase",
+   "question": "someone who books freight but owns no ships",
+   "expect_items": [
+    "A.nvocc",
+    "A.freight-forwarder"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-13",
+   "type": "paraphrase",
+   "question": "paper confirming the customer received the goods",
+   "expect_items": [
+    "D.proof-of-delivery"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-14",
+   "type": "paraphrase",
+   "question": "customs is holding our goods, what does that mean",
+   "expect_items": [
+    "C.customs-hold"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-15",
+   "type": "paraphrase",
+   "question": "document listing what is in each package",
+   "expect_items": [
+    "C.packing-list"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-16",
+   "type": "paraphrase",
+   "question": "the price customs uses to work out duty",
+   "expect_items": [
+    "C.customs-valuation"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-17",
+   "type": "paraphrase_ar",
+   "question": "ما الرسوم التي يدفعها المستورد عند تأخير استلام الحاوية من الميناء",
+   "expect_items": [
+    "C.demurrage"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-18",
+   "type": "paraphrase_ar",
+   "question": "ما هي بوليصة الشحن",
+   "expect_items": [
+    "C.bill-of-lading"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-19",
+   "type": "paraphrase_ar",
+   "question": "ما هو الوزن القابل للمحاسبة في الشحن الجوي",
+   "expect_items": [
+    "B.chargeable-weight"
+   ],
+   "reference": "retrieval only"
+  },
+  {
+   "id": "para-20",
+   "type": "paraphrase_ar",
+   "question": "ما هو تتبع الشحنات",
+   "expect_items": [
+    "D.milestones"
+   ],
+   "reference": "retrieval only"
+  }
+ ]
+}

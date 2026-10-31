@@ -1,0 +1,231 @@
+/* ATLAS Control Tower — design system (CONTROL_TOWER_PLAN.md §5, §12).
+   One set of tokens for every hub page and component. Light by default, as in
+   the reference; Apple's neutral graphite dark mode (as on every page). Status
+   colours are for status only; one system blue is for action and selection. */
+
+:root{
+  color-scheme:light;
+  --hub-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI Variable Text","Segoe UI",Inter,system-ui,sans-serif;
+  --hub-mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+
+  --hub-bg:#f6f5f3;            /* window background: a warm white */
+  --hub-bg-2:#efeeeb;          /* sidebar */
+  --hub-surface:#ffffff;       /* cards */
+  --hub-surface-2:#f4f3f0;     /* insets, table heads */
+  --hub-glass:rgba(255,255,255,.86);
+  --hub-glass-edge:rgba(255,255,255,.65);
+  --hub-ink:#1d1d1f;
+  --hub-ink-2:#424245;
+  --hub-ink-3:#636368;          /* muted text: 4.5:1 or better on every hub surface */
+  --hub-ink-4:#a1a1a6;
+  --hub-line:rgba(0,0,0,.08);
+  --hub-line-2:rgba(0,0,0,.05);
+
+  --hub-blue:#0071e3;  --hub-blue-wash:rgba(0,113,227,.10);   /* information: in transit, carrier routes */
+  /* Caterpillar: CAT Yellow for action and selection, with black on it; a deep gold
+     where it is text (yellow text on white would not be read); the focus ring the same. */
+  --hub-accent:#ffcd11; --hub-on-accent:#1d1d1f; --hub-accent-ink:#7a5c00; --hub-accent-wash:rgba(255,205,17,.22);
+  --hub-accent-hover:#f2c200; --hub-focus:#8a6a00;
+  --hub-green:#34c759; --hub-green-wash:rgba(52,199,89,.13);
+  --hub-amber:#ff9500; --hub-amber-wash:rgba(255,149,0,.13);
+  --hub-red:#ff3b30;   --hub-red-wash:rgba(255,59,48,.10);
+  --hub-teal:#30b0c7;  --hub-teal-wash:rgba(48,176,199,.13);
+  /* status colours as TEXT (dots, bars and fills keep the bright ones): 4.5:1 or better */
+  --hub-green-ink:#1d7a33; --hub-amber-ink:#8a5000; --hub-red-ink:#d70015; --hub-teal-ink:#0e7490;
+  --hub-purple:#af52de;
+
+  /* map and scene "clay" */
+  --hub-water:#dfe9f3; --hub-water-2:#cfdeec;
+  --hub-land:#fbfbfa;  --hub-land-side:#dcdcd6; --hub-land-edge:#c9c9c2;
+  --hub-land-focus:#eef4ff; --hub-border:#d6d6d0;
+  --hub-tree:#7cc46a; --hub-road:#e9e9ec;
+
+  /* restrained corners, light shadows (an edge, not a lift) */
+  --hub-r-sm:8px; --hub-r:12px; --hub-r-lg:16px; --hub-r-xl:18px;
+  --hub-shadow:0 1px 2px rgba(0,0,0,.04),0 2px 10px rgba(0,0,0,.035);
+  --hub-shadow-lg:0 12px 34px rgba(0,0,0,.11),0 2px 6px rgba(0,0,0,.04);
+  /* type: one scale, Apple's proportions */
+  --hub-t-large:700 34px/1.1 var(--hub-font);
+  --hub-t-title:700 26px/1.15 var(--hub-font);
+  --hub-t-section:700 21px/1.2 var(--hub-font);
+  --hub-t-headline:600 15px/1.3 var(--hub-font);
+  --hub-t-body:400 14px/1.45 var(--hub-font);
+  --hub-t-caption:500 12px/1.35 var(--hub-font);
+  --hub-t-kpi:600 34px/1 var(--hub-font);
+  /* space: 4-point steps */
+  --hub-sp-1:4px; --hub-sp-2:8px; --hub-sp-3:12px; --hub-sp-4:16px; --hub-sp-5:20px; --hub-sp-6:24px; --hub-sp-8:32px; --hub-sp-10:40px;
+  --hub-e:cubic-bezier(.2,.8,.2,1); --hub-spring:cubic-bezier(.3,.7,.4,1.25);
+  --hub-side:256px; --hub-top:60px;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  color-scheme:dark;
+  --hub-bg:#111113; --hub-bg-2:#18181a; --hub-surface:#1c1c1e; --hub-surface-2:#262628;
+  --hub-glass:rgba(30,30,32,.88); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f5f5f7; --hub-ink-2:#d1d1d6; --hub-ink-3:#98989d; --hub-ink-4:#636366;
+  --hub-line:rgba(255,255,255,.10); --hub-line-2:rgba(255,255,255,.06);
+  --hub-blue:#0a84ff; --hub-blue-wash:rgba(10,132,255,.18);
+  --hub-green:#30d158; --hub-green-wash:rgba(48,209,88,.15);
+  --hub-amber:#ff9f0a; --hub-amber-wash:rgba(255,159,10,.15);
+  --hub-red:#ff453a; --hub-red-wash:rgba(255,69,58,.16);
+  --hub-teal:#64d2ff; --hub-teal-wash:rgba(100,210,255,.14);
+  --hub-green-ink:#30d158; --hub-amber-ink:#ff9f0a; --hub-red-ink:#ff6961; --hub-teal-ink:#64d2ff;
+  --hub-accent:#ffcd11; --hub-on-accent:#1d1d1f; --hub-accent-ink:#ffcd11; --hub-accent-wash:rgba(255,205,17,.16);
+  --hub-accent-hover:#ffd84a; --hub-focus:#ffcd11;
+  --hub-water:#101a2b; --hub-water-2:#0b1320;
+  --hub-land:#26282c; --hub-land-side:#1a1b1e; --hub-land-edge:#3a3c41; --hub-land-focus:#1e3354; --hub-border:#45474d;
+  --hub-tree:#30a14e; --hub-road:#2f3136;
+  --hub-shadow:0 0 0 .5px rgba(255,255,255,.04),0 1px 2px rgba(0,0,0,.3);
+  --hub-shadow-lg:0 14px 44px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --hub-bg:#111113; --hub-bg-2:#18181a; --hub-surface:#1c1c1e; --hub-surface-2:#262628;
+  --hub-glass:rgba(30,30,32,.88); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f5f5f7; --hub-ink-2:#d1d1d6; --hub-ink-3:#98989d; --hub-ink-4:#636366;
+  --hub-line:rgba(255,255,255,.10); --hub-line-2:rgba(255,255,255,.06);
+  --hub-blue:#0a84ff; --hub-blue-wash:rgba(10,132,255,.18);
+  --hub-green:#30d158; --hub-green-wash:rgba(48,209,88,.15);
+  --hub-amber:#ff9f0a; --hub-amber-wash:rgba(255,159,10,.15);
+  --hub-red:#ff453a; --hub-red-wash:rgba(255,69,58,.16);
+  --hub-teal:#64d2ff; --hub-teal-wash:rgba(100,210,255,.14);
+  --hub-green-ink:#30d158; --hub-amber-ink:#ff9f0a; --hub-red-ink:#ff6961; --hub-teal-ink:#64d2ff;
+  --hub-accent:#ffcd11; --hub-on-accent:#1d1d1f; --hub-accent-ink:#ffcd11; --hub-accent-wash:rgba(255,205,17,.16);
+  --hub-accent-hover:#ffd84a; --hub-focus:#ffcd11;
+  --hub-water:#101a2b; --hub-water-2:#0b1320;
+  --hub-land:#26282c; --hub-land-side:#1a1b1e; --hub-land-edge:#3a3c41; --hub-land-focus:#1e3354; --hub-border:#45474d;
+  --hub-tree:#30a14e; --hub-road:#2f3136;
+  --hub-shadow:0 0 0 .5px rgba(255,255,255,.04),0 1px 2px rgba(0,0,0,.3);
+  --hub-shadow-lg:0 14px 44px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
+}
+
+/* Midnight: the navy dark, a second dark theme (Settings: Light · Charcoal · Midnight · Auto) */
+@media (prefers-color-scheme:dark){ :root[data-dark="midnight"]:not([data-theme="light"]){
+  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
+  --hub-glass:rgba(18,27,45,.88); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
+  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
+  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
+  --hub-water:#0d1b30; --hub-water-2:#0a1628;
+  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
+  --hub-road:#24334d;
+}}
+:root[data-theme="dark"][data-dark="midnight"]{
+  --hub-bg:#0b1220; --hub-bg-2:#0e1626; --hub-surface:#121b2d; --hub-surface-2:#172238;
+  --hub-glass:rgba(18,27,45,.88); --hub-glass-edge:rgba(255,255,255,.08);
+  --hub-ink:#f2f4f8; --hub-ink-2:#c9d1de; --hub-ink-3:#93a0b5; --hub-ink-4:#64718a;
+  --hub-line:rgba(255,255,255,.09); --hub-line-2:rgba(255,255,255,.05);
+  --hub-blue:#3b9bff; --hub-blue-wash:rgba(59,155,255,.16);
+  --hub-water:#0d1b30; --hub-water-2:#0a1628;
+  --hub-land:#1c2a42; --hub-land-side:#121d31; --hub-land-edge:#2a3a57; --hub-land-focus:#21385e; --hub-border:#30415f;
+  --hub-road:#24334d;
+}
+
+/* ── base ── */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--hub-bg);color:var(--hub-ink);font:var(--hub-t-body);-webkit-font-smoothing:antialiased;letter-spacing:-.006em}
+.num,.hub-num{font-variant-numeric:tabular-nums}
+a{color:var(--hub-accent-ink);text-decoration:none}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--hub-focus);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--hub-mono)}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ── components ── */
+.hub-card{background:var(--hub-surface);border-radius:var(--hub-r-lg);box-shadow:var(--hub-shadow);border:1px solid var(--hub-line-2)}
+.hub-glass{background:var(--hub-glass);border:1px solid var(--hub-glass-edge);box-shadow:var(--hub-shadow-lg);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+.hub-pill{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:999px;border:0;
+  background:var(--hub-surface-2);color:var(--hub-ink);font-weight:500;font-size:13px;cursor:pointer;white-space:nowrap}
+.hub-pill{transition:background-color .15s var(--hub-e),transform .15s var(--hub-e)}
+.hub-pill:hover{background:color-mix(in srgb,var(--hub-surface-2) 82%,var(--hub-ink) 6%)}
+.hub-pill:active{transform:scale(.98)}
+.hub-pill.primary{background:var(--hub-accent);color:var(--hub-on-accent);font-weight:600}
+.hub-pill.primary:hover{background:var(--hub-accent-hover)}
+.hub-pill svg{width:15px;height:15px}
+.hub-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600;line-height:18px;white-space:nowrap}
+.hub-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.hub-badge.plain::before{display:none}
+.hub-badge.live{background:var(--hub-green-wash);color:var(--hub-green-ink)}
+.hub-badge.part{background:var(--hub-amber-wash);color:var(--hub-amber-ink)}
+.hub-badge.off{background:var(--hub-surface-2);color:var(--hub-ink-3)}
+.hub-badge.red{background:var(--hub-red-wash);color:var(--hub-red-ink)}
+.hub-badge.blue{background:var(--hub-blue-wash);color:var(--hub-blue)}
+.hub-badge.teal{background:var(--hub-teal-wash);color:var(--hub-teal-ink)}
+.hub-seg{display:inline-flex;background:var(--hub-surface-2);border-radius:10px;padding:2px;gap:2px}
+.hub-seg button{border:0;background:transparent;border-radius:8px;padding:5px 12px;font-size:12.5px;font-weight:500;cursor:pointer;color:var(--hub-ink-2)}
+.hub-seg button[aria-pressed="true"]{background:var(--hub-surface);color:var(--hub-ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.hub-label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--hub-ink-3)}
+.hub-empty{padding:28px 18px;text-align:center;color:var(--hub-ink-3)}
+.hub-empty b{display:block;color:var(--hub-ink);font-size:15px;margin-bottom:4px}
+.hub-src{font-size:11.5px;color:var(--hub-ink-3)}
+/* ── motion, as Apple does it: a press you feel, pages that arrive, a status island, errors with a way out ──
+   The press is for buttons and links that sit in the page's flow; never for a pin placed on a map by a
+   transform (scaling it would move it from under the pointer). */
+:where(.hub-pill,.nav a,.chip,.exc a,.act a,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hub-askfab,.side-t,.dl-x,.hv-x,.gb-row,.gb-acts button,.gb-ctl button,.hub-err button){transition:scale .24s var(--hub-spring)}
+:where(.hub-pill,.nav a,.chip,.exc a,.act a,.tb-ic,.ata-tabs a,.seg button,.tb-th button,.hub-askfab,.side-t,.dl-x,.hv-x,.gb-row,.gb-acts button,.gb-ctl button,.hub-err button):active:not(:disabled){scale:.96}
+@keyframes hubIn{from{opacity:0;transform:translateY(var(--nav-dy,10px)) scale(.992);filter:blur(3px)}to{opacity:1;transform:none;filter:none}}
+.content.nav-in{animation:hubIn .46s var(--hub-e) both}
+.hub-island{position:fixed;top:10px;left:50%;z-index:300;display:inline-flex;align-items:center;gap:9px;max-width:calc(100vw - 32px);height:38px;padding:0 18px 0 12px;
+  border-radius:999px;background:#1d1d1f;color:#f5f5f7;font:600 13px/1 var(--hub-font);box-shadow:0 12px 32px rgba(0,0,0,.28),0 0 0 .5px rgba(255,255,255,.08);
+  transform:translate(-50%,-72px) scale(.86);opacity:0;pointer-events:none;transition:transform .55s var(--hub-spring),opacity .25s var(--hub-e)}
+.hub-island.on{transform:translate(-50%,0) scale(1);opacity:1}
+.hub-island svg{width:18px;height:18px;flex:none}
+.hub-island.off svg{color:#ff9f0a} .hub-island.down svg{color:#ff453a} .hub-island.back svg{color:#30d158}
+.hub-island span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hub-err{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:34px 20px}
+.hub-err .ic{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;margin-bottom:6px;background:var(--hub-amber-wash);color:var(--hub-amber-ink);animation:hubErr .45s var(--hub-spring) both}
+.hub-err .ic svg{width:22px;height:22px}
+.hub-err b{font-size:16px;letter-spacing:-.01em}
+.hub-err p{margin:0;max-width:440px;color:var(--hub-ink-3);font-size:13px}
+.hub-err .hub-pill{margin-top:10px}
+@keyframes hubErr{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+/* ── every action its own movement (hub/motion.js moves it; these are the looks it moves) ── */
+/* the menu: the yellow selection glides from the old item to the new one */
+.nav{position:relative;z-index:1}
+.nav a{transition:color .2s var(--hub-e),background-color .15s var(--hub-e),scale .24s var(--hub-spring)}
+.nav-ink{position:absolute;z-index:0;border-radius:9px;background:var(--hub-accent);pointer-events:none;
+  box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 16px color-mix(in srgb,var(--hub-accent) 30%,transparent)}
+.nav a.ink-wait{background:transparent!important;box-shadow:none!important;color:var(--hub-ink-2)!important}
+.nav a.ink-wait svg{color:var(--hub-ink-3)!important}
+/* segmented controls (Globe | Map, the theme): a thumb slides under the chosen option */
+.has-thumb{position:relative}
+.has-thumb>button{position:relative;z-index:1;background:transparent!important;box-shadow:none!important}
+.seg-thumb{position:absolute;z-index:0;left:0;top:0;border-radius:7px;background:var(--hub-surface);pointer-events:none;
+  box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px var(--hub-line)}
+.tb-th .seg-thumb{border-radius:999px}
+.seg-thumb.live{transition:left .46s cubic-bezier(.34,1.36,.64,1),width .46s cubic-bezier(.34,1.36,.64,1),top .3s var(--hub-e),opacity .2s var(--hub-e)}
+/* the theme spreads out in a circle from the button pressed */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){z-index:2}
+#theme button svg{transition:color .2s var(--hub-e)}
+#theme button[aria-pressed="true"] svg{animation:moIcon .6s cubic-bezier(.34,1.36,.64,1)}
+@keyframes moIcon{from{transform:rotate(-80deg) scale(.5);opacity:.3}to{transform:none;opacity:1}}
+/* small things that answer the pointer */
+.chip:hover{transform:translateY(-2px)}
+.exc svg{transition:transform .28s cubic-bezier(.34,1.36,.64,1)}
+.exc a:hover svg{transform:translateX(3px)}
+.tdc-l i{transition:transform .28s cubic-bezier(.34,1.36,.64,1)}
+.tdc-l a:hover i{transform:scale(1.6)}
+.tdc-l a{transition:background-color .15s var(--hub-e),scale .24s var(--hub-spring)}
+.tdc-l a:active{scale:.97}
+#setTop svg{transition:transform .6s var(--hub-e)}
+#setTop:hover svg{transform:rotate(60deg)}
+/* ATLAS waves when you reach for it */
+.ax-arm-r{transform-box:view-box;transform-origin:78px 77px}
+.hub-askfab:hover .ax-arm-r,#askTop:hover .ax-arm-r{animation:moWave .9s ease-in-out}
+@keyframes moWave{0%,100%{transform:none}25%{transform:rotate(-20deg)}50%{transform:rotate(10deg)}75%{transform:rotate(-14deg)}}
+/* Download CSV: a check is drawn; Try Again spins while it retries */
+.hub-pill.mo-done{background:var(--hub-green-wash)!important;color:var(--hub-green-ink)!important}
+.mo-ok{width:15px;height:15px;stroke-dasharray:24;stroke-dashoffset:24;animation:moDraw .45s .05s var(--hub-e) forwards}
+@keyframes moDraw{to{stroke-dashoffset:0}}
+.mo-busy::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:moSpin .7s linear infinite}
+@keyframes moSpin{to{transform:rotate(1turn)}}
+/* an error: a short shake, as a wrong password does on a Mac */
+.hub-err{animation:moShake .5s .12s both}
+@keyframes moShake{0%,100%{transform:none}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+/* new activity glows once */
+.act li a{transition:background-color 1.2s var(--hub-e),scale .24s var(--hub-spring)}
+.act li.mo-new a{background:var(--hub-accent-wash);transition:none}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}

@@ -1,0 +1,325 @@
+# ATLAS Enterprise Logistics Control Tower — audit and plan
+
+Stage A of the unified platform build (29 Oct 2026). This is a review document:
+nothing in the product changes until it is agreed. It records what exists
+today, what each navigation item in the reference design would need, and how
+the new interface is introduced without touching the working automation.
+
+Inputs: the ATLAS mock-up PDF (28 Oct, "Supply chain hub"), the two reference
+videos (an Apple-Maps-style 3D map with a bottom sheet; a light isometric
+"WareTrack" yard with animated trucks and forklifts under glass panels), and
+the written brief. The images are visual references only — never a source of
+operational data.
+
+---
+
+## 1. What the repository is today
+
+| Area | Where | Notes |
+|---|---|---|
+| Branches | `claude/atlas-potato-garden` (working), `claude/maia-m6rhri`, `claude/start-work-d53i2b` | No separate production branch; releases are ZIPs from `make_release.py`, installed on MAN-ATAAZ-01 (Windows Server 2022). |
+| Web server | `dashboard/server.py` (stdlib `http.server`, ~2,100 lines) | One process, port 8787, behind IIS at `ata.mantracgroup.com`. SSE live stream at `/api/stream`. gzip + ETag. |
+| UI | `dashboard/static/index.html` (~8,200 lines, vanilla JS), `clearance.html` (~1,300), shared `platform.css`, `search.js`, `todo.js`, `trackmap.js` | No framework, no build step, no npm. Every asset is served from the repo. |
+| ATA automation | `update_eta.py` (~12,700 lines) | Entry `main()`. Hub sign-in → COE/BU view → per shipment: carrier lookup (DHL, Qatar, AFKL, ocean portals) → ETA/ATA → Hub write → read-back verification. Run limits, carrier pacing, holds (CMA CGM), dry run. |
+| Live state | `dashboard/bridge.py` | The automation publishes run, shipment, provider-result, human-action and verification events; the server snapshots them to the UI. The UI never computes automation state itself. |
+| Run control | `dashboard/control.py`, `/api/control` | Start / dry run / pause / stop are *requests* the automation honours between shipments. Disabled unless switched on. One tower per port (exclusive bind). |
+| Human Action | `human_queue.py`, `dashboard/live_view.py`, `/api/human`, `/api/session/` | Pause inside a shipment, remote live view, "open" and "resume" only; nothing typed into a page by the platform. Security codes never handled. |
+| PO automation | `po/` (pipeline, extract, validate, template, mail, ehub, store), `/api/po` | BOE PDF → duty template → validated → email (send/resend permissions). |
+| Clearance | `dashboard/clearance.py`, `clearance.html`, `/api/clearance*` | eHub "Shipment Update" export (.xlsx) uploaded or dropped in an inbox; escalations, contacts, draft mails, To Do. |
+| ATLAS | `dashboard/assistant.py`, `intelligence/` (router, kb, kb_answer, converse, research, factguard…), `knowledge/` (238 items) | Local model (Ollama, qwen3:30b on the server), SearXNG web research, Snowflake Cortex optional. Evidence-labelled answers, abstains. |
+| Accounts | `controlplane/` (users, rbac, audit, oidc) | Roles ADMIN / OPERATOR / VIEWER, 23 permissions, server-side checks, audit log, optional Entra ID. |
+| Learning | `ml/` | Shadow mode; no champion model on the server yet. |
+| Worker | `worker/` | Verification of eHub writes, carrier access checks. |
+| Tests | 93 suites, ~5,600 checks (`run_tests.py`) + 28-step release smoke test | Real browser tests with Playwright/Chromium. |
+| Deployment | `deploy/iis`, `INSTALL_SERVER.bat`, scheduled task "Mantrac Tower" | Python 3.12 on Windows; no admin rights needed for daily use. |
+
+## 2. Capability inventory
+
+**1 = existing and verified · 2 = existing but incomplete · 3 = needs new
+implementation · 4 = blocked (missing data, credentials, permissions or an
+external integration).**
+
+| Navigation item (brief) | Class | What exists / what is missing |
+|---|---|---|
+| Overview | **2** | KPIs, Tracking map, To Do, On the way, ATLAS. Missing: the stage strip (in transit / arrived-under-clearance / cleared-awaiting-delivery) and a live shipment list with drill-down on the same page. |
+| Shipment Tracking | **2** | Run records (carrier ETA/ATA, places, milestones, evidence) and the eHub export (step, ETA, ATA, on-time, agent, forwarder) both exist, but as two pages with two vocabularies. Missing: one shipment view joining them by AWB/BOL, a timeline, source attribution per field. |
+| ATA Tracking / Automation | **1** (engine) / **2** (workspace) | Start/stop/dry run, live progress, human actions, read-back verification, evidence, logs, run history — all real. Spread across Overview, Shipments, History tabs; needs one workspace page. |
+| Clearance Management | **1** | eHub export, filters, drill-down tables, escalations, contacts, mails, headline. |
+| Documents | **2** | PO documents (BOE PDFs, generated templates) and run evidence (screenshots, page text) exist. **No clearance-document list** (certificate of origin, packing list…): the eHub export does not contain one, so "documents missing" cannot be claimed (class 4 for that part). |
+| To Do & Approvals | **2** | To Do (run failures, past due, corrections, missing contacts), Human Action queue, ATLAS knowledge proposals, PO send/resend. Missing: one page listing approvals with priority, owner and status. |
+| Rate Management | **4** | No freight-rate, quote or tender data anywhere in the platform. Needs a data source (OTM export, forwarder rate sheets, or a rates table someone owns) before anything is shown. |
+| Carrier Management | **2** | Real carrier data: holds, pacing, access checks, failures by carrier, timings (`intelligence/carrier_health.py`, telemetry). Missing: a carrier page; service KPIs need more history. |
+| Analytics & KPIs | **2** | Run analysis, clearance KPIs (on-time, cycle, past due, stage targets), knowledge KPI definitions (OTIF, dwell…). Missing: one KPI catalogue page with definitions, periods and denominators. |
+| ATLAS AI Assistant | **1** | Evidence-grounded, page-aware, abstains, local model, permission-checked. |
+| Reports | **2** | Run PDF, shipment PDF, CSV exports. Missing: a reports page and scheduled reports. |
+| Master Data | **2** | Clearance contacts (agents, BUs, forwarders), carrier/AWB prefixes, place resolver (airports, ports, cities). Missing: one page to view and correct them. |
+| Settings | **1** | Users and access levels, theme, preferences, audit log. |
+| Spot Tender (mock-up) | **4** | No tender data or process in the platform. |
+| Optimization (mock-up) | **4** | Needs rates + lanes + volumes; none available. |
+
+Booked shipments (mock-up "Booked 12"): **4** — neither the Hub run nor the
+eHub export carries bookings.
+
+## 3. Data definitions for the new stage strip
+
+All counted from the loaded eHub export (one row per shipment), never typed in:
+
+| KPI | Definition | Source field |
+|---|---|---|
+| Shipments | rows in the export within the filters | all |
+| In transit | open, no ATA, ETA on or after the data date | `ata`, `eta`, `step` |
+| Arrived, under clearance | open, ATA present (or ETA passed), current step in Submit to BU … Customs Release | `ata`, `step` |
+| Cleared, awaiting delivery | current step "Awaiting Receipt" | `step` |
+| On time / late | the export's own On Time flag | `ontime` |
+| Booked | **not shown** — no source | — |
+
+The run's own shipments (Hub + carriers) keep their own states (written,
+partial, skipped, failed, waiting for a person) — they are a different
+population and are never added to the export's counts.
+
+## 4. Architecture of the change
+
+```
+Browser ──▶ IIS (ata.mantracgroup.com) ──▶ dashboard/server.py :8787
+                                          ├─ existing APIs (unchanged)
+                                          ├─ /api/hub/*  new read-only views (join run + export)
+                                          └─ static: hub.html + design system (new), old pages kept
+update_eta.py ──events──▶ bridge.py ──snapshot/SSE──▶ every page
+update_eta.py ◀──requests── control.py ◀── /api/control (unchanged)
+```
+
+Rules:
+
+1. **The automation is not modified for the UI.** The new workspace reads the
+   same bridge snapshot and SSE stream and sends the same `/api/control`
+   requests the current dashboard does. No new write path to the Hub.
+2. **New endpoints are read-only views** over existing stores (bridge
+   snapshot, clearance export, escalations, PO store, telemetry), behind the
+   existing permission checks. Each is checked against existing endpoints
+   first; nothing is duplicated.
+3. **Same domain, same sign-in.** The hub lives at `/hub` on the same server
+   and session as today. `/`, `/clearance` and every existing page stay
+   exactly where they are; nothing redirects to the hub.
+4. **Adding, never replacing.** The hub is added next to the current pages.
+   Existing pages, files, ATLAS and its icon are not removed, renamed,
+   redirected or redesigned. A hub module that has no view of its own yet
+   links to the existing page. Changes to existing files are limited to
+   adding new routes and lines.
+5. **No new runtime dependencies.** No framework, no npm, no external map
+   tiles. Maps and animations are drawn from data the server already serves
+   (Natural Earth outlines in `static/maps`, the place resolver).
+   **One approved exception (29 Oct 2026): three.js** for the 3D map only —
+   version 0.169.0 (r169, Sept 2024), the single file `build/three.module.min.js`
+   from https://registry.npmjs.org/three/-/three-0.169.0.tgz, unmodified,
+   self-hosted at `dashboard/static/vendor/three.module.min.js` with its MIT
+   `LICENSE` beside it. Core only, no add-ons, no CDN, no build step.
+
+## 5. Design system ("Apple" direction)
+
+* **Light by default** (as in both reference videos), with a dark mode in
+  midnight navy for control-room screens. One set of tokens in a single
+  stylesheet; every page uses it.
+* **Type:** the system UI stack (`-apple-system, "SF Pro Text", "Segoe UI
+  Variable", Inter…`) — SF on Apple devices, Segoe on the Windows server.
+  Tabular figures for numbers.
+* **Surfaces:** frosted glass panels (`backdrop-filter`) over the map and the
+  operations scene; solid cards elsewhere; 14–20 px radii; soft, low shadows;
+  hairline separators.
+* **Colour:** neutral greys, one system blue for action and selection, green
+  / amber / red only for status.
+* **Components:** sidebar, KPI chip, stage strip, sheet (Apple Maps bottom
+  sheet), segmented control, pill button, drawer, table, timeline, empty /
+  stale / no-permission states.
+* **Motion:** short, purposeful (sheet slides, pin drops, route draw-on);
+  everything respects "reduce motion".
+
+## 6. Maps "next level"
+
+* **3D tilted map** (pitch, rotate, zoom) drawn on canvas with extruded,
+  soft-shaded land in the clay style of the Apple Maps reference; water,
+  coastlines, country borders; no external tiles.
+* **Pins** only at places a carrier or the eHub export actually named (place
+  resolver: airports, ports, cities). Each pin opens an **Apple-Maps-style
+  sheet**: place, counts by stage, shipments there, last update, a small
+  "by hour/day" bar chart from real timestamps, and actions (open list,
+  ask ATLAS).
+* **Routes** drawn origin → last reported place → destination, with the
+  driven part solid and the remaining part dashed; never a guessed position
+  between reported places.
+* **Freshness** on every pin and sheet ("reported 11 Oct 08:38, 18 days ago").
+
+**3D map and its fallback (`hub/map3d_gl.js` → `hub/map3d.js`).** The 3D
+map (three.js, WebGL) is used when the browser has WebGL. It switches to the
+2D canvas map **once, and never back automatically**, when: WebGL is
+unavailable or the context cannot be created; three.js fails to load; the
+WebGL context is lost; or the **median frame time over the first 2 seconds
+of drawing is above 50 ms**. The chosen mode and the reason are written to
+the browser console (`[hub map] mode: 3d|2d — reason`). The 2D/3D button
+still switches by hand in both directions.
+
+## 7. Daily operations scene
+
+The isometric scene from the WareTrack reference, drawn in SVG, shows the
+day's flow as **an illustration whose quantities are real**: inbound lane
+(in transit), quay/apron (arrived, under clearance), customs gate (at a
+customs step), bonded yard (awaiting receipt), out-gate (completed today).
+Each zone's vehicle count is the real count from the export (capped, with the
+number on a label), and clicking a zone opens its shipment list. It is
+labelled "illustration — counts from the eHub export as of <date>".
+
+## 8. Stages and what each delivers
+
+| Stage | Delivers | Exit check |
+|---|---|---|
+| **A** | This audit and plan | Agreed |
+| **B** | Design tokens + app shell (`/hub`): sidebar, top bar, search, To Do, profile, theme; all modules listed with status (live / partial / not connected); the ATLAS character as ATLAS's icon | Old pages unchanged; shell tests; screenshots light/dark/desktop/tablet |
+| **C** | Overview + Shipment Tracking: stage strip (§3), 3D map + sheets, live shipment list and cards, one shipment view joining run + export | Counts equal the Clearance page's; no position without a source |
+| **D** | ATA workspace: run status, queue, human actions, verification, evidence, errors, run history — on the existing APIs | Existing automation tests + Human Action e2e pass unchanged |
+| **E** | Clearance, Documents (what exists), To Do & Approvals, Carrier, Master Data views | Each view's numbers traced to a source |
+| **F** | ATLAS in the shell, KPI catalogue, Reports page, security review, full suite, smoke | Full suite + smoke + review |
+
+Rate Management, Spot Tender and Optimization stay visible as **"not
+connected — needs a rates source"** until a data owner and source exist.
+
+## 9. Not done without explicit approval
+
+Deploying to MAN-ATAAZ-01, live Hub writes, production runs, new credentials
+or external services.
+
+## 10. Status (29 Oct 2026)
+
+| Stage | Status | What was delivered | Exit check |
+|---|---|---|---|
+| A | Done | This document | Agreed |
+| B | Done | Tokens (`hub/hub.css`), `/hub` shell, modules with live / partial / not connected, the ATLAS character as ATLAS's icon (byte-identical template) | `test_hub.py` §6: `/` and `/clearance` unchanged, nothing redirects |
+| C | Done | Stage strip, 3D map (three.js r169 self-hosted, Apple Maps visual language, 2D fallback once), daily-flow scene, lists behind every number, Shipment Tracking with one shipment joined from the export and the run (each field with its source) | `test_hub.py`, `test_hub_map3d.py`, `test_hub_views.py`; counts equal the Clearance page's (same `clearance.records`) |
+| D | Done | The existing pages inside the hub, as they are: ATA Automation (the run page with its controls, plus a Human Action button that opens the Human Action page and leads back), Run Shipments, BOE / PO Automation, Clearance, ATLAS, Access, Settings. Opened with `?embed=1` they hide only their brand bar, take the hub's theme and open links to other pages in the hub; opened directly they are unchanged. ATLAS's chat is on every page: an existing page shows its own; the hub's own pages open the same chat (`/?embed=chat`) in a layer | `test_hub_views.py`; the existing pages' own suites unchanged |
+| E | Done | To Do & Approvals, Master Data (read). Removed at the owner's request (30 Oct): Documents, Carriers, Analytics & KPIs, Reports, Optimization, Run History and Human Action as menu pages | `test_hub_views.py` |
+| F | Done | Security review (findings fixed), full suite, release ZIP and smoke test | See the final report |
+
+Still not connected (no data source), shown as Soon: Rate Management, Spot Tender.
+
+Access while in review: `/hub` and `/api/hub/*` need the admin-only
+`hub.preview` permission. Every hub number is counted from the rows of the
+business units the person may see; no account carries a BU limit yet (adding
+one would change the existing Clearance page, To Do, search and ATLAS too —
+a decision for the owner).
+
+## 11. ATLAS on the platform: read-only tools (30 Oct 2026)
+
+`dashboard/atlas_tools.py` answers the platform's own numbers before the
+rules do. Nothing else about ATLAS changed (the rules, the knowledge base,
+the local model and Cortex answer everything else as before).
+
+- **One source of each rule.** Stages come from `hub.STAGES` and
+  `hub.stages()`, past due from `clearance.past_due()`, pages and links from
+  `hub.MODULES`. ATLAS's number and the hub's number are the same count.
+- **Numbers only from a tool.** Every reply is checked (`grounded()`): a
+  figure no tool returned turns the reply into "I don't have data for that".
+- **No data, said plainly.** Freight rates and tenders (not connected) and
+  missing documents (the export has no document list) get "No data: …" and
+  no figure.
+- **Short first, with a link and how it's counted.** The number, then
+  "Open the list" (`/hub#overview?list=<stage>&bu=<BU>` opens that exact
+  list), then the definition and the export's date. "How is X counted /
+  what does X mean" leads with the definition.
+- **English and Arabic.** An Arabic question gets an Arabic answer (country
+  names with their BU codes).
+- **Page awareness.** The hub's chat is told the hub page and the list on
+  screen; "Explain this number" explains that list, or the Overview's stage
+  strip. The list sheet has its own Ask ATLAS.
+- **Scope and role.** The server passes the person's role and BUs (never the
+  browser): a BU-limited person is counted only their BUs and refused
+  another's; a role without Clearance gets no export figures. The tools never
+  request an action; actions stay behind the existing buttons, confirmation
+  and the Operator/Admin check.
+- **Left to the rules.** Anything cut by agent, forwarder, mode, step,
+  division, carrier or month, a single shipment, the run, the BOE page, and
+  Clearance with filters on screen.
+- **Logging.** `<runtime>/clearance/atlas_tools.jsonl`: time, intent, tools,
+  language and milliseconds only — no question, BU, reference or person.
+- **Eval.** `python atlas_platform_eval.py <dir> <export.xlsx> <out>`:
+  44 questions (EN/AR) plus 12 held-out paraphrases, expected values counted
+  by the eval's own code. Tests: `test_atlas_tools.py`.
+
+## 12. Globe and the Apple look (30 Oct 2026)
+
+- **Globe** (`dashboard/static/hub/globe.js`): the Overview's "Where shipments
+  are" opens on a dotted globe (Canvas 2D, no library): land as dots from the
+  same `world.json`, the map's own pins and routes (`mapData`), labels that
+  never overlap, a glass card (past due by BU, or the chosen BU with its
+  actions), drag to turn, zoom, pause, reduced motion respected. The map is
+  unchanged behind "Globe | Map" (remembered; `?map=2d|3d` opens the map,
+  `?map=globe` the globe). three.js loads only when the Map is shown.
+- **Apple look**: one "APPLE LAYER" of tokens at the end of the console's
+  styles (index.html), mirrored in `platform.css` (test_platform_look.py) and
+  matched in `hub/hub.css`: system blue for action (was indigo), Apple's
+  status colours for dots and fills (text keeps 4.5:1 via the `-ink` tokens),
+  neutral graphite dark mode everywhere, Apple's type stack, bolder large
+  titles, rounder cards. Tokens only: no markup, script or layout change.
+
+## 13. Apple design language: the hub as one calm product (30 Oct 2026)
+
+Design system (`hub/hub.css`, mirrored in the console's APPLE LAYER and
+`platform.css`): warm whites (`#f6f5f3`) and deep charcoal (`#111113`); a type
+scale (`--hub-t-large … --hub-t-caption`, `--hub-t-kpi`), 4-point spacing
+(`--hub-sp-*`), cards at 16–18 px corners, edge-light shadows, one hover,
+press and focus style, less glass (top bar only, small overlays).
+
+- **Overview**: a date line and a large headline, then **Now** (KPIs in the
+  KPI type, the globe, Operational exceptions, ATA automation, a compact To Do
+  whose button opens the existing slide-out) and **Recent activity**.
+  Exceptions come from `hub.exceptions()` with To Do's own rules
+  (`todo.LONG_PAST_DUE`, eHub status `RequiredCorrection`), BU-scoped; the run's
+  failed / waiting-for-a-person only for unrestricted accounts. Activity comes
+  from `hub.activity()`: export loads, escalations and resolutions, calls and
+  mails logged, ATA run start/finish — no names or addresses.
+- **Shipment Tracking**: the globe first — the business units of the shown
+  shipments (where they clear) and the run's carrier-reported places and
+  routes; choose a BU to filter, a shipment to focus; status on every row;
+  `?q=` / `?bu=` links. Not live GPS, said on the card.
+- **ATA Automation**: tabs over the existing pages — Live run, Shipments &
+  read-back, History, Activity log (`#history?v=logs`) — and whether a Human
+  Action waits (to To Do). The automation itself is unchanged.
+- **Slide-outs**: To Do panel and shipment panel share one motion (.26 s),
+  corners and a round close button; Esc and a click outside close them.
+- Kept removed, as asked earlier: Performance Dashboards (KPI catalogue and
+  reports), Optimization, Master Data, Documents, Carrier Analysis.
+- Tests: `test_hub_experience.py`.
+
+## 14. Caterpillar colours, two darks, the sidebar, the chat (30 Oct 2026)
+
+- **CAT in Apple's design**: CAT Yellow `#FFCD11` with black on it for action
+  and selection (primary buttons, the chosen page in the sidebar, the send
+  button, what you write in the chat); a deep gold `#7A5C00` where the brand
+  colour is text (4.5:1 on white); the focus ring 3:1 or better. Blue stays for
+  information (in transit, carrier routes); green, amber, red for status only.
+- **Two darks until the team decides**: Charcoal (`#111113`) and Midnight (the
+  earlier navy, `#0b1220`), a button each beside Light and Auto in the top bar;
+  remembered (`ct-theme`, `ct-dark`), carried to every page inside the hub
+  (`&dark=` and the `hub-theme` message) and to standalone pages.
+- **Sidebar**: Apple's sidebar toggle minimises it to its icons and maximises it
+  again (HIG: let people hide the sidebar; never hidden by default);
+  remembered (`hub-side`); names kept for screen readers and as tooltips.
+- **ATLAS's chat, Messages style**: your words in a CAT-yellow bubble on the
+  right, ATLAS's in a grey bubble on the left with its face at the foot, the
+  tail corner, a typing bubble while it answers. Styles only.
+
+## 15. Apple motion, the status island, errors, and the whole Messages chat (30 Oct 2026)
+
+- **ATLAS's icon**: in the hub's chat layer the page's hidden SVG with the
+  character's gradients was hidden with the rest of the page, so only its eyes
+  and antenna showed; that SVG is kept (`body>:not(#app):not(svg)`).
+- **Messages**: ATLAS's face and name centred in a frosted header; no avatar on
+  every answer; runs grouped with the tail on the last bubble; "Delivered" under
+  your latest message, a red "!" and "Not Delivered" (with Retry) when it fails;
+  a three-dot typing bubble with the step beneath; 👍/👎 as a reaction capsule
+  over the bubble; a rounded field whose send button pops in only with text;
+  sent messages rise from the field. Styles only.
+- **Motion**: a press scales buttons and links to .96 with a spring; a page
+  rises and fades in when you navigate; an embedded page fades in when loaded.
+  Reduced motion turns all of it off.
+- **Status island**: a black capsule at the top says "Not connected to the
+  internet", "Can't reach ATLAS Control Tower" or "Connected" (then leaves).
+- **Errors**: an icon, what happened, and Try Again (Overview, list sheet,
+  Shipment Tracking, the shipment panel, To Do).

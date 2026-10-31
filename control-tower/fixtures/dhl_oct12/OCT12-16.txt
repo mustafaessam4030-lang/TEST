@@ -1,0 +1,75 @@
+Tracking Code: OCT12-16
+This shipment is handled by: DHL Global Forwarding
+Origin: Brussel (Bruxelles), Belgium
+Destination: Accra, Ghana
+Time	Status	Location
+
+
+November 6, 2026
+
+2:44 PM (UTC)	Estimated Delivery	Accra
+
+
+October 10, 2026
+
+5:17 PM (UTC)	Arrived Final Destination	Kotoka International Airport
+
+
+October 10, 2026
+
+5:15 PM (UTC)	Estimated Carrier Arrival (Destination)	Accra
+
+
+October 10, 2026
+
+12:47 PM (UTC +02:00)	Carrier: Departed	Brussels Airport
+
+
+October 10, 2026
+
+12:35 PM (UTC +02:00)	Estimated Carrier Departure (Origin)	Bruxelles (Brussel)
+
+
+October 10, 2026
+
+6:46 AM (UTC +02:00)	Received at airline	Bruxelles (Brussel)
+
+
+October 8, 2026
+
+11:53 PM (UTC +02:00)	Departed DHL Station	Bruxelles (Brussel)
+
+
+October 8, 2026
+
+2:44 PM (UTC)	Customs Entry	Accra
+
+
+October 6, 2026
+
+6:40 PM (UTC +02:00)	Export Customs Cleared	Machelen
+
+
+October 6, 2026
+
+6:00 PM (UTC +02:00)	Estimated Pick Up Date	Grimbergen
+
+
+October 6, 2026
+
+2:37 PM (UTC +02:00)	Received at Origin	Machelen
+
+
+October 6, 2026
+
+2:37 PM (UTC +02:00)	All Export Documents Received	Machelen
+
+
+October 6, 2026
+
+12:37 PM (UTC +02:00)	Actual Pickup Time	Grimbergen
+
+
+October 6, 2026
+
+3:40 AM (UTC +02:00)	Shipment Entered into System	Bruxelles (Brussel)

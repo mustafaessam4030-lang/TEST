@@ -1,0 +1,100 @@
+Tracking Code: OCT12-41
+This shipment is handled by: DHL Global Forwarding
+Origin: Brussel (Bruxelles), Belgium
+Destination: Accra, Ghana
+Time	Status	Location
+
+
+October 8, 2026
+
+10:06 AM (UTC)	Shipment Delivered	Tarkwa
+
+
+October 7, 2026
+
+7:28 PM (UTC)	Import Customs Cleared	Accra
+
+
+October 6, 2026
+
+4:35 PM (UTC)	Handover Freight to Forwarder	Accra
+
+
+October 1, 2026
+
+3:04 PM (UTC)	Customs Entry	Accra
+
+
+September 29, 2026
+
+10:14 AM (UTC)	Freight Recovered at	Accra
+
+
+September 28, 2026
+
+11:14 AM (UTC)	Broker Notified	Accra
+
+
+September 26, 2026
+
+5:15 PM (UTC)	Estimated Carrier Arrival (Destination)	Accra
+
+
+September 26, 2026
+
+4:46 PM (UTC)	Arrived Final Destination	Kotoka International Airport
+
+
+September 26, 2026
+
+4:46 PM (UTC)	Carrier: Arrived	Kotoka International Airport
+
+
+September 26, 2026
+
+12:36 PM (UTC +02:00)	Carrier: Departed	Brussels Airport
+
+
+September 26, 2026
+
+12:35 PM (UTC +02:00)	Estimated Carrier Departure (Origin)	Bruxelles (Brussel)
+
+
+September 26, 2026
+
+5:50 AM (UTC +02:00)	Received at airline	Bruxelles (Brussel)
+
+
+September 25, 2026
+
+11:13 PM (UTC +02:00)	Departed DHL Station	Bruxelles (Brussel)
+
+
+September 22, 2026
+
+6:00 PM (UTC +02:00)	Estimated Pick Up Date	Grimbergen
+
+
+September 22, 2026
+
+2:56 PM (UTC +02:00)	Export Customs Cleared	Machelen
+
+
+September 22, 2026
+
+12:17 PM (UTC +02:00)	Received at Origin	Machelen
+
+
+September 22, 2026
+
+12:17 PM (UTC +02:00)	All Export Documents Received	Machelen
+
+
+September 22, 2026
+
+10:30 AM (UTC +02:00)	Shipment Entered into System	Bruxelles (Brussel)
+
+
+September 22, 2026
+
+10:17 AM (UTC +02:00)	Actual Pickup Time	Grimbergen

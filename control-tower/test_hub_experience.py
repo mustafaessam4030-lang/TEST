@@ -1,0 +1,298 @@
+"""
+The hub's Apple-style experience: the Overview's Now / Recent activity,
+operational exceptions counted with To Do's own rules, recent activity from
+the records (no names or addresses), the compact To Do card opening the
+existing slide-out, Shipment Tracking around the globe, ATA Automation's
+tabs, and one look (type scale, restrained corners, one slide-out motion).
+
+    python test_hub_experience.py
+"""
+import json
+import os
+import re
+import socket
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+TMP = tempfile.mkdtemp(prefix="hub_exp_")
+os.environ.update({"ATA_RUNTIME_DIR": os.path.join(TMP, "rt"), "ATA_CLEARANCE_INBOX": os.path.join(TMP, "inbox"),
+                   "DASHBOARD_ACCOUNTS": "0", "ATLAS_INTEL_DIR": os.path.join(TMP, "intel"),
+                   "PO_DATA_DIR": os.path.join(TMP, "po"), "PO_AUTO": "0",
+                   "DASHBOARD_ACCESS_KEY_FILE": os.path.join(TMP, "access_key")})
+os.makedirs(os.environ["ATA_CLEARANCE_INBOX"])
+
+PASSED, FAILED, SKIPPED = [], [], []
+
+
+def check(name, cond, detail=""):
+    (PASSED if cond else FAILED).append(name)
+    print("  {0}  {1}{2}".format("PASS" if cond else "FAIL", name, "" if cond else "  -- " + str(detail)[:300]))
+
+
+from dashboard import clearance as C, hub as H, todo as TD, server as S  # noqa: E402
+
+
+def row(bu, step, awb, overdue=None, status="x", eta="2026-10-01"):
+    r = {k: None for k in C.FIELDS}
+    r.update(bu=bu, step=step, eta=eta, overdue=overdue, ontime=0 if overdue else 1, awb=awb, mode="Air", status=status, due="2026-10-01")
+    return r
+
+
+ROWS = [row("EG", "Submit to BU", "EG-0001", 45.0), row("EG", "Submit to BU", "EG-0002", 31.0),
+        row("EG", "Customs Declaration", "EG-0003", 30.0), row("EG", "Customs Declaration", "EG-0004", 3.0),
+        row("GH", "Correction Required", "GH-0001", 50.0, "RequiredCorrection"),
+        row("GH", "Completed", "GH-0002"), row("NG", "Mystery step", "NG-0001", None, "x", None)]
+DATA = {"asof": "2026-10-26", "fields": C.FIELDS, "rows": [[r[k] for k in C.FIELDS] for r in ROWS], "dq": {}}
+C.load = lambda: DATA
+RT = C.runtime()
+(RT / "meta.json").write_text(json.dumps({"file": "data.xlsx", "count": 7, "loaded_at": "2026-10-30T08:00:00", "by": "Jane Doe"}))
+(RT / "escalations.json").write_text(json.dumps([
+    {"id": "e1", "awb": "EG-0001", "bu": "EG", "step": "Submit to BU", "status": "open", "at": "2026-10-30T09:00:00", "by": "Jane Doe", "due": "2026-09-01"},
+    {"id": "e2", "awb": "GH-0001", "bu": "GH", "step": "Correction Required", "status": "resolved", "at": "2026-10-29T09:00:00",
+     "resolved_at": "2026-10-30T10:00:00", "by": "Jane Doe", "resolved_by": "John Roe", "due": "2026-09-01"}]))
+(RT / "contact_log.jsonl").write_text(json.dumps({"awb": "EG-0002", "bu": "EG", "kind": "mail", "to": "agent@example.com",
+                                                  "by": "Jane Doe", "at": "2026-10-30T11:00:00"}) + "\n")
+STATE = {"run": {"run_id": "R1", "status": "finished", "started_at": "2026-10-30T07:00:00", "finished_at": "2026-10-30T07:30:00"},
+         "shipments": [{"reference": "X1", "state": "failed"}, {"reference": "X2", "state": "waiting_for_human"},
+                       {"reference": "X3", "state": "updated"}]}
+
+print("\n1. OPERATIONAL EXCEPTIONS: COUNTED WITH TO DO'S OWN RULES")
+ex = {e["id"]: e for e in H.exceptions(DATA, C.records(DATA), STATE)}
+check("Open and past due: every open row with Performance above 0 (5)", ex["pastdue"]["count"] == 5, ex.get("pastdue"))
+check("30 days or more, not escalated: To Do's own threshold and exclusion (EG-0002, EG-0003, GH-0001 = 3)",
+      ex["over30"]["count"] == 3 and TD.LONG_PAST_DUE == 30, ex.get("over30"))
+todo_long = next(i for i in TD.build(lambda p: True, None)["items"] if i["id"] == "clr:long-late")
+check("...the same number To Do shows (never two numbers for one thing)", todo_long.get("count") == ex["over30"]["count"], todo_long)
+check("Correction required: the eHub status To Do uses (1)", ex["correction"]["count"] == 1)
+check("No stage: open rows the strip cannot place (1, no ETA)", ex["nostage"]["count"] == 1)
+check("The run's own: failed (1) and waiting for a person (1), linking to the run and To Do",
+      ex["failed"]["count"] == 1 and ex["human"]["count"] == 1 and ex["human"]["href"] == "/hub#todo")
+check("Only exceptions with a count are listed", all(e["count"] > 0 for e in ex.values()))
+ov = H.overview(STATE, lambda p: True, allowed={"GH"})
+check("A BU-limited person: only their BUs, and no run exceptions (the run has no BU)",
+      {e["id"] for e in ov["exceptions"]} == {"pastdue", "over30", "correction"} and
+      next(e for e in ov["exceptions"] if e["id"] == "pastdue")["count"] == 1, ov["exceptions"])
+
+print("\n2. RECENT ACTIVITY: FROM THE RECORDS, NO NAMES OR ADDRESSES")
+act = H.activity(STATE, lambda p: True)
+kinds = [a["kind"] for a in act]
+check("Export load, escalation, resolution, mail and the run's start and finish, newest first",
+      {"export", "escalation", "resolved", "contact", "run"} <= set(kinds) and
+      [a["at"] for a in act] == sorted([a["at"] for a in act], reverse=True), kinds)
+blob = json.dumps(act)
+check("No person's name or address is in the list", "Jane" not in blob and "John" not in blob and "@" not in blob)
+gh = H.activity(STATE, lambda p: True, allowed={"GH"})
+check("BU-limited: only their BUs' events and nothing from the run",
+      all(a["kind"] in ("export", "resolved", "escalation") for a in gh) and "EG-0001" not in json.dumps(gh), gh)
+check("Without Clearance access: none of the export's events", all(a["kind"] == "run" for a in H.activity(STATE, lambda p: p != "clearance.view")))
+check("The Overview carries both", "exceptions" in H.overview(STATE, lambda p: True) and "activity" in H.overview(STATE, lambda p: True))
+
+print("\n3. ONE LOOK")
+CSS = (HERE / "dashboard" / "static" / "hub" / "hub.css").read_text(encoding="utf-8")
+HUB = (HERE / "dashboard" / "static" / "hub.html").read_text(encoding="utf-8")
+VIEWS = (HERE / "dashboard" / "static" / "hub" / "views.js").read_text(encoding="utf-8")
+TODOJS = (HERE / "dashboard" / "static" / "todo.js").read_text(encoding="utf-8")
+check("A type scale (large title to caption, and one for KPIs) and 4-point spacing",
+      all("--hub-t-" + k in CSS for k in ("large", "title", "section", "headline", "body", "caption", "kpi")) and "--hub-sp-4:16px" in CSS)
+check("Restrained corners: cards 16-18 px (were 20-26)", "--hub-r-lg:16px; --hub-r-xl:18px" in CSS)
+check("Warm whites in light, deep charcoal in dark", "--hub-bg:#f6f5f3" in CSS and "--hub-bg:#111113" in CSS)
+check("Less glass: the sidebar is solid", ".side{position:sticky;top:0;height:100vh;background:var(--hub-bg-2);" in HUB)
+check("One slide-out motion (.26 s) for the To Do panel and the shipment panel",
+      "transition:transform .26s var(--hub-e)" in VIEWS and "transition:transform .26s var(--e)" in TODOJS)
+check("KPI numbers use the KPI type", ".chip .v{font:var(--hub-t-kpi)" in HUB)
+
+print("\n4. IN THE BROWSER")
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
+if sync_playwright is None:
+    SKIPPED.append("browser")
+else:
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        PORT = so.getsockname()[1]
+    S.start(port=PORT, open_browser=False, host="127.0.0.1", access_key=None)
+    BASE = "http://127.0.0.1:{0}".format(PORT)
+    time.sleep(0.4)
+    exe = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
+    with sync_playwright() as p:
+        br = p.chromium.launch(executable_path=exe) if os.path.exists(exe) else p.chromium.launch()
+        errs = []
+        pg = br.new_page(viewport={"width": 1440, "height": 950})
+        pg.on("console", lambda m: m.type == "error" and errs.append(m.text)); pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light')")
+        pg.goto(BASE + "/hub"); pg.wait_for_timeout(3000)
+        heads = pg.eval_on_selector_all("[data-view='overview'] .card-h h2", "els => els.map(e => e.textContent)")
+        check("The Overview is clean: numbers and cards with short titles, no paragraph of text above them",
+              pg.locator("#headline").count() == 0 and pg.locator("#sub").count() == 0 and pg.locator(".sec-h").count() == 0
+              and "Exceptions" in heads and "Recent activity" in heads, heads)
+        exc = pg.eval_on_selector_all("#exL b", "els => els.map(e => e.textContent)")
+        check("Exceptions are listed with their numbers", "Open and past due" in exc and pg.locator("#exL em").first.inner_text() == "5", exc)
+        pg.locator("#exL a").first.click(); pg.wait_for_timeout(1200)
+        check("An exception opens the rows behind it", not pg.evaluate("document.getElementById('dl').hidden")
+              and "past due" in pg.locator("#dlT").inner_text().lower(), pg.locator("#dlT").inner_text())
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(400)
+        acts = pg.locator("#actL").inner_text()
+        check("Recent activity shows the records (export, escalation, mail), no names", "eHub export loaded" in acts
+              and "Escalated EG-0001" in acts and "Mail drafted" in acts and "Jane" not in acts, acts[:300])
+        pg.locator("#tdOpen").click(); pg.wait_for_timeout(500)
+        check("'Open To Do' opens the existing slide-out", pg.evaluate("document.getElementById('todoPanel').classList.contains('show')"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(400)
+        check("...and Esc closes it", not pg.evaluate("document.getElementById('todoPanel').classList.contains('show')"))
+        check("The To Do card is compact: three tasks at most", pg.locator("#todoL li").count() <= 3)
+        # Shipment Tracking around the globe
+        pg.evaluate("location.hash = '#tracking'"); pg.wait_for_timeout(3000)
+        check("Shipment Tracking opens on its globe", pg.locator("#hvGlobe .gb").count() == 1 and
+              "Shown by business unit" in pg.locator("#hvGlobe .gb-card").inner_text())
+        check("Every row says its status (dot and word)", pg.locator("#hvBody .hv-st").count() == pg.locator("#hvBody tr[data-ref]").count() > 0)
+        pg.locator('#hvGlobe .gb-row[data-id="bu:EG"]').click(); pg.wait_for_timeout(900)
+        pg.locator("#hvGlobe .gb-acts button", has_text="Show only EG").click(); pg.wait_for_timeout(600)
+        bus = set(pg.eval_on_selector_all("#hvBody tr[data-ref]", "els => els.map(e => e.dataset.bu)"))
+        check("Choosing a BU on the globe filters the list to it", bus == {"EG"} and pg.evaluate("document.getElementById('hvBu').value") == "EG", bus)
+        pg.locator("#hvBody tr[data-ref]").first.click(); pg.wait_for_timeout(900)
+        check("Choosing a shipment opens its panel and turns the globe to its BU",
+              pg.locator(".hv-drawer.on").count() == 1 and (pg.get_attribute('#hvGlobe .gb-pin[aria-pressed="true"]', "aria-label") or "").startswith("EG"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(400)
+        pg.evaluate("location.hash = '#tracking?q=GH-0001'"); pg.wait_for_timeout(2500)
+        check("A link can carry a search (?q=)", pg.evaluate("document.getElementById('hvQ').value") == "GH-0001"
+              and pg.locator("#hvBody tr[data-ref]").count() == 1)
+        pg.evaluate("location.hash = ''"); pg.wait_for_timeout(1200)
+        check("Leaving Tracking stops its globe", pg.evaluate("!window.HubViews._globe"))
+        # ATA Automation: one place
+        pg.evaluate("location.hash = '#ata'"); pg.wait_for_timeout(2500)
+        tabs = pg.eval_on_selector_all("#ataTabs a:not(.hum)", "els => els.map(e => e.textContent)")
+        check("ATA Automation has its tabs: live run, shipments & read-back, history, activity log",
+              tabs == ["Live run", "Shipments & read-back", "History", "Activity log"] and
+              pg.locator('#ataTabs a[aria-current="page"]').inner_text() == "Live run", tabs)
+        pg.locator("#ataTabs a", has_text="Activity log").click(); pg.wait_for_timeout(2500)
+        check("Activity log opens the run page's own log", pg.evaluate("document.getElementById('embedF').contentWindow.location.hash") == "#logs"
+              and pg.locator('#ataTabs a[aria-current="page"]').inner_text() == "Activity log")
+        check("The tabs say whether a Human Action waits, linking to To Do", pg.get_attribute("#ataTabs a.hum", "href") == "/hub#todo")
+        pg.evaluate("location.hash = '#clearance'"); pg.wait_for_timeout(1500)
+        check("Other pages have no ATA tabs", pg.evaluate("document.getElementById('ataTabs').hidden"))
+        check("No console error anywhere above", not [e for e in errs if "favicon" not in e], errs)
+        pg.close()
+        # Two darks side by side (Charcoal, Midnight), a button each; CAT yellow for the chosen page
+        tp = br.new_page(viewport={"width": 1440, "height": 950})
+        terr = []
+        tp.on("pageerror", lambda e: terr.append(str(e)))
+        tp.add_init_script("sessionStorage.setItem('ct-intro','1');if(!localStorage.getItem('ct-theme'))localStorage.setItem('ct-theme','light')")
+        tp.goto(BASE + "/hub"); tp.wait_for_timeout(2500)
+        names = tp.eval_on_selector_all("#theme button", "els => els.map(e => e.getAttribute('aria-label'))")
+        check("A theme button each: Light, Dark Charcoal, Dark Midnight, Auto",
+              names == ["Light theme", "Dark theme: Charcoal", "Dark theme: Midnight", "Follow the device"], names)
+        sel = tp.evaluate("getComputedStyle(document.querySelector('.nav a[aria-current=\"page\"]')).backgroundColor")
+        check("The chosen page in the sidebar is CAT Yellow with black on it", sel == "rgb(255, 205, 17)", sel)
+        tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(600)
+        bg = tp.evaluate("getComputedStyle(document.body).backgroundColor")
+        check("Midnight: the navy dark", bg == "rgb(11, 18, 32)" and tp.evaluate("document.documentElement.dataset.dark") == "midnight", bg)
+        tp.locator('#theme button[data-t="dark"]').click(); tp.wait_for_timeout(600)
+        check("Charcoal: the charcoal dark", tp.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(17, 17, 19)"
+              and not tp.evaluate("document.documentElement.dataset.dark"))
+        tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(300)
+        tp.reload(); tp.wait_for_timeout(2500)
+        check("The choice is remembered (Midnight after a reload)", tp.evaluate("document.documentElement.dataset.dark") == "midnight"
+              and tp.get_attribute('#theme button[data-t="midnight"]', "aria-pressed") == "true")
+        tp.evaluate("location.hash = '#clearance'"); tp.wait_for_timeout(2500)
+        inner = tp.evaluate("(() => { const d = document.getElementById('embedF').contentDocument; return [d.documentElement.dataset.theme, d.documentElement.dataset.dark, getComputedStyle(d.body).backgroundColor]; })()")
+        check("A page inside the hub follows it (Clearance in Midnight)", inner[0] == "dark" and inner[1] == "midnight", inner)
+        tp.evaluate("location.hash = ''"); tp.wait_for_timeout(1200)
+        # the sidebar: minimise and maximise
+        tp.locator('#theme button[data-t="light"]').click(); tp.wait_for_timeout(300)
+        w0 = tp.locator("#side").bounding_box()["width"]
+        tp.locator("#sideT").click(); tp.wait_for_timeout(600)
+        w1 = tp.locator("#side").bounding_box()["width"]
+        check("The sidebar minimises to its icons", w1 < 90 < w0 and tp.get_attribute("#sideT", "aria-expanded") == "false", (w0, w1))
+        check("...every link keeps its name (screen readers, tooltips)",
+              tp.evaluate("[...document.querySelectorAll('#nav a')].every(a => a.textContent.trim().length > 1 && a.title)"))
+        check("...ATLAS keeps its icon", tp.locator('#nav a[data-mod="atlas"] .axf').is_visible())
+        tp.reload(); tp.wait_for_timeout(2000)
+        check("...and stays minimised after a reload", tp.locator("#side").bounding_box()["width"] < 90)
+        tp.locator("#sideT").click(); tp.wait_for_timeout(600)
+        check("...and maximises again", tp.locator("#side").bounding_box()["width"] > 200 and tp.get_attribute("#sideT", "aria-expanded") == "true")
+        # ATLAS's chat in the Messages style
+        tp.locator("#askTop").click(); tp.wait_for_timeout(2500)
+        ch = tp.frame_locator("#chatF")
+        ch.locator("#chatIn").fill("How many shipments are past due?"); ch.locator("#chatIn").press("Enter"); tp.wait_for_timeout(2500)
+        me = ch.locator(".msg.me .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color, getComputedStyle(e, '::before').backgroundColor]")
+        bot = ch.locator(".msg.bot:not(.think) .bub").last.evaluate("e => [getComputedStyle(e).backgroundColor, getComputedStyle(e, '::before').backgroundColor]")
+        check("Chat: what you write is a CAT-yellow bubble with black text and a Messages tail",
+              me[0] == "rgb(255, 205, 17)" and me[1] == "rgb(29, 29, 31)" and me[2] == "rgb(255, 205, 17)", me)
+        check("Chat: ATLAS answers in a grey bubble with its tail, its face on the left at the foot of the answer",
+              bot[0] == "rgb(233, 233, 235)" and bot[1] == "rgb(233, 233, 235)" and ch.locator(".msg.bot:not(.think) .m-av").last.is_visible()
+              and ch.locator(".msg.bot:not(.think) .m-av").last.bounding_box()["x"] < ch.locator(".msg.bot:not(.think) .bub").last.bounding_box()["x"], bot)
+        recv = ch.locator(".msg.me").last.evaluate("e => getComputedStyle(e, '::after').content")
+        check("Chat: 'Delivered' under your latest message once ATLAS has answered", recv == '"Delivered"', recv)
+        hb = ch.locator(".ch-h").bounding_box(); ab = ch.locator("#chAtlas").bounding_box()
+        check("Chat: ATLAS's face is on the left of the header, its name beside it",
+              ab["x"] - hb["x"] < 30 and ch.locator(".ch-nm").bounding_box()["x"] > ab["x"] + ab["width"] - 2, (hb, ab))
+        check("Chat: the send button appears only when there is something to send",
+              ch.locator("#chatSend").evaluate("e => getComputedStyle(e).opacity") == "0")
+        icon = ch.locator("body").evaluate("() => { const d = document.querySelector('body > svg'); const sh = document.querySelector('#chAtlas ellipse'); return [d ? getComputedStyle(d).display : 'missing', sh ? sh.getAttribute('fill') : 'none']; }")
+        check("Chat: the ATLAS character is whole (its colours were hidden with the page in the hub's chat layer)",
+              icon[0] != "none" and icon[0] != "missing" and icon[1] == "url(#axShell)", icon)
+        # in a dark theme the chat layer is see-through around the chat (it hid the hub behind an opaque sheet)
+        tp.keyboard.press("Escape"); tp.wait_for_timeout(500)
+        tp.locator('#theme button[data-t="midnight"]').click(); tp.wait_for_timeout(500)
+        tp.locator("#askTop").click(); tp.wait_for_timeout(1500)
+        px = tp.screenshot(clip={"x": 300, "y": 120, "width": 4, "height": 4})
+        from io import BytesIO
+        try:
+            from PIL import Image
+            c = Image.open(BytesIO(px)).convert("RGB").getpixel((1, 1))
+            ok = c != (15, 17, 21) and c != (0, 0, 0)
+        except ImportError:
+            ok, c = True, "PIL missing"
+        check("In a dark theme the hub stays visible behind the chat layer", ok and tp.locator("#strip").is_visible(), c)
+        check("No error with the themes, the sidebar or the chat", not terr, terr)
+        tp.close()
+        # Apple motion and states: a press, pages that arrive, the status island, errors with Try Again
+        ctxo = br.new_context(viewport={"width": 1440, "height": 950})
+        mp = ctxo.new_page()
+        merr = []
+        mp.on("pageerror", lambda e: merr.append(str(e)))
+        mp.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','light')")
+        mp.goto(BASE + "/hub"); mp.wait_for_timeout(2500)
+        css_all = (HERE / "dashboard" / "static" / "hub" / "hub.css").read_text(encoding="utf-8")
+        check("A press is felt: buttons and links scale down a touch while pressed", ":active:not(:disabled){scale:.96}" in css_all)
+        press = css_all[css_all.index("/* ── motion, as Apple does it"):css_all.index("@keyframes hubIn")]
+        check("...but never a map pin (scaling a pin placed by a transform moved it from under the pointer)",
+              "pin" not in press.split("*/", 1)[1] and ":where(button" not in press)
+        mp.evaluate("location.hash = '#tracking'"); mp.wait_for_timeout(300)
+        check("A page arrives with a short rise and fade when you navigate", mp.evaluate("document.getElementById('content').classList.contains('nav-in')"))
+        mp.wait_for_timeout(2500)
+        ctxo.set_offline(True); mp.wait_for_timeout(900)
+        txt = mp.locator("#island").inner_text()
+        check("No internet: the status island says so at the top", "Not connected to the internet" in txt
+              and mp.evaluate("document.getElementById('island').classList.contains('on')"), txt)
+        ctxo.set_offline(False); mp.wait_for_timeout(1200)
+        check("...and says Connected when it is back", "Connected" in mp.locator("#island").inner_text())
+        mp.wait_for_timeout(3000)
+        check("...then steps aside", not mp.evaluate("document.getElementById('island').classList.contains('on')"))
+        mp.route("**/api/hub/list*", lambda r: r.fulfill(status=500, content_type="application/json", body='{"error":"server error"}'))
+        mp.evaluate("location.hash = '#tracking?x=1'"); mp.wait_for_timeout(2000)
+        check("An error says what happened, with Try Again", mp.locator("#hvBody .hub-err").count() == 1
+              and mp.locator("#hvBody [data-retry]").inner_text() == "Try Again")
+        mp.unroute("**/api/hub/list*")
+        mp.locator("#hvBody [data-retry]").click(); mp.wait_for_timeout(2000)
+        check("...and Try Again does try again", mp.locator("#hvBody tr[data-ref]").count() > 0)
+        check("No error from the motion, the island or the error states", not merr, merr)
+        ctxo.close()
+        dk = br.new_page(viewport={"width": 1440, "height": 950})
+        derr = []
+        dk.on("pageerror", lambda e: derr.append(str(e)))
+        dk.add_init_script("sessionStorage.setItem('ct-intro','1');localStorage.setItem('ct-theme','dark')")
+        dk.goto(BASE + "/hub"); dk.wait_for_timeout(2500)
+        bg = dk.evaluate("getComputedStyle(document.body).backgroundColor")
+        check("Dark: deep charcoal, not pure black", bg == "rgb(17, 17, 19)", bg)
+        check("No error in dark mode", not derr, derr)
+        dk.close()
+        br.close()
+
+print("\n{0} passed, {1} failed{2}".format(len(PASSED), len(FAILED), ", {0} skipped".format(len(SKIPPED)) if SKIPPED else ""))
+sys.exit(1 if FAILED else 0)
