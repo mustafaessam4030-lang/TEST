@@ -198,5 +198,9 @@ except urllib.error.HTTPError as e:
     code = e.code
 check("A POST from another site (wrong Origin) is refused, even with the cookie and token", code == 403, code)
 
+js = open(os.path.join(HERE, "controlplane", "static", "login", "login.js"), encoding="utf-8").read()
+check("Sign-in keeps the part after # (a mission link from ATLAS lands on the mission, not the Overview)",
+      "location.hash" in js and "safe + h" in js)
+
 print("\n{0} passed, {1} failed".format(len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

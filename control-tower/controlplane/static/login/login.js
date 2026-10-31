@@ -20,7 +20,11 @@
   if (params.get('signed_out')) note('You are signed out.', true);
   const next = (() => {
     const n = params.get('next') || '/';
-    return n.startsWith('/') && !n.startsWith('//') ? n : '/';
+    const safe = n.startsWith('/') && !n.startsWith('//') ? n : '/';
+    // The page part after "#" (e.g. /hub#missions?id=…) never reaches the server, so the browser
+    // keeps it on this sign-in page: carry it on, so a link lands where it pointed.
+    const h = location.hash;
+    return safe.includes('#') || !h || !/^#[\w\-?=&%.,/]{1,200}$/.test(h) ? safe : safe + h;
   })();
 
   fetch('/api/auth/config').then((r) => r.json()).then((c) => {
