@@ -129,7 +129,7 @@ check("A review panel: every reviewer's verdict and concern kept, with who said 
       all(models.family({"id": x["model"], "family": x["family"]}) != "claude" for x in r["reviewers"]), r)
 w = council.word("You are ATLAS.", "CONCLUSION: delay", facts + ["EG-0001", "Customs Declaration"], "m1", "report", "emergency", 80000)
 check("Drafts in parallel: a draft that invents a number is rejected, the best draft that passes is used",
-      w["text"] and w["model"] != "claude-sonnet-5" and any(x["model"] == "claude-sonnet-5" and "added facts" in x["why"] for x in w["rejected"]), w)
+      w["text"] and w["model"] != "claude-sonnet-5" and any(x["model"] == "claude-sonnet-5" and "refused by the fact check" in x["why"] for x in w["rejected"]), w)
 DOWN.add("llama3.3-70b")
 h2 = council.hypotheses(facts, [], "m2", "hyp", "deep", 80000)
 check("A member that is down is simply left out; the others carry on", "llama3.3-70b" not in h2["members"] and h2["members"], h2)

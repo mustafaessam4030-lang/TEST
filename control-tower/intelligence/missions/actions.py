@@ -134,6 +134,13 @@ def decide(action_id, approve, by, can, policy=None):
                        "You can do this step yourself: {0}".format(a["title"])), a
     target = _target(a["kind"], a.get("args") or {})
     with db._lock:
+        limit = _limit("ATLAS_MISSION_ACTIONS_DAILY", 20)
+        today = executed_today()
+        if len(today) >= limit:
+            return False, ("Today's limit of {0} executed mission actions is reached (ATLAS_MISSION_ACTIONS_DAILY). "
+                           "It resets at midnight; you can still do this step yourself.".format(limit)), a
+        if policy and sum(1 for x in today if x.get("policy")) >= _limit("ATLAS_MISSION_POLICY_DAILY", 5):
+            return False, "Today's limit of automatic (policy) approvals is reached; a person approves the rest.", a
         busy = [x for x in listing(status=("executing", "awaiting_outcome")) if x["id"] != action_id and x["kind"] != "queue_human"
                 and _target(x["kind"], x.get("args") or {}) == target]
         if busy:
@@ -169,6 +176,20 @@ def decide(action_id, approve, by, can, policy=None):
     verify_one(db.one("SELECT * FROM actions WHERE id=?", action_id))
     _roll_up(a["mission_id"])
     return True, message, db.one("SELECT * FROM actions WHERE id=?", action_id)
+
+
+def _limit(name, default):
+    try:
+        return max(0, int(os.environ.get(name) or default))
+    except ValueError:
+        return default
+
+
+def executed_today():
+    """Actions executed since local midnight (by a person or a policy)."""
+    t = time.localtime()
+    midnight = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+    return db.many("SELECT id, policy FROM actions WHERE executed_at >= ?", midnight)
 
 
 # ── the Action Verifier ───────────────────────────────────────────────────
@@ -346,4 +367,7 @@ def _apply_policies(mission):
             if a["status"] == "proposed":
                 ok, msg, _ = decide(a["id"], True, "policy:{0} (approved by {1})".format(p.get("id"), p.get("approved_by")),
                                     lambda perm: True, policy=p.get("id"))
-                db.event(mission["id"], "policy", "Level 4 policy {0} approved {1}: {2}".format(p.get("id"), a["title"], msg))
+                db.event(mission["id"], "policy", "Level 4 policy {0} {1} {2}: {3}".format(
+                    p.get("id"), "approved" if ok else "did not approve", a["title"], msg))
+                if not ok and "limit" in msg:
+                    return

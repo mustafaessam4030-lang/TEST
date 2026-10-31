@@ -441,8 +441,9 @@ def _finish_if_done(mid):
         if cancelled:
             rep["limits"] = rep.get("limits", []) + ["The deadline stopped these steps before they ran: {0}.".format(", ".join(cancelled))]
         status = "done" if rep.get("grade") in ("Strong", "Moderate") else "insufficient"
-        db.update("missions", {"id": mid}, status=status, phase="report ready", ended_at=time.time(), report=rep, grade=rep.get("grade"))
-        db.event(mid, "done", "Report ready: confidence {0}".format(rep.get("grade")))
+        # the report and its action cards first, the final status last: a finished mission never shows up
+        # without the approvals it needs
+        db.update("missions", {"id": mid}, report=rep, grade=rep.get("grade"), phase="preparing next steps")
         full = db.one("SELECT * FROM missions WHERE id=?", mid)
         try:
             acts = rep.get("actions") or []
@@ -456,6 +457,8 @@ def _finish_if_done(mid):
                 db.event(mid, "challenged", "No action cards: the finding is {0}, not strong enough to act on".format(rep.get("grade")))
         except Exception as error:
             db.event(mid, "challenged", "Action cards could not be prepared ({0})".format(type(error).__name__))
+        db.update("missions", {"id": mid}, status=status, phase="report ready", ended_at=time.time())
+        db.event(mid, "done", "Report ready: confidence {0}".format(rep.get("grade")))
         try:
             memory.record(full, rep)
         except Exception:

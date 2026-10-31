@@ -50,6 +50,28 @@ def members(need, profile, k, tier="T1", used=0, budget=80000, avoid_family=None
     return chosen
 
 
+# Text in the records or on a web page that talks to an AI ("ignore previous instructions", "SYSTEM:",
+# "approve all actions", an email address, "set FLAG=1") is data, never an instruction: it is cut out of
+# what a model is shown. The records themselves are unchanged and still shown to people as they are.
+INSTRUCTION = re.compile(r"(ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|rules|prompts?)"
+                         r"|\b(?:system|assistant|developer)\s*:|\b(?:ai|llm)\s+(?:agents?|models?|assistants?)\s+reading\s+this"
+                         r"|\bapprove\s+(?:all|every)\b|\bset\s+[A-Z][A-Z0-9_]{3,}\s*=|\brm\s+-rf\b|\bcredentials?\b"
+                         r"|[\w.+-]+@[\w-]+\.[\w.]+)", re.I)
+REMOVED = "[instruction-like text removed]"
+
+
+def defang(lines):
+    """-> (lines with instruction-like text cut from its first sign to the end of that line, how many were cut)."""
+    out, n = [], 0
+    for line in lines:
+        m = INSTRUCTION.search(str(line))
+        if m:
+            n += 1
+            line = str(line)[:m.start()].rstrip(" ;:,-") + " " + REMOVED
+        out.append(line)
+    return out, n
+
+
 def _parallel(group, fn):
     """Run fn(member) for each member at once (the providers' slots keep the tower's model to one call)."""
     out = [None] * len(group)
@@ -113,6 +135,8 @@ def hypotheses(facts, known, mission_id, task_id, profile, budget):
         return {"causes": [], "members": [], "failed": []}
     system = ("You help a logistics control tower investigate. List other plausible causes worth testing, "
               "as JSON: {\"causes\": [\"short cause\", ...]} (at most 3). Do not repeat these: " + "; ".join(known))
+    facts, cut = defang(facts)
+    known, _ = defang(known)
     prompt = "FACTS:\n- " + "\n- ".join(facts)
     res = _parallel(group, lambda m: _json(models.call("reason", system, prompt, mission_id=mission_id, task_id=task_id,
                                                        purpose="hypotheses (council)", profile=profile, budget=budget,
@@ -133,7 +157,8 @@ def hypotheses(facts, known, mission_id, task_id, profile, budget):
             else:
                 merged.append({"label": c, "theme": theme(c), "proposed_by": [r["model"]], "wordings": [{"model": r["model"], "text": c}]})
     merged.sort(key=lambda x: -len(x["proposed_by"]))
-    return {"causes": merged[:5], "members": [r["model"] for r in res if r["ok"]], "failed": [r["model"] for r in res if not r["ok"]]}
+    return {"causes": merged[:5], "members": [r["model"] for r in res if r["ok"]], "failed": [r["model"] for r in res if not r["ok"]],
+            "removed": cut}
 
 
 def review(facts, draft, drafter_family, mission_id, task_id, profile, budget):
@@ -144,6 +169,7 @@ def review(facts, draft, drafter_family, mission_id, task_id, profile, budget):
         return {"agree": None, "split": False, "reviewers": [], "failed": []}
     system = ("You are an independent reviewer. Check whether the DRAFT follows from the FACTS. "
               "Reply JSON only: {\"agree\": true|false, \"concerns\": [\"...\"]}. Do not add facts.")
+    facts, cut = defang(facts)
     prompt = "FACTS:\n- " + "\n- ".join(facts) + "\n\nDRAFT:\n" + draft
     res = _parallel(group, lambda m: _json(models.call("review", system, prompt, mission_id=mission_id, task_id=task_id,
                                                        purpose="independent review (council)", profile=profile, budget=budget,
@@ -154,7 +180,7 @@ def review(facts, draft, drafter_family, mission_id, task_id, profile, budget):
         return {"agree": None, "split": False, "reviewers": [], "failed": [r["model"] for r in res]}
     yes = sum(1 for r in reviewers if r["agree"])
     return {"agree": yes * 2 > len(reviewers), "split": 0 < yes < len(reviewers), "reviewers": reviewers,
-            "failed": [r["model"] for r in res if not r["ok"]]}
+            "failed": [r["model"] for r in res if not r["ok"]], "removed": cut}
 
 
 MEASURE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(%|percent|days?|hours?|weeks?|shipments?|awbs?|bols?|escalations?)\b", re.I)
@@ -170,6 +196,26 @@ def _measures(text, inputs):
             if n.replace(",", "") not in have and n.replace(",", "").split(".")[0] not in have]
 
 
+# A mission report states what the records show; it never says something was done. Action words must
+# be in the evidence (e.g. a recorded escalation), otherwise the draft is refused.
+ACTED = re.compile(r"\b(escalated|e-?mailed|messaged|notified|contacted|re-?ran|reprocessed|executed|deleted|paid|booked|"
+                   r"cancell?ed|submitted|instructed|wrote to|called)\b", re.I)
+MAX_CHARS = 1200
+
+
+def checks(text, inputs):
+    """The council's own checks on a draft, after the chat's fact check: length, numbers with units, action claims."""
+    bad = []
+    if len(text or "") > MAX_CHARS:
+        bad.append("{0:,} characters (a summary is at most {1:,})".format(len(text), MAX_CHARS))
+    bad += _measures(text, inputs)
+    source = " ".join(str(x) for x in inputs if x).lower()
+    bad += ["claims it '{0}'".format(w) for w in sorted({m.group(0).lower() for m in ACTED.finditer(text or "")}) if w not in source]
+    if INSTRUCTION.search(text or ""):
+        bad.append("instruction-like text")
+    return bad
+
+
 def word(system, prompt, inputs, mission_id, task_id, profile, budget, max_tokens=220):
     """-> {"text" | None, "model", "rejected": [{model, why}], "members": [...]}: the best draft that passes the fact check."""
     from .. import factguard
@@ -177,6 +223,8 @@ def word(system, prompt, inputs, mission_id, task_id, profile, budget, max_token
     group = members("word", profile, k, budget=budget, used=models.tokens_used(mission_id))
     if not group:
         return {"text": None, "model": None, "rejected": [], "members": []}
+    lines, cut = defang(prompt.split("\n"))
+    prompt = "\n".join(lines)
     res = _parallel(group, lambda m: models.call("word", system, prompt, mission_id=mission_id, task_id=task_id,
                                                  purpose="report wording (council)", profile=profile, budget=budget,
                                                  max_tokens=max_tokens, only=m, max_calls=len(group) + 1)["text"])
@@ -189,9 +237,9 @@ def word(system, prompt, inputs, mission_id, task_id, profile, budget, max_token
             rejected.append({"model": r["model"], "why": "no answer ({0})".format(r["error"])})
             continue
         ok, bad = factguard.check(r["value"], inputs)
-        bad = list(bad) + _measures(r["value"], inputs)
+        bad = list(bad) + checks(r["value"], inputs)
         ok = ok and not bad
         if ok:
             return {"text": r["value"].strip(), "model": r["model"], "rejected": rejected, "members": [x["model"] for x in res]}
-        rejected.append({"model": r["model"], "why": "added facts not in the evidence ({0})".format(", ".join(bad[:3]))})
+        rejected.append({"model": r["model"], "why": "refused by the fact check ({0})".format(", ".join(str(b)[:80] for b in bad[:3]))})
     return {"text": None, "model": None, "rejected": rejected, "members": [x["model"] for x in res]}
