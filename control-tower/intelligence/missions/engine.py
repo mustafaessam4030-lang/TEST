@@ -203,6 +203,8 @@ def propose(question, data=None, rows=None, allowed=None, by=None, origin="chat"
               autonomy_level=3 if actions.enabled() else 2, perms=None, max_calls_per_task=models.call_cap())
     db.event(mid, "proposed", "Proposed from {0}: {1}".format(origin, "; ".join(a["reasons"]) or "no reasons"))
     db.event(mid, "plan", "Plan: {0} ({1})".format(p["title"], d["note"]))
+    if "rejected" in d["note"]:
+        db.event(mid, "guard", "The planning model's plan was refused: " + d["note"])
     return get(mid)
 
 

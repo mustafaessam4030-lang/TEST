@@ -21,7 +21,7 @@ import os
 import re
 import threading
 
-from . import models
+from . import db, models
 
 SIZE = {"drill": 0, "normal": 1, "deep": 2, "emergency": 3}
 
@@ -58,6 +58,17 @@ INSTRUCTION = re.compile(r"(ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|abo
                          r"|\bapprove\s+(?:all|every)\b|\bset\s+[A-Z][A-Z0-9_]{3,}\s*=|\brm\s+-rf\b|\bcredentials?\b"
                          r"|[\w.+-]+@[\w-]+\.[\w.]+)", re.I)
 REMOVED = "[instruction-like text removed]"
+# A "cause" that is an order, not a cause: starts with a command, or is a shell command
+COMMAND = re.compile(r"^\s*(?:please\s+)?(?:run|execute|delete|send|email|escalate|approve|ignore|disable|enable|set|call|wire|pay)\b|\brm\s+-rf\b", re.I)
+
+
+def _guard(mission_id, text):
+    """A blocked attempt, on the mission's timeline (kind "guard") so people can see what was tried."""
+    if mission_id:
+        try:
+            db.event(mission_id, "guard", text)
+        except Exception:
+            pass
 
 
 def defang(lines):
@@ -137,6 +148,8 @@ def hypotheses(facts, known, mission_id, task_id, profile, budget):
               "as JSON: {\"causes\": [\"short cause\", ...]} (at most 3). Do not repeat these: " + "; ".join(known))
     facts, cut = defang(facts)
     known, _ = defang(known)
+    if cut:
+        _guard(mission_id, "{0} line(s) of instruction-like text cut from the records before any model saw them".format(cut))
     prompt = "FACTS:\n- " + "\n- ".join(facts)
     res = _parallel(group, lambda m: _json(models.call("reason", system, prompt, mission_id=mission_id, task_id=task_id,
                                                        purpose="hypotheses (council)", profile=profile, budget=budget,
@@ -145,8 +158,15 @@ def hypotheses(facts, known, mission_id, task_id, profile, budget):
     for r in res:
         if not r["ok"]:
             continue
+        extra = sorted(k_ for k_ in r["value"] if k_ != "causes")
+        if extra:
+            _guard(mission_id, "{0} tried to add {1}: ignored, a model cannot act or change settings".format(
+                r["model"], ", ".join("'{0}'".format(x) for x in extra)))
         for c in (r["value"].get("causes") or [])[:3]:
             c = " ".join(str(c).split())[:120]
+            if INSTRUCTION.search(c) or COMMAND.search(c):
+                _guard(mission_id, "{0} suggested a 'cause' that is an instruction (\"{1}\"): dropped".format(r["model"], c[:70]))
+                continue
             if not c or any(_words(c) and _words(c) == _words(k_) for k_ in known):
                 continue
             hit = next((x for x in merged if _same(x["label"], c)), None)
@@ -170,10 +190,18 @@ def review(facts, draft, drafter_family, mission_id, task_id, profile, budget):
     system = ("You are an independent reviewer. Check whether the DRAFT follows from the FACTS. "
               "Reply JSON only: {\"agree\": true|false, \"concerns\": [\"...\"]}. Do not add facts.")
     facts, cut = defang(facts)
+    if cut:
+        _guard(mission_id, "{0} line(s) of instruction-like text cut before the reviewers saw the facts".format(cut))
     prompt = "FACTS:\n- " + "\n- ".join(facts) + "\n\nDRAFT:\n" + draft
     res = _parallel(group, lambda m: _json(models.call("review", system, prompt, mission_id=mission_id, task_id=task_id,
                                                        purpose="independent review (council)", profile=profile, budget=budget,
                                                        max_tokens=250, json_mode=True, only=m, max_calls=len(group) + 1)["text"]))
+    for r in res:
+        if r["ok"]:
+            extra = sorted(k_ for k_ in r["value"] if k_ not in ("agree", "concerns"))
+            if extra:
+                _guard(mission_id, "{0} (reviewer) tried {1}: ignored, a reviewer only agrees or raises concerns".format(
+                    r["model"], ", ".join("'{0}'".format(x) for x in extra)))
     reviewers = [{"model": r["model"], "family": r["family"], "agree": bool(r["value"].get("agree")),
                   "concerns": [str(c)[:200] for c in (r["value"].get("concerns") or [])][:4]} for r in res if r["ok"]]
     if not reviewers:
@@ -242,4 +270,5 @@ def word(system, prompt, inputs, mission_id, task_id, profile, budget, max_token
         if ok:
             return {"text": r["value"].strip(), "model": r["model"], "rejected": rejected, "members": [x["model"] for x in res]}
         rejected.append({"model": r["model"], "why": "refused by the fact check ({0})".format(", ".join(str(b)[:80] for b in bad[:3]))})
+        _guard(mission_id, "{0}'s report draft refused: {1}".format(r["model"], ", ".join(str(b)[:60] for b in bad[:3])))
     return {"text": None, "model": None, "rejected": rejected, "members": [x["model"] for x in res]}

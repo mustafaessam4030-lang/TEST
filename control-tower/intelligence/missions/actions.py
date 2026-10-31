@@ -370,4 +370,5 @@ def _apply_policies(mission):
                 db.event(mission["id"], "policy", "Level 4 policy {0} {1} {2}: {3}".format(
                     p.get("id"), "approved" if ok else "did not approve", a["title"], msg))
                 if not ok and "limit" in msg:
+                    db.event(mission["id"], "guard", "Daily limit reached: the remaining actions wait for a person")
                     return

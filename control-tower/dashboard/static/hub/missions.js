@@ -93,7 +93,12 @@
 .ms-tl li[data-k]::before{content:attr(data-k);font:600 10px var(--hub-font);letter-spacing:.04em;text-transform:uppercase;margin-right:6px;padding:2px 6px;border-radius:5px;background:var(--hub-surface-2);color:var(--hub-ink-3)}
 .ms-tl li[data-k="replan"]::before,.ms-tl li[data-k="plan"]::before{background:var(--hub-blue-wash);color:var(--hub-blue)}
 .ms-tl li[data-k^="action"]::before{background:var(--hub-amber-wash);color:var(--hub-amber-ink)}
-.ms-tl li[data-k="challenged"]::before,.ms-tl li[data-k="deadline"]::before{background:var(--hub-red-wash);color:var(--hub-red-ink)}
+.ms-tl li[data-k="challenged"]::before,.ms-tl li[data-k="deadline"]::before,.ms-tl li[data-k="guard"]::before{background:var(--hub-red-wash);color:var(--hub-red-ink)}
+.ms-guard{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ms-guard li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:10px 12px;border-radius:10px;font-size:13px;background:color-mix(in srgb,var(--hub-surface-2) 55%,transparent)}
+.ms-guard li b{font:700 10.5px var(--hub-font);letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:6px}
+.ms-guard li b.blocked{background:var(--hub-red-wash);color:var(--hub-red-ink)} .ms-guard li b.held{background:var(--hub-amber-wash);color:var(--hub-amber-ink)} .ms-guard li b.ran{background:var(--hub-green-wash);color:var(--hub-green-ink)}
+.ms-guard time{font-size:11.5px;color:var(--hub-ink-3);font-variant-numeric:tabular-nums}
 .ms-plan li label{display:contents;cursor:pointer}
 .ms-plan li input{margin:0;accent-color:var(--hub-accent)}
 .ms-plan li.off{opacity:.45}
@@ -356,6 +361,16 @@
       <div class="ms-ac">${mem.map((x) => `<article><p style="margin:0;font-size:13px">${esc(x.text)}</p><div class="ms-row"><span class="ms-note">${esc(ST[x.status] || x.status)}${x.proposal_id ? " · " + esc(x.proposal_id) : ""}</span><span class="sp"></span>
         ${x.status === "draft" && can ? `<button class="hub-pill" type="button" data-mact="promote" data-mid="${esc(x.id)}">Propose as knowledge</button><button class="hub-pill" type="button" data-mact="reject" data-mid="${esc(x.id)}">Drop</button>` : ""}</div></article>`).join("")}</div></section>`;
   }
+  function guardCard(m) {
+    // What the agents tried, and what ATLAS did: blocked attempts, held actions, executed ones.
+    const ev = (m.events || []).filter((e) => ["guard", "challenged", "policy", "action_executed", "action_verified", "action_not_verified", "action_failed"].includes(e.kind));
+    if (!ev.length) return "";
+    const tag = (k) => k === "guard" || k === "challenged" || k === "action_failed" || k === "action_not_verified" ? ["blocked", k === "guard" ? "Blocked" : k === "challenged" ? "Challenged" : "Not confirmed"]
+      : k === "policy" ? ["held", "Policy"] : ["ran", k === "action_verified" ? "Confirmed" : "Executed"];
+    const blocked = ev.filter((e) => e.kind === "guard").length;
+    return `<section class="hv-card ms-card" aria-labelledby="msGT"><h3 id="msGT">Guardrails <span class="ms-note">what the agents tried, and what ATLAS did · ${fmt(blocked)} blocked</span></h3>
+      <ul class="ms-guard">${ev.slice().reverse().map((e) => { const [c, l] = tag(e.kind); return `<li><b class="${c}">${esc(l)}</b><span>${esc(e.text)}</span><time>${esc(new Date(e.at * 1000).toLocaleTimeString("en-GB"))}</time></li>`; }).join("")}</ul></section>`;
+  }
   function notesList(m) {
     return (m.notes || []).map((n) => `<li><time>${esc(when(n.at))}</time><b>${esc(n.by)}</b>: ${esc(n.text)}</li>`).join("") || `<li class="ms-note">No notes yet.</li>`;
   }
@@ -408,7 +423,7 @@
         put(el.querySelector("#msTop"), `<section class="hv-card ms-card"><h3>Continued normally</h3><p class="ms-note">ATLAS will not propose this again for 24 hours. You can still ask for a mission on the Missions page.</p></section>`);
       } else {
         put(el.querySelector("#msTop"), reportCard(m) + liveCards(m, can));
-        put(el.querySelector("#msActs"), actionsCard(m) + conflictsCard(m));
+        put(el.querySelector("#msActs"), guardCard(m) + actionsCard(m) + conflictsCard(m));
         put(el.querySelector("#msLeft"), evidenceCard(m) + usageCard(m));
         put(el.querySelector("#msRight"), hypCard(m) + memoryCard(m) + `<section class="hv-card ms-card"><h3>Timeline <span class="ms-note">the Commander's activity</span></h3><ol class="ms-tl">${(m.events || []).slice().reverse().map((e) => `<li data-k="${esc(e.kind)}"><time>${esc(new Date(e.at * 1000).toLocaleTimeString("en-GB"))}</time>${esc(e.text)}</li>`).join("")}</ol></section>`);
       }
